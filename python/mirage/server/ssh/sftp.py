@@ -19,7 +19,9 @@ import os
 import posixpath
 import stat
 from collections.abc import AsyncIterator, Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, TypeVar
 
 import asyncssh
@@ -30,6 +32,7 @@ from asyncssh.constants import (FILEXFER_TYPE_DIRECTORY, FILEXFER_TYPE_REGULAR,
 from mirage.fuse.core import MountCore
 from mirage.fuse.errors import classify_error
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
+from mirage.server.ssh.constants import LISTING_CONCURRENCY
 from mirage.server.ssh.session import key_profile, new_session_id, open_session
 from mirage.server.ssh.stream import ENCODING, ERRORS
 from mirage.utils.errors import NoMountError
@@ -122,8 +125,10 @@ def exists(core: MountCore, path: str) -> bool:
 def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
     """A directory's entries with their attributes, in one pass.
 
-    An entry that vanishes between the listing and its stat is left out,
-    as ``ls`` leaves out a file deleted mid-listing.
+    The entries are stat'd together, at most ``LISTING_CONCURRENCY`` at
+    once, rather than one after another. An entry that vanishes between
+    the listing and its stat is left out, as ``ls`` leaves out a file
+    deleted mid-listing.
 
     Args:
         core (MountCore): the mount core.
@@ -133,19 +138,24 @@ def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
         list[tuple[str, dict[str, Any]]]: (name, ``st_*`` dict) pairs,
             ``.`` and ``..`` first.
     """
-    entries = []
-    for name in core.readdir(path):
-        if name == ".":
-            child = path
-        elif name == "..":
-            child = posixpath.dirname(path)
-        else:
-            child = posixpath.join(path, name)
-        try:
-            entries.append((name, core.getattr(child)))
-        except (FileNotFoundError, NotADirectoryError) as exc:
-            logger.debug("sftp: %s vanished while listing: %r", child, exc)
-    return entries
+    with ThreadPoolExecutor(LISTING_CONCURRENCY) as pool:
+        rows = pool.map(partial(_entry, core, path), core.readdir(path))
+        return [row for row in rows if row is not None]
+
+
+def _entry(core: MountCore, path: str,
+           name: str) -> tuple[str, dict[str, Any]] | None:
+    if name == ".":
+        child = path
+    elif name == "..":
+        child = posixpath.dirname(path)
+    else:
+        child = posixpath.join(path, name)
+    try:
+        return name, core.getattr(child)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        logger.debug("sftp: %s vanished while listing: %r", child, exc)
+        return None
 
 
 def open_file(core: MountCore, path: str, pflags: int) -> OpenFile:

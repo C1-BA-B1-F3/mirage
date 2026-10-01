@@ -15,11 +15,15 @@
 import asyncio
 import inspect
 import stat
+import threading
+import time
 
 import asyncssh
 import pytest
 
-from mirage.server.ssh.sftp import MirageSFTPServer, filetype, to_attrs
+from mirage.server.ssh.constants import LISTING_CONCURRENCY
+from mirage.server.ssh.sftp import (MirageSFTPServer, filetype, listing,
+                                    to_attrs)
 from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
                                        vault_workspace)
 
@@ -308,3 +312,39 @@ async def test_sftp_runs_under_the_key_profile(tmp_path):
     finally:
         await stop_harness(harness)
     assert content == b"token\n"
+
+
+class ListingCore:
+    """MountCore double: a wide directory whose stats each take a while."""
+
+    def __init__(self, names):
+        self.names = names
+        self.lock = threading.Lock()
+        self.now = 0
+        self.peak = 0
+
+    def readdir(self, path):
+        return [".", ".."] + self.names
+
+    def getattr(self, path):
+        with self.lock:
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+        time.sleep(0.005)
+        with self.lock:
+            self.now -= 1
+        if path.endswith("gone"):
+            raise FileNotFoundError(path)
+        return {"st_size": len(path)}
+
+
+def test_listing_stats_entries_together_under_the_cap():
+    # Each stat is a hop to the workspace loop and, on an unindexed
+    # mount, a backend request: a wide directory must not pay them one
+    # after another, nor put them all on the wire at once.
+    names = [f"f{i}" for i in range(40)] + ["gone"]
+    core = ListingCore(names)
+    rows = listing(core, "/d")
+    assert [name for name, _ in rows] == [".", ".."] + names[:-1]
+    assert rows[2] == ("f0", {"st_size": len("/d/f0")})
+    assert core.peak == LISTING_CONCURRENCY

@@ -2411,6 +2411,64 @@ async def test_a_create_through_the_command_dispatcher_meets_the_rules():
         await ws.close()
 
 
+LINKED_DOC = {
+    "commands": {
+        "allow": ["awk", "sed", "ln", "echo"],
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    "awk": ["/data/secret"],
+                    "sed": ["/data/secret"],
+                },
+            }
+        ],
+    }
+}
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_read_through_a_link_meets_the_target_rule():
+    # A path a command names inside its own program (awk's getline, sed's
+    # r) reaches the dispatcher unjudged, and the door follows a link to
+    # its target. The rule on the target holds through the link exactly
+    # as it holds on the target itself; a link to an allowed file reads.
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"linked": LINKED_DOC},
+    )
+    ws.create_session("g", profile="linked")
+    try:
+        await ws.shell(
+            "echo TOPSECRET > /data/secret && echo ok > /data/f && "
+            "ln -s /data/secret /data/alias && ln -s /data/f /data/okalias"
+        )
+        for name in ("secret", "alias"):
+            assert await _line(
+                ws,
+                f"awk 'BEGIN {{ getline x < \"/data/{name}\"; print x }}'",
+                "g",
+            ) == (0, "\n", "")
+            assert await _line(
+                ws, f"sed -n 'r /data/{name}' /data/f", "g"
+            ) == (
+                0,
+                "",
+                "",
+            )
+        assert await _line(
+            ws, "awk 'BEGIN { getline x < \"/data/okalias\"; print x }'", "g"
+        ) == (0, "ok\n", "")
+        assert await _line(ws, "sed -n 'r /data/okalias' /data/f", "g") == (
+            0,
+            "ok\n",
+            "",
+        )
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_a_write_through_the_dispatcher_never_names_a_hidden_entry():
     # A rule on a hidden path stays silent: a write the dispatcher carries

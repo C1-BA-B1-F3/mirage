@@ -782,7 +782,10 @@ class MountEntry:
                 filetype_fns=(filetype_fns if not is_filetype_cmd else None),
                 index=self.index,
                 dispatch=(
-                    with_dispatch_rule_guard(context.dispatch)
+                    with_dispatch_rule_guard(
+                        context.dispatch,
+                        context.ns.links if context.ns is not None else None,
+                    )
                     if context.dispatch is not None
                     else None
                 ),

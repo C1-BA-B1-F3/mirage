@@ -241,7 +241,7 @@ export async function runOnMount(
   // The same door for a listing: a walker whose output is one document
   // (tree) reads the subtree under a nested mount through here, because
   // that subtree lives in a VFS its own accessor cannot open.
-  const guarded = withDispatchRuleGuard(dispatch)
+  const guarded = withDispatchRuleGuard(dispatch, ns.links)
   const readdirPath: ReaddirPath = (path: string) => pathReaddir(guarded, path)
 
   const [lineRuntime, denial] = lineRuntimeFor(

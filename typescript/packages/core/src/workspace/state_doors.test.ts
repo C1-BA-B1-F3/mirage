@@ -2524,6 +2524,51 @@ describe('a warm walk is refused as the cold walk is', () => {
   })
 })
 
+describe('a dispatched read through a link meets the target rule', () => {
+  const LINKED_DOC: SessionProfile = parseSessionProfile({
+    commands: {
+      allow: ['awk', 'sed', 'ln', 'echo'],
+      deny: [{ reason: 'sealed', commands: { awk: ['/data/secret'], sed: ['/data/secret'] } }],
+    },
+  })
+
+  // A path a command names inside its own program (awk's getline, sed's r)
+  // reaches the dispatcher unjudged, and the door follows a link to its
+  // target. The rule on the target holds through the link exactly as it
+  // holds on the target itself; a link to an allowed file reads.
+  it('refuses the target as it refuses the target named', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { linked: LINKED_DOC } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'linked' })
+    await ws.shell(
+      'echo TOPSECRET > /data/secret && echo ok > /data/f && ' +
+        'ln -s /data/secret /data/alias && ln -s /data/f /data/okalias',
+    )
+    const line = async (text: string): Promise<[number, string, string]> => {
+      const r = await ws.shell(text, { sessionId: 'g' })
+      return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+    }
+    for (const name of ['secret', 'alias']) {
+      expect(await line(`awk 'BEGIN { getline x < "/data/${name}"; print x }'`)).toEqual([
+        0,
+        '\n',
+        '',
+      ])
+      expect(await line(`sed -n 'r /data/${name}' /data/f`)).toEqual([0, '', ''])
+    }
+    expect(await line(`awk 'BEGIN { getline x < "/data/okalias"; print x }'`)).toEqual([
+      0,
+      'ok\n',
+      '',
+    ])
+    expect(await line(`sed -n 'r /data/okalias' /data/f`)).toEqual([0, 'ok\n', ''])
+  })
+})
+
 describe('a walk the executor fans out meets the command rules', () => {
   const FANOUT_DOC: SessionProfile = parseSessionProfile({
     commands: {

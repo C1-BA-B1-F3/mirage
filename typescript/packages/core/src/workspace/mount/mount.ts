@@ -628,7 +628,7 @@ export class MountEntry {
         cwd: context.cwd ?? ROOT_CWD,
         index: this.index,
         ...(context.dispatch !== undefined
-          ? { dispatch: withDispatchRuleGuard(context.dispatch) }
+          ? { dispatch: withDispatchRuleGuard(context.dispatch, context.ns?.links) }
           : {}),
         ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         ...(context.env !== undefined ? { env: context.env } : {}),

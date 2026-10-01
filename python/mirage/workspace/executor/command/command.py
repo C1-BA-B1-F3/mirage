@@ -177,7 +177,9 @@ async def _finish_find(
         session_id=session.session_id,
         ns=ns,
         stat_path=stat_path,
-        dispatch=with_dispatch_rule_guard(dispatch),
+        dispatch=with_dispatch_rule_guard(
+            dispatch, ns.links if ns is not None else None
+        ),
         identity=identity_from(ns, session_view(session, registry.policies)),
         stdin=stdin,
         starts=starts,
@@ -542,7 +544,9 @@ async def handle_command(
             cross_scopes,
             cross_texts,
             cross_flags,
-            with_dispatch_rule_guard(dispatch),
+            with_dispatch_rule_guard(
+                dispatch, cross_ns.links if cross_ns is not None else None
+            ),
             run_operand,
             stdin=stdin,
             storage_key=make_storage_key(registry),

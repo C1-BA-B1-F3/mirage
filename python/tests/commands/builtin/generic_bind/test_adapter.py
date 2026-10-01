@@ -470,6 +470,38 @@ async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
     ]
 
 
+@pytest.mark.asyncio
+async def test_dispatch_rule_guard_judges_the_link_target_the_door_follows():
+    from types import SimpleNamespace
+
+    from mirage.commands.builtin.generic_bind.adapter import (
+        with_dispatch_rule_guard,
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    async def door(op, path, **kwargs):
+        calls.append((op, path.virtual))
+        return None, None
+
+    links = SimpleNamespace(
+        resolve=lambda v: "/data/locked/y" if v == "/data/alias" else v
+    )
+    dispatch = with_dispatch_rule_guard(door, links)
+    gate = _Gate(refused="/data/locked/y")
+    token = set_admission(gate)
+    try:
+        # The door follows the link, so the target is what the op reaches.
+        with pytest.raises(PermissionError):
+            await dispatch("read", _spec("/data/alias"))
+        # An op on the link itself never reaches the target.
+        await dispatch("unlink", _spec("/data/alias"))
+        await dispatch("read", _spec("/data/alias"), nofollow=True)
+    finally:
+        reset_admission(token)
+    assert calls == [("unlink", "/data/alias"), ("read", "/data/alias")]
+
+
 class _SealedRead(Policy):
     """Refuse reads of one path; record every op asked."""
 

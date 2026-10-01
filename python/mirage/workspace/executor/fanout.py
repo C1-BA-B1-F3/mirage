@@ -605,7 +605,9 @@ async def _fan_out_traversal(
             for name in ("max_depth", "sort", "sortr", "sort_files")
         )
     ):
-        guarded = with_dispatch_rule_guard(dispatch)
+        guarded = with_dispatch_rule_guard(
+            dispatch, ns.links if ns is not None else None
+        )
         try:
             stdout, io = await rg(
                 flat_scopes(paths),

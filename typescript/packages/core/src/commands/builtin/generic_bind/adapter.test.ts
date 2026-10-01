@@ -45,6 +45,7 @@ import type { Action, OpsContext } from '../../../policy/types.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
+import type { LinkView } from '../../../ops/types.ts'
 
 const accessor = {} as never
 // No namespace facts, which is what a command bound outside a workspace
@@ -431,6 +432,47 @@ describe('withDispatchRuleGuard', () => {
       '/data/b',
       '/data/locked/y',
       '/data/locked/y',
+    ])
+  })
+})
+
+describe('withDispatchRuleGuard on a link', () => {
+  const spec = (virtual: string): PathSpec =>
+    new PathSpec({
+      virtual,
+      directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
+      vfsPath: virtual,
+      resolved: true,
+    })
+
+  it('judges the link target the door follows', async () => {
+    const calls: string[][] = []
+    const door: DispatchFn = (op, path) => {
+      calls.push([op, path.virtual])
+      return Promise.resolve([null, new IOResult()])
+    }
+    const links = {
+      resolve: (v: string) => (v === '/data/alias' ? '/data/locked/y' : v),
+    } as unknown as LinkView
+    const dispatch = withDispatchRuleGuard(door, links)
+    const gate = {
+      scoped: true,
+      granted: [],
+      check: (virtual: string) => {
+        if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
+      },
+      refuses: (virtual: string) => virtual === '/data/locked/y',
+    }
+    await runWithAdmission(gate, async () => {
+      // The door follows the link, so the target is what the op reaches.
+      await expect(dispatch('read', spec('/data/alias'))).rejects.toThrow('refused')
+      // An op on the link itself never reaches the target.
+      await dispatch('unlink', spec('/data/alias'))
+      await dispatch('read', spec('/data/alias'), [], { nofollow: true })
+    })
+    expect(calls).toEqual([
+      ['unlink', '/data/alias'],
+      ['read', '/data/alias'],
     ])
   })
 })

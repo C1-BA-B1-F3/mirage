@@ -376,4 +376,14 @@ describe('what a write leaves in the file cache', () => {
       }
     },
   )
+
+  it('keeps nothing a self-overwrite wrote on a backend that rewrites uploads', async () => {
+    const ws = await seeded(false)
+    try {
+      await run(ws, 'cat /data/a.docx | tee /data/a.docx')
+      expect(await ws.cache.exists('/data/a.docx')).toBe(false)
+    } finally {
+      await ws.close()
+    }
+  })
 })

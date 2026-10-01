@@ -430,6 +430,8 @@ describe('Ops is one door with the dispatcher', () => {
     await ws.vfs.writeFile('/m/notes.txt', 'stored')
     await ws.cache.set('/m/notes.txt', new TextEncoder().encode('cached'), { ttl: 600 })
     expect(await ws.vfs.readFileText('/m/notes.txt')).toBe('cached')
+    const named = await ws.dispatch('read', '/m/notes.txt', [], { filetype: '.tally' })
+    expect(new TextDecoder().decode(named as Uint8Array)).toBe('rendered')
   })
 
   // A VFS that ships the renderer itself (gdocs) reads the same rendering

@@ -673,3 +673,18 @@ describe('applyIo on a mount that keeps no written bytes', () => {
     expect(DEC.decode((await cache.get('/s3/a.txt')) ?? undefined)).toBe('written')
   })
 })
+
+describe('applyIo on a path read and written in one line', () => {
+  // `cat a | tee a` leaves both a read and a write of the path; the read's
+  // bytes are not what a rewriting backend stores after the write.
+  it('keeps nothing where the mount keeps no written bytes', async () => {
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({
+      reads: { '/sp/a.docx': ENC.encode('read') },
+      writes: { '/sp/a.docx': ENC.encode('written') },
+      cache: ['/sp/a.docx'],
+    })
+    await applyIo(cache, io, facts(30, true, false))
+    expect(await cache.exists('/sp/a.docx')).toBe(false)
+  })
+})

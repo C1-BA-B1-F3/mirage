@@ -1069,3 +1069,10 @@ async def test_a_backend_that_rewrites_uploads_keeps_no_written_bytes(line):
     ws = await _seeded(_RewritingRAM())
     await _run(ws, line.format(path="/data/a.docx"))
     assert not await ws.cache.exists("/data/a.docx")
+
+
+@pytest.mark.asyncio
+async def test_a_backend_that_rewrites_uploads_keeps_no_self_overwrite():
+    ws = await _seeded(_RewritingRAM())
+    await _run(ws, "cat /data/a.docx | tee /data/a.docx")
+    assert not await ws.cache.exists("/data/a.docx")

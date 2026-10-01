@@ -752,3 +752,15 @@ async def test_apply_io_keeps_written_bytes_by_default():
     io = IOResult(writes={"/s3/a.txt": b"written"}, cache=["/s3/a.txt"])
     await cache_io.apply_io(cache, io, _facts(30))
     assert await cache.get("/s3/a.txt") == b"written"
+
+
+@pytest.mark.asyncio
+async def test_apply_io_drops_a_path_read_and_written_it_does_not_keep():
+    # `cat a | tee a` leaves both a read and a write of the path; the read's
+    # bytes are not what a rewriting backend stores after the write.
+    cache = RAMFileCacheStore()
+    io = IOResult(reads={"/sp/a.docx": b"read"},
+                  writes={"/sp/a.docx": b"written"},
+                  cache=["/sp/a.docx"])
+    await cache_io.apply_io(cache, io, _facts(30, keeps_writes=False))
+    assert not await cache.exists("/sp/a.docx")

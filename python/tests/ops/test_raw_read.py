@@ -118,6 +118,16 @@ async def test_a_user_renderer_renders_after_a_shell_command(line):
 
 
 @pytest.mark.asyncio
+async def test_a_renderer_named_by_filetype_is_never_served_warm():
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/notes.txt")
+    data, _ = await ws.dispatch("read",
+                                PathSpec.from_str_path("/data/notes.txt"),
+                                filetype=".tally")
+    assert data == b"RENDERED"
+
+
+@pytest.mark.asyncio
 async def test_a_vfs_own_renderer_is_still_served_from_the_file_cache():
     ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
     await _seed(ws, "/data/books.tally")

@@ -29,4 +29,4 @@ async def readlink(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return await readlink_generic(resolved, list(texts), opts)
 
 
-BUILDER = Builder('readlink', readlink, None, False, None)
+BUILDER = Builder('readlink', readlink)

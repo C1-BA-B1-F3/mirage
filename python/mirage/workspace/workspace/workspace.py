@@ -20,7 +20,7 @@ from dataclasses import replace
 from functools import partial
 from shlex import join as shell_join
 from types import TracebackType
-from typing import Any, Literal, overload
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -48,7 +48,6 @@ from mirage.process.child import ChildProcess
 from mirage.process.stdio import ProcessInput, ProcessOutput
 from mirage.process.supervisor import ProcessSupervisor
 from mirage.process.types import ProcessView, SpawnRequest
-from mirage.provision import ProvisionResult
 from mirage.runtime.base import Runtime
 from mirage.runtime.binding import WorkspaceBinding, capture_binding
 from mirage.runtime.resolver import PrefixResolver
@@ -802,7 +801,6 @@ class Workspace:
                                             shell_join(argv),
                                             child.session_id,
                                             input_stream.stream(),
-                                            provision=False,
                                             agent_id=None,
                                             cwd=None,
                                             env=None,
@@ -812,8 +810,6 @@ class Workspace:
                                             routing_decision=None,
                                             argv=argv,
                                             sink=output)
-                if not isinstance(result, IOResult):
-                    raise RuntimeError("spawn returned a provision plan")
                 await output.emit(Channel.STDOUT, await
                                   materialize(result.stdout))
                 await output.emit(Channel.STDERR, await
@@ -1483,8 +1479,8 @@ class Workspace:
     async def _serialize_line(
         self,
         session_id: str | None,
-        run: Callable[[], Awaitable[IOResult | ProvisionResult]],
-    ) -> IOResult | ProvisionResult:
+        run: Callable[[], Awaitable[IOResult]],
+    ) -> IOResult:
         """Run one line of a session at a time, as one bash process does.
 
         Two top-level lines on one session share its env, cwd and ``$?``,
@@ -1502,7 +1498,7 @@ class Workspace:
         Args:
             session_id (str | None): the session the caller named, or
                 None for the default.
-            run (Callable[[], Awaitable[IOResult | ProvisionResult]]):
+            run (Callable[[], Awaitable[IOResult]]):
                 the line, started only once the session is held.
         """
         ambient = get_current_session_for(self._session_mgr)
@@ -1522,45 +1518,11 @@ class Workspace:
                 raise RuntimeError("Workspace is closed")
             return await run()
 
-    @overload
-    async def shell(self,
-                    command: str,
-                    session_id: str | None = ...,
-                    stdin: ByteSource | None = ...,
-                    provision: Literal[False] = ...,
-                    agent_id: str | None = ...,
-                    cwd: str | None = ...,
-                    env: dict[str, str] | None = ...,
-                    cancel: asyncio.Event | None = ...,
-                    record: bool = ...,
-                    runtime: str | None = ...,
-                    routing_decision: "RouteDecision | None" = ...,
-                    handed: "HandOff | None" = ...) -> IOResult:
-        ...
-
-    @overload
-    async def shell(self,
-                    command: str,
-                    session_id: str | None = ...,
-                    stdin: ByteSource | None = ...,
-                    *,
-                    provision: Literal[True],
-                    agent_id: str | None = ...,
-                    cwd: str | None = ...,
-                    env: dict[str, str] | None = ...,
-                    cancel: asyncio.Event | None = ...,
-                    record: bool = ...,
-                    runtime: str | None = ...,
-                    routing_decision: "RouteDecision | None" = ...,
-                    handed: "HandOff | None" = ...) -> ProvisionResult:
-        ...
-
     async def shell(
         self,
         command: str,
         session_id: str | None = None,
         stdin: ByteSource | None = None,
-        provision: bool = False,
         agent_id: str | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
@@ -1569,14 +1531,13 @@ class Workspace:
         runtime: str | None = None,
         routing_decision: RouteDecision | None = None,
         handed: HandOff | None = None,
-    ) -> IOResult | ProvisionResult:
+    ) -> IOResult:
         """Execute a shell command in the workspace.
 
         Args:
             command: The shell command string to execute.
             session_id: Session whose persistent state hosts the command.
             stdin: Optional stdin payload (bytes or async byte iterator).
-            provision: If True, return a ProvisionResult instead of running.
             agent_id: Agent identifier for observability and history.
             cwd: Per-call working directory override. When provided, the
                 command runs in an ephemeral session clone (bash subshell
@@ -1625,8 +1586,8 @@ class Workspace:
                 self._serialize_line(
                     session_id,
                     partial(execute_line, self, command, session_id, stdin,
-                            provision, agent_id, cwd, env, cancel, record,
-                            runtime, routing_decision, handed, frame)), cancel)
+                            agent_id, cwd, env, cancel, record, runtime,
+                            routing_decision, handed, frame)), cancel)
         except (MirageAbortError, asyncio.CancelledError):
             # An abandoned invocation is the caller's outcome, not the
             # shell's, whether it arrived on the event or as a cancel

@@ -21,11 +21,13 @@ vi.mock('../generic/find.ts', async (importOriginal) => ({
 
 import { GitHubAccessor } from '../../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
+import { runWithSession } from '../../../context/session_context.ts'
 import type { GitHubTransport } from '../../../core/github/client.ts'
 import { populateIndex } from '../../../core/github/tree.ts'
 import type { TreeEntry } from '../../../core/github/tree_entry.ts'
 import { IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { SessionState } from '../../../workspace/session/session.ts'
 import type { CommandOpts } from '../../config.ts'
 import { findGeneric } from '../generic/find.ts'
 import type * as findModule from '../generic/find.ts'
@@ -90,5 +92,27 @@ describe('github find', () => {
     await cmd.fn(makeAccessor(), [pattern], [], opts)
     const seen = generic.mock.calls[0]?.[0] ?? []
     expect(seen.map((p) => p.virtual)).toEqual(['/src/a.py', '/src/b.py'])
+  })
+
+  it('walks the guarded tree under a hide', async () => {
+    // The native find classifies on the raw tree; under a hide the walk
+    // must list through the guarded readdir, so the hidden file is absent
+    // from what the generic filters.
+    const cmd = GITHUB_FIND[0]
+    if (cmd === undefined) throw new Error('find not registered')
+    const index = new RAMIndexCacheStore()
+    await populateIndex(index, TREE, '')
+    const opts: CommandOpts = { stdin: null, flags: {}, filetypeFns: null, cwd: '/', index }
+    const src = new PathSpec({ virtual: '/src', directory: '/src', vfsPath: 'src' })
+    const sess = new SessionState({ sessionId: 'veiled' })
+    sess.hiddenPaths = { paths: ['/src/c.txt'] }
+    const listed = await runWithSession(sess, async () => {
+      await cmd.fn(makeAccessor(), [src], [], opts)
+      const walk = generic.mock.calls[0]?.[3]
+      if (walk === undefined) throw new Error('the generic was not reached')
+      return walk(src, {})
+    })
+    expect(listed).toContain('/src/a.py')
+    expect(listed).not.toContain('/src/c.txt')
   })
 })

@@ -15,7 +15,6 @@
 from datetime import datetime, timezone
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.strftime import gnu_strftime
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
@@ -106,7 +105,7 @@ def lacks_plus_error(operand: str) -> UsageError:
         f"{usage_hint(CommandName.DATE)}", usage_exit_code(CommandName.DATE))
 
 
-@command("date", vfs=None, spec=SPECS["date"], provision=pure_provision)
+@command("date", vfs=None, spec=SPECS["date"])
 async def date(
     accessor: Accessor,
     paths: list[PathSpec],

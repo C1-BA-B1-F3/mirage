@@ -32,4 +32,4 @@ async def fmt(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('fmt', fmt, None, False, None, read=True)
+BUILDER = Builder('fmt', fmt, read=True)

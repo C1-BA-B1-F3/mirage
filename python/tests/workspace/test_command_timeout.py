@@ -28,10 +28,6 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace.session.ram import RAMSessionStore
 
 
-async def _slow_provision(*args, **kwargs):
-    await asyncio.sleep(5)
-
-
 @pytest.fixture
 def restore_defaults():
     snapshot = dict(sg.DEFAULT_COMMAND_LIMITS)
@@ -333,16 +329,6 @@ async def test_truncation_keeps_lazy_exit_zero_on_match():
     r = await ws.shell("grep a /data/f.txt")
     assert r.exit_code == 0
     assert (await r.stdout_str()) == "a\na\n"
-
-
-@pytest.mark.asyncio
-async def test_provision_dry_run_honors_timeout(monkeypatch, restore_defaults):
-    sg.DEFAULT_COMMAND_LIMITS["cat"] = Limit(timeout_seconds=0.1)
-    monkeypatch.setattr("mirage.workspace.workspace.execute.provision_node",
-                        _slow_provision)
-    ws = _ws()
-    r = await ws.shell("cat /data/f.txt", provision=True)
-    assert r.exit_code == 124
 
 
 @pytest.mark.asyncio

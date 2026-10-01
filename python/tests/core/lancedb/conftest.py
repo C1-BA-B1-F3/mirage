@@ -113,7 +113,6 @@ def lance_config(tmp_path) -> LanceDBConfig:
         title_column="name",
         blob_column="image_bytes",
         blob_ext="png",
-        text_column="name",
         vector_column="vector",
     )
 
@@ -168,5 +167,4 @@ def edged(tmp_path) -> LanceDBAccessor:
                       group_by=["label"],
                       id_column="id",
                       title_column="name",
-                      text_column="name",
                       vector_column="vector"))

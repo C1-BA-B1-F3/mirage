@@ -4,12 +4,15 @@ import pytest
 
 from mirage.cache.index import RAMIndexCacheStore
 from mirage.commands.builtin.dify import COMMANDS
-from mirage.commands.builtin.slug_tree.find import _default_name, _expr_texts
+from mirage.commands.builtin.slug_tree.find import (_default_name, _expr_texts,
+                                                    _reads_times)
 from mirage.commands.config import CommandOpts
+from mirage.context import reset_current_session, set_current_session
 from mirage.core.dify import tree
 from mirage.io.types import IOResult, materialize
-from mirage.types import PathSpec
+from mirage.types import HiddenPaths, PathSpec
 from mirage.utils.key_prefix import mount_key
+from mirage.workspace.session import SessionState
 from tests.commands.builtin.dify.conftest import document
 
 find = next(cmd for cmd in COMMANDS
@@ -106,3 +109,30 @@ def test_default_name_only_for_bare_word():
     assert _default_name(None, ['!', '-name', 'x']) is None
     assert _default_name(None, ['(', '-name', 'a']) is None
     assert _default_name('given', ['foo']) == "given"
+
+
+@pytest.mark.parametrize("texts, reads", [
+    (["-name", "*.md"], False),
+    (["-mtime", "-1"], True),
+    (["-newer", "/knowledge/README.md"], True),
+    (["-newermt", "2024-01-01"], True),
+    (["-printf", "%p %s\n"], False),
+    (["-printf", "%TY %p\n"], True),
+])
+def test_only_an_expression_that_reads_times_pays_the_full_stat(texts, reads):
+    assert _reads_times(texts) is reads
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_child_leaves_its_directory_empty():
+    session = SessionState(
+        session_id="veiled",
+        hidden_paths=HiddenPaths(paths=("/knowledge/guides/deep/note.md", )))
+    token = set_current_session(session)
+    try:
+        stdout, io = await run([spec("/knowledge/guides")], ["-empty"])
+    finally:
+        reset_current_session(token)
+
+    assert stdout == b"/knowledge/guides/deep\n"
+    assert io.exit_code == 0

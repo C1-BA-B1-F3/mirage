@@ -33,4 +33,4 @@ async def head(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('head', head, None, False, header_aggregate, read=True)
+BUILDER = Builder('head', head, aggregate=header_aggregate, read=True)

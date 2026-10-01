@@ -78,7 +78,8 @@ describe('dify stat', () => {
     expect(item.content).toBe(ContentType.TEXT)
     expect(item.size).toBeNull()
     expect(item.extra.source_size).toBe(123)
-    expect(item.modified).toBe('2024-05-21T09:00:00.000Z')
+    expect(item.modified).toBe('2024-05-21T09:00:00Z')
+    expect(item.birthtime).toBe('2024-05-21T09:00:00Z')
     expect(item.extra.slug).toBe('guides/quickstart')
     expect(clientMod.getDocumentDetail).not.toHaveBeenCalled()
   })
@@ -97,7 +98,7 @@ describe('dify stat', () => {
   it('stat fetches document detail and fills the refreshed fields', async () => {
     const index = new RAMIndexCacheStore()
     vi.mocked(clientMod.getDocumentDetail).mockResolvedValue({
-      updated_at: 1716282000,
+      updated_at: 1716285600,
       tokens: 21,
       indexing_status: 'completed',
       data_source_detail_dict: { upload_file: { size: 456 } },
@@ -113,12 +114,13 @@ describe('dify stat', () => {
     expect(item.extra.source_size).toBe(456)
     expect(item.extra.tokens).toBe(21)
     expect(item.extra.indexing_status).toBe('completed')
-    expect(item.modified).toBe('2024-05-21T09:00:00Z')
+    expect(item.modified).toBe('2024-05-21T10:00:00Z')
+    expect(item.birthtime).toBe('2024-05-21T09:00:00Z')
   })
 
-  it('stat falls back to the entry size when the detail has none', async () => {
+  it('stat keeps the listed source size when the detail has none', async () => {
     const index = new RAMIndexCacheStore()
-    vi.mocked(clientMod.getDocumentDetail).mockResolvedValue({ updated_at: 1716282000 })
+    vi.mocked(clientMod.getDocumentDetail).mockResolvedValue({})
 
     const item = await stat(ACCESSOR, pathAt('/knowledge/guides/quickstart'), index)
 
@@ -126,5 +128,6 @@ describe('dify stat', () => {
     expect(item.extra.tokens).toBe(9)
     expect(item.extra.indexing_status).toBe('completed')
     expect(item.modified).toBe('2024-05-21T09:00:00Z')
+    expect(item.birthtime).toBe('2024-05-21T09:00:00Z')
   })
 })

@@ -21,7 +21,6 @@ import { ensureLiveTree } from '../../../core/github/tree.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { metadataProvision } from './_provision.ts'
 import { IOResult } from '../../../io/types.ts'
 import { DEFAULT_MAX_DU_ENTRIES, runDu } from '../generic/du.ts'
 import { WalkBudget, walkEntries, walkSize } from '../generic_bind/builders/du.ts'
@@ -79,5 +78,4 @@ export const GITHUB_DU = command({
   vfs: VFSName.GITHUB,
   spec: specOf('du'),
   fn: duCommand,
-  provision: metadataProvision,
 })

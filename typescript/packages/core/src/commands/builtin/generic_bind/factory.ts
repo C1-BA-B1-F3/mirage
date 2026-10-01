@@ -21,11 +21,10 @@ import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { type FileStat, FileType, type PathSpec } from '../../../types.ts'
 import { eisdir, enotdir, isMissingPath } from '../../../utils/errors.ts'
 import type { ChildMounts, LinkView } from '../../../ops/types.ts'
-import { type CommandFn, type ProvisionFn, type RegisteredCommand, command } from '../../config.ts'
+import { type CommandFn, type RegisteredCommand, command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import {
   type CommandIO,
-  resolveGlobOf,
   withAbortGuard,
   withDirGuard,
   withPathGuards,
@@ -33,7 +32,6 @@ import {
 } from './adapter.ts'
 import { type StatOp } from '../../../vfs/types.ts'
 import { BUILDERS } from './builders/index.ts'
-import { defaultProvision } from './provision.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
 function cachedStat<A extends Accessor>(stat: StatOp<A>): StatOp<A> {
@@ -194,7 +192,6 @@ function writeWraps<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
 
 export interface MakeGenericCommandsOptions<A extends Accessor = Accessor> {
   overrides?: ReadonlySet<string>
-  provisionOverrides?: Record<string, ProvisionFn<A>>
   // Per-command adapters that replace the shared adapter when one command
   // needs a cheaper backend operation (mirrors the Python ops_overrides).
   opsOverrides?: Record<string, CommandIO<A>>
@@ -222,7 +219,6 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
   options: MakeGenericCommandsOptions<A> = {},
 ): RegisteredCommand[] {
   const skip = options.overrides ?? new Set<string>()
-  const provOver = options.provisionOverrides ?? {}
   const opsOver = options.opsOverrides ?? {}
   // A name no builder has does nothing at all, so a misspelled override left
   // the generic registered beside the bespoke one, and an override for a
@@ -230,7 +226,7 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
   // something. Refused at registration, which is import time. Mirrors
   // `make_generic_commands` in `generic_bind/factory.py`.
   const known = new Set(BUILDERS.map((b) => b.name))
-  const unknown = [...new Set([...skip, ...Object.keys(provOver), ...Object.keys(opsOver)])]
+  const unknown = [...new Set([...skip, ...Object.keys(opsOver)])]
     .filter((name) => !known.has(name))
     .sort(compareCodePoints)
   if (unknown.length > 0) {
@@ -241,11 +237,8 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
     if (skip.has(b.name)) continue
     const raw = (opsOver[b.name] ?? ops) as CommandIO
     // Path guards are applied per invocation, over the stamped adapter,
-    // inside the command closure below; this registration copy exists
-    // for provision estimates, which bind here and read the session at
-    // call time. The raw adapter stays untouched for the ops tables,
-    // whose door does its own enforcement.
-    const baseOps = withPathGuards(raw)
+    // inside the command closure below. The raw adapter stays untouched
+    // for the ops tables, whose door does its own enforcement.
     const finish = b.read === true ? readWraps : b.write === true ? writeWraps : statWraps
     // A per-command adapter with its own stat (dify's light ls) would
     // otherwise print the probe's full stat under fresh only.
@@ -307,20 +300,13 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
         },
       )
     }
-    const provision =
-      b.name in provOver
-        ? ((provOver[b.name] ?? null) as ProvisionFn | null)
-        : b.provision !== undefined
-          ? b.provision(baseOps.stat)
-          : defaultProvision(b.name, baseOps.stat, resolveGlobOf(baseOps), baseOps.readdir)
-    const aggregate = baseOps.local !== false ? (b.aggregate ?? null) : null
+    const aggregate = raw.local !== false ? (b.aggregate ?? null) : null
     commands.push(
       ...command({
         name: b.name,
         vfs,
         spec: specOf(b.name),
         fn,
-        provision,
         aggregate,
         write: b.write === true,
         pathGuarded: true,

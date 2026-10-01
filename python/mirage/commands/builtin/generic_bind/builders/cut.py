@@ -32,4 +32,4 @@ async def cut(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('cut', cut, None, False, None, read=True)
+BUILDER = Builder('cut', cut, read=True)

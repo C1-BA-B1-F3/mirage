@@ -7,10 +7,11 @@ from mirage.commands.builtin.generic.jq import (exit_code, indent_width,
                                                 option_refusal, parse_flags,
                                                 positional_value, read_options,
                                                 run_status)
-from mirage.commands.config import CommandOpts, help_page, version_line
+from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
 from mirage.io.stream import yield_bytes

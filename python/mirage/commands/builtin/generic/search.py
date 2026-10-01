@@ -2,9 +2,8 @@ from collections.abc import Callable
 from typing import Any
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import exact_zero_provision
 from mirage.commands.builtin.utils.paths import default_paths
-from mirage.commands.config import CommandOpts, ProvisionFn, command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -42,7 +41,6 @@ def make_search(
     options: Callable[[FlagView], dict[str, JsonValue]] = semantic_options,
     *,
     name: str = "search",
-    provision: ProvisionFn | None = exact_zero_provision,
 ) -> Callable[..., Any]:
     """Build ``NAME QUERY [PATH...]`` over a backend's native search.
 
@@ -55,8 +53,6 @@ def make_search(
         options (Callable[[FlagView], dict[str, JsonValue]]): the search
             options for one invocation.
         name (str): the head word the command answers to.
-        provision (ProvisionFn | None): the dry-run estimate, or None for
-            the default one a caller wraps on.
     """
 
     async def search(
@@ -73,8 +69,6 @@ def make_search(
             SearchQuery(texts[0], options=options(fl)), opts.index)
         return output, IOResult()
 
-    wrapped: Callable[..., Any] = command(name,
-                                          vfs=vfs,
-                                          spec=SPECS["search"],
-                                          provision=provision)(search)
+    wrapped: Callable[..., Any] = command(name, vfs=vfs,
+                                          spec=SPECS["search"])(search)
     return wrapped

@@ -12,11 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
 from functools import partial
 
 from mirage.accessor.email import EmailAccessor
-from mirage.commands.builtin.email._provision import metadata_provision
 from mirage.commands.builtin.email.io import resolve_glob
 from mirage.commands.builtin.generic.find import (is_link, parse_find_args,
                                                   resolve_start, walk_find)
@@ -31,7 +29,6 @@ from mirage.core.email.readdir import readdir as _readdir
 from mirage.core.email.search import search_messages
 from mirage.core.email.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.fnmatch import fnmatch
 from mirage.utils.key_prefix import mount_prefix_of
@@ -63,15 +60,7 @@ def _folder_operand(paths: list[PathSpec]) -> PathSpec | None:
     return operand if len(parts) == 1 else None
 
 
-async def find_provision(accessor: EmailAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    return await metadata_provision(
-        accessor, paths, texts,
-        replace(opts, command="find " + " ".join(p.virtual for p in paths)))
-
-
-@command("find", vfs="email", spec=SPECS["find"], provision=find_provision)
+@command("find", vfs="email", spec=SPECS["find"])
 async def find(
     accessor: EmailAccessor,
     paths: list[PathSpec],

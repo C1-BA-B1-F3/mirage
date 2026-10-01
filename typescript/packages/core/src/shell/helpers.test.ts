@@ -40,7 +40,6 @@ import {
   getProcessSubBody,
   getRedirects,
   takeContinuation,
-  getSubshellBody,
   getText,
   getTestArgv,
   getWhileParts,
@@ -346,7 +345,7 @@ describe('getListParts', () => {
   })
 })
 
-describe('getWhileParts / getSubshellBody', () => {
+describe('getWhileParts', () => {
   it('while returns condition + body from do_group', () => {
     const cond = node('command', 'cond')
     const body1 = node('command', 'body1')
@@ -356,12 +355,6 @@ describe('getWhileParts / getSubshellBody', () => {
     const [c, b] = getWhileParts(n)
     expect(c).toBe(cond)
     expect(b).toEqual([body1, body2])
-  })
-
-  it('subshell body is its named children', () => {
-    const body1 = node('command', 'x')
-    const n = node('subshell', '', { namedChildren: [body1] })
-    expect(getSubshellBody(n)).toEqual([body1])
   })
 })
 

@@ -33,4 +33,4 @@ async def base64(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         dir_aware_stat(ops, accessor, opts))
 
 
-BUILDER = Builder('base64', base64, None, False, None, read=True)
+BUILDER = Builder('base64', base64, read=True)

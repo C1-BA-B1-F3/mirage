@@ -93,4 +93,4 @@ async def find(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                                 opts.index))
 
 
-BUILDER = Builder('find', find, None, False, None)
+BUILDER = Builder('find', find)

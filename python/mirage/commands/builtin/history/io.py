@@ -20,9 +20,7 @@ from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import NativeReadOps, ReadOps
 
 # The history view is read-only (the recorder owns mutation), so only the
-# read trio is wired; the history commands themselves stay bespoke. There is
-# no native streaming read, so the stream op is synthesized from the whole
-# rendered histfile.
+# read ops are wired, and a stream is the whole rendered histfile.
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 native=NativeReadOps(find=find),
                 is_mounted=lambda a: True,

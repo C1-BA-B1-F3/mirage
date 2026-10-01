@@ -113,9 +113,6 @@ describe('makeGenericCommands', () => {
       makeGenericCommands('fake', makeOps(), { overrides: new Set(['cat', 'search']) }),
     ).toThrow(/no generic builder named search/)
     expect(() =>
-      makeGenericCommands('fake', makeOps(), { provisionOverrides: { gerp: () => null } }),
-    ).toThrow(/no generic builder named gerp/)
-    expect(() =>
       makeGenericCommands('fake', makeOps(), { opsOverrides: { lss: makeOps() } }),
     ).toThrow(/no generic builder named lss/)
   })

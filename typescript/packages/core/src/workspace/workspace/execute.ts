@@ -32,7 +32,6 @@ import {
   findUnterminatedBacktick,
   type ShellParser,
 } from '../../shell/parse/index.ts'
-import type { ProvisionResult } from '../../provision/types.ts'
 import { formatFsError, isFsError } from '../../utils/errors.ts'
 import {
   hasAborted,
@@ -103,10 +102,6 @@ export interface ExecuteEnv {
   secretSources(): Promise<Readonly<Record<string, ResolvedSource>>>
   registerCloser(fn: () => Promise<void>): void
   invalidateAllAfterRemote(): Promise<void>
-  provision(
-    command: string,
-    options?: Pick<ExecuteOptions, 'sessionId' | 'agentId' | 'cwd' | 'env'>,
-  ): Promise<ProvisionResult>
   execute(cmd: string, options: ExecuteOptions): Promise<ExecuteResult>
 }
 
@@ -197,16 +192,15 @@ export async function executeLine(
   command: string,
   options: ExecuteOptions,
   argv?: readonly string[],
-): Promise<ExecuteResult | ProvisionResult> {
+): Promise<ExecuteResult> {
   const frame: LineFrame = { session: null, statusBefore: null, writer: newStatusWriter() }
   try {
     let result = await runLine(env, command, options, frame, argv)
-    // A provision run answers with a plan, not output, so it has nothing
-    // to stream. The drain is the last await of the line, and a stalled
-    // store would hold `shell` open past an abort; it joins under the
-    // same grace as the tree.
+    // The drain is the last await of the line, and a stalled store would
+    // hold `shell` open past an abort; it joins under the same grace as
+    // the tree.
     const sink = options.sink
-    if (sink !== undefined && result instanceof ExecuteResult) {
+    if (sink !== undefined) {
       result = await joinOrAbort(drainToSink(sink, result), options.signal)
     }
     if (hasAborted(options.signal)) throw makeAbortError(options.signal)
@@ -242,7 +236,7 @@ interface LineFrame {
 
 /**
  * Order of gates: hydrate stores, drain any queued drift check, parse,
- * syntax gate, provision branch, policy, then the strategies (whole-line
+ * syntax gate, policy, then the strategies (whole-line
  * runtime or command tree). Failures fold into the line's result via
  * `failureResult`, except the kinds that are the caller's problem (abort,
  * drift), which propagate.
@@ -253,7 +247,7 @@ async function runLine(
   options: ExecuteOptions,
   frame: LineFrame,
   argv?: readonly string[],
-): Promise<ExecuteResult | ProvisionResult> {
+): Promise<ExecuteResult> {
   if (options.signal?.aborted === true) {
     throw makeAbortError(options.signal)
   }
@@ -270,27 +264,7 @@ async function runLine(
       ? (findSyntaxError(root, (source) => parser.parse(source)) ??
         findUnterminatedBacktick(root.text))
       : null
-  if (offending !== null) {
-    // The gate runs before the provision branch, mirroring Python: a
-    // provision run of unparseable input reports the syntax error
-    // instead of walking the ERROR tree.
-    return syntaxErrorResult(offending, root)
-  }
-  if (options.provision === true) {
-    // The plan is judged as this line's caller: the effective session
-    // and agent ride into the walk's admission gate, so a command
-    // denied to the actual caller cannot have its backend costs
-    // exposed under the default session's identity.
-    return abortable(
-      env.provision(command, {
-        ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
-        ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
-        ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-        ...(options.env !== undefined ? { env: options.env } : {}),
-      }),
-      options.signal,
-    )
-  }
+  if (offending !== null) return syntaxErrorResult(offending, root)
   const rootNode = root as unknown as TSNodeLike
   // Evaluator calls carry their exact session, including ephemeral forks.
   // Ambient re-entry is safe only with task-local storage: the browser
@@ -307,7 +281,7 @@ async function runLine(
     const abort = new AbortController()
     const combined =
       options.signal === undefined ? abort.signal : AbortSignal.any([options.signal, abort.signal])
-    let result: ExecuteResult | ProvisionResult | undefined
+    let result: ExecuteResult | undefined
     let process: ProcessHandle
     try {
       process = env.jobTable.processes.start({
@@ -324,7 +298,7 @@ async function runLine(
             () => runLine(env, command, { ...options, signal: combined }, frame, argv),
             env.sessions,
           )
-          return result instanceof ExecuteResult ? result.exitCode : 0
+          return result.exitCode
         },
       })
     } catch (error) {
@@ -377,7 +351,7 @@ async function runLine(
     // never a typed line: they must not record a history entry or open
     // their own recording context, so their ops flow into this line's
     // recorder (GNU: history is appended by the line reader).
-    const innerOpts: ExecuteOptions & { provision?: false } = {
+    const innerOpts: ExecuteOptions = {
       record: false,
       sessionId: opts.sessionId,
       session: opts.session ?? effectiveSession,

@@ -2,7 +2,6 @@ import pytest
 from aioresponses import CallbackResult, aioresponses
 
 import mirage.core.msgraph.drive as drive_ops
-import mirage.core.sharepoint.write as write_mod
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
 from mirage.core.sharepoint.write import write_bytes
 from mirage.observe.context import RecordingScope
@@ -42,7 +41,7 @@ async def test_write_small_file():
 
 @pytest.mark.asyncio
 async def test_write_large_file_uses_upload_session(monkeypatch):
-    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(drive_ops, "SIMPLE_UPLOAD_MAX", 4)
     monkeypatch.setattr(drive_ops, "UPLOAD_CHUNK", 4)
     ranges = []
 
@@ -71,7 +70,7 @@ async def test_write_large_file_uses_upload_session(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_session_requests_replace(monkeypatch):
-    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(drive_ops, "SIMPLE_UPLOAD_MAX", 4)
     monkeypatch.setattr(drive_ops, "UPLOAD_CHUNK", 8)
     captured = {}
 

@@ -27,7 +27,6 @@ from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
                                                           with_path_guards,
                                                           with_policy_guard)
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
-from mirage.commands.builtin.generic_bind.provision import default_provision
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -304,7 +303,6 @@ def make_generic_commands(
     ops: CommandIO,
     *,
     overrides: set[str] | None = None,
-    provision_overrides: dict[str, Callable[..., Any]] | None = None,
     ops_overrides: dict[str, CommandIO] | None = None,
 ) -> list[Callable[..., Any]]:
     """Generate the default command set for a backend from its ops.
@@ -314,22 +312,18 @@ def make_generic_commands(
         ops (CommandIO): the backend's IO adapter.
         overrides (set[str] | None): command names to skip (the backend
             ships its own wrapper for these).
-        provision_overrides (dict[str, Callable] | None): per-command
-            provision functions that replace the catalog default (for a
-            backend whose cost model genuinely differs).
         ops_overrides (dict[str, CommandIO] | None): per-command adapters
             that replace the shared adapter when one command needs a cheaper
             backend operation.
     """
     skip = overrides or set()
-    prov_over = provision_overrides or {}
     ops_over = ops_overrides or {}
     # A name no builder has does nothing at all, so a misspelled override
     # left the generic registered beside the bespoke one, and an override
     # for a command the table never had (mem0's `search`) read as if it
     # displaced something. Refused at registration, which is import time.
     known = {b.name for b in BUILDERS}
-    unknown = sorted((set(skip) | set(prov_over) | set(ops_over)) - known)
+    unknown = sorted((set(skip) | set(ops_over)) - known)
     if unknown:
         raise ValueError(f"make_generic_commands({vfs!r}): no generic "
                          f"builder named {', '.join(unknown)}")
@@ -338,12 +332,6 @@ def make_generic_commands(
         if b.name in skip:
             continue
         raw = ops_over.get(b.name, ops)
-        # Path guards are applied per invocation, over the stamped
-        # adapter, inside _run_with_namespace_globs; this registration
-        # copy exists for provision estimates, which bind here and read
-        # the session at call time. The raw adapter stays untouched for
-        # the ops tables, whose door does its own enforcement.
-        base_ops = with_path_guards(raw)
         finish: Callable[[CommandIO], CommandIO]
         if b.read:
             finish = _read_wraps
@@ -357,22 +345,11 @@ def make_generic_commands(
                     if raw.stat is ops.stat and not b.write else raw)
         bound = functools.partial(_run_with_namespace_globs, answered, finish,
                                   b.fn)
-        provision: Callable[..., Any] | None
-        if b.name in prov_over:
-            provision = prov_over[b.name]
-        elif b.provision is not None:
-            provision = b.provision(base_ops.stat)
-        else:
-            provision = default_provision(b.name,
-                                          base_ops.stat,
-                                          resolve_glob=base_ops.resolve_glob,
-                                          readdir=base_ops.readdir)
-        agg = b.aggregate if base_ops.local else None
+        agg = b.aggregate if raw.local else None
         commands.append(
             command(b.name,
                     vfs=vfs,
                     spec=SPECS[b.name],
-                    provision=provision,
                     aggregate=agg,
                     write=b.write,
                     path_guarded=True)(bound))

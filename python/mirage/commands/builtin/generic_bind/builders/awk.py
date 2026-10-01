@@ -74,4 +74,4 @@ async def awk(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('awk', awk, None, False, None, read=True)
+BUILDER = Builder('awk', awk, read=True)

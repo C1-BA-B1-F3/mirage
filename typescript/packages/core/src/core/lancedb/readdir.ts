@@ -23,7 +23,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { dirEntry } from '../vector/readdir.ts'
 import { filtersOf, tableOf } from '../vector/scope.ts'
 import { tableExists, type LanceRow, type ValueTest } from './query.ts'
-import { renderCard } from './render.ts'
+import { cellText, renderCard } from './render.ts'
 
 function rowEntries(rows: LanceRow[], config: LanceDBConfigResolved): [string, IndexEntry][] {
   // The widened select carries every rendered column, so each card's exact
@@ -31,7 +31,7 @@ function rowEntries(rows: LanceRow[], config: LanceDBConfigResolved): [string, I
   // time, so blob entries stay size-unknown and stat renders them itself.
   const entries: [string, IndexEntry][] = []
   for (const row of rows) {
-    const id = String(row[config.idColumn])
+    const id = cellText(row[config.idColumn])
     entries.push([
       `${id}.md`,
       new IndexEntry({

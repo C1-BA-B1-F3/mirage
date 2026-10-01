@@ -32,4 +32,4 @@ async def sha384sum(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                    dir_aware_stream(ops, accessor, opts))
 
 
-BUILDER = Builder('sha384sum', sha384sum, None, False, None, read=True)
+BUILDER = Builder('sha384sum', sha384sum, read=True)

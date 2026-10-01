@@ -51,62 +51,6 @@
         "stdout": "",
         "stderr": "sed: -i not supported on this backend: Permission denied\n"
       }
-    },
-    {
-      "id": "qdrant_prov_cat",
-      "seq": 640040,
-      "targets": [
-        "qdrant"
-      ],
-      "command": "cat /db/cat/big/1.txt",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=17 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "qdrant_prov_grep",
-      "seq": 640041,
-      "targets": [
-        "qdrant"
-      ],
-      "command": "grep x /db/cat/big/1.txt",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=17 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "qdrant_prov_ls",
-      "seq": 640042,
-      "targets": [
-        "qdrant"
-      ],
-      "command": "ls /db/cat/big",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "qdrant_prov_search",
-      "seq": 930041,
-      "targets": [
-        "qdrant"
-      ],
-      "command": "search planning /db",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=0 hits=0 precision=exact\n",
-        "stderr": ""
-      }
     }
   ]
 }

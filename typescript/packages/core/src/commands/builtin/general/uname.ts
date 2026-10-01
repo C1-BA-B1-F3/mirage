@@ -17,7 +17,6 @@ import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult } from '../../../io/types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { pureProvision } from '../generic_bind/provision.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -67,5 +66,4 @@ export const GENERAL_UNAME = command({
   vfs: null,
   spec: specOf('uname'),
   fn: unameCommand,
-  provision: pureProvision,
 })

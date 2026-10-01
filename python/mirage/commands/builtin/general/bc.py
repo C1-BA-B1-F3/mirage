@@ -17,7 +17,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -2164,7 +2163,7 @@ def error_line(statement: BcStatement, error: BcParseError) -> int:
     return statement.lines[0]
 
 
-@command("bc", vfs=None, spec=SPECS["bc"], provision=pure_provision)
+@command("bc", vfs=None, spec=SPECS["bc"])
 async def bc(
     accessor: Accessor,
     paths: list[PathSpec],

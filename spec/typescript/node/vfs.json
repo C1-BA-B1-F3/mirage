@@ -2206,9 +2206,6 @@
         "table": {
           "required": false
         },
-        "textColumn": {
-          "required": false
-        },
         "titleColumn": {
           "required": false
         },

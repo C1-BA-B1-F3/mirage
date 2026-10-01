@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
+import { hiddenPathsIntersect, pathRulesActive } from '../../../context/session_context.ts'
 import { makeSearchBackedFind } from '../../../core/generic/find.ts'
 import type { SlugTree } from '../../../core/slug_tree/tree.ts'
 import { materialize, type ByteSource } from '../../../io/types.ts'
@@ -30,7 +31,13 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { findGeneric } from '../generic/find.ts'
-import { resolveGlobOf, type CommandIO } from '../generic_bind/adapter.ts'
+import {
+  resolveGlobOf,
+  withPathGuards,
+  withPolicyGuard,
+  type CommandIO,
+} from '../generic_bind/adapter.ts'
+import { findWalk } from '../generic_bind/builders/find.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -59,6 +66,17 @@ async function normalizeFindOutput(
   return ENC.encode(normalized.join('\n') + '\n')
 }
 
+const TIME_TESTS = new Set(['-mtime', '-newer', '-newermt'])
+const TIME_DIRECTIVE = /%[aAcCtTBW]/
+
+/** Whether the expression reads a timestamp, which the light stat only approximates from the listing. */
+export function readsTimes(texts: readonly string[]): boolean {
+  return texts.some(
+    (word, i) =>
+      TIME_TESTS.has(word) || (word === '-printf' && TIME_DIRECTIVE.test(texts[i + 1] ?? '')),
+  )
+}
+
 /**
  * Build `find` for a slug-tree backend, filtered over one tree walk.
  *
@@ -66,20 +84,21 @@ async function normalizeFindOutput(
  *   vfs: the backend the command registers for.
  *   io: the backend's command IO.
  *   tree: the backend's tree.
- *   stat: the full stat the walk filters with.
- *   statLight: the index-only stat find otherwise stats through; the full
- *     stat is paid only when -mtime needs times. Without one, find wires no
- *     stat at all and -mtime is pushed down into the walk.
+ *   stat: the full stat, paid only when the expression reads times
+ *     (-mtime, -newer, a -printf time).
+ *   statLight: the index-only stat used otherwise.
  */
 export function makeFind<A extends Accessor>(
   vfs: VFSName,
   io: CommandIO<A>,
   tree: SlugTree<A>,
   stat: StatOp<A>,
-  statLight?: StatOp<A>,
+  statLight: StatOp<A>,
 ): RegisteredCommand[] {
   const resolveGlob = resolveGlobOf(io)
   const findCore = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
+  const walkFull = withPolicyGuard(withPathGuards(io))
+  const walkLight = withPolicyGuard(withPathGuards({ ...io, stat: statLight }))
   return command({
     name: 'find',
     vfs,
@@ -94,23 +113,31 @@ export function makeFind<A extends Accessor>(
       const resolved = paths.length > 0 ? await resolveGlob(accessor, paths, index) : []
       const searchPath = resolved[0]
       // Push-down choices: a bare word acts as the -name filter, and the
-      // heavier per-document stat is only paid when -mtime needs times.
+      // heavier per-document stat is only paid when the expression reads
+      // times.
       const fl = new FlagView(opts.flags, specOf('find'))
       const bag: Record<string, FlagValue> = { ...opts.flags }
       const name = defaultName(fl.asStr('name'), texts)
       if (name !== undefined) bag.name = name
-      const full = fl.asStr('mtime') !== undefined
-      const statFn =
-        statLight === undefined
-          ? undefined
-          : (spec: PathSpec) => (full ? stat : statLight)(accessor, spec, index)
-      const result = await findGeneric(
-        resolved,
-        texts,
-        { ...opts, flags: bag },
-        (root, options) => findCore(accessor, root, options, index),
-        statFn,
-      )
+      const timed = readsTimes(texts)
+      const statFn = timed ? stat : statLight
+      // A tree walk classifies on the raw backend tree, so under hidden
+      // paths or a path rule it would answer for entries the session cannot
+      // see; the walk classifies through the guarded readdir/stat, the fork
+      // the factory builder takes.
+      const result =
+        pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
+          ? await findWalk(timed ? walkFull : walkLight, accessor, resolved, texts, {
+              ...opts,
+              flags: bag,
+            })
+          : await findGeneric(
+              resolved,
+              texts,
+              { ...opts, flags: bag },
+              (root, options) => findCore(accessor, root, options, index),
+              (spec: PathSpec) => statFn(accessor, spec, index),
+            )
       if (result === null || searchPath === undefined) return result
       const [stdout, ioResult] = result
       return [await normalizeFindOutput(stdout, searchPath), ioResult]

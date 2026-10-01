@@ -15,9 +15,7 @@
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { VFSName } from '../../../types.ts'
 import { CommandCatalog } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { makeObjectStoreCommands, OBJECT_STORE_OVERRIDES } from '../object_store/index.ts'
 import { S3_IO } from './io.ts'
 
@@ -25,10 +23,5 @@ export const S3_COMMANDS = new CommandCatalog([
   ...makeGenericCommands<S3Accessor>(VFSName.S3, S3_IO, {
     overrides: OBJECT_STORE_OVERRIDES,
   }),
-  ...withDefaultProvisions(
-    makeObjectStoreCommands(VFSName.S3, S3_IO),
-    S3_IO.stat,
-    resolveGlobOf(S3_IO),
-    S3_IO.readdir,
-  ),
+  ...makeObjectStoreCommands(VFSName.S3, S3_IO),
 ])

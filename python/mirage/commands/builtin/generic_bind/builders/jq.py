@@ -31,4 +31,4 @@ async def jq(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('jq', jq, None, False, None, read=True)
+BUILDER = Builder('jq', jq, read=True)

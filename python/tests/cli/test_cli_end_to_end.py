@@ -244,24 +244,6 @@ def test_daemon_stop_then_status_not_running(daemon, tmp_path):
     assert out == {} or out.get("running") is False
 
 
-def test_provision_returns_dry_run_result(daemon, tmp_path):
-    """`mirage provision` hits /execute with provision=True and returns
-    a {"kind": "provision", ...} payload instead of actually running."""
-    cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "provision-test")
-    result = _run_cli(
-        daemon["env"],
-        "provision",
-        "--workspace_id",
-        "provision-test",
-        "--command",
-        "echo would-not-run",
-    )
-    assert result["kind"] == "provision"
-    _run_cli(daemon["env"], "workspace", "delete", "provision-test")
-
-
 def test_execute_propagates_inner_exit_code(daemon, tmp_path):
     cfg = _write_config(tmp_path)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",

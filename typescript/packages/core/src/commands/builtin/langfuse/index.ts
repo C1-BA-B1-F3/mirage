@@ -16,9 +16,7 @@ import type { LangfuseAccessor } from '../../../accessor/langfuse.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { LANGFUSE_GREP } from './grep.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { LANGFUSE_IO } from './io.ts'
 import { LANGFUSE_RG } from './rg.ts'
 
@@ -28,10 +26,6 @@ export const LANGFUSE_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<LangfuseAccessor>(VFSName.LANGFUSE, LANGFUSE_IO, {
     overrides: LANGFUSE_OVERRIDES,
   }),
-  ...withDefaultProvisions(
-    [...LANGFUSE_GREP, ...LANGFUSE_RG],
-    LANGFUSE_IO.stat,
-    resolveGlobOf(LANGFUSE_IO),
-    LANGFUSE_IO.readdir,
-  ),
+  ...LANGFUSE_GREP,
+  ...LANGFUSE_RG,
 ]

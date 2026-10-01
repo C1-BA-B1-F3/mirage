@@ -38,13 +38,6 @@ def ops_summary() -> str:
     return f"{len(records)} ops, {total} bytes transferred"
 
 
-def show_plan(label: str, dr) -> None:
-    print(f"\n--- plan: {label} ---")
-    print(f"  network_read: {dr.network_read}  cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}  cache_hits: {dr.cache_hits}  "
-          f"precision: {dr.precision}")
-
-
 async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /s/ ===")
 
@@ -175,29 +168,6 @@ async def main():
                        " grep -c '^#' /s/README.md &"
                        " wait; echo done")
     print(f"  stdout: {(await r.stdout_str()).strip()}")
-
-    # ── PROVISION ───────────────────────────────────────
-    print("\n=== PROVISION (plan without executing) ===")
-    await ws.cache.clear()
-    before = ops_summary()
-
-    dr = await ws.shell("cat /s/README.md", provision=True)
-    show_plan("cat /s/README.md", dr)
-
-    dr = await ws.shell("head -c 100 /s/README.md", provision=True)
-    show_plan("head -c 100 /s/README.md (byte budget, EXACT)", dr)
-
-    dr = await ws.shell("ls /s/", provision=True)
-    show_plan("ls /s/ (metadata only)", dr)
-
-    dr = await ws.shell("find /s/ -name '*.py'", provision=True)
-    show_plan("find /s/ -name '*.py' (metadata only)", dr)
-
-    dr = await ws.shell("grep -l import /s/*.py", provision=True)
-    show_plan("grep -l import /s/*.py", dr)
-
-    print(f"\n  before plans: {before}")
-    print(f"  after plans:  {ops_summary()}  (planning is read-free)")
 
     # ── streaming chains ────────────────────────────────
     print("\n=== STREAMING (chain backpressure) ===")

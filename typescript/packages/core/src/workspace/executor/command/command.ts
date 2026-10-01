@@ -59,7 +59,7 @@ import { maybeWithTimeout } from '../../../commands/builtin/utils/limit.ts'
 import { resolveProducer, resolveLimit } from '../../../policy/index.ts'
 import type { ExecuteNodeFn, JobHandlerResult } from '../jobs.ts'
 import { handleDisown, handleFg, handleJobs, handleKill, handlePs, handleWait } from '../jobs.ts'
-import { standardRequest } from '../../../commands/config.ts'
+import { standardRequest } from '../../../commands/spec/standard.ts'
 
 import { dropsMountCaches, handleCli } from './cli.ts'
 import { pathStat } from '../builtins/links/index.ts'

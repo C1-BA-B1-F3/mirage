@@ -32,7 +32,7 @@ export {
   printable,
 } from './format.ts'
 export { JqParser, decodeUtf8, stringText } from './parse.ts'
-export { InputReader, isJsonlPath, readTexts, valueText } from './stream.ts'
+export { InputReader, readTexts, valueText } from './stream.ts'
 export {
   DEFAULT_INDENT,
   JqParseError,

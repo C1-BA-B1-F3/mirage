@@ -13,13 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { ChromaAccessor } from '../../../accessor/chroma.ts'
-import { stat } from '../../../core/chroma/stat.ts'
+import { stat, statLight } from '../../../core/chroma/stat.ts'
 import { CHROMA_TREE } from '../../../core/chroma/tree.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { makeFind } from '../slug_tree/find.ts'
 import { CHROMA_IO } from './io.ts'
 import { CHROMA_SEARCH } from './search.ts'
@@ -28,10 +26,6 @@ export const CHROMA_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<ChromaAccessor>(VFSName.CHROMA, CHROMA_IO, {
     overrides: new Set(['find']),
   }),
-  ...withDefaultProvisions(
-    [...makeFind(VFSName.CHROMA, CHROMA_IO, CHROMA_TREE, stat), ...CHROMA_SEARCH],
-    CHROMA_IO.stat,
-    resolveGlobOf(CHROMA_IO),
-    CHROMA_IO.readdir,
-  ),
+  ...makeFind(VFSName.CHROMA, CHROMA_IO, CHROMA_TREE, stat, statLight),
+  ...CHROMA_SEARCH,
 ]

@@ -13,8 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
 from mirage.commands.builtin.gsheets.io import IO as _IO
 from mirage.commands.builtin.gsheets.rm import rm
 
@@ -27,5 +25,5 @@ COMMANDS = [
         _IO,
         overrides={"rm"},
     ),
-    *with_default_provisions([rm], _IO.stat, _IO.resolve_glob, _IO.readdir),
+    rm,
 ]

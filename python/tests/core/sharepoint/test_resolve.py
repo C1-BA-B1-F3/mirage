@@ -105,6 +105,49 @@ async def test_site_entries_caches_display_name_and_name():
     assert accessor.site_cache["eng"] == _SITE_ID
 
 
+_TEAM = {
+    "id": _SITE_ID,
+    "displayName": "Engineering",
+    "webUrl": "https://tenant.sharepoint.com/sites/eng",
+}
+_OTHER = {
+    "id": "other-id",
+    "displayName": "Other",
+    "webUrl": "https://other.sharepoint.com/sites/o",
+}
+
+
+@pytest.mark.asyncio
+async def test_site_entries_skips_a_site_nothing_could_address():
+    with aioresponses() as m:
+        m.get(_SITES_RE,
+              payload={
+                  "value":
+                  [_TEAM, {
+                      "displayName": "No id"
+                  }, {
+                      "id": "nameless"
+                  }]
+              })
+        entries = await site_entries(_accessor())
+    assert entries == [("Engineering", _SITE_ID)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tenant_host,names", [
+    (None, ["Engineering", "Other"]),
+    ("tenant.sharepoint.com", ["Engineering"]),
+    ("TENANT.sharepoint.com", ["Engineering"]),
+])
+async def test_site_entries_keep_the_tenant_host(tenant_host, names):
+    accessor = SharePointAccessor(
+        SharePointConfig(access_token="tok", tenant_host=tenant_host))
+    with aioresponses() as m:
+        m.get(_SITES_RE, payload={"value": [_TEAM, _OTHER]})
+        entries = await site_entries(accessor)
+    assert [name for name, _ in entries] == names
+
+
 def _scoped_accessor() -> SharePointAccessor:
     return SharePointAccessor(
         SharePointConfig(access_token="tok",

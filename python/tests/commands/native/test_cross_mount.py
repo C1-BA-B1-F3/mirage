@@ -20,7 +20,6 @@ import pytest
 
 from mirage.core.ram.mkdir import mkdir
 from mirage.core.ram.write import write_bytes as mem_write
-from mirage.provision import Precision
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
@@ -249,12 +248,3 @@ def test_cross_vfs_file_fans_out(cross):
     out = cross.run("file /m1/a.txt /m2/b.txt")
     assert "/m1/a.txt:" in out
     assert "/m2/b.txt:" in out
-
-
-def test_plan_cross_vfs_aggregate_sums(cross):
-    cross.create_file(1, "a.txt", b"hello\n")
-    cross.create_file(2, "b.txt", b"world\n")
-    result = asyncio.run(
-        cross.ws.shell("md5 /m1/a.txt /m2/b.txt", provision=True))
-    assert result.precision == Precision.EXACT
-    assert result.network_read == "12"

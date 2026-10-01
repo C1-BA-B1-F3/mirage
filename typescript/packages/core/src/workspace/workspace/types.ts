@@ -216,7 +216,6 @@ export class ExecuteResult {
 
 export interface ExecuteOptions {
   stdin?: ByteSource | null
-  provision?: boolean
   sessionId?: string
   /** @internal The exact session carried by an evaluator, including an unregistered fork. */
   session?: SessionState

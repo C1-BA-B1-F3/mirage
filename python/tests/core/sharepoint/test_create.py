@@ -48,4 +48,5 @@ async def test_create_records_the_virtual_path():
             await create(_accessor(), _SPEC)
     finally:
         scope.close()
-    assert [r.path for r in scope.records] == ["/m/m/Documents/k.txt"]
+    assert [(r.op, r.path)
+            for r in scope.records] == [("create", "/m/m/Documents/k.txt")]

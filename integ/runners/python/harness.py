@@ -347,12 +347,6 @@ async def stat_check(ws, check: dict) -> str:
     return line + "\n"
 
 
-def provision_line(result) -> str:
-    return (f"net={result.network_read} write={result.network_write} "
-            f"cache={result.cache_read} ops={result.read_ops} "
-            f"hits={result.cache_hits} precision={result.precision.value}")
-
-
 def bind_mount(case: dict, mount_path: str) -> dict:
     """Substitute {mount} and {http} in a case with run-time values.
 
@@ -573,10 +567,6 @@ async def run_case(
         for mount in ws.mounts():
             await mount.index_store.clear()
     start = time.monotonic()
-    if case.get("provision"):
-        plan = await ws.shell(case["command"], provision=True)
-        return 0, provision_line(
-            plan) + "\n", "", time.monotonic() - start, None, []
     if case.get("answer") is not None:
         await answer_decisions(ws, case["answer"])
     predicted = None

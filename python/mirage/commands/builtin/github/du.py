@@ -23,13 +23,11 @@ from mirage.commands.builtin.generic_bind.adapter import (with_path_guards,
 from mirage.commands.builtin.generic_bind.builders.du import (WalkBudget,
                                                               walk_entries,
                                                               walk_size)
-from mirage.commands.builtin.github._provision import metadata_provision
 from mirage.commands.builtin.github.io import IO, resolve_glob
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.github.tree import ensure_tree
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 
 
@@ -61,12 +59,6 @@ async def _du_entries(accessor: GitHubAccessor,
                       path: PathSpec) -> tuple[list[tuple[str, int]], int]:
     found = _subtree(accessor, path)
     return found, sum(size for _, size in found)
-
-
-async def du_provision(accessor: GitHubAccessor, paths: list[PathSpec],
-                       texts: list[str], opts: CommandOpts) -> ProvisionResult:
-    return await metadata_provision("du " + " ".join(
-        p.virtual if isinstance(p, PathSpec) else p for p in paths))
 
 
 async def _resolve(live: Callable[[], Awaitable[None]],
@@ -105,7 +97,7 @@ async def _live_entries(live: Callable[[], Awaitable[None]],
     return await _du_entries(accessor, path)
 
 
-@command("du", vfs="github", spec=SPECS["du"], provision=du_provision)
+@command("du", vfs="github", spec=SPECS["du"])
 async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
     checked = False

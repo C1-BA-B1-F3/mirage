@@ -56,7 +56,7 @@ async def invalid_documents(config):
 
 
 @pytest.mark.asyncio
-async def test_ensure_tree_builds_prefixed_entries_and_uses_api_size(
+async def test_ensure_tree_keeps_the_source_size_in_extra(
         monkeypatch, dify_accessor, dify_index):
     tree_calls["documents"] = 0
     monkeypatch.setattr(tree, "list_all_documents", counted_documents)
@@ -71,12 +71,13 @@ async def test_ensure_tree_builds_prefixed_entries_and_uses_api_size(
     assert root.entries == ["/knowledge/README.md", "/knowledge/guides"]
     assert guides.entries == ["/knowledge/guides/quickstart"]
     assert quickstart.entry.id == "doc-1"
-    assert quickstart.entry.size == 333
+    assert quickstart.entry.size is None
+    assert quickstart.entry.extra["source_size"] == 333
     assert quickstart.entry.extra["slug"] == "guides/quickstart"
     assert quickstart.entry.extra["raw_slug"] == "guides/quickstart"
     assert quickstart.entry.extra["has_slug"] is True
     assert readme.entry.id == "doc-6"
-    assert readme.entry.size is None
+    assert readme.entry.extra["source_size"] is None
     assert readme.entry.extra["raw_slug"] == "README.md"
     assert readme.entry.extra["has_slug"] is False
 
@@ -154,4 +155,6 @@ def test_tree_slug_and_timestamp_helpers():
                 "size": 7
             }
         }}) == 7
-    assert tree.timestamp_to_iso(None) == ""
+    assert tree.epoch_text(1716282000) == "2024-05-21T09:00:00Z"
+    assert tree.epoch_text("2026-01-01T00:00:00Z") == "2026-01-01T00:00:00Z"
+    assert tree.epoch_text(None) is None

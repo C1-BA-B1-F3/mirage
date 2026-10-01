@@ -73,4 +73,4 @@ async def rg(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('rg', rg, None, False, None, read=True)
+BUILDER = Builder('rg', rg, read=True)

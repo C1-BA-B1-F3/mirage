@@ -36,4 +36,4 @@ async def basename(ops: CommandIO, accessor: Accessor,
     )
 
 
-BUILDER = Builder('basename', basename, None, False, None)
+BUILDER = Builder('basename', basename)

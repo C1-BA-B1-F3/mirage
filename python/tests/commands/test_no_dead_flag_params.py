@@ -23,10 +23,9 @@ from mirage.commands.spec import SPECS
 from mirage.commands.spec.types import CommandSpec
 
 # The dispatcher calls every handler with exactly four positional
-# arguments (`Mount.execute_cmd`), and the provision path with the same
-# four (`handle_command_provision`); everything else -- flags, stdin,
-# cwd, the namespace facts -- rides the CommandOpts bag. A handler that
-# names anything else in its signature can never receive it.
+# arguments (`Mount.execute_cmd`); everything else -- flags, stdin, cwd,
+# the namespace facts -- rides the CommandOpts bag. A handler that names
+# anything else in its signature can never receive it.
 HANDLER_PARAMS = ("accessor", "paths", "texts", "opts")
 BUILDER_PARAMS = ("ops", ) + HANDLER_PARAMS
 AGGREGATE_PARAMS = ("results", )
@@ -36,7 +35,7 @@ def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
     """Every registered command handler and generic-bind builder.
 
     Yields (command name, source label, spec, function) for the handler
-    itself and for any provision/aggregate function registered with it.
+    itself and for any aggregate function registered with it.
     """
     seen: set[int] = set()
     for info in pkgutil.walk_packages(mirage.commands.__path__,
@@ -52,9 +51,6 @@ def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
                 source = inspect.getsourcefile(inspect.unwrap(rc.fn)) or "?"
                 label = source.split("/mirage/")[-1]
                 yield rc.name, label, rc.spec, rc.fn
-                if rc.provision_fn is not None:
-                    yield rc.name, f"{label} [provision]", rc.spec, \
-                        rc.provision_fn
                 if rc.aggregate is not None:
                     yield rc.name, f"{label} [aggregate]", rc.spec, \
                         rc.aggregate
@@ -78,7 +74,7 @@ def _param_names(fn: Callable[..., Any]) -> tuple[str, ...] | None:
 
 
 def test_handlers_take_accessor_paths_texts_opts():
-    """Registered handlers and provisions have the one dispatcher shape.
+    """Registered handlers have the one dispatcher shape.
 
     Flags, stdin, cwd, and the namespace facts all ride ``CommandOpts``;
     a parameter named after any of them is dead the moment the

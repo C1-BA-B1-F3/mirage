@@ -29,7 +29,6 @@ class LanceDBConfig(BaseModel):
     title_column: str | None = None
     blob_column: str | None = None
     blob_ext: str = "bin"
-    text_column: str | None = None
     vector_column: str | None = None
     search_limit: int = 10
     max_rows: int = 1000

@@ -240,26 +240,11 @@ def literal_word(node: TSNodeLike, home: str | None = None) -> str | None:
     return None
 
 
-def has_command_substitution(node: TSNodeLike) -> bool:
-    """Whether the node contains a command or process substitution.
-
-    The provision planner suppresses substitution execution, so any
-    word carrying one expands to empty during a plan walk and the
-    affected estimate must degrade to UNKNOWN instead of trusting the
-    incomplete expansion.
-    """
-    if node.type in (NT.COMMAND_SUBSTITUTION, NT.PROCESS_SUBSTITUTION):
-        return True
-    return any(has_command_substitution(c) for c in node.named_children)
-
-
 def split_env_prefix(
     parts: list[TSNodeLike], ) -> tuple[list[TSNodeLike], list[TSNodeLike]]:
     """Split FOO=1 BAR=2 cmd parts into (assignments, remaining).
 
-    The single structural rule for env-prefixed commands, shared by the
-    executor (which expands and applies the assignments) and the
-    provision planner (which only needs the command parts).
+    The single structural rule for env-prefixed commands.
     """
     assignments: list[TSNodeLike] = []
     remaining: list[TSNodeLike] = []
@@ -442,11 +427,6 @@ def get_cfor_parts(
         if child.type == NT.DO_GROUP:
             body = list(child.named_children)
     return exprs, body
-
-
-def get_subshell_body(node: TSNodeLike) -> list[TSNodeLike]:
-    """Get body commands from subshell."""
-    return list(node.named_children)
 
 
 def is_backgrounded(node: TSNodeLike) -> bool:

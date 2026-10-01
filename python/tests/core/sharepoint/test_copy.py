@@ -1,9 +1,11 @@
+import re
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
-from mirage.core.sharepoint.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.sharepoint.copy import copy
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -152,3 +154,32 @@ async def test_copy_dir_conflict_merges_per_child():
         assert ("POST", URL(_DRIVE + "/root:/src/f.txt:/copy")) in m.requests
         assert ("GET", URL(child_monitor)) in m.requests
         assert ("DELETE", URL(_DRIVE + "/root:/dst")) not in m.requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("src,dst,named", [
+    ("/sp/Nope/Documents/a.txt", "/sp/Engineering/Documents/b.txt",
+     "/sp/Nope/Documents/a.txt"),
+    ("/sp/Engineering/Documents/a.txt", "/sp/Nope/Documents/b.txt",
+     "/sp/Nope/Documents/b.txt"),
+])
+async def test_copy_names_the_side_that_does_not_resolve(src, dst, named):
+    with aioresponses() as m:
+        m.get(re.compile(r".*/sites\?.*"),
+              payload={
+                  "value": [{
+                      "id": _SITE_ID,
+                      "displayName": "Engineering"
+                  }]
+              },
+              repeat=True)
+        with pytest.raises(FileNotFoundError) as exc:
+            await copy(
+                _accessor(),
+                PathSpec(vfs_path=mount_key(src, "/sp"),
+                         virtual=src,
+                         directory=src),
+                PathSpec(vfs_path=mount_key(dst, "/sp"),
+                         virtual=dst,
+                         directory=dst))
+    assert str(exc.value) == named

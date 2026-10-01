@@ -19,7 +19,7 @@ import { getParts } from '../../shell/helpers.ts'
 import { globPattern, unmarkGlobs } from '../../utils/glob_walk.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { SessionState } from '../session/session.ts'
-import { expandParts, expandWords } from './parts.ts'
+import { expandWords } from './parts.ts'
 import type { ExecuteFn } from './node.ts'
 
 const ENC = new TextEncoder()
@@ -112,17 +112,6 @@ describe('expandWords quoting', () => {
   it('keeps an unquoted brace atom live', async () => {
     const { out } = await words('c {$p,x}', { p: '*.txt' })
     expect(out.slice(1).map((w) => globPattern(w))).toEqual(['*.txt', 'x'])
-  })
-})
-
-describe('expandParts', () => {
-  it('is the unmarked view of expandWords', async () => {
-    const cmd = "c '/data/*.txt' \"/data/\"*.txt {a,b}* '/data/*'?.txt"
-    const { parts, session, executeFn, out } = await words(cmd)
-    const texts = await expandParts(parts, session, executeFn)
-    expect(texts).toEqual(out.map((w) => unmarkGlobs(w)))
-    // No mark ever reaches a caller of expandParts.
-    expect(texts.every((t) => t === unmarkGlobs(t))).toBe(true)
   })
 })
 

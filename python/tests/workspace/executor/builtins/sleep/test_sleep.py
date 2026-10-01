@@ -3,8 +3,8 @@ import time
 
 import pytest
 
-from mirage.commands.config import help_page, version_line
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.workspace.executor.builtins.sleep import handle_sleep
 
 

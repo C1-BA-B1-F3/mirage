@@ -12,10 +12,11 @@ from mirage.commands.builtin.generic.archive.zipinfo import (  # yapf: disable
     ZipRow, render_header, render_row, render_totals, render_verbose,
     zipinfo_layout)
 from mirage.commands.builtin.utils.copy import path_exists
-from mirage.commands.config import CommandOpts, version_line
+from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.standard import version_line
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec

@@ -19,13 +19,11 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.errors import CommandTimeoutError
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.observe.context import RecordingScope
-from mirage.policy import HandOff, resolve_limit
-from mirage.provision import ProvisionResult
+from mirage.policy import HandOff
 from mirage.runtime.routing import RouteDecision, RouteDeny, RouteError
 from mirage.shell.console import JobConsole
 from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
@@ -44,7 +42,6 @@ from mirage.workspace.node.admission import (admit_line, is_pending,
                                              is_pending_refusal)
 from mirage.workspace.node.explain import prejudge_line, unrefused_nodes
 from mirage.workspace.node.occurrence import evaluated_from
-from mirage.workspace.node.provision_node import provision_node
 from mirage.workspace.node.run_tree import run_command_tree
 from mirage.workspace.session import (SessionState, get_current_session_for,
                                       reset_current_session,
@@ -55,26 +52,12 @@ from mirage.workspace.workspace.fill import (cli_env_names, fill_env,
                                              fill_names, guest_bound,
                                              line_nodes)
 from mirage.workspace.workspace.line import run_whole_line
-from mirage.workspace.workspace.utils import command_name, fork_for_call
+from mirage.workspace.workspace.utils import fork_for_call
 
 if TYPE_CHECKING:
     from mirage.workspace.workspace import Workspace
 
 logger = logging.getLogger(__name__)
-
-
-async def plan_eval_stub(cmd: str, **opts: Any) -> IOResult:
-    """Inert evaluator for provision walks.
-
-    A dry run must never execute: a command substitution with side
-    effects ($(tee ...)) would otherwise run while "estimating".
-    Substitutions expand to empty, so affected words degrade the
-    plan to honest UNKNOWN instead of resolving via execution.
-
-    Args:
-        cmd (str): the substitution's command line, ignored.
-    """
-    return IOResult()
 
 
 @dataclass(slots=True)
@@ -210,7 +193,7 @@ async def recurse(
             if saved is not None:
                 session.terminal_output = terminal_output
                 session.restore(saved)
-    if isinstance(io, IOResult) and io.refusal is not None:
+    if io.refusal is not None:
         nested.latest = io.refusal
     return io
 
@@ -256,7 +239,6 @@ async def execute_line(
     command: str,
     session_id: str | None,
     stdin: ByteSource | None,
-    provision: bool,
     agent_id: str | None,
     cwd: str | None,
     env: dict[str, str] | None,
@@ -268,13 +250,13 @@ async def execute_line(
     frame: LineFrame | None = None,
     argv: tuple[str, ...] | None = None,
     sink: JobConsole | None = None,
-) -> IOResult | ProvisionResult:
+) -> IOResult:
     """The body of ``Workspace.shell``; see its docstring for the
     argument contract.
 
     Order of gates: hydrate stores, drain any queued drift check,
-    resolve the session, parse, syntax gate, policy, then one of three
-    strategies (provision walk, whole-line runtime, command tree).
+    resolve the session, parse, syntax gate, policy, then one of two
+    strategies (whole-line runtime, command tree).
     Failures fold into the line's ``IOResult`` via ``failure_result``,
     except the kinds that are the caller's problem (abort, drift,
     policy misconfiguration), which propagate.
@@ -314,19 +296,18 @@ async def execute_line(
         if session_id is None:
             session_id = ws._session_mgr.default_id
         session = ws._session_mgr.get(session_id)
-    if not provision and session.process_id is None:
-        results: list[IOResult | ProvisionResult] = []
+    if session.process_id is None:
+        results: list[IOResult] = []
 
         async def run() -> int:
             token = set_current_session(session, owner=ws._session_mgr)
             try:
                 result = await execute_line(ws, command, session_id, stdin,
-                                            provision, agent_id, cwd, env,
-                                            cancel, record, runtime,
-                                            routing_decision, handed, frame,
-                                            argv, sink)
+                                            agent_id, cwd, env, cancel, record,
+                                            runtime, routing_decision, handed,
+                                            frame, argv, sink)
                 results.append(result)
-                return result.exit_code if isinstance(result, IOResult) else 0
+                return result.exit_code
             finally:
                 reset_current_session(token)
 
@@ -356,8 +337,8 @@ async def execute_line(
     io = IOResult()
     # The line-reader decision (GNU: history is appended where the
     # typed line is read, never inside the evaluator). Internal
-    # evaluations and provision runs get an inert scope.
-    is_line = record and not provision
+    # evaluations get an inert scope.
+    is_line = record
     scope = RecordingScope(active=is_line)
 
     session_token = set_current_session(effective_session,
@@ -385,7 +366,7 @@ async def execute_line(
         if offending is not None:
             io = syntax_error_result(offending, ast)
             return io
-        decision = await ws._router.decide(ast, command, runtime, provision,
+        decision = await ws._router.decide(ast, command, runtime,
                                            effective_session, session_id, agent
                                            or "", ws._route_policy,
                                            routing_decision)
@@ -407,21 +388,6 @@ async def execute_line(
                                  routing_decision=decision,
                                  agent_id=agent,
                                  nested=nested)
-        if provision:
-            name = command_name(command)
-            guard = resolve_limit(name,
-                                  workspace_limits=ws._registry.command_limits,
-                                  profile_limits=effective_session.
-                                  command_limits) if name else None
-            timeout = guard.timeout_seconds if guard is not None else None
-            return await run_with_timeout(
-                provision_node(ws._registry,
-                               ws.dispatch,
-                               plan_eval_stub,
-                               ws._namespace,
-                               ast,
-                               effective_session,
-                               agent_id=agent or ""), timeout, name)
         held = False
         try:
             line_runtime = ws._runtimes.whole_line(decision)
@@ -446,8 +412,7 @@ async def execute_line(
                     # Filled only after the line is admitted (a refused
                     # line must never reach a secret store) and before the
                     # runtime snapshots the env; a whole-line program may
-                    # read any name, so the walk is not consulted. A dry
-                    # run (provision) returned above and never fetches. A
+                    # read any name, so the walk is not consulted. A
                     # SecretsError raises through to the generic fold
                     # below: the line exits 1 and never runs.
                     whole_names = fill_names(effective_session, [ast],

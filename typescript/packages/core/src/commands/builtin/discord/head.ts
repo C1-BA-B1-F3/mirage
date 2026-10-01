@@ -22,7 +22,6 @@ import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { headGeneric } from '../generic/head.ts'
-import { fileReadProvision } from './_provision.ts'
 
 const resolveDiscordGlob = resolveGlobOf(DISCORD_IO)
 
@@ -56,5 +55,4 @@ export const DISCORD_HEAD = command({
   vfs: VFSName.DISCORD,
   spec: specOf('head'),
   fn: headCommand,
-  provision: fileReadProvision,
 })

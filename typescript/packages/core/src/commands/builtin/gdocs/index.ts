@@ -14,12 +14,9 @@
 
 import type { GDocsAccessor } from '../../../accessor/gdocs.ts'
 import { VFSName } from '../../../types.ts'
-import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
+import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GDOCS_IO } from './io.ts'
-import { fileReadProvision } from './_provision.ts'
 import { GDOCS_RM } from './rm.ts'
 
 // Docs verbs and API passthroughs live in the gws CLI
@@ -28,10 +25,6 @@ import { GDOCS_RM } from './rm.ts'
 export const GDOCS_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GDocsAccessor>(VFSName.GDOCS, GDOCS_IO, {
     overrides: new Set(['rm']),
-    provisionOverrides: {
-      grep: fileReadProvision as ProvisionFn,
-      rg: fileReadProvision as ProvisionFn,
-    },
   }),
-  ...withDefaultProvisions([...GDOCS_RM], GDOCS_IO.stat, resolveGlobOf(GDOCS_IO), GDOCS_IO.readdir),
+  ...GDOCS_RM,
 ]

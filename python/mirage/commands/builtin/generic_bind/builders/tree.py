@@ -33,4 +33,4 @@ async def tree(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               partial(ops.stat, accessor))
 
 
-BUILDER = Builder('tree', tree, None, False, None)
+BUILDER = Builder('tree', tree)

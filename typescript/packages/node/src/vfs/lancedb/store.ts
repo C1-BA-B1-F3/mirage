@@ -20,7 +20,7 @@ import {
   type LanceRow,
   type ValueTest,
 } from '@struktoai/mirage-core/core/lancedb/query'
-import { toStr } from '@struktoai/mirage-core/core/lancedb/render'
+import { cellText } from '@struktoai/mirage-core/core/lancedb/render'
 import type { LanceDBConfigResolved } from '@struktoai/mirage-core/vfs/lancedb/config'
 import { loadOptionalPeer } from '@struktoai/mirage-core/utils/optional_peer'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
@@ -29,7 +29,7 @@ function textsOf(rows: LanceRow[], column: string): string[] {
   const texts: string[] = []
   for (const row of rows) {
     const value = row[column]
-    if (value !== null && value !== undefined) texts.push(toStr(value))
+    if (value !== null && value !== undefined) texts.push(cellText(value))
   }
   return texts
 }
@@ -51,7 +51,7 @@ async function keptTexts(
     for (const row of batch.toArray() as LanceRow[]) {
       const value = row[column]
       if (value === null || value === undefined) continue
-      const text = toStr(value)
+      const text = cellText(value)
       if (keep(text)) {
         texts.push(text)
         if (texts.length >= limit) return texts

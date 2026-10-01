@@ -20,15 +20,25 @@ import { directoryStat } from '../slug_tree/stat.ts'
 import { ensureDirSizes } from './sizes.ts'
 import { CHROMA_TREE } from './tree.ts'
 
-export async function stat(
+/** The index-only stat `ls` and a `find` without -mtime use: no size scan. */
+export function statLight(
   accessor: ChromaAccessor,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  return stat(accessor, path, index, false)
+}
+
+export async function stat(
+  accessor: ChromaAccessor,
+  path: PathSpec,
+  index?: IndexCacheStore,
+  sizes = true,
+): Promise<FileStat> {
   const resolved = await CHROMA_TREE.resolve(accessor, path, index)
   if (resolved.isDir) return directoryStat(resolved)
   let entry = resolved.entry
-  if (entry.size === null) {
+  if (sizes && entry.size === null) {
     // One scan for the whole directory, paid the first time anything in it
     // is stat'd; later stats of its siblings are already sized.
     await ensureDirSizes(accessor, parent(resolved.virtualKey), index)

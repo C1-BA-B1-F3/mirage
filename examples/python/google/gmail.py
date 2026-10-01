@@ -46,10 +46,6 @@ async def main():
 
     first = (await r.stdout_str()).strip().split("\n")[0]
 
-    print("=== plan: cat ===")
-    dr = await ws.shell(f"cat /gmail/INBOX/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
     print("=== cat message ===")
     r = await ws.shell(f"cat /gmail/INBOX/{first}")
     print((await r.stdout_str())[:500])

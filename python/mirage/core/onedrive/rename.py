@@ -15,18 +15,16 @@
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_subtree
 from mirage.core.msgraph.drive import rename_replace
-from mirage.core.onedrive.client import drive_loc, split_path
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
 async def rename(accessor: OneDriveAccessor, src: PathSpec,
                  dst: PathSpec) -> None:
-    _, src_s = split_path(src)
-    _, dst_s = split_path(dst)
     config = accessor.config
     await rename_replace(config,
-                         drive_loc(config, src_s),
-                         drive_loc(config, dst_s),
+                         drive_loc(config, src.vfs_path),
+                         drive_loc(config, dst.vfs_path),
                          session=accessor.pool)
     await invalidate_subtree(dst)
     await invalidate_subtree(src)

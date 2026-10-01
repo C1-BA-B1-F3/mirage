@@ -610,33 +610,6 @@ describe('mirage CLI end-to-end', () => {
     expect((status.parsed as { running: boolean }).running).toBe(false)
   }, 30000)
 
-  it('provision returns a dry-run result', async () => {
-    const cfgPath = writeRamConfig(tmp, 'provision-cfg.yaml')
-    const created = (await runCli(env, [
-      'workspace',
-      'create',
-      cfgPath,
-      '--id',
-      'provision-ws',
-    ])) as {
-      id: string
-    }
-    expect(created.id).toBe('provision-ws')
-
-    const result = (await runCli(env, [
-      'provision',
-      '-w',
-      'provision-ws',
-      '-c',
-      'echo planned',
-    ])) as {
-      kind: string
-    }
-    expect(result.kind).toBe('provision')
-
-    await runCli(env, ['workspace', 'delete', 'provision-ws'])
-  }, 30000)
-
   it('subshell cwd changes do not leak', async () => {
     const cfgPath = writeRamConfig(tmp, 'cwd-cfg.yaml')
     const created = (await runCli(env, ['workspace', 'create', cfgPath, '--id', 'cwd-ws'])) as {

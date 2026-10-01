@@ -22,7 +22,6 @@ import uuid
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
-from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
 from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
@@ -62,41 +61,6 @@ def ops_summary() -> str:
     cache = ops.cache_bytes
     return (f"{len(ops.records)} ops, "
             f"{net} net, {cache} cache")
-
-
-S3_GET_PER_1K_USD = 0.0004
-S3_EGRESS_PER_GB_USD = 0.09
-
-
-def _price_wrap(original):
-    """Wrap a registered estimator so its bytes/ops become dollars."""
-
-    async def priced(accessor, paths, *texts, **kwargs):
-        result = await original(accessor, paths, *texts, **kwargs)
-        egress = result.network_read_high * S3_EGRESS_PER_GB_USD / 1e9
-        requests = result.read_ops * S3_GET_PER_1K_USD / 1000
-        result.estimated_cost_usd = egress + requests
-        return result
-
-    return priced
-
-
-_BUILTIN_CAT = S3_COMMANDS.require("cat")
-assert _BUILTIN_CAT.provision_fn is not None
-priced_cat = _BUILTIN_CAT.with_overrides(
-    provision=_price_wrap(_BUILTIN_CAT.provision_fn))
-
-
-def price_cat_reads(workspace: Workspace, mount_path: str) -> None:
-    """Attach an S3 price model to cat on one mount.
-
-    The backend catalog is available before a workspace exists. The copied
-    definition keeps the builtin execution function but carries a wrapped
-    estimator converting bytes and requests into estimated_cost_usd, which
-    the planner then combines across pipes, branches, and loops like any
-    other field (all-or-nothing: a stage without a cost drops the total).
-    """
-    workspace.mount(mount_path).register(priced_cat)
 
 
 async def main():
@@ -216,65 +180,14 @@ async def main():
     r = await ws.shell("stat /s3/data")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    # ── plan: estimate before executing ──
-    print("\n=== PLAN ESTIMATES ===\n")
-
-    dr = await ws.shell("grep mirage /s3/data/example.jsonl", provision=True)
-    print("--- plan: grep mirage /s3/data/example.jsonl ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}, precision: {dr.precision}")
-
-    dr = await ws.shell("grep mirage /s3/data/example.jsonl | head -n 3",
-                        provision=True)
-    print("\n--- plan: grep mirage ... | head -n 3 ---")
-    print(f"  op: {dr.op}, children: {len(dr.children)}")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  precision: {dr.precision}")
-    for c in dr.children:
-        net, cache = c.network_read, c.cache_read
-        print(f"    {c.command}: net={net}, cache={cache}, {c.precision}")
-
-    dr = await ws.shell("grep mirage /s3/data/example.jsonl && echo found",
-                        provision=True)
-    print("\n--- plan: grep ... && echo found ---")
-    print(f"  op: {dr.op}, network_read: {dr.network_read}")
-    for c in dr.children:
-        print(f"    {c.command}: net={c.network_read}, {c.precision}")
-
-    print(f"\n  Stats after plans (should be 0): {ops_summary()}")
-
-    # ── cache-aware plan ──
+    # ── caching: one full read warms the file cache ──
     # Read file to populate cache (cat declares cache, wc materializes)
     print("\n--- caching: cat /s3/data/example.jsonl | wc -l ---")
     result = await ws.shell("cat /s3/data/example.jsonl | wc -l")
     print(f"  lines: {(await result.stdout_str()).strip()}")
     print(f"  Stats after caching: {ops_summary()}")
 
-    dr = await ws.shell("grep mirage /s3/data/example.jsonl", provision=True)
-    print("\n--- plan after cache: grep mirage ... ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  cache_hits: {dr.cache_hits}, read_ops: {dr.read_ops}")
-
-    # ── cost model: attach dollars to the byte estimates ──
-    print("\n=== PROVISION COST MODEL ===\n")
-    price_cat_reads(ws, "/s3/data")
-    dr = await ws.shell("cat /s3/data/example.jsonl", provision=True)
-    print("--- priced plan: cat /s3/data/example.jsonl ---")
-    print(f"  network_read: {dr.network_read}, read_ops: {dr.read_ops}")
-    print(f"  estimated_cost_usd: {dr.estimated_cost_usd:.10f}")
-
-    dr = await ws.shell("for i in 1 2 3; do cat /s3/data/example.jsonl; done",
-                        provision=True)
-    print("--- priced plan: for-loop x3 ---")
-    print(f"  network_read: {dr.network_read}, "
-          f"estimated_cost_usd: {dr.estimated_cost_usd:.10f}")
-
-    dr = await ws.shell("cat /s3/data/example.jsonl | wc -l", provision=True)
-    print("--- priced plan: cat | wc (wc has no cost model) ---")
-    print(f"  estimated_cost_usd: {dr.estimated_cost_usd} "
-          "(all-or-nothing: an unpriced stage drops the total)")
-
-    print("\n=== ACTUAL EXECUTION ===\n")
+    print("\n=== EXECUTION ===\n")
 
     # ── simple grep ──
     print("--- grep mirage /s3/data/example.jsonl ---")
@@ -467,11 +380,6 @@ async def main():
     print("\n--- printenv ---")
     result = await ws.shell("printenv")
     print(f"  {(await result.stdout_str()).strip()}")
-
-    print("\n--- plan: cd + grep ---")
-    await ws.shell("cd /s3/data")
-    dr = await ws.shell("grep mirage example.jsonl", provision=True)
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
 
     # ── execution history: hidden recorder + GNU views ──
     print("\n=== EXECUTION HISTORY ===\n")

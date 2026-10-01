@@ -1,9 +1,11 @@
+import re
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
-from mirage.core.sharepoint.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.sharepoint.rename import rename
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -99,3 +101,32 @@ async def test_rename_conflict_keeps_error_for_nonempty_dir():
               })
         with pytest.raises(GraphError):
             await rename(_accessor(), _spec("src"), _spec("dst"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("src,dst,named", [
+    ("/sp/Nope/Documents/a.txt", "/sp/Engineering/Documents/b.txt",
+     "/sp/Nope/Documents/a.txt"),
+    ("/sp/Engineering/Documents/a.txt", "/sp/Nope/Documents/b.txt",
+     "/sp/Nope/Documents/b.txt"),
+])
+async def test_rename_names_the_side_that_does_not_resolve(src, dst, named):
+    with aioresponses() as m:
+        m.get(re.compile(r".*/sites\?.*"),
+              payload={
+                  "value": [{
+                      "id": _SITE_ID,
+                      "displayName": "Engineering"
+                  }]
+              },
+              repeat=True)
+        with pytest.raises(FileNotFoundError) as exc:
+            await rename(
+                _accessor(),
+                PathSpec(vfs_path=mount_key(src, "/sp"),
+                         virtual=src,
+                         directory=src),
+                PathSpec(vfs_path=mount_key(dst, "/sp"),
+                         virtual=dst,
+                         directory=dst))
+    assert str(exc.value) == named

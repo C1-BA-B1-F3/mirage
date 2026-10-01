@@ -72,9 +72,11 @@ async def test_du_bare_measures_the_cwd_dot_spelled(workspace):
     # the implicit /dev child mount rides along as ./dev, in its
     # post-order position rather than appended, and keeps GNU's `0` row
     # even though it holds nothing; the /usr/bin view rides along the
-    # same way. Pinned on coreutils 9.7 with a tmpfs at ./dev: `0 ./dev`,
-    # `6 ./sub`, `12 .`, plus the program files' own total.
-    listed = await seeded.shell("du -s /usr/bin")
+    # same way, and /.bash_history counts toward `.` like any dotfile
+    # (unrecorded here, so it is still empty). Pinned on coreutils 9.7 with
+    # a tmpfs at ./dev: `0 ./dev`, `6 ./sub`, `12 .`, plus the program
+    # files' own total.
+    listed = await seeded.shell("du -s /usr/bin", record=False)
     programs = int((listed.stdout or b"0").split(b"\t")[0])
     io = await seeded.shell("du", cwd="/")
     assert io.exit_code == 0

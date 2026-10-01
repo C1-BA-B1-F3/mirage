@@ -221,9 +221,6 @@ class SSHTestEnv:
     def run_io(self, cmd: str, stdin: bytes | None = None):
         return asyncio.run(self.ws.shell(cmd, stdin=stdin))
 
-    def run_io_provision(self, cmd: str):
-        return asyncio.run(self.ws.shell(cmd, provision=True))
-
 
 async def _drain(ait):
     return [chunk async for chunk in ait]
@@ -266,24 +263,14 @@ def test_cat(env):
     assert env.run("cat /ssh/f.txt") == "hello world\n"
 
 
-def test_cat_populates_cache_and_provision_sees_hit(env):
+def test_cat_populates_cache(env):
     """Regression: ssh cat must wrap its stream in CachableAsyncIterator
-    so apply_io can populate the cache. Then provision should report
-    cache_hits=1 instead of network_read on the second call."""
+    so apply_io can populate the cache."""
     env.create_file("f.txt", b"hello world\n")
     env.run("cat /ssh/f.txt")
     cache_keys = list(env.ws._cache._entries)
     assert "/ssh/f.txt" in cache_keys, (
         f"cache should have /ssh/f.txt after cat; got {cache_keys}")
-
-    pr = env.run_io_provision("cat /ssh/f.txt")
-    leaf = pr.children[0] if pr.children else pr
-    assert leaf.cache_hits == 1, (
-        f"expected cache_hits=1 after warm cat, got {leaf.cache_hits}")
-    assert leaf.network_read_low == 0, (
-        f"expected network_read=0 after warm cat, got {leaf.network_read_low}")
-    assert leaf.cache_read_low > 0, (
-        f"expected cache_read>0 after warm cat, got {leaf.cache_read_low}")
 
 
 def test_head(env):

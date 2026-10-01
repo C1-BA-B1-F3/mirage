@@ -26,8 +26,6 @@ from mirage.core.api.client import (RetryPolicy, SessionArg, SessionPool,
                                     api_request, header_delay, resolve_session)
 from mirage.core.msgraph.config import MsGraphConfig
 from mirage.core.msgraph.constants import MAX_BACKOFF, RETRY_STATUSES
-from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.secrets import reveal_secret
 
@@ -52,14 +50,17 @@ def id_segment(value: str) -> str:
     return quote(value, safe=_URI_COMPONENT_SAFE)
 
 
-def split_path(path: PathSpec) -> tuple[str, str]:
-    prefix = mount_prefix_of(path.virtual, path.vfs_path) or ""
-    raw = path.virtual
-    if prefix and raw.startswith(prefix):
-        rest = raw[len(prefix):]
-        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
-            raw = rest or "/"
-    return prefix, raw.strip("/")
+def encoded_path(path: str) -> str:
+    """Escape a drive-relative item path for a Graph URL.
+
+    Each segment is escaped on its own, the way ``id_segment`` escapes an
+    identifier, so a ``/`` inside the path stays a separator and both
+    languages spell the same path the same way.
+
+    Args:
+        path (str): the item path, slash-separated.
+    """
+    return "/".join(id_segment(part) for part in path.split("/") if part)
 
 
 class GraphError(RuntimeError):

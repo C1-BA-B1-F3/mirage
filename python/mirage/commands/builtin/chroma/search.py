@@ -9,8 +9,4 @@ def _options(fl: FlagView) -> dict[str, JsonValue]:
     return {"top_k": top_k if top_k is not None else 10}
 
 
-search = make_search("chroma",
-                     IO.search,
-                     _options,
-                     name="chroma-query",
-                     provision=None)
+search = make_search("chroma", IO.search, _options, name="chroma-query")

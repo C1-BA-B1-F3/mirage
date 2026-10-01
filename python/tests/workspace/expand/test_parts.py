@@ -21,7 +21,7 @@ from mirage.io import IOResult
 from mirage.shell import parse
 from mirage.shell.helpers import get_parts
 from mirage.utils.glob_walk import glob_pattern, unmark_globs
-from mirage.workspace.expand.parts import expand_parts, expand_words
+from mirage.workspace.expand.parts import expand_words
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.session import vars_from_env
 
@@ -112,18 +112,6 @@ def test_brace_escaped_template_glob_is_literal():
 def test_brace_unquoted_expansion_atom_is_live():
     words = _words("c {$p,x}", env={"p": "*.txt"})
     assert [glob_pattern(w) for w in words[1:]] == ["*.txt", "x"]
-
-
-def test_expand_parts_is_the_unmarked_view():
-    cmd = "c '/data/*.txt' \"/data/\"*.txt {a,b}* '/data/*'?.txt"
-    parts = get_parts(parse(cmd).named_children[0])
-    session = SessionState(session_id="t", cwd="/", vars=vars_from_env({}))
-    execute_fn = AsyncMock(return_value=IOResult())
-    words = asyncio.run(expand_words(parts, session, execute_fn))
-    texts = asyncio.run(expand_parts(parts, session, execute_fn))
-    assert texts == [unmark_globs(w) for w in words]
-    # No mark ever reaches a caller of expand_parts.
-    assert all(w == unmark_globs(w) for w in texts)
 
 
 def test_a_substitution_splits_into_300000_words():

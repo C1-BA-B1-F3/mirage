@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildDirEntries, extractDocumentSize, extractSlug, timestampToIso } from './tree.ts'
+import { buildDirEntries, epochText, extractDocumentSize, extractSlug } from './tree.ts'
 
 function doc(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -76,15 +76,15 @@ describe('extractDocumentSize', () => {
   })
 })
 
-describe('timestampToIso', () => {
-  it('converts an epoch-seconds number to ISO', () => {
-    expect(timestampToIso(1716282000)).toBe('2024-05-21T09:00:00.000Z')
+describe('epochText', () => {
+  it('spells epoch seconds like every other backend', () => {
+    expect(epochText(1716282000)).toBe('2024-05-21T09:00:00Z')
   })
 
-  it('passes strings through and empties everything else', () => {
-    expect(timestampToIso('2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z')
-    expect(timestampToIso(null)).toBe('')
-    expect(timestampToIso({})).toBe('')
+  it('passes strings through and drops everything else', () => {
+    expect(epochText('2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z')
+    expect(epochText(null)).toBeNull()
+    expect(epochText({})).toBeNull()
   })
 })
 
@@ -104,6 +104,8 @@ describe('buildDirEntries', () => {
     expect(quickstart?.resourceType).toBe('file')
     expect(quickstart?.extra.slug).toBe('guides/quickstart')
     expect(quickstart?.extra.has_slug).toBe(true)
+    expect(quickstart?.size).toBeNull()
+    expect(quickstart?.extra.source_size).toBe(180)
   })
 
   it('drops the deeper document whose ancestor is itself a file', () => {

@@ -17,8 +17,8 @@ import zipfile
 
 import pytest
 
-from mirage.commands.config import version_line
 from mirage.commands.errors import UsageError
+from mirage.commands.spec.standard import version_line
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace

@@ -1,40 +1,19 @@
-from urllib.parse import quote
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-# yapf: disable
-from mirage.core.msgraph.client import (GraphError, graph_delete, graph_get,
-                                        graph_get_bytes, graph_list,
-                                        graph_patch, graph_post,
-                                        graph_post_monitor, graph_put_bytes,
-                                        graph_stream, headers, id_segment,
-                                        new_session, poll_monitor, split_path,
-                                        upload_chunk)
-# yapf: enable
+from mirage.core.msgraph.client import encoded_path, id_segment
 from mirage.core.msgraph.config import MsGraphConfig, graph_api
-from mirage.core.msgraph.constants import MAX_BACKOFF, RETRY_STATUSES
-
-__all__ = [
-    "graph_api",
-    "MAX_BACKOFF",
-    "RETRY_STATUSES",
-    "GraphError",
-    "drive_ref_path",
-    "graph_delete",
-    "graph_get",
-    "graph_get_bytes",
-    "graph_list",
-    "graph_patch",
-    "graph_post",
-    "graph_post_monitor",
-    "graph_put_bytes",
-    "graph_stream",
-    "headers",
-    "id_segment",
-    "item_url",
-    "new_session",
-    "poll_monitor",
-    "split_path",
-    "upload_chunk",
-]
 
 
 def item_url(config: MsGraphConfig,
@@ -57,7 +36,7 @@ def item_url(config: MsGraphConfig,
     p = path.strip("/")
     if not p:
         return f"{base}/root{action}"
-    stem = f"{base}/root:/{quote(p, safe='/')}"
+    stem = f"{base}/root:/{encoded_path(p)}"
     if action:
         return f"{stem}:{action}"
     return stem
@@ -65,6 +44,7 @@ def item_url(config: MsGraphConfig,
 
 def drive_ref_path(drive_id: str, folder: str = "") -> str:
     base = f"/drives/{drive_id}"
-    if folder:
-        return f"{base}/root:/{quote(folder, safe='/')}"
+    stripped = folder.strip("/")
+    if stripped:
+        return f"{base}/root:/{encoded_path(stripped)}"
     return f"{base}/root:"

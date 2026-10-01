@@ -30,7 +30,6 @@ describe('RegisteredCommand', () => {
     })
     expect(rc.filetype).toBeNull()
     expect(rc.write).toBe(false)
-    expect(rc.provisionFn).toBeNull()
     expect(rc.aggregate).toBeNull()
   })
 })
@@ -85,8 +84,7 @@ describe('command()', () => {
     expect(out.map((r) => r.vfs)).toEqual(['ram', 'disk'])
   })
 
-  it('passes through filetype, provision, aggregate, write', () => {
-    const prov = () => 'p'
+  it('passes through filetype, aggregate, write', () => {
     const agg = () => new Uint8Array(0)
     const out = command({
       name: 'cat',
@@ -94,12 +92,10 @@ describe('command()', () => {
       spec: STUB_SPEC,
       fn: STUB_FN,
       filetype: '.json',
-      provision: prov,
       aggregate: agg,
       write: true,
     })
     expect(out[0]?.filetype).toBe('.json')
-    expect(out[0]?.provisionFn).toBe(prov)
     expect(out[0]?.aggregate).toBe(agg)
     expect(out[0]?.write).toBe(true)
   })

@@ -18,7 +18,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from mirage.server.io_serde import io_result_to_dict
 from mirage.server.jobs import JobStatus
@@ -27,9 +27,10 @@ router = APIRouter(prefix="/v1/workspaces/{workspace_id}/execute")
 
 
 class ExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     command: str
     session_id: str | None = None
-    provision: bool = False
     agent_id: str | None = None
     cwd: str | None = None
     runtime: str | None = None
@@ -53,7 +54,6 @@ def _build_execute_kwargs(req: ExecuteRequest,
                           stdin: bytes | None) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "command": req.command,
-        "provision": req.provision,
         "record": req.record,
     }
     if req.session_id is not None:
@@ -153,5 +153,8 @@ async def _parse_execute_body(
             else:
                 stdin_bytes = str(stdin_part).encode("utf-8")
         return req_obj, stdin_bytes
-    body = await request.json()
-    return ExecuteRequest.model_validate(body), None
+    try:
+        return ExecuteRequest.model_validate(await request.json()), None
+    except ValueError as e:
+        raise HTTPException(status_code=400,
+                            detail=f"bad execute request: {e}")

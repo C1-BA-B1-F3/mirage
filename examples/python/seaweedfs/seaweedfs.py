@@ -100,14 +100,6 @@ async def main():
     r = await ws.shell("jq .tags /seaweedfs/data/config.json")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print("\n--- PROVISION: cat (plan only) vs head -c (byte budget) ---")
-    dr = await ws.shell("cat /seaweedfs/data/example.jsonl", provision=True)
-    print(f"  cat: network_read={dr.network_read} precision={dr.precision}")
-    dr = await ws.shell("head -c 20 /seaweedfs/data/example.jsonl",
-                        provision=True)
-    print(f"  head -c 20: network_read={dr.network_read} "
-          f"precision={dr.precision}")
-
     print("\n--- rm seeded objects ---")
     for key in ("/seaweedfs/data/example.jsonl", "/seaweedfs/data/config.json",
                 "/seaweedfs/notes.txt"):

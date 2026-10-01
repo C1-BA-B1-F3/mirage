@@ -141,7 +141,6 @@ export interface CrossEnv {
   run(cmd: string): Promise<string>
   exit(cmd: string): Promise<number>
   stderr(cmd: string): Promise<string>
-  provision(cmd: string): Promise<unknown>
   cleanup(): Promise<void>
 }
 
@@ -206,9 +205,6 @@ export function makeCrossEnv(kinds: readonly [BackendKind, BackendKind]): CrossE
     async stderr(cmd) {
       const io = await ws.shell(cmd)
       return DEC.decode(io.stderr)
-    },
-    async provision(cmd) {
-      return ws.shell(cmd, { provision: true })
     },
     async cleanup() {
       await ws.close()

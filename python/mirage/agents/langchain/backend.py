@@ -132,9 +132,7 @@ class LangchainWorkspace(SandboxBackendProtocol):
         return self._id
 
     async def _exec(self, command: str) -> IOResult:
-        result = await self._ws.shell(command, session_id=self._session_id)
-        assert isinstance(result, IOResult)
-        return result
+        return await self._ws.shell(command, session_id=self._session_id)
 
     # ── execute ──────────────────────────────────────────────
 

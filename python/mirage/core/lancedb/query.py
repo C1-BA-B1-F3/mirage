@@ -19,6 +19,7 @@ from typing import Any
 from lancedb.query import AsyncQuery
 
 from mirage.accessor.lancedb import LanceDBAccessor
+from mirage.core.lancedb.render import cell_text
 
 ValueTest = Callable[[str], bool]
 
@@ -114,7 +115,7 @@ async def _kept_texts(query: AsyncQuery, column: str, limit: int,
             value = row.get(column)
             if value is None:
                 continue
-            text = str(value)
+            text = cell_text(value)
             if keep(text):
                 texts.append(text)
                 if len(texts) >= limit:
@@ -160,7 +161,8 @@ async def distinct_values(accessor: LanceDBAccessor,
     if keep is None:
         rows = await query.limit(limit).to_list()
         texts = [
-            str(row[column]) for row in rows if row.get(column) is not None
+            cell_text(row[column]) for row in rows
+            if row.get(column) is not None
         ]
     else:
         texts = await _kept_texts(query, column, limit, keep)

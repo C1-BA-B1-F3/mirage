@@ -42,10 +42,6 @@ describe('exitCodeFromResponse', () => {
     expect(exitCodeFromResponse({ jobId: 'job_abc', workspaceId: 'ws', submittedAt: 0 })).toBe(0)
   })
 
-  it('returns 0 for kind:provision', () => {
-    expect(exitCodeFromResponse({ kind: 'provision', detail: 'ok' })).toBe(0)
-  })
-
   it('returns 0 for kind:raw', () => {
     expect(exitCodeFromResponse({ kind: 'raw', value: 'hi' })).toBe(0)
   })

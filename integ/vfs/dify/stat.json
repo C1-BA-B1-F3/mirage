@@ -19,10 +19,10 @@
       "targets": [
         "dify"
       ],
-      "command": "stat -c '%y' /knowledge/guides/auth",
+      "command": "stat -c '%y %w' /knowledge/guides/auth",
       "expect": {
         "exit": 0,
-        "stdout": "2024-05-21T09:00:00Z\n",
+        "stdout": "2024-05-21T09:00:00Z 2024-05-21T09:00:00Z\n",
         "stderr": ""
       }
     }

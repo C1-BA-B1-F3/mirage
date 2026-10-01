@@ -52,7 +52,7 @@ class MockVFS extends BaseVFS {
 }
 
 describe('Workspace lifecycle', () => {
-  it.each(['glob', 'midpath', 'provision', 'metadata', 'touch', 'chmod', 'chown', 'chgrp'])(
+  it.each(['glob', 'midpath', 'metadata', 'touch', 'chmod', 'chown', 'chgrp'])(
     'prepares the first %s access to a dynamic mount',
     async (action) => {
       class IndexedRAM extends RAMVFS {
@@ -108,11 +108,7 @@ describe('Workspace lifecycle', () => {
       await ws.cache.set('/data/file', bytes.encode('old'))
       ws.addMount('/data', replacement, MountMode.WRITE)
       try {
-        if (action === 'provision') {
-          const result = await ws.provision('cat /data/file')
-          expect(result.cacheHits).toBe(0)
-          expect((await ws.shell('cat /data/file')).stdout).toEqual(bytes.encode('new'))
-        } else if (action === 'metadata') {
+        if (action === 'metadata') {
           const expanded = await expandOperands(ws.namespace, [
             new PathSpec({
               virtual: '/data/*.txt',

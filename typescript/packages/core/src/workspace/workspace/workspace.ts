@@ -19,7 +19,6 @@ import { checkCliVerbs } from '../session/validate.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import type { IndexConfig } from '../../cache/index/config.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
-import { IOResult } from '../../io/types.ts'
 import { type EventDict, Observer } from '../../observe/observer.ts'
 import type { OpRecord } from '../../observe/record.ts'
 import { type OpKwargs, OpsRegistry } from '../../ops/registry.ts'
@@ -32,9 +31,7 @@ import { lookup, program, programNote, programs } from '../lookup/lookup.ts'
 import { vfsStateRequiresOverride } from '../../vfs/secrets.ts'
 import { cliSpecFor } from '../../commands/cli/specs.ts'
 import type { CLISpec } from '../../commands/cli/types.ts'
-import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import type { CLIInstall } from '../cli/types.ts'
-import { resolveLimit } from '../../policy/index.ts'
 import { PermissionsPolicy } from '../../policy/builtin/permissions.ts'
 import { PolicyError } from '../../policy/errors.ts'
 import { Decisions } from '../../policy/decisions.ts'
@@ -67,8 +64,6 @@ import {
 import type { Explanation, Policies } from '../../policy/index.ts'
 import type { RoutePolicy } from '../../runtime/routing/index.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
-import type { ExecuteFn } from '../expand/node.ts'
-import type { ProvisionResult } from '../../provision/types.ts'
 import { Ops } from '../../ops/ops.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import { checkReadCapability } from '../mount/read_policy.ts'
@@ -104,7 +99,6 @@ import { PyodideUnavailableError } from '../../runtime/python/pyodide/errors.ts'
 import { Dispatcher } from '../dispatcher/index.ts'
 import { Namespace } from '../mount/namespace/namespace.ts'
 import { explainLine } from '../node/explain.ts'
-import { provisionNode } from '../node/provision_node.ts'
 import { buildFilePrompt } from '../file_prompt.ts'
 import { getCurrentSessionFor } from '../../context/session_context.ts'
 import { abortable, hasAborted, makeAbortError } from '../abort.ts'
@@ -134,10 +128,8 @@ import { normalizeMounts, prepareAddedMount, unmountPrefix } from './mounts.ts'
 import { Router } from './routing.ts'
 import { Runtimes } from './runtimes.ts'
 import { Session } from './handle.ts'
-import { ExecuteResult } from './types.ts'
-import { type ExecuteOptions, type MountSpec, type WorkspaceOptions } from './types.ts'
+import type { ExecuteOptions, ExecuteResult, MountSpec, WorkspaceOptions } from './types.ts'
 import { Mount } from '../mount/spec.ts'
-import { commandName, forkForCall } from './utils.ts'
 import { WatchManager } from './watch.ts'
 
 export { ExecuteResult } from './types.ts'
@@ -660,7 +652,6 @@ export class Workspace {
               ),
             )
           })
-          if (!(result instanceof ExecuteResult)) throw new Error('spawn returned a provision plan')
           return result.exitCode
         } finally {
           input.stop()
@@ -1352,49 +1343,6 @@ export class Workspace {
     await this.dispatcher.invalidateAfterWriteByPath(path)
   }
 
-  async provision(
-    command: string,
-    options: Pick<ExecuteOptions, 'sessionId' | 'agentId' | 'cwd' | 'env'> = {},
-  ): Promise<ProvisionResult> {
-    const parser = await this.getShellParser()
-    const root = parser.parse(command)
-    const rootNode = root as unknown as TSNodeLike
-    // The plan is judged as its caller: the same ambient-or-named
-    // session resolution as runLine, the per-call cwd/env overlay, and
-    // the line's agent — the gate inside the walk answers visibility
-    // and policy for that identity, never the default session's
-    // (mirrors Python's execute_line, which provisions on the
-    // effective session with the line's agent).
-    const ambient = getCurrentSessionFor(this.sessionManager)
-    const base =
-      ambient !== null &&
-      (options.sessionId === undefined || options.sessionId === ambient.sessionId)
-        ? ambient
-        : this.sessionManager.get(options.sessionId ?? this.sessionManager.defaultId)
-    const session = forkForCall(base, options.cwd, options.env)
-    const agentId = options.agentId ?? this.agentId ?? ''
-    // A dry run must never execute: a command substitution with side
-    // effects ($(tee ...)) would otherwise run while "estimating".
-    // Substitutions expand to empty, so affected words degrade the
-    // plan to honest UNKNOWN instead of resolving via execution.
-    const executeFn: ExecuteFn = () => Promise.resolve(new IOResult())
-    const provName = commandName(command)
-    const provResolved =
-      provName !== ''
-        ? resolveLimit(provName, [], null, null, this.registry.commandLimits, session.commandLimits)
-        : null
-    const provTimeout = provResolved !== null ? provResolved.timeoutSeconds : null
-    return runWithTimeout(
-      provisionNode(
-        { registry: this.registry, executeFn, namespace: this.namespace, agentId },
-        rootNode,
-        session,
-      ),
-      provTimeout,
-      provName !== '' ? provName : '?',
-    )
-  }
-
   /**
    * The declared source instances, built once.
    *
@@ -1462,25 +1410,11 @@ export class Workspace {
         this.closers.push(fn)
       },
       invalidateAllAfterRemote: () => this.invalidateAllAfterRemote(),
-      provision: (cmd, opts) => this.provision(cmd, opts),
-      execute: (cmd, opts) =>
-        this.executeInternal(cmd, opts as ExecuteOptions & { provision?: false | undefined }),
+      execute: (cmd, opts) => this.executeInternal(cmd, opts),
     }
   }
 
-  async shell(
-    command: string,
-    options?: ExecuteOptions & { provision?: false | undefined },
-  ): Promise<ExecuteResult>
-  async shell(
-    command: string,
-    options: ExecuteOptions & { provision: true },
-  ): Promise<ProvisionResult>
-  async shell(command: string, options: ExecuteOptions): Promise<ExecuteResult | ProvisionResult>
-  async shell(
-    command: string,
-    options: ExecuteOptions = {},
-  ): Promise<ExecuteResult | ProvisionResult> {
+  async shell(command: string, options: ExecuteOptions = {}): Promise<ExecuteResult> {
     // The top-level door, so it shuts as soon as a close starts. A line that
     // got in after `jobTable.killAll()` could submit a background job that
     // teardown then never stops, and mounts would close under it. The
@@ -1490,18 +1424,7 @@ export class Workspace {
     return this.executeInternal(command, options)
   }
 
-  private async executeInternal(
-    command: string,
-    options: ExecuteOptions & { provision?: false | undefined },
-  ): Promise<ExecuteResult>
-  private async executeInternal(
-    command: string,
-    options: ExecuteOptions,
-  ): Promise<ExecuteResult | ProvisionResult>
-  private async executeInternal(
-    command: string,
-    options: ExecuteOptions,
-  ): Promise<ExecuteResult | ProvisionResult> {
+  private async executeInternal(command: string, options: ExecuteOptions): Promise<ExecuteResult> {
     // A line admitted before close may still recurse through eval/source/$(),
     // but no continuation can start after teardown has finished.
     if (this.closed) throw new Error('Workspace is closed')

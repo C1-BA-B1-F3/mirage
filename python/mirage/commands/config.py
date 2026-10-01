@@ -15,21 +15,15 @@
 import functools
 from collections.abc import Awaitable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from types import MappingProxyType
-from typing import Any, Callable, Protocol, TypeAlias, cast, overload
+from typing import Any, Callable, Protocol, TypeAlias, overload
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.constants import ROOT_CWD
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.builtins import is_builtin_grammar, registered_spec
-from mirage.commands.spec.constants import (HELP_OPTION, OWN_OPTION_LOOP,
-                                            STANDARD_AFTER_SCAN,
-                                            STANDARD_BEFORE_SCAN,
-                                            VERSION_OPTION)
-from mirage.commands.spec.help import render_help
-from mirage.commands.spec.parser import ParsedArgs, parse_command
-from mirage.commands.spec.synopsis import SYNOPSES
+from mirage.commands.spec.constants import OWN_OPTION_LOOP
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.commands.spec.types import FlagValue
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
@@ -38,52 +32,23 @@ from mirage.process.types import ProcessView
 from mirage.runtime.base import Runtime
 from mirage.runtime.types import DispatchFn, ExecPathFn, ShellFn
 from mirage.types import Limit, PathSpec
-from mirage.version import __version__
 
 
 @dataclass(frozen=True, slots=True)
 class ExecContext:
-    """The execution context ``Mount.execute_cmd`` takes: everything
-    the workspace supplies for one invocation beyond the parsed line.
+    """What the workspace hands ``Mount.execute_cmd`` for one command.
 
-    The one bag a dispatcher call site builds (mirrors the options
-    object TypeScript's ``Mount.executeCmd`` has always taken as its
-    fifth argument, named ``ExecContext`` there too). ``execute_cmd``
-    re-boxes these onto ``CommandOpts`` beside the facts only the mount
-    can supply (mount_prefix, index, filetype_fns), so every field here
-    is spelled exactly as ``CommandOpts`` spells it — one fact has one
-    name on both sides of the seam, pinned by
-    ``tests/commands/test_exec_context_parity.py``. ``session_view``
-    stays although no ``opts`` reader wants it today, because
-    ``CLIDoors.session_view`` has production readers and the doors
-    record is pinned to be a subset of ``CommandOpts``.
+    ``execute_cmd`` copies these fields onto ``CommandOpts``, next to
+    the facts only the mount knows (``mount_prefix``, ``index``,
+    ``filetype_fns``). Each field is named as on ``CommandOpts`` and
+    means the same; ``tests/commands/test_exec_context_parity.py``
+    pins that.
 
     Args:
-        stdin (ByteSource | None): Piped standard input, if any.
-        cwd (str): The session's working directory, as a virtual path;
-            ``execute_cmd`` promotes it to the PathSpec handlers read.
-        dispatch (DispatchFn | None): The workspace op dispatch.
-        session_id (str | None): The calling session.
-        env (dict[str, str] | None): The session environment snapshot.
-        exec_allowed (bool): Whether the policy layer permits spawning
-            an interpreter.
-        exec_path_allowed (ExecPathFn | None): Whether code may be
-            loaded from one path.
-        runtime (Runtime | None): The resolved runtime for interpreter
-            commands.
-        runtime_unavailable (str | None): Why the requested runtime is
-            unavailable (python-only; the TS table refuses at
-            resolution time).
-        ns (NamespaceView | None): The name plane's facts.
-        stat_path (StatPath | None): Dispatcher-backed stat of one path.
-        readdir_path (ReaddirPath | None): Dispatcher-backed readdir of
-            one path.
-        session_view (SessionView | None): The session plane's live,
-            gated handle.
-        shell (ShellFn | None): Runs a nested line in the calling
-            session.
-        argv (tuple[str, ...]): The words after the command name, as the
-            line spelled them.
+        limit_override (Limit | None): The caller's output limit, which
+            ``execute_cmd`` applies itself instead of forwarding.
+        cwd (str): The working directory as a virtual path;
+            ``execute_cmd`` turns it into a PathSpec.
     """
 
     limit_override: Limit | None = None
@@ -107,74 +72,51 @@ class ExecContext:
 
 @dataclass(frozen=True, slots=True)
 class CommandOpts:
-    """The dispatcher context of one command invocation, as one value.
+    """Everything a command handler gets besides its operands.
 
-    Mirrors the TypeScript ``CommandOpts`` (commands/config.ts): the
-    dispatcher (``Mount.execute_cmd``) constructs it once and hands it
-    to every handler as the fourth argument, so builders and bespoke
-    backend wrappers are wiring that passes it through. The generic owns
-    everything inside it (flag parsing via a spec-bound FlagView, the
-    stdin fallback); the wiring owns everything outside it (glob
-    resolution, op binding, push-downs). A handler reads the fields it
-    wants and ignores the rest, so there is no opt-in registry anywhere.
+    ``Mount.execute_cmd`` builds one per invocation and passes it as
+    the handler's fourth argument. A handler reads the fields it needs
+    and ignores the rest.
 
     Args:
         stdin (ByteSource | None): Piped standard input, if any.
-        flags (Mapping[str, FlagValue]): The parsed command-line flag
-            bag — only real flags, no injected context.
-        cwd (PathSpec): The session's working directory, promoted by the
-            dispatcher — the mount-relative key rides ``vfs_path``
-            for operand defaulting. Always a PathSpec (the TS twin keeps
-            a string and threads ``mount_prefix`` instead).
-        mount_prefix (str): The owning mount's prefix, for commands that
-            render mount-relative names.
-        filetype_fns (Mapping[str, CommandFn] | None): Extension-specific
-            handlers of the same command, for a generic that delegates
-            per operand; None when the handler itself is one of them.
-        command (str | None): The full command string, set on the
-            provision path only.
-        spec (CommandSpec | None): The invoked command's spec, set on the
-            provision path: a provision function is shared across
-            commands, so it needs the spec to resolve a flag spelling.
-        index (IndexCacheStore): The mount's index cache store.
-        dispatch (DispatchFn | None): The workspace op dispatch, for
-            interpreter commands whose sandboxed I/O rides it.
-        session_id (str | None): The calling session, for commands that
-            record per-session state.
-        env (dict[str, str] | None): The session environment.
-        exec_allowed (bool): Whether the policy layer permits spawning
-            an interpreter.
-        exec_path_allowed (ExecPathFn | None): Whether code may be
-            loaded from one path, for an interpreter's file operand;
-            None outside a workspace, where ``exec_allowed`` answers
-            for files too.
-        runtime (Runtime | None): The resolved runtime for interpreter
-            commands.
-        runtime_unavailable (str | None): The hint naming why the
-            requested runtime is unavailable. Python-only: the TS
-            runtime table refuses at resolution time instead.
-        ns (NamespaceView | None): The name plane's facts (symlinks,
-            mount boundaries, attr overlay, child names the namespace
-            owes a directory), which no backend can see.
-        stat_path (StatPath | None): Dispatcher-backed stat of one path,
-            for a traversal command's start point.
-        readdir_path (ReaddirPath | None): Dispatcher-backed readdir of
-            one path, for a walker that reads past a mount boundary.
-        session_view (SessionView | None): The session plane's live,
-            gated handle (reads and gate-cleared writes); ``env`` above
-            stays the frozen process-view snapshot.
-        shell (ShellFn | None): Runs a nested line in the calling
-            session, reading the input it is handed, the way the
-            session's ``sh -c`` would: awk's command pipes and
-            ``system()`` go through it. None outside a workspace.
-        argv (tuple[str, ...]): The words after the command name, as the
-            line spelled them (an operand's ``raw_path``), for the GNU
-            diagnostic that quotes a word the classified operands do not
-            hold: diffutils names the line's last argument, an option
-            included (``cmp: missing operand after '-s'``). Flags are read
-            through a spec-bound ``FlagView``, never from here. Empty
-            where a line runs split per operand or per mount, since no
-            one word list describes such a run.
+        flags (Mapping[str, FlagValue]): The parsed flags. Read them
+            through a spec-bound ``FlagView``.
+        cwd (PathSpec): The working directory.
+        mount_prefix (str): The prefix of the mount running the command.
+        filetype_fns (Mapping[str, CommandFn] | None): Handlers of the
+            same command for one file extension, so a generic can hand
+            an operand to one; None inside such a handler.
+        command (str | None): The command name the mount runs.
+        index (IndexCacheStore): The mount's index cache.
+        dispatch (DispatchFn | None): The workspace op dispatcher.
+        session_id (str | None): The calling session.
+        env (dict[str, str] | None): A snapshot of the session
+            environment.
+        exec_allowed (bool): Whether policy lets the command start an
+            interpreter.
+        exec_path_allowed (ExecPathFn | None): Whether policy lets an
+            interpreter load code from a path; None outside a
+            workspace, where ``exec_allowed`` decides.
+        runtime (Runtime | None): The runtime an interpreter runs in.
+        runtime_unavailable (str | None): Why the requested runtime is
+            missing. Python only; TypeScript refuses earlier.
+        ns (NamespaceView | None): What the namespace knows and no
+            backend does: symlinks, mount boundaries, the attribute
+            overlay.
+        stat_path (StatPath | None): Stat one path through the
+            dispatcher, which may land on another mount.
+        readdir_path (ReaddirPath | None): List one directory through
+            the dispatcher, for a walk that crosses a mount.
+        session_view (SessionView | None): The live session, with policy
+            applied to writes; ``env`` stays the snapshot.
+        processes (ProcessView | None): The session's processes.
+        shell (ShellFn | None): Run a nested line in the calling
+            session, as ``sh -c`` would (awk's pipes and ``system()``).
+        argv (tuple[str, ...]): The words after the command name as
+            typed, for a GNU diagnostic that quotes one
+            (``cmp: missing operand after '-s'``). Empty when a line
+            runs split per operand or per mount.
     """
 
     stdin: ByteSource | None = None
@@ -183,7 +125,6 @@ class CommandOpts:
     mount_prefix: str = ""
     filetype_fns: Mapping[str, "CommandFn"] | None = None
     command: str | None = None
-    spec: CommandSpec | None = None
     index: IndexCacheStore = NULL_INDEX
     dispatch: DispatchFn | None = None
     session_id: str | None = None
@@ -205,13 +146,10 @@ CommandFnResult = tuple[ByteSource | None, IOResult] | None
 
 
 class CommandFn(Protocol):
-    """Command handler signature, mirroring the TS ``CommandFn``.
+    """A command handler: ``(accessor, paths, texts, opts)``.
 
-    Four positional parameters — accessor, paths, texts, opts — on both
-    sides. Handlers that narrow the accessor to their backend's type are
-    cast at registration (``command``), exactly like the TS
-    ``options.fn as CommandFn``, so the dispatcher call site stays
-    typed.
+    A handler typed for one backend's accessor is cast to this when it
+    is registered.
     """
 
     def __call__(self, accessor: Accessor, paths: list[PathSpec],
@@ -220,252 +158,67 @@ class CommandFn(Protocol):
         ...
 
 
-class ProvisionFn(Protocol):
-    """Provision estimator signature, mirroring the TS ``ProvisionFn``.
-
-    Same four positional parameters as ``CommandFn``; the provision-only
-    context (``command``, ``spec``) rides in ``opts``.
-    """
-
-    def __call__(self, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str], opts: CommandOpts) -> Awaitable[Any]:
-        ...
-
-
-def version_line(name: str) -> bytes:
-    """Render the GNU-style version line for a command.
+@dataclass(frozen=True, slots=True)
+class RegisteredCommand:
+    """One command as a mount registers it.
 
     Args:
-        name (str): command name as invoked.
+        name (str): The command name.
+        spec (CommandSpec): The grammar, with ``--help`` and
+            ``--version`` added.
+        vfs (str | None): The backend it belongs to.
+        filetype (str | None): The file extension it handles, or None
+            for every file.
+        fn (CommandFn): The handler.
+        aggregate (Callable[..., Any] | None): Merges the results of a
+            run split across mounts.
+        write (bool): Whether it changes files.
+        limit (Limit | None): Its output limit.
+        path_guarded (bool): Whether mount-root policy checks its
+            operands.
     """
-    return f"{name} (Mirage) {__version__}\n".encode()
+
+    name: str
+    spec: CommandSpec
+    vfs: str | None
+    filetype: str | None
+    fn: CommandFn
+    aggregate: Callable[..., Any] | None = None
+    write: bool = False
+    limit: Limit | None = None
+    path_guarded: bool = False
+
+    def with_overrides(self, *, fn: CommandFn) -> "RegisteredCommand":
+        """A copy with the handler replaced, to register a customized
+        builtin on one mount.
+
+        Args:
+            fn (CommandFn): The replacement handler.
+        """
+        return replace(self, fn=fn)
 
 
-def has_injected_version(spec: CommandSpec | None) -> bool:
-    """Whether the wrapper supplies this spec's version response.
-
-    Args:
-        spec (CommandSpec | None): the registered command spec.
-    """
-    return spec is not None and any(o is VERSION_OPTION for o in spec.options)
-
-
-# gnulib's two standard options, in the order ``help_spec`` injects
-# them. Both are answered INSIDE the getopt loop, so the one the scan
-# reaches FIRST decides the line: measured on coreutils 9.7,
-# `cat --help --version` prints the help page and `cat --version --help`
-# prints the version line.
-_STANDARD_DESTS = ("--help", "--version")
-
-
-def has_injected_help(spec: CommandSpec | None) -> bool:
-    """Whether the wrapper supplies this spec's help response.
-
-    Args:
-        spec (CommandSpec | None): the registered command spec.
-    """
-    return spec is not None and any(o is HELP_OPTION for o in spec.options)
-
-
-def _scan(name: str, spec: CommandSpec, words: list[str]) -> ParsedArgs:
-    """Read these words the way the line is read downstream.
-
-    The same parse, so the two agree by construction rather than by a
-    second reading of the grammar. Only the option reports and the typed
-    dests are consumed, which is why a cwd the caller does not have is
-    not one it needs: nothing here looks at a resolved path.
-
-    Args:
-        name (str): command name as invoked, for the per-program rules
-            the grammar cannot state.
-        spec (CommandSpec): the registered spec.
-        words (list[str]): the words to read.
-    """
-    return parse_command(spec, words, ROOT_CWD.virtual, name)
-
-
-def _scan_refuses(parsed: ParsedArgs) -> bool:
-    """Whether the scan refused an option in the words it read.
-
-    ``missing_required_options`` is deliberately not read: the words are
-    a PREFIX of the line for every command but the two that defer, so an
-    option declared later has not been reached yet.
-
-    Args:
-        parsed (ParsedArgs): one ``_scan`` result.
-    """
-    return bool(parsed.option_error_kinds
-                or parsed.old_option_needs_value is not None)
-
-
-def _standard_index(name: str, spec: CommandSpec, argv: list[str],
-                    dest: str) -> int | None:
-    """Where the parser reads one injected standard option, if anywhere.
-
-    Deliberately not a raw scan over argv. A word that only looks like
-    the option can be an earlier option's value, and a lookalike stops
-    at the wrong one: `grep -e -- --version` hands `--` to -e, so the
-    line is not ended and the `--version` after it really is the option,
-    while `sort -o --version --version` hands the first spelling to -o's
-    output file and only the second is read. Reading each prefix in turn
-    puts the answer where the grammar already lives, so `--`, a declared
-    remainder and a consumed value all follow from the parser rather
-    than from three rules restated here. Adding words never un-types a
-    dest, so the first prefix that carries it is the position.
-
-    Args:
-        name (str): command name as invoked.
-        spec (CommandSpec): the registered spec.
-        argv (list[str]): the words after the command name.
-        dest (str): canonical long spelling to locate.
-    """
-    for index in range(len(argv)):
-        if dest in _scan(name, spec, argv[:index + 1]).typed_dests:
-            return index
-    return None
-
-
-def _standard_output(name: str, spec: CommandSpec, dest: str) -> bytes:
-    """What one standard option answers with.
-
-    Args:
-        name (str): command name as invoked.
-        spec (CommandSpec): the registered spec; ``help_page`` renders
-            the same page from it as from the declared one.
-        dest (str): canonical long spelling, one of _STANDARD_DESTS.
-    """
-    return help_page(name, spec) if dest == "--help" else version_line(name)
-
-
-def standard_request(name: str, spec: CommandSpec | None,
-                     argv: list[str]) -> bytes | None:
-    """Output when argv asks a command for an injected standard option.
-
-    None when the command declares that option itself, when the parser
-    does not read any word as one, or when an option the scan reads
-    first is one the parser refuses.
-
-    This is the one door both standard options come through, and it runs
-    ahead of routing because neither answer belongs to a backend: `rm
-    --version /ro/x` would otherwise meet the read-only refusal, and
-    `mv --help /ram/a /disk/b` would otherwise reach the cross-mount
-    relay, which bypasses the registered wrapper and MOVED THE FILE. The
-    two are one mechanism rather than two because GNU answers both from
-    the same long_options table, so they are ordered against each other
-    by scan position like any other pair of options: measured on
-    coreutils 9.7, `cat --help --version` is the help page and
-    `cat --version --help` is the version line.
-
-    Three rules about position, all of them GNU's and none of them
-    restated here:
-
-    Which words the scan has read when it answers, because a standard
-    option is an option like any other and an error the scan meets first
-    is what GNU reports: `cat --bogus --vers` is `unrecognized option
-    '--bogus'` (exit 1) and `grep --bogus --vers` is grep's own (exit
-    2), where `cat --version --bogus` prints the version and exits 0.
-    So the words ahead of the option are re-read through the parser and
-    a refusal among them declines the answer. Two families answer
-    elsewhere and carry their own tables: STANDARD_AFTER_SCAN finishes
-    the whole line first, STANDARD_BEFORE_SCAN answers ahead of every
-    option. Both are gated on the spec being the builtin's own grammar,
-    since a mount may register a command under one of those names.
-
-    Whether that word is the option at all, which only the parser can
-    say: a declared remainder slot is argparse's REMAINDER, so the first
-    operand ends option parsing and every later word belongs to the
-    program being run; `--` ends it too; and a value-taking option
-    swallows the word after it. Asking the parser covers all three.
-
-    And gnulib's ``parse_long_options``, which reads argv[1] only when
-    it is the whole line (``argc == 2``), so for a
-    SOLE_ARGUMENT_LONG_OPTIONS command the option is an ordinary operand
-    as soon as another word joins it (`expr --version` is the version,
-    `expr --version x` is `expr: syntax error: unexpected argument
-    'x'`). The parser already applies that window, so this reads its
-    answer rather than carrying a second copy of the rule.
-
-    Args:
-        name (str): command name as invoked.
-        spec (CommandSpec | None): the command's registered spec.
-        argv (list[str]): the words after the command name.
-    """
-    if spec is None:
-        return None
-    injected = {
-        "--help": has_injected_help(spec),
-        "--version": has_injected_version(spec),
-    }
-    if not any(injected.values()):
-        return None
-    whole = _scan(name, spec, argv)
-    found: list[tuple[int, str]] = []
-    for dest in _STANDARD_DESTS:
-        if not injected[dest] or dest not in whole.typed_dests:
-            continue
-        index = _standard_index(name, spec, argv, dest)
-        if index is not None:
-            found.append((index, dest))
-    if not found:
-        return None
-    # The one the scan reaches first decides; no two options share a
-    # word, so the positions cannot tie.
-    index, dest = min(found)
-    builtin = is_builtin_grammar(name, spec)
-    if builtin and name in STANDARD_BEFORE_SCAN:
-        return _standard_output(name, spec, dest)
-    # Everything ahead of the option has to scan cleanly: a refusal
-    # among those words is what GNU reports instead of the answer.
-    if _scan_refuses(_scan(name, spec, argv[:index])):
-        return None
-    # A program that answers only after the whole scan needs the rest of
-    # the line to be clean as well.
-    if builtin and name in STANDARD_AFTER_SCAN and _scan_refuses(whole):
-        return None
-    return _standard_output(name, spec, dest)
-
-
-def help_page(name: str, spec: CommandSpec) -> bytes:
-    """One command's ``--help`` page.
-
-    The page is rendered from ``help_spec``, not from the declared spec,
-    so it documents the two options every command answers rather than
-    only the ones its author wrote down. Only the builtin itself gets
-    GNU's own synopsis line: a registered command that borrowed the name
-    keeps the line its own spec synthesizes, which is why this asks for
-    the spec OBJECT rather than trusting the name.
-
-    Either form of the builtin's own grammar answers the same page: the
-    declared spec the wrapper holds, and the one enriched copy the
-    registry parses, which is what a caller reaching this from the
-    routing door has. That is exactly what ``is_builtin_grammar``
-    settles, and asking it rather than ``SPECS[name] is spec`` is what
-    keeps a cross-mount `--help` from losing GNU's synopsis line.
-
-    Args:
-        name (str): command name as invoked.
-        spec (CommandSpec): the command's grammar, declared or as
-            registered.
-    """
-    synopsis = SYNOPSES.get(name) if is_builtin_grammar(name, spec) else None
-    return render_help(name, registered_spec(name, spec),
-                       synopsis=synopsis).encode()
-
-
-def _with_help_support(
+def _answer_standard_options(
         name: str, spec: CommandSpec,
         fn: Callable[..., Any]) -> tuple[CommandSpec, CommandFn]:
-    """Inject --help / --version and short-circuit them before the handler.
+    """Add ``--help`` and ``--version`` to a command, as GNU tools have.
 
-    Mirrors GNU coreutils: every registered command accepts both flags,
-    prints to stdout, and exits 0 without running the command body.
-    A command declaring its own --version handles that flag itself, and
-    a program that runs its own option loop (OWN_OPTION_LOOP) answers
-    --help there too, after any option typed before it.
+    Either one prints to stdout and exits 0 without running the
+    handler. A command that declares its own ``--version``, or a
+    program that runs its own option loop (OWN_OPTION_LOOP), answers
+    that option itself.
+
+    Args:
+        name (str): The command name.
+        spec (CommandSpec): The declared grammar.
+        fn (Callable[..., Any]): The handler.
+
+    Returns:
+        tuple[CommandSpec, CommandFn]: The grammar with both options,
+            and the handler that answers them.
     """
-    has_version = any(o.long == "--version" for o in spec.options)
+    own_version = any(o.long == "--version" for o in spec.options)
     own_help = is_builtin_grammar(name, spec) and name in OWN_OPTION_LOOP
-    new_spec = registered_spec(name, spec)
     help_text = help_page(name, spec)
     version_text = version_line(name)
 
@@ -474,46 +227,11 @@ def _with_help_support(
                       texts: list[str], opts: CommandOpts) -> CommandFnResult:
         if not own_help and opts.flags.get("help") is True:
             return yield_bytes(help_text), IOResult()
-        if not has_version and opts.flags.get("version") is True:
+        if not own_version and opts.flags.get("version") is True:
             return yield_bytes(version_text), IOResult()
         return await fn(accessor, paths, texts, opts)
 
-    return new_spec, wrapper
-
-
-class _Unset:
-    __slots__ = ()
-
-
-_UNSET = _Unset()
-
-
-@dataclass(frozen=True, slots=True)
-class RegisteredCommand:
-    name: str
-    spec: CommandSpec
-    vfs: str | None
-    filetype: str | None
-    fn: CommandFn
-    provision_fn: ProvisionFn | None = None
-    aggregate: Callable[..., Any] | None = None
-    write: bool = False
-    limit: Limit | None = None
-    path_guarded: bool = False
-
-    def with_overrides(
-        self,
-        *,
-        fn: CommandFn | _Unset = _UNSET,
-        provision: ProvisionFn | None | _Unset = _UNSET,
-    ) -> "RegisteredCommand":
-        """Return an independent command definition with selected changes."""
-        return replace(
-            self,
-            fn=(self.fn if fn is _UNSET else cast(CommandFn, fn)),
-            provision_fn=(self.provision_fn if provision is _UNSET else cast(
-                ProvisionFn | None, provision)),
-        )
+    return registered_spec(name, spec), wrapper
 
 
 def command(
@@ -522,88 +240,96 @@ def command(
     vfs: str | list[str] | None,
     spec: CommandSpec,
     filetype: str | None = None,
-    provision: Callable[..., Any] | None = None,
-    dry_run: Callable[..., Any] | None = None,
     aggregate: Callable[..., Any] | None = None,
     write: bool = False,
     limit: Limit | None = None,
     path_guarded: bool = False,
 ) -> Callable[..., Any]:
+    """Register the decorated handler as a command of one or more VFSes.
+
+    The decorator returns the handler wrapped to answer ``--help`` and
+    ``--version``, with one ``RegisteredCommand`` per VFS in its
+    ``_registered_commands`` attribute.
+
+    Args:
+        name (str): The command name.
+        vfs (str | list[str] | None): The VFS name, or several.
+        spec (CommandSpec): The command's grammar.
+        filetype (str | None): The file extension it handles.
+        aggregate (Callable[..., Any] | None): Merges a run split across
+            mounts.
+        write (bool): Whether it changes files.
+        limit (Limit | None): Its output limit.
+        path_guarded (bool): Whether mount-root policy checks its
+            operands.
+    """
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        vfs_names = (vfs if isinstance(vfs, list) else [vfs])
-        new_spec, wrapped_fn = _with_help_support(name, spec, fn)
-        provision_fn = cast(ProvisionFn | None, provision or dry_run)
-        # functools.wraps copies function attributes by reference. Copy the
-        # registration list before extending it so wrapping a builtin cannot
-        # add registrations to the shared backend command.
-        cmds = list(getattr(wrapped_fn, "_registered_commands", []))
-        for p in vfs_names:
-            rc = RegisteredCommand(
-                name=name,
-                spec=new_spec,
-                vfs=p,
-                filetype=filetype,
-                fn=wrapped_fn,
-                provision_fn=provision_fn,
-                aggregate=aggregate,
-                write=write,
-                limit=limit,
-                path_guarded=path_guarded,
-            )
-            cmds.append(rc)
-        setattr(wrapped_fn, "_registered_commands", cmds)
-        return wrapped_fn
+        full_spec, wrapped = _answer_standard_options(name, spec, fn)
+        # functools.wraps shares the wrapped function's attribute list,
+        # so copy it: wrapping a builtin must not add to its registrations.
+        registrations = list(getattr(wrapped, "_registered_commands", []))
+        for vfs_name in (vfs if isinstance(vfs, list) else [vfs]):
+            registrations.append(
+                RegisteredCommand(
+                    name=name,
+                    spec=full_spec,
+                    vfs=vfs_name,
+                    filetype=filetype,
+                    fn=wrapped,
+                    aggregate=aggregate,
+                    write=write,
+                    limit=limit,
+                    path_guarded=path_guarded,
+                ))
+        setattr(wrapped, "_registered_commands", registrations)
+        return wrapped
 
     return decorator
 
 
-_CommandSource: TypeAlias = RegisteredCommand | Callable[..., Any]
+CommandSource: TypeAlias = RegisteredCommand | Callable[..., Any]
 
 
 def registered_commands(
-        items: Iterable[_CommandSource]) -> list[RegisteredCommand]:
-    """Flatten command sources into their registrations, in order.
+        items: Iterable[CommandSource]) -> list[RegisteredCommand]:
+    """The registrations of *items*, in order.
 
     Args:
-        items (Iterable[_CommandSource]): ``RegisteredCommand`` values
-            and ``@command``-decorated functions, each of which may
-            carry several registrations.
+        items (Iterable[CommandSource]): ``RegisteredCommand`` values
+            and ``@command``-decorated functions.
 
     Raises:
-        TypeError: an item is neither.
+        TypeError: An item is neither.
     """
     values: list[RegisteredCommand] = []
     for item in items:
-        registrations = ([item] if isinstance(item, RegisteredCommand) else
-                         getattr(item, "_registered_commands", None))
-        if registrations is None:
-            raise TypeError(
-                "command catalogs require RegisteredCommand values or "
-                "@command-decorated functions")
-        for registered in registrations:
-            if not isinstance(registered, RegisteredCommand):
-                raise TypeError("command catalog registrations must be "
-                                "RegisteredCommand values")
-            values.append(registered)
+        if isinstance(item, RegisteredCommand):
+            values.append(item)
+            continue
+        registrations = getattr(item, "_registered_commands", None)
+        if registrations is None or not all(
+                isinstance(r, RegisteredCommand) for r in registrations):
+            raise TypeError("a command catalog takes RegisteredCommand values "
+                            "and @command-decorated functions")
+        values.extend(registrations)
     return values
 
 
-@dataclass(frozen=True, slots=True, init=False)
 class CommandCatalog(Sequence[RegisteredCommand]):
-    """Immutable command table with exact name/filetype lookup."""
+    """A fixed list of commands, looked up by name and file extension.
 
-    _items: tuple[RegisteredCommand, ...]
-    _by_key: Mapping[tuple[str, str | None],
-                     RegisteredCommand] = field(repr=False)
+    Args:
+        items (Iterable[CommandSource]): ``RegisteredCommand`` values
+            and ``@command``-decorated functions; a later one wins a
+            lookup.
+    """
 
-    def __init__(self, items: Iterable[_CommandSource]) -> None:
-        values = registered_commands(items)
-        by_key: dict[tuple[str, str | None], RegisteredCommand] = {}
-        for registered in values:
-            by_key[(registered.name, registered.filetype)] = registered
-        object.__setattr__(self, "_items", tuple(values))
-        object.__setattr__(self, "_by_key", MappingProxyType(by_key))
+    __slots__ = ("_items", "_by_key")
+
+    def __init__(self, items: Iterable[CommandSource]) -> None:
+        self._items = tuple(registered_commands(items))
+        self._by_key = {(c.name, c.filetype): c for c in self._items}
 
     def __len__(self) -> int:
         return len(self._items)
@@ -632,9 +358,8 @@ class CommandCatalog(Sequence[RegisteredCommand]):
     def require(self,
                 name: str,
                 filetype: str | None = None) -> RegisteredCommand:
-        command = self.get(name, filetype)
-        if command is None:
-            message = (f"command {name!r} with filetype {filetype!r} "
-                       "is not registered")
-            raise KeyError(message)
-        return command
+        found = self.get(name, filetype)
+        if found is None:
+            raise KeyError(f"command {name!r} with filetype {filetype!r} "
+                           "is not registered")
+        return found

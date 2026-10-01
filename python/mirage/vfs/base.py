@@ -144,7 +144,6 @@ class BaseVFS:
         overrides: set[str] | None = None,
         commands: list[Callable[..., Any]] | None = None,
         ops: list[Callable[..., Any]] | None = None,
-        provision_overrides: dict[str, Callable[..., Any]] | None = None,
         auto_ops: bool = True,
         caches_reads: bool | None = None,
         sizes_always_known: bool | None = None,
@@ -179,8 +178,6 @@ class BaseVFS:
             ops (list[Callable] | None): ``@op`` functions or
                 ``RegisteredOp`` values layered over the derived set; one
                 carrying no filetype shadows the derived op of its name.
-            provision_overrides (dict[str, Callable] | None): per-command
-                cost estimators replacing the catalog default.
             auto_ops (bool): derive the op set from the table; disable to
                 serve only the explicit ``ops``.
             caches_reads (bool | None): serve repeat reads from the file
@@ -219,11 +216,10 @@ class BaseVFS:
         if read_revalidatable is not None:
             self.read_revalidatable = read_revalidatable
         if io is None:
-            if any(x is not None
-                   for x in (overrides, commands, ops, provision_overrides)):
+            if any(x is not None for x in (overrides, commands, ops)):
                 raise ValueError(
-                    "overrides, commands, ops and provision_overrides "
-                    "derive from an io table; pass io")
+                    "overrides, commands and ops derive from an io table; "
+                    "pass io")
             return
         # The base's placeholder would register every generic command
         # under a VFS no registry or prompt knows.
@@ -232,10 +228,7 @@ class BaseVFS:
         self._from_table = True
         table = io.to_command_io() if isinstance(io, VFSAdapter) else io
         self._commands_table = registered_commands([
-            *make_generic_commands(self.name,
-                                   table,
-                                   overrides=overrides,
-                                   provision_overrides=provision_overrides),
+            *make_generic_commands(self.name, table, overrides=overrides),
             *(commands or []),
         ])
         user_ops: list[RegisteredOp] = []

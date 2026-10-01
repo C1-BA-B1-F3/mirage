@@ -130,10 +130,7 @@ export interface VFSOptions<A extends Accessor = Accessor> {
   autoOps?: boolean
   /** Serve repeat reads from the file cache. Read-mostly content only. */
   cachesReads?: boolean
-  /**
-   * Whether the backend stores exactly the bytes a write sends, so the file
-   * cache may keep them. Turn off for a backend that rewrites uploads.
-   */
+  /** Keep written bytes in the file cache; off for a backend that rewrites uploads. */
   keepsWrittenBytes?: boolean
   /**
    * Whether `io.stat` sizes every regular file without fetching it. A

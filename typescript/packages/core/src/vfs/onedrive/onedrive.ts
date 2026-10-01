@@ -23,9 +23,7 @@ export interface OneDriveVFSState {
 export class OneDriveVFS extends BaseVFS {
   override readonly name: string = VFSName.ONEDRIVE
   override readonly cachesReads: boolean = true
-  // SharePoint property promotion (OneDrive for Business is a SharePoint
-  // library) writes library metadata into an uploaded Office, .eml, .msg or
-  // .tiff file, so what a write sent is not what the drive holds.
+  // SharePoint rewrites uploaded Office files (property promotion).
   override readonly keepsWrittenBytes: boolean = false
   // Graph driveItems carry an exact byte `size` for every file in both
   // listings and item gets; folders (including the root) report null with

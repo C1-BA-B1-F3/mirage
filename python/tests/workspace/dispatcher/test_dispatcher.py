@@ -1066,8 +1066,6 @@ async def test_a_write_keeps_its_bytes_by_default(line):
                          WRITES_THAT_KEEP_BYTES.values(),
                          ids=WRITES_THAT_KEEP_BYTES.keys())
 async def test_a_backend_that_rewrites_uploads_keeps_no_written_bytes(line):
-    # The backend stores something other than what was sent, so the entry
-    # goes and the next read fetches what the backend holds.
     ws = await _seeded(_RewritingRAM())
     await _run(ws, line.format(path="/data/a.docx"))
     assert not await ws.cache.exists("/data/a.docx")

@@ -17,9 +17,7 @@ class SharePointVFS(BaseVFS):
     accessor: SharePointAccessor
     name: str = VFSName.SHAREPOINT
     caches_reads: bool = True
-    # SharePoint property promotion (OneDrive for Business is a SharePoint
-    # library) writes library metadata into an uploaded Office, .eml, .msg
-    # or .tiff file, so what a write sent is not what the drive holds.
+    # SharePoint rewrites uploaded Office files (property promotion).
     keeps_written_bytes: bool = False
     # Graph drive items carry an exact content-length size and the site
     # and drive levels are plain directories; unlike onedrive there is

@@ -392,9 +392,9 @@ describe('Ops is one door with the dispatcher', () => {
   })
 
   it('does not serve a raw read from the file cache', async () => {
-    // A rendering command's read lands in the file cache keyed on the
-    // path alone (that is what `applyIo` does with an IOResult), so the
-    // rendering sits under the very key a raw read asks for. Seeding
+    // A command's read lands in the file cache keyed on the path alone
+    // (that is what `applyIo` does with an IOResult), so whatever it
+    // returned sits under the very key a raw read asks for. Seeding
     // the cache directly is the same state one command earlier reaches.
     // Mirrors Python's tests/ops/test_raw_read.py.
     const vfs = new RAMVFS()

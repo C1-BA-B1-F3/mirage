@@ -509,9 +509,7 @@ REWRITE_UPLOADS = {"onedrive", "sharepoint"}
 
 @pytest.mark.parametrize("name", known_vfs_names())
 def test_only_backends_that_rewrite_uploads_drop_written_bytes(name):
-    # SharePoint property promotion (OneDrive for Business is a SharePoint
-    # library) rewrites an uploaded Office file; every other backend was
-    # read back byte for byte, so it keeps what a write sent.
+    # Every other backend was read back byte for byte on the real service.
     try:
         cls = resolve_class(resolve_entry(name).vfs_path)
     except ImportError as exc:

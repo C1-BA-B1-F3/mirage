@@ -364,8 +364,6 @@ describe('what a write leaves in the file cache', () => {
     }
   })
 
-  // The backend stores something other than what was sent, so the entry
-  // goes and the next read fetches what the backend holds.
   it.each(WRITES_THAT_KEEP_BYTES)(
     'keeps nothing %s wrote on a backend that rewrites uploads',
     async (_name, line) => {

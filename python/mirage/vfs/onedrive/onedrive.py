@@ -31,9 +31,7 @@ class OneDriveVFS(BaseVFS):
     accessor: OneDriveAccessor
     name: str = VFSName.ONEDRIVE
     caches_reads: bool = True
-    # SharePoint property promotion (OneDrive for Business is a SharePoint
-    # library) writes library metadata into an uploaded Office, .eml, .msg
-    # or .tiff file, so what a write sent is not what the drive holds.
+    # SharePoint rewrites uploaded Office files (property promotion).
     keeps_written_bytes: bool = False
     # Graph driveItems carry an exact byte `size` for every file in both
     # listings and item gets; folders (including the root) report None

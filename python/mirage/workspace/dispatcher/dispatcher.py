@@ -409,14 +409,12 @@ class Dispatcher:
                           path.virtual)
         await mount.ensure_ready()
         caches_reads = mount.vfs.caches_reads
-        # The file cache is keyed on the path alone, and what a command
-        # put there is the rendered read. A raw read asks for a
-        # different value under the same key, so it must not be served
-        # from that cache; nothing populates it from here, so skipping
-        # the probe is the whole fix.
+        # The file cache holds what commands read, keyed on the path
+        # alone. A raw read, or a read through a renderer added beside the
+        # VFS, asks for a different value under the same key, so it must
+        # not be served from that cache; nothing populates it from here,
+        # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
-        # A renderer added on the mount is never what a command read, so
-        # an entry a command left is raw bytes, not this read's rendering.
         renders = mount.renders_user_read(path.virtual)
 
         if (caches_reads and not raw and not renders

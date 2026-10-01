@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -119,9 +118,8 @@ class WasiRuntime(PythonRuntime):
         # Mount prefixes route to the workspace bridge; everything else
         # is served from the build directory, so a mount at "/" never
         # collides with the interpreter's own files.
-        core = (RuntimeVFS(context.dispatch, asyncio.get_running_loop(),
-                           context.resolver) if context is not None else None)
-        fs = WasmVFS(WasmFsConfig(host_root=str(self._root)), core)
+        fs = WasmVFS(WasmFsConfig(host_root=str(self._root)),
+                     RuntimeVFS.of(context) if context is not None else None)
         # The guest sees the mounts, so the script's own directory heads
         # sys.path, as it does on CPython.
         source = prepare_source(args, search_path=True)

@@ -36,13 +36,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, DotWalkLoop, fs_strerror
 from mirage.utils.path import CycleError, dotted_spelling
-from mirage.workspace.executor.builtins.links.probe import (link_target_stat,
-                                                            miss_strerror,
-                                                            path_readdir,
-                                                            path_stat)
 from mirage.workspace.executor.builtins.shared import abs_path, fail, result
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
+from mirage.workspace.mount.namespace.probe import (link_target_stat,
+                                                    miss_strerror,
+                                                    path_readdir, path_stat)
 from mirage.workspace.session import SessionState
 
 _TARGET_DIR_LONG = "--target-directory"

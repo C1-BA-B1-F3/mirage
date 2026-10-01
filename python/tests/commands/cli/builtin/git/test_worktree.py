@@ -23,8 +23,8 @@ from mirage.commands.cli.builtin.git.worktree import (UNTRACKED_ALL,
                                                       UNTRACKED_NORMAL, scan,
                                                       tracked_directories)
 from mirage.types import LINK_TARGET_KEY, FileType
-from mirage.workspace.executor.builtins.links import path_stat
-from mirage.workspace.executor.command.run import namespace_view_of
+from mirage.workspace.mount.namespace.probe import path_stat
+from mirage.workspace.mount.namespace.view import namespace_view_of
 
 LOCATION = RepoLocation(gitdir="/repo/.git",
                         commondir="/repo/.git",

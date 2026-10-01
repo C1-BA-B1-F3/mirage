@@ -167,7 +167,7 @@ export class GuestProcessTable {
     }
     if (request.op === 'resolve' || request.op === 'spawn') {
       if (request.op === 'spawn') this.context.processes?.checkSpawn()
-      const vfs = new RuntimeVFS(this.context.dispatch, this.context.resolver)
+      const vfs = RuntimeVFS.of(this.context)
       const head = request.argv?.[0]
       if (typeof head !== 'string' || !head)
         throw Object.assign(new Error('empty executable'), { code: 'ENOENT' })

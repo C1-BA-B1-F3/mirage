@@ -109,11 +109,6 @@ export interface WorkspaceOptions {
    * client is released on close. Mirrors Python's `owns_store`.
    */
   ownsStore?: boolean
-  python?: {
-    autoLoadFromImports?: boolean
-    bootstrapCode?: string
-    denyPackages?: readonly string[]
-  }
   /**
    * The workspace's ordered runtime world: instances and name
    * shorthands including 'workspace'; the first capturer binds each

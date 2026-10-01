@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { OpsRegistry } from '../ops/registry.ts'
+import { PyodideRuntime } from '../runtime/python/pyodide/runtime.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import { MountMode } from '../types.ts'
 import { getTestParser, stdoutStr } from './fixtures/workspace_fixture.ts'
@@ -114,7 +115,7 @@ describe('Workspace + Python mount', () => {
         mode: MountMode.EXEC,
         ops,
         shellParser: parser,
-        python: { autoLoadFromImports: true },
+        runtimes: [new PyodideRuntime({ config: { autoLoadFromImports: true } }), 'workspace'],
       },
     )
     ws.addMount('/ram', ram, MountMode.EXEC)

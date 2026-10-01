@@ -946,6 +946,110 @@
           "name": "probe"
         },
         {
+          "op": "runtimes",
+          "expect": {
+            "value": ["workspace", "monty", "quickjs"]
+          }
+        },
+        {
+          "op": "register_cli",
+          "name": "probe",
+          "script": {
+            "source": "print('kept', argv[1])",
+            "language": "python"
+          },
+          "runtime": "monty"
+        },
+        {
+          "op": "exec",
+          "command": "which python3",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "/usr/bin/python3\n",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "op": "remove_runtime",
+          "name": "monty"
+        },
+        {
+          "op": "runtimes",
+          "expect": {
+            "value": ["workspace", "quickjs"]
+          }
+        },
+        {
+          "op": "exec",
+          "command": "which python3",
+          "expect": {
+            "value": {
+              "exit_code": 1,
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "probe gone",
+          "expect": {
+            "value": {
+              "exit_code": 127,
+              "stderr_contains": "unknown runtime"
+            }
+          }
+        },
+        {
+          "op": "remove_runtime",
+          "name": "monty",
+          "expect": {
+            "error": "no runtime entry: 'monty'"
+          }
+        },
+        {
+          "op": "remove_runtime",
+          "name": "workspace",
+          "expect": {
+            "error": "cannot remove the workspace runtime"
+          }
+        },
+        {
+          "op": "add_runtime",
+          "name": "monty",
+          "expect": {
+            "value": "monty"
+          }
+        },
+        {
+          "op": "exec",
+          "command": "which python3",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "/usr/bin/python3\n",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "probe back",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "kept back\n",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "op": "unregister_cli",
+          "name": "probe"
+        },
+        {
           "op": "exec",
           "command": "echo intact",
           "expect": {
@@ -1912,6 +2016,13 @@
         },
         {
           "op": "add_runtime",
+          "name": "monty",
+          "expect": {
+            "error": "Workspace is closed"
+          }
+        },
+        {
+          "op": "remove_runtime",
           "name": "monty",
           "expect": {
             "error": "Workspace is closed"

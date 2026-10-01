@@ -24,7 +24,7 @@ import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { fail } from '../shared.ts'
 import { dispatchStat, walkSpelling } from '../../../../commands/builtin/utils/paths.ts'
-import { statOrNull } from './probe.ts'
+import { statOrNull } from '../../../mount/namespace/probe.ts'
 import type { Result } from '../types.ts'
 import type { FlagValue } from '../../../../commands/spec/types.ts'
 

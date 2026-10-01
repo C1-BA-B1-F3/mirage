@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, Callable, ClassVar
@@ -29,6 +28,7 @@ from mirage.runtime.python.monty.osaccess import MirageOSAccess
 from mirage.runtime.types import (EvalResult, EvalValue, FilesystemOperation,
                                   RunArgs, RunResult, RuntimeContext,
                                   RuntimeReach, ScriptSource)
+from mirage.runtime.vfs import RuntimeVFS
 
 
 class MontyRuntime(PythonRuntime, EvaluatorMixin):
@@ -137,6 +137,4 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
     def _bridge(self, env: dict[str, str],
                 context: RuntimeContext | None) -> MirageOSAccess:
         return MirageOSAccess(
-            asyncio.get_running_loop(),
-            context.dispatch if context is not None else None, env,
-            context.resolver if context is not None else None)
+            RuntimeVFS.of(context) if context is not None else None, env)

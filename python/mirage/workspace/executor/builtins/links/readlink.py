@@ -25,6 +25,7 @@ from mirage.workspace.executor.builtins.shared import (fail, operand_text,
                                                        split_flags)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
+from mirage.workspace.mount.namespace.probe import path_exists
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 

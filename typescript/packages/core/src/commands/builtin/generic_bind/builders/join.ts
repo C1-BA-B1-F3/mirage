@@ -20,7 +20,12 @@ export const JOIN_BUILDER: Builder = {
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined
-    const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
-    return joinGeneric(resolved, opts, (p) => ops.readStream(accessor, p, idx))
+    const resolveGlob = resolveGlobOf(ops)
+    return joinGeneric(
+      paths,
+      opts,
+      (targets) => resolveGlob(accessor, targets, idx),
+      (p) => ops.readStream(accessor, p, idx),
+    )
   },
 }

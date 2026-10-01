@@ -28,7 +28,7 @@ function accessorOf(config: QdrantConfig, points: QdrantPoint[]) {
   const query = vi.fn((_collection: string, _opts: { limit: number }) =>
     Promise.resolve({ points }),
   )
-  const accessor = new QdrantAccessor(resolveQdrantConfig(config))
+  const accessor = new QdrantAccessor(resolveQdrantConfig({ cloudInference: true, ...config }))
   vi.spyOn(accessor, 'client').mockResolvedValue({ query } as unknown as QdrantClient)
   return { accessor, query }
 }

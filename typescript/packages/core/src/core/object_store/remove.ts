@@ -14,6 +14,7 @@
 
 import type { Accessor } from '../../accessor/base.ts'
 import {
+  evictAfter,
   invalidateAfterUnlink,
   invalidateAncestors,
   invalidateSubtree,
@@ -29,29 +30,31 @@ export function makeUnlink<A extends Accessor, C>(driver: ObjectStoreDriver<A, C
   return async function unlink(accessor, path) {
     const key = kp.apply(driver.keyPrefixOf(accessor), path.mountPath)
     const timer = startOp()
-    const { conn, close } = await driver.connect(accessor)
-    try {
-      try {
-        await driver.deleteFile(conn, key)
-      } finally {
-        // In the `finally`, not on success: a delete that raises part-way
-        // has already removed keys, and a pin that outlives the object it
-        // names fails the next snapshot load.
-        record('unlink', path.virtual, driver.vfs, 0, timer)
-        await close()
-      }
-    } finally {
+    const settle = async (): Promise<void> => {
+      // Also when the delete threw: one that throws part-way has already
+      // removed keys, and a pin that outlives the object it names fails
+      // the next snapshot load.
+      record('unlink', path.virtual, driver.vfs, 0, timer)
       // The eviction rides with the record: a retracted pin and a cached
       // body for the same path must not both survive, or a restored
       // snapshot serves the body with nothing left to check it.
-      // Over-dropping costs one refetch. Outside the inner `finally` so a
-      // cache that rejects cannot skip `close()`.
+      // Over-dropping costs one refetch.
       await invalidateAfterUnlink(path)
       // Deleting the last key under a prefix makes every ancestor that
       // existed only as that prefix disappear, so their cached listings
       // are stale symmetrically to the write case.
       await invalidateAncestors(path)
     }
+    // The connect is outside, because a connection that never opened
+    // removed nothing.
+    const { conn, close } = await driver.connect(accessor)
+    await evictAfter(async () => {
+      try {
+        await driver.deleteFile(conn, key)
+      } finally {
+        await close()
+      }
+    }, settle)
   }
 }
 
@@ -68,18 +71,11 @@ export function makeRemovePrefix<A extends Accessor, C>(
   return async function removePrefix(accessor, path) {
     const pfx = kp.applyDir(driver.keyPrefixOf(accessor), path.mountPath)
     const timer = startOp()
-    const { conn, close } = await driver.connect(accessor)
-    try {
-      try {
-        await driver.deletePrefix(conn, pfx)
-      } finally {
-        // A prefix delete is a paginated walk, so a failure mid-walk has
-        // already removed keys. The eviction rides with the record, as in
-        // unlink.
-        record('rm_r', path.virtual, driver.vfs, 0, timer)
-        await close()
-      }
-    } finally {
+    const settle = async (): Promise<void> => {
+      // A prefix delete is a paginated walk, so a failure mid-walk has
+      // already removed keys. The eviction rides with the record, as in
+      // unlink.
+      record('rm_r', path.virtual, driver.vfs, 0, timer)
       // Not invalidateAfterUnlink: a prefix delete takes every key below
       // with it, and each of those listings and bodies was cached under
       // its own key, so nothing above them evicts one.
@@ -88,6 +84,14 @@ export function makeRemovePrefix<A extends Accessor, C>(
       // prefix are gone now.
       await invalidateAncestors(path)
     }
+    const { conn, close } = await driver.connect(accessor)
+    await evictAfter(async () => {
+      try {
+        await driver.deletePrefix(conn, pfx)
+      } finally {
+        await close()
+      }
+    }, settle)
   }
 }
 

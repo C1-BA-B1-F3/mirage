@@ -638,6 +638,7 @@ def parse_command(
         digit_options = False
         equals_values = False
         in_order_operands = False
+        spelled_words: frozenset[str] = frozenset()
         letter_options = False
         whole_words = False
         own_loop = False
@@ -674,6 +675,11 @@ def parse_command(
         digit_options = builtin and cmd_name in constants.DIGIT_OPTIONS
         equals_values = builtin and cmd_name in constants.EQUALS_SHORT_VALUES
         in_order_operands = builtin and cmd_name in constants.IN_ORDER_OPERANDS
+        spelled_words = (
+            constants.SPELLED_WORDS.get(cmd_name, frozenset())
+            if builtin
+            else frozenset()
+        )
         letter_options = builtin and cmd_name in constants.LETTER_OPTIONS
         whole_words = builtin and cmd_name in constants.WHOLE_WORD_LONG_OPTIONS
         own_loop = builtin and cmd_name in constants.OWN_OPTION_LOOP
@@ -714,13 +720,16 @@ def parse_command(
         # original cluster here; values and operands receive their own kinds.
         word_kinds[scan_origins[i]] = "str"
 
-        if tok == "--" and not end_of_flags:
-            end_of_flags = True
+        if end_of_flags:
+            record_operand(tok)
             i += 1
             continue
 
-        if end_of_flags:
-            record_operand(tok)
+        if tok in spelled_words:
+            flags.occurrences.append((constants.SPELLED, tok))
+
+        if tok == "--":
+            end_of_flags = True
             i += 1
             continue
 

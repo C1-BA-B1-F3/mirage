@@ -22,10 +22,10 @@ from mirage.core.hierarchy.readdir import DirListing, Listed, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.slack.channels import list_channels, list_dms
 from mirage.core.slack.client import slack_get
-from mirage.core.slack.files import file_blob_name
 from mirage.core.slack.formatters import (
     channel_dirname,
     dm_dirname,
+    file_blob_name,
     user_filename,
 )
 from mirage.core.slack.history import fetch_messages_for_day, messages_to_jsonl

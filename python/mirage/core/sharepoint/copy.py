@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.sharepoint import SharePointAccessor
-from mirage.cache.context import invalidate_subtree_after
+from mirage.cache.context import evict_after, invalidate_subtree
 from mirage.core.msgraph.drive import copy_tree
 from mirage.core.sharepoint.resolve import drive_loc, resolve_item
 from mirage.types import PathSpec
@@ -38,12 +38,12 @@ async def copy(
     config = accessor.config
     src_resolved = await resolve_item(accessor, src)
     dst_resolved = await resolve_item(accessor, dst)
-    await invalidate_subtree_after(
-        dst,
+    await evict_after(
         copy_tree(
             config,
             drive_loc(config, src_resolved, src.vfs_path),
             drive_loc(config, dst_resolved, dst.vfs_path),
             session=accessor.pool,
         ),
+        lambda _: invalidate_subtree(dst),
     )

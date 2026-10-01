@@ -15,7 +15,8 @@
 import { Accessor } from './base.ts'
 import { TimeRange } from '../core/time_range.ts'
 import type { BaseVFS } from '../vfs/base.ts'
-import type { DiscordTransport } from '../core/discord/client.ts'
+import { NodeDiscordTransport, type DiscordTransport } from '../core/discord/client.ts'
+import type { DiscordConfig } from '../core/discord/config.ts'
 
 export class DiscordAccessor extends Accessor {
   readonly timeRange: TimeRange
@@ -26,6 +27,16 @@ export class DiscordAccessor extends Accessor {
     super()
     this.timeRange = new TimeRange(config.startTime, config.endTime)
   }
+}
+
+/**
+ * The accessor the `discord` CLI's verbs reach the API through, built from
+ * the install's config. Python's verbs hand the config to core directly;
+ * here core takes an accessor.
+ */
+export function discordAccessor(config: unknown): DiscordAccessor {
+  const cfg = config as DiscordConfig
+  return new DiscordAccessor(new NodeDiscordTransport(cfg.token, cfg.baseUrl))
 }
 
 export interface DiscordResourceLike extends BaseVFS {

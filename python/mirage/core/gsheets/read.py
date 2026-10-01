@@ -14,8 +14,8 @@
 
 from mirage.accessor.gsheets import GSheetsAccessor
 from mirage.cache.index import IndexCacheStore
+from mirage.core.google.client import TokenManager, google_get, sheets_base
 from mirage.core.google.entry import resolve_app_entry
-from mirage.core.gsheets.client import TokenManager, google_get, sheets_base
 from mirage.core.gsheets.constants import MIME
 from mirage.core.gsheets.scope import detect_scope
 from mirage.core.hierarchy.read import make_read

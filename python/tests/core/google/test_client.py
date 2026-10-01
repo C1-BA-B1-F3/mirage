@@ -12,6 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import time
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from mirage.core.google.client import (
     TokenManager,
     calendar_base,
@@ -21,6 +26,7 @@ from mirage.core.google.client import (
     forms_base,
     gmail_base,
     google_error_message,
+    google_headers,
     sheets_base,
     slides_base,
     token_url,
@@ -104,3 +110,36 @@ def test_non_json_body_is_reported_verbatim():
 def test_empty_body_falls_back_to_the_reason_then_the_status():
     assert google_error_message("", 404, "Not Found") == "Not Found"
     assert google_error_message("   ", 404, None) == "HTTP 404"
+
+
+def _refresh_returning(*tokens: str):
+    return patch(
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        side_effect=[(t, 3600) for t in tokens],
+    )
+
+
+@pytest.mark.asyncio
+async def test_token_manager_refreshes_once_then_caches():
+    mgr = _manager()
+    with _refresh_returning("cached-token") as refresh:
+        assert await mgr.get_token() == "cached-token"
+        assert await mgr.get_token() == "cached-token"
+    refresh.assert_called_once_with(mgr.config)
+
+
+@pytest.mark.asyncio
+async def test_token_manager_refreshes_when_expired():
+    mgr = _manager()
+    with _refresh_returning("token-1", "token-2"):
+        await mgr.get_token()
+        mgr._expires_at = time.time() - 1
+        assert await mgr.get_token() == "token-2"
+
+
+@pytest.mark.asyncio
+async def test_google_headers_carry_the_bearer_token():
+    with _refresh_returning("my-token"):
+        headers = await google_headers(_manager())
+    assert headers["Authorization"] == "Bearer my-token"

@@ -17,7 +17,7 @@ from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.read import make_read, make_read_range
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.slack import files as slack_files
+from mirage.core.slack.client import download_file
 from mirage.core.slack.history import get_history_jsonl
 from mirage.core.slack.readdir import readdir
 from mirage.core.slack.scope import detect_scope
@@ -114,7 +114,7 @@ async def _read_blob(
     index: IndexCacheStore,
 ) -> bytes:
     url = await _blob_url(accessor, path, index)
-    return await slack_files.download_file(
+    return await download_file(
         accessor.config, url, 0, None, session=accessor.pool
     )
 
@@ -128,7 +128,7 @@ async def _read_blob_range(
     size: int | None,
 ) -> bytes:
     url = await _blob_url(accessor, path, index)
-    return await slack_files.download_file(
+    return await download_file(
         accessor.config, url, offset, size, session=accessor.pool
     )
 

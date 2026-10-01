@@ -12,7 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.cache.context import invalidate_ancestors, invalidate_subtree
+from mirage.cache.context import (
+    evict_after,
+    invalidate_ancestors,
+    invalidate_subtree,
+)
 from mirage.core.object_store.driver import (
     A,
     C,
@@ -66,54 +70,51 @@ def make_rename(
                 raise enoent(src_spec)
             return
         timer = start_op()
-        # None until the store answers: False means it told us cleanly
-        # that nothing moved, and only a clean "nothing" is safe to skip.
-        moved: bool | None = None
         # Which of the two paths ran, because only the prefix walk moves
         # a subtree and capture retracts on the op name. A raise from
-        # move_file leaves this "rename": the walk below never ran, so
-        # nothing under the prefix can have moved.
+        # move_file leaves this "rename": the walk never ran, so nothing
+        # under the prefix can have moved.
         op = "rename"
+
+        async def move(conn: C) -> bool:
+            nonlocal op
+            if await move_file(conn, src_key, kp.apply(kpfx, dst)):
+                return True
+            # A directory owns no object of its own, so a clean False
+            # here is the ordinary way into the prefix walk, not an
+            # answer about it.
+            op = "rename_prefix"
+            return await move_prefix(
+                conn, kp.apply_dir(kpfx, src), kp.apply_dir(kpfx, dst)
+            )
+
+        async def settle(moved: bool | None) -> None:
+            # None when the store raised: move_prefix is a paginated walk
+            # that can fail having already moved keys, so only a clean
+            # False, where nothing moved at all, is skipped.
+            if moved is False:
+                return
+            # Two records for one op, because a move invalidates the
+            # token of both paths: src's object left, dst's was replaced
+            # by it. Order is free -- both are pure retractions and
+            # deletions commute -- but it stops being free if either
+            # carries a token.
+            record(op, src_spec.virtual, driver.vfs, 0, timer)
+            record(op, dst_spec.virtual, driver.vfs, 0, timer)
+            # The eviction rides with the records, as in unlink.
+            # Subtrees, not single paths: move_prefix relocates every key
+            # under src, so each listing and body cached below the old
+            # name names something that is no longer there, and each one
+            # below the new name predates the move.
+            await invalidate_subtree(dst_spec)
+            await invalidate_subtree(src_spec)
+            # The move can create the destination's missing ancestors and
+            # erase the source's prefix-only ones in the same call.
+            await invalidate_ancestors(dst_spec)
+            await invalidate_ancestors(src_spec)
+
         async with driver.connect(accessor) as conn:
-            try:
-                moved = await move_file(conn, src_key, kp.apply(kpfx, dst))
-                if not moved:
-                    # A directory owns no object of its own, so a clean
-                    # False here is the ordinary way into the prefix
-                    # walk, not an answer about it. Back to unanswered
-                    # before asking, or a walk that raises having
-                    # already moved keys reads as "nothing moved" and
-                    # skips the record it is in `finally` for.
-                    moved = None
-                    op = "rename_prefix"
-                    moved = await move_prefix(
-                        conn, kp.apply_dir(kpfx, src), kp.apply_dir(kpfx, dst)
-                    )
-            finally:
-                if moved is not False:
-                    # Two records for one op, because a move invalidates
-                    # the token of both paths: src's object left, dst's
-                    # was replaced by it. In `finally` because
-                    # move_prefix is a paginated walk that can fail
-                    # having already moved keys; skipped only on a clean
-                    # False, where nothing moved at all. Order is free --
-                    # both are pure retractions and deletions commute --
-                    # but it stops being free if either carries a token.
-                    record(op, src_spec.virtual, driver.vfs, 0, timer)
-                    record(op, dst_spec.virtual, driver.vfs, 0, timer)
-                    # The eviction rides with the records, on the same
-                    # condition, as in unlink. Subtrees, not single
-                    # paths: move_prefix relocates every key under src,
-                    # so each listing and body cached below the old name
-                    # names something that is no longer there, and each
-                    # one below the new name predates the move.
-                    await invalidate_subtree(dst_spec)
-                    await invalidate_subtree(src_spec)
-                    # The move can create the destination's missing
-                    # ancestors and erase the source's prefix-only ones
-                    # in the same call.
-                    await invalidate_ancestors(dst_spec)
-                    await invalidate_ancestors(src_spec)
+            moved = await evict_after(move(conn), settle)
         if not moved:
             raise enoent(src_spec.virtual)
 

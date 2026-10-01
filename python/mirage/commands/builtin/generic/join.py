@@ -8,7 +8,8 @@ from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
-from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.constants import OPERAND, SPELLED
+from mirage.commands.spec.flag_view import FlagView, spread_operands
 from mirage.commands.spec.types import CommandName, FlagValue
 from mirage.commands.spec.usage import (
     extra_operand_error,
@@ -72,6 +73,9 @@ class JoinFlags:
         eol (bytes): the record terminator, NUL under -z.
         check_order (CheckOrder): --check-order and --nocheck-order.
         header (bool): --header.
+        files (tuple[int, int]): which operands are FILE1 and FILE2, since
+            the obsolete ``-j1 FIELD``, ``-j2 FIELD`` and ``-o LIST...``
+            forms take operands as option values.
     """
 
     field1: int = 0
@@ -88,6 +92,23 @@ class JoinFlags:
     eol: bytes = b"\n"
     check_order: CheckOrder = CheckOrder.DEFAULT
     header: bool = False
+    files: tuple[int, int] = (0, 1)
+
+
+class _Status(Enum):
+    """join.c's operand_status: what a filed operand may turn out to be."""
+
+    MUST_BE_OPERAND = "operand"
+    MIGHT_BE_J1_ARG = "j1"
+    MIGHT_BE_J2_ARG = "j2"
+    MIGHT_BE_O_ARG = "o"
+
+
+@dataclass(frozen=True, slots=True)
+class _Filed:
+    index: int
+    word: str
+    status: _Status
 
 
 def _raw(text: str) -> bytes:
@@ -203,6 +224,8 @@ class _Options:
     zero: bool = False
     check_order: CheckOrder = CheckOrder.DEFAULT
     header: bool = False
+    files: list[_Filed] = field(default_factory=list)
+    joption_count: list[int] = field(default_factory=lambda: [0, 0])
 
     def set_tab(self, text: str) -> None:
         raw = _raw(text)
@@ -218,8 +241,25 @@ class _Options:
         self.tab = tab
         self.literal_tab = self.literal_tab or bool(raw)
 
-    def apply(self, name: str, value: FlagValue) -> None:
+    def apply(self, name: str, value: FlagValue, spelled: bool) -> _Status:
+        """Take one option, and say what the next operand may be.
+
+        Args:
+            name (str): the option's dest.
+            value (FlagValue): its value.
+            spelled (bool): whether it was typed as a lone ``-j1`` or
+                ``-j2`` (SPELLED_WORDS).
+        """
         text = value if isinstance(value, str) else ""
+        if name == "j" and spelled:
+            is_j2 = text == "2"
+            self.joption_count[is_j2] += 1
+            return (
+                _Status.MIGHT_BE_J2_ARG if is_j2 else _Status.MIGHT_BE_J1_ARG
+            )
+        if name == "o" and text != "auto":
+            self.outlist.extend(_field_list(text))
+            return _Status.MIGHT_BE_O_ARG
         if name in ("a", "v"):
             if name == "v":
                 self.pairables = False
@@ -239,10 +279,7 @@ class _Options:
             self.field1 = _set_join_field(self.field1, _join_field(text))
             self.field2 = _set_join_field(self.field2, self.field1)
         elif name == "o":
-            if text == "auto":
-                self.autoformat = True
-            else:
-                self.outlist.extend(_field_list(text))
+            self.autoformat = True
         elif name == "t":
             self.set_tab(text)
         elif name == "ignore_case":
@@ -255,6 +292,48 @@ class _Options:
             self.check_order = CheckOrder.DISABLED
         elif name == "header":
             self.header = True
+        return _Status.MUST_BE_OPERAND
+
+    def add_file(self, index: int, word: str, status: _Status) -> _Status:
+        """join.c's add_file_name: file an operand, taking an earlier one
+        as an option's value when a third arrives, and say what the next
+        operand may be.
+
+        Args:
+            index (int): the operand's position among the operands.
+            word (str): the operand as typed.
+            status (_Status): what the option before it says it may be.
+        """
+        if len(self.files) == 2:
+            op0 = self.files[0].status is _Status.MUST_BE_OPERAND
+            taken = self.files[op0]
+            if taken.status is _Status.MUST_BE_OPERAND:
+                raise extra_operand_error(CommandName.JOIN, word)
+            if taken.status is _Status.MIGHT_BE_J1_ARG:
+                self.joption_count[0] -= 1
+                self.field1 = _set_join_field(
+                    self.field1, _join_field(taken.word)
+                )
+            elif taken.status is _Status.MIGHT_BE_J2_ARG:
+                self.joption_count[1] -= 1
+                self.field2 = _set_join_field(
+                    self.field2, _join_field(taken.word)
+                )
+            else:
+                self.outlist.extend(_field_list(taken.word))
+            del self.files[op0]
+        self.files.append(_Filed(index, word, status))
+        if status is _Status.MIGHT_BE_O_ARG:
+            return _Status.MIGHT_BE_O_ARG
+        return _Status.MUST_BE_OPERAND
+
+    def settle_j(self) -> None:
+        """A ``-j1`` or ``-j2`` no operand was taken for is ``-j 1`` or
+        ``-j 2``."""
+        for which in (0, 1):
+            if self.joption_count[which]:
+                self.field1 = _set_join_field(self.field1, which)
+                self.field2 = _set_join_field(self.field2, which)
 
     def freeze(self) -> JoinFlags:
         separator = (
@@ -278,25 +357,71 @@ class _Options:
             eol=b"\0" if self.zero else b"\n",
             check_order=self.check_order,
             header=self.header,
+            files=(
+                (self.files[0].index, self.files[1].index)
+                if len(self.files) == 2
+                else (0, 1)
+            ),
         )
 
 
-def parse_flags(flags: Mapping[str, FlagValue]) -> JoinFlags:
+def parse_flags(
+    flags: Mapping[str, FlagValue],
+    operands: Sequence[str] | None = None,
+    argv: Sequence[str] = (),
+) -> JoinFlags:
     """Run join.c's option loop over the occurrences in typed order.
 
     Each option takes effect where it was typed, so ``-a1 -a2`` asks for
     both files, the later of ``--check-order`` and ``--nocheck-order``
     wins, and a second ``-1``, ``-t`` or ``-e`` that disagrees with the
-    first is GNU's refusal.
+    first is GNU's refusal. The operands are read there too, as join's
+    RETURN_IN_ORDER getopt hands them over: a third one is refused where
+    it stands, or turns an earlier one into the value of an obsolete
+    ``-j1 FIELD``, ``-j2 FIELD`` or ``-o LIST...``. A glob's matches
+    stand where it was typed once ``spread_operands`` has put them on the
+    tape. Operands the tape does not place, from a call that never went
+    through the shell, follow the options, as after ``--``.
 
     Args:
         flags (Mapping[str, FlagValue]): flags parsed against join's spec.
+        operands (Sequence[str] | None): the operands, or None to read the
+            options alone.
+        argv (Sequence[str]): the line's words, for the usage error.
     """
     options = _Options()
-    for name, value in FlagView(flags, spec=SPECS["join"]).occurrences(
-        *OPTIONS
-    ):
-        options.apply(name, value)
+    words = list(operands or ())
+    tape = FlagView(flags, spec=SPECS["join"]).occurrences(
+        *OPTIONS, OPERAND, SPELLED
+    )
+    placed = [value for name, value in tape if name == OPERAND]
+    if len(placed) != len(words):
+        tape = [(name, value) for name, value in tape if name != OPERAND]
+    status = _Status.MUST_BE_OPERAND
+    spelled = after_dashes = False
+    index = 0
+    for name, value in tape:
+        if name == SPELLED:
+            after_dashes = after_dashes or value == "--"
+            spelled = value != "--"
+        elif name == OPERAND:
+            if after_dashes:
+                options.add_file(index, words[index], _Status.MUST_BE_OPERAND)
+            else:
+                status = options.add_file(index, words[index], status)
+            index += 1
+        else:
+            status = options.apply(name, value, spelled)
+            spelled = False
+    for rest in range(index, len(words)):
+        options.add_file(rest, words[rest], _Status.MUST_BE_OPERAND)
+    if operands is not None and len(options.files) < 2:
+        raise missing_operand_error(
+            CommandName.JOIN,
+            options.files[-1].word if options.files else None,
+            argv,
+        )
+    options.settle_j()
     return options.freeze()
 
 
@@ -550,8 +675,8 @@ class _Merge:
         )
 
 
-def _operand_name(path: PathSpec) -> bytes:
-    return _raw(path.raw_path or path.virtual)
+def _operand_word(path: PathSpec) -> str:
+    return path.raw_path or path.virtual
 
 
 async def join(
@@ -560,37 +685,31 @@ async def join(
     read_bytes: Callable[..., Awaitable[bytes]],
     stdin: ByteSource | None = None,
     flags: JoinFlags = JoinFlags(),
-    argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     """GNU ``join`` of two files over already-parsed options.
 
     Args:
-        paths (list[PathSpec]): the two operands; ``-`` reads stdin.
+        paths (list[PathSpec]): the operands, of which ``flags.files``
+            names the two files; ``-`` reads stdin.
         read_bytes (Callable): reads one operand's bytes.
         stdin (ByteSource | None): the line's input.
         flags (JoinFlags): the options, from ``parse_flags``.
-        argv (Sequence[str]): the line's words, for the usage error.
     """
-    if len(paths) > 2:
-        raise extra_operand_error(
-            CommandName.JOIN, paths[2].raw_path or paths[2].virtual
-        )
-    if len(paths) < 2:
+    if len(paths) <= max(flags.files):
         raise missing_operand_error(
-            CommandName.JOIN,
-            paths[-1].raw_path or paths[-1].virtual if paths else None,
-            argv,
+            CommandName.JOIN, _operand_word(paths[-1]) if paths else None
         )
-    if paths[0].raw_path == "-" and paths[1].raw_path == "-":
+    file1, file2 = (paths[index] for index in flags.files)
+    if file1.raw_path == "-" and file2.raw_path == "-":
         return None, IOResult(
             exit_code=1, stderr=b"join: both files cannot be standard input\n"
         )
     read = stdin_bytes(read_bytes, stdin)
-    data1 = await read(paths[0])
-    data2 = await read(paths[1])
+    data1 = await read(file1)
+    data2 = await read(file2)
     merge = _Merge(
         flags,
-        (_operand_name(paths[0]), _operand_name(paths[1])),
+        (_raw(_operand_word(file1)), _raw(_operand_word(file2))),
         (_records(data1, flags.eol), _records(data2, flags.eol)),
     )
     merge.run()
@@ -601,22 +720,34 @@ async def join_generic(
     paths: list[PathSpec],
     texts: list[str],
     opts: CommandOpts,
+    resolve_glob: Callable[[list[PathSpec]], Awaitable[list[PathSpec]]],
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     """The builder's door: parse the line's flags, then ``join``.
 
+    Each operand's glob expands on its own, so the option loop sees its
+    matches where the word was typed (``join -j1 2 *.txt``).
+
     Args:
-        paths (list[PathSpec]): the operands.
+        paths (list[PathSpec]): the operands, unresolved.
         texts (list[str]): unused; join takes no text operands.
         opts (CommandOpts): the line's flags, stdin and words.
+        resolve_glob (Callable): expands globs against the backend.
         read_bytes (Callable): reads one operand's bytes.
     """
+    groups = [await resolve_glob([path]) for path in paths]
+    resolved = [path for group in groups for path in group]
+    flags = spread_operands(
+        opts.flags,
+        [[_operand_word(path) for path in group] for group in groups],
+    )
     return await join(
-        paths,
+        resolved,
         read_bytes=read_bytes,
         stdin=opts.stdin,
-        flags=parse_flags(opts.flags),
-        argv=opts.argv,
+        flags=parse_flags(
+            flags, [_operand_word(path) for path in resolved], opts.argv
+        ),
     )
 
 

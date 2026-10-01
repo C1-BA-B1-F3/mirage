@@ -187,8 +187,14 @@ async def _get(conn: S3Conn, key: str) -> bytes | None:
 async def _put(conn: S3Conn, key: str, data: bytes) -> ObjectMeta | None:
     # The ETag is read through the same helper _head uses, so the token a
     # write stamps and the token a later stat reports are one spelling.
+    # A write carries no type of its own, so the mount's default is the
+    # one the store keeps and serves back.
+    content_type = conn.config.default_content_type
     resp = await conn.client.put_object(
-        Bucket=conn.config.bucket, Key=key, Body=data
+        Bucket=conn.config.bucket,
+        Key=key,
+        Body=data,
+        **({"ContentType": content_type} if content_type else {}),
     )
     return ObjectMeta(
         size=len(data),

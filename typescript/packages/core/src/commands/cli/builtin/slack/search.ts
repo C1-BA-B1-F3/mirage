@@ -17,7 +17,7 @@ import { searchMessages } from '../../../../core/slack/search.ts'
 import { IOResult, type ByteSource } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { slackAccessor } from './accessor.ts'
+import { slackAccessor } from '../../../../accessor/slack.ts'
 
 export async function search(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)

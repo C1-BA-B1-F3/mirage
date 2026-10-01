@@ -33,16 +33,20 @@ from mirage.commands.spec import SPECS
 from mirage.core.github.tree import ensure_tree
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+from mirage.utils.key_prefix import mount_prefix_of
 
 
 def _subtree(
     accessor: GitHubAccessor, path: PathSpec
-) -> list[tuple[str, int]]:
-    """Every sized entry at or under ``path``, in mount-relative space.
+) -> tuple[list[tuple[str, int]], list[str]]:
+    """Every blob and every directory at or under ``path``.
 
     Read off the git tree rather than the index, mirroring TypeScript's
     du: the tree is keyed repo-relative, which is the space these
-    comparisons are in.
+    comparisons are in, so both come back mount-relative. A blob of
+    unknown size counts 0, as the walked du counts any file. A directory
+    comes back on its own because one holding no blob (only a submodule,
+    which the tree drops) still gets du's 0 row.
 
     Args:
         accessor (GitHubAccessor): backend handle holding the tree.
@@ -50,24 +54,17 @@ def _subtree(
     """
     key = path.vfs_path.strip("/")
     prefix = key + "/" if key else ""
-    found = [
-        ("/" + p, entry.size)
-        for p, entry in accessor.tree.items()
-        if (p == key or p.startswith(prefix)) and entry.size is not None
-    ]
-    found.sort()
-    return found
-
-
-async def _du_size(accessor: GitHubAccessor, path: PathSpec) -> int:
-    return sum(size for _, size in _subtree(accessor, path))
-
-
-async def _du_entries(
-    accessor: GitHubAccessor, path: PathSpec
-) -> tuple[list[tuple[str, int]], int]:
-    found = _subtree(accessor, path)
-    return found, sum(size for _, size in found)
+    blobs: list[tuple[str, int]] = []
+    directories: list[str] = []
+    for p, entry in accessor.tree.items():
+        if p != key and not p.startswith(prefix):
+            continue
+        if entry.type == "blob":
+            blobs.append(("/" + p, entry.size or 0))
+        else:
+            directories.append("/" + p)
+    blobs.sort()
+    return blobs, directories
 
 
 async def _resolve(
@@ -108,7 +105,8 @@ async def _live_size(
             budget,
             path,
         )
-    return await _du_size(accessor, path)
+    blobs, _ = _subtree(accessor, path)
+    return sum(size for _, size in blobs)
 
 
 async def _live_entries(
@@ -127,7 +125,10 @@ async def _live_entries(
             budget,
             path,
         )
-    return await _du_entries(accessor, path)
+    blobs, directories = _subtree(accessor, path)
+    mount = mount_prefix_of(path.virtual, path.vfs_path)
+    budget.directories.extend(mount + d for d in directories)
+    return blobs, sum(size for _, size in blobs)
 
 
 @command("du", vfs="github", spec=SPECS["du"])

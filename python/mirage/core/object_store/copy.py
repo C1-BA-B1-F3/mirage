@@ -12,7 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.cache.context import invalidate_after_write, invalidate_ancestors
+from mirage.cache.context import (
+    evict_after,
+    invalidate_after_write,
+    invalidate_ancestors,
+)
 from mirage.core.object_store.driver import (
     A,
     C,
@@ -62,28 +66,29 @@ def make_copy(
                 raise enoent(src_spec)
             return
         timer = start_op()
-        # None until the store answers: False means it told us cleanly
-        # that nothing was copied, and only a clean "nothing" is safe to
-        # skip -- a raise may have left a partial object behind.
-        copied: bool | None = None
+
+        async def settle(copied: bool | None) -> None:
+            # None when the store raised: only a clean False, "nothing was
+            # copied", is safe to skip -- a raise may have left a partial
+            # object behind.
+            if copied is False:
+                return
+            # The destination, not the source: a copy replaces dst's
+            # bytes and leaves src untouched, so only dst's token stops
+            # describing its object. (dropbox records a copy against src;
+            # that is inert there only because dropbox emits no read
+            # record at all, so no dropbox path is ever pinned.)
+            record("copy", dst_spec.virtual, driver.vfs, 0, timer)
+            # The eviction rides with the record, as in unlink.
+            await invalidate_after_write(dst_spec)
+            # The copy can materialize the destination's missing
+            # ancestors.
+            await invalidate_ancestors(dst_spec)
+
         async with driver.connect(accessor) as conn:
-            try:
-                copied = await copy_file(conn, src_key, dst_key)
-            finally:
-                if copied is not False:
-                    # The destination, not the source: a copy replaces
-                    # dst's bytes and leaves src untouched, so only dst's
-                    # token stops describing its object. (dropbox records
-                    # a copy against src; that is inert there only
-                    # because dropbox emits no read record at all, so no
-                    # dropbox path is ever pinned.)
-                    record("copy", dst_spec.virtual, driver.vfs, 0, timer)
-                    # The eviction rides with the record, on the same
-                    # condition, as in unlink.
-                    await invalidate_after_write(dst_spec)
-                    # The copy can materialize the destination's missing
-                    # ancestors.
-                    await invalidate_ancestors(dst_spec)
+            copied = await evict_after(
+                copy_file(conn, src_key, dst_key), settle
+            )
         if not copied:
             raise enoent(src_spec.virtual)
 

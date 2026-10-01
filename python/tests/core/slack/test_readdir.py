@@ -540,3 +540,102 @@ async def test_a_channel_listing_is_written_as_a_window(accessor):
             index=index,
         )
     assert index.windows["/channels/general__C001"] is True
+
+
+FILES_DIR = "/channels/general__C001/2026-04-10/files"
+REPORT = {
+    "id": "F1ABC",
+    "name": "report.pdf",
+    "title": "report.pdf",
+    "filetype": "pdf",
+    "mimetype": "application/pdf",
+    "size": 4096,
+    "url_private_download": (
+        "https://files.slack.com/files-pri/T1-F1ABC/download/report.pdf"
+    ),
+    "timestamp": 1712707200,
+}
+
+
+async def _list_files_dir(accessor, index, messages) -> list[str]:
+    await index.set_dir(
+        "/channels",
+        [
+            (
+                "general__C001",
+                IndexEntry(
+                    id="C001",
+                    name="general",
+                    resource_type="slack/channel",
+                    vfs_name="general__C001",
+                    remote_time="1700000000",
+                ),
+            ),
+        ],
+    )
+    await index.set_dir(
+        "/channels/general__C001",
+        [
+            (
+                "2026-04-10",
+                IndexEntry(
+                    id="C001:2026-04-10",
+                    name="2026-04-10",
+                    resource_type="slack/date_dir",
+                    vfs_name="2026-04-10",
+                ),
+            ),
+        ],
+    )
+    with patch(
+        "mirage.core.slack.readdir.fetch_messages_for_day",
+        new_callable=AsyncMock,
+        return_value=messages,
+    ):
+        return await readdir(
+            accessor,
+            PathSpec(
+                vfs_path=FILES_DIR.lstrip("/"),
+                virtual=FILES_DIR,
+                directory=FILES_DIR,
+            ),
+            index=index,
+        )
+
+
+@pytest.mark.asyncio
+async def test_files_dir_lists_attachments_and_indexes_their_url(
+    accessor, index
+):
+    messages = [
+        {
+            "type": "message",
+            "user": "U1",
+            "ts": "1712707200.0",
+            "files": [REPORT],
+        },
+        {
+            "type": "message",
+            "user": "U2",
+            "ts": "1712707260.0",
+            "text": "no file here",
+        },
+    ]
+    result = await _list_files_dir(accessor, index, messages)
+    assert result == [f"{FILES_DIR}/report__F1ABC.pdf"]
+    blob = await index.get(f"{FILES_DIR}/report__F1ABC.pdf")
+    assert blob.entry is not None
+    assert blob.entry.id == "F1ABC"
+    assert blob.entry.size == 4096
+    assert blob.entry.extra["mimetype"] == "application/pdf"
+    assert "url_private_download" in blob.entry.extra
+    assert blob.entry.extra["filetype"] == "pdf"
+    assert blob.entry.extra["ts"] == "1712707200.0"
+
+
+@pytest.mark.asyncio
+async def test_files_dir_empty_on_no_attachments(accessor, index):
+    messages = [
+        {"type": "message", "user": "U1", "ts": "1712707200.0", "text": "hi"}
+    ]
+    assert await _list_files_dir(accessor, index, messages) == []

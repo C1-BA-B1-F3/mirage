@@ -13,16 +13,17 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import contextlib
 
 import pytest
 
 from mirage.cache.context import (
     active_cache_manager,
+    evict_after,
     invalidate_after_unlink,
     invalidate_after_write,
     invalidate_ancestors,
     invalidate_subtree,
-    invalidate_subtree_after,
     listing_refreshed,
     push_cache_manager,
 )
@@ -198,39 +199,33 @@ class _EvictFailed(Exception):
     pass
 
 
-class _BrokenEviction(FakeManager):
-    async def invalidate_subtree(self, path: PathSpec) -> None:
-        await super().invalidate_subtree(path)
-        raise _EvictFailed
-
-
-async def _op(error: type[Exception] | None) -> None:
+async def _op(error: type[Exception] | None) -> str:
     if error is not None:
         raise error
+    return "done"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "op_error, evict_breaks, raised",
+    "op_error, evict_breaks, raised, seen",
     [
-        (None, False, None),
-        (_OpFailed, False, _OpFailed),
-        (_OpFailed, True, _OpFailed),
-        (None, True, _EvictFailed),
+        (None, False, None, "done"),
+        (_OpFailed, False, _OpFailed, None),
+        (_OpFailed, True, _OpFailed, None),
+        (None, True, _EvictFailed, "done"),
     ],
 )
-async def test_invalidate_subtree_after_evicts_and_keeps_the_ops_error(
-    op_error, evict_breaks, raised
+async def test_evict_after_evicts_and_keeps_the_ops_error(
+    op_error, evict_breaks, raised, seen
 ):
     # The op's own error wins over an eviction that fails after it.
-    manager = _BrokenEviction() if evict_breaks else FakeManager()
-    previous = push_cache_manager(manager)
-    try:
-        if raised is None:
-            await invalidate_subtree_after(_spec("/c"), _op(op_error))
-        else:
-            with pytest.raises(raised):
-                await invalidate_subtree_after(_spec("/c"), _op(op_error))
-    finally:
-        push_cache_manager(previous)
-    assert [p.virtual for p in manager.subtrees] == ["/c"]
+    results = []
+
+    async def evict(result: str | None) -> None:
+        results.append(result)
+        if evict_breaks:
+            raise _EvictFailed
+
+    with pytest.raises(raised) if raised else contextlib.nullcontext():
+        assert await evict_after(_op(op_error), evict) == "done"
+    assert results == [seen]

@@ -12,11 +12,33 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from pathlib import Path
+from typing import Any
+
 import asyncssh
 
 from mirage.accessor.base import Accessor
-from mirage.core.ssh.client import _connect_kwargs
 from mirage.core.ssh.config import SSHConfig
+from mirage.vfs.secrets import reveal_secret
+
+
+def _connect_kwargs(config: SSHConfig) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"host": config.host}
+    if config.hostname:
+        kwargs["host"] = config.hostname
+    if config.port:
+        kwargs["port"] = config.port
+    if config.username:
+        kwargs["username"] = config.username
+    if config.password is not None:
+        kwargs["password"] = reveal_secret(config.password)
+    if config.identity_file:
+        kwargs["client_keys"] = [str(Path(config.identity_file).expanduser())]
+        if config.passphrase is not None:
+            kwargs["passphrase"] = reveal_secret(config.passphrase)
+    kwargs["known_hosts"] = config.known_hosts
+    kwargs["login_timeout"] = config.timeout
+    return kwargs
 
 
 class SSHAccessor(Accessor):

@@ -41,6 +41,8 @@ import {
   OPERAND,
   OWN_OPTION_LOOP,
   REFUSED,
+  SPELLED,
+  SPELLED_WORDS,
   SOLE_ARGUMENT_LONG_OPTIONS,
   STDIN_SCRIPT_COMMANDS,
   STDOUT_DASH_OPTIONS,
@@ -582,6 +584,7 @@ export function parseCommand(
   let digitOptions: boolean
   let equalsValues: boolean
   let inOrderOperands: boolean
+  let spelledWords: ReadonlySet<string>
   let letterOptions: boolean
   let wholeWords: boolean
   let ownLoop: boolean
@@ -601,6 +604,7 @@ export function parseCommand(
     digitOptions = false
     equalsValues = false
     inOrderOperands = false
+    spelledWords = new Set()
     letterOptions = false
     wholeWords = false
     ownLoop = false
@@ -631,6 +635,7 @@ export function parseCommand(
     digitOptions = builtin && DIGIT_OPTIONS.has(cmdName)
     equalsValues = builtin && EQUALS_SHORT_VALUES.has(cmdName)
     inOrderOperands = builtin && IN_ORDER_OPERANDS.has(cmdName)
+    spelledWords = (builtin ? SPELLED_WORDS[cmdName] : undefined) ?? new Set()
     letterOptions = builtin && LETTER_OPTIONS.has(cmdName)
     wholeWords = builtin && WHOLE_WORD_LONG_OPTIONS.has(cmdName)
     ownLoop = builtin && OWN_OPTION_LOOP.has(cmdName)
@@ -677,14 +682,16 @@ export function parseCommand(
       continue
     }
 
-    if (tok === '--' && !endOfFlags) {
-      endOfFlags = true
+    if (endOfFlags) {
+      recordOperand(tok)
       i += 1
       continue
     }
 
-    if (endOfFlags) {
-      recordOperand(tok)
+    if (spelledWords.has(tok)) flagOccurrences(flags).push([SPELLED, tok])
+
+    if (tok === '--') {
+      endOfFlags = true
       i += 1
       continue
     }

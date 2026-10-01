@@ -41,7 +41,8 @@ The query text is turned into a vector two ways:
 - **Local (default):** the `qdrant-client[fastembed]` extra embeds the query in
   process with `embedding_model` (default `sentence-transformers/all-MiniLM-L6-v2`).
 - **Server-side:** set `cloud_inference` to let a Qdrant Cloud (inference-enabled)
-  cluster embed the query. The TypeScript backend always uses this path.
+  cluster embed the query. The TypeScript backend has no in-process model, so it
+  takes this path or a caller's `embed` hook, and refuses `search` with neither.
 
 Either way the collection must already store vectors produced by the same model.
 

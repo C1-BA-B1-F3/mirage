@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.onedrive import OneDriveAccessor
-from mirage.cache.context import invalidate_subtree_after
+from mirage.cache.context import evict_after, invalidate_subtree
 from mirage.core.msgraph.drive import copy_tree
 from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
@@ -36,12 +36,12 @@ async def copy(
         dst (PathSpec): where the copy lands.
     """
     config = accessor.config
-    await invalidate_subtree_after(
-        dst,
+    await evict_after(
         copy_tree(
             config,
             drive_loc(config, src.vfs_path),
             drive_loc(config, dst.vfs_path),
             session=accessor.pool,
         ),
+        lambda _: invalidate_subtree(dst),
     )

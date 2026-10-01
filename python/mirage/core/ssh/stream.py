@@ -15,7 +15,7 @@
 import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -31,7 +31,7 @@ async def read_stream(
     config = accessor.config
     sftp = await accessor.sftp()
     try:
-        remote_path = _abs(config, path)
+        remote_path = join_root(config.root, path)
         async with sftp.open(remote_path, "rb") as f:
             while True:
                 chunk = await f.read(chunk_size)

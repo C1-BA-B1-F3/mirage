@@ -513,21 +513,20 @@ class Dispatcher:
         # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
 
-        if (
-            caches_reads
-            and not raw
-            and op in DISPATCH_READ_OPS
-            and not mount.renders_user_read(
-                kwargs["filetype"]
-                if "filetype" in kwargs
-                else get_extension(path.virtual)
-            )
-        ):
+        if caches_reads and not raw and op in DISPATCH_READ_OPS:
             cached = await self._cache.get(path.virtual)
+            # The freshness check runs before the renderer check, so a
+            # user-renderer read of a path the backend reports gone still
+            # fails; only the cached bytes themselves are never served.
             if (
                 cached is not None
                 and await self._reconciler.may_serve_cached(
                     mount, path.virtual
+                )
+                and not mount.renders_user_read(
+                    kwargs["filetype"]
+                    if "filetype" in kwargs
+                    else get_extension(path.virtual)
                 )
                 and not mount.retiring
                 and self._namespace.try_mount_for(path.virtual) is mount

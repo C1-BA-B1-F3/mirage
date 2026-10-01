@@ -468,23 +468,22 @@ export class Dispatcher {
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
     const requested = kwargs?.filetype
-    if (
-      caches &&
-      !raw &&
-      DISPATCH_READ_OPS.has(opName) &&
-      !this.opsRegistry.rendersUserRead(
-        vfs,
-        requested === undefined
-          ? getExtension(p.virtual)
-          : typeof requested === 'string'
-            ? requested
-            : null,
-      )
-    ) {
+    if (caches && !raw && DISPATCH_READ_OPS.has(opName)) {
       const cached = await this.cache.get(p.virtual)
+      // The freshness check runs before the renderer check, so a
+      // user-renderer read of a path the backend reports gone still fails;
+      // only the cached bytes themselves are never served.
       if (
         cached !== null &&
         (await this.reconciler.mayServeCached(mount, p.virtual)) &&
+        !this.opsRegistry.rendersUserRead(
+          vfs,
+          requested === undefined
+            ? getExtension(p.virtual)
+            : typeof requested === 'string'
+              ? requested
+              : null,
+        ) &&
         !mount.retiring &&
         this.namespace.tryMountFor(p.virtual) === mount
       ) {

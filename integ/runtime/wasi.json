@@ -889,6 +889,188 @@
           }
         }
       ]
+    },
+    {
+      "id": "open_follows_the_shared_rule",
+      "hosts": [
+        "python"
+      ],
+      "world": {
+        "runtimes": [
+          "wasi",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"open('/data/nope.txt')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "create /data/nope.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError",
+            "ops_absent": [
+              "create /data/sub",
+              "truncate /data/sub"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/seed.txt', 'a'); f.write('more\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_absent": [
+              "truncate /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\nmore\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "content_outside_the_view_is_refused",
+      "hosts": [
+        "python"
+      ],
+      "world": {
+        "runtimes": [
+          "wasi",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cat /data/a.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "a\n"
+          }
+        },
+        {
+          "command": "cat /.bash_history",
+          "expect": {
+            "exit": 0,
+            "stdout_contains": "cat /data/a.txt"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/.bash_history').read())\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "read /.bash_history"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/tmp/new.txt', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "Error",
+            "ops_absent": [
+              "create /tmp/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('/tmp/new.txt').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "structure_is_open_above_mounts_and_links",
+      "hosts": [
+        "python"
+      ],
+      "world": {
+        "runtimes": [
+          "wasi",
+          "workspace"
+        ],
+        "mounts": {
+          "/parent/child": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; p = Path('/parent'); print(p.is_dir(), sorted(c.name for c in p.iterdir()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True ['child']\n"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/parent/new.txt', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "create /parent/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "ln -s /parent/child/a.txt /alias",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; a = Path('/alias'); print(a.is_symlink(), sorted(c.name for c in Path('/').iterdir() if c.name in ('alias', 'parent')), a.read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True ['alias', 'parent'] a\n"
+          }
+        }
+      ]
     }
   ]
 }

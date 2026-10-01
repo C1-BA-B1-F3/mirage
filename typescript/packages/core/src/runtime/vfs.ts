@@ -280,12 +280,16 @@ export class RuntimeVFS {
    * answers as a directory, so the root above nested mounts and the
    * directories above a link are directories here as they are in a
    * shell, while a withheld surface's files (history, the program view)
-   * stay unseen. 0 is the door's spelling of an unknown mtime.
+   * stay unseen. A file's own row decides that, not its listing: the
+   * history mount lists its one file as empty so a traversal never
+   * descends into it. 0 is the door's spelling of an unknown mtime.
    */
   async viewStat(path: string): Promise<VFSStat | null> {
+    const row = await this.statOrNull(path)
     if (this.serves(path)) {
-      const row = await this.statOrNull(path)
       if (row !== null) return row
+    } else if (row !== null && !row.isDir) {
+      return null
     }
     if ((await this.listingOrNull(path)) === null) return null
     return { size: 0, isDir: true, mode: DIR_MODE, mtimeMs: 0 }

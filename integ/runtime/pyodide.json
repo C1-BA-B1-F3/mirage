@@ -1704,6 +1704,150 @@
           }
         }
       ]
+    },
+    {
+      "id": "open_follows_the_shared_rule",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"open('/data/nope.txt')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "create /data/nope.txt"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError"
+          }
+        },
+        {
+          "command": "python3 -c \"open('/data/sub', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "IsADirectoryError",
+            "ops_absent": [
+              "create /data/sub",
+              "truncate /data/sub"
+            ]
+          }
+        },
+        {
+          "command": "python3 -c \"f = open('/data/seed.txt', 'a'); f.write('more\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_absent": [
+              "truncate /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\nmore\n"
+          }
+        }
+      ]
+    },
+    {
+      "note": "Pyodide is not on the shared view rule yet: a write outside every mount (/tmp/new.txt) lands in the interpreter's own MEMFS, where monty, quickjs and wasi refuse it. The steps below are the ones it already shares; the rest join when pyodide moves onto the rule.",
+      "id": "content_outside_the_view_is_refused",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cat /data/a.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "a\n"
+          }
+        },
+        {
+          "command": "cat /.bash_history",
+          "expect": {
+            "exit": 0,
+            "stdout_contains": "cat /data/a.txt"
+          }
+        },
+        {
+          "command": "python3 -c \"print(open('/.bash_history').read())\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError",
+            "ops_absent": [
+              "read /.bash_history"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "note": "Pyodide is not on the shared view rule yet: a write under a directory only a nested mount implies (/parent/new.txt) lands in the interpreter's own MEMFS, and a link outside every mount (/alias) is not mounted, where monty, quickjs and wasi refuse the first and follow the second. The step below is the one it already shares.",
+      "id": "structure_is_open_above_mounts_and_links",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/parent/child": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"from pathlib import Path; p = Path('/parent'); print(p.is_dir(), sorted(c.name for c in p.iterdir()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True ['child']\n"
+          }
+        }
+      ]
     }
   ]
 }

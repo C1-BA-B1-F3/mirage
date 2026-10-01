@@ -897,6 +897,209 @@
           }
         }
       ]
+    },
+    {
+      "id": "open_follows_the_shared_rule",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "seed.txt": "seed\n",
+              "sub/inner.txt": "in\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e \"console.log(std.open('/data/nope.txt', 'r') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /data/nope.txt"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/sub', 'w') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /data/sub",
+              "truncate /data/sub"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/nope.txt', 'r+') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /data/nope.txt"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/seed.txt', 'wx') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "truncate /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"const f = std.open('/data/seed.txt', 'a'); f.puts('more\\n'); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "ops_absent": [
+              "truncate /data/seed.txt"
+            ]
+          }
+        },
+        {
+          "command": "cat /data/seed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "seed\nmore\n"
+          }
+        },
+        {
+          "command": "ln -s /data/gone /data/lnk",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/lnk', 'wx') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /data/lnk",
+              "create /data/gone"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "content_outside_the_view_is_refused",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cat /data/a.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "a\n"
+          }
+        },
+        {
+          "command": "cat /.bash_history",
+          "expect": {
+            "exit": 0,
+            "stdout_contains": "cat /data/a.txt"
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/.bash_history', 'r') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "read /.bash_history"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/tmp/new.txt', 'w') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /tmp/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "js -e \"console.log(JSON.stringify(os.stat('/tmp/new.txt')[1]))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "44\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "structure_is_open_above_mounts_and_links",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/parent/child": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "js -e \"const [st, e] = os.stat('/parent'); console.log(e, (st.mode & os.S_IFMT) === os.S_IFDIR, JSON.stringify(os.readdir('/parent')[0].filter((n) => n[0] !== '.').sort()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 true [\"child\"]\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/parent/new.txt', 'w') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": [
+              "create /parent/new.txt"
+            ]
+          }
+        },
+        {
+          "command": "ln -s /parent/child/a.txt /alias",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "js -e \"const [st, e] = os.stat('/alias'); console.log(e, (st.mode & os.S_IFMT) === os.S_IFREG, JSON.stringify(os.readdir('/')[0].filter((n) => n === 'alias' || n === 'parent').sort()), std.open('/alias', 'r').readAsString())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0 true [\"alias\",\"parent\"] a\n\n"
+          }
+        }
+      ]
     }
   ]
 }

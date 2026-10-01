@@ -270,16 +270,20 @@ class RuntimeVFS:
         workspace lists answers as a directory, so the root above nested
         mounts and the directories above a link are directories here as
         they are in a shell, while a withheld surface's files (history,
-        the program view) stay unseen. 0 is the door's spelling of an
-        unknown mtime.
+        the program view) stay unseen. A file's own row decides that,
+        not its listing: the history mount lists its one file as empty
+        so a traversal never descends into it. 0 is the door's spelling
+        of an unknown mtime.
 
         Args:
             path (str): guest-absolute virtual path.
         """
+        row = self.stat_or_none(path)
         if self.serves(path):
-            row = self.stat_or_none(path)
             if row is not None:
                 return row
+        elif row is not None and not row.is_dir:
+            return None
         if self.listing_or_none(path) is None:
             return None
         return VFSStat(size=0, is_dir=True, mode=DIR_MODE, mtime_ns=0)

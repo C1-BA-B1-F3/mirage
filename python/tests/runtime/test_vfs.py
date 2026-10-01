@@ -199,18 +199,16 @@ class ViewVFS(RuntimeVFS):
             loop=None,
             resolver=PrefixResolver(lambda: ["/data/"]),
         )
-        self.stats = []
 
     def _wait(self, pending):
         return asyncio.run(pending)
 
     async def _op(self, op, path, **kwargs):
         if op == "stat":
-            self.stats.append(path)
             if path in ("/data/a.txt", "/.bash_history"):
                 return FileStat(name=path, size=1, type=FileType.FILE)
             raise FileNotFoundError(path)
-        if op == "readdir" and path in ("/", "/parent"):
+        if op == "readdir" and path in ("/", "/parent", "/.bash_history"):
             return []
         raise FileNotFoundError(path)
 
@@ -220,9 +218,9 @@ def test_view_stat_opens_structure_and_withholds_content():
     assert vfs.view_stat("/data/a.txt").is_dir is False
     implied = vfs.view_stat("/parent")
     assert (implied.is_dir, implied.mode) == (True, DIR_MODE)
-    # A withheld surface's file is never asked about at all.
+    # A withheld file stays unseen though its mount lists it as empty,
+    # the way the history mount does so a traversal never descends.
     assert vfs.view_stat("/.bash_history") is None
-    assert vfs.stats == ["/data/a.txt"]
 
 
 def test_a_refusal_is_not_read_as_an_absence():

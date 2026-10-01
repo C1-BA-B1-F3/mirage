@@ -222,8 +222,10 @@ describe('MontyFs outside the view', () => {
         "No such file or directory: '/tmp",
       )
     }
-    // Only structural questions were asked: no row, no bytes, no change.
-    expect(seen.filter((call) => !call.startsWith('readdir '))).toEqual([])
+    // Only structural questions were asked (what kind a path is, what a
+    // directory holds): no bytes, no change.
+    const structural = (call: string): boolean => /^(stat|readdir) /.test(call)
+    expect(seen.filter((call) => !structural(call))).toEqual([])
   })
 
   it('refuses every path with no workspace attached', () => {

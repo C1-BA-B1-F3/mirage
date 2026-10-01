@@ -122,10 +122,28 @@ class WasmView:
             raise FileNotFoundError("no workspace mounts are reachable")
         return self._core
 
-    def _core_call(self, op: str, path: str, **kwargs: Any) -> Any:
-        if self._core is None:
+    def _content_core(self, path: str) -> RuntimeVFS:
+        """The door for a content call on `path`, inside the view only.
+
+        Structure is open (a stat, a listing or a readlink answers for
+        any path the workspace has), but content goes only through the
+        runtime's view (``RuntimeVFS.serves``), the rule every guest
+        door keeps: a guest reads and writes nothing the view
+        withholds, such as the shell's history.
+
+        Args:
+            path (str): guest-absolute path.
+
+        Raises:
+            FileNotFoundError: no workspace is attached, or the view
+                does not serve `path`.
+        """
+        if self._core is None or not self._core.serves(path):
             raise FileNotFoundError(path)
-        return self._core.call(op, path, **kwargs)
+        return self._core
+
+    def _core_call(self, op: str, path: str, **kwargs: Any) -> Any:
+        return self._content_core(path).call(op, path, **kwargs)
 
     def stat(self, path: str) -> VFSStat:
         """Stat a guest path.
@@ -165,13 +183,21 @@ class WasmView:
     def _core_stat(self, path: str, nofollow: bool = False) -> VFSStat:
         """The door's own stat, or ENOENT when no workspace is attached.
 
+        A path outside the view still answers as structure: a directory
+        row when the workspace lists it (``RuntimeVFS.view_stat``).
+
         Args:
             path (str): guest-absolute path.
             nofollow (bool): report a trailing symlink itself.
         """
         if self._core is None:
             raise FileNotFoundError(path)
-        return self._core.stat(path, nofollow=nofollow)
+        if self._core.serves(path):
+            return self._core.stat(path, nofollow=nofollow)
+        row = self._core.view_stat(path)
+        if row is None:
+            raise FileNotFoundError(path)
+        return row
 
     def stat_or_none(
         self, path: str, *, nofollow: bool = False
@@ -191,7 +217,10 @@ class WasmView:
         """The mount's unclassified rows for `path`, or None.
 
         Asked of a path with no row. The build directory holds rows for
-        everything it holds, so a path it serves never lists here.
+        everything it holds, so a path it serves never lists here. A
+        path outside the view lists only where it is a directory there
+        (``RuntimeVFS.view_stat``): the history mount lists its one file
+        as empty, and that file is withheld, not a directory.
 
         Args:
             path (str): guest-absolute path.
@@ -202,7 +231,10 @@ class WasmView:
             return None
         if build is not None:
             return None
-        return self._require_core().listing_or_none(path)
+        core = self._require_core()
+        if not core.serves(path) and core.view_stat(path) is None:
+            return None
+        return core.listing_or_none(path)
 
     def read(self, path: str) -> bytes:
         build = self._serving_build(path)
@@ -254,7 +286,8 @@ class WasmView:
             if src_build != dst_build:
                 raise OSError(host_errno.EXDEV, "cross-device rename", src)
             raise PermissionError(READONLY_HINT)
-        self._require_core().rename(src, dst)
+        self._content_core(dst)
+        self._content_core(src).rename(src, dst)
 
     def symlink(self, path: str, target: str) -> None:
         """Create a symlink at `path` pointing at `target`.
@@ -281,7 +314,9 @@ class WasmView:
         """
         if self._serving_build(path) is not None:
             raise OSError(host_errno.EINVAL, "not a symbolic link", path)
-        return str(self._core_call("readlink", path))
+        if self._core is None:
+            raise FileNotFoundError(path)
+        return str(self._core.call("readlink", path))
 
     def setattr(
         self,
@@ -305,7 +340,7 @@ class WasmView:
             nofollow (bool): stamp the link itself, not its target.
         """
         self._deny_build(path)
-        self._require_core().setattr(
+        self._content_core(path).setattr(
             path, atime=atime, mtime=mtime, nofollow=nofollow
         )
 
@@ -321,7 +356,7 @@ class WasmView:
             buf (bytes | bytearray): the handle's whole buffer.
         """
         self._deny_build(path)
-        self._require_core().flush(path, base_len, low_write, buf)
+        self._content_core(path).flush(path, base_len, low_write, buf)
 
     def readdir(self, path: str) -> list[tuple[str, int]]:
         """List a guest directory as (name, preview1 filetype) pairs.

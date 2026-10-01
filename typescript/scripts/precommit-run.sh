@@ -1,6 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --selftest runs this script against a fake eslint that records each call's
+# files and fails on one named `bad`: 500 files stay one call, 501 become two
+# that cover every file once, and a failure in either half fails the run.
+if [[ "${1:-}" == --selftest ]]; then
+  root="$(mktemp -d)"
+  trap 'rm -rf "$root"' EXIT
+  mkdir -p "$root/scripts" "$root/node_modules/.bin" "$root/calls"
+  cp "$0" "$root/scripts/precommit-run.sh"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'printf "%s\n" "$@" | grep -v "^-" >"calls/$$"' \
+    '! grep -qx bad "calls/$$"' >"$root/node_modules/.bin/eslint"
+  chmod +x "$root/node_modules/.bin/eslint"
+  expect() {
+    local calls="$1" status="$2" rc=0 want
+    shift 2
+    rm -f "$root/calls/"*
+    "$root/scripts/precommit-run.sh" eslint --fix "$@" || rc=$?
+    local got=("$root/calls/"*)
+    want="$(printf '%s\n' "${@#typescript/}" | sort)"
+    if [[ ${#got[@]} -ne $calls || "$(cat "${got[@]}" | sort)" != "$want" ]] ||
+      [[ ($status == pass && $rc -ne 0) || ($status == fail && $rc -eq 0) ]]; then
+      echo "precommit-run selftest: $# files gave ${#got[@]} calls and exit $rc," \
+        "want $calls calls and $status" >&2
+      exit 1
+    fi
+  }
+  many=($(seq -f 'typescript/f%g' 500))
+  expect 1 pass "${many[@]}"
+  expect 2 pass "${many[@]}" typescript/f501
+  expect 2 fail typescript/bad "${many[@]}"
+  expect 2 fail "${many[@]}" typescript/bad
+  echo "precommit-run selftest: ok"
+  exit 0
+fi
+
 tool="$1"
 shift
 

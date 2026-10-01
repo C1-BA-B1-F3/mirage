@@ -75,6 +75,11 @@ jobs:
       - name: SKIP hook ids
         run: ./python/.venv/bin/python scripts/check_skip_hooks.py
 
+      # The hook's own lint run only proves the split on a clean tree; a
+      # failure in the background half would pass it unnoticed.
+      - name: ESLint batch split
+        run: typescript/scripts/precommit-run.sh --selftest
+
       - name: Install TypeScript dependencies
         working-directory: typescript
         run: pnpm install --frozen-lockfile

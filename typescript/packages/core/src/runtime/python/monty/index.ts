@@ -15,4 +15,3 @@
 export { MontyUnavailableError } from './binding.ts'
 export { MirageOSAccess } from './osaccess.ts'
 export { MontyRuntime } from './runtime.ts'
-export { MontyVFS } from './vfs.ts'

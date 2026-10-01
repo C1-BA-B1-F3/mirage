@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import builtins
 from dataclasses import dataclass
 
 from mirage.errors import FsCondition
@@ -86,3 +87,25 @@ def cpython_error(condition: FsCondition) -> CPythonError:
         condition (FsCondition): the named condition.
     """
     return CPYTHON[condition]
+
+
+def guest_error(
+    condition: FsCondition, path: str, target: str | None = None
+) -> OSError:
+    """The guest-side exception for one condition, in CPython's shape.
+
+    CPython's own message for it, so guest code reads the same
+    ``[Errno 2] No such file or directory: '/data/x'`` whichever mount
+    refused, and the builtin a guest ``except`` names.
+
+    Args:
+        condition (FsCondition): the named condition.
+        path (str): the path the operation names.
+        target (str | None): a rename's destination, which CPython
+            prints after the source.
+    """
+    row = cpython_error(condition)
+    kind: type[OSError] = getattr(builtins, row.exception)
+    if target is None:
+        return kind(row.errno, row.phrase, path)
+    return kind(row.errno, row.phrase, path, None, target)

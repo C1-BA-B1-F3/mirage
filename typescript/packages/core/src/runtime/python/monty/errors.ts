@@ -98,9 +98,11 @@ export function guestError(code: GuestCode, path: string, target?: string): Erro
  * Args:
  *   err: whatever the mount op rejected with.
  *   path: the path the operation names.
+ *   target: a rename's destination, which CPython prints after the
+ *     source.
  */
-export function asGuestError(err: unknown, path: string): unknown {
+export function asGuestError(err: unknown, path: string, target?: string): unknown {
   const condition = classify(err)
   if (condition === null) return err
-  return guestError(condition, path)
+  return guestError(condition, path, target)
 }

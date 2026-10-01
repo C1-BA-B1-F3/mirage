@@ -13,14 +13,17 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import errno
 import logging
+import os
 from collections.abc import Coroutine, Iterator
 from typing import Any, TypeVar
 
 from mirage.concurrency.limiter import ConcurrencyLimiter
-from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
+from mirage.runtime.constants import ABSENT_PATH, LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import plan_flush
+from mirage.runtime.handles.mode import OpenMode
 from mirage.runtime.resolver import MountResolver
 from mirage.runtime.types import DispatchFn, RuntimeContext, VFSEntry, VFSStat
 from mirage.types import FileStat, PathSpec
@@ -54,6 +57,17 @@ def _listed(raw: str, links: set[str]) -> VFSEntry:
     """
     linked = raw.rstrip("/").rsplit("/", 1)[-1] in links
     return VFSEntry(path=raw, size=0, is_dir=raw.endswith("/"), is_link=linked)
+
+
+def _refused(code: int, kind: type[OSError], path: str) -> OSError:
+    """An open's refusal, numbered and worded the way the host's own is.
+
+    Args:
+        code (int): the errno.
+        kind (type[OSError]): the builtin the errno maps to.
+        path (str): the path the open named.
+    """
+    return kind(code, os.strerror(code), path)
 
 
 class RuntimeVFS:
@@ -172,6 +186,18 @@ class RuntimeVFS:
         owner = self._resolver.owner_of(path)
         return None if owner is None else norm(owner)
 
+    def serves(self, path: str) -> bool:
+        """Whether a mount serves `path`, so the workspace answers for it.
+
+        A guest routes on this: a path no mount serves is the engine's
+        own (monty's scratch tree, a wasm build directory). With no
+        mounts wired there is no scoping, and every path routes here.
+
+        Args:
+            path (str): guest-absolute virtual path.
+        """
+        return not self.prefixes() or self.mount_of(path) is not None
+
     def read(self, path: str) -> bytes:
         data = self.call("read", path)
         if isinstance(data, str):
@@ -199,6 +225,85 @@ class RuntimeVFS:
                 and gates that read exactly as it gates ``readlink``.
         """
         return self._row(self.call("stat", path, nofollow=nofollow))
+
+    def stat_or_none(
+        self, path: str, *, nofollow: bool = False
+    ) -> VFSStat | None:
+        """The path's row, or None when the mount says it is not there.
+
+        Only an absence (``ABSENT_PATH``) answers None. Anything else
+        raises, since a refusal is not an answer about the path.
+
+        Args:
+            path (str): guest-absolute virtual path.
+            nofollow (bool): report a trailing symlink itself.
+        """
+        try:
+            return self.stat(path, nofollow=nofollow)
+        except ABSENT_PATH:
+            return None
+
+    def listing_or_none(self, path: str) -> list[VFSEntry] | None:
+        """The directory's unclassified rows, or None when it is not one.
+
+        The question a guest asks of a path with no row of its own, a
+        directory a mount only implies (the root above a nested mount),
+        so nothing per entry is stat'd.
+
+        Args:
+            path (str): guest-absolute virtual path.
+        """
+        try:
+            return self.readdir(path, classify=False)
+        except ABSENT_PATH:
+            return None
+
+    def open(self, path: str, mode: OpenMode) -> VFSStat | None:
+        """Apply an open's effect on the mount, before any byte moves.
+
+        One rule for every guest open, however it is spelled (a mode
+        string, preview1 oflags): a directory refuses, an exclusive
+        create refuses what exists, a missing path is created when the
+        mode creates and refused when it does not, and a truncating
+        mode empties what exists. The effect lands at open because
+        CPython's ``open('w')`` leaves an empty file behind even when
+        nothing is written; a bare open and close never flushes.
+
+        Args:
+            path (str): guest-absolute virtual path.
+            mode (OpenMode): what the open asked for.
+
+        Returns:
+            VFSStat | None: the file's row when its content survives
+            the open (a read or an append), None when it starts empty
+            (created or truncated).
+
+        Raises:
+            FileExistsError: an exclusive create found the path, a
+                dangling link included.
+            IsADirectoryError: the path is a directory, a mount's
+                implied one included.
+            FileNotFoundError: the path is missing and the mode does
+                not create.
+        """
+        # An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so
+        # a dangling one is a name that is there.
+        row = self.stat_or_none(path, nofollow=mode.exclusive)
+        if row is not None and mode.exclusive:
+            raise _refused(errno.EEXIST, FileExistsError, path)
+        if row is None:
+            if mode.create:
+                self.create(path)
+                return None
+            if self.listing_or_none(path) is not None:
+                raise _refused(errno.EISDIR, IsADirectoryError, path)
+            raise _refused(errno.ENOENT, FileNotFoundError, path)
+        if row.is_dir:
+            raise _refused(errno.EISDIR, IsADirectoryError, path)
+        if mode.truncate:
+            self.truncate(path)
+            return None
+        return row
 
     @staticmethod
     def _row(fs: FileStat) -> VFSStat:
@@ -305,7 +410,7 @@ class RuntimeVFS:
             st = self._row(
                 await self._op("stat", row.path, nofollow=row.is_link)
             )
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except ABSENT_PATH as exc:
             logger.debug(
                 "runtime vfs: readdir %s: stat %s: %s",
                 directory,
@@ -340,8 +445,8 @@ class RuntimeVFS:
     def unlink(self, path: str) -> None:
         self.call("unlink", path)
 
-    def mkdir(self, path: str) -> None:
-        self.call("mkdir", path)
+    def mkdir(self, path: str, *, parents: bool = False) -> None:
+        self.call("mkdir", path, parents=parents)
 
     def rmdir(self, path: str) -> None:
         self.call("rmdir", path)
@@ -431,21 +536,32 @@ class RuntimeVFS:
             nofollow=nofollow,
         )
 
-    def append(self, path: str, data: bytes, whole: bytes) -> None:
-        """Extend `path` by `data`, falling back to writing `whole`.
+    def append(
+        self, path: str, data: bytes, whole: bytes | None = None
+    ) -> None:
+        """Extend `path` by `data`, falling back to a whole-file write.
 
         `append` is optional per backend (S3 registers `write` and
         `rename` without it), so a mount that declines is remembered:
         the fallback then costs one failed dispatch per mount rather
-        than one per call.
+        than one per call. The fallback writes `whole` when the caller
+        holds it, and otherwise reads the base itself, a missing file
+        starting empty, so a caller that only ever appends keeps no copy
+        of the file for a mount that may never need one.
 
         Args:
             path (str): guest-absolute virtual path.
             data (bytes): only the newly appended bytes.
-            whole (bytes): the file's full content, for the fallback.
+            whole (bytes | None): the file's full content, when the
+                caller already has it.
         """
         if self._append_delta(path, data):
             return
+        if whole is None:
+            try:
+                whole = self.read(path) + data
+            except FileNotFoundError:
+                whole = data
         self.write(path, whole)
 
     def _append_delta(self, path: str, data: bytes) -> bool:

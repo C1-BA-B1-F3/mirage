@@ -2035,6 +2035,119 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
         await ws.close()
 
 
+RELAY_DOC = {
+    "paths": {
+        "hide": ["/data/r/ghost"]
+    },
+    "commands": {
+        "allow": ["mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls"],
+        "deny": [{
+            "reason": "cut",
+            "commands": {
+                "split": ["/data/out/xab"]
+            }
+        }, {
+            "reason": "tarred",
+            "commands": {
+                "tar": ["/data/r/sec", "/data/r/ghost"]
+            }
+        }, {
+            "reason": "copied",
+            "commands": {
+                "cp": ["/data/r/sec", "/data/dst/sec", "/data/r/ghost"]
+            }
+        }],
+    }
+}
+
+TAR_SEC_REFUSED = ("tar: Removing leading `/' from member names\n"
+                   "tar: /data/r/sec: Cannot open: Permission denied\n"
+                   "tar: Exiting with failure status due to previous "
+                   "errors\n")
+
+
+def _relay_ws() -> Workspace:
+    ws = Workspace(
+        {
+            "/data/": (RAMVFS(), MountMode.WRITE),
+            "/other/": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE,
+        profiles={"relayed": RELAY_DOC})
+    ws.create_session("g", profile="relayed")
+    return ws
+
+
+async def _seed_relay_tree(ws: Workspace) -> None:
+    await ws.shell("mkdir -p /data/r /other/src && echo s > /data/r/sec && "
+                   "echo o > /data/r/open && echo g > /data/r/ghost && "
+                   "echo s > /other/src/sec && echo o > /other/src/open")
+
+
+@pytest.mark.asyncio
+async def test_a_relayed_walk_meets_the_command_rules():
+    # A line that spans mounts runs through the cross-mount relay, whose
+    # reads and writes reach the op dispatcher rather than the command's
+    # own guarded slots. The command rules hold there too, in the voice
+    # the single-mount walk uses.
+    ws = _relay_ws()
+    try:
+        await _seed_relay_tree(ws)
+        assert await _line(ws, "tar -cf - /data/r | tar -tf -",
+                           "g") == (0, "data/r/\ndata/r/open\n",
+                                    TAR_SEC_REFUSED)
+        assert await _line(ws, "tar -cf /other/y.tar /data/r",
+                           "g") == (2, "", TAR_SEC_REFUSED)
+        assert (await _line(ws, "tar -tf /other/y.tar",
+                            "g"))[1] == "data/r/\ndata/r/open\n"
+        assert await _line(
+            ws, "cp -r /data/r /other/r",
+            "g") == (1, "", "cp: cannot open '/data/r/sec' for reading: "
+                     "Permission denied\n")
+        assert (await _line(ws, "find /other/r",
+                            "g"))[1] == "/other/r\n/other/r/open\n"
+        assert await _line(
+            ws, "cp -r /other/src /data/dst",
+            "g") == (1, "", "cp: cannot create regular file '/data/dst/sec': "
+                     "Permission denied\n")
+        assert (await _line(ws, "find /data/dst",
+                            "g"))[1] == "/data/dst\n/data/dst/open\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_write_through_the_command_dispatcher_meets_the_rules():
+    # split writes each piece through the dispatcher it is handed, not a
+    # guarded slot, so a rule on one piece holds there as GNU reports an
+    # output it cannot open: the pieces before it stay, the run fails.
+    ws = _relay_ws()
+    try:
+        await ws.shell("mkdir -p /data/out && echo a > /data/f && "
+                       "echo b >> /data/f && echo c >> /data/f")
+        assert await _line(
+            ws, "split -l 1 /data/f /data/out/x",
+            "g") == (1, "", "split: /data/out/xab: Permission denied\n")
+        assert (await _line(ws, "ls /data/out", "g"))[1] == "xaa\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_relayed_walk_never_names_a_hidden_entry():
+    # A rule on a hidden path stays silent: the relayed walk passes the
+    # hidden entry by as missing, never as refused.
+    ws = _relay_ws()
+    try:
+        await _seed_relay_tree(ws)
+        for line in ("tar -cf - /data/r | tar -tf -",
+                     "cp -r /data/r /other/h; find /other/h"):
+            _, out, err = await _line(ws, line, "g")
+            assert "ghost" not in out and "ghost" not in err
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_an_asked_scope_reached_by_a_walk_is_refused_until_named():
     # A walk gets no nod mid-command: the entry is refused without a

@@ -2272,3 +2272,96 @@ describe('a walk below the operand meets the rule guard', () => {
     })
   })
 })
+
+describe('a relayed walk meets the command rules', () => {
+  const RELAY_DOC: SessionProfile = parseSessionProfile({
+    paths: { hide: ['/data/r/ghost'] },
+    commands: {
+      allow: ['mkdir', 'echo', 'cat', 'cp', 'tar', 'find', 'split', 'ls'],
+      deny: [
+        { reason: 'cut', commands: { split: ['/data/out/xab'] } },
+        { reason: 'tarred', commands: { tar: ['/data/r/sec', '/data/r/ghost'] } },
+        { reason: 'copied', commands: { cp: ['/data/r/sec', '/data/dst/sec', '/data/r/ghost'] } },
+      ],
+    },
+  })
+  const TAR_SEC_REFUSED =
+    "tar: Removing leading `/' from member names\n" +
+    'tar: /data/r/sec: Cannot open: Permission denied\n' +
+    'tar: Exiting with failure status due to previous errors\n'
+
+  async function relayWs(): Promise<Workspace> {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { relayed: RELAY_DOC } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'relayed' })
+    await ws.shell(
+      'mkdir -p /data/r /other/src && echo s > /data/r/sec && ' +
+        'echo o > /data/r/open && echo g > /data/r/ghost && ' +
+        'echo s > /other/src/sec && echo o > /other/src/open',
+    )
+    return ws
+  }
+
+  async function line(ws: Workspace, text: string): Promise<[number, string, string]> {
+    const r = await ws.shell(text, { sessionId: 'g' })
+    return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+  }
+
+  // A line that spans mounts runs through the cross-mount relay, whose
+  // reads and writes reach the op dispatcher rather than the command's own
+  // guarded slots. The command rules hold there too, in the voice the
+  // single-mount walk uses.
+  it('refuses the entries a rule names, reading and writing', async () => {
+    const ws = await relayWs()
+    expect(await line(ws, 'tar -cf - /data/r | tar -tf -')).toEqual([
+      0,
+      'data/r/\ndata/r/open\n',
+      TAR_SEC_REFUSED,
+    ])
+    expect(await line(ws, 'tar -cf /other/y.tar /data/r')).toEqual([2, '', TAR_SEC_REFUSED])
+    expect((await line(ws, 'tar -tf /other/y.tar'))[1]).toBe('data/r/\ndata/r/open\n')
+    expect(await line(ws, 'cp -r /data/r /other/r')).toEqual([
+      1,
+      '',
+      "cp: cannot open '/data/r/sec' for reading: Permission denied\n",
+    ])
+    expect((await line(ws, 'find /other/r'))[1]).toBe('/other/r\n/other/r/open\n')
+    expect(await line(ws, 'cp -r /other/src /data/dst')).toEqual([
+      1,
+      '',
+      "cp: cannot create regular file '/data/dst/sec': Permission denied\n",
+    ])
+    expect((await line(ws, 'find /data/dst'))[1]).toBe('/data/dst\n/data/dst/open\n')
+  })
+
+  // split writes each piece through the dispatcher it is handed, not a
+  // guarded slot, so a rule on one piece holds there as GNU reports an
+  // output it cannot open: the pieces before it stay, the run fails.
+  it('holds a write through the command dispatcher to the rules', async () => {
+    const ws = await relayWs()
+    await ws.shell(
+      'mkdir -p /data/out && echo a > /data/f && echo b >> /data/f && echo c >> /data/f',
+    )
+    expect(await line(ws, 'split -l 1 /data/f /data/out/x')).toEqual([
+      1,
+      '',
+      'split: /data/out/xab: Permission denied\n',
+    ])
+    expect((await line(ws, 'ls /data/out'))[1]).toBe('xaa\n')
+  })
+
+  // A rule on a hidden path stays silent: the relayed walk passes the
+  // hidden entry by as missing, never as refused.
+  it('never names a hidden entry', async () => {
+    const ws = await relayWs()
+    for (const text of ['tar -cf - /data/r | tar -tf -', 'cp -r /data/r /other/h; find /other/h']) {
+      const [, out, err] = await line(ws, text)
+      expect(out).not.toContain('ghost')
+      expect(err).not.toContain('ghost')
+    }
+  })
+})

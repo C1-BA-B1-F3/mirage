@@ -26,6 +26,8 @@ from mirage.cache.index.config import IndexConfig
 from mirage.cache.index.factory import build_index
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
+from mirage.commands.builtin.generic_bind.adapter import \
+    with_dispatch_rule_guard
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
 from mirage.commands.config import CommandOpts, ExecContext, RegisteredCommand
@@ -778,7 +780,8 @@ class MountEntry:
                 mount_prefix=mount_prefix,
                 filetype_fns=(filetype_fns if not is_filetype_cmd else None),
                 index=self.index,
-                dispatch=context.dispatch,
+                dispatch=(with_dispatch_rule_guard(context.dispatch)
+                          if context.dispatch is not None else None),
                 session_id=context.session_id,
                 env=context.env,
                 exec_allowed=context.exec_allowed,

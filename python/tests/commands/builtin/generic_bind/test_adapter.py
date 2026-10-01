@@ -400,6 +400,45 @@ async def test_rule_guard_asks_the_bound_gate_and_leaves_stat_alone():
     assert ("rename", "/data/a", "/data/b") in calls
 
 
+@pytest.mark.asyncio
+async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
+    from mirage.commands.builtin.generic_bind.adapter import \
+        with_dispatch_rule_guard
+    calls: list[tuple[str, str]] = []
+
+    async def door(op, path, **kwargs):
+        calls.append((op, path.virtual))
+        return None, None
+
+    dispatch = with_dispatch_rule_guard(door)
+    # No gate bound: every op reaches the door.
+    await dispatch("read", _spec("/data/locked/y"))
+    gate = _Gate(refused="/data/locked/y")
+    token = set_admission(gate)
+    session = SessionState(session_id="relay-hidden",
+                           hidden_paths=HiddenPaths(paths=("/data/hidden", )))
+    st = set_current_session(session)
+    try:
+        with pytest.raises(PermissionError):
+            await dispatch("read", _spec("/data/locked/y"))
+        # A destination passed by keyword is as refused as the subject.
+        with pytest.raises(PermissionError):
+            await dispatch("rename",
+                           _spec("/data/a"),
+                           dst=_spec("/data/locked/y"))
+        # A metadata op is never refused: deny is present and refused.
+        await dispatch("stat", _spec("/data/locked/y"))
+        # A hidden path is the door's to answer as missing, so the gate
+        # is never asked and never names it.
+        await dispatch("read", _spec("/data/hidden/k"))
+    finally:
+        reset_current_session(st)
+        reset_admission(token)
+    assert calls == [("read", "/data/locked/y"), ("stat", "/data/locked/y"),
+                     ("read", "/data/hidden/k")]
+    assert gate.asked == ["/data/locked/y", "/data/a", "/data/locked/y"]
+
+
 class _SealedRead(Policy):
     """Refuse reads of one path; record every op asked."""
 

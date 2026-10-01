@@ -38,7 +38,9 @@ import {
   pathAllowed,
   walkProbeFor,
 } from '../../../context/session_context.ts'
+import { METADATA_OPS } from '../../../policy/constants.ts'
 import { preOpsGate, type Policies } from '../../../policy/policies.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 import { hasAborted, makeAbortError } from '../../../workspace/abort.ts'
 import { moveReveals } from '../../../utils/hidden.ts'
 import { removeRemnants, visibleBelow, type RemnantChannel } from '../../../utils/remnants.ts'
@@ -381,6 +383,31 @@ export function withRuleGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
     })
   }
   return guarded
+}
+
+/**
+ * Return `dispatch` asking the admitted command's gate about each path
+ * before an op goes to the door.
+ *
+ * The op dispatcher a command is handed (`opts.dispatch`, the cross-mount
+ * relay's) reaches a mount without passing the command's own guarded
+ * slots, so `withRuleGuard` never sees what a relayed `tar -cf -` or a
+ * cross-mount `cp -r` reads and writes. The door enforces hiding, modes and
+ * pure path rules on its own but cannot tell which command issued an op;
+ * the bound gate can. A metadata op passes as the slot chain lets `stat`
+ * pass, and a hidden path is left for the door to answer as missing, so no
+ * rule names it.
+ */
+export function withDispatchRuleGuard(dispatch: DispatchFn): DispatchFn {
+  return async (op, path, args, kwargs, report) => {
+    const gate = getAdmission()
+    if (gate !== null && !METADATA_OPS.has(op)) {
+      for (const spec of [path, ...(args ?? []), ...Object.values(kwargs ?? {})]) {
+        if (spec instanceof PathSpec && pathAllowed(spec.virtual)) gate.check(spec.virtual)
+      }
+    }
+    return dispatch(op, path, args, kwargs, report)
+  }
 }
 
 /** Resolve the governing mount per path, including on fallback context storage. */

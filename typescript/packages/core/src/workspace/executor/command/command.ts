@@ -56,6 +56,7 @@ import {
 import { resolveNewerRefs } from '../find_refs.ts'
 import type { ExecuteFn } from '../../expand/node.ts'
 import { FindParseError } from '../../../commands/errors.ts'
+import { withDispatchRuleGuard } from '../../../commands/builtin/generic_bind/adapter.ts'
 import { maybeWithTimeout } from '../../../commands/builtin/utils/limit.ts'
 import { resolveProducer, resolveLimit } from '../../../policy/index.ts'
 import type { ExecuteNodeFn, JobHandlerResult } from '../jobs.ts'
@@ -514,7 +515,7 @@ export async function handleCommand(
       csScopes,
       csTexts,
       csFlags,
-      dispatch,
+      withDispatchRuleGuard(dispatch),
       runOperand,
       stdin,
       makeStorageKey(registry),

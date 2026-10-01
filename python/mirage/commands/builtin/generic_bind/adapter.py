@@ -37,8 +37,11 @@ from mirage.context import (
     path_allowed,
 )
 from mirage.context.session_context import require_paths_writable
+from mirage.io import IOResult
 from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
+from mirage.policy.constants import METADATA_OPS
 from mirage.policy.policies import Policies, pre_ops_gate
+from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, MountMode, PathSpec, WalkProbe
 from mirage.utils.errors import (
     MISS_ERRORS,
@@ -1011,6 +1014,35 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
         if fn is not None:
             changes[slot] = functools.partial(_rule_call, fn)
     return replace(ops, **changes)
+
+
+def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
+    """Return ``dispatch`` asking the admitted command's gate about each
+    path before an op goes to the door.
+
+    The op dispatcher a command is handed (``opts.dispatch``, the
+    cross-mount relay's) reaches a mount without passing the command's
+    own guarded slots, so ``with_rule_guard`` never sees what a relayed
+    ``tar -cf -`` or a cross-mount ``cp -r`` reads and writes. The door
+    enforces hiding, modes and pure path rules on its own but cannot
+    tell which command issued an op; the bound gate can. A metadata op
+    passes as the slot chain lets ``stat`` pass, and a hidden path is
+    left for the door to answer as missing, so no rule names it.
+
+    Args:
+        dispatch (DispatchFn): the workspace op dispatcher.
+    """
+
+    async def guarded(op: str, path: PathSpec,
+                      **kwargs: Any) -> tuple[Any, IOResult]:
+        gate = get_admission()
+        if gate is not None and op not in METADATA_OPS:
+            for spec in (path, *kwargs.values()):
+                if isinstance(spec, PathSpec) and path_allowed(spec.virtual):
+                    gate.check(spec.virtual)
+        return await dispatch(op, path, **kwargs)
+
+    return guarded
 
 
 def with_path_guards(ops: CommandIO) -> CommandIO:

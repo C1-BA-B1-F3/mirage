@@ -28,6 +28,7 @@ import {
   withAbortGuard,
   withPolicyGuard,
   withRuleGuard,
+  withDispatchRuleGuard,
   withPathGuards,
   requireOp,
   type CommandIO,
@@ -42,6 +43,8 @@ import type { Policy } from '../../../policy/base.ts'
 import { Policies } from '../../../policy/policies.ts'
 import type { Action, OpsContext } from '../../../policy/types.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
+import { IOResult } from '../../../io/types.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 
 const accessor = {} as never
 // No namespace facts, which is what a command bound outside a workspace
@@ -343,6 +346,69 @@ describe('withRuleGuard', () => {
     ])
     expect(calls).not.toContainEqual(['rename', '/data/a', '/data/locked/y'])
     expect(calls).toContainEqual(['rename', '/data/a', '/data/b'])
+  })
+})
+
+describe('withDispatchRuleGuard', () => {
+  const spec = (virtual: string): PathSpec =>
+    new PathSpec({
+      virtual,
+      directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
+      vfsPath: virtual,
+      resolved: true,
+    })
+
+  it('asks the bound gate before the door', async () => {
+    const calls: string[][] = []
+    const door: DispatchFn = (op, path) => {
+      calls.push([op, path.virtual])
+      return Promise.resolve([null, new IOResult()])
+    }
+    const dispatch = withDispatchRuleGuard(door)
+    // No gate bound: every op reaches the door.
+    await dispatch('read', spec('/data/locked/y'))
+    const asked: string[] = []
+    const gate = {
+      scoped: true,
+      granted: [],
+      check: (virtual: string) => {
+        asked.push(virtual)
+        if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
+      },
+    }
+    const session = new SessionState({
+      sessionId: 'relay-hidden',
+      hiddenPaths: { paths: ['/data/hidden'] },
+    })
+    await runWithSession(session, () =>
+      runWithAdmission(gate, async () => {
+        await expect(dispatch('read', spec('/data/locked/y'))).rejects.toThrow('refused')
+        // A destination passed alongside the subject is as refused as it.
+        await expect(dispatch('rename', spec('/data/a'), [spec('/data/locked/y')])).rejects.toThrow(
+          'refused',
+        )
+        await expect(
+          dispatch('write', spec('/data/a'), [], { dst: spec('/data/locked/y') }),
+        ).rejects.toThrow('refused')
+        // A metadata op is never refused: deny is present and refused.
+        await dispatch('stat', spec('/data/locked/y'))
+        // A hidden path is the door's to answer as missing, so the gate is
+        // never asked and never names it.
+        await dispatch('read', spec('/data/hidden/k'))
+      }),
+    )
+    expect(calls).toEqual([
+      ['read', '/data/locked/y'],
+      ['stat', '/data/locked/y'],
+      ['read', '/data/hidden/k'],
+    ])
+    expect(asked).toEqual([
+      '/data/locked/y',
+      '/data/a',
+      '/data/locked/y',
+      '/data/a',
+      '/data/locked/y',
+    ])
   })
 })
 

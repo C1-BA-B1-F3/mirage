@@ -392,6 +392,10 @@ jobs:
         working-directory: integ
         run: pnpm exec tsx cross_commands.ts
 
+      - name: Run virtual-root mount switching (ram/disk/yaml)
+        working-directory: integ
+        run: pnpm exec tsx root.ts
+
       - name: Run workspace lifecycle JSON scenarios (Node and browser wrappers)
         working-directory: integ
         run: pnpm exec tsx lifecycle/run.ts
@@ -512,22 +516,30 @@ jobs:
           gh release download "$QUICKJS_BUILD" -R quickjs-ng/quickjs \
             -p qjs-wasi.wasm -O /tmp/quickjs/qjs-wasi.wasm
 
+      # One runner process per target, four at a time: a runner's
+      # --target-jobs lanes share one core, and the battery is CPU-bound
+      # there. shard.py splits the facet across the shard jobs by case count
+      # and prints each target's time at the end, which is what to read
+      # before changing --procs or the shard count.
       - name: Run declarative battery (python hosts)
         env:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
-        run: |
-          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
-            [.targets[] | select((.facet // "core") == "core")]
-            | to_entries | map(select(.key % $count == $index) | .value.id)
-            | if length == 0 then error("empty core shard") else .[] end
-          ' integ/targets.json)
-          args=()
-          while IFS= read -r target; do
-            args+=(--target "$target")
-          done <<< "$target_ids"
-          ./python/.venv/bin/python integ/runners/python/main.py "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
-
+        run: >-
+          ./python/.venv/bin/python integ/runners/tools/shard.py
+          --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --emit-dir "$GITHUB_WORKSPACE/emit/python"
+          -- ./python/.venv/bin/python integ/runners/python/main.py --strict
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+      # integ-shared-parity diffs these against the typescript shards'
+      # instead of running both hosts over the same targets a second time.
+      - name: Keep the battery outputs for the parity diff
+        uses: actions/upload-artifact@v7
+        with:
+          name: integ-emit-python-${{ matrix.shard }}
+          path: emit/python
+          if-no-files-found: error
+          retention-days: 1
       # Moved here from the `integ` job when the HTTP fixture server became a
       # TypeScript kit fake: the adapter still starts it, but the interpreter is
       # tsx now, and this is the python-host job that already has node for
@@ -709,17 +721,19 @@ jobs:
         env:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
-        run: |
-          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
-            [.targets[] | select((.facet // "core") == "core")]
-            | to_entries | map(select(.key % $count == $index) | .value.id)
-            | if length == 0 then error("empty core shard") else .[] end
-          ' targets.json)
-          args=()
-          while IFS= read -r target; do
-            args+=(--target "$target")
-          done <<< "$target_ids"
-          pnpm exec tsx runners/typescript/main.ts "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+        run: >-
+          ../python/.venv/bin/python runners/tools/shard.py
+          --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --emit-dir "$GITHUB_WORKSPACE/emit/typescript"
+          -- pnpm exec tsx runners/typescript/main.ts --strict
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+      - name: Keep the battery outputs for the parity diff
+        uses: actions/upload-artifact@v7
+        with:
+          name: integ-emit-typescript-${{ matrix.shard }}
+          path: emit/typescript
+          if-no-files-found: error
+          retention-days: 1
 
       # The fixture server is python (started by the adapter through
       # startPythonServer), so this runs here rather than in integ-ts, which
@@ -734,36 +748,29 @@ jobs:
   # runs both emitters and diffs them case by case, so a change that breaks
   # the same way in both languages still fails. Shared targets only (ram,
   # disk, redis) — the credentialed targets stay in their own jobs.
+  # The battery jobs keep every target's raw outputs, so parity is a diff of
+  # those files rather than both hosts running these targets a second time.
+  # The targets stay pinned to the ones it has always compared; widening the
+  # list costs nothing now but a run's worth of divergences to triage.
   integ-shared-parity:
-    needs: [changes, typescript-build]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    needs: [changes, integ-shared-py, integ-shared-ts]
+    if: ${{ !cancelled() && needs.integ-shared-py.result == 'success' && needs.integ-shared-ts.result == 'success' }}
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/integ-battery-setup
+      - uses: actions/download-artifact@v8
         with:
-          build-packages: "false"
-          typescript-build-artifact: integ-typescript-dist
-      # Targets are pinned: with no arguments parity.py adds the Graph and
-      # Mem0 groups unconditionally, and the setup action exports
-      # S3_ENDPOINT/SSH_HOST/GWS_URL, which would pull in the S3, SSH and
-      # Drive groups too. That would gate every core/TypeScript PR on the
-      # whole credentialed battery, which has its own jobs already.
+          pattern: integ-emit-python-*
+          path: emit/python
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: integ-emit-typescript-*
+          path: emit/typescript
+          merge-multiple: true
       - name: Diff python and typescript battery output
         run: >-
-          ./python/.venv/bin/python integ/runners/parity.py
+          python3 integ/runners/parity.py --from emit
           ram disk disk-host-links redis ram-history
 
   # One job per backend family with both hosts inside it. The postgres, chroma,
@@ -1694,10 +1701,10 @@ jobs:
     needs: [changes, typescript-build]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        facet: [project, email, chat, dify, mem0, cli]
+    # One job for the six small facets: each leg of the old matrix spent a
+    # minute or more on setup for under a minute of cases.
+    env:
+      FACETS: project email chat dify mem0 cli
     steps:
       - uses: actions/checkout@v7
 
@@ -1739,7 +1746,6 @@ jobs:
         run: pnpm run prisma:clients
 
       - name: Start fake Trello and Linear APIs
-        if: matrix.facet == 'project'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/trello/main.ts --port 5095 > /tmp/trello.log 2>&1 &
@@ -1754,7 +1760,6 @@ jobs:
       # The airtable mount runs in the project facet and its CLI in the cli
       # facet, against the same fake.
       - name: Start fake Airtable API
-        if: matrix.facet == 'project' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/airtable/main.ts --port 5101 > /tmp/airtable.log 2>&1 &
@@ -1767,7 +1772,6 @@ jobs:
       # ntn, linear, airtable) end to end against the same mocks the email,
       # chat and project facets use.
       - name: Start the fake mail and Google Workspace servers
-        if: matrix.facet == 'email' || matrix.facet == 'cli'
         run: |
           cd integ
           nohup pnpm exec tsx server/mail/main.ts --port 5085 \
@@ -1786,7 +1790,6 @@ jobs:
           echo "GWS_URL=http://127.0.0.1:19999" >> "$GITHUB_ENV"
 
       - name: Start fake Slack Web API
-        if: matrix.facet == 'chat' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/slack/main.ts --port 5097 > /tmp/slack.log 2>&1 &
@@ -1795,7 +1798,6 @@ jobs:
           echo "SLACK_URL=http://127.0.0.1:5097" >> "$GITHUB_ENV"
 
       - name: Start fake Discord API
-        if: matrix.facet == 'chat' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/discord/main.ts --port 5090 > /tmp/discord.log 2>&1 &
@@ -1806,7 +1808,6 @@ jobs:
       # A different Hugging Face product from the hf/ Xet store: hf_hub/ is
       # the git-backed Hub the `hf` CLI acts on.
       - name: Start fake Hugging Face Hub
-        if: matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/hf_hub/main.ts --port 5086 > /tmp/hfhub.log 2>&1 &
@@ -1819,7 +1820,6 @@ jobs:
       # it. Same server binary, named at startup and replayed by every later
       # bare /reset.
       - name: Start fake GitHub API
-        if: matrix.facet == 'cli'
         run: |
           cd integ
           nohup ./node_modules/.bin/tsx server/github/main.ts \
@@ -1828,28 +1828,41 @@ jobs:
           cat /tmp/github.log
           echo "GITHUB_URL=http://127.0.0.1:5098" >> "$GITHUB_ENV"
 
-      # The ntn and linear CLIs ride the notion mock (self-started by each
-      # runner under NOTION_ENABLED) and the fake Linear GraphQL server.
-      - name: Start fake Linear API and the Notion mock
-        if: matrix.facet == 'cli'
+      # The ntn CLI rides the notion mock (self-started by each runner under
+      # NOTION_ENABLED); the linear CLI rides the Linear fake started above.
+      - name: Start the Notion mock
         run: |
           cd integ
-          nohup ./node_modules/.bin/tsx server/linear/main.ts --port 5094 > /tmp/linear.log 2>&1 &
-          for i in $(seq 1 30); do grep -q "LINEAR_URL=" /tmp/linear.log && break; sleep 1; done
-          cat /tmp/linear.log
-          echo "LINEAR_URL=http://127.0.0.1:5094" >> "$GITHUB_ENV"
           nohup ./node_modules/.bin/tsx server/notion/main.ts --port 5091 > /tmp/notion.log 2>&1 &
           for i in $(seq 1 30); do grep -q "NOTION_URL=" /tmp/notion.log && break; sleep 1; done
           cat /tmp/notion.log
           echo "NOTION_URL=http://127.0.0.1:5091" >> "$GITHUB_ENV"
           echo "NOTION_ENABLED=1" >> "$GITHUB_ENV"
 
-      - name: Run ${{ matrix.facet }} battery (python host)
-        run: ./python/.venv/bin/python integ/runners/python/main.py --facet ${{ matrix.facet }} --strict
+      # Every facet in turn, each in its own log group. A failing facet does
+      # not stop the ones after it, and the typescript step runs even when the
+      # python one failed, so one run reports every facet on both hosts.
+      - name: Run every facet battery (python host)
+        run: |
+          failed=""
+          for facet in $FACETS; do
+            echo "::group::$facet"
+            ./python/.venv/bin/python integ/runners/python/main.py --facet "$facet" --strict || failed="$failed $facet"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
 
-      - name: Run ${{ matrix.facet }} battery (typescript host)
+      - name: Run every facet battery (typescript host)
+        if: ${{ !cancelled() }}
         working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --facet ${{ matrix.facet }} --strict
+        run: |
+          failed=""
+          for facet in $FACETS; do
+            echo "::group::$facet"
+            pnpm exec tsx runners/typescript/main.ts --facet "$facet" --strict || failed="$failed $facet"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
 
       # A 404 is an answer to a real client -- "no such repository", "no such
       # file" -- so an endpoint the fake does not implement is indistinguishable
@@ -1857,7 +1870,7 @@ jobs:
       # conclusion rather than an error. The fake names every unrouted request
       # on stderr; this is what makes that a failure rather than a log line.
       - name: Fail on any unrouted GitHub request
-        if: matrix.facet == 'cli'
+        if: ${{ !cancelled() }}
         run: |
           if grep -q "no route for" /tmp/github.log; then
             echo "The gh battery reached endpoints the fake does not implement:"

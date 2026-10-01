@@ -39,6 +39,7 @@
       "seq": 783,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm --version /ro/xro.txt | cut -d' ' -f1,2",
@@ -53,6 +54,7 @@
       "seq": 784,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm --help /ro/xro.txt | grep -c -F -- 'Usage: rm'",

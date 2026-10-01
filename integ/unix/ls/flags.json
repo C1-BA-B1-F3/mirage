@@ -1384,7 +1384,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/lsn && printf x > /data/lsn/a.txt && touch -d '1969-01-01T00:00:00' /data/lsn/a.txt && ls -go --time-style=+%12s /data/lsn/a.txt | awk '{print $4}' | cut -c1-4",
       "expect": {
@@ -1404,7 +1405,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/lsw && printf x > /data/lsw/a.txt && touch -d '2001-02-03T12:00:00' /data/lsw/a.txt && ls -go --time-style='+%1d,%-m,%1j,%03e,%1Y,%1y,%3u,%+1d' /data/lsw/a.txt | awk '{print $4}'",
       "expect": {

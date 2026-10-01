@@ -511,6 +511,7 @@ class MainLoop:
                                   exit_code(self._statuses, self._opts))
             if self._reports:
                 self._io.stderr = "".join(self._reports).encode()
+            await self._reader.close()
 
     async def _run(self, doc: str, position: str) -> tuple[JqRun[str], str]:
         """Run the program on one document, and say where the reader

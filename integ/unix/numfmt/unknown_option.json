@@ -5,6 +5,7 @@
       "seq": 991037,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --zzz='é'",
@@ -19,6 +20,7 @@
       "seq": 991038,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt -- '--zzz=é'",

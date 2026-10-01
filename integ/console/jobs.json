@@ -5,6 +5,7 @@
       "seq": 509000,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "(echo out; echo err 1>&2) & wait",
@@ -19,6 +20,7 @@
       "seq": 509002,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "(sh -c 'exit 4' & wait $!; echo rc=$?) 2>/dev/null",
@@ -33,6 +35,7 @@
       "seq": 509004,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "(sleep 5 & kill $! && echo killed) 2>/dev/null",
@@ -47,6 +50,7 @@
       "seq": 509006,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "(echo payload > /data/console-bg.txt & wait) 2>/dev/null; cat /data/console-bg.txt; rm /data/console-bg.txt",
@@ -61,6 +65,7 @@
       "seq": 509008,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "sleep 5 & p=$!; j=$(jobs -p); test \"$p\" = \"$j\" && echo pid-ok; kill \"$p\"; wait \"$p\" 2>/dev/null || :",
@@ -75,6 +80,7 @@
       "seq": 509010,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "sleep 5 & p=$!; disown \"$p\"; ps | grep \"^$p\" >/dev/null && echo visible; kill \"$p\"",
@@ -89,6 +95,7 @@
       "seq": 509012,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "s=$$; test \"$s\" = \"$(echo $$)\" && echo shell-ok",
@@ -103,6 +110,7 @@
       "seq": 509014,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "ps | cut -f2 | grep '^ps$' 2>/dev/null",
@@ -117,6 +125,7 @@
       "seq": 509016,
       "targets": [
         "ram",
+        "opfs",
         "console-redis"
       ],
       "command": "true && ps | cut -f2 | grep '^ps$' 2>/dev/null",

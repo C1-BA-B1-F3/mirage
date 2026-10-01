@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { readFileSync } from 'node:fs'
-import { announceFor, emit, start } from '../kit/typescript/index.ts'
+import { announceFor, emit, prepareTemplate, start } from '../kit/typescript/index.ts'
 import type { Announce, Arm, Fake, JsonValue, MinimalClient } from '../kit/typescript/index.ts'
 import { KitError } from '../kit/typescript/errors.ts'
 import { airtableFake } from '../airtable/fake.ts'
@@ -77,7 +77,9 @@ interface EntryOpts {
 // Prisma client, and those types differ per service with no useful supertype,
 // so a map holding them directly would need a cast at every read. Closing over
 // the concrete fake inside the thunk erases the parameter with no cast at all.
-type Entry = (opts: EntryOpts) => Promise<Instance>
+// The schema rides beside it so every template can be built before the first
+// fake starts; a non-kit entry has none.
+type Entry = ((opts: EntryOpts) => Promise<Instance>) & { schema?: string }
 
 function announceOf(service: string, port: number, token: string | undefined): Announce {
   const a = announceFor(service, port)
@@ -86,7 +88,7 @@ function announceOf(service: string, port: number, token: string | undefined): A
 
 // The common case: one HTTP listener, one announce line.
 function plain<C extends MinimalClient>(fake: Fake<C>): Entry {
-  return async (o: EntryOpts): Promise<Instance> => {
+  const entry = async (o: EntryOpts): Promise<Instance> => {
     const started = await start(fake, o.port, o.fixture, o.fixtureRoot)
     return {
       name: fake.config.service,
@@ -94,6 +96,7 @@ function plain<C extends MinimalClient>(fake: Fake<C>): Entry {
       close: started.close,
     }
   }
+  return Object.assign(entry, { schema: fake.config.schema })
 }
 
 // A fake that also serves a non-HTTP listener. The arm is started from the SAME
@@ -102,7 +105,7 @@ function withArms<C extends MinimalClient>(
   fake: Fake<C>,
   arms: (runtime: Awaited<ReturnType<typeof start<C>>>['runtime'], o: EntryOpts) => Promise<Arm>,
 ): Entry {
-  return async (o: EntryOpts): Promise<Instance> => {
+  const entry = async (o: EntryOpts): Promise<Instance> => {
     const started = await start(fake, o.port, o.fixture, o.fixtureRoot)
     // The HTTP listener is already up by the time the arm is asked for, so an
     // arm that refuses its port has to take the listener down with it. Leaving
@@ -123,6 +126,7 @@ function withArms<C extends MinimalClient>(
       },
     }
   }
+  return Object.assign(entry, { schema: fake.config.schema })
 }
 
 function portOf(extras: Record<string, JsonValue>, key: string): number {
@@ -238,6 +242,7 @@ async function launchAll(
   out: Instance[],
   announce: (a: Announce) => void,
 ): Promise<Instance[]> {
+  const chosen: { spec: Spec; entry: Entry }[] = []
   for (const [name, raw] of Object.entries(config)) {
     // JSON has no comments and this config has three pinned ports that need a
     // stated reason, so a leading underscore marks a key that is prose. It is
@@ -253,6 +258,15 @@ async function launchAll(
         `${name}: no fake named ${which}. Known: ${Object.keys(REGISTRY).sort().join(', ')}`,
       )
     }
+    chosen.push({ spec, entry })
+  }
+  // Every schema at once, before any fake starts; a push that fails names its
+  // schema, which names the fake.
+  const schemas = new Set(
+    chosen.flatMap(({ entry }) => (entry.schema === undefined ? [] : [entry.schema])),
+  )
+  await Promise.all([...schemas].map((schema) => prepareTemplate(schema)))
+  for (const { spec, entry } of chosen) {
     // Started one at a time rather than in parallel. Seeding writes SQLite, and
     // a failure has to name the fake that caused it: Promise.all would report
     // the first rejection with nine other startups still in flight.

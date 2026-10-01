@@ -50,7 +50,7 @@ def _emit_or_record(emit: list[dict] | None,
             "stderr": err,
             "check": check_out,
         })
-    elif report is not None:
+    if report is not None:
         report.record(
             target_id, case["id"],
             harness.compare(case, exit_code, out, err, elapsed, check_out,
@@ -358,7 +358,7 @@ async def main() -> None:
             sys.exit(2)
     else:
         selected = args.targets or list(manifest)
-    report = None if args.emit else harness.Report()
+    report = harness.Report()
     emit: list[dict] | None = [] if args.emit else None
     ran = 0
     allow_skip = harness.parse_allow_skip(services, args.allow_skip)
@@ -400,16 +400,13 @@ async def main() -> None:
         print(verdict, file=sys.stderr)
         sys.exit(2)
 
-    if args.emit:
-        # No file, deliberately, where the report path prints partial counts:
-        # parity.py diffs two emits by (target, id), so a short one reads as
-        # a pile of ONLY-PY/ONLY-TS rows rather than as the run that broke.
-        if raised:
-            print(f"{len(raised)} target(s) failed to run", file=sys.stderr)
-            sys.exit(1)
+    # No file, deliberately, when a target raised: parity.py diffs two emits
+    # by (target, id), so a short one reads as a pile of ONLY-PY/ONLY-TS rows
+    # rather than as the run that broke. The emit rides beside the report
+    # rather than replacing it, so a battery job hands parity its outputs
+    # without a second run.
+    if args.emit and not raised:
         Path(args.emit).write_text(json.dumps(emit))
-        return
-    assert report is not None
     print(f"\n{report.summary()}")
     # Printed before the exit, because a pooled run that lost a target
     # still ran every other one and its counts are the answer to "what

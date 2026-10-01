@@ -4,7 +4,8 @@
       "id": "which_prints_the_programs_file",
       "seq": 915,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which cat",
       "expect": {
@@ -17,7 +18,8 @@
       "id": "which_miss_is_silent",
       "seq": 916,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which nope-xyz",
       "expect": {
@@ -30,7 +32,8 @@
       "id": "which_keyword_is_not_a_command",
       "seq": 917,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which if",
       "expect": {
@@ -43,7 +46,8 @@
       "id": "which_all_found_exit_rule",
       "seq": 918,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which cat nope-xyz",
       "expect": {
@@ -56,7 +60,8 @@
       "id": "which_no_operand_exits_1",
       "seq": 919,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which",
       "expect": {
@@ -69,7 +74,8 @@
       "id": "which_s_reports_through_the_status",
       "seq": 920,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which -s cat",
       "expect": {
@@ -82,7 +88,8 @@
       "id": "which_invalid_option",
       "seq": 921,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which -z cat",
       "expect": {
@@ -95,7 +102,8 @@
       "id": "which_prints_one_file_per_program",
       "seq": 991500,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "debianutils which on debian:stable-slim prints the file PATH finds; every program mirage runs has one under /usr/bin.",
       "command": "which ls sort; echo \"rc=$?\"",
@@ -109,7 +117,8 @@
       "id": "which_builtin_without_a_program_misses",
       "seq": 991501,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "GNU: cd is bash's alone, no file on PATH, so which prints nothing and exits 1.",
       "command": "which cd; echo \"rc=$?\"",
@@ -123,7 +132,8 @@
       "id": "which_a_searches_the_one_directory",
       "seq": 991502,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "which -a ls",
       "expect": {
@@ -136,7 +146,8 @@
       "id": "which_names_an_executable_file",
       "seq": 991503,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "[ -x \"$(which ls)\" ] && echo executable || echo \"not a file\"",
       "expect": {
@@ -149,7 +160,8 @@
       "id": "which_file_reads_as_the_script_that_runs_it",
       "seq": 991504,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "cat \"$(which ls)\"",
       "expect": {
@@ -162,7 +174,8 @@
       "id": "which_file_runs_the_program_by_path",
       "seq": 991505,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "/usr/bin/echo hi there",
       "expect": {
@@ -175,7 +188,8 @@
       "id": "path_names_the_program_directory",
       "seq": 991506,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "bash 5.2 on debian:stable-slim, started with an empty environment, sets PATH without exporting it: printenv PATH exits 1 and declare -p shows --, so a child process keeps its own PATH.",
       "command": "echo \"$PATH\"; printenv PATH || echo not exported; declare -p PATH",
@@ -189,7 +203,8 @@
       "id": "usr_bin_has_no_file_for_a_shell_only_builtin",
       "seq": 991507,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "ls /usr/bin/cd; echo \"rc=$?\"",
       "expect": {
@@ -202,7 +217,8 @@
       "id": "usr_bin_file_of_a_builtin_names_no_help",
       "seq": 991514,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "The file names --help only where the program's spec answers it; bash's echo builtin prints --help back as text.",
       "command": "cat /usr/bin/echo",
@@ -216,7 +232,8 @@
       "id": "usr_bin_has_no_file_for_history",
       "seq": 991515,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "bash 5.2 on debian:stable-slim: history is a shell builtin with no program on PATH, so which misses it and type -a prints the builtin line alone.",
       "command": "which history; echo \"rc=$?\"; type -a history",
@@ -230,7 +247,8 @@
       "id": "usr_bin_refuses_writes_as_read_only",
       "seq": 991516,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "The refusals any read-only mount gives: the redirect as EROFS and chmod in mirage's read-only-mount wording, so the file stays 0755.",
       "command": "echo x > /usr/bin/ls; chmod 644 /usr/bin/ls; ls -l /usr/bin/ls | cut -c1-10",
@@ -244,7 +262,8 @@
       "id": "usr_bin_metadata_counts_rendered_bytes",
       "seq": 991517,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "note": "Virtual stubs have the same size contract as a regular script; stat and wc agree (GNU pinned on debian:stable-slim).",
       "command": "stat -c %s /usr/bin/ls; wc -c < /usr/bin/ls; find /usr/bin/ls -size 0c",
@@ -258,7 +277,8 @@
       "id": "usr_bin_stubs_are_searchable_text",
       "seq": 991518,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "grep Help /usr/bin/ls; head -n 1 /usr/bin/ls; file /usr/bin/ls",
       "expect": {

@@ -15,7 +15,7 @@
 import { Prisma } from '../../../generated/gws/index.js'
 import { RouteError } from '../../kit/typescript/index.ts'
 import type { Ctx, Dmmf, KitHandler, KitRoute, Reply } from '../../kit/typescript/index.ts'
-import { dropState, installFlushed, withState } from '../store/cache.ts'
+import { dropState, flushedRows, installFlushed, withState } from '../store/cache.ts'
 import type { C } from '../store/client.ts'
 import { loadState } from '../store/load.ts'
 import { saveState } from '../store/save.ts'
@@ -77,10 +77,10 @@ function stateful(handler: KitHandler<GwsState>, write: boolean): KitHandler<C> 
     try {
       const reply = await handler({ ...ctx, db: st })
       if (write) {
-        await saveState(ctx.db, DMMF, ctx.tenant, st)
+        const rows = await saveState(ctx.db, DMMF, ctx.tenant, st, flushedRows(ctx.db, ctx.tenant))
         // The rows now say what this world says, so it becomes the cached
         // one and every load still in flight is stale; see `Cached`.
-        installFlushed(ctx.db, ctx.tenant, st)
+        installFlushed(ctx.db, ctx.tenant, st, rows)
       } else if (fingerprint(st) !== before) {
         dropState(ctx.db, ctx.tenant)
         process.stderr.write(

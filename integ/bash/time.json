@@ -5,6 +5,7 @@
       "seq": 511000,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time false | true; echo \"$? ${PIPESTATUS[*]}\"",
@@ -19,6 +20,7 @@
       "seq": 511001,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time { x=kept; echo hi; }; echo $x",
@@ -33,6 +35,7 @@
       "seq": 511002,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time false",
@@ -47,6 +50,7 @@
       "seq": 511003,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time ! false | true; echo $?",
@@ -61,6 +65,7 @@
       "seq": 511004,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; f() { echo hi; }; time f",
@@ -75,6 +80,7 @@
       "seq": 511005,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; echo \"$(time echo hi)\"",
@@ -89,6 +95,7 @@
       "seq": 511006,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time time echo hi",
@@ -103,6 +110,7 @@
       "seq": 511007,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=''; time echo hi",
@@ -117,6 +125,7 @@
       "seq": 511008,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time",
@@ -131,6 +140,7 @@
       "seq": 511009,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; { time echo hi > {mount}/time-redirect-out; } 2> {mount}/time-redirect-timing; cat {mount}/time-redirect-out {mount}/time-redirect-timing; rm {mount}/time-redirect-out {mount}/time-redirect-timing",
@@ -145,6 +155,7 @@
       "seq": 511010,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time [[ x = x ]]",
@@ -159,6 +170,7 @@
       "seq": 511011,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "TIMEFORMAT=timed; time (( 1 + 1 ))",

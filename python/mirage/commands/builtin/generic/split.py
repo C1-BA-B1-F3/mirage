@@ -505,50 +505,57 @@ async def split(
             # have the runner prefix them onto this mount.
             writes[spec.mount_path] = data
 
-    if chunks is not None:
-        all_data = b"".join([chunk async for chunk in source])
-        if chunks.only is not None:
-            # `K/N` writes the one chunk to stdout and no file at all.
-            return chunk_at(all_data, chunks, separator,
-                            chunks.only), IOResult()
-        # Every chunk gets its file, an empty one included: GNU creates
-        # N files for `-n N` however short the input is.
-        for i, part in enumerate(chunk_parts(all_data, chunks, separator)):
-            name = suffix_fn(i) + additional_suffix
-            await emit(name, part)
-    elif byte_limit > 0:
-        buf = bytearray()
-        async for chunk in source:
-            buf.extend(chunk)
-            while len(buf) >= byte_limit:
+    # A write that fails ends the split mid-input, and `async for` leaves
+    # the source it stopped in open.
+    try:
+        if chunks is not None:
+            all_data = b"".join([chunk async for chunk in source])
+            if chunks.only is not None:
+                # `K/N` writes the one chunk to stdout and no file at all.
+                return chunk_at(all_data, chunks, separator,
+                                chunks.only), IOResult()
+            # Every chunk gets its file, an empty one included: GNU creates
+            # N files for `-n N` however short the input is.
+            for i, part in enumerate(chunk_parts(all_data, chunks, separator)):
+                name = suffix_fn(i) + additional_suffix
+                await emit(name, part)
+        elif byte_limit > 0:
+            buf = bytearray()
+            async for chunk in source:
+                buf.extend(chunk)
+                while len(buf) >= byte_limit:
+                    name = suffix_fn(file_idx) + additional_suffix
+                    data = bytes(buf[:byte_limit])
+                    await emit(name, data)
+                    buf = buf[byte_limit:]
+                    file_idx += 1
+            if buf:
                 name = suffix_fn(file_idx) + additional_suffix
-                data = bytes(buf[:byte_limit])
+                data = bytes(buf)
                 await emit(name, data)
-                buf = buf[byte_limit:]
-                file_idx += 1
-        if buf:
-            name = suffix_fn(file_idx) + additional_suffix
-            data = bytes(buf)
-            await emit(name, data)
-    else:
-        line_buf: list[bytes] = []
-        if separator == b"\n":
-            records: AsyncIterator[bytes] = AsyncLineIterator(source)
         else:
-            raw = b"".join([chunk async for chunk in source])
-            records = _record_iterator(raw, separator)
-        async for line in records:
-            line_buf.append(line)
-            if len(line_buf) >= lines_per_file:
+            line_buf: list[bytes] = []
+            if separator == b"\n":
+                records: AsyncIterator[bytes] = AsyncLineIterator(source)
+            else:
+                raw = b"".join([chunk async for chunk in source])
+                records = _record_iterator(raw, separator)
+            async for line in records:
+                line_buf.append(line)
+                if len(line_buf) >= lines_per_file:
+                    name = suffix_fn(file_idx) + additional_suffix
+                    data = separator.join(line_buf) + separator
+                    await emit(name, data)
+                    line_buf = []
+                    file_idx += 1
+            if line_buf:
                 name = suffix_fn(file_idx) + additional_suffix
                 data = separator.join(line_buf) + separator
                 await emit(name, data)
-                line_buf = []
-                file_idx += 1
-        if line_buf:
-            name = suffix_fn(file_idx) + additional_suffix
-            data = separator.join(line_buf) + separator
-            await emit(name, data)
+    finally:
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            await close()
 
     return None, IOResult(writes=writes)
 

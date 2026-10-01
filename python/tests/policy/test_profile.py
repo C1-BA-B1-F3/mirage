@@ -2152,7 +2152,7 @@ WARM_DOC = {
         "hide": ["/data/w/h.txt"]
     },
     "commands": {
-        "allow": ["cat", "grep", "rg", "cp", "tar", "find"],
+        "allow": ["cat", "grep", "rg", "cp", "tar", "find", "echo"],
         "deny": [{
             "reason": "sealed",
             "commands": {
@@ -2167,8 +2167,8 @@ WARM_DOC = {
 }
 
 WARM_LINES = ("grep -r secret /data/w", "rg secret /data/w", "cat /data/w/*",
-              "cp -r /data/w /data/c; find /data/c",
-              "tar -cf /data/x.tar /data/w; tar -tf /data/x.tar",
+              "cp -r /data/w /data/c; echo $?; find /data/c",
+              "tar -cf /data/x.tar /data/w; echo $?; tar -tf /data/x.tar",
               "tar -cf - /data/w | tar -tf -")
 
 

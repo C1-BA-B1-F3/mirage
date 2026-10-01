@@ -2433,7 +2433,7 @@ describe('a warm walk is refused as the cold walk is', () => {
   const WARM_DOC: SessionProfile = parseSessionProfile({
     paths: { hide: ['/data/w/h.txt'] },
     commands: {
-      allow: ['cat', 'grep', 'rg', 'cp', 'tar', 'find'],
+      allow: ['cat', 'grep', 'rg', 'cp', 'tar', 'find', 'echo'],
       deny: [
         {
           reason: 'sealed',
@@ -2449,8 +2449,8 @@ describe('a warm walk is refused as the cold walk is', () => {
     'grep -r secret /data/w',
     'rg secret /data/w',
     'cat /data/w/*',
-    'cp -r /data/w /data/c; find /data/c',
-    'tar -cf /data/x.tar /data/w; tar -tf /data/x.tar',
+    'cp -r /data/w /data/c; echo $?; find /data/c',
+    'tar -cf /data/x.tar /data/w; echo $?; tar -tf /data/x.tar',
     'tar -cf - /data/w | tar -tf -',
   ]
 

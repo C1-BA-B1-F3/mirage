@@ -360,7 +360,7 @@ export class PyodideRuntime extends PythonRuntime implements Evaluator {
     opts: { inputs?: Record<string, EvalValue>; session?: string },
     context?: RuntimeContext,
   ): Promise<EvalResult> {
-    this.vfs = context !== undefined ? new RuntimeVFS(context.dispatch, context.resolver) : null
+    this.vfs = context !== undefined ? RuntimeVFS.of(context) : null
     const worker = await this.ensureWorker(context)
     if (worker !== null && context !== undefined) {
       return (await worker.execute(
@@ -738,7 +738,7 @@ export class PyodideRuntime extends PythonRuntime implements Evaluator {
   }
 
   private async runOne(args: RunArgs, context?: RuntimeContext): Promise<RunResult> {
-    this.vfs = context !== undefined ? new RuntimeVFS(context.dispatch, context.resolver) : null
+    this.vfs = context !== undefined ? RuntimeVFS.of(context) : null
     const worker = await this.ensureWorker(context)
     if (worker !== null && context !== undefined) {
       const { cwd, signal, ...rest } = args

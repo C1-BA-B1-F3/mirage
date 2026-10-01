@@ -17,14 +17,10 @@ import logging
 from collections.abc import Awaitable
 from typing import Any
 
-from mirage.context import (get_current_session, reset_current_session,
-                            set_current_session)
-from mirage.observe.context import (active_recorder, reset_active_recorder,
-                                    set_active_recorder)
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import plan_flush
 from mirage.runtime.resolver import MountResolver
-from mirage.runtime.types import DispatchFn, VFSEntry, VFSStat
+from mirage.runtime.types import DispatchFn, RuntimeContext, VFSEntry, VFSStat
 from mirage.types import FileStat, PathSpec
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import norm
@@ -32,6 +28,10 @@ from mirage.utils.stat_view import (content_size, device_rdev, is_dir, is_link,
                                     mtime_ns, posix_mode)
 
 logger = logging.getLogger(__name__)
+
+
+async def _settle(pending: Awaitable[Any]) -> Any:
+    return await pending
 
 
 class RuntimeVFS:
@@ -53,14 +53,13 @@ class RuntimeVFS:
     that caller. The hop cannot carry the launching task's contextvars:
     what travels is the calling thread's context, and the threads guest
     calls arrive on (monty's tokio workers, wasmtime's run thread) never
-    had the session bound. So the VFS captures the session and the op
-    recorder on the launching task at construction — every runtime
-    builds one per run, and monty builds one per eval — and re-binds
-    both around each dispatched op, the same bracket FUSE's
-    ``MountCore`` puts around its ops. Session mount modes are then
-    enforced inside the op exactly as they are for a shell command, and
-    a guest's file I/O lands on the typed line's ledger exactly as a
-    shell command's does.
+    had the session bound. The dispatch it is given carries them
+    instead: a runtime builds its VFS with ``RuntimeVFS.of(context)``,
+    over the context's scoped dispatch, which replays the launching
+    task's session and op recorder around every op. Session mount modes are
+    then enforced inside the op exactly as they are for a shell command,
+    and a guest's file I/O lands on the typed line's ledger exactly as
+    a shell command's does.
 
     Args:
         dispatch (DispatchFn): the workspace dispatch coroutine function.
@@ -77,38 +76,22 @@ class RuntimeVFS:
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()
-        self._session = get_current_session()
-        self._recorder = active_recorder()
 
-    def _raw(self, op: str, path: str, **kwargs: Any) -> Any:
-        coro = self._dispatch(op, PathSpec.from_str_path(path), **kwargs)
-        result, _ = asyncio.run_coroutine_threadsafe(self._bind_session(coro),
-                                                     self._loop).result()
-        return result
-
-    async def _bind_session(self, coro: Awaitable[Any]) -> Any:
-        """Run one dispatched op under the captured launch context.
-
-        Set inside the coroutine so the tokens land on the event-loop
-        task that executes the op, mirroring ``MountCore._bind_session``.
-        Binds the session (mount modes) and the op recorder (the typed
-        line's ledger) together: both were captured on the launching
-        task and both are invisible to the thread the guest called from.
+    @classmethod
+    def of(cls, context: RuntimeContext) -> "RuntimeVFS":
+        """The file door every engine builds from its execution context.
 
         Args:
-            coro (Coroutine): the dispatch coroutine to run under the
-                session and recorder.
-
-        Returns:
-            Any: whatever the wrapped coroutine returns.
+            context (RuntimeContext): the execution's captured doors.
         """
-        token = set_current_session(self._session)
-        rec_token = set_active_recorder(self._recorder)
-        try:
-            return await coro
-        finally:
-            reset_active_recorder(rec_token)
-            reset_current_session(token)
+        return cls(context.dispatch, asyncio.get_running_loop(),
+                   context.resolver)
+
+    def _raw(self, op: str, path: str, **kwargs: Any) -> Any:
+        pending = self._dispatch(op, PathSpec.from_str_path(path), **kwargs)
+        result, _ = asyncio.run_coroutine_threadsafe(_settle(pending),
+                                                     self._loop).result()
+        return result
 
     def call(self, op: str, path: str, **kwargs: Any) -> Any:
         """Run one workspace op and return its result.

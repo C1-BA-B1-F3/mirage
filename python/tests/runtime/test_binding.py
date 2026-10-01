@@ -14,6 +14,7 @@
 
 import asyncio
 import os
+import threading
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,16 +23,21 @@ import pytest
 from mirage import (CodeExecution, MountMode, PathSpec, ProcessExecution,
                     RunResult, Runtime, ShellExecution,
                     UnsupportedExecutionError, Workspace)
-from mirage.context import get_current_session_for
+from mirage.context import (get_current_session, get_current_session_for,
+                            reset_current_session, set_current_session)
 from mirage.fuse.core import MountCore
+from mirage.observe.context import RecordingScope, record, start_op
 from mirage.policy import Deny, Policy
+from mirage.runtime.binding import WorkspaceBinding, capture_binding
 from mirage.runtime.js import QuickJsRuntime
 from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.python.monty import MontyRuntime
 from mirage.runtime.python.wasi import WasiRuntime
+from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.vfs import RuntimeVFS
 from mirage.vfs.ram import RAMVFS
+from mirage.workspace.session import SessionState
 
 
 class Probe(LanguageRuntime):
@@ -139,8 +145,7 @@ async def test_context_keeps_namespace_live_and_matches_native_projection():
         assert context.ns.links.resolve("/data/link") == "/data/a"
         ws.add_mount("/data/nested", RAMVFS(), mode=MountMode.EXEC)
         assert context.resolver.owner_of("/data/nested/a") == "/data/nested/"
-        vfs = RuntimeVFS(context.dispatch, asyncio.get_running_loop(),
-                         context.resolver)
+        vfs = RuntimeVFS.of(context)
         mount = MountCore(ws.vfs)
         # Call both sync adapters on a worker to keep their serving loop free.
         guest = await asyncio.to_thread(vfs.read, "/data/link")
@@ -265,3 +270,58 @@ async def test_process_views_do_not_share_by_profile_or_follow_reused_sessions(
         assert ws.runtime_context("one").processes.list() == ()
         release.set()
         await process.join()
+
+
+class SessionSpyDispatch:
+    """Records the session and emits an op event inside each op."""
+
+    def __init__(self):
+        self.sessions = []
+
+    async def __call__(self, op, path, **kwargs):
+        self.sessions.append(get_current_session())
+        record(op, path.virtual, "ram", 7, start_op())
+        return b"payload", None
+
+
+def vfs_read_on_a_bare_thread(vfs):
+    # Monty's tokio workers and wasmtime's run thread carry no Python
+    # context, so a bare Thread models them: the op arrives with an
+    # empty context and only what the context captured can scope it.
+    worker = threading.Thread(target=vfs.read, args=("/data/f.txt", ))
+    worker.start()
+    return asyncio.to_thread(worker.join)
+
+
+@pytest.mark.asyncio
+async def test_context_vfs_replays_the_launch_session_and_recorder():
+    dispatch = SessionSpyDispatch()
+    binding = WorkspaceBinding(dispatch, PrefixResolver(lambda: []))
+    sess = SessionState(session_id="agent")
+    scope = RecordingScope()
+    token = set_current_session(sess)
+    try:
+        vfs = RuntimeVFS.of(capture_binding(binding))
+    finally:
+        reset_current_session(token)
+    try:
+        await vfs_read_on_a_bare_thread(vfs)
+    finally:
+        scope.close()
+    assert dispatch.sessions == [sess]
+    assert [(r.op, r.path) for r in scope.records] == [("read", "/data/f.txt")]
+
+
+@pytest.mark.asyncio
+async def test_context_vfs_of_a_bare_launch_stays_unscoped_and_unrecorded():
+    dispatch = SessionSpyDispatch()
+    vfs = RuntimeVFS.of(
+        capture_binding(WorkspaceBinding(dispatch,
+                                         PrefixResolver(lambda: []))))
+    scope = RecordingScope()
+    try:
+        await vfs_read_on_a_bare_thread(vfs)
+    finally:
+        scope.close()
+    assert dispatch.sessions == [None]
+    assert scope.records == []

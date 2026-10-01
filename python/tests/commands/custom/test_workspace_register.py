@@ -14,7 +14,7 @@
 
 import asyncio
 
-from mirage.commands.registry import command
+from mirage.commands.config import command
 from mirage.commands.spec import CommandSpec, Operand
 from mirage.io.types import IOResult
 from mirage.types import MountMode

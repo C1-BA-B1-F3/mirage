@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.gmail import GmailAccessor
 from mirage.commands.builtin.gmail import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gmail import OPS as GMAIL_VFS_OPS
 from mirage.ops.registry import RegisteredOp

@@ -22,8 +22,7 @@ except ImportError as _err:
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.commands.builtin.redis import COMMANDS as REDIS_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.redis import OPS as REDIS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

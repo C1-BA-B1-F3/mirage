@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.slack import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.time_range import TimeRange
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.slack import OPS as SLACK_VFS_OPS

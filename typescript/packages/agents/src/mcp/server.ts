@@ -24,8 +24,8 @@ import {
   LS_DESCRIPTION,
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
-} from '../tool-descriptions.ts'
-import { MirageToolOperations, type MirageToolOperationsOptions } from '../tool-operations.ts'
+} from '../tool_descriptions.ts'
+import { MirageToolOperations, type MirageToolOperationsOptions } from '../tool_operations.ts'
 
 export interface MirageMcpServerOptions extends MirageToolOperationsOptions {
   name?: string

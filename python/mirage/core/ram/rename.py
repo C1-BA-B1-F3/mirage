@@ -15,8 +15,8 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_subtree
 from mirage.core.ram.dest import check_dest_parents, lookup_error
-from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
+from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 from mirage.vfs.ram.store import RAMStore
 

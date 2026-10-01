@@ -18,7 +18,7 @@ from mirage.commands.config import (CommandOpts, RegisteredCommand, command,
                                     has_injected_version, help_page,
                                     standard_request, version_line)
 from mirage.commands.spec import SPECS, CommandSpec, Operand, Option
-from mirage.commands.spec.builtin_specs import registered_spec
+from mirage.commands.spec.builtins import registered_spec
 from mirage.version import __version__
 
 _HANDLER_CALLS: list[str] = []

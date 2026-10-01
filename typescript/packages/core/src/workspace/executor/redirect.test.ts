@@ -20,7 +20,7 @@ import type { TSNodeLike } from '../../shell/types.ts'
 import { makeIntegrationWS, run, runExit, runResult } from '../fixtures/integration_fixture.ts'
 import { SessionState } from '../session/session.ts'
 import { ExecutionNode } from '../types.ts'
-import type { DispatchFn } from './cross_mount.ts'
+import type { DispatchFn } from '../../runtime/types.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import { handleRedirect } from './redirect.ts'
 

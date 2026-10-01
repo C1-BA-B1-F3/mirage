@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
 from mirage.commands.builtin.onedrive import COMMANDS as ONEDRIVE_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.onedrive.watch import build_delta_hook
 from mirage.ops.onedrive import OPS as ONEDRIVE_OPS
 from mirage.ops.registry import RegisteredOp

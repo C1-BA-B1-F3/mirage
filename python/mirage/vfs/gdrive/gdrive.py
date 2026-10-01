@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.commands.builtin.gdrive import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.gdrive.watch import build_delta_hook
 from mirage.core.google.client import TokenManager
 from mirage.ops.gdrive import OPS as GDRIVE_VFS_OPS

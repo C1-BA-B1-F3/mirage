@@ -26,7 +26,7 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     IgnoredPathsError, NothingSpecifiedError, NoWorkspaceError, PathspecError,
     UnknownPathspecError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.ignore import IgnoreStack, load_ignores
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.io import entry_bytes
 from mirage.commands.cli.builtin.git.objects import store_blob
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative

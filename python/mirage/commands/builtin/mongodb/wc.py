@@ -18,8 +18,7 @@ from mirage.commands.builtin.generic.wc import (WCCounts, format_count_rows,
 from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
 from mirage.commands.builtin.mongodb.io import IO
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.mongodb.client import count_documents

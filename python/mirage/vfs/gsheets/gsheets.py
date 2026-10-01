@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.gsheets import GSheetsAccessor
 from mirage.commands.builtin.gsheets import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gsheets import OPS as GSHEETS_VFS_OPS
 from mirage.ops.registry import RegisteredOp

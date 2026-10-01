@@ -20,7 +20,7 @@ import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { RedisIndexEntry } from './entry.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function readdir(
   accessor: RedisAccessor,

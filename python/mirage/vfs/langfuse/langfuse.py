@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.commands.builtin.langfuse import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.langfuse import OPS as LANGFUSE_VFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

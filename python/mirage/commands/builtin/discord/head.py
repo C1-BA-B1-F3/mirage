@@ -21,8 +21,7 @@ from mirage.commands.builtin.generic.head import head as generic_head
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
 from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.discord.client import discord_get
 from mirage.core.discord.history import date_to_snowflake

@@ -15,7 +15,7 @@
 import posixpath
 
 from mirage.commands.cli.builtin.git.errors import GitError
-from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.pathspec import repo_relative, under
 from mirage.commands.cli.builtin.git.render import quote_path
 from mirage.commands.cli.builtin.git.repo import config_bool

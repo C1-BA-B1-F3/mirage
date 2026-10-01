@@ -19,8 +19,7 @@ from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.commands.builtin.generic_bind.search import run_search
 from mirage.commands.builtin.langfuse._provision import file_read_provision
 from mirage.commands.builtin.langfuse.io import IO
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
 from mirage.provision.types import ProvisionResult

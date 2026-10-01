@@ -16,7 +16,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from mirage.commands.config import RegisteredCommand, command
+from mirage.commands.config import CommandCatalog, RegisteredCommand, command
 from mirage.commands.spec import CommandSpec
 
 
@@ -32,13 +32,6 @@ async def _provision(*args, **kwargs):
     return None
 
 
-def _catalog_type():
-    from mirage.commands import registry
-
-    assert hasattr(registry, "CommandCatalog")
-    return registry.CommandCatalog
-
-
 def _decorated(name: str, filetype: str | None = None):
     return command(name, vfs="s3", spec=CommandSpec(),
                    filetype=filetype)(_handler)
@@ -46,7 +39,7 @@ def _decorated(name: str, filetype: str | None = None):
 
 def test_catalog_iterates_definitions_and_resolves_decorated_commands():
     source = [_decorated("cat"), _decorated("cat", ".demo")]
-    catalog = _catalog_type()(source)
+    catalog = CommandCatalog(source)
 
     assert list(catalog) == [fn._registered_commands[0] for fn in source]
     assert catalog.require("cat").filetype is None
@@ -59,13 +52,13 @@ def test_catalog_accepts_registered_command_values():
                                    vfs="s3",
                                    filetype=None,
                                    fn=_handler)
-    catalog = _catalog_type()([registered])
+    catalog = CommandCatalog([registered])
 
     assert catalog.require("cat") is registered
 
 
 def test_catalog_get_and_require_have_explicit_missing_behavior():
-    catalog = _catalog_type()([_decorated("cat")])
+    catalog = CommandCatalog([_decorated("cat")])
 
     assert catalog.get("missing") is None
     with pytest.raises(KeyError, match="missing"):
@@ -74,7 +67,7 @@ def test_catalog_get_and_require_have_explicit_missing_behavior():
 
 def test_catalog_is_an_immutable_snapshot():
     source = [_decorated("cat")]
-    catalog = _catalog_type()(source)
+    catalog = CommandCatalog(source)
 
     source.append(_decorated("tail"))
 

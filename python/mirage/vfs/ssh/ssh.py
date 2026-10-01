@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.commands.builtin.ssh import COMMANDS as SSH_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.watch import build_delta_hook
 from mirage.ops.registry import RegisteredOp

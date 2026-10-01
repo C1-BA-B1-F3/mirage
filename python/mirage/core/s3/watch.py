@@ -17,8 +17,8 @@ from collections.abc import AsyncIterator
 from mirage.accessor.s3 import S3Accessor
 from mirage.core.s3.client import (_client_kwargs, _key, _strip_prefix,
                                    async_session)
-from mirage.core.timeutil import to_iso_z
 from mirage.types import PathSpec, WalkEntry
+from mirage.utils.dates import to_iso_z
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.watch.base import DeltaHook
 from mirage.watch.delta import ListingDeltaHook

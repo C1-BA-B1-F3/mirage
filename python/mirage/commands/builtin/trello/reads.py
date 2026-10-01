@@ -20,8 +20,7 @@ from typing import Any
 from mirage.accessor.trello import TrelloAccessor
 from mirage.commands.builtin.trello._scope import (require_board, require_card,
                                                    require_list)
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandSpec, Operand
 from mirage.core.trello.client import (get_board, get_card, list_board_labels,

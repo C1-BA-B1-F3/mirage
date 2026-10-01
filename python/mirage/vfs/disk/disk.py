@@ -19,8 +19,7 @@ from typing import Any
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.commands.builtin.disk import COMMANDS as DISK_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.disk.utils import resolve_inside_sync, walk_entries
 from mirage.core.disk.watch import build_delta_hook
 from mirage.ops.disk import OPS as DISK_OPS

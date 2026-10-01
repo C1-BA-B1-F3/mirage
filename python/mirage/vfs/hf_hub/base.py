@@ -16,8 +16,7 @@ from typing import Any, Generic, TypeVar
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.commands.builtin.hf_hub import COMMANDS as HF_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.hf_hub.watch import build_delta_hook
 from mirage.ops.hf_hub import OPS as HF_OPS
 from mirage.ops.registry import RegisteredOp

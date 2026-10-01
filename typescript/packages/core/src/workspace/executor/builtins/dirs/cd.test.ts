@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { PathSpec } from '../../../../types.ts'
 import { ContentType, FileType } from '../../../../types.ts'
 import { SessionState } from '../../../session/session.ts'
-import type { DispatchFn } from '../../cross_mount.ts'
+import type { DispatchFn } from '../../../../runtime/types.ts'
 import { handleCd } from './cd.ts'
 
 function dispatcher(dirs: string[] = [], files: string[] = []) {

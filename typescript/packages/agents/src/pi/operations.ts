@@ -24,10 +24,10 @@ import type {
   WriteOperations,
 } from '@earendil-works/pi-coding-agent'
 import picomatch from 'picomatch'
-import { FileVersionTracker } from '../file-version.ts'
-import { decode, refusalLine } from '../io-text.ts'
+import { FileVersionTracker } from '../file_version.ts'
+import { decode, refusalLine } from '../io_text.ts'
 
-export { StaleMirageFileError } from '../file-version.ts'
+export { StaleMirageFileError } from '../file_version.ts'
 
 export interface MirageOperationsOptions {
   staleWriteProtection?: boolean

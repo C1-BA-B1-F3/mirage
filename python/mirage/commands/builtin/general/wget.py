@@ -16,9 +16,8 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
 from mirage.commands.builtin.general.curl import resolve_target
 from mirage.commands.builtin.utils.http import http_get
-from mirage.commands.config import CommandOpts
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
-from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult

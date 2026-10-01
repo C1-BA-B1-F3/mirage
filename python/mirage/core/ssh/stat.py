@@ -17,8 +17,8 @@ import asyncssh
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.ssh.client import _abs
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.errors import eacces, enoent
 from mirage.utils.filetype import content_type_for_path
 

@@ -571,7 +571,7 @@ STANDARD_BEFORE_SCAN = frozenset({"zgrep"})
 # rather than keying on the two strings: the parser resolves each pair
 # once and then asks whether the option declaring a set IS one of them.
 # A name is not identity, and a mount may register its own `tee`
-# (commands/registry.py) whose `--output-error` would otherwise inherit
+# (commands/config.py) whose `--output-error` would otherwise inherit
 # gnulib's rule from a spelling collision alone. Identity is also the
 # only signal that survives registration, which hands the parser an
 # enriched COPY of the spec (config.py appends --help/--version), so

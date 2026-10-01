@@ -15,7 +15,8 @@
 import { invalidateAfterWrite } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 import { checkDestParents, lookupError } from './dest.ts'
 
 export async function copy(accessor: RedisAccessor, src: PathSpec, dst: PathSpec): Promise<void> {

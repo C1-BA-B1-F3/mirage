@@ -19,8 +19,7 @@ from dataclasses import dataclass, field
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.stream import read_stdin_async
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult

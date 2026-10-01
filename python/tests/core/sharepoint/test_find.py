@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import mirage.core.msgraph.drive_ops as drive_ops
+import mirage.core.msgraph.drive as drive_ops
 from mirage.core.api.client import SessionPool
 from mirage.core.sharepoint import find as find_mod
 from mirage.core.sharepoint.resolve import ResolvedPath

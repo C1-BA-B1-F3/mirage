@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.notion import NotionAccessor
 from mirage.commands.builtin.notion import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.notion.config import NotionConfig
 from mirage.ops.notion import OPS as NOTION_VFS_OPS
 from mirage.ops.registry import RegisteredOp

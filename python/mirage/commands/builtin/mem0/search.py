@@ -18,9 +18,8 @@ from mirage.accessor.mem0 import Mem0Accessor
 from mirage.commands.builtin.generic_bind import metadata_provision
 from mirage.commands.builtin.mem0.io import IO
 from mirage.commands.builtin.utils.paths import default_paths
-from mirage.commands.config import CommandOpts
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
-from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult

@@ -12,8 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.agno.prompt import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 from mirage.agents.agno.toolkit import MirageToolkit
+from mirage.agents.prompt import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 
 __all__ = [
     "MirageToolkit",

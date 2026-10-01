@@ -15,9 +15,9 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_after_write
 from mirage.core.ram.dest import check_dest_parents, check_write_target
-from mirage.core.timeutil import now_iso
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
+from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 
 

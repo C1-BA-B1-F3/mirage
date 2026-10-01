@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.ops.generic.factory import make_generic_ops
-from mirage.ops.generic.table import OpsTable
+from mirage.ops.generic.types import OpsTable
 
 __all__ = [
     "OpsTable",

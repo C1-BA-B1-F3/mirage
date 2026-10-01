@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { lookupError } from './dest.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export interface SetAttrsFields {
   mode?: number

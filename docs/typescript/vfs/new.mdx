@@ -356,6 +356,20 @@ Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies 
 
 A backend whose content lives in a remote service keeps `needs_override: true` in that state. Both loaders refuse a missing live override; neither substitutes an empty RAM mount. A backend that owns portable content can implement `getState` and `loadState` and register a factory so snapshots rebuild it, as shown above.
 
+### Listing versions
+
+Under `read: fresh`, a cached listing the running command did not write is listed again, unless the backend declares what to check it against. Declare `listingVersion` as a literal member, like `readRevalidatable`, so the spec generator can read it: `override readonly listingVersion: ListingVersion = ListingVersion.MOUNT`.
+
+- `ListingVersion.NONE` (the default): no version; every command re-lists.
+- `ListingVersion.MOUNT`: one version covers every listing of the mount (GitHub and the Hub use the head commit). A stat of the mount root through an empty index returns it as `fingerprint`, and the tree fill stores the same value with every listing it writes (`seed(..., version)` or `setDir(..., { version })`).
+- `ListingVersion.FOLDER`: each listing carries its own folder's version (disk). A stat of the folder returns it as the fingerprint, and `readdir` reads it before listing and passes it to `setDir(path, entries, expiresAt, { version })`, so a change during the scan leaves the stored version behind.
+
+Take the version from a backend response, the same kind of token the stat answers, since the gate compares the two with `===`. Store `null` when there is nothing reliable to store; that listing re-lists.
+
+`listingsPin` (default `null`) is set per instance in the constructor when the config pins the mount to something that cannot move: the lowercased ref when it is a full 40- or 64-hex commit sha. A stored listing whose version equals the pin is served with no request. The stored value still comes from a response, never from config, so a branch whose name looks like a sha never matches.
+
+`node/src/vfs/listing_version.test.ts` holds every declarer to this, as `tests/vfs/test_listing_version.py` does in Python: the fill stores a version, a stat through an empty index answers the stored value, a second command sends only the expected checks, and an outside change moves the version. It reads each declaration from the regenerated `spec/typescript/node/vfs.json`, so regenerate `spec/` first. A new declarer adds a harness to the test and adds its name to the pinned roster, or the roster tests fail.
+
 ## 6. Snapshot Support
 
 Leave `supportsSnapshot` unset unless the complete drift contract is implemented:

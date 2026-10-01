@@ -56,7 +56,7 @@ mounts:
 
 ## The read policy
 
-`read: bounded` serves cached bytes and cached directory listings without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read, and re-lists a cached folder once per command before serving it.
+`read: bounded` serves cached bytes and cached directory listings without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read, and checks a cached listing before serving it: against the listing's stored version where the backend has one, otherwise by re-listing the folder once per command. See [listings under `fresh`](/home/cache#listings-under-fresh).
 
 `fresh` is refused at mount time on a backend that cannot honour it, rather than quietly behaving as `bounded`:
 
@@ -69,7 +69,23 @@ mounts:
 
 `ttl:` lives only in a mount block. At the top level it would sit beside `index: {ttl: ...}` and mean a different thing, so the workspace-level default is `read:` alone and a workspace-level `bounded` takes 600 seconds.
 
-Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings: each command re-lists a folder it reads from the cache, once, and trusts that re-list for the rest of the command, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A read that belongs to no command (FUSE, a programmatic op such as `ws.vfs`, an agent's file tools) trusts a listing written in the last second, so calls in a short `ls -l` burst over FUSE can share one re-list; a burst lasting beyond the window can re-list again, and an outside change can stay hidden from those reads for up to that second.
+Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A cached listing is served when:
+
+1. the running command wrote it;
+2. the mount is pinned to a full commit sha and the listing was fetched at it (GitHub, the Hugging Face Hub repos), with no request;
+3. its stored version still matches the backend's: one check per command for a GitHub or Hub mount, one local stat per folder on disk.
+
+Otherwise the folder is listed again, and that re-list is trusted for the rest of the command. A read that belongs to no command (FUSE, a programmatic op such as `ws.vfs`, an agent's file tools) trusts a listing written, or a version check sent, in the last second, so calls in a short `ls -l` burst over FUSE can share one re-list or one check; a burst lasting beyond the window can re-list again, and an outside change can stay hidden from those reads for up to that second.
+
+Disk versions each folder by its change time, which assumes a local POSIX filesystem. For a network or FUSE root (NFS, SMB, rclone, s3fs, mirage's own FUSE), whose folder change time may not move when its entries do, turn the versions off in the mount's `config:`; that mount then re-lists once per command:
+
+```yaml
+mounts:
+  /share:
+    vfs: disk
+    config: {root: /mnt/nfs/share, folder_versions: false}
+    read: fresh
+```
 
 Existing listings in a persisted Redis index retain their stored expiry until rewritten.
 

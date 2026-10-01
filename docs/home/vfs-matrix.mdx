@@ -14,6 +14,12 @@ Sections below mirror the **Setup** sidebar so you can pick a category and follo
 
 Every VFS accepts `read: bounded`. `read: fresh`, which revalidates cached bytes against the backend before serving them, is accepted today only by the S3-compatible family, GridFS, OneDrive, SharePoint, the Hugging Face Hub repos (models, datasets, spaces), Hugging Face Buckets, GitHub, Google Drive, Google Docs, Google Sheets and Google Slides — the backends whose `stat` and read stamp the same kind of content token. It is also accepted by backends that cache listings but no bytes (Disk, Chroma, Qdrant, Airtable, W&B, and OPFS in the browser), where `fresh` checks the listings. On GitHub it revalidates a cached file against its blob sha; a file read for the first time comes from the mount's listing, and the next read's check corrects it. On Google Docs, Sheets and Slides the token is the file's Drive modified time, and the check lists every file of that kind, so it costs one listing rather than one stat. Any other mount declaring it is refused at mount time rather than downgraded. This list is maintained by hand for now and grows one backend at a time as each learns to stamp a read fingerprint.
 
+Under `fresh`, a cached listing is checked too, and what it is checked against depends on the VFS (`listing_version` in `spec/*/vfs.json`; see [listings under `fresh`](/home/cache#listings-under-fresh)):
+
+- `mount`: GitHub (Python, Node, browser) and HF Models, HF Datasets, HF Spaces (Python, Node). One check per command against the head commit; a mount pinned to a full commit sha sends none once its listings were fetched at that sha.
+- `folder`: Disk (Python, Node). One local stat per listed folder. `folder_versions: false` turns it off for that mount.
+- `none`: every other VFS. A cached listing is re-listed once per command.
+
 ## Infrastructure
 
 No external setup, these run locally or against a connection string you already have.

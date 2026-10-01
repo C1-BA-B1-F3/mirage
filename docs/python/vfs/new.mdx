@@ -383,6 +383,20 @@ The mount registers both tables when the driver is placed; a driver never regist
 
 Set `caches_reads=True` only for stable, read-mostly content. Implement `get_state()` with credentials redacted (`self.config_state(self.config)`) and close any network clients in `close()`.
 
+### Listing versions
+
+Under `read: fresh`, a cached listing the running command did not write is listed again, unless the backend declares what to check it against. Declare `listing_version` (`mirage.types.ListingVersion`) as a class attribute, like `read_revalidatable`:
+
+- `NONE` (the default): no version; every command re-lists.
+- `MOUNT`: one version covers every listing of the mount (GitHub and the Hub use the head commit). A stat of the mount root through an empty index returns it as `FileStat.fingerprint`, and the tree fill seeds the same value with every listing it writes (`seed(..., version=...)`).
+- `FOLDER`: each listing carries its own folder's version (disk). A stat of the folder returns it as the fingerprint, and `readdir` reads it before listing and passes it to `set_dir(..., version=...)`, so a change during the scan leaves the stored version behind.
+
+Take the version from a backend response, the same kind of token the stat answers, since the gate compares the two with `==`. Store `None` when there is nothing reliable to store; that listing re-lists.
+
+`listings_pin` is an instance attribute (default `None`). Set it in `__init__` when the config pins the mount to something that cannot move: the lowercased ref when it is a full 40- or 64-hex commit sha. A stored listing whose version equals the pin is served with no request. The stored value still comes from a response, never from config, so a branch whose name looks like a sha never matches.
+
+`tests/vfs/test_listing_version.py` holds every declarer to this: the fill stores a version on the root and on a nested folder, a stat through an empty index answers the stored value, a second command sends only the expected checks and no refill, and an outside change moves the version. A new declarer adds a harness there and adds its name to the pinned roster, or the roster tests fail.
+
 ## 6. Snapshot Support
 
 Leave `supports_snapshot=False` unless the complete drift contract is implemented:

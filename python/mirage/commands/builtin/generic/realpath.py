@@ -69,11 +69,11 @@ async def canonicalize(word: str, cwd: str, mode: str, nolinks: bool,
 
     A relative word starts at the working directory. Each named component
     is appended and, unless ``nolinks``, taken through its links, so a
-    ``..`` climbs from where a link leads. A component a ``.``, ``..`` or
-    trailing slash follows must be a directory; then the whole path must
-    be there, except that the default mode lets the last component alone
-    be missing, and ``nolinks`` blames any missing one on the last. ``m``
-    checks nothing and leaves a looping link unresolved.
+    ``..`` climbs from where a link leads. A component followed by ``.``
+    or ``..`` must be a directory. A trailing slash rejects an existing
+    non-directory. GNU 9.7's default mode accepts a missing final component
+    with a slash; ``nolinks`` also accepts missing parents. ``e`` requires
+    existence; ``m`` checks nothing and leaves a looping link unresolved.
 
     Args:
         word (str): the path as given.
@@ -168,7 +168,8 @@ async def realpath(
             await _directory(stat, path, word)
         return path
 
-    relative_to = flags.relative_to or flags.relative_base
+    relative_to = (flags.relative_to if flags.relative_to is not None
+                   else flags.relative_base)
     to = base = None
     for word in dict.fromkeys(w for w in (relative_to, flags.relative_base)
                               if w is not None):

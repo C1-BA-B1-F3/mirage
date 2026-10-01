@@ -329,14 +329,8 @@ function headerInserts(root: Node, text: string): [number, string][] {
 }
 
 function repairForHeaders(parser: Parser, root: Node, text: string): [Node, string] {
-  // bash reads any word as a for or select name and checks it when the loop
-  // runs (`x-y': not a valid identifier), and gives a header with no `in` the
-  // list `"$@"` (make_for_command; `declare -f` prints it), POSIX allowing
-  // `for f do`. The grammar takes neither, so a name it cannot read is spelled
-  // `for 0 in NAME` (getForParts reads it back) and a missing list is
-  // inserted. Error recovery hides a nested header until the outer one
-  // parses, so this repeats. A line may already hold an unrelated error
-  // (`done <<< 1`), so a repair only has to add none.
+  // Encode invalid names for runtime validation and supply omitted "$@".
+  // Repeat to expose nested headers; accept only repairs adding no errors.
   let [repaired, retried] = [text, root]
   for (let inserts = headerInserts(root, text); inserts.length > 0; ) {
     for (const [offset, insert] of inserts.sort((a, b) => b[0] - a[0])) {

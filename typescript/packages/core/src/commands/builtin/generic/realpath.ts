@@ -69,12 +69,11 @@ async function directory(stat: PathStat, path: string, word: string): Promise<vo
  * and `readlink -f` share. A relative word
  * starts at the working directory. Each named component is appended and,
  * unless `nolinks`, taken through its links, so a `..` climbs from where a
- * link leads. A component a `.`, `..` or trailing slash follows must be a
- * directory; then the whole path must be there, except that the default
- * mode lets the last component alone be missing, and `nolinks` blames any
- * missing one on the last. `m` checks nothing and leaves a looping link
- * unresolved. Throws the first check the walk fails. Mirrors Python's
- * canonicalize.
+ * link leads. A component followed by `.` or `..` must be a directory.
+ * A trailing slash rejects an existing non-directory. GNU 9.7's default mode
+ * accepts a missing final component with a slash; `nolinks` also accepts
+ * missing parents. `e` requires existence, while `m` checks nothing and leaves a looping
+ * link unresolved. Throws the first check the walk fails. Mirrors Python.
  */
 export async function canonicalize(
   word: string,

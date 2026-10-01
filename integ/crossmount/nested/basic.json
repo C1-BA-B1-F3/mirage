@@ -1030,6 +1030,45 @@
         "stderr": ""
       },
       "note": "One invocation sorts across explicit operands owned by different mounts; timestamps established by nest_rg_time_sort_spans_mounts."
+    },
+    {
+      "id": "nest_realpath_relative_operand",
+      "seq": 950085,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && realpath -m /data/file /data/inner/file relative.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/file\n/data/inner/file\n/data/relative.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nest_realpath_operand_order",
+      "seq": 950086,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && realpath -m relative.txt /data/file other.txt /data/inner/file relative.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/relative.txt\n/data/file\n/data/other.txt\n/data/inner/file\n/data/relative.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nest_realpath_empty_operand",
+      "seq": 950087,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && realpath -m /data/file '' /data/inner/file relative.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/file\n/data/inner/file\n/data/relative.txt\n",
+        "stderr": "realpath: '': No such file or directory\n"
+      }
     }
   ]
 }

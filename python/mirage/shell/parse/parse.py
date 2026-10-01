@@ -365,14 +365,8 @@ def _header_inserts(root: tree_sitter.Node,
 
 def _repair_for_headers(root: tree_sitter.Node,
                         data: bytes) -> tuple[tree_sitter.Node, bytes]:
-    # bash reads any word as a for or select name and checks it when the
-    # loop runs (`x-y': not a valid identifier), and gives a header with
-    # no `in` the list `"$@"` (make_for_command; `declare -f` prints it),
-    # POSIX allowing `for f do`. The grammar takes neither, so a name it
-    # cannot read is spelled `for 0 in NAME` (get_for_parts reads it back)
-    # and a missing list is inserted. Error recovery hides a nested header
-    # until the outer one parses, so this repeats. A line may already hold
-    # an unrelated error (`done <<< 1`), so a repair only has to add none.
+    # Encode invalid names for runtime validation and supply omitted "$@".
+    # Repeat to expose nested headers; accept only repairs adding no errors.
     repaired, retried = data, root
     while inserts := _header_inserts(retried, repaired):
         for offset, text in sorted(inserts, reverse=True):

@@ -323,6 +323,9 @@ class _Gate:
         if virtual == self.refused:
             raise PermissionError(virtual)
 
+    def refuses(self, virtual: str) -> bool:
+        return virtual == self.refused
+
 
 def _spec(virtual: str) -> PathSpec:
     return PathSpec(

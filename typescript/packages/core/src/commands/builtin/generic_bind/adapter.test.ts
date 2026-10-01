@@ -321,6 +321,7 @@ describe('withRuleGuard', () => {
         asked.push(virtual)
         if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
       },
+      refuses: (virtual: string) => virtual === '/data/locked/y',
     }
     await runWithAdmission(gate, async () => {
       // The gate throws at call time, like the hidden guard, so a caller's
@@ -375,6 +376,7 @@ describe('withDispatchRuleGuard', () => {
         asked.push(virtual)
         if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
       },
+      refuses: (virtual: string) => virtual === '/data/locked/y',
     }
     const session = new SessionState({
       sessionId: 'relay-hidden',
@@ -1052,6 +1054,7 @@ it('a missing capability obeys the rule before the mode', async () => {
       asked.push(path)
       throw eacces(path)
     },
+    refuses: () => true,
   }
   await runWithAdmission(gate, () =>
     runWithMountGate('/data', MountMode.READ, async () => {

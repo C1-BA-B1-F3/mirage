@@ -173,9 +173,21 @@ export class Admitted implements EntryGate {
   // Throw `PolicyDenied` when a rule in force refuses this entry for the
   // running command.
   check(virtual: string): void {
-    if (this.judged.has(norm(virtual))) return
-    const reason = ioRefusal(this.rules, this.tokens, virtual, this.granted)
+    const reason = this.refusal(virtual)
     if (reason !== null) throw new PolicyDenied(reason, virtual)
+  }
+
+  // Whether a rule in force refuses this entry for the running command,
+  // without throwing.
+  refuses(virtual: string): boolean {
+    return this.refusal(virtual) !== null
+  }
+
+  // The reason a rule in force refuses this entry, null when the line was
+  // admitted on it or nothing refuses it.
+  private refusal(virtual: string): string | null {
+    if (this.judged.has(norm(virtual))) return null
+    return ioRefusal(this.rules, this.tokens, virtual, this.granted)
   }
 }
 

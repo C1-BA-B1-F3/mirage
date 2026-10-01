@@ -170,11 +170,29 @@ class Admitted:
         Args:
             virtual (str): absolute virtual path of the entry.
         """
-        if _norm(virtual) in self.judged:
-            return
-        reason = io_refusal(self.rules, self.tokens, virtual, self.granted)
+        reason = self._refusal(virtual)
         if reason is not None:
             raise PolicyDenied(errno.EACCES, reason, virtual)
+
+    def refuses(self, virtual: str) -> bool:
+        """Whether a rule in force refuses this entry for the running
+        command, without raising.
+
+        Args:
+            virtual (str): absolute virtual path of the entry.
+        """
+        return self._refusal(virtual) is not None
+
+    def _refusal(self, virtual: str) -> str | None:
+        """The reason a rule in force refuses this entry, None when the
+        line was admitted on it or nothing refuses it.
+
+        Args:
+            virtual (str): absolute virtual path of the entry.
+        """
+        if _norm(virtual) in self.judged:
+            return None
+        return io_refusal(self.rules, self.tokens, virtual, self.granted)
 
 
 def policy_scopes(

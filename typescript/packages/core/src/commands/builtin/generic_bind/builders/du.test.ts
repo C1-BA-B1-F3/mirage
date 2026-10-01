@@ -189,6 +189,7 @@ const SCOPED_GATE: EntryGate = {
   scoped: true,
   granted: [],
   check: () => undefined,
+  refuses: () => false,
 }
 
 const THROTTLED = Object.assign(new Error('Box GET /folders/9/items -> 429'), {

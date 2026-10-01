@@ -449,6 +449,35 @@ describe('admission', () => {
     }).check('/data/asked/a')
   })
 
+  // The cache door asks without throwing: an answer it can decline on,
+  // true exactly where check would throw.
+  it('the admitted gate answers refuses as check would', () => {
+    const deny: CommandRule = { reason: 'sealed', paths: ['/data/sealed'] }
+    const rules: AdmissionRules = { allow: null, ask: [], deny: [deny] }
+    const gate = new Admitted({
+      rules,
+      tokens: ['grep', '-r', 'x', '/data'],
+      judged: new Set(['/data/sealed/named']),
+      granted: [],
+      scoped: true,
+    })
+    expect(gate.refuses('/data/sealed/s')).toBe(true)
+    expect(gate.refuses('/data/open/o')).toBe(false)
+    expect(gate.refuses('/data/sealed/named')).toBe(false)
+    const ask: CommandRule = { reason: 'nod', commands: ['grep'], paths: ['/data/asked/*'] }
+    const asked: AdmissionRules = { allow: null, ask: [ask], deny: [] }
+    const under = (granted: readonly CommandRule[]) =>
+      new Admitted({
+        rules: asked,
+        tokens: ['grep', '-r', 'x', '/data'],
+        judged: new Set(['/data']),
+        granted,
+        scoped: true,
+      })
+    expect(under([]).refuses('/data/asked/a')).toBe(true)
+    expect(under([ask]).refuses('/data/asked/a')).toBe(false)
+  })
+
   it('admit reports the grant the line runs under and its scope', async () => {
     const w = await ws()
     const session = w.sessionManager.get(w.sessionManager.defaultId)

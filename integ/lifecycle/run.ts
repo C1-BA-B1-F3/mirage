@@ -73,7 +73,7 @@ type Step = (
       runtime?: string
       config?: Record<string, unknown>
     }
-  | { op: 'unregister_cli' | 'add_runtime'; name: string }
+  | { op: 'unregister_cli' | 'add_runtime' | 'remove_runtime'; name: string }
   | {
       op: 'register_policy'
       id: string
@@ -83,7 +83,9 @@ type Step = (
       reason: string
     }
   | { op: 'unregister_policy'; id: string }
-  | { op: 'mounts' | 'clis' | 'close' | 'snapshot' | 'checkout' | 'drain_processes' }
+  | {
+      op: 'mounts' | 'clis' | 'runtimes' | 'close' | 'snapshot' | 'checkout' | 'drain_processes'
+    }
   | { op: 'concurrent'; steps: Step[] }
 ) & { expect?: Record<string, unknown>; session?: string }
 
@@ -205,6 +207,11 @@ async function action(
       return [...ws.clis().keys()].sort()
     case 'add_runtime':
       return ws.addRuntime(step.name).name
+    case 'remove_runtime':
+      await ws.removeRuntime(step.name)
+      break
+    case 'runtimes':
+      return ws.runtimes().map((entry) => entry.name)
     case 'register_policy': {
       if (policies.has(step.id)) throw new Error('policy already registered')
       const policy: Policy = {

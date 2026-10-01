@@ -18,8 +18,8 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileType
 from mirage.utils.errors import FS_ERRORS, eisdir, fs_strerror
 from mirage.utils.path import resolve_path
-from mirage.workspace.executor.builtins.links import resolve_path_stat
 from mirage.workspace.executor.builtins.scope import _to_scope
+from mirage.workspace.mount.namespace.probe import resolve_path_stat
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 

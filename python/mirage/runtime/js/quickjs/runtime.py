@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import json
 import os
 from collections.abc import Sequence
@@ -160,11 +159,8 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
                 source = f"std.evalScript({json.dumps(source)});"
             source = cwd_preamble(cwd) + source
         argv += ["-e", source, "--", *named, *args.args]
-        dispatch = context.dispatch if context is not None else None
-        resolver = context.resolver if context is not None else None
-        core = (RuntimeVFS(dispatch, asyncio.get_running_loop(), resolver)
-                if dispatch is not None else None)
-        fs = WasmVFS(core=core)
+        fs = WasmVFS(
+            core=RuntimeVFS.of(context) if context is not None else None)
         stdout, stderr, exit_code = await self._runtime.run(
             argv=argv,
             stdin=args.stdin,

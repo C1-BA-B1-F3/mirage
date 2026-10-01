@@ -18,8 +18,8 @@ import pytest
 
 from mirage.io import IOResult
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.workspace.executor.builtins.links import resolve_path_stat
-from mirage.workspace.executor.builtins.links.probe import stat_or_none
+from mirage.workspace.mount.namespace.probe import (resolve_path_stat,
+                                                    stat_or_none)
 
 
 class _Dispatch:

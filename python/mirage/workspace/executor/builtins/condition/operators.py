@@ -26,8 +26,8 @@ from mirage.workspace.executor.builtins.condition.constants import (
     FILE_PAIR_BINARY, FILE_UNARY, INT_COMPARATORS, UNSUPPORTED_UNARY)
 from mirage.workspace.executor.builtins.condition.types import (CondContext,
                                                                 CondError)
-from mirage.workspace.executor.builtins.links import resolve_path_stat
 from mirage.workspace.executor.builtins.scope import _scope_path, _to_scope
+from mirage.workspace.mount.namespace.probe import resolve_path_stat
 from mirage.workspace.session.elements import element_is_set
 
 

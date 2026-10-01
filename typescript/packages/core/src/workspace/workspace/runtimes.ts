@@ -21,7 +21,6 @@ import {
   bindCommands,
   buildRuntime,
   DEFAULT_ENTRIES,
-  DEFAULT_PYTHON,
   WorkspaceRuntime,
   wholeLineRuntime,
 } from '../../runtime/table.ts'
@@ -31,56 +30,45 @@ export interface RuntimesInit {
   registry: MountRegistry
   /** The `runtimes` option: instances and name shorthands, or undefined for the default world. */
   entries: RuntimeEntry[] | undefined
-  /** `options.python`, forwarded into the default python engine's build. */
-  pythonConfig: Record<string, unknown>
   binding: WorkspaceBinding
-  registerCloser: (fn: () => Promise<void>) => void
 }
 
 /**
  * The workspace's ordered runtime world; the first capturer binds each
  * command. Mirrors the Python `Runtimes` in `workspace/runtimes.py`.
  *
+ * Owns the entry list and everything that reads or changes it: building
+ * it from config, adding and removing entries, closing them, and
+ * answering which entry takes a whole line.
+ *
  * The TypeScript engines construct lazily (missing wasm surfaces at run
- * time), so defaults and explicit entries build the same way. The vfs
- * runtime is required: every world names an executor for unclaimed
- * commands, so an omitted entry appends the default unconditional one.
+ * time), so defaults and explicit entries build the same way. The
+ * workspace runtime is required: every world names an executor for
+ * unclaimed commands, so an omitted entry appends the default
+ * unconditional one.
  */
 export class Runtimes {
-  readonly entries: Runtime[] = []
-  bindings: Record<string, Runtime>
+  entries: readonly Runtime[] = []
+  bindings: Record<string, Runtime> = Object.create(null) as Record<string, Runtime>
+  private readonly registry: MountRegistry
   private readonly binding: WorkspaceBinding
-  private readonly registerCloser: (fn: () => Promise<void>) => void
+  private readonly retiring = new Map<Runtime, Promise<void>>()
 
   constructor(init: RuntimesInit) {
+    this.registry = init.registry
     this.binding = init.binding
-    this.registerCloser = init.registerCloser
-    if (init.entries === undefined) {
-      for (const name of DEFAULT_ENTRIES) {
-        this.entries.push(
-          buildRuntime(name, name === DEFAULT_PYTHON ? { config: { ...init.pythonConfig } } : {}),
-        )
-      }
-    } else {
-      for (const entry of init.entries) {
-        this.entries.push(typeof entry === 'string' ? buildRuntime(entry) : entry)
-      }
+    const entries: Runtime[] = (init.entries ?? DEFAULT_ENTRIES).map((entry) =>
+      typeof entry === 'string' ? buildRuntime(entry) : entry,
+    )
+    if (!entries.some((entry) => entry.name === 'workspace')) {
+      entries.push(new WorkspaceRuntime())
     }
-    if (!this.entries.some((entry) => entry.name === 'workspace')) {
-      this.entries.push(new WorkspaceRuntime())
-    }
-    init.registry.workspaceRuntime =
-      this.entries.find((entry): entry is WorkspaceRuntime => entry instanceof WorkspaceRuntime) ??
-      null
-    // The live array: add() pushes into it, so the registry view never
-    // goes stale (Python re-assigns per add instead).
-    init.registry.runtimeEntries = this.entries
-    for (const entry of this.entries) {
+    for (const entry of entries) {
       rejectConfigScript(`runtime '${entry.name}' script`, entry.script)
-      entry.bind(this.binding)
-      this.registerCloser(() => entry.close())
     }
-    this.bindings = bindCommands(this.entries)
+    const bindings = bindCommands(entries)
+    for (const entry of entries) entry.bind(this.binding)
+    this.install(entries, bindings)
   }
 
   /**
@@ -97,10 +85,47 @@ export class Runtimes {
     const candidate = [...this.entries, entry]
     const bindings = bindCommands(candidate)
     entry.bind(this.binding)
-    this.registerCloser(() => entry.close())
-    this.entries.push(entry)
-    this.bindings = bindings
+    this.install(candidate, bindings)
     return entry
+  }
+
+  /** Unbind an entry's commands now and close it once it is idle. */
+  async remove(name: string): Promise<void> {
+    if (name === 'workspace') {
+      throw new Error(
+        'cannot remove the workspace runtime: it serves every command no other runtime captures',
+      )
+    }
+    const entry = this.entries.find((candidate) => candidate.name === name)
+    if (entry === undefined) throw new Error(`no runtime entry: '${name}'`)
+    const remaining = this.entries.filter((candidate) => candidate !== entry)
+    this.install(remaining, bindCommands(remaining))
+    const closing = retire(entry).finally(() => {
+      this.retiring.delete(entry)
+    })
+    this.retiring.set(entry, closing)
+    await closing
+  }
+
+  /** Close every entry, including the ones still being removed. */
+  async close(): Promise<void> {
+    const results = await Promise.allSettled([
+      ...this.entries.map((entry) => entry.close()),
+      ...this.retiring.values(),
+    ])
+    const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as unknown] : []))
+    if (failures.length > 0)
+      throw failures.length === 1
+        ? failures[0]
+        : new AggregateError(failures, 'runtime close failed')
+  }
+
+  private install(entries: readonly Runtime[], bindings: Record<string, Runtime>): void {
+    this.entries = entries
+    this.bindings = bindings
+    this.registry.runtimeEntries = entries
+    this.registry.workspaceRuntime =
+      entries.find((entry): entry is WorkspaceRuntime => entry instanceof WorkspaceRuntime) ?? null
   }
 
   /**
@@ -118,4 +143,9 @@ export class Runtimes {
       decision !== null ? decision.bindings : this.bindings
     return wholeLineRuntime(bindings)
   }
+}
+
+async function retire(entry: Runtime): Promise<void> {
+  await entry.retire()
+  await entry.close()
 }

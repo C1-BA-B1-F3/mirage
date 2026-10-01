@@ -28,7 +28,7 @@ import { CrossMountError } from './errors.ts'
 import { normDir, rstripSlash } from '../utils/slash.ts'
 import { planFlush } from './handles/index.ts'
 import { PrefixResolver, type MountResolver } from './resolver.ts'
-import type { BridgeDispatchFn } from './types.ts'
+import type { BridgeDispatchFn, RuntimeContext } from './types.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
 import { concat } from '../io/cachable_iterator.ts'
 
@@ -156,6 +156,11 @@ export class RuntimeVFS {
   constructor(dispatch: BridgeDispatchFn, resolver: MountResolver = new PrefixResolver(() => [])) {
     this.dispatch = dispatch
     this.resolver = resolver
+  }
+
+  /** The file door every engine builds from its execution context. */
+  static of(context: RuntimeContext): RuntimeVFS {
+    return new RuntimeVFS(context.dispatch, context.resolver)
   }
 
   /**

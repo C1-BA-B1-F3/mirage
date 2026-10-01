@@ -147,8 +147,7 @@ async def close_async(ws: "Workspace", ) -> None:
         ws.processes.stop()
         drain_tasks = list(ws._cache._drain_tasks.values())
         await ws._script_policy.close()
-        for line_runtime in ws._runtimes.entries:
-            await line_runtime.close()
+        await ws._runtimes.close()
         await ws.processes.drain()
         await ws.job_table.close_consoles()
         retirements = await asyncio.gather(

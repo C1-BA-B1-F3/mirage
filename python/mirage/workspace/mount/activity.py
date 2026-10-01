@@ -17,34 +17,11 @@ from collections.abc import AsyncIterator, Callable
 
 from mirage.io.cachable_iterator import CachableAsyncIterator
 from mirage.io.types import ByteSource
+from mirage.utils.activity import Activity
 
 
-class VFSActivity:
+class VFSActivity(Activity):
     """Calls and streams sharing a VFS, including removed aliases."""
-
-    def __init__(self) -> None:
-        self._count = 0
-        self._idle = asyncio.Event()
-        self._idle.set()
-
-    def acquire(self) -> Callable[[], None]:
-        self._count += 1
-        self._idle.clear()
-        released = False
-
-        def release() -> None:
-            nonlocal released
-            if released:
-                return
-            released = True
-            self._count -= 1
-            if self._count == 0:
-                self._idle.set()
-
-        return release
-
-    async def wait(self) -> None:
-        await self._idle.wait()
 
     def hold(self, source: ByteSource) -> ByteSource:
         if isinstance(source, (bytes, bytearray)):

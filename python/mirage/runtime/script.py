@@ -53,9 +53,14 @@ async def eval_with_ctx(source: str, ctx: dict[str, EvalValue],
         asyncio.TimeoutError: the script outran ``timeout``.
         EvalError: the script did not parse, or raised.
     """
-    result = await asyncio.wait_for(evaluator.eval(source,
-                                                   inputs={CTX_GLOBAL: ctx}),
-                                    timeout=timeout)
+    release = evaluator.admit() if isinstance(evaluator, Runtime) else None
+    try:
+        result = await asyncio.wait_for(evaluator.eval(
+            source, inputs={CTX_GLOBAL: ctx}),
+                                        timeout=timeout)
+    finally:
+        if release is not None:
+            release()
     return result.value
 
 

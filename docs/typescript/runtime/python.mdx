@@ -241,6 +241,20 @@ the workspace gate even while `import js` remains sealed.
 Worker termination destroys its isolate; only in-process shutdown invokes
 the returned cleanup function, so extensions must tolerate abrupt shutdown.
 
+## Adding and removing on a live workspace
+
+Runtimes come and go like mounts: `addRuntime` appends an entry (the first
+capturer still wins), `removeRuntime` takes one out, and `runtimes()` lists them. To
+swap engines, remove the old one first:
+
+```ts
+await ws.removeRuntime('pyodide') // python3 rebinds at once
+ws.addRuntime(new MontyRuntime())
+```
+
+A line already running on a removed runtime finishes before it closes;
+a removed instance cannot be added again, and `workspace` is permanent.
+
 ## Resource limits
 
 `python3` is a command like any other: the same `command_limits`

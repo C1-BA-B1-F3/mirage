@@ -41,9 +41,7 @@ def api_base_of(config: BoxConfig) -> str:
 
 
 def upload_base_of(config: BoxConfig) -> str:
-    if config.endpoint:
-        return config.endpoint.rstrip("/") + "/2.0"
-    return BOX_UPLOAD_BASE
+    return api_base_of(config) if config.endpoint else BOX_UPLOAD_BASE
 
 
 class BoxApiError(RuntimeError):

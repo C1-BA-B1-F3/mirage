@@ -79,7 +79,7 @@ The access token is cached in memory and refreshed ~5 minutes before expiry
 | `refresh_token`   | One of\* | Long-lived OAuth2 refresh token (with `client_id`)                            |
 | `enterprise_id`   | No       | Enterprise id for the client-credentials grant                                |
 | `root_folder_id`  | No       | Mount a sub-folder as the root (default `0`, the account root)                |
-| `endpoint`        | No       | Base URL overriding the real `api.box.com` and `upload.box.com` hosts (test fakes) |
+| `endpoint`        | No       | Base URL overriding the real Box API and upload hosts (test fakes)            |
 
 \* Provide one of: `access_token`; `client_id` + `refresh_token`; or
 `client_id` + `client_secret` + `enterprise_id`.

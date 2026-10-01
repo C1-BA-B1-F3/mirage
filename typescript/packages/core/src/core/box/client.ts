@@ -59,7 +59,7 @@ function apiBaseOf(config: BoxConfig): string {
 
 function uploadBaseOf(config: BoxConfig): string {
   return config.endpoint !== undefined && config.endpoint !== ''
-    ? `${rstripSlash(config.endpoint)}/2.0`
+    ? apiBaseOf(config)
     : BOX_UPLOAD_BASE
 }
 

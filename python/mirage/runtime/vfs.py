@@ -114,7 +114,6 @@ class RuntimeVFS:
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()
-        self._whole: dict[str, bytes] = {}
         self._limiter = ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
 
     @classmethod
@@ -218,7 +217,6 @@ class RuntimeVFS:
         return bytes(data)
 
     def write(self, path: str, data: bytes) -> None:
-        self._whole.pop(path, None)
         self.call("write", path, data=data)
 
     def stat(self, path: str, *, nofollow: bool = False) -> VFSStat:
@@ -455,15 +453,12 @@ class RuntimeVFS:
         )
 
     def create(self, path: str) -> None:
-        self._whole.pop(path, None)
         self.call("create", path)
 
     def truncate(self, path: str, length: int = 0) -> None:
-        self._whole.pop(path, None)
         self.call("truncate", path, length=length)
 
     def unlink(self, path: str) -> None:
-        self._whole.pop(path, None)
         self.call("unlink", path)
 
     def mkdir(self, path: str, *, parents: bool = False) -> None:
@@ -484,7 +479,6 @@ class RuntimeVFS:
         """
         if self.mount_of(src) != self.mount_of(dst):
             raise CrossMountError(src, dst)
-        self._whole.clear()
         self.call("rename", src, dst=PathSpec.from_str_path(dst))
 
     def symlink(self, path: str, target: str) -> None:
@@ -567,11 +561,12 @@ class RuntimeVFS:
         `rename` without it), so a mount that declines is remembered:
         the fallback then costs one failed dispatch per mount rather
         than one per call. The fallback writes `whole` when the caller
-        holds it. Otherwise it extends what it last wrote whole for the
-        path, so a write loop on such a mount reads the file back once,
-        not once per line, and reads the base only the first time, a
-        missing file starting empty. Every other write through this
-        door forgets that copy.
+        holds it, and otherwise reads the base fresh, a missing file
+        starting empty. Fresh every time, never a copy from an earlier
+        append: a mount without the op can only emulate one by reading
+        and rewriting, and an append lands after whatever the file
+        holds now, so a write another action made between two appends
+        is kept, as O_APPEND keeps it.
 
         Args:
             path (str): guest-absolute virtual path.
@@ -582,15 +577,11 @@ class RuntimeVFS:
         if self._append_delta(path, data):
             return
         if whole is None:
-            base = self._whole.get(path)
-            if base is None:
-                try:
-                    base = self.read(path)
-                except FileNotFoundError:
-                    base = b""
-            whole = base + data
+            try:
+                whole = self.read(path) + data
+            except FileNotFoundError:
+                whole = data
         self.write(path, whole)
-        self._whole[path] = whole
 
     def _append_delta(self, path: str, data: bytes) -> bool:
         mount = self.mount_of(path) or path

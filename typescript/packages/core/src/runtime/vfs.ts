@@ -156,10 +156,6 @@ export class RuntimeVFS {
   private readonly dispatch: BridgeDispatchFn
   private readonly resolver: MountResolver
   private readonly noAppend = new Set<string>()
-  // What the append fallback last wrote whole per path, so the next
-  // append on a mount without the op extends it instead of reading the
-  // file back; every other write through this door forgets it.
-  private readonly whole = new Map<string, Uint8Array>()
 
   constructor(dispatch: BridgeDispatchFn, resolver: MountResolver = new PrefixResolver(() => [])) {
     // One cap on every request this door sends, held for that request
@@ -232,7 +228,6 @@ export class RuntimeVFS {
   }
 
   async write(path: string, bytes: Uint8Array): Promise<void> {
-    this.whole.delete(path)
     const out = await this.dispatch('write', path, bytes)
     if (out !== undefined) {
       throw new TypeError(`runtime vfs: write ${path} expected void, got ${typeof out}`)
@@ -421,7 +416,6 @@ export class RuntimeVFS {
    * records the op a create is.
    */
   async create(path: string): Promise<void> {
-    this.whole.delete(path)
     await this.dispatch('create', path)
   }
 
@@ -431,12 +425,10 @@ export class RuntimeVFS {
    * ftruncate to a length operates on its open handle's buffer.
    */
   async truncate(path: string): Promise<void> {
-    this.whole.delete(path)
     await this.dispatch('truncate', path)
   }
 
   async unlink(path: string): Promise<void> {
-    this.whole.delete(path)
     await this.dispatch('unlink', path)
   }
 
@@ -471,7 +463,6 @@ export class RuntimeVFS {
    */
   async rename(src: string, dst: string): Promise<void> {
     if (this.mountOf(src) !== this.mountOf(dst)) throw new CrossMountError(src, dst)
-    this.whole.clear()
     await this.dispatch('rename', src, undefined, dst)
   }
 
@@ -534,8 +525,10 @@ export class RuntimeVFS {
    * The fallback needs the whole file. An encoder that already holds
    * it (a closing file handle) passes it; one that does not (monty's
    * appends, pyodide's mutation replay, which recorded only the tail)
-   * omits it, and the fallback extends what it last wrote whole for the
-   * path, so a write loop reads the file back once, not once per line.
+   * omits it, and the fallback reads the base fresh. Fresh every time,
+   * never a copy from an earlier append: an append lands after whatever
+   * the file holds now, so a write another action made between two
+   * appends is kept, as O_APPEND keeps it.
    * Only a confirmed absence starts from an empty base, since an append may
    * create the file — every other read failure propagates, because
    * writing the tail alone over a file that exists but is momentarily
@@ -548,21 +541,17 @@ export class RuntimeVFS {
    */
   async append(path: string, tail: Uint8Array, whole?: Uint8Array): Promise<void> {
     if (await this.appendDelta(path, tail)) return
-    let next = whole
-    if (next === undefined) {
-      let base = this.whole.get(path)
-      if (base === undefined) {
-        try {
-          base = await this.read(path)
-        } catch (err) {
-          if (!isMissingPath(err)) throw err
-          base = new Uint8Array()
-        }
-      }
-      next = concat([base, tail])
+    if (whole !== undefined) {
+      await this.write(path, whole)
+      return
     }
-    await this.write(path, next)
-    this.whole.set(path, next)
+    let base: Uint8Array = new Uint8Array()
+    try {
+      base = await this.read(path)
+    } catch (err) {
+      if (!isMissingPath(err)) throw err
+    }
+    await this.write(path, concat([base, tail]))
   }
 
   private async appendDelta(path: string, tail: Uint8Array): Promise<boolean> {

@@ -520,16 +520,15 @@ class NoAppendVFS(RuntimeVFS):
         )
         self.files = dict(files)
         self.writes = []
-        self.reads = 0
 
     def _raw(self, op, path, **kwargs):
         if op == "append":
             raise OperationNotSupportedError("append")
         if op == "read":
-            self.reads += 1
             if path not in self.files:
                 raise FileNotFoundError(path)
             return self.files[path]
+        self.files[path] = kwargs["data"]
         self.writes.append((path, kwargs["data"]))
         return None
 
@@ -544,14 +543,15 @@ def test_append_without_a_whole_file_reads_its_own_base(files, written):
     assert vfs.writes == [("/s3/a", written)]
 
 
-def test_a_run_of_appends_reads_the_base_back_once():
-    # A write loop on a mount without append would otherwise read the
-    # whole growing file back once per line.
+def test_an_append_keeps_a_write_made_since_the_last_one():
+    # The fallback reads the base fresh each time: an append lands
+    # after whatever the file holds now, as O_APPEND does, so a copy
+    # kept from the last append would overwrite another action's write.
     vfs = NoAppendVFS({"/s3/a": b"head"})
     vfs.append("/s3/a", b"-1")
+    vfs.files["/s3/a"] = b"other"
     vfs.append("/s3/a", b"-2")
-    assert vfs.writes == [("/s3/a", b"head-1"), ("/s3/a", b"head-1-2")]
-    assert vfs.reads == 1
+    assert vfs.writes == [("/s3/a", b"head-1"), ("/s3/a", b"other-2")]
 
 
 def test_flush_ships_only_the_delta():

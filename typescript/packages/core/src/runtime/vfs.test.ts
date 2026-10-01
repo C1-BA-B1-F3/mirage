@@ -544,20 +544,23 @@ describe('RuntimeVFS append', () => {
     expect(new TextDecoder().decode(write[2])).toBe('headtail')
   })
 
-  // A write loop on a mount without append would otherwise read the
-  // whole growing file back once per line.
-  it('reads the base back once for a run of appends', async () => {
-    const dispatch = vi.fn<BridgeDispatchFn>((op) => {
+  // The fallback reads the base fresh each time: an append lands after
+  // whatever the file holds now, as O_APPEND does, so a copy kept from
+  // the last append would overwrite another action's write.
+  it('keeps a write made since the last append', async () => {
+    let stored: Uint8Array = enc.encode('head')
+    const dispatch = vi.fn<BridgeDispatchFn>((op, _path, bytes) => {
       if (op === 'append') return Promise.reject(enotsup('s3', 'append', '/a/x'))
-      if (op === 'read') return Promise.resolve(enc.encode('head'))
+      if (op === 'read') return Promise.resolve(stored)
+      if (op === 'write' && bytes !== undefined) stored = bytes
       return Promise.resolve(undefined)
     })
     const door = new RuntimeVFS(dispatch, new PrefixResolver(() => ['/a']))
     await door.append('/a/x', enc.encode('-1'))
+    stored = enc.encode('other')
     await door.append('/a/x', enc.encode('-2'))
     const writes = dispatch.mock.calls.filter((c) => c[0] === 'write')
-    expect(writes.map((c) => new TextDecoder().decode(c[2]))).toEqual(['head-1', 'head-1-2'])
-    expect(dispatch.mock.calls.filter((c) => c[0] === 'read')).toHaveLength(1)
+    expect(writes.map((c) => new TextDecoder().decode(c[2]))).toEqual(['head-1', 'other-2'])
   })
 
   it('starts from an empty base when the file is simply absent', async () => {

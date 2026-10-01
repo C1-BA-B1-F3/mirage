@@ -1876,9 +1876,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      # Its own entry: the conformance run installs both W&B SDKs from
+      # their requirements files, which the lock does not hold.
       - uses: ./.github/actions/setup-uv
         with:
-          save-cache: "false"
+          cache-suffix: wandb
+          cache-dependency-glob: |
+            python/uv.lock
+            integ/wandb/requirements-*.txt
       - name: Install Python dependencies
         working-directory: python
         run: uv sync --locked

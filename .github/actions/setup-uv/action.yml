@@ -6,11 +6,24 @@ description: >-
 inputs:
   save-cache:
     description: >-
-      Save the cache when the job ends. Only a job that syncs the full set
-      (`uv sync --all-extras --no-extra camel`) saves: the entry is written
-      once per lock, so one saved by a job that installs less would leave
-      out wheels every other job needs. Every job restores it.
+      Save the cache when the job ends. The shared entry is written once per
+      key, by whichever saving job finishes first, so only a job that syncs
+      exactly the full set (`uv sync --all-extras --no-extra camel`) saves
+      it; a job that installs a subset restores it and saves nothing.
     default: "true"
+  cache-suffix:
+    description: >-
+      Name an entry of the job's own. A job that installs wheels the full
+      set does not (camel's fork, a second Python, requirements outside the
+      lock) saves them under its own key rather than racing for the shared
+      one, which would then lack them or lack the full set.
+    default: ""
+  cache-dependency-glob:
+    description: >-
+      The files whose hash keys the entry. The lock alone decides what a
+      sync installs, so an integ fixture's pyproject does not move the key;
+      a job that installs from requirements files adds them.
+    default: python/uv.lock
 runs:
   using: composite
   steps:
@@ -18,9 +31,8 @@ runs:
       with:
         version: "0.12.9"
         enable-cache: true
-        # The lock alone decides which wheels a sync wants, so an integ
-        # fixture's pyproject or requirements file does not move the key.
-        cache-dependency-glob: python/uv.lock
+        cache-suffix: ${{ inputs.cache-suffix }}
+        cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
         # setup-uv runs `uv cache prune --ci` before saving by default. That
         # drops every downloaded wheel and keeps only those built from source
         # (27 MB), so each job fetched all ~530 packages from PyPI again:

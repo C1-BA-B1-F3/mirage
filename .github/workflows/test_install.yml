@@ -47,10 +47,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Its own entry: these installs resolve fresh on 3.11 as well as
+      # 3.12, wheels the shared entry never holds.
       - name: Install uv
         uses: ./.github/actions/setup-uv
         with:
-          save-cache: "false"
+          cache-suffix: install
 
       - name: Base install (no extras) on 3.11 and 3.12
         working-directory: python

@@ -92,8 +92,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Its own entry: the camel step below syncs camel's fork too, which
+      # the shared entry never holds.
       - name: Install uv
         uses: ./.github/actions/setup-uv
+        with:
+          cache-suffix: camel
 
       - name: Install Python dependencies
         working-directory: python

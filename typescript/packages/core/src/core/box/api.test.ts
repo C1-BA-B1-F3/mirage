@@ -142,9 +142,7 @@ describe('box upload host', () => {
   it('keeps folder calls on the api host', async () => {
     vi.mocked(client.boxPostJson).mockResolvedValue({})
     await createFolder(new BoxTokenManager({ accessToken: 'tok' }), '0', 'd')
-    expect(vi.mocked(client.boxPostJson).mock.calls[0]?.[1]).toBe(
-      'https://api.box.com/2.0/folders',
-    )
+    expect(vi.mocked(client.boxPostJson).mock.calls[0]?.[1]).toBe('https://api.box.com/2.0/folders')
   })
 
   it('sends uploads to an endpoint override', async () => {

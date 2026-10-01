@@ -14,6 +14,7 @@
 
 export const BOX_TOKEN_URL = 'https://api.box.com/oauth2/token'
 export const BOX_API_BASE = 'https://api.box.com/2.0'
+export const BOX_UPLOAD_BASE = 'https://upload.box.com/api/2.0'
 export const TOKEN_BUFFER_SECONDS = 300
 
 // The user event stream the watch hooks read: `changes` is the one Box

@@ -23,7 +23,7 @@ from mirage.core.api.client import api_request
 from mirage.core.api.oauth import TokenManager as OAuthTokenManager
 from mirage.core.box.config import BoxConfig
 from mirage.core.box.constants import (BOX_API_BASE, BOX_TOKEN_URL,
-                                       TOKEN_BUFFER_SECONDS)
+                                       BOX_UPLOAD_BASE, TOKEN_BUFFER_SECONDS)
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.secrets import reveal_secret
 
@@ -38,6 +38,12 @@ def api_base_of(config: BoxConfig) -> str:
     if config.endpoint:
         return config.endpoint.rstrip("/") + "/2.0"
     return BOX_API_BASE
+
+
+def upload_base_of(config: BoxConfig) -> str:
+    if config.endpoint:
+        return config.endpoint.rstrip("/") + "/2.0"
+    return BOX_UPLOAD_BASE
 
 
 class BoxApiError(RuntimeError):
@@ -122,10 +128,12 @@ class BoxTokenManager(OAuthTokenManager):
     def __init__(self, config: BoxConfig) -> None:
         super().__init__(TOKEN_BUFFER_SECONDS)
         self._config = config
-        # API base for all non-token calls; api.py reads this instead of the
-        # BOX_API_BASE const so a config endpoint override reaches every
+        # API base for every non-token, non-upload call, and the upload
+        # base Box serves file uploads from; api.py reads these instead of
+        # the constants so a config endpoint override reaches every
         # request.
         self.api_base = api_base_of(config)
+        self.upload_base = upload_base_of(config)
         self._dev_token_mode = bool(reveal_secret(config.access_token))
         self._ccg_mode = not self._dev_token_mode and bool(
             config.enterprise_id)

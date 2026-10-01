@@ -131,8 +131,12 @@ class BaseVFS:
     # lists again: nothing (NONE, the default), one version for the whole
     # mount answered by a stat of its root (MOUNT), or each folder's own
     # version answered by a stat of that folder (FOLDER). A declarer stores
-    # the version with each listing it writes, taken from the same response
-    # as the rows, and its stat must answer the same kind of token:
+    # with each listing it writes a version no newer than its rows: taken
+    # from the same response (github's tree names its head), or read first
+    # and the rows then read at it or after it (hf walks the tree at the
+    # commit its revision request answered; disk stats a folder before it
+    # scans), so a change in between leaves the stored version behind and
+    # the next check re-lists. Its stat must answer the same kind of token:
     # tests/vfs/test_listing_version.py holds each one to that.
     listing_version: ListingVersion = ListingVersion.NONE
 

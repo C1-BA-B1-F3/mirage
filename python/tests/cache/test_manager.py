@@ -627,6 +627,45 @@ async def test_inside_a_command_the_window_does_not_apply(clock):
         assert manager.listing_trusted("/data") is True
 
 
+@pytest.mark.asyncio
+async def test_a_late_older_check_never_replaces_a_newer_memo(clock):
+    # Check A is sent and stalls; once it is out of the window a caller
+    # sends check B, which answers V2 first. A then lands with V1, the
+    # head it saw before the move. Recording A would put the memo back to
+    # V1: a listing stored at V2 would be re-checked, and one stored at V1
+    # served as current.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    release = asyncio.Event()
+    asked: list[str] = []
+
+    async def check_a() -> str:
+        await release.wait()
+        return "V1"
+
+    def answer(version: str):
+
+        async def check() -> str:
+            asked.append(version)
+            return version
+
+        return check
+
+    first = asyncio.create_task(
+        manager.checked_version("/data", "V0", check_a)
+    )
+    await asyncio.sleep(0)
+    clock.now += LISTING_TRUST_WINDOW + 0.01
+    assert await manager.checked_version("/data", "V0", answer("V2")) == "V2"
+    release.set()
+    assert await first == "V1"
+    asked.clear()
+    assert await manager.checked_version("/data", "V2", answer("V3")) == "V2"
+    assert asked == []
+    assert await manager.checked_version("/data", "V1", answer("V4")) == "V4"
+    assert asked == ["V4"]
+
+
 def _probed() -> FileStat:
     return FileStat(name="h.txt", size=4, type=FileType.FILE)
 

@@ -643,6 +643,29 @@ async def run_case(
     return result.exit_code, out, err, elapsed, check_out, notes
 
 
+def malformed_mutate(spec: dict) -> str | None:
+    """Why a path mutate step cannot run, or None when it can.
+
+    Only ``"delete": true`` removes; anything else writes ``content``, so a
+    step with neither a string content nor a true delete has nothing to
+    write. A delete that is not a boolean says neither.
+
+    Args:
+        spec (dict): the step's ``mutate`` object, with no ``command``.
+    """
+    shown = json.dumps(spec, separators=(",", ":"))
+    if "delete" in spec and not isinstance(spec["delete"], bool):
+        return f'malformed mutate step {shown}: "delete" must be true or false'
+    if spec.get("delete") is not True and not isinstance(
+        spec.get("content"), str
+    ):
+        return (
+            f'malformed mutate step {shown}: "content" must be a string '
+            'unless "delete" is true'
+        )
+    return None
+
+
 async def run_scenario(
     read_ws, mutate, remove, mutate_line, steps: list[dict]
 ) -> tuple[int, str, str]:
@@ -654,7 +677,11 @@ async def run_scenario(
             spec = step["mutate"]
             if "command" in spec:
                 await mutate_line(spec["command"])
-            elif spec.get("delete") is True:
+                continue
+            refusal = malformed_mutate(spec)
+            if refusal is not None:
+                raise ValueError(refusal)
+            if spec.get("delete") is True:
                 await remove(spec["path"])
             else:
                 await mutate(spec["path"], spec["content"].encode())

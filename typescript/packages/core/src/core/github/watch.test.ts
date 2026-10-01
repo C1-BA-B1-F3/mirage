@@ -27,9 +27,9 @@ interface TreeItem {
   size?: number
 }
 
-function transport(tree: TreeItem[], truncated = false): GitHubTransport {
+function transport(tree: TreeItem[], truncated = false, sha?: string): GitHubTransport {
   return {
-    get: () => Promise.resolve({ tree, truncated }),
+    get: () => Promise.resolve({ tree, truncated, sha }),
     request: () => Promise.resolve({}),
   }
 }
@@ -83,9 +83,54 @@ describe('GitHubWalk', () => {
     expect(Object.keys(acc.tree)).toEqual(['a.txt'])
   })
 
+  it('keeps a complete load and its version through a truncated walk', async () => {
+    // The walk refuses a truncated tree before reseating anything, so a mount
+    // loaded complete keeps its tree, its flag and the head it was loaded at:
+    // an older head the gate catches, never a partial tree versioned as whole
+    // or a whole tree marked truncated.
+    const acc = new GitHubAccessor({
+      transport: transport([], true, 'head-1'),
+      owner: 'acme',
+      repo: 'proj',
+      ref: 'main',
+      defaultBranch: 'main',
+      tree: STALE,
+      treeVersion: 'head-0',
+    })
+    await expect(collect(new GitHubWalk(acc), root())).rejects.toThrow(IncompleteWalkError)
+    expect(acc.truncated).toBe(false)
+    expect(acc.treeVersion).toBe('head-0')
+    expect(Object.keys(acc.tree)).toEqual(['a.txt'])
+  })
+
   it('reports blobs with their sha as the fingerprint', async () => {
     const acc = accessor([{ path: 'a.txt', type: 'blob', sha: 'sha-a', size: 3 }], STALE)
     const entries = await collect(new GitHubWalk(acc), root())
     expect(entries.map((e) => [e.virtual, e.fingerprint])).toEqual([['/gh/a.txt', 'sha-a']])
+  })
+
+  it('clears a truncated load after a complete walk', async () => {
+    // A mount built from a truncated tree has no listing version. A walk
+    // that fetched the whole tree must reseat the flag with the tree, or
+    // the next seed still stamps no version.
+    const acc = new GitHubAccessor({
+      transport: transport(
+        [
+          { path: 'a.txt', type: 'blob', sha: 'sha-a', size: 3 },
+          { path: 'b.txt', type: 'blob', sha: 'sha-b', size: 3 },
+        ],
+        false,
+        'head-1',
+      ),
+      owner: 'acme',
+      repo: 'proj',
+      ref: 'main',
+      defaultBranch: 'main',
+      tree: STALE,
+      truncated: true,
+    })
+    await collect(new GitHubWalk(acc), root())
+    expect(acc.truncated).toBe(false)
+    expect(acc.treeVersion).toBe('head-1')
   })
 })

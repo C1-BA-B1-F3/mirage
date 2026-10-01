@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.ram import ListingCheckStore, RAMIndexCacheStore
 from mirage.cache.index.scope import command_scope
 from mirage.types import ListingVersion, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.base import BaseVFS
@@ -300,7 +300,7 @@ async def _check_contract(name: str) -> None:
         assert stored is not None
         assert (await store.list_dir(harness.nested)).version is not None
         remote = await mount.execute_op(
-            "stat", harness.key, index=RAMIndexCacheStore()
+            "stat", harness.key, index=ListingCheckStore()
         )
         assert remote.fingerprint == stored
         before = harness.counts()
@@ -312,7 +312,7 @@ async def _check_contract(name: str) -> None:
         assert mount.vfs.listing_version == type(mount.vfs).listing_version
         harness.change()
         moved = await mount.execute_op(
-            "stat", harness.key, index=RAMIndexCacheStore()
+            "stat", harness.key, index=ListingCheckStore()
         )
         assert moved.fingerprint is not None
         assert moved.fingerprint != stored

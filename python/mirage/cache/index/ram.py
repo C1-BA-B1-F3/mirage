@@ -327,3 +327,13 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._tombstones.clear()
         self._versions.clear()
         self._clear_locks()
+
+
+class ListingCheckStore(RAMIndexCacheStore):
+    """The empty, throwaway store the listing gate stats a version through.
+
+    A root stat asks the backend for its head only through this store.
+    Through any other index it names no version and reads nothing, so a
+    getattr of the root never sends a request or reads the index; the gate
+    passes this store to say a request is what it wants.
+    """

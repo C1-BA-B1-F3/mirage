@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type * as UtilsModule from '../core/disk/utils.ts'
 import type * as StatModule from '../core/disk/stat.ts'
-import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
+import { ListingCheckStore, RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
 import {
   FileStat,
@@ -200,7 +200,7 @@ async function shell(ws: NodeWorkspace, line: string): Promise<void> {
 async function throwawayStat(ws: NodeWorkspace, mount: MountEntry, key: string): Promise<FileStat> {
   const spec = new PathSpec({ virtual: key, directory: '/', vfsPath: '' })
   return (await ws.opsRegistry.call('stat', mount.vfs, mount.vfs.accessor, spec, [], {
-    index: new RAMIndexCacheStore(),
+    index: new ListingCheckStore(),
   })) as FileStat
 }
 

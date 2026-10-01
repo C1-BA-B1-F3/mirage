@@ -21,7 +21,7 @@ import * as kp from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor, RowTables } from '../../accessor/hf_hub.ts'
 import { HfHubError, apiUrl, hubGetResponse, hubPost, revSegment } from './client.ts'
 import { MAX_TREE_PAGES, TREE_PAGE_SIZE, TREE_PAGE_SIZE_EXPANDED } from './constants.ts'
-import { headCommit } from './repo.ts'
+import { headCommit, mountVersion } from './repo.ts'
 import type { TreeEntry } from './tree_entry.ts'
 import { isDirEntry } from './tree_entry.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
@@ -320,8 +320,8 @@ export function indexDirs(
  *
  * A directory seen only as some path's parent has a listing of its own but no
  * row naming it, so its parent would not list it and a stat of it would find
- * no entry. Every listed path must have a row: a versioned listing on Redis
- * reads EXPIRED when one of its children has none.
+ * no entry. Every listed path must have a row: a lookup that finds a listed
+ * name with none takes it as evicted and refills.
  */
 function listImplied(dirs: Map<string, [string, IndexEntry][]>, root: string): void {
   const named = new Set<string>()
@@ -356,20 +356,24 @@ function rowsOf(dirs: ReadonlyMap<string, readonly [string, IndexEntry][]>): Row
 }
 
 /**
- * Write the accessor's tree into `index` under `prefix`, and return the rows
+ * Write one fetched tree into `index` under `prefix`, and return the rows
  * written, built from the same walk.
+ *
+ * The tree is the caller's own fetch, never `accessor.tree` re-read after an
+ * await: the watcher replaces that with no lock, and its rows may be at
+ * another head than the `version` stamped here.
  *
  * One `setDir` per directory, the way the shared store spells a whole
  * listing; the year-long expiry is what makes the index the listing rather
  * than a cache in front of one.
  */
 export async function seedIndex(
-  accessor: HfHubAccessor,
+  tree: Map<string, TreeEntry>,
   index: IndexCacheStore,
   prefix: string,
   version: string | null = null,
 ): Promise<RowTables> {
-  const dirs = indexDirs(accessor.tree, prefix)
+  const dirs = indexDirs(tree, prefix)
   const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
   // Every folder carries the head the tree was walked at, not just the root:
   // a nested listing is served on that version as much as the root is.
@@ -422,7 +426,7 @@ export async function refillSnapshot(
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  const snapshot = await seedIndex(accessor, index, prefix, head)
+  const snapshot = await seedIndex(tree, index, prefix, mountVersion(head, accessor.keyPrefix))
   if (previous !== null) await index.reportGone(departed(previous, tree.keys(), prefix, isDirEntry))
   return snapshot
 }

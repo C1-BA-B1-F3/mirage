@@ -44,7 +44,7 @@ export class HfModelsVFS extends HfHubVFS {
     }
     this.config = cfg
     this.accessor = new HfModelsHubAccessor(this.config)
-    this.listingsPin = hfListingsPin(this.accessor.revision)
+    this.listingsPin = hfListingsPin(this.accessor.revision, this.accessor.keyPrefix)
   }
 
   getState(): Promise<HfModelsVFSState> {

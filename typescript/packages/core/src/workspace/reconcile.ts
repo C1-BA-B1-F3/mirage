@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Evicted } from '../cache/index/config.ts'
-import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import { ListingCheckStore, RAMIndexCacheStore } from '../cache/index/ram.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
@@ -255,7 +255,7 @@ export class Reconciler {
       scopeOf(mount, path),
       [],
       {
-        index: new RAMIndexCacheStore(),
+        index: new ListingCheckStore(),
       },
     )
     return remote instanceof FileStat ? remote.fingerprint : null

@@ -252,9 +252,13 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * What a `read: fresh` mount checks a cached listing against before it
    * lists again: nothing (NONE, the default), one version for the whole mount
    * answered by a stat of its root (MOUNT), or each folder's own version
-   * answered by a stat of that folder (FOLDER). A declarer stores the version
-   * with each listing it writes, taken from the same response as the rows,
-   * and its `stat` must answer the same kind of token: node's
+   * answered by a stat of that folder (FOLDER). A declarer stores with each
+   * listing it writes a version no newer than its rows: taken from the same
+   * response (github's tree names its head), or read first and the rows then
+   * read at it or after it (hf walks the tree at the commit its revision
+   * request answered; disk stats a folder before it scans), so a change in
+   * between leaves the stored version behind and the next check re-lists.
+   * Its `stat` must answer the same kind of token: node's
    * listing_version.test.ts holds each one to that.
    *
    * Mirrors Python's `BaseVFS.listing_version`.

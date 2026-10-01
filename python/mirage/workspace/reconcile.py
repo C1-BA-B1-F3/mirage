@@ -18,7 +18,7 @@ from functools import partial
 
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.ram import ListingCheckStore, RAMIndexCacheStore
 from mirage.types import FileStat, ListingVersion, PathSpec, ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import ancestors
@@ -282,7 +282,7 @@ class Reconciler:
             path (str): the mount root or the folder the version covers.
         """
         remote = await mount.execute_op(
-            "stat", path, index=RAMIndexCacheStore()
+            "stat", path, index=ListingCheckStore()
         )
         return remote.fingerprint if isinstance(remote, FileStat) else None
 

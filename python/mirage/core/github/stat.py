@@ -17,18 +17,9 @@ import logging
 import aiohttp
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import (
-    NULL_INDEX,
-    IndexCacheStore,
-    IndexEntry,
-    LookupStatus,
-)
-from mirage.core.github.lookup import (
-    locate,
-    lookup_retrying,
-    point_lookup,
-    root_of,
-)
+from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.ram import ListingCheckStore
+from mirage.core.github.lookup import locate, lookup_retrying, point_lookup
 from mirage.core.github.repo import ensure_ref
 from mirage.core.github.tree import fetch_head
 from mirage.types import FileStat, FileType, PathSpec
@@ -82,7 +73,7 @@ async def stat(
         return FileStat(
             name="/",
             type=FileType.DIRECTORY,
-            fingerprint=await _root_version(accessor, index, prefix),
+            fingerprint=await _root_version(accessor, index),
         )
     # A probe through a throwaway index asks for this one path; everything
     # else answers from the mount's listing, filling it if need be.
@@ -97,29 +88,26 @@ async def stat(
 async def _root_version(
     accessor: GitHubAccessor,
     index: IndexCacheStore,
-    prefix: str,
 ) -> str | None:
     """The version of the whole mount: the head commit its ref is at.
 
-    A live root listing answers with the head it was stored at, read past
-    the listing gate, so a getattr of the root never pays a check. An
-    index with no root listing (a throwaway one, the null index, a mount
-    that has not listed yet) asks the head with one shallow request. An
-    expired listing names no version. Nothing here refills the index: a
-    refused head names no version rather than falling into a lookup.
+    Only the gate's ``ListingCheckStore`` asks for it, with one shallow
+    request. Every other index (the mount's own, the null index) names no
+    version and reads nothing, neither the index nor the backend, so a
+    getattr of the root never pays a check or a store round trip: nothing
+    reads a root fingerprint off a mount-view stat. Nothing here refills
+    the index: a refused head names no version rather than falling into a
+    lookup.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
-        index (IndexCacheStore): the index to read the root listing from.
-        prefix (str): the mount prefix the index keys are built against.
+        index (IndexCacheStore): the index the stat was asked through.
 
     Returns:
-        str | None: the head commit sha, or None when it is not known.
+        str | None: the head commit sha, or None when it is not asked for
+        or not known.
     """
-    listing = await index.peek_dir(root_of(prefix))
-    if listing.entries is not None:
-        return listing.version
-    if listing.status is not LookupStatus.NOT_FOUND:
+    if not isinstance(index, ListingCheckStore):
         return None
     try:
         return await fetch_head(

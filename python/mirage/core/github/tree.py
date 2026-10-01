@@ -25,6 +25,7 @@ from mirage.cache.index import (
     NULL_INDEX,
     IndexCacheStore,
     IndexEntry,
+    ListResult,
     LookupStatus,
 )
 from mirage.cache.index.config import IndexSnapshot
@@ -419,7 +420,7 @@ async def refill_snapshot(
     tree, truncated, head = await fetch_tree(
         accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
     )
-    _reseat(accessor, tree, truncated, head)
+    reseat_tree(accessor, tree, truncated, head)
     # A refill replaces this mount's snapshot, including paths now absent.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
     snapshot = seed_index(accessor, index, prefix)
@@ -434,7 +435,7 @@ def _is_folder(entry: TreeEntry) -> bool:
     return entry.type == "tree"
 
 
-def _reseat(
+def reseat_tree(
     accessor: GitHubAccessor,
     tree: dict[str, TreeEntry],
     truncated: bool,
@@ -498,8 +499,29 @@ async def ensure_live_snapshot(
         return None
     # The liveness probe comes before anything on the accessor, so a live
     # index still answers every read without one.
-    status = (await index.list_dir(prefix.rstrip("/") or "/")).status
-    if status not in (LookupStatus.NOT_FOUND, LookupStatus.EXPIRED):
+    root = await index.list_dir(prefix.rstrip("/") or "/")
+    return await _refill_unless_live(accessor, index, prefix, root)
+
+
+async def _refill_unless_live(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    root: ListResult,
+) -> IndexSnapshot | None:
+    """``ensure_live_snapshot`` for a root listing the caller already read.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to fill, held under its lock.
+        prefix (str): the mount prefix the index keys are built against.
+        root (ListResult): the root listing, read through the gate.
+
+    Returns:
+        IndexSnapshot | None: the refill's rows, or None when none was
+        needed or possible.
+    """
+    if root.status not in (LookupStatus.NOT_FOUND, LookupStatus.EXPIRED):
         return None
     # A truncated tree is not the whole listing, so the invariant this
     # rests on does not hold and readdir's per-directory fallback owns
@@ -543,9 +565,12 @@ async def ensure_tree(
         # Tree walkers bypass listings, so they need their own expiry probe.
         if index is not NULL_INDEX:
             async with index_lock(index, prefix.rstrip("/") or "/"):
-                refilled = await ensure_live_snapshot(accessor, index, prefix)
+                root = await index.list_dir(prefix.rstrip("/") or "/")
+                refilled = await _refill_unless_live(
+                    accessor, index, prefix, root
+                )
                 if refilled is None:
-                    await _match_tree_to_index(accessor, index, prefix)
+                    await _match_tree_to_index(accessor, index, prefix, root)
         return
     async with accessor.tree_lock:
         if accessor.tree_loaded:
@@ -559,13 +584,14 @@ async def ensure_tree(
         tree, truncated, head = await fetch_tree(
             accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
         )
-        _reseat(accessor, tree, truncated, head)
+        reseat_tree(accessor, tree, truncated, head)
 
 
 async def _match_tree_to_index(
     accessor: GitHubAccessor,
     index: IndexCacheStore,
     prefix: str,
+    root: ListResult,
 ) -> None:
     """Refill when the in-memory tree is older than the live index.
 
@@ -573,17 +599,19 @@ async def _match_tree_to_index(
     listing to a newer head while this accessor still holds the tree it
     fetched earlier. Listings answer from the index and never notice; a
     walker of ``accessor.tree`` would read the old tree. The root listing
-    is read past the gate, which ``ensure_live_snapshot`` already passed.
-    A truncated tree keeps readdir's per-directory fallback instead.
+    is the one the liveness probe just read through the gate, under the
+    same lock, so its version is the one the gate approved and the index
+    is not read again. A truncated tree keeps readdir's per-directory
+    fallback instead.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
         index (IndexCacheStore): the mount's index, held under its lock.
         prefix (str): the mount prefix the index keys are built against.
+        root (ListResult): the live root listing the probe read.
     """
     if accessor.truncated:
         return
-    root = await index.peek_dir(prefix.rstrip("/") or "/")
     if root.entries is None or root.version == accessor.tree_version:
         return
     await refill_snapshot(accessor, index, prefix)

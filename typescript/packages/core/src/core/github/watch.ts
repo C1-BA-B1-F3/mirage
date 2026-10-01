@@ -64,7 +64,7 @@ export class GitHubWalk {
     // a CREATE was followed by a find that could not see the file. It
     // carries the head it was walked at, so a walker can tell it from the
     // tree the index was filled with.
-    reseatTree(accessor, tree, false, sha)
+    reseatTree(accessor, tree, truncated, sha)
     const stem = stripSlash(rstripSlash(root.vfsPath))
     const base = stem !== '' ? `${stem}/` : ''
     for (const item of tree) {

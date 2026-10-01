@@ -488,6 +488,34 @@ async def test_refill_returns_the_snapshot_it_wrote(
     assert (await index.list_dir("/m")).entries == ["/m/a.txt"]
 
 
+# The watcher sets accessor.tree with no lock, so a walk at an older head
+# can land while the refill awaits its invalidation. The refill seeds the
+# tree it fetched itself, stamped with the head it walked at, never the
+# accessor's tree re-read after an await.
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_a_refill_seeds_its_own_tree_when_the_watcher_swaps_it(
+    mock_fetch, accessor, head
+):
+    head.return_value = "c" * 40
+    mock_fetch.return_value = {"new.txt": parse_entry(file_row("new.txt"))}
+    index = RAMIndexCacheStore()
+    invalidate = index.invalidate_prefix
+
+    async def watcher_lands(*args, **kwargs):
+        accessor.tree = {"old.txt": parse_entry(file_row("old.txt"))}
+        await invalidate(*args, **kwargs)
+
+    index.invalidate_prefix = watcher_lands
+    snapshot = await refill_snapshot(accessor, index, "/m")
+    listing = await index.list_dir("/m")
+    assert listing.entries == ["/m/new.txt"]
+    assert listing.version == "c" * 40
+    assert (await index.get("/m/new.txt")).entry.id == "oid-new.txt"
+    assert (await index.get("/m/old.txt")).entry is None
+    assert snapshot.children["/m"] == ["/m/new.txt"]
+
+
 def _tree(*rows):
     return {row["path"]: parse_entry(row) for row in rows}
 

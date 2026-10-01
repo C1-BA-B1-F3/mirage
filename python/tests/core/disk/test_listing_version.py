@@ -140,6 +140,53 @@ def test_a_folder_changed_within_two_seconds_has_no_version(tmp_path):
     assert folder_version(tmp_path, changed + 2_000_000_000) is not None
 
 
+FUTURE_NS = 60_000_000_000
+
+
+def _mtime_ahead(folder: Path) -> tuple[int, int]:
+    """Set a folder's mtime a minute past its ctime; return both.
+
+    Args:
+        folder (Path): the host folder.
+    """
+    ctime = os.stat(folder).st_ctime_ns
+    os.utime(folder, ns=(ctime, ctime + FUTURE_NS))
+    st = os.stat(folder)
+    assert st.st_mtime_ns > st.st_ctime_ns
+    return st.st_ctime_ns, st.st_mtime_ns
+
+
+# Where st_ctime is a creation time, the mtime is what a change moves, so
+# a folder whose mtime is ahead of the clock is still settling however
+# long ago its ctime was.
+def test_a_folder_whose_mtime_is_ahead_has_no_version_until_it_passes(
+    tmp_path,
+):
+    ctime, mtime = _mtime_ahead(tmp_path)
+    assert folder_version(tmp_path, ctime + QUIET_NS) is None
+    assert folder_version(tmp_path, mtime + 1_999_999_999) is None
+    assert folder_version(tmp_path, mtime + 2_000_000_000) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_folder_whose_mtime_is_ahead_is_relisted_until_it_passes(
+    tmp_path, clock, scans
+):
+    (tmp_path / "a.txt").write_text("a")
+    ctime, mtime = _mtime_ahead(tmp_path)
+    clock.now = ctime + QUIET_NS
+    ws = _ws(tmp_path)
+    try:
+        await _ls(ws)
+        assert await _stored(ws) is None
+        clock.now = mtime + QUIET_NS
+        await _ls(ws)
+        assert await _stored(ws) == _expected(tmp_path)
+        assert scans == [tmp_path, tmp_path]
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_a_quiet_folder_stores_the_version_its_stat_answers(
     tmp_path, clock

@@ -48,6 +48,17 @@ per file. The [`hf` CLI](/python/cli/hf) is the write half: `hf download --local
 puts a copy on a ram or disk mount, which is an ordinary writable filesystem,
 and `hf upload` sends it back as a single commit.
 
+## Listings under `fresh`
+
+Under `read: fresh`, a cached listing is checked against the commit the
+`revision` resolves to: one small check per command
+(`revision/{rev}?expand[]=sha`), after which every cached listing of the
+mount at that commit is served. A mount whose `revision` is a full 40- or
+64-hex commit sha serves its cached listings with no request. With a
+`key_prefix`, the stored version is that commit joined with the prefix, so mounts
+of different subtrees sharing an index never share a version. See
+[listings under `fresh`](/home/cache#listings-under-fresh).
+
 ## Filesystem Layout
 
 Maps dataset repo files to virtual paths under the mount prefix.
@@ -117,10 +128,12 @@ so `rm` and `touch` are refused, as is any command asked to write into it.
 
 ## Cache
 
-Uses `IndexCacheStore` with `index_ttl = 600` (10 minutes). Directory
+Uses `IndexCacheStore` with `index_ttl = 86_400` (one day). Directory
 listings are cached and populate file-size/type entries for `stat`'s fast
-path, so a `readdir` + per-entry `stat` (which `ls`, FUSE `getattr`, and
-most shell commands trigger) costs one HTTP request instead of N.
+path. The first listing fills the index for the whole mount: one revision
+request for the commit, then the recursive tree walked at that commit, so a
+`readdir` + per-entry `stat` (which `ls`, FUSE `getattr`, and most shell
+commands trigger) costs those requests rather than one per entry.
 
 ## Use Cases
 

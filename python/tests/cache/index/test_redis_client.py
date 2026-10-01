@@ -797,17 +797,19 @@ def _row(name: str) -> tuple[str, IndexEntry]:
 
 
 @pytest.mark.asyncio
-async def test_a_versioned_listing_missing_a_child_row_reads_expired(
+async def test_a_versioned_listing_missing_a_child_row_is_served(
     rolling_client,
 ):
-    # Redis eviction can drop a row while its listing survives; a served
-    # version would otherwise present the evicted child as absent.
+    # Redis eviction can drop a row while its listing survives. The store
+    # serves the listing as written; the reader that finds a listed name
+    # with no row refills on demand.
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     await store.set_dir("/d", [_row("a"), _row("b")], version="v1")
-    assert (await store.list_dir("/d")).entries == ["/d/a", "/d/b"]
     await client.delete(f"{prefix}{ENTRY_PREFIX}/d/b")
-    assert (await store.list_dir("/d")).status == LookupStatus.EXPIRED
+    listing = await store.list_dir("/d")
+    assert listing.entries == ["/d/a", "/d/b"]
+    assert listing.version == "v1"
 
 
 @pytest.mark.asyncio

@@ -63,7 +63,7 @@ async def test_lookup_answers_from_the_tree_without_an_index(loaded):
 async def test_lookup_and_the_index_agree(loaded):
     """Both paths are built by index_rows, so they cannot disagree."""
     index = RAMIndexCacheStore()
-    seed_index(loaded, index, "")
+    seed_index(loaded.tree, index, "")
     without = await lookup(loaded, NULL_INDEX, "", "/d")
     with_index = await lookup(loaded, index, "", "/d")
     assert without.is_dir and with_index.is_dir
@@ -128,7 +128,7 @@ async def test_direct_lookup_refreshes_invalidated_snapshot(
     fetch = AsyncMock(return_value=tree)
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     try:
-        seed_index(loaded, index, "/m")
+        seed_index(loaded.tree, index, "/m")
         await index.set_dir(
             "/other",
             [
@@ -178,7 +178,7 @@ async def test_parallel_snapshot_readers_share_one_replacement(
     fetch_mock = AsyncMock(side_effect=fetch)
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch_mock)
     try:
-        seed_index(loaded, index, "/m")
+        seed_index(loaded.tree, index, "/m")
         await index.invalidate()
         keys = ["/m/a.txt", "/m"] * 4
         results = await asyncio.gather(
@@ -237,7 +237,7 @@ async def test_a_stat_retries_when_the_index_is_cleared_under_it(
     index = _ClearedMidLookup()
     accessor.tree = _tree(file_row("a.txt", 7))
     accessor.tree_loaded = True
-    seed_index(accessor, index, "")
+    seed_index(accessor.tree, index, "")
     # The root is live when stat starts, so the one-path route stands
     # aside and the clear lands inside the ordinary lookup.
     result = await stat(accessor, ps("a.txt"), index)
@@ -251,7 +251,7 @@ async def test_a_genuine_miss_on_a_live_index_asks_once(accessor):
     index.cleared = True
     accessor.tree = _tree(file_row("a.txt", 7))
     accessor.tree_loaded = True
-    seed_index(accessor, index, "")
+    seed_index(accessor.tree, index, "")
     with pytest.raises(FileNotFoundError):
         await stat(accessor, ps("nope"), index)
     assert index.gets == 1
@@ -323,7 +323,7 @@ async def test_lookup_of_an_expired_folder_under_a_live_root_refills_it(
     loaded, monkeypatch
 ):
     index = expired_on_arrival("/m")
-    seed_index(loaded, index, "/m")
+    seed_index(loaded.tree, index, "/m")
     fetch = AsyncMock(return_value=dict(loaded.tree))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     refills = loaded.refills

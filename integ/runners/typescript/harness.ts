@@ -198,7 +198,7 @@ export interface Case {
 export type ScenarioStep =
   | {
       mutate:
-        | { path: string; content: string }
+        | { path: string; content: string; delete?: false }
         | { path: string; delete: true }
         | { command: string }
     }
@@ -507,6 +507,25 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
   await ws.shell(`rm ${marker}`)
 }
 
+/**
+ * Why a path mutate step cannot run, or null when it can.
+ *
+ * Only `"delete": true` removes; anything else writes `content`, so a step
+ * with neither a string content nor a true delete has nothing to write. A
+ * delete that is not a boolean says neither. Mirrors Python's
+ * `malformed_mutate`.
+ */
+export function malformedMutate(spec: Record<string, unknown>): string | null {
+  const shown = JSON.stringify(spec)
+  if ('delete' in spec && typeof spec.delete !== 'boolean') {
+    return `malformed mutate step ${shown}: "delete" must be true or false`
+  }
+  if (spec.delete !== true && typeof spec.content !== 'string') {
+    return `malformed mutate step ${shown}: "content" must be a string unless "delete" is true`
+  }
+  return null
+}
+
 export async function runScenario(
   ws: ExecWorkspace,
   mutate: (path: string, content: Uint8Array) => Promise<void>,
@@ -520,8 +539,14 @@ export async function runScenario(
   for (const step of steps) {
     if ('mutate' in step) {
       const spec = step.mutate
-      if ('command' in spec) await mutateLine(spec.command)
-      else if ('delete' in spec) await remove(spec.path)
+      if ('command' in spec) {
+        await mutateLine(spec.command)
+        continue
+      }
+      const refusal = malformedMutate(spec)
+      if (refusal !== null) throw new Error(refusal)
+      // Only `delete: true` removes; `false` is a plain mutate, as on python.
+      if (spec.delete === true) await remove(spec.path)
       else await mutate(spec.path, ENC.encode(spec.content))
       continue
     }

@@ -20,7 +20,7 @@ import pytest
 from fakeredis.aioredis import FakeRedis
 
 from mirage.cache.index import IndexEntry
-from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.ram import ListingCheckStore, RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.read import read
@@ -315,15 +315,26 @@ def _vfs(hub: FakeGitHub) -> GitHubVFS:
     )
 
 
-# A throwaway index has no root listing, so the root's version is asked
-# with one shallow request, and it is the head commit.
+# The gate's check store has no root listing, so the root's version is
+# asked with one shallow request, and it is the head commit.
 @pytest.mark.asyncio
-async def test_a_root_stat_through_a_throwaway_index_asks_the_head():
+async def test_a_root_stat_through_the_check_store_asks_the_head():
+    with serve(_three()) as hub:
+        vfs = _vfs(hub)
+        found = await stat(vfs.accessor, ROOT, ListingCheckStore())
+        assert found.fingerprint == hub.head()
+        assert hub.counts() == (1, 0, 0)
+
+
+# Any other index without a root listing names no version and asks
+# nothing; only the gate's check store wants the request.
+@pytest.mark.asyncio
+async def test_a_root_stat_through_another_empty_index_asks_nothing():
     with serve(_three()) as hub:
         vfs = _vfs(hub)
         found = await stat(vfs.accessor, ROOT, RAMIndexCacheStore())
-        assert found.fingerprint == hub.head()
-        assert hub.counts() == (1, 0, 0)
+        assert found.fingerprint is None
+        assert hub.counts() == (0, 0, 0)
 
 
 @pytest.mark.asyncio
@@ -332,17 +343,18 @@ async def test_a_refused_head_names_no_version_and_refills_nothing(status):
     with serve(_three()) as hub:
         vfs = _vfs(hub)
         hub.fail["dir"] = (status, "refused")
-        found = await stat(vfs.accessor, ROOT, RAMIndexCacheStore())
+        found = await stat(vfs.accessor, ROOT, ListingCheckStore())
         assert found.fingerprint is None
         assert hub.count("recursive") == 0
         assert (vfs.accessor.tree, vfs.accessor.tree_loaded) == ({}, False)
 
 
-# With no index at all the root still names its version, for one request.
+# With no index at all the root names no version and asks nothing (it used
+# to ask the head once; only the gate's check store wants that request).
 @pytest.mark.asyncio
-async def test_a_root_stat_with_no_index_asks_the_head_once():
+async def test_a_root_stat_with_no_index_asks_nothing():
     with serve(_three()) as hub:
         vfs = _vfs(hub)
         found = await stat(vfs.accessor, ROOT)
-        assert found.fingerprint == hub.head()
-        assert hub.counts() == (1, 0, 0)
+        assert found.fingerprint is None
+        assert hub.counts() == (0, 0, 0)

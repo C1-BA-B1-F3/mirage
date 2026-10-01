@@ -272,7 +272,7 @@ export interface RedisClientLike {
   del: (key: string | string[]) => Promise<unknown>
   multi: () => RedisPipeline
   eval: (script: string, options: { keys: string[]; arguments: string[] }) => Promise<unknown>
-  exists: (keys: string | string[]) => Promise<number>
+  exists: (key: string) => Promise<number>
   scanIterator: (options: { MATCH: string; COUNT?: number }) => AsyncIterable<string | string[]>
   isOpen: boolean
   quit: () => Promise<unknown>
@@ -582,15 +582,6 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     )
       return { status: LookupStatus.EXPIRED }
     if (listing.partial) return { partialEntries: listing.entries, version: listing.version }
-    // Eviction can drop a child's row while its listing survives. An
-    // unversioned listing is re-listed by its gate anyway; a versioned one may
-    // be served on the version alone, so it must be whole.
-    if (
-      listing.version !== null &&
-      listing.entries.length > 0 &&
-      (await c.exists(listing.entries.map((path) => this.entryKey(path)))) < listing.entries.length
-    )
-      return { status: LookupStatus.EXPIRED }
     return { entries: listing.entries, version: listing.version }
   }
 

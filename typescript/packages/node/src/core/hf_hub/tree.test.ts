@@ -449,6 +449,33 @@ describe('refillSnapshot reports what left the repository', () => {
   })
 })
 
+// The watcher sets accessor.tree with no lock, so a walk at an older head can
+// land while the refill awaits its invalidation. The refill seeds the tree it
+// fetched itself, stamped with the head it walked at, never the accessor's
+// tree re-read after an await.
+it('seeds its own tree when the watcher swaps the accessor tree', async () => {
+  const acc = accessor()
+  const index = new RAMIndexCacheStore()
+  const invalidate = index.invalidatePrefix.bind(index)
+  vi.spyOn(repo, 'headCommit').mockResolvedValue('c'.repeat(40))
+  vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([fileRow('new.txt')]))
+  vi.spyOn(index, 'invalidatePrefix').mockImplementation(async (...args) => {
+    acc.tree = new Map([['old.txt', parseEntry(fileRow('old.txt'))]])
+    await invalidate(...args)
+  })
+  try {
+    const snapshot = await refillSnapshot(acc, index, '/m')
+    const listing = await index.listDir('/m')
+    expect(listing.entries).toEqual(['/m/new.txt'])
+    expect(listing.version).toBe('c'.repeat(40))
+    expect((await index.get('/m/new.txt')).entry?.id).toBe('oid-new.txt')
+    expect((await index.get('/m/old.txt')).entry ?? null).toBeNull()
+    expect(snapshot.children.get('/m')).toEqual(['/m/new.txt'])
+  } finally {
+    vi.restoreAllMocks()
+  }
+})
+
 const HEAD = 'c'.repeat(40)
 
 describe('refillSnapshot at the head', () => {

@@ -16,6 +16,22 @@ import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
 
 /**
+ * The version a mount's listings are stored and checked at.
+ *
+ * The head commit, joined with the key prefix when the mount has one: the
+ * index keys are mount-relative, so two mounts of one repository at one head
+ * but different key prefixes hold different listings under the same keys, and
+ * must not match each other's version. ':' cannot occur in a hex sha, and a
+ * mount with no key prefix keeps the plain head.
+ *
+ * Mirrors Python's `mount_version`.
+ */
+export function mountVersion(head: string | null, keyPrefix: string): string | null {
+  if (head === null || head === '') return null
+  return keyPrefix === '' ? head : `${head}:${keyPrefix}`
+}
+
+/**
  * The commit the mount's revision currently points at.
  *
  * Read from the repo object rather than from /refs because the repo object

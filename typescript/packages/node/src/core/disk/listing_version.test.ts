@@ -67,6 +67,17 @@ function settle(...folders: string[]): void {
   vi.setSystemTime(Number(latest / 1000000n) + QUIET_MS)
 }
 
+// Set a folder's mtime a minute past its ctime; return both as stat reads
+// them back.
+function mtimeAhead(folder: string): [bigint, bigint] {
+  const ctime = statSync(folder, { bigint: true }).ctimeNs
+  const seconds = Number(ctime / 1000000n) / 1000
+  utimesSync(folder, seconds, seconds + 60)
+  const st = statSync(folder, { bigint: true })
+  expect(st.mtimeNs > st.ctimeNs).toBe(true)
+  return [st.ctimeNs, st.mtimeNs]
+}
+
 function expected(folder: string): string {
   const st = statSync(folder, { bigint: true })
   return `${String(st.dev)}:${String(st.ino)}:${String(st.ctimeNs)}:${String(st.mtimeNs)}`
@@ -140,6 +151,16 @@ describe('folderVersion', () => {
     expect(await folderVersion(root, changed + 1999999999n)).toBeNull()
     expect(await folderVersion(root, changed + 2000000000n)).not.toBeNull()
   })
+
+  // Where ctime is a creation time, the mtime is what a change moves, so a
+  // folder whose mtime is ahead of the clock is still settling however long
+  // ago its ctime was.
+  it('is withheld while the mtime is ahead, until the clock passes it', async () => {
+    const [ctime, mtime] = mtimeAhead(root)
+    expect(await folderVersion(root, ctime + 3000000000n)).toBeNull()
+    expect(await folderVersion(root, mtime + 1999999999n)).toBeNull()
+    expect(await folderVersion(root, mtime + 2000000000n)).not.toBeNull()
+  })
 })
 
 describe('disk folder versions under fresh', () => {
@@ -152,6 +173,23 @@ describe('disk folder versions under fresh', () => {
       const version = await stored(ws)
       expect(version).toBe(expected(root))
       expect(await checked(ws)).toBe(version)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('a folder whose mtime is ahead is re-listed until the clock passes it', async () => {
+    writeFileSync(join(root, 'a.txt'), 'a')
+    const [ctime, mtime] = mtimeAhead(root)
+    vi.setSystemTime(Number(ctime / 1000000n) + QUIET_MS)
+    const ws = workspace()
+    try {
+      await ls(ws)
+      expect(await stored(ws)).toBeNull()
+      vi.setSystemTime(Number(mtime / 1000000n) + QUIET_MS)
+      await ls(ws)
+      expect(await stored(ws)).toBe(expected(root))
+      expect(scans).toEqual([root, root])
     } finally {
       await ws.close()
     }

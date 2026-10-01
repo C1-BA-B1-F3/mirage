@@ -603,9 +603,10 @@ ${script}`,
     },
   )
 
-  // Redis eviction can drop a row while its listing survives; a served
-  // version would otherwise present the evicted child as absent.
-  it('reads a versioned listing missing a child row as expired', async () => {
+  // Redis eviction can drop a row while its listing survives. The store
+  // serves the listing as written; the reader that finds a listed name with
+  // no row refills on demand.
+  it('serves a versioned listing missing a child row', async () => {
     await store.setDir(
       '/d',
       [
@@ -615,9 +616,10 @@ ${script}`,
       undefined,
       { version: 'v1' },
     )
-    expect((await store.listDir('/d')).entries).toEqual(['/d/a', '/d/b'])
     await (await redis()).del(`${prefix}mirage:idx:entry:/d/b`)
-    expect((await store.listDir('/d')).status).toBe(LookupStatus.EXPIRED)
+    const listing = await store.listDir('/d')
+    expect(listing.entries).toEqual(['/d/a', '/d/b'])
+    expect(listing.version).toBe('v1')
   })
 
   it('serves an unversioned listing missing a child row', async () => {

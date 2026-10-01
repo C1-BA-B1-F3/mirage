@@ -434,6 +434,45 @@ describe('which listings a mount trusts', () => {
   })
 })
 
+describe('which version check a mount remembers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // Check A is sent and stalls; once it is out of the window a caller sends
+  // check B, which answers V2 first. A then lands with V1, the head it saw
+  // before the move. Recording A would put the memo back to V1: a listing
+  // stored at V2 would be re-checked, and one stored at V1 served as current.
+  it('never lets a late, older check replace a newer memo', async () => {
+    const clock = shiftPerformanceNow()
+    const manager = new CacheManager(
+      new RAMFileCacheStore(),
+      new RAMIndexCacheStore({ ttl: 600 }),
+      '/data/',
+      true,
+    )
+    let release: (version: string) => void = () => undefined
+    const stalled = new Promise<string>((resolve) => {
+      release = resolve
+    })
+    const asked: string[] = []
+    const answer = (version: string) => (): Promise<string> => {
+      asked.push(version)
+      return Promise.resolve(version)
+    }
+    const first = manager.checkedVersion('/data', 'V0', () => stalled)
+    clock.advance(LISTING_TRUST_WINDOW * 1000 + 10)
+    expect(await manager.checkedVersion('/data', 'V0', answer('V2'))).toBe('V2')
+    release('V1')
+    expect(await first).toBe('V1')
+    asked.length = 0
+    expect(await manager.checkedVersion('/data', 'V2', answer('V3'))).toBe('V2')
+    expect(asked).toEqual([])
+    expect(await manager.checkedVersion('/data', 'V1', answer('V4'))).toBe('V4')
+    expect(asked).toEqual(['V4'])
+  })
+})
+
 describe('what a probe saw this command', () => {
   const path = PathSpec.fromStrPath('/data/arch/h.txt')
   const probed = (): FileStat => new FileStat({ name: 'h.txt', size: 4, type: FileType.FILE })

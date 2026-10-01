@@ -612,13 +612,6 @@ class RedisIndexCacheStore(IndexCacheStore):
             return ListResult(
                 partial_entries=listing.entries, version=listing.version
             )
-        # Eviction can drop a child's row while its listing survives. An
-        # unversioned listing is re-listed by its gate anyway; a versioned
-        # one may be served on the version alone, so it must be whole.
-        if listing.version is not None and listing.entries:
-            rows = [self._entry_key(path) for path in listing.entries]
-            if await self._client.exists(*rows) < len(rows):
-                return ListResult(status=LookupStatus.EXPIRED)
         return ListResult(entries=listing.entries, version=listing.version)
 
     async def set_dir(

@@ -27,6 +27,27 @@ class Absence(Enum):
     REVISION = "revision"
 
 
+def mount_version(head: str | None, key_prefix: str) -> str | None:
+    """The version a mount's listings are stored and checked at.
+
+    The head commit, joined with the key prefix when the mount has one: the
+    index keys are mount-relative, so two mounts of one repository at one
+    head but different key prefixes hold different listings under the same
+    keys, and must not match each other's version. ":" cannot occur in a
+    hex sha, and a mount with no key prefix keeps the plain head.
+
+    Args:
+        head (str | None): the head commit, or None when none is known.
+        key_prefix (str): the mount's normalized key prefix, "" for none.
+
+    Returns:
+        str | None: the version, or None when the head is unknown.
+    """
+    if not head:
+        return None
+    return f"{head}:{key_prefix}" if key_prefix else head
+
+
 async def head_commit(accessor: HfHubAccessor) -> str:
     """The commit the mount's revision currently points at.
 

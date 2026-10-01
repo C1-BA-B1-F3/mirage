@@ -388,7 +388,7 @@ Set `caches_reads=True` only for stable, read-mostly content. Implement `get_sta
 Under `read: fresh`, a cached listing the running command did not write is listed again, unless the backend declares what to check it against. Declare `listing_version` (`mirage.types.ListingVersion`) as a class attribute, like `read_revalidatable`:
 
 - `NONE` (the default): no version; every command re-lists.
-- `MOUNT`: one version covers every listing of the mount (GitHub and the Hub use the head commit). A stat of the mount root through an empty index returns it as `FileStat.fingerprint`, and the tree fill seeds the same value with every listing it writes (`seed(..., version=...)`).
+- `MOUNT`: one version covers every listing of the mount (GitHub and the Hub use the head commit). A stat of the mount root through the gate's empty check store (`mirage.cache.index.ram.ListingCheckStore`) asks the backend and returns it as `FileStat.fingerprint`; through any other index it names none and reads neither the index nor the backend, since nothing reads a root fingerprint off a mount-view stat. The tree fill seeds the same value with every listing it writes (`seed(..., version=...)`).
 - `FOLDER`: each listing carries its own folder's version (disk). A stat of the folder returns it as the fingerprint, and `readdir` reads it before listing and passes it to `set_dir(..., version=...)`, so a change during the scan leaves the stored version behind.
 
 Take the version from a backend response, the same kind of token the stat answers, since the gate compares the two with `==`. Store `None` when there is nothing reliable to store; that listing re-lists.

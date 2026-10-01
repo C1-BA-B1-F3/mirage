@@ -16,7 +16,7 @@ import type { GitHubAccessor } from '../../accessor/github.ts'
 import { fetchDirTreePage, fetchTree, GitHubApiError } from './client.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { LookupStatus } from '../../cache/index/config.ts'
-import type { IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
+import type { IndexEntry, IndexSnapshot, ListResult } from '../../cache/index/config.ts'
 import { departed } from '../../cache/index/diff.ts'
 import { withIndexLock } from '../../cache/index/lock.ts'
 import type { GitHubTreeItem } from './client.ts'
@@ -233,8 +233,22 @@ export async function ensureLiveSnapshot(
   // The liveness probe comes before anything on the accessor, so a live
   // index still answers every read without one.
   const root = rstripSlash(prefix) === '' ? '/' : rstripSlash(prefix)
-  const status = (await index.listDir(root)).status
-  if (status !== LookupStatus.NOT_FOUND && status !== LookupStatus.EXPIRED) return null
+  return refillUnlessLive(accessor, index, prefix, await index.listDir(root))
+}
+
+/**
+ * `ensureLiveSnapshot` for a root listing the caller already read through the
+ * gate, under the index lock.
+ *
+ * Mirrors Python's `_refill_unless_live`.
+ */
+async function refillUnlessLive(
+  accessor: GitHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+  root: ListResult,
+): Promise<IndexSnapshot | null> {
+  if (root.status !== LookupStatus.NOT_FOUND && root.status !== LookupStatus.EXPIRED) return null
   // A truncated tree is not the whole listing, so the invariant this rests
   // on does not hold and readdir's per-directory fallback owns the miss.
   if (accessor.truncated) return null
@@ -250,8 +264,10 @@ export async function ensureLiveSnapshot(
  * accessor holds the tree it fetched earlier. Listings answer from the index
  * and never notice; a walker of `accessor.tree` would read the old tree, so
  * it refills when the root listing's version differs from the tree's. The
- * root is read past the gate, which `ensureLiveSnapshot` already passed. A
- * truncated tree keeps readdir's per-directory fallback instead.
+ * root listing is the one the liveness probe just read through the gate,
+ * under the same lock, so its version is the one the gate approved and the
+ * index is not read again. A truncated tree keeps readdir's per-directory
+ * fallback instead.
  */
 export async function ensureLiveTree(
   accessor: GitHubAccessor,
@@ -261,9 +277,9 @@ export async function ensureLiveTree(
   if (index === undefined) return
   const root = rstripSlash(prefix) === '' ? '/' : rstripSlash(prefix)
   await withIndexLock(index, root, async () => {
-    const refilled = await ensureLiveSnapshot(accessor, index, prefix)
+    const listing = await index.listDir(root)
+    const refilled = await refillUnlessLive(accessor, index, prefix, listing)
     if (refilled !== null || accessor.truncated) return
-    const listing = await index.peekDir(root)
     if (listing.entries == null || (listing.version ?? null) === accessor.treeVersion) return
     await refillSnapshot(accessor, index, prefix)
   })

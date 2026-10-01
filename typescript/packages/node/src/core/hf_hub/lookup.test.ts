@@ -266,7 +266,7 @@ for (const backend of ['ram', 'redis']) {
                 .spyOn(client, 'hubBytesTagged')
                 .mockResolvedValue([new TextEncoder().encode('new bytes'), ''])
               try {
-                await seedIndex(accessor, index, '/m')
+                await seedIndex(accessor.tree, index, '/m')
                 await index.setDir('/other', [
                   ['keep', new IndexEntry({ id: 'keep', name: 'keep', resourceType: 'file' })],
                 ])
@@ -313,7 +313,7 @@ for (const backend of ['ram', 'redis']) {
           .spyOn(client, 'hubGetResponse')
           .mockResolvedValue({ data: [], status: 200, headers: {} })
         try {
-          await seedIndex(accessor, index, '')
+          await seedIndex(accessor.tree, index, '')
           await index.setDir(
             '/d',
             [['b.txt', new IndexEntry({ id: 'old', name: 'b.txt', resourceType: 'file' })]],
@@ -337,7 +337,7 @@ for (const backend of ['ram', 'redis']) {
           .mockRejectedValueOnce(new Error('offline'))
           .mockResolvedValueOnce({ data: [], status: 200, headers: {} })
         try {
-          await seedIndex(accessor, index, '')
+          await seedIndex(accessor.tree, index, '')
           await index.invalidate()
           await expect(stat(accessor, ps('a.txt'), index)).rejects.toThrow('offline')
           expect((await index.get('/a.txt')).entry?.id).toBe('oid-a')
@@ -358,7 +358,7 @@ for (const backend of ['ram', 'redis']) {
           .spyOn(client, 'hubGetResponse')
           .mockRejectedValue(new Error('unexpected fetch'))
         try {
-          await seedIndex(accessor, index, '/m')
+          await seedIndex(accessor.tree, index, '/m')
           await index.setDir('/', [], new Date(0))
           expect((await lookup(accessor, index, '/m', '/m')).children).toEqual(['/m/a.txt', '/m/d'])
           expect(fetch).not.toHaveBeenCalled()
@@ -393,7 +393,7 @@ for (const backend of ['ram', 'redis']) {
         }
       })
       try {
-        await seedIndex(accessor, index, '/m')
+        await seedIndex(accessor.tree, index, '/m')
         await index.invalidate()
         const keys = Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? '/m/a.txt' : '/m'))
         const results = await Promise.all(keys.map((key) => lookup(accessor, index, '/m', key)))
@@ -486,7 +486,7 @@ describe('stat on an index that holds no tree', () => {
   it('answers a live index without a request', async () => {
     const accessor = loaded()
     const index = new RAMIndexCacheStore()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
     const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
     expect((await stat(accessor, ps('a.txt'), index)).fingerprint).toBe('oid-a')
@@ -497,7 +497,7 @@ describe('stat on an index that holds no tree', () => {
   it('refills an expired index rather than asking one path', async () => {
     const accessor = loaded()
     const index = new RAMIndexCacheStore()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     await index.invalidate()
     const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
     const walk = vi
@@ -628,7 +628,7 @@ describe('a lookup the index is cleared under', () => {
   it('retries at the stat door', async () => {
     const accessor = loaded()
     const index = new ClearedMidLookup()
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     const walk = vi
       .spyOn(client, 'hubGetResponse')
       .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
@@ -642,7 +642,7 @@ describe('a lookup the index is cleared under', () => {
     const accessor = loaded()
     const index = new ClearedMidLookup()
     index.cleared = true
-    await seedIndex(accessor, index, '')
+    await seedIndex(accessor.tree, index, '')
     expect(await codeOf(() => stat(accessor, ps('nope'), index))).toBe('ENOENT')
     expect(index.gets).toBe(1)
   })

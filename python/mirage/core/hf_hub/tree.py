@@ -40,7 +40,7 @@ from mirage.core.hf_hub.constants import (
     TREE_PAGE_SIZE,
     TREE_PAGE_SIZE_EXPANDED,
 )
-from mirage.core.hf_hub.repo import head_commit
+from mirage.core.hf_hub.repo import head_commit, mount_version
 from mirage.core.hf_hub.tree_entry import TreeEntry
 from mirage.utils import key_prefix as kp
 
@@ -452,8 +452,8 @@ def _list_implied(
 
     A directory seen only as some path's parent has a listing of its own
     but no row naming it, so its parent would not list it and a stat of it
-    would find no entry. Every listed path must have a row: a versioned
-    listing on Redis reads EXPIRED when one of its children has none.
+    would find no entry. Every listed path must have a row: a lookup that
+    finds a listed name with none takes it as evicted and refills.
 
     Args:
         dirs (dict[str, list[tuple[str, IndexEntry]]]): each directory's
@@ -475,24 +475,29 @@ def _list_implied(
 
 
 def seed_index(
-    accessor: HfHubAccessor,
+    tree: dict[str, TreeEntry],
     index: IndexCacheStore,
     prefix: str,
     version: str | None = None,
 ) -> IndexSnapshot:
-    """Write the accessor's tree into ``index`` under ``prefix``.
+    """Write one fetched tree into ``index`` under ``prefix``.
+
+    The tree is the caller's own fetch, never ``accessor.tree`` re-read
+    after an await: the watcher replaces that with no lock, and its rows
+    may be at another head than the ``version`` stamped here.
 
     Args:
-        accessor (HfHubAccessor): the mount's accessor, holding the tree.
+        tree (dict[str, TreeEntry]): the tree, walked at ``version``.
         index (IndexCacheStore): the index to seed.
         prefix (str): the mount prefix the keys are built against.
-        version (str | None): the head commit the tree was walked at,
-            stamped on every listing; None stores them unversioned.
+        version (str | None): the mount version of the head the tree was
+            walked at (``mount_version``), stamped on every listing; None
+            stores them unversioned.
 
     Returns:
         IndexSnapshot: the rows it wrote.
     """
-    entries, children = index_rows(accessor.tree, prefix)
+    entries, children = index_rows(tree, prefix)
     index.seed(
         entries,
         children,
@@ -563,7 +568,9 @@ async def refill_snapshot(
     accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    snapshot = seed_index(accessor, index, prefix, head)
+    snapshot = seed_index(
+        tree, index, prefix, mount_version(head, accessor.key_prefix)
+    )
     if previous is not None:
         await index.report_gone(
             departed(previous.items(), tree, prefix, _is_folder)

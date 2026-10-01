@@ -12,12 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import { LISTING_TRUST_WINDOW } from '@struktoai/mirage-core/cache/index/constants'
-import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
+import { ListingCheckStore, RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
+import { RedisIndexCacheStore } from '@struktoai/mirage-core/cache/index/redis'
 import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { FileStat } from '@struktoai/mirage-core/types'
-import { ListingVersion, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
+import {
+  FileType,
+  ListingVersion,
+  MountMode,
+  PathSpec,
+  ReadPolicy,
+} from '@struktoai/mirage-core/types'
 import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
@@ -27,7 +35,9 @@ import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { FakeHub, serveHub } from '../../core/hf_hub/_test_util.ts'
 import { stat } from '../../core/hf_hub/stat.ts'
 import { Workspace } from '../../workspace.ts'
+import { HfDatasetsVFS } from '../hf_datasets/hf_datasets.ts'
 import { HfModelsVFS } from '../hf_models/hf_models.ts'
+import { HfSpacesVFS } from '../hf_spaces/hf_spaces.ts'
 import { buildVfs } from '../registry.ts'
 
 const ENC = new TextEncoder()
@@ -46,10 +56,10 @@ afterEach(async () => {
   hubs = []
 })
 
-async function hubOf(): Promise<FakeHub> {
+async function hubOf(segment = 'models'): Promise<FakeHub> {
   const fake = new FakeHub()
-  fake.files().set('a.txt', ENC.encode('alpha\n'))
-  fake.files().set('docs/sub/b.txt', ENC.encode('bravo\n'))
+  fake.files(segment).set('a.txt', ENC.encode('alpha\n'))
+  fake.files(segment).set('docs/sub/b.txt', ENC.encode('bravo\n'))
   hubs.push(fake)
   return serveHub(fake)
 }
@@ -59,6 +69,25 @@ function vfsOf(fake: FakeHub, revision?: string): Promise<BaseVFS> {
   if (revision !== undefined) config.revision = revision
   return buildVfs('hf_models', config)
 }
+
+function prefixedOf(
+  fake: FakeHub,
+  keyPrefix?: string,
+  revision?: string,
+  name = 'hf_models',
+): Promise<BaseVFS> {
+  const config: Record<string, unknown> = { repo_id: 'acme/widget', endpoint: fake.url }
+  if (keyPrefix !== undefined) config.key_prefix = keyPrefix
+  if (revision !== undefined) config.revision = revision
+  return buildVfs(name, config)
+}
+
+// Each repository kind computes its own pin, so each is asked.
+const KINDS = [
+  { name: 'hf_models', segment: 'models', Vfs: HfModelsVFS },
+  { name: 'hf_datasets', segment: 'datasets', Vfs: HfDatasetsVFS },
+  { name: 'hf_spaces', segment: 'spaces', Vfs: HfSpacesVFS },
+] as const
 
 function wsOf(
   vfs: BaseVFS,
@@ -96,6 +125,48 @@ function revs(fake: FakeHub, route: string): string[] {
 
 function add(fake: FakeHub): void {
   fake.files().set('docs/sub/new.txt', ENC.encode('new\n'))
+}
+
+function storeOf(backend: string): IndexCacheStore {
+  if (backend === 'ram') return new RAMIndexCacheStore()
+  return new RedisIndexCacheStore({
+    url: process.env.REDIS_URL ?? '',
+    keyPrefix: `rows:${crypto.randomUUID()}:`,
+  })
+}
+
+interface RedisInternals {
+  client(): Promise<{ del(key: string): Promise<number> }>
+  entryKey(path: string): string
+}
+
+// Drop one row the way eviction does: the listing that names it survives.
+async function dropRow(store: IndexCacheStore, key: string): Promise<void> {
+  if (store instanceof RAMIndexCacheStore) {
+    await store.invalidateEntry(key)
+    return
+  }
+  const redis = store as unknown as RedisInternals
+  await (await redis.client()).del(redis.entryKey(key))
+}
+
+// Record every listing read the store answers from here on.
+function countListDirs(store: IndexCacheStore): string[] {
+  const reads: string[] = []
+  const listDir = store.listDir.bind(store)
+  vi.spyOn(store, 'listDir').mockImplementation((path: string) => {
+    reads.push(path)
+    return listDir(path)
+  })
+  return reads
+}
+
+// Keep one row missing however often it is refilled.
+function rowStaysMissing(store: RAMIndexCacheStore, key: string): void {
+  const get = store.get.bind(store)
+  vi.spyOn(store, 'get').mockImplementation(async (path: string) =>
+    path === key ? { status: LookupStatus.NOT_FOUND } : get(path),
+  )
 }
 
 async function stored(w: Workspace, key = '/m'): Promise<string | null> {
@@ -241,9 +312,54 @@ describe('hf_hub versions a listing by its head commit', () => {
     }
   })
 
+  // Repeated root stats on a mount that has not listed send nothing, and a
+  // fresh one's cold root stat sends nothing either: only the gate's check
+  // store asks the head.
+  it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
+    'sends no request for a cold root stat (%s)',
+    async (policy) => {
+      const fake = await hubOf()
+      const w = wsOf(await vfsOf(fake), policy)
+      try {
+        for (let i = 0; i < 5; i++) expect((await w.vfs.stat('/m')).type).toBe(FileType.DIRECTORY)
+        expect(await out(w, 'stat -c %n /m')).toBe('/m\n')
+        expect(counts(fake)).toEqual([0, 0, 0, 0])
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
+  // A cold walk asks the head once, for the refill's version, however many
+  // times it stats the root on the way.
+  it.each(['find /m', 'du /m'])('asks the head once for a cold walk: %s', async (line) => {
+    const fake = await hubOf()
+    const w = wsOf(await vfsOf(fake), ReadPolicy.BOUNDED)
+    try {
+      await out(w, line)
+      expect([fake.count('revision'), fake.count('tree')]).toEqual([1, 1])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // A root stat through the mount asks nothing, so it answers with the Hub
+  // unreachable, as a FUSE getattr of the root must.
+  it('answers a root stat with the Hub unreachable', async () => {
+    const fake = await hubOf()
+    const w = wsOf(await vfsOf(fake), ReadPolicy.BOUNDED)
+    try {
+      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
+      expect(await out(w, 'stat -c %n /m')).toBe('/m\n')
+    } finally {
+      await w.close()
+    }
+  })
+
   // A second mount over a warm shared store has not loaded its tree; the
-  // gate's root stat asks the head once and never walks or loads the tree.
-  it('never walks for a root stat through a throwaway index', async () => {
+  // gate's root stat, through its check store, asks the head once and never
+  // walks or loads the tree.
+  it('never walks for a root stat through the check store', async () => {
     const fake = await hubOf()
     const shared = new RAMIndexCacheStore({ ttl: 600 })
     const one = wsOf(await vfsOf(fake), ReadPolicy.FRESH, shared)
@@ -253,7 +369,7 @@ describe('hf_hub versions a listing by its head commit', () => {
       await out(one, 'ls /m')
       fake.log.length = 0
       const found = (await two.opsRegistry.call('stat', twoVfs, twoVfs.accessor, ROOT, [], {
-        index: new RAMIndexCacheStore(),
+        index: new ListingCheckStore(),
       })) as FileStat
       expect(found.fingerprint).toBe(fake.head())
       expect(counts(fake)).toEqual([1, 0, 0, 0])
@@ -264,10 +380,11 @@ describe('hf_hub versions a listing by its head commit', () => {
     }
   })
 
-  // The mount's own index answers the root from its listing, read past the
-  // gate, so a getattr of the root costs nothing however stale the trust is.
+  // Only the gate's check store wants the root's version, so a root stat
+  // through the mount's own index names none and reads neither the index nor
+  // the backend, however stale the trust is (it used to answer the stored one).
   it.each([true, false])(
-    'reads the root ungated through the mount index (scoped=%s)',
+    'names no root version through the mount index (scoped=%s)',
     async (scoped) => {
       const real = performance.now.bind(performance)
       let offset = 0
@@ -281,11 +398,13 @@ describe('hf_hub versions a listing by its head commit', () => {
         offset += LISTING_TRUST_WINDOW * 2000
         fake.log.length = 0
         const index = w.registry.mountFor('/m').index
+        const reads = countListDirs(w.registry.mountFor('/m').indexStore)
         const found = scoped
           ? await runInCommandScope(() => stat(accessorOf(vfs), ROOT, index))
           : await stat(accessorOf(vfs), ROOT, index)
         expect(version).not.toBeNull()
-        expect(found.fingerprint).toBe(version)
+        expect(found.fingerprint).toBeNull()
+        expect(reads).toEqual([])
         expect(counts(fake)).toEqual([0, 0, 0, 0])
       } finally {
         await w.close()
@@ -325,7 +444,7 @@ describe('hf_hub versions a listing by its head commit', () => {
         fake.fail.set('revision', [status, code])
         fake.log.length = 0
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-        const found = await stat(accessorOf(vfs), ROOT, new RAMIndexCacheStore())
+        const found = await stat(accessorOf(vfs), ROOT, new ListingCheckStore())
         expect(found.fingerprint).toBeNull()
         expect([fake.count('revision'), fake.count('tree')]).toEqual([1, 0])
         // Said on stderr, the way Python logs it.
@@ -338,18 +457,30 @@ describe('hf_hub versions a listing by its head commit', () => {
     },
   )
 
-  // With no index at all (the null index), the root asks the head once.
-  it('asks the head once for a root stat with no index', async () => {
+  // With no index at all (the null index), the root names no version and
+  // asks nothing (it used to ask the head once).
+  it('asks nothing for a root stat with no index', async () => {
     const fake = await hubOf()
     const vfs = await vfsOf(fake)
     const found = await stat(accessorOf(vfs), ROOT, undefined)
-    expect(found.fingerprint).toBe(fake.head())
-    expect(counts(fake)).toEqual([1, 0, 0, 0])
+    expect(found.fingerprint).toBeNull()
+    expect(counts(fake)).toEqual([0, 0, 0, 0])
   })
 
-  it('pins the effective revision lowercased', () => {
+  // Any other index names no version and asks nothing, listed or not: only
+  // the gate's check store wants the request, and nothing loads the tree.
+  it('asks nothing for a root stat through another empty index', async () => {
+    const fake = await hubOf()
+    const vfs = await vfsOf(fake)
+    const found = await stat(accessorOf(vfs), ROOT, new RAMIndexCacheStore())
+    expect(found.fingerprint).toBeNull()
+    expect(counts(fake)).toEqual([0, 0, 0, 0])
+    expect(accessorOf(vfs).treeLoaded).toBe(false)
+  })
+
+  it.each(KINDS)('pins the effective revision lowercased ($name)', ({ Vfs }) => {
     const pin = (revision?: string): string | null =>
-      new HfModelsVFS(
+      new Vfs(
         revision === undefined ? { repoId: 'acme/widget' } : { repoId: 'acme/widget', revision },
       ).listingsPin
     expect(pin(SHA.toUpperCase())).toBe(SHA)
@@ -357,6 +488,9 @@ describe('hf_hub versions a listing by its head commit', () => {
     expect(pin('main')).toBeNull()
     expect(pin()).toBeNull()
     expect(pin(SHA.slice(0, -1))).toBeNull()
+    expect(new Vfs({ repoId: 'acme/widget', revision: SHA, keyPrefix: 'docs' }).listingsPin).toBe(
+      `${SHA}:docs/`,
+    )
   })
 
   // Pinned to a commit given in uppercase: the refill still resolves the
@@ -471,6 +605,60 @@ describe('hf_hub versions a listing by its head commit', () => {
   })
 
   // An hf outage is a transport failure, not a programming error: the gate
+  // Index keys are mount-relative, so two mounts of one repository with
+  // different key prefixes over one shared store must not share a version:
+  // the second mount's check would match, or its pin would, and it would
+  // serve the first one's subtree as its own root.
+  it.each(KINDS.flatMap((kind) => [false, true].map((pinned) => ({ ...kind, pinned }))))(
+    'keeps shared listings apart by key prefix ($name, pinned=$pinned)',
+    async ({ name, segment, pinned }) => {
+      const fake = await hubOf(segment)
+      const shared = new RAMIndexCacheStore({ ttl: 600 })
+      const revision = pinned ? fake.head(segment) : undefined
+      const sub = wsOf(await prefixedOf(fake, 'docs/', revision, name), ReadPolicy.FRESH, shared)
+      const whole = wsOf(
+        await prefixedOf(fake, undefined, revision, name),
+        ReadPolicy.FRESH,
+        shared,
+      )
+      try {
+        expect(await out(sub, 'ls /m')).toBe('sub\n')
+        expect(await out(whole, 'ls /m')).toBe('a.txt\ndocs\n')
+        expect(await out(sub, 'ls /m')).toBe('sub\n')
+        expect(await out(whole, 'ls /m/docs/sub')).toBe(LISTED)
+      } finally {
+        await sub.close()
+        await whole.close()
+      }
+    },
+  )
+
+  // The composed version is what the root stat names, so the gate's check
+  // still matches what a prefixed mount's fill stored, and a mount with no
+  // key prefix keeps the plain head (an existing pin holds).
+  it('checks the version a prefixed mount stored', async () => {
+    const fake = await hubOf()
+    const w = wsOf(await prefixedOf(fake, 'docs/'))
+    try {
+      await out(w, 'ls /m')
+      const version = await stored(w)
+      expect(version).not.toBeNull()
+      expect(version).not.toBe(fake.head())
+      fake.log.length = 0
+      expect(await out(w, 'ls /m')).toBe('sub\n')
+      expect(counts(fake)).toEqual([1, 0, 0, 0])
+    } finally {
+      await w.close()
+    }
+    const plain = wsOf(await prefixedOf(fake, undefined))
+    try {
+      await out(plain, 'ls /m')
+      expect(await stored(plain)).toBe(fake.head())
+    } finally {
+      await plain.close()
+    }
+  })
+
   // answers EXPIRED, warned, and the listing stays stored for the re-list.
   it('keeps the listing when the Hub cannot be reached', async () => {
     const fake = await hubOf()
@@ -520,4 +708,77 @@ describe('hf_hub versions a listing by its head commit', () => {
       await w.close()
     }
   })
+
+  // Eviction can drop a child's row while its listing survives. The store
+  // still serves the listing; a stat or read of the listed child finds no row
+  // and refills once, so it answers the child rather than a hole.
+  const rowBackends = process.env.REDIS_URL === undefined ? ['ram'] : ['ram', 'redis']
+  const rowCases = rowBackends.flatMap((backend) =>
+    [ReadPolicy.BOUNDED, ReadPolicy.FRESH].map((policy) => [backend, policy] as const),
+  )
+  it.each(rowCases)(
+    'refills once for a listed child without a row (%s, %s)',
+    async (backend, policy) => {
+      const fake = await hubOf()
+      const store = storeOf(backend)
+      const w = wsOf(await vfsOf(fake), policy, store)
+      try {
+        await out(w, 'ls /m')
+        await dropRow(store, '/m/docs/sub/b.txt')
+        fake.log.length = 0
+        expect(await out(w, 'cat /m/docs/sub/b.txt')).toBe('bravo\n')
+        expect(fake.count('tree')).toBe(1)
+        expect(await out(w, 'stat -c %n /m/docs/sub/b.txt')).toBe('/m/docs/sub/b.txt\n')
+        expect(await out(w, 'ls /m/docs/sub')).toBe(LISTED)
+        expect(fake.count('tree')).toBe(1)
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
+  // A listed child whose row is still missing after the eviction refill is
+  // absent, as it was before rows were checked: one refill per command. The
+  // refill bumps the accessor's refill count, which used to send the retry
+  // into a second refill of its own.
+  it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
+    'refills once per command for a row the refill does not bring back (%s)',
+    async (policy) => {
+      const fake = await hubOf()
+      const store = new RAMIndexCacheStore()
+      const w = wsOf(await vfsOf(fake), policy, store)
+      try {
+        await out(w, 'ls /m')
+        rowStaysMissing(store, '/m/docs/sub/b.txt')
+        for (const command of [1, 2]) {
+          fake.log.length = 0
+          const result = await w.shell('stat /m/docs/sub/b.txt')
+          expect(result.exitCode).toBe(1)
+          expect(DEC.decode(result.stderr)).toContain('No such file')
+          expect(fake.count('tree'), String(command)).toBe(1)
+        }
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
+  // A name the live listing does not hold is absent, and costs no refill.
+  it.each(rowCases)(
+    'answers an unlisted name absent without a refill (%s, %s)',
+    async (backend, policy) => {
+      const fake = await hubOf()
+      const w = wsOf(await vfsOf(fake), policy, storeOf(backend))
+      try {
+        await out(w, 'ls /m')
+        fake.log.length = 0
+        const result = await w.shell('stat /m/docs/sub/zz.txt')
+        expect(result.exitCode).toBe(1)
+        expect(DEC.decode(result.stderr)).toContain('No such file')
+        expect(fake.count('tree')).toBe(0)
+      } finally {
+        await w.close()
+      }
+    },
+  )
 })

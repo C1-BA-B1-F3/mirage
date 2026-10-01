@@ -18,6 +18,7 @@ import logging
 import pytest
 from fakeredis.aioredis import FakeRedis
 
+from mirage.cache.index import LookupResult, LookupStatus
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
@@ -26,6 +27,7 @@ from mirage.core.github.config import GitHubConfig
 from mirage.core.github.stat import stat
 from mirage.core.github.watch import GitHubWalk
 from mirage.types import (
+    FileType,
     ListingVersion,
     MountMode,
     PathSpec,
@@ -97,11 +99,24 @@ def test_github_declares_one_version_for_the_whole_mount():
     assert GitHubVFS.listing_version is ListingVersion.MOUNT
 
 
-# The mount's own index answers the root from its listing, read past the
-# gate, so a getattr of the root costs nothing however stale the trust is.
+def _count_list_dirs(monkeypatch, store) -> list[str]:
+    reads: list[str] = []
+    list_dir = store.list_dir
+
+    async def counted(path):
+        reads.append(path)
+        return await list_dir(path)
+
+    monkeypatch.setattr(store, "list_dir", counted)
+    return reads
+
+
+# Only the gate's check store wants the root's version, so a root stat
+# through the mount's own index names none and reads neither the index nor
+# the backend, however stale the trust is (it used to answer the stored one).
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scoped", [True, False])
-async def test_a_root_stat_through_the_mount_index_reads_it_ungated(
+async def test_a_root_stat_through_the_mount_index_names_no_version(
     monkeypatch, scoped
 ):
     now = [100.0]
@@ -114,34 +129,66 @@ async def test_a_root_stat_through_the_mount_index_reads_it_ungated(
             now[0] += LISTING_TRUST_WINDOW * 2
             hub.log.clear()
             mount = ws.mount("/gh")
+            reads = _count_list_dirs(monkeypatch, mount.index_store)
             if scoped:
                 async with command_scope():
                     found = await stat(mount.vfs.accessor, ROOT, mount.index)
             else:
                 found = await stat(mount.vfs.accessor, ROOT, mount.index)
             assert stored is not None
-            assert found.fingerprint == stored
+            assert found.fingerprint is None
+            assert reads == []
             assert hub.counts() == (0, 0, 0)
         finally:
             await ws.close()
 
 
-# A mount that has not listed yet asks the head for a root stat, one
-# request; once it has listed, the root answers from the listing for none.
+# Only the gate's check store asks the head, so a root stat through the
+# mount's own index sends nothing, cold or listed (it used to ask once).
 @pytest.mark.asyncio
 @pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
-async def test_a_root_stat_before_the_first_listing_asks_once(policy):
+async def test_a_root_stat_before_the_first_listing_asks_nothing(policy):
     with serve(_three()) as hub:
         ws = _ws(_vfs(hub), policy=policy)
         try:
             assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
-            assert hub.counts() == (1, 0, 0)
+            assert hub.counts() == (0, 0, 0)
             await _out(ws, "ls /gh")
             hub.log.clear()
             assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
             assert hub.counts() == (0, 0, 0)
         finally:
             await ws.close()
+
+
+# Repeated root stats on a mount that has not listed send nothing, on a
+# branch or pinned to a commit.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pinned", [False, True])
+async def test_a_bounded_root_stat_sends_no_request(pinned):
+    with serve(_three()) as hub:
+        ws = _ws(
+            _vfs(hub, ref=hub.head() if pinned else "main"),
+            policy=ReadPolicy.BOUNDED,
+        )
+        try:
+            for _ in range(5):
+                assert (await ws.stat("/gh")).type == FileType.DIRECTORY
+            assert hub.counts() == (0, 0, 0)
+        finally:
+            await ws.close()
+
+
+# A root stat through the mount asks nothing, so it answers with the
+# backend unreachable, as a FUSE getattr of the root must.
+@pytest.mark.asyncio
+async def test_a_root_stat_answers_with_the_backend_unreachable():
+    with serve(_three()) as hub:
+        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED)
+    try:
+        assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
+    finally:
+        await ws.close()
 
 
 # An expired root listing names no version and asks nothing; a refused
@@ -260,6 +307,24 @@ def test_the_pin_is_the_effective_ref_lowercased():
         token="t", owner="o", repo="r", ref=SHA, base_url="x"
     )
     assert GitHubVFS(pinned).listings_pin == SHA
+
+
+# Only a full SHA-1 or SHA-256 hex string names a commit; one short or
+# one long is a branch name, so it pins nothing.
+@pytest.mark.parametrize(
+    "ref,pin",
+    [
+        ("c" * 64, "c" * 64),
+        ("C" * 64, "c" * 64),
+        ("c" * 39, None),
+        ("c" * 41, None),
+        ("c" * 63, None),
+        ("c" * 65, None),
+    ],
+)
+def test_only_a_full_length_hex_ref_pins(ref, pin):
+    config = GitHubConfig(token="t", owner="o", repo="r", base_url="x")
+    assert GitHubVFS(config, ref=ref).listings_pin == pin
 
 
 @pytest.mark.asyncio
@@ -404,23 +469,85 @@ async def test_a_watched_tree_carries_the_head_it_was_walked_at(policy, cost):
             await ws.close()
 
 
-# On Redis a versioned listing whose child row was evicted reads
-# EXPIRED, and the reader refills rather than serving a hole.
+async def _drop_row(store, client, key: str) -> None:
+    if client is None:
+        await store.invalidate_entry(key)
+    else:
+        await client.delete(store._entry_key(key))
+
+
+def _store(backend: str):
+    client = FakeRedis() if backend == "redis" else None
+    if client is None:
+        return RAMIndexCacheStore(), None
+    return RedisIndexCacheStore(client=client), client
+
+
+# Eviction can drop a child's row while its listing survives. The store
+# still serves the listing; a stat or read of the listed child finds no
+# row and refills once, so it answers the child rather than a hole.
 @pytest.mark.asyncio
-async def test_an_evicted_child_row_on_redis_refills_the_listing():
-    client = FakeRedis()
-    store = RedisIndexCacheStore(client=client)
+@pytest.mark.parametrize("backend", ["ram", "redis"])
+@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
+async def test_a_listed_child_without_a_row_refills_once(backend, policy):
+    store, client = _store(backend)
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), index=store)
+        ws = _ws(_vfs(hub), policy=policy, index=store)
         try:
             await _out(ws, "ls /gh")
-            await client.delete(store._entry_key("/gh/d1/a.txt"))
+            await _drop_row(store, client, "/gh/d1/a.txt")
             hub.log.clear()
+            assert await _out(ws, "cat /gh/d1/a.txt") == b"x\n"
+            assert hub.count("recursive") == 1
+            assert await _out(ws, "stat -c %n /gh/d1/a.txt") == (
+                b"/gh/d1/a.txt\n"
+            )
             assert await _out(ws, "ls /gh/d1") == LISTED
             assert hub.count("recursive") == 1
         finally:
             await ws.close()
-            await client.aclose()
+            if client is not None:
+                await client.aclose()
+
+
+# A truncated tree has no whole listing to refill, so the folder that
+# names the evicted row is listed again on its own.
+@pytest.mark.asyncio
+async def test_a_listed_child_without_a_row_in_a_truncated_tree_relists():
+    store = RAMIndexCacheStore()
+    with serve(_three()) as hub:
+        hub.truncated_recursive = True
+        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
+        try:
+            assert await _out(ws, "ls /gh/d1") == LISTED
+            await store.invalidate_entry("/gh/d1/a.txt")
+            hub.log.clear()
+            assert await _out(ws, "cat /gh/d1/a.txt") == b"x\n"
+            assert hub.count("recursive") == 0
+            assert hub.count("sha_dir") >= 1
+        finally:
+            await ws.close()
+
+
+# A name the live listing does not hold is absent, and costs no refill.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["ram", "redis"])
+@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
+async def test_an_unlisted_name_is_absent_without_a_refill(backend, policy):
+    store, client = _store(backend)
+    with serve(_three()) as hub:
+        ws = _ws(_vfs(hub), policy=policy, index=store)
+        try:
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            result = await ws.shell("stat /gh/d1/zz.txt")
+            assert result.exit_code == 1
+            assert "No such file" in await result.stderr_str()
+            assert hub.count("recursive") == 0
+        finally:
+            await ws.close()
+            if client is not None:
+                await client.aclose()
 
 
 # The Redis store serves an unchanged listing on one check, the same as RAM.
@@ -462,3 +589,79 @@ async def test_an_unreachable_backend_keeps_the_listing(caplog):
         assert "listing check failed" in caplog.text
     finally:
         await ws.close()
+
+
+def _row_stays_missing(store, key: str) -> None:
+    get = store.get
+
+    async def missing(path):
+        result = await get(path)
+        return (
+            LookupResult(status=LookupStatus.NOT_FOUND)
+            if (path == key)
+            else result
+        )
+
+    store.get = missing
+
+
+# A listed child whose row is still missing after the eviction refill is
+# absent, as it was before rows were checked: one refill per command, and
+# the retry inside the same stat does not refill again.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
+async def test_a_row_missing_after_its_refill_costs_one_refill(policy):
+    store = RAMIndexCacheStore()
+    with serve(_three()) as hub:
+        ws = _ws(_vfs(hub), policy=policy, index=store)
+        try:
+            await _out(ws, "ls /gh")
+            _row_stays_missing(store, "/gh/d1/a.txt")
+            for command in (1, 2):
+                hub.log.clear()
+                result = await ws.shell("stat /gh/d1/a.txt")
+                assert result.exit_code == 1
+                assert "No such file" in await result.stderr_str()
+                assert hub.count("recursive") == 1, command
+        finally:
+            await ws.close()
+
+
+# The truncated arm re-lists the folder once per command, not twice.
+@pytest.mark.asyncio
+async def test_a_row_missing_after_its_relist_relists_once():
+    store = RAMIndexCacheStore()
+    with serve(_three()) as hub:
+        hub.truncated_recursive = True
+        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
+        try:
+            assert await _out(ws, "ls /gh/d1") == LISTED
+            _row_stays_missing(store, "/gh/d1/a.txt")
+            for command in (1, 2):
+                hub.log.clear()
+                result = await ws.shell("stat /gh/d1/a.txt")
+                assert result.exit_code == 1
+                assert hub.count("recursive") == 0
+                assert hub.count("sha_dir") == 1, command
+        finally:
+            await ws.close()
+
+
+# A warm tree walk reads the root listing once: the version the liveness
+# probe read is the one the in-memory tree is matched against, and the
+# root stat find and du make reads nothing.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["find /gh", "du -a /gh"])
+async def test_a_warm_tree_walk_reads_the_root_listing_once(monkeypatch, line):
+    with serve(_three()) as hub:
+        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED)
+        try:
+            await _out(ws, "ls -R /gh")
+            await _out(ws, line)
+            reads = _count_list_dirs(monkeypatch, ws.mount("/gh").index_store)
+            hub.log.clear()
+            await _out(ws, line)
+            assert reads.count("/gh") == 1
+            assert hub.counts() == (0, 0, 0)
+        finally:
+            await ws.close()

@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shiftPerformanceNow } from '../../cache/_test_util.ts'
+import { LookupStatus } from '../../cache/index/config.ts'
 import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { RedisIndexCacheStore } from '../../cache/index/redis.ts'
@@ -22,7 +23,7 @@ import { runInCommandScope } from '../../cache/index/scope.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
 import { stat } from '../../core/github/stat.ts'
 import { GitHubWalk } from '../../core/github/watch.ts'
-import { ListingVersion, MountMode, PathSpec, ReadPolicy } from '../../types.ts'
+import { FileType, ListingVersion, MountMode, PathSpec, ReadPolicy } from '../../types.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { Mount } from '../../workspace/mount/spec.ts'
 import { Reconciler } from '../../workspace/reconcile.ts'
@@ -86,6 +87,48 @@ async function out(w: Workspace, line: string): Promise<string> {
   return DEC.decode(result.stdout)
 }
 
+function storeOf(backend: string): IndexCacheStore {
+  if (backend === 'ram') return new RAMIndexCacheStore()
+  return new RedisIndexCacheStore({
+    url: process.env.REDIS_URL ?? '',
+    keyPrefix: `rows:${crypto.randomUUID()}:`,
+  })
+}
+
+interface RedisInternals {
+  client(): Promise<{ del(key: string): Promise<number> }>
+  entryKey(path: string): string
+}
+
+// Drop one row the way eviction does: the listing that names it survives.
+async function dropRow(store: IndexCacheStore, key: string): Promise<void> {
+  if (store instanceof RAMIndexCacheStore) {
+    await store.invalidateEntry(key)
+    return
+  }
+  const redis = store as unknown as RedisInternals
+  await (await redis.client()).del(redis.entryKey(key))
+}
+
+// Record every listing read the store answers from here on.
+function countListDirs(store: IndexCacheStore): string[] {
+  const reads: string[] = []
+  const listDir = store.listDir.bind(store)
+  vi.spyOn(store, 'listDir').mockImplementation((path: string) => {
+    reads.push(path)
+    return listDir(path)
+  })
+  return reads
+}
+
+// Keep one row missing however often it is refilled.
+function rowStaysMissing(store: RAMIndexCacheStore, key: string): void {
+  const get = store.get.bind(store)
+  vi.spyOn(store, 'get').mockImplementation(async (path: string) =>
+    path === key ? { status: LookupStatus.NOT_FOUND } : get(path),
+  )
+}
+
 async function stored(w: Workspace, key = '/gh'): Promise<string | null> {
   return (await w.registry.mountFor('/gh').indexStore.listDir(key)).version ?? null
 }
@@ -95,10 +138,11 @@ describe('github versions a listing by its head commit', () => {
     expect((await vfsOf()).listingVersion).toBe(ListingVersion.MOUNT)
   })
 
-  // The mount's own index answers the root from its listing, read past the
-  // gate, so a getattr of the root costs nothing however stale the trust is.
+  // Only the gate's check store wants the root's version, so a root stat
+  // through the mount's own index names none and reads neither the index nor
+  // the backend, however stale the trust is (it used to answer the stored one).
   it.each([true, false])(
-    'reads the root ungated through the mount index (scoped=%s)',
+    'names no root version through the mount index (scoped=%s)',
     async (scoped) => {
       const clock = shiftPerformanceNow()
       const vfs = await vfsOf()
@@ -110,11 +154,13 @@ describe('github versions a listing by its head commit', () => {
         clock.advance(LISTING_TRUST_WINDOW * 2000)
         gh.log.length = 0
         const index = w.registry.mountFor('/gh').index
+        const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
         const found = scoped
           ? await runInCommandScope(() => stat(vfs.accessor, ROOT, index))
           : await stat(vfs.accessor, ROOT, index)
         expect(version).not.toBeNull()
-        expect(found.fingerprint).toBe(version)
+        expect(found.fingerprint).toBeNull()
+        expect(reads).toEqual([])
         expect(gh.counts()).toEqual([0, 0, 0])
       } finally {
         await w.close()
@@ -122,15 +168,15 @@ describe('github versions a listing by its head commit', () => {
     },
   )
 
-  // A mount that has not listed yet asks the head for a root stat, one
-  // request; once it has listed, the root answers from the listing for none.
+  // Only the gate's check store asks the head, so a root stat through the
+  // mount's own index sends nothing, cold or listed (it used to ask once).
   it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
-    'asks the head once for a root stat before the first listing (%s)',
+    'asks nothing for a root stat before the first listing (%s)',
     async (policy) => {
       const w = await wsOf(await vfsOf(), policy)
       try {
         expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
-        expect(gh.counts()).toEqual([1, 0, 0])
+        expect(gh.counts()).toEqual([0, 0, 0])
         await out(w, 'ls /gh')
         gh.log.length = 0
         expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
@@ -140,6 +186,30 @@ describe('github versions a listing by its head commit', () => {
       }
     },
   )
+
+  // Repeated root stats on a mount that has not listed send nothing, on a
+  // branch or pinned to a commit.
+  it.each([false, true])('sends no request for a bounded root stat (pinned=%s)', async (pinned) => {
+    const w = await wsOf(await vfsOf(pinned ? await gh.head() : 'main'), ReadPolicy.BOUNDED)
+    try {
+      for (let i = 0; i < 5; i++) expect((await w.vfs.stat('/gh')).type).toBe(FileType.DIRECTORY)
+      expect(gh.counts()).toEqual([0, 0, 0])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // A root stat through the mount asks nothing, so it answers with the
+  // backend unreachable, as a FUSE getattr of the root must.
+  it('answers a root stat with the backend unreachable', async () => {
+    const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED)
+    try {
+      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
+      expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
+    } finally {
+      await w.close()
+    }
+  })
 
   // An expired root listing names no version and asks nothing.
   it('names no version for an expired root listing', async () => {
@@ -247,6 +317,20 @@ describe('github versions a listing by its head commit', () => {
 
   it('pins nothing for a branch', async () => {
     expect((await vfsOf()).listingsPin).toBeNull()
+  })
+
+  // Only a full SHA-1 or SHA-256 hex string names a commit; one short or one
+  // long is a branch name, so it pins nothing.
+  it.each([
+    ['c'.repeat(64), 'c'.repeat(64)],
+    ['C'.repeat(64), 'c'.repeat(64)],
+    ['c'.repeat(39), null],
+    ['c'.repeat(41), null],
+    ['c'.repeat(63), null],
+    ['c'.repeat(65), null],
+  ])('pins only a full-length hex ref (%s)', async (ref, pin) => {
+    gh.ref = ref
+    expect((await vfsOf(ref)).listingsPin).toBe(pin)
   })
 
   // A mount pinned to an older commit, over a store a `main` mount filled,
@@ -393,4 +477,129 @@ describe('github versions a listing by its head commit', () => {
       await w.close()
     }
   })
+
+  // Eviction can drop a child's row while its listing survives. The store
+  // still serves the listing; a stat or read of the listed child finds no row
+  // and refills once, so it answers the child rather than a hole.
+  const rowBackends = process.env.REDIS_URL === undefined ? ['ram'] : ['ram', 'redis']
+  const rowCases = rowBackends.flatMap((backend) =>
+    [ReadPolicy.BOUNDED, ReadPolicy.FRESH].map((policy) => [backend, policy] as const),
+  )
+  it.each(rowCases)(
+    'refills once for a listed child without a row (%s, %s)',
+    async (backend, policy) => {
+      const store = storeOf(backend)
+      const w = await wsOf(await vfsOf(), policy, store)
+      try {
+        await out(w, 'ls /gh')
+        await dropRow(store, '/gh/d1/a.txt')
+        gh.log.length = 0
+        expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
+        expect(gh.count('recursive')).toBe(1)
+        expect(await out(w, 'stat -c %n /gh/d1/a.txt')).toBe('/gh/d1/a.txt\n')
+        expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+        expect(gh.count('recursive')).toBe(1)
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
+  // A truncated tree has no whole listing to refill, so the folder that names
+  // the evicted row is listed again on its own.
+  it('re-lists the folder of a listed child without a row in a truncated tree', async () => {
+    gh.truncatedRecursive = true
+    const store = new RAMIndexCacheStore()
+    const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED, store)
+    try {
+      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+      await store.invalidateEntry('/gh/d1/a.txt')
+      gh.log.length = 0
+      expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
+      expect(gh.count('recursive')).toBe(0)
+      expect(gh.count('sha_dir')).toBeGreaterThanOrEqual(1)
+    } finally {
+      await w.close()
+    }
+  })
+
+  // A listed child whose row is still missing after the eviction refill is
+  // absent, as it was before rows were checked: one refill per command, and
+  // the retry inside the same stat does not refill again.
+  it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
+    'refills once per command for a row the refill does not bring back (%s)',
+    async (policy) => {
+      const store = new RAMIndexCacheStore()
+      const w = await wsOf(await vfsOf(), policy, store)
+      try {
+        await out(w, 'ls /gh')
+        rowStaysMissing(store, '/gh/d1/a.txt')
+        for (const command of [1, 2]) {
+          gh.log.length = 0
+          const result = await w.shell('stat /gh/d1/a.txt')
+          expect(result.exitCode).toBe(1)
+          expect(DEC.decode(result.stderr)).toContain('No such file')
+          expect(gh.count('recursive'), String(command)).toBe(1)
+        }
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
+  // The truncated arm re-lists the folder once per command, not twice.
+  it('re-lists once per command for a row the re-list does not bring back', async () => {
+    gh.truncatedRecursive = true
+    const store = new RAMIndexCacheStore()
+    const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED, store)
+    try {
+      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+      rowStaysMissing(store, '/gh/d1/a.txt')
+      for (const command of [1, 2]) {
+        gh.log.length = 0
+        const result = await w.shell('stat /gh/d1/a.txt')
+        expect(result.exitCode).toBe(1)
+        expect(gh.count('recursive')).toBe(0)
+        expect(gh.count('sha_dir'), String(command)).toBe(1)
+      }
+    } finally {
+      await w.close()
+    }
+  })
+
+  // A warm tree walk reads the root listing once: the version the liveness
+  // probe read is the one the in-memory tree is matched against, and the root
+  // stat find and du make reads nothing.
+  it.each(['find /gh', 'du -a /gh'])('reads the root listing once for a warm %s', async (line) => {
+    const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED)
+    try {
+      await out(w, 'ls -R /gh')
+      await out(w, line)
+      const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
+      gh.log.length = 0
+      await out(w, line)
+      expect(reads.filter((path) => path === '/gh')).toHaveLength(1)
+      expect(gh.counts()).toEqual([0, 0, 0])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // A name the live listing does not hold is absent, and costs no refill.
+  it.each(rowCases)(
+    'answers an unlisted name absent without a refill (%s, %s)',
+    async (backend, policy) => {
+      const w = await wsOf(await vfsOf(), policy, storeOf(backend))
+      try {
+        await out(w, 'ls /gh')
+        gh.log.length = 0
+        const result = await w.shell('stat /gh/d1/zz.txt')
+        expect(result.exitCode).toBe(1)
+        expect(DEC.decode(result.stderr)).toContain('No such file')
+        expect(gh.count('recursive')).toBe(0)
+      } finally {
+        await w.close()
+      }
+    },
+  )
 })

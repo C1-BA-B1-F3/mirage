@@ -14,7 +14,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../../accessor/github.ts'
-import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { ListingCheckStore, RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { RedisIndexCacheStore } from '../../cache/index/redis.ts'
 import { PathSpec } from '../../types.ts'
 import { populateIndex } from './tree.ts'
@@ -199,22 +199,31 @@ describe('the root stat names the head commit', () => {
     vi.unstubAllGlobals()
   })
 
-  // A throwaway index has no root listing, so the root's version is asked
-  // with one shallow request, and it is the head commit.
-  it('asks the head through a throwaway index', async () => {
+  // The gate's check store has no root listing, so the root's version is
+  // asked with one shallow request, and it is the head commit.
+  it('asks the head through the check store', async () => {
     const gh = three()
-    const found = await stat(servedAccessor(), ROOT, new RAMIndexCacheStore())
+    const found = await stat(servedAccessor(), ROOT, new ListingCheckStore())
     expect(found.fingerprint).toBe(await gh.head())
     expect(gh.counts()).toEqual([1, 0, 0])
   })
 
-  // With no index at all (the null index) the root still names its version,
-  // for one request; any other path is still absent.
-  it('asks the head once with no index', async () => {
+  // Any other index without a root listing names no version and asks
+  // nothing; only the gate's check store wants the request.
+  it('asks nothing through another empty index', async () => {
+    const gh = three()
+    const found = await stat(servedAccessor(), ROOT, new RAMIndexCacheStore())
+    expect(found.fingerprint).toBeNull()
+    expect(gh.counts()).toEqual([0, 0, 0])
+  })
+
+  // With no index at all (the null index) the root names no version and asks
+  // nothing (it used to ask the head once); any other path is still absent.
+  it('asks nothing with no index', async () => {
     const gh = three()
     const found = await stat(servedAccessor(), ROOT, undefined)
-    expect(found.fingerprint).toBe(await gh.head())
-    expect(gh.counts()).toEqual([1, 0, 0])
+    expect(found.fingerprint).toBeNull()
+    expect(gh.counts()).toEqual([0, 0, 0])
     const file = new PathSpec({ vfsPath: 'd1/a.txt', virtual: '/gh/d1/a.txt', directory: '/gh/d1' })
     await expect(stat(servedAccessor(), file, undefined)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -226,7 +235,7 @@ describe('the root stat names the head commit', () => {
     gh.fail.set('dir', [status, 'refused'])
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const accessor = servedAccessor()
-    const found = await stat(accessor, ROOT, new RAMIndexCacheStore())
+    const found = await stat(accessor, ROOT, new ListingCheckStore())
     expect(found.fingerprint).toBeNull()
     expect(gh.count('recursive')).toBe(0)
     expect(accessor.tree).toEqual({})

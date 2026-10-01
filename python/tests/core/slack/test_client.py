@@ -16,7 +16,7 @@ import pytest
 from aioresponses import aioresponses
 from yarl import URL
 
-from mirage.core.slack.client import slack_get, slack_post
+from mirage.core.slack.client import download_file, slack_get, slack_post
 from mirage.core.slack.config import SlackConfig
 
 BASE = "https://slack.com/api"
@@ -154,3 +154,17 @@ async def test_slack_post_success(config):
     assert result["ts"] == "1234567890.123456"
     assert len(sent) == 1
     assert sent[0].kwargs["json"] == {"channel": "C123", "text": "hello"}
+
+
+@pytest.mark.asyncio
+async def test_download_file_uses_bot_token():
+    with aioresponses() as m:
+        m.get("http://x", body=b"OK")
+        m.get("http://x", body=b"OK")
+        await download_file(
+            SlackConfig(token="xoxb-bot", search_token="xoxp-user"), "http://x"
+        )
+        await download_file(SlackConfig(token="xoxb-bot"), "http://x")
+        sent = m.requests[("GET", URL("http://x"))]
+    assert sent[0].kwargs["headers"] == {"Authorization": "Bearer xoxb-bot"}
+    assert sent[1].kwargs["headers"] == {"Authorization": "Bearer xoxb-bot"}

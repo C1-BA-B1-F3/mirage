@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { SlackAccessor } from '../../../../accessor/slack.ts'
+import type * as SlackAccessorModule from '../../../../accessor/slack.ts'
 import type { SlackResponse, SlackTransport } from '../../../../core/slack/client.ts'
 import { cliSpecFor } from '../../specs.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -47,9 +47,10 @@ class FakeTransport implements SlackTransport {
   }
 }
 
-vi.mock('./accessor.ts', () => ({
-  slackAccessor: () => new SlackAccessor(new FakeTransport()),
-}))
+vi.mock('../../../../accessor/slack.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof SlackAccessorModule>()
+  return { ...actual, slackAccessor: () => new actual.SlackAccessor(new FakeTransport()) }
+})
 
 function unwrap(result: CommandFnResult): [ByteSource | null, IOResult] {
   if (result === null) throw new Error('expected a result tuple')

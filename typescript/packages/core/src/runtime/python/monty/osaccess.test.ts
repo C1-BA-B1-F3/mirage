@@ -18,7 +18,6 @@ import { ContentType, FileStat, FileType } from '../../../types.ts'
 import { RuntimeVFS } from '../../vfs.ts'
 import { MirageOSAccess } from './index.ts'
 import type { GuestStat } from './stat.ts'
-import { MontyVFS } from './vfs.ts'
 import { PrefixResolver } from '../../resolver.ts'
 import { MAX_URANDOM_BYTES } from './constants.ts'
 
@@ -55,13 +54,11 @@ function accessOn(
   return new MirageOSAccess(
     BITS,
     env,
-    new MontyVFS(
-      new RuntimeVFS(
-        dispatch,
-        new PrefixResolver(
-          () => mounts,
-          () => new Set(links),
-        ),
+    new RuntimeVFS(
+      dispatch,
+      new PrefixResolver(
+        () => mounts,
+        () => new Set(links),
       ),
     ),
   )
@@ -117,12 +114,12 @@ function refusing(): Mock<BridgeDispatchFn> {
   )
 }
 
-// A bridge with nothing behind it. A listing still has to REFUSE
-// rather than answer undefined: the real dispatcher returns an array
-// or rejects with a coded error, and a door that reads a broken answer
-// as an empty directory would hide the break.
+// A bridge with nothing behind it. A listing and a stat still have to
+// REFUSE rather than answer undefined: the real dispatcher returns a
+// row or rejects with a coded error, and a door that reads a broken
+// answer as an empty directory would hide the break.
 const noop = vi.fn<BridgeDispatchFn>((op, path) =>
-  op === 'readdir'
+  op === 'readdir' || op === 'stat'
     ? Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' }))
     : Promise.resolve(undefined),
 )
@@ -206,9 +203,9 @@ describe('MirageOSAccess scratch paths', () => {
     // makes its scratch directories before writing under them.
     const access = accessOn(noop)
     await expect(Promise.resolve(access.handle('Path.exists', ['/tmp/x']))).resolves.toBe(false)
-    expect(() => access.handle('Path.write_text', ['/tmp/x', 'hi'])).toThrow(
-      'No such file or directory',
-    )
+    await expect(
+      Promise.resolve(access.handle('Path.write_text', ['/tmp/x', 'hi'])),
+    ).rejects.toThrow('No such file or directory')
     access.handle('Path.mkdir', ['/tmp'], {})
     expect(access.handle('Path.write_text', ['/tmp/x', 'hi'])).toBe(2)
     expect(access.handle('Path.read_text', ['/tmp/x'])).toBe('hi')
@@ -238,10 +235,16 @@ describe('MirageOSAccess scratch paths', () => {
     )
   })
 
-  it('mkdir honors parents and exist_ok in the tree', () => {
+  it('mkdir honors parents and exist_ok in the tree', async () => {
     const access = accessOn(noop)
-    expect(() => access.handle('Path.mkdir', ['/tmp/a/b'], {})).toThrow('No such file or directory')
-    expect(access.handle('Path.mkdir', ['/tmp/a/b'], { parents: true, exist_ok: false })).toBeNull()
+    await expect(Promise.resolve(access.handle('Path.mkdir', ['/tmp/a/b'], {}))).rejects.toThrow(
+      'No such file or directory',
+    )
+    await expect(
+      Promise.resolve(
+        access.handle('Path.mkdir', ['/tmp/a/b'], { parents: true, exist_ok: false }),
+      ),
+    ).resolves.toBeNull()
     expect(() => access.handle('Path.mkdir', ['/tmp/a/b'], {})).toThrow('File exists')
     expect(access.handle('Path.mkdir', ['/tmp/a/b'], { parents: false, exist_ok: true })).toBeNull()
   })
@@ -253,6 +256,20 @@ describe('MirageOSAccess scratch paths', () => {
     expect(() => access.handle('Path.rename', ['/tmp/x', '/ram/y'])).toThrow(
       '[Errno 18] Invalid cross-device link',
     )
+  })
+
+  // A directory the workspace lists but no mount claims is one the guest
+  // sees, so a scratch file may be created in it.
+  it('creates a scratch file under a directory only the workspace lists', async () => {
+    const access = accessOn(listing(['/parent/child'], ['/parent/child']), {}, ['/parent/child'])
+    await expect(
+      Promise.resolve(access.handle('Path.write_text', ['/parent/new.txt', 'hi'])),
+    ).resolves.toBe(2)
+    expect(access.handle('Path.read_text', ['/parent/new.txt'])).toBe('hi')
+    await expect(Promise.resolve(access.handle('Path.iterdir', ['/parent']))).resolves.toEqual([
+      '/parent/child',
+      '/parent/new.txt',
+    ])
   })
 
   it('merges the workspace listing into a scratch iterdir, so / shows the mounts', async () => {
@@ -288,8 +305,10 @@ describe('MirageOSAccess declining', () => {
     )
   })
 
-  it('accepts a path object as well as a string', () => {
-    expect(accessOn(noop).handle('Path.mkdir', [{ path: '/ram/d' }], {})).not.toBe(NOT_HANDLED)
+  it('accepts a path object as well as a string', async () => {
+    const out = accessOn(noop).handle('Path.mkdir', [{ path: '/ram/d' }], {})
+    expect(out).not.toBe(NOT_HANDLED)
+    await out
   })
 })
 
@@ -403,41 +422,6 @@ describe('MirageOSAccess stat', () => {
       false,
     )
     expect(statOnly.mock.calls.filter(([op]) => op === 'readdir')).toHaveLength(0)
-  })
-
-  it('forgets a cached ancestor absence when mkdir brings the ancestor into being', async () => {
-    // A stat that missed is remembered, and `mkdir(parents=True)` then
-    // makes the ancestor real. Forgetting only the leaf left the
-    // ancestor cached as missing, so a later stat of it skipped the
-    // mount's row and answered from the scratch tree instead: the
-    // tree's own mode and the run's own stamp, not the backend's.
-    const made = new Set<string>()
-    const dispatch = vi.fn<BridgeDispatchFn>((op, path) => {
-      const bare = path.replace(/\/$/, '')
-      if (op === 'mkdir') {
-        for (let s = bare.length; s > 0; s = bare.lastIndexOf('/', s - 1)) {
-          made.add(bare.slice(0, s))
-        }
-        return Promise.resolve(null)
-      }
-      if (op === 'stat' && made.has(bare)) {
-        return Promise.resolve(
-          new FileStat({
-            name: bare,
-            type: FileType.DIRECTORY,
-            mode: 0o750,
-            modified: '2026-07-15T00:00:00Z',
-          }),
-        )
-      }
-      return Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' }))
-    })
-    const access = accessOn(dispatch)
-    await Promise.resolve(access.handle('Path.stat', ['/ram/a'])).catch(() => null)
-    await Promise.resolve(access.handle('Path.mkdir', ['/ram/a/b'], { parents: true }))
-    const row = (await Promise.resolve(access.handle('Path.stat', ['/ram/a']))) as FakeClassInstance
-    expect((row.instance as GuestStat).st_mode).toBe(0o40750)
-    expect((row.instance as GuestStat).st_mtime).toBe(1784073600)
   })
 })
 
@@ -576,8 +560,12 @@ describe('MirageOSAccess mounted open and append', () => {
   // The follow-stat of a dangling link misses, but the listed name is
   // still there: O_EXCL refuses it rather than creating through it.
   it('refuses an exclusive open of a dangling link it listed', async () => {
-    const dispatch = vi.fn<BridgeDispatchFn>((op, path) => {
-      if (op === 'readdir') return Promise.resolve(['/ram/lnk'])
+    const dispatch = vi.fn<BridgeDispatchFn>((op, path, _bytes, _dst, attrs) => {
+      if (op === 'readdir' && path === '/ram/') return Promise.resolve(['/ram/lnk'])
+      // The link's own row, which only a no-follow stat reaches.
+      if (op === 'stat' && path === '/ram/lnk' && attrs?.nofollow === true) {
+        return Promise.resolve(new FileStat({ name: path, size: 8, type: FileType.SYMLINK }))
+      }
       return Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' }))
     })
     const access = accessOn(dispatch, {}, ['/ram'], ['lnk'])
@@ -591,8 +579,12 @@ describe('MirageOSAccess mounted open and append', () => {
   // and python's monty answer, rather than handing back a handle whose
   // first read fails.
   it('refuses a read open of a dangling link it listed', async () => {
-    const dispatch = vi.fn<BridgeDispatchFn>((op, path) => {
-      if (op === 'readdir') return Promise.resolve(['/ram/lnk'])
+    const dispatch = vi.fn<BridgeDispatchFn>((op, path, _bytes, _dst, attrs) => {
+      if (op === 'readdir' && path === '/ram/') return Promise.resolve(['/ram/lnk'])
+      // The link's own row, which only a no-follow stat reaches.
+      if (op === 'stat' && path === '/ram/lnk' && attrs?.nofollow === true) {
+        return Promise.resolve(new FileStat({ name: path, size: 8, type: FileType.SYMLINK }))
+      }
       return Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' }))
     })
     const access = accessOn(dispatch, {}, ['/ram'], ['lnk'])

@@ -71,8 +71,22 @@ export const OPERAND = ''
 // `jq -c '[., $ARGS.positional]' f.json --args a` as f.json plus ["a"]). tar
 // reads the whole line first: GNU tar 1.35 lists `d/m` for
 // `tar -f a.tar d/m -t` as it does for `tar -f a.tar -t d/m`. Measured, not
-// derived, like the other per-program rules.
-export const IN_ORDER_OPERANDS: ReadonlySet<string> = new Set(['jq'])
+// derived, like the other per-program rules. join's getopt loop runs
+// RETURN_IN_ORDER too, so `join a b c -a 3` refuses the extra operand before
+// the bad file number, and a missing-operand line names the line's last word
+// rather than its last operand: `join a.txt -t ,` is missing an operand after
+// ',' (coreutils 9.7).
+export const IN_ORDER_OPERANDS: ReadonlySet<string> = new Set(['jq', 'join'])
+
+// The option words an IN_ORDER_OPERANDS program's own loop reads by their
+// spelling, so the tape keeps each one where it was typed, as [SPELLED, word]
+// just before the occurrence it spells. join.c takes a lone `-j1` or `-j2`
+// (`optarg == argv[optind - 1] + 2`) as the obsolete `-j1 FIELD` until no
+// operand is left for FIELD, while `-j 1` and `-ij1` are always both files'
+// field 1, and it reads every operand after `--` as a file (coreutils 9.7).
+export const SPELLED_WORDS: Readonly<Record<string, ReadonlySet<string>>> = Object.freeze({
+  join: new Set(['-j1', '-j2', '--']),
+})
 
 // The programs whose option loop reads a dash-led word as options only when a
 // letter follows the dash, and any other one as an operand where it sits:
@@ -114,6 +128,10 @@ export const OWN_OPTION_LOOP: ReadonlySet<string> = new Set(['jq'])
 // ends before its value (`--arg`). No option of such a program is spelled
 // `-?`, so no dest is `?`.
 export const REFUSED = '?'
+
+// The name a SPELLED_WORDS word goes by on the tape. No option is spelled
+// `-=`, so no dest is `=`.
+export const SPELLED = '='
 
 const AMBIGUOUS_NAMES: Readonly<Record<string, string>> = Object.freeze({
   l: 'args_l',
@@ -617,12 +635,6 @@ export const FLOAT_VALUE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 // Commands whose `Try '--help'` hint line is prefixed with the command
 // name (GNU diffutils style: `diff: Try 'diff --help' ...`).
 export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp', 'patch'])
-
-// Commands that read their operands in line order (getopt's
-// RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
-// the line's last word, not its last operand: `join a.txt -t ,` is missing
-// an operand after ',' (coreutils 9.7). Mirrors Python's ARGV_IN_ORDER.
-export const ARGV_IN_ORDER: ReadonlySet<string> = new Set(['join'])
 
 // An old-style cluster letter left without its argument exits 2, not
 // USAGE_EXIT's 64: tar reads the cluster itself and raises its own fatal

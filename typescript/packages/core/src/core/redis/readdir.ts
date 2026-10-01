@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IndexEntry, ResourceType } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { readdirError } from '../../utils/errors.ts'
@@ -19,7 +20,6 @@ import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { RedisIndexEntry } from './entry.ts'
 import { norm } from '../../utils/path.ts'
 
 export async function readdir(
@@ -69,9 +69,12 @@ export async function readdir(
   const virtualEntries = sorted.map((entry) => `${mountPrefix}${entry}`)
   if (index !== undefined) {
     const fileSet = new Set(files)
-    const entries: [string, RedisIndexEntry][] = sorted.map((e) => {
+    // size stays null: a listing knows a key exists but not its length, and
+    // a lying 0 would be trusted by an index-first size lookup over a stat.
+    const entries: [string, IndexEntry][] = sorted.map((e) => {
       const name = e.slice(e.lastIndexOf('/') + 1)
-      return [name, fileSet.has(e) ? RedisIndexEntry.file(e) : RedisIndexEntry.folder(e)]
+      const resourceType = fileSet.has(e) ? ResourceType.FILE : ResourceType.FOLDER
+      return [name, new IndexEntry({ id: e, name, vfsName: name, resourceType })]
     })
     await index.setDir(virtualKey, entries)
   }

@@ -31,6 +31,7 @@ class S3Config(AWSAuth):
     timeout: int = 30
     proxy: SecretStr | None = None
     key_prefix: str | None = None
+    default_content_type: str | None = None
 
     @field_validator("key_prefix")
     @classmethod

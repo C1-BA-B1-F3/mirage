@@ -35,6 +35,7 @@ class FakeDispatch:
         stat_modified: str | None = None,
         devices: set[str] | None = None,
         refuse_readdir: bool = False,
+        refuse_readlink: bool = False,
     ) -> None:
         self.files = files
         self.supports_append = supports_append
@@ -45,6 +46,7 @@ class FakeDispatch:
         # A backend that serves stat but will not list, which is what a
         # deny rule on readdir alone leaves behind.
         self.refuse_readdir = refuse_readdir
+        self.refuse_readlink = refuse_readlink
         self.writes: list[tuple[str, bytes]] = []
         self.appends: list[tuple[str, bytes]] = []
         self.created: list[str] = []
@@ -76,6 +78,8 @@ class FakeDispatch:
                     mode=self.stat_mode,
                     modified=self.stat_modified,
                 ), None
+            if virtual in self.dirs:
+                return FileStat(name=virtual, type=FileType.DIRECTORY), None
             raise FileNotFoundError(virtual)
         if op == "readdir":
             if self.refuse_readdir:
@@ -86,7 +90,8 @@ class FakeDispatch:
             for p in [*self.files, *self.devices]:
                 if p.startswith(prefix):
                     names.add(prefix + p[len(prefix) :].split("/")[0])
-            if not names and virtual.rstrip("/") not in ("", "/"):
+            known = ("", "/", *self.dirs)
+            if not names and virtual.rstrip("/") not in known:
                 raise FileNotFoundError(virtual)
             return sorted(names), None
         if op == "write":
@@ -131,6 +136,8 @@ class FakeDispatch:
             self.renamed.append((virtual, dst))
             return None, None
         if op == "readlink":
+            if self.refuse_readlink:
+                raise PermissionError(errno.EACCES, "denied", virtual)
             found = self.links.get(virtual)
             if found is None:
                 raise OSError(errno.EINVAL, "not a symbolic link", virtual)
@@ -609,3 +616,34 @@ def test_monty_is_symlink_reads_the_name_plane():
     result = asyncio.run(runtime.run(RunArgs(code=code)))
     assert result.exit_code == 0, result.stderr
     assert result.stdout == b"True False\n"
+
+
+def test_monty_a_dangling_link_is_a_link_though_it_does_not_exist():
+    # The stat follows the link and misses, so `exists()` is False, but
+    # the name plane still holds the link: the miss was the target's.
+    dispatch = FakeDispatch({}, links={"/s3/dangling": "/s3/gone"})
+    runtime = MontyRuntime()
+    runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
+    code = (
+        "from pathlib import Path\n"
+        "p = Path('/s3/dangling')\n"
+        "print(p.exists(), p.is_symlink())"
+    )
+    result = asyncio.run(runtime.run(RunArgs(code=code)))
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == b"False True\n"
+
+
+def test_monty_a_refused_readlink_is_not_read_as_not_a_link():
+    # CPython's `Path.is_symlink` swallows only its `_ignore_error` list
+    # and re-raises PermissionError; False would be an answer the guest
+    # cannot tell from the truth.
+    dispatch = FakeDispatch({"/s3/x": b"1"}, refuse_readlink=True)
+    runtime = MontyRuntime()
+    runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
+    code = "from pathlib import Path\nPath('/s3/x').is_symlink()"
+    result = asyncio.run(runtime.run(RunArgs(code=code)))
+    assert result.exit_code == 1
+    assert b"PermissionError: [Errno 13] Permission denied: '/s3/x'" in (
+        result.stderr
+    )

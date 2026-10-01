@@ -24,8 +24,8 @@ from mirage.commands.builtin.find_eval import (
     keep,
     start_basename,
 )
-from mirage.core.ssh.client import _abs
 from mirage.core.ssh.config import SSHConfig
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.dates import in_mtime_window
 from mirage.utils.stat_view import DIR_SIZE
@@ -70,7 +70,7 @@ async def find(
     )
     if maxdepth is None or maxdepth >= 0:
         try:
-            root_attrs = await sftp.stat(_abs(config, path))
+            root_attrs = await sftp.stat(join_root(config.root, path))
         except (asyncssh.SFTPError, OSError):
             root_attrs = None
         if root_attrs is not None:
@@ -123,7 +123,7 @@ async def _walk(
 ) -> None:
     if maxdepth is not None and depth > maxdepth:
         return
-    remote = _abs(config, path)
+    remote = join_root(config.root, path)
     try:
         entries = await sftp.readdir(remote)
     except asyncssh.SFTPNoSuchFile:

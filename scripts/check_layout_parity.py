@@ -40,6 +40,11 @@ TS_PACKAGES = {
 
 EXCEPTIONS = ROOT / "spec" / "layout_exceptions.json"
 
+TS_IMPORT = re.compile(
+    r"""(?:\bfrom\s*|\bimport\s*\(?\s*|\bmock\(\s*)['"]([^'"]+)['"]"""
+)
+PACKAGE_IMPORT = re.compile(r"@struktoai/mirage-([a-z]+)/(.+)")
+
 
 @dataclass
 class Findings:
@@ -114,18 +119,89 @@ def python_modules() -> dict[str, dict[str, str]]:
     return dict(out)
 
 
-def typescript_modules() -> dict[str, dict[str, str]]:
+def _import_target(source: Path, spec: str) -> Path | None:
+    """The typescript file an import specifier names, or None for a package
+    outside this repo.
+
+    Args:
+        source (Path): the importing file.
+        spec (str): the specifier as written.
+
+    Returns:
+        Path | None: the imported file.
+    """
+    if spec.startswith("."):
+        target = source.parent / spec
+    else:
+        match = PACKAGE_IMPORT.fullmatch(spec)
+        if match is None:
+            return None
+        target = ROOT / "typescript" / "packages" / match[1] / "src" / match[2]
+    if target.suffix == ".js":
+        target = target.with_suffix(".ts")
+    elif target.suffix != ".ts":
+        target = target.with_name(target.name + ".ts")
+    return target.resolve()
+
+
+def test_only_modules() -> set[Path]:
+    """The typescript modules that only test files import.
+
+    TypeScript colocates its tests with the sources, so a fake shared by
+    several suites lands in ``src/``, where python keeps its twin under
+    ``tests/``, which this gate does not scan. A module's own
+    ``<stem>.test.ts`` does not count as a user, or every module with a
+    test and no other importer would pass for a helper; one imported by
+    tests and other helpers only is a helper too. An ``index.ts`` never
+    is: it is a package's public door, which its tests import as a user
+    would.
+
+    Returns:
+        set[Path]: the helper modules.
+    """
+    importers: dict[Path, set[Path]] = defaultdict(set)
+    for source in (ROOT / "typescript" / "packages").glob("*/src/**/*.ts"):
+        for spec in TS_IMPORT.findall(source.read_text()):
+            target = _import_target(source.resolve(), spec)
+            if target is not None:
+                importers[target].add(source.resolve())
+    helpers: set[Path] = set()
+    grew = True
+    while grew:
+        grew = False
+        for target, users in importers.items():
+            others = users - {target.with_name(f"{target.stem}.test.ts")}
+            if target.name == "index.ts" or target in helpers:
+                continue
+            if others and all(
+                user.name.endswith(".test.ts") or user in helpers
+                for user in others
+            ):
+                helpers.add(target)
+                grew = True
+    return helpers
+
+
+def typescript_modules(
+    py: dict[str, dict[str, str]],
+) -> dict[str, dict[str, str]]:
     """Every typescript module, keyed by directory then folded name.
 
     The three runtime packages are unioned: python's ``VFS/disk`` has
     no counterpart in ``core`` because CLAUDE.md puts node-only code in
     ``node``, and that split is the design rather than a gap. ``index.ts``
-    is skipped for the same reason ``__init__.py`` is.
+    is skipped for the same reason ``__init__.py`` is, and so is a module
+    only tests import (``test_only_modules``) that python has no module
+    of the same name for.
+
+    Args:
+        py (dict[str, dict[str, str]]): the python map.
 
     Returns:
         dict[str, dict[str, str]]: directory -> folded name -> real name.
     """
     out: dict[str, dict[str, str]] = defaultdict(dict)
+    helpers = test_only_modules()
     for package, prefix in TS_PACKAGES.items():
         src = ROOT / "typescript" / "packages" / package / "src"
         if not src.is_dir():
@@ -141,7 +217,10 @@ def typescript_modules() -> dict[str, dict[str, str]]:
                 joined = prefix
             else:
                 joined = f"{prefix}/{inner}"
-            out[canonical_dir(joined)][canonical(path.stem)] = path.stem
+            rel, name = canonical_dir(joined), canonical(path.stem)
+            if path.resolve() in helpers and name not in py.get(rel, {}):
+                continue
+            out[rel][name] = path.stem
     return dict(out)
 
 
@@ -306,7 +385,8 @@ def main() -> int:
     exceptions = load_exceptions()
     baseline_value = exceptions.get("baseline", 0)
     baseline = baseline_value if isinstance(baseline_value, int) else 0
-    found = collect(python_modules(), typescript_modules())
+    py = python_modules()
+    found = collect(py, typescript_modules(py))
     remaining, stale = excuse(found, exceptions)
 
     if args.as_json:

@@ -12,34 +12,29 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.google.client import (
-    TokenManager,
-    drive_base,
-    google_get,
-    google_get_bytes,
-    google_headers,
-    google_post,
-    refresh_access_token,
-    sheets_base,
-)
-from mirage.core.google.constants import (
-    DRIVE_API_BASE,
-    SHEETS_API_BASE,
-    TOKEN_BUFFER_SECONDS,
-    TOKEN_URL,
-)
+import pytest
 
-__all__ = [
-    "DRIVE_API_BASE",
-    "SHEETS_API_BASE",
-    "TOKEN_URL",
-    "TOKEN_BUFFER_SECONDS",
-    "TokenManager",
-    "drive_base",
-    "sheets_base",
-    "google_get",
-    "google_get_bytes",
-    "google_headers",
-    "google_post",
-    "refresh_access_token",
-]
+from mirage.core.ssh.utils import join_root
+
+
+@pytest.mark.parametrize(
+    ("root", "rel", "expected"),
+    [
+        (
+            "/home/ubuntu/project",
+            "/src/main.py",
+            "/home/ubuntu/project/src/main.py",
+        ),
+        (
+            "/home/ubuntu/project/",
+            "src/main.py",
+            "/home/ubuntu/project/src/main.py",
+        ),
+        ("/home/ubuntu/project", "", "/home/ubuntu/project"),
+        ("/", "/file.txt", "/file.txt"),
+        ("/", "", "/"),
+        ("", "/", "/"),
+    ],
+)
+def test_join_root(root, rel, expected):
+    assert join_root(root, rel) == expected

@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.join import join_generic
 from mirage.commands.builtin.generic_bind.adapter import (
@@ -33,11 +35,11 @@ async def join(
 ) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("join: no VFS")
-    resolved = await ops.resolve_glob(accessor, paths, opts.index)
     return await join_generic(
-        resolved,
+        paths,
         list(texts),
         opts,
+        partial(ops.resolve_glob, accessor, index=opts.index),
         bound_op(ops.read_bytes, accessor, opts.index),
     )
 

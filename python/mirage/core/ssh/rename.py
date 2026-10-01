@@ -16,7 +16,7 @@ import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 
 
@@ -30,10 +30,14 @@ async def rename(
     # POSIX rename semantics (replace an existing destination); plain SFTP
     # rename refuses to overwrite, so prefer posix-rename@openssh.com.
     try:
-        await sftp.posix_rename(_abs(config, src), _abs(config, dst))
+        await sftp.posix_rename(
+            join_root(config.root, src), join_root(config.root, dst)
+        )
     except asyncssh.SFTPOpUnsupported:
         try:
-            await sftp.rename(_abs(config, src), _abs(config, dst))
+            await sftp.rename(
+                join_root(config.root, src), join_root(config.root, dst)
+            )
         except asyncssh.SFTPNoSuchFile:
             raise FileNotFoundError(src)
     except asyncssh.SFTPNoSuchFile:

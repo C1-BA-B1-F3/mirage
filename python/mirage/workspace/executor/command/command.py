@@ -34,6 +34,7 @@ from mirage.commands.builtin.utils.limit import maybe_with_timeout
 from mirage.commands.errors import FindParseError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.builtins import registered_spec
+from mirage.commands.spec.flag_view import spread_operands
 from mirage.commands.spec.standard import standard_request
 from mirage.io import IOResult
 from mirage.io.stream import materialize
@@ -484,18 +485,28 @@ async def handle_command(
         cross_scopes = (
             cross_parsed.paths if cmd_name == "sort" else path_scopes
         )
+        cross_flags = cross_parsed.flag_kwargs
         if strategy_for(cmd_name) is Strategy.RELAY:
             # STREAM and FANOUT run each operand natively on its mount, which
             # expands the operand's glob. RELAY sees every operand at once
             # (wc's layout, cp's sources), so its glob operands must expand
             # here; an unmatched glob stays the literal word, like bash.
-            expanded = await resolve_globs(
-                list(cross_scopes),
-                registry,
-                links=namespace,
-                options=glob_options(session),
+            # One operand at a time, so join's option loop sees each match
+            # where its glob was typed.
+            groups: list[list[PathSpec]] = []
+            for scope in cross_scopes:
+                expanded = await resolve_globs(
+                    [scope],
+                    registry,
+                    links=namespace,
+                    options=glob_options(session),
+                )
+                groups.append([p for p in expanded if isinstance(p, PathSpec)])
+            cross_scopes = [p for group in groups for p in group]
+            cross_flags = spread_operands(
+                cross_flags,
+                [[p.raw_path or p.virtual for p in group] for group in groups],
             )
-            cross_scopes = [p for p in expanded if isinstance(p, PathSpec)]
         run_single = functools.partial(
             run_on_mount,
             registry,
@@ -527,7 +538,7 @@ async def handle_command(
             cmd_name,
             cross_scopes,
             cross_texts,
-            cross_parsed.flag_kwargs,
+            cross_flags,
             dispatch,
             run_operand,
             stdin=stdin,

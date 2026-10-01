@@ -12,11 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import { describe, expect, it, vi } from 'vitest'
 import {
   HttpNotionTransport,
   MCPNotionTransport,
+  MemoryOAuthClientProvider,
   NotionAPIError,
   NotionMCPError,
 } from './client.ts'
@@ -47,32 +47,11 @@ class TestTransport extends MCPNotionTransport {
   }
 }
 
-const fakeAuthProvider: OAuthClientProvider = {
-  get redirectUrl() {
-    return 'http://localhost/cb'
-  },
-  get clientMetadata() {
-    return { redirect_uris: ['http://localhost/cb'] }
-  },
-  clientInformation() {
-    return undefined
-  },
-  tokens() {
-    return undefined
-  },
-  saveTokens() {
-    return undefined
-  },
-  redirectToAuthorization() {
-    return undefined
-  },
-  saveCodeVerifier() {
-    return undefined
-  },
-  codeVerifier() {
-    return ''
-  },
-}
+const fakeAuthProvider = new MemoryOAuthClientProvider({
+  clientMetadata: { redirect_uris: ['http://localhost/cb'] },
+  redirect: () => undefined,
+  redirectUrl: 'http://localhost/cb',
+})
 
 function makeTransport(): { transport: TestTransport; fake: FakeClient } {
   const transport = new TestTransport({ authProvider: fakeAuthProvider })
@@ -275,4 +254,39 @@ it('honors Retry-After and bounds repeated rate limits', async () => {
   } finally {
     vi.useRealTimers()
   }
+})
+
+describe('MemoryOAuthClientProvider', () => {
+  it('holds what it is handed and redirects through the callback', async () => {
+    const redirects: URL[] = []
+    const clientMetadata = { redirect_uris: ['https://example.com/cb'], client_name: 'mirage' }
+    const provider = new MemoryOAuthClientProvider({
+      clientMetadata,
+      redirect: (url) => {
+        redirects.push(url)
+      },
+    })
+    expect(provider.clientMetadata).toBe(clientMetadata)
+    expect([provider.redirectUrl, provider.tokens(), provider.clientInformation()]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(() => provider.codeVerifier()).toThrow(/no code verifier/)
+    const tokens = { access_token: 'x', token_type: 'Bearer' }
+    provider.saveTokens(tokens)
+    provider.saveClientInformation({ client_id: 'abc' })
+    provider.saveCodeVerifier('v')
+    expect([provider.tokens(), provider.clientInformation(), provider.codeVerifier()]).toEqual([
+      tokens,
+      { client_id: 'abc' },
+      'v',
+    ])
+    provider.clearTokens()
+    expect(provider.tokens()).toBeUndefined()
+    const url = new URL('https://example.com/authorize')
+    await provider.redirectToAuthorization(url)
+    expect(redirects).toEqual([url])
+    expect(fakeAuthProvider.redirectUrl).toBe('http://localhost/cb')
+  })
 })

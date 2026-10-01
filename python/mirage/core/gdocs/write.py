@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.core.gdocs.client import TokenManager, docs_base, google_post
+from mirage.core.google.client import TokenManager, docs_base, google_post
 
 
 async def append_text(

@@ -16,8 +16,6 @@ import json
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
-from aioresponses import aioresponses
-from yarl import URL
 
 from mirage.accessor.slack import SlackAccessor
 from mirage.cache.index import IndexEntry, RAMIndexCacheStore
@@ -140,7 +138,7 @@ async def test_read_jsonl(accessor, index):
 async def test_read_file_blob(accessor, index):
     await _populate_index(index)
     with patch(
-        "mirage.core.slack.files.download_file",
+        "mirage.core.slack.read.download_file",
         new_callable=AsyncMock,
         return_value=b"%PDF-1.4 fake bytes",
     ):
@@ -172,25 +170,10 @@ async def test_read_not_found(accessor, index):
         await read(accessor, spec("/nonexistent/path"), index)
 
 
-async def test_download_file_uses_bot_token():
-    from mirage.core.slack.files import download_file
-
-    with aioresponses() as m:
-        m.get("http://x", body=b"OK")
-        m.get("http://x", body=b"OK")
-        await download_file(
-            SlackConfig(token="xoxb-bot", search_token="xoxp-user"), "http://x"
-        )
-        await download_file(SlackConfig(token="xoxb-bot"), "http://x")
-        sent = m.requests[("GET", URL("http://x"))]
-    assert sent[0].kwargs["headers"] == {"Authorization": "Bearer xoxb-bot"}
-    assert sent[1].kwargs["headers"] == {"Authorization": "Bearer xoxb-bot"}
-
-
 async def test_read_file_blob_pushes_the_window_down(accessor, index):
     await _populate_index(index)
     with patch(
-        "mirage.core.slack.files.download_file",
+        "mirage.core.slack.read.download_file",
         new_callable=AsyncMock,
         return_value=b"1.4 f",
     ) as mock_dl:

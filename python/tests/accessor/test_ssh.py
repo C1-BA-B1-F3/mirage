@@ -17,8 +17,46 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from mirage.accessor.ssh import SSHAccessor
+from mirage.accessor.ssh import SSHAccessor, _connect_kwargs
 from mirage.core.ssh.config import SSHConfig
+
+
+def test_connect_kwargs_overrides():
+    cfg = SSHConfig(
+        host="dev",
+        hostname="10.0.0.1",
+        port=2222,
+        username="admin",
+        identity_file="~/.ssh/custom.pem",
+    )
+    kw = _connect_kwargs(cfg)
+    assert kw["host"] == "10.0.0.1"
+    assert kw["port"] == 2222
+    assert kw["username"] == "admin"
+
+
+def test_connect_kwargs_defaults():
+    kw = _connect_kwargs(SSHConfig(host="dev"))
+    assert kw["host"] == "dev"
+    assert "port" not in kw
+    assert "username" not in kw
+    assert kw["known_hosts"] is None
+    assert kw["login_timeout"] == 30
+
+
+def test_connect_kwargs_password_and_passphrase():
+    cfg = SSHConfig(
+        host="dev", password="pw", identity_file="~/k", passphrase="pp"
+    )
+    kw = _connect_kwargs(cfg)
+    assert kw["password"] == "pw"
+    assert kw["passphrase"] == "pp"
+
+
+def test_connect_kwargs_passphrase_rides_the_identity_file():
+    kw = _connect_kwargs(SSHConfig(host="dev", passphrase="pp"))
+    assert "passphrase" not in kw
+    assert "password" not in kw
 
 
 @pytest.mark.asyncio
@@ -53,3 +91,4 @@ async def test_ssh_owns_connections_during_initialization(monkeypatch, fail):
     connect.assert_awaited_once()
     conn.close.assert_called_once()
     conn.wait_closed.assert_awaited_once()
+

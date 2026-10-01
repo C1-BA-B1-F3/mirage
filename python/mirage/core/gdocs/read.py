@@ -14,9 +14,9 @@
 
 from mirage.accessor.gdocs import GDocsAccessor
 from mirage.cache.index import IndexCacheStore
-from mirage.core.gdocs.client import TokenManager, docs_base, google_get
 from mirage.core.gdocs.constants import MIME
 from mirage.core.gdocs.scope import detect_scope
+from mirage.core.google.client import TokenManager, docs_base, google_get
 from mirage.core.google.entry import resolve_app_entry
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch

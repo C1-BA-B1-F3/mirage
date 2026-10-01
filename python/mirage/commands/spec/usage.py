@@ -18,7 +18,7 @@ from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.argmatch import ArgmatchChoices, ArgmatchKind
 from mirage.commands.spec.constants import (
-    ARGV_IN_ORDER,
+    IN_ORDER_OPERANDS,
     OLD_OPTION_EXIT,
     OPERAND_EXIT,
     PYTHON_NAMES,
@@ -632,7 +632,7 @@ def missing_operand_error(
             which the line's last word is read from.
     """
     after = last
-    if after is not None and cmd_name in ARGV_IN_ORDER and argv:
+    if after is not None and cmd_name in IN_ORDER_OPERANDS and argv:
         after = argv[-1]
     if after is None and cmd_name in USAGE_HINT_PREFIX:
         after = argv[-1] if argv else cmd_name

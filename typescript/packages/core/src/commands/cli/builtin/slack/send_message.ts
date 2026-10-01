@@ -17,7 +17,7 @@ import { postMessage, replyToThread } from '../../../../core/slack/post.ts'
 import { IOResult, type ByteSource } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { slackAccessor } from './accessor.ts'
+import { slackAccessor } from '../../../../accessor/slack.ts'
 
 const ENC = new TextEncoder()
 

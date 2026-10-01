@@ -12,34 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.google.client import (
-    TokenManager,
-    drive_base,
-    google_get,
-    google_get_bytes,
-    google_headers,
-    google_post,
-    refresh_access_token,
-    slides_base,
-)
-from mirage.core.google.constants import (
-    DRIVE_API_BASE,
-    SLIDES_API_BASE,
-    TOKEN_BUFFER_SECONDS,
-    TOKEN_URL,
-)
 
-__all__ = [
-    "DRIVE_API_BASE",
-    "SLIDES_API_BASE",
-    "TOKEN_URL",
-    "TOKEN_BUFFER_SECONDS",
-    "TokenManager",
-    "drive_base",
-    "slides_base",
-    "google_get",
-    "google_get_bytes",
-    "google_headers",
-    "google_post",
-    "refresh_access_token",
-]
+def join_root(root: str, rel: str) -> str:
+    """The remote path of a mount-relative path under the configured root.
+
+    Args:
+        root (str): the remote directory the mount is rooted at.
+        rel (str): the mount-relative path; a leading slash is ignored.
+    """
+    base = root.rstrip("/")
+    stripped = rel.lstrip("/")
+    if not stripped:
+        return base or "/"
+    return f"{base}/{stripped}"

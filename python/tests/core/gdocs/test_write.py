@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.core.gdocs.client import TokenManager
 from mirage.core.gdocs.write import append_text
+from mirage.core.google.client import TokenManager
 from mirage.vfs.gdocs.config import GDocsConfig
 
 

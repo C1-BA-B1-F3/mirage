@@ -16,7 +16,7 @@ import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import epoch_to_iso
 from mirage.utils.errors import eacces, enoent
@@ -33,7 +33,7 @@ async def stat(
     config = accessor.config
     sftp = await accessor.sftp()
     try:
-        remote_path = _abs(config, path)
+        remote_path = join_root(config.root, path)
         attrs = await sftp.stat(remote_path)
         is_dir = attrs.type == asyncssh.FILEXFER_TYPE_DIRECTORY
         name = path.rstrip("/").rsplit("/", 1)[-1] or "/"

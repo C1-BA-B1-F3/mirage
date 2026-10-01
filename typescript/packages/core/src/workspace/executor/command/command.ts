@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { registeredSpec } from '../../../commands/spec/builtins.ts'
+import { spreadOperands } from '../../../commands/spec/flag_view.ts'
 import { SPECS } from '../../../commands/spec/index.ts'
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
@@ -445,7 +446,7 @@ export async function handleCommand(
         undefined,
         cmdName !== 'tar',
       )
-    const csFlags = csParsed.flagKwargs
+    let csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts
     const csRefusal = optionError(cmdName, csParsed)
     if (csRefusal !== null) {
@@ -463,15 +464,24 @@ export async function handleCommand(
       // STREAM and FANOUT run each operand natively on its mount, which
       // expands the operand's glob. RELAY sees every operand at once (wc's
       // layout, cp's sources), so its glob operands must expand here; an
-      // unmatched glob stays the literal word, like bash.
-      const expanded = await resolveGlobs(
-        csScopes,
-        registry,
-        false,
-        namespace ?? null,
-        globOptions(session),
+      // unmatched glob stays the literal word, like bash. One operand at a
+      // time, so join's option loop sees each match where its glob was typed.
+      const groups: PathSpec[][] = []
+      for (const scope of csScopes) {
+        const expanded = await resolveGlobs(
+          [scope],
+          registry,
+          false,
+          namespace ?? null,
+          globOptions(session),
+        )
+        groups.push(expanded.filter((p): p is PathSpec => typeof p !== 'string'))
+      }
+      csScopes = groups.flat()
+      csFlags = spreadOperands(
+        csFlags,
+        groups.map((group) => group.map((p) => p.rawPath)),
       )
-      csScopes = expanded.filter((p): p is PathSpec => typeof p !== 'string')
     }
     const runCtx: RunOnMountCtx = {
       ...(signal !== undefined ? { signal } : {}),

@@ -614,6 +614,19 @@
             "exit": 0,
             "stdout": "True False\n"
           }
+        },
+        {
+          "command": "ln -s /ram/t.txt /alias",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; a = Path('/alias'); print(a.is_symlink(), a.exists(), a.read_text(), end='')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True True hello\n"
+          }
         }
       ]
     },
@@ -899,6 +912,13 @@
           "expect": {
             "exit": 0,
             "stdout": "is_dir True\nexists True\nstat 0o40000\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; open('/parent/new.txt', 'w').write('s'); print(open('/parent/new.txt').read(), sorted(p.name for p in Path('/parent').iterdir()))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "s ['child', 'new.txt']\n"
           }
         }
       ]

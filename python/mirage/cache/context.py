@@ -15,11 +15,13 @@
 import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from mirage.types import FileStat, PathSpec
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class CacheInvalidator(Protocol):
@@ -132,30 +134,32 @@ async def invalidate_subtree(path: PathSpec) -> None:
         await manager.invalidate_subtree(path)
 
 
-async def invalidate_subtree_after(
-    path: PathSpec, op: Awaitable[None]
-) -> None:
-    """Run ``op``, then evict the subtree at ``path``, also when ``op``
-    fails: an op that fails partway (a folder copy that merged some
-    children) has already changed what lies below ``path``. After a
-    failed op an eviction error is logged, not raised, so the caller
-    still learns why the op failed.
+async def evict_after(
+    op: Awaitable[T], evict: Callable[[T | None], Awaitable[None]]
+) -> T:
+    """Run ``op``, then ``evict``, also when ``op`` fails.
+
+    An op that fails partway (a paginated delete, a folder copy that
+    merged some children) has already changed the backend, so what it
+    touched is stale either way. ``evict`` gets the op's result, or None
+    when the op failed. After a failed op an eviction error is logged,
+    not raised, so the caller still learns why the op failed.
 
     Args:
-        path (PathSpec): Root of the subtree the op changes.
-        op (Awaitable[None]): The backend change.
+        op (Awaitable[T]): The backend change.
+        evict (Callable[[T | None], Awaitable[None]]): Records and
+            evicts what the op changed, given its result or None.
     """
     try:
-        await op
+        result = await op
     except BaseException:
         try:
-            await invalidate_subtree(path)
+            await evict(None)
         except Exception as exc:
-            logger.debug(
-                "evicting %s after a failed op: %s", path.virtual, exc
-            )
+            logger.debug("evicting after a failed op: %s", exc)
         raise
-    await invalidate_subtree(path)
+    await evict(result)
+    return result
 
 
 async def invalidate_ancestors(path: PathSpec) -> None:

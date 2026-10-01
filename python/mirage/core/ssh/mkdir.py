@@ -14,7 +14,7 @@
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 
 
@@ -24,9 +24,11 @@ async def mkdir(
     config = accessor.config
     sftp = await accessor.sftp()
     if parents:
-        await sftp.makedirs(_abs(config, path.mount_path), exist_ok=True)
+        await sftp.makedirs(
+            join_root(config.root, path.mount_path), exist_ok=True
+        )
     else:
-        await sftp.mkdir(_abs(config, path.mount_path))
+        await sftp.mkdir(join_root(config.root, path.mount_path))
     await invalidate_after_write(path)
     if parents:
         await invalidate_ancestors(path)

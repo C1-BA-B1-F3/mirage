@@ -16,7 +16,7 @@ import json
 from typing import Any
 
 from mirage.core.api.client import api_request, status_error
-from mirage.core.gsheets.client import (
+from mirage.core.google.client import (
     TokenManager,
     google_headers,
     sheets_base,

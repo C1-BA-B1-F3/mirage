@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.errors import FsCondition
-from mirage.runtime.python.monty.errors import cpython_error
 
 MISSING_EXTRA_HINT = (
     "the monty runtime requires the 'monty' extra. Install with: "
@@ -31,10 +30,17 @@ MAX_URANDOM_BYTES = 1_048_576
 # either line turns every continuation into an error at the prompt.
 INCOMPLETE_MARKERS = ("unexpected EOF", "Expected an indented block")
 
-# POSIX's answer for a rename across filesystems. Monty ships no shutil,
-# so guest code writes the copy-and-delete fallback by hand; the errno
-# is what tells it to. The phrase is the CPython table's, so the py and
-# ts encoders cannot drift apart on it.
-EXDEV_MESSAGE = cpython_error(FsCondition.CROSS_MOUNT).phrase
-
-FILE_EXISTS_MESSAGE = "[Errno 17] File exists: {path!r}"
+# What a refused readlink may mean "no link here". EINVAL is the backend
+# saying the path is not one, and the other three are CPython's own
+# `_ignore_error` list, which is what `Path.is_symlink` swallows around
+# its lstat. Everything else propagates: CPython re-raises
+# PermissionError out of `is_symlink`, and reporting a refusal as "not a
+# link" is an answer the guest cannot tell from one.
+NOT_A_LINK = frozenset(
+    {
+        FsCondition.EINVAL,
+        FsCondition.ENOENT,
+        FsCondition.ENOTDIR,
+        FsCondition.ELOOP,
+    }
+)

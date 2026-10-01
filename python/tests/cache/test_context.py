@@ -19,7 +19,10 @@ import pytest
 from mirage.cache.context import (active_cache_manager,
                                   invalidate_after_unlink,
                                   invalidate_after_write, invalidate_ancestors,
-                                  invalidate_subtree, push_cache_manager)
+                                  invalidate_subtree, listing_refreshed,
+                                  push_cache_manager)
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.types import PathSpec
@@ -31,8 +34,11 @@ def _run(coro):
 
 class FakeManager:
 
-    def listed_since(self, _folder: str, _started: int) -> bool:
+    def listing_trusted(self, _folder: str) -> bool:
         return False
+
+    def probed_stat(self, _path):
+        return None
 
     def __init__(self) -> None:
         self.writes: list[PathSpec] = []
@@ -151,3 +157,22 @@ async def _repeated_mount_case(prefix: str) -> None:
 @pytest.mark.parametrize("prefix", ["/data", "/nested/data"])
 def test_ancestor_eviction_with_repeated_mount_name(prefix: str):
     _run(_repeated_mount_case(prefix))
+
+
+@pytest.mark.asyncio
+async def test_listing_refreshed_follows_the_managers_listing_rule(
+        monkeypatch):
+    # github's truncated-tree walk asks here rather than through the gate, so
+    # a read that belongs to no command trusts a listing for the window too.
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
+    index = RAMIndexCacheStore(ttl=600)
+    manager = CacheManager(RAMFileCacheStore(), index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    prev = push_cache_manager(manager)
+    try:
+        assert listing_refreshed("/data") is True
+        now[0] += LISTING_TRUST_WINDOW
+        assert listing_refreshed("/data") is False
+    finally:
+        push_cache_manager(prev)

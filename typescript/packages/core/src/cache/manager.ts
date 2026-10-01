@@ -14,13 +14,14 @@
 
 import { activeRecords } from '../observe/context.ts'
 import { READ_FINGERPRINT_OPS } from '../observe/record.ts'
-import { DEFAULT_READ_TTL, PathSpec } from '../types.ts'
+import { DEFAULT_READ_TTL, type FileStat, PathSpec } from '../types.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
-import { tick } from './index/scope.ts'
+import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
+import { commandStarted, tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
 
@@ -56,9 +57,13 @@ export class CacheManager {
 
   private readGeneration = 0
   private view: IndexView | null = null
-  // Folder to the tick its listing was last written at, by any view of this
-  // mount, shared or lock-held.
-  private readonly written = new Map<string, number>()
+  // Folder to the tick and the monotonic millisecond its listing was last
+  // written at, by any view of this mount, shared or lock-held.
+  private readonly written = new Map<string, [number, number]>()
+  // Cache key to what the freshness probe got from the backend: its command
+  // identity, the read generation then, and the stat.
+  private readonly probed = new Map<string, [number, number, FileStat]>()
+  private probeBound = PROBED_LIMIT
 
   constructor(
     fileCache: FileCache | null,
@@ -89,11 +94,39 @@ export class CacheManager {
     return this.fileCache === null ? call() : withCacheMutation(this.fileCache, call)
   }
 
-  /** Clear the whole backend index while this mount still owns it. */
+  /**
+   * Clear the whole backend index while this mount still owns it.
+   *
+   * The clear that follows native code (an external program, a remote runtime
+   * line) that may have changed the mount, so it also retires what the
+   * running command's probes saw.
+   */
   clearIndex(index: IndexCacheStore | undefined): Promise<void> {
     return this.withMutation(async () => {
+      this.retire()
       if (this.ownsPath(this.prefix || '/')) await index?.clear()
     })
+  }
+
+  /**
+   * Retire every in-flight read and every remembered probe answer.
+   *
+   * The one step every cache drop takes: a read that began before it must not
+   * stamp the cache after it, and a probe answer from before it must not be
+   * served after it.
+   */
+  private retire(): void {
+    this.readGeneration += 1
+    this.probed.clear()
+    this.probeBound = PROBED_LIMIT
+  }
+
+  // A re-list found children gone: the backend changed under the command, so
+  // nothing its probes saw is safe to serve.
+  private async goneLocked(gone: readonly Evicted[]): Promise<void> {
+    if (gone.length === 0) return
+    this.retire()
+    await this.onGone?.(gone)
   }
 
   /**
@@ -126,17 +159,10 @@ export class CacheManager {
     return {
       readTtl: this.readTtl,
       excludedPrefixes: this.excludedPrefixes,
-      ...(this.onGone === undefined
-        ? {}
-        : {
-            onGone: locked
-              ? this.onGone
-              : (gone: readonly Evicted[]) =>
-                  this.withMutation(async () => {
-                    const owned = gone.filter((child) => this.ownsPath(child.path))
-                    if (owned.length > 0) await this.onGone?.(owned)
-                  }),
-          }),
+      onGone: locked
+        ? (gone: readonly Evicted[]) => this.goneLocked(gone)
+        : (gone: readonly Evicted[]) =>
+            this.withMutation(() => this.goneLocked(gone.filter((c) => this.ownsPath(c.path)))),
       ...(this.mayServeListing === undefined ? {} : { mayServeListing: this.mayServeListing }),
       noteWritten: (folder) => {
         this.noteWritten(folder)
@@ -145,17 +171,83 @@ export class CacheManager {
   }
 
   private noteWritten(folder: string): void {
-    this.written.set(folder, tick())
+    this.written.set(folder, [tick(), performance.now()])
   }
 
   /**
-   * Whether this mount wrote `folder`'s listing after `stamp`.
+   * Whether `folder`'s listing is recent enough to serve under fresh.
+   *
+   * Inside a command: only if the command wrote it itself, so one command
+   * re-lists a folder once however often it reads it. Outside any command
+   * (FUSE, a programmatic op) there is no command to belong to, so a listing
+   * written within `LISTING_TRUST_WINDOW` seconds is trusted instead: one
+   * `ls -l` over FUSE is a burst of calls that can share a re-list until
+   * the window expires.
    *
    * Every view of the mount, shared or lock-held, records into one map, so
    * a glob's write counts for the `ls` that follows it.
    */
-  listedSince(folder: string, stamp: number): boolean {
-    return (this.written.get(folder) ?? 0) > stamp
+  listingTrusted(folder: string): boolean {
+    const written = this.written.get(folder)
+    if (written === undefined) return false
+    const [stamp, at] = written
+    const started = commandStarted()
+    if (started !== null) return stamp > started
+    return performance.now() - at < LISTING_TRUST_WINDOW * 1000
+  }
+
+  /**
+   * Remember what the freshness probe got from the backend for `path`.
+   *
+   * Only the reconciler's probe calls this, and only with an answer it got
+   * from the backend, so a stat served from an index row -- which may carry
+   * no content token -- never lands here. A path the backend reports gone
+   * records nothing: the probe asks the backend only when no answer is
+   * servable, so there is nothing left to take back.
+   */
+  noteProbed(path: PathSpec, stat: FileStat): void {
+    const started = commandStarted()
+    if (started === null) return
+    if (this.probed.size >= this.probeBound) {
+      this.pruneProbes(started)
+      // What is left is all the running command's; the next prune waits for
+      // the map to double, so one large walk stays linear.
+      this.probeBound = Math.max(PROBED_LIMIT, 2 * this.probed.size)
+    }
+    this.probed.set(this.cacheKey(path), [started, this.readGeneration, stat])
+  }
+
+  // Only the probing command is ever served an answer, so the other commands'
+  // entries are dead weight here.
+  private pruneProbes(started: number): void {
+    for (const [key, [stamp]] of this.probed) {
+      if (stamp !== started) this.probed.delete(key)
+    }
+  }
+
+  /** Mutation generation, captured before a freshness probe starts. */
+  get generation(): number {
+    return this.readGeneration
+  }
+
+  /**
+   * The backend's answer for `path` from this command's probe.
+   *
+   * A read command stats its own operand after the probe already asked the
+   * backend; under fresh, asking again resolves through listings the command
+   * has not re-checked, and re-lists every folder on the path. The answer is
+   * served only inside the command that probed, and only while no cache drop
+   * has landed since: a write in the command (`sed -i`, `> f`), the clear
+   * after an external program, and a re-list that found the path gone all
+   * retire it (`retire()`), so the next stat goes back to the backend.
+   */
+  probedStat(path: PathSpec): FileStat | null {
+    const probed = this.probed.get(this.cacheKey(path))
+    const started = commandStarted()
+    if (probed === undefined || started === null) return null
+    const [stamp, generation, stat] = probed
+    if (stamp !== started || generation !== this.readGeneration) return null
+    return stat
   }
 
   /**
@@ -293,7 +385,7 @@ export class CacheManager {
 
   /** Invalidate caches after a write to `path`; only `virtual` is read. */
   async invalidateAfterWrite(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -303,7 +395,7 @@ export class CacheManager {
 
   /** Invalidate caches after a deletion of `path`; only `virtual` is read. */
   async invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -326,7 +418,7 @@ export class CacheManager {
    * Mirrors Python `CacheManager.invalidate_subtree`.
    */
   async invalidateSubtree(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -370,7 +462,7 @@ export class CacheManager {
    * direction to be wrong in.
    */
   async dropPrefix(): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     if (!this.cachesReads || this.fileCache === null) return
     await this.fileCache.evictPrefix(this.prefix + '/')
   }

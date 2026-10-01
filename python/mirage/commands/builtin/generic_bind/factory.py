@@ -202,6 +202,36 @@ def with_stat_cache(ops: CommandIO) -> CommandIO:
     return replace(ops, stat=functools.partial(_cached_stat, ops.stat))
 
 
+async def _probe_answered_stat(stat: Callable[..., Any], accessor: Accessor,
+                               path: PathSpec, *args, **kwargs):
+    # The freshness probe already asked the backend this command; asking
+    # again resolves through listings fresh has not re-checked yet.
+    manager = active_cache_manager()
+    probed = None if manager is None else manager.probed_stat(path)
+    if probed is not None:
+        return probed
+    return await stat(accessor, path, *args, **kwargs)
+
+
+def with_probe_answers(ops: CommandIO) -> CommandIO:
+    """Return ``ops`` whose ``stat`` serves this command's probe answer.
+
+    Under fresh the freshness probe has already asked the backend about
+    the operand (``CacheManager.probed_stat``). It is the backend's own
+    op-table stat, so this goes only on an adapter whose ``stat`` is that
+    function: a per-command stat (dify's light ``ls``) keeps asking, so
+    what it prints never changes with the policy.
+
+    Applied to the raw adapter, below the path guards: a hidden or
+    refused path is answered by its guard before any remembered answer,
+    and every other slot keeps the guard order it always had.
+
+    Args:
+        ops (CommandIO): the backend's raw IO adapter.
+    """
+    return replace(ops, stat=functools.partial(_probe_answered_stat, ops.stat))
+
+
 def _read_wraps(ops: CommandIO) -> CommandIO:
     return with_slash_guard(with_read_cache(ops))
 
@@ -261,7 +291,9 @@ async def _run_with_namespace_globs(ops: CommandIO,
         glob_target_stat=(links.target_stat if links is not None else None))
     # The policy guard sits outside the cache wraps (`finish`) so a
     # coded pre_ops deny fires before a warm serve, the dispatcher's
-    # own order at the op door.
+    # own order at the op door. A probe answer is served below the path
+    # guards (`with_probe_answers` on the raw adapter), so they still
+    # judge every path before it.
     bound = with_dir_guard(with_policy_guard(finish(
         with_path_guards(stamped))))
     return await fn(bound, accessor, paths, texts, opts)
@@ -312,13 +344,19 @@ def make_generic_commands(
         # the session at call time. The raw adapter stays untouched for
         # the ops tables, whose door does its own enforcement.
         base_ops = with_path_guards(raw)
+        finish: Callable[[CommandIO], CommandIO]
         if b.read:
             finish = _read_wraps
         elif not b.write:
             finish = _stat_wraps
         else:
             finish = _write_wraps
-        bound = functools.partial(_run_with_namespace_globs, raw, finish, b.fn)
+        # A per-command adapter with its own stat (dify's light ls) would
+        # otherwise print the probe's full stat under fresh only.
+        answered = (with_probe_answers(raw)
+                    if raw.stat is ops.stat and not b.write else raw)
+        bound = functools.partial(_run_with_namespace_globs, answered, finish,
+                                  b.fn)
         provision: Callable[..., Any] | None
         if b.name in prov_over:
             provision = prov_over[b.name]

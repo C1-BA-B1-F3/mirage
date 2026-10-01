@@ -107,6 +107,11 @@
     "constants": "Twin of agents/openai_agents/constants.py; see directories.python_only.agents/openai_agents.",
     "sandbox": "Twin of agents/openai_agents/sandbox.py (MirageSandboxClient); see directories.python_only.agents/openai_agents."
    }
+  },
+  "cache": {
+   "typescript_only": {
+    "_test_util": "The performance.now() shift shared by the listing-window tests (manager, context, reconciler and the github read_fresh and listing_ttl suites). TypeScript colocates tests with sources, so a shared test helper lands in the source directory; python moves its clock by patching mirage.cache.manager._now, which needs no helper module."
+   }
   }
  }
 }

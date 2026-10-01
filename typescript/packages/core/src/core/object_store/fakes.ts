@@ -254,8 +254,12 @@ export function makeDriver(
 }
 
 export class FakeManager {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
+  }
+
+  probedStat(): null {
+    return null
   }
 
   readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {

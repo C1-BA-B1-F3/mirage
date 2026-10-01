@@ -19,8 +19,8 @@ import time
 import pytest
 
 from mirage.io import IOResult
-from mirage.types import (DEFAULT_READ_TTL, CacheFacts, MountMode, ReadPolicy,
-                          ReadSpec)
+from mirage.types import (DEFAULT_READ_TTL, CacheFacts, HiddenPaths, MountMode,
+                          ReadPolicy, ReadSpec)
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
@@ -284,14 +284,15 @@ def test_always_revalidates_a_walk_and_a_glob():
         "revalidated, which is the bug this test exists for")
 
 
-def test_always_warm_read_costs_a_gate_probe():
-    """Cost is the contract, and the gate's probe is the cost.
+def test_always_warm_read_costs_one_probe():
+    """Cost is the contract, and the routing probe is the cost.
 
-    A warm ``cat`` is three backend stats: the routing reconcile, ``cat``'s
-    own operand stat, and the gate's probe. Two means the gate stopped
-    probing a named warm operand -- which is what ``main`` does, so this
-    number is what separates the two. Counting starts after the warm-up,
-    because a cold+warm total is the same either way.
+    A warm ``cat`` is one backend stat: the routing reconcile. ``cat``'s own
+    operand stat and the gate both reuse its answer for the rest of the
+    command, so a count cannot tell the gate on from off here; the gate's
+    own reach -- the reads routing never sees -- is pinned by
+    ``test_always_revalidates_a_walk_and_a_glob``. Counting starts after the
+    warm-up, because a cold+warm total is the same either way.
     """
     objects = {"a.txt": b"name,age\n"}
     session, ws = _always_mount(objects)
@@ -305,11 +306,69 @@ def test_always_warm_read_costs_a_gate_probe():
             await ws.close()
 
     asyncio.run(run())
-    assert client.calls["head_object"] == 3, (
-        "routing reconcile + cat's own stat + the gate's probe; two means "
-        "the gate no longer revalidates a named warm operand")
+    assert client.calls["head_object"] == 1, (
+        "the routing reconcile, reused by cat's stat and the gate")
     assert client.calls["get_object"] == 0, (
         "an unchanged object must still be served from cache")
+
+
+def _warm_stat(line: str, session_id: str | None = None):
+    objects = {"a.txt": b"name,age\n"}
+    session, ws = _always_mount(objects)
+    client = session._client
+    if session_id is not None:
+        ws.create_session(session_id).hidden_paths = HiddenPaths(
+            paths=("/s3/a.txt", ))
+
+    async def run() -> tuple[int, bytes, str]:
+        with patch_s3_session(session):
+            await ws.shell("cat /s3/a.txt")
+            client.calls.clear()
+            result = (await ws.shell(line) if session_id is None else await
+                      ws.shell(line, session_id=session_id))
+            out = await result.materialize_stdout()
+            err = await result.stderr_str()
+            await ws.close()
+            return result.exit_code, out, err
+
+    return asyncio.run(run()), client
+
+
+def test_always_warm_stat_costs_one_probe():
+    """The keyed-store ``stat`` override reuses the routing probe too.
+
+    s3 and gridfs register their own ``stat`` rather than the generic's,
+    so they get the probe answer only if the override's adapter carries
+    it: one HEAD, the routing reconcile, where it cost two.
+    """
+    (code, out, _), client = _warm_stat("stat -c %s /s3/a.txt")
+    assert (code, out) == (0, b"9\n")
+    assert client.calls["head_object"] == 1
+
+
+def test_a_warm_stat_still_refuses_a_trailing_slash():
+    # The probe answer is keyed without the slash; the slash guard above it
+    # must still turn `a.txt/` into ENOTDIR.
+    (code, out, err), _ = _warm_stat("stat /s3/a.txt/")
+    assert (code, out) == (1, b"")
+    assert "Not a directory" in err
+
+
+def test_a_warm_stat_probe_does_not_reveal_a_hidden_path():
+    # Another session warmed the file; in a session that hides it, the
+    # stat override must still answer ENOENT.
+    (code, out, err), _ = _warm_stat("stat -c %s /s3/a.txt", "hidden")
+    assert (code, out) == (1, b"")
+    assert "No such file or directory" in err
+
+
+def test_a_warm_stat_probe_does_not_skip_the_dots_walk():
+    # The probe answer is keyed by the normalized path; `nope/..` names a
+    # directory that does not exist, which only the walk guard proves, so
+    # the answer must be served below it: GNU answers ENOENT here.
+    (code, out, err), _ = _warm_stat("stat -c %s /s3/nope/../a.txt")
+    assert (code, out) == (1, b"")
+    assert "No such file or directory" in err
 
 
 class _SnapshotFalseS3(S3VFS):
@@ -507,25 +566,36 @@ def test_metadata_command_reconciles_its_operand():
     """``ls`` reads no bytes, so the cache gate never fires for it.
 
     Routing is the one door a metadata command has to backend truth, and
-    it must keep probing there: a warm ``ls -l`` costs three backend
-    stats, and two means the routing reconcile stopped firing for a
-    command the gate does not cover.
+    it must keep probing there. The stat count cannot show it any more:
+    ``ls``'s own operand stat serves the routing probe's answer, so a warm
+    ``ls -l`` is the probe plus ls's readdir check of its operand, and with
+    routing dark it is ls's stat plus that same check -- two either way.
+    What only the routing probe does is evict a copy the backend replaced,
+    so that is what this pins.
     """
     objects = {"a.txt": b"v1\n"}
     session, ws = _always_mount(objects)
     client = session._client
 
-    async def run() -> None:
+    async def run() -> tuple[bool, bool]:
         with patch_s3_session(session):
             await ws.shell("cat /s3/a.txt")
             client.calls.clear()
             assert (await ws.shell("ls -l /s3/a.txt")).exit_code == 0
+            kept = await ws.cache.exists("/s3/a.txt")
+            objects["a.txt"] = b"v2\n"
+            assert (await ws.shell("ls -l /s3/a.txt")).exit_code == 0
+            evicted = not await ws.cache.exists("/s3/a.txt")
             await ws.close()
+            return kept, evicted
 
-    asyncio.run(run())
-    assert client.calls["head_object"] == 3, (
-        "ls must still reconcile its operand at routing; 2 means the one "
-        "door a metadata command has to backend truth went dark")
+    kept, evicted = asyncio.run(run())
+    assert kept, "an unchanged copy survives the probe"
+    assert evicted, (
+        "ls must still reconcile its operand at routing; a replaced copy "
+        "left in the cache means the one door a metadata command has to "
+        "backend truth went dark")
+    assert client.calls["head_object"] == 4
 
 
 def _bounded_mount(objects, ttl=600):
@@ -588,9 +658,9 @@ def test_bounded_serves_within_the_bound_then_goes_cold():
     assert warm == b"v1\n"
     assert warm_calls["head_object"] == 1, (
         "a warm bounded read is cat's own stat and nothing else; the same "
-        "read under fresh costs three (the routing reconcile, cat's stat "
-        "and the gate's probe), so anything above one means a door that "
-        "should have skipped did not")
+        "read under fresh also costs one (the routing reconcile, whose "
+        "answer cat's stat and the gate reuse), so anything above one here "
+        "means a door that should have skipped did not")
     assert warm_calls.get("get_object", 0) == 0
     assert cold == b"v2\n", "past its bound, the entry must not be served"
 

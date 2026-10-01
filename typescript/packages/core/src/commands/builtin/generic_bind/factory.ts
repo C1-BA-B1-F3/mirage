@@ -56,6 +56,30 @@ function withStatCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
   return { ...ops, stat: cachedStat(ops.stat) }
 }
 
+/**
+ * Return `ops` whose stat serves this command's probe answer.
+ *
+ * Under fresh the freshness probe has already asked the backend about the
+ * operand (CacheManager.probedStat). It is the backend's own op-table stat,
+ * so this goes only on an adapter whose stat is that function: a per-command
+ * stat (dify's light ls) keeps asking, so what it prints never changes with
+ * the policy.
+ *
+ * Applied to the raw adapter, below the path guards: a hidden or refused path
+ * is answered by its guard before any remembered answer, and every other slot
+ * keeps the guard order it always had.
+ */
+export function withProbeAnswers<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
+  const stat = ops.stat
+  return {
+    ...ops,
+    // The freshness probe already asked the backend this command; asking
+    // again resolves through listings fresh has not re-checked yet.
+    stat: async (accessor: A, path: PathSpec, index?: IndexCacheStore) =>
+      activeCacheManager()?.probedStat(path) ?? (await stat(accessor, path, index)),
+  }
+}
+
 // Honor a trailing slash on an operand. POSIX resolves `x/` as `x/.`, so
 // the operand has to name a directory: GNU answers `cat reg/` with "Not
 // a directory" where plain `cat reg` reads the file. Enforcing it on
@@ -141,7 +165,7 @@ export function withSlashGuard<A extends Accessor>(ops: CommandIO<A>): CommandIO
   }
 }
 
-function withReadCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
+export function withReadCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
   const readBytes = cacheAwareReadBytes(ops.readBytes)
   return {
     ...ops,
@@ -223,6 +247,10 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
     // whose door does its own enforcement.
     const baseOps = withPathGuards(raw)
     const finish = b.read === true ? readWraps : b.write === true ? writeWraps : statWraps
+    // A per-command adapter with its own stat (dify's light ls) would
+    // otherwise print the probe's full stat under fresh only.
+    const answered =
+      raw.stat === (ops as CommandIO).stat && b.write !== true ? withProbeAnswers(raw) : raw
     // A nested mount's keys live in another VFS and no VFS
     // stores a symlink, so a glob resolved by one backend's readdir
     // misses both. The names are session-scoped, so the fact is stamped
@@ -242,7 +270,9 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
     // Python's `glob_children` is `| None` and takes the uniform path.
     // The policy guard sits outside the cache wraps (`finish`) so a
     // coded preOps deny fires before a warm serve, the dispatcher's
-    // own order at the op door; the invocation's mount prefix rides
+    // own order at the op door. A probe answer is served below the path
+    // guards (withProbeAnswers on the raw adapter), so they still judge
+    // every path before it. The invocation's mount prefix rides
     // into its wrap-time scope for readers drained after the gate
     // scopes return. The abort guard sits outermost: once the
     // invocation's signal has fired no slot starts, so a handler the
@@ -254,7 +284,7 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
           withPolicyGuard(
             finish(
               withPathGuards(
-                stampNamespace(raw, opts.ns?.childMounts, opts.ns?.links),
+                stampNamespace(answered, opts.ns?.childMounts, opts.ns?.links),
                 opts.mountPrefix,
               ),
             ),

@@ -57,7 +57,8 @@ export function runInCommandScope<T>(fn: () => Promise<T>): Promise<T> {
  *
  * Python's stream wrapper copies the whole context, stamp included; here
  * each storage is captured by name, so a stream a command hands back
- * would otherwise drain as an unscoped read and re-list every folder.
+ * would otherwise drain as an unscoped read, trusting only listings from
+ * the last second rather than the ones its own command wrote.
  */
 export function captureCommandScope(): ContextCall {
   return started.capture()

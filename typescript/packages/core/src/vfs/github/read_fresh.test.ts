@@ -14,6 +14,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeGitHub, blobSha } from '../../core/github/_test_util.ts'
+import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
+import { shiftPerformanceNow } from '../../cache/_test_util.ts'
 import { DEFAULT_READ_TTL, MountMode, ReadPolicy } from '../../types.ts'
 import type { BaseVFS } from '../base.ts'
 import { RAMVFS } from '../ram/ram.ts'
@@ -81,6 +83,21 @@ async function fails(w: Workspace, line: string): Promise<string> {
 }
 
 describe('github under read: fresh', () => {
+  it('does not let a warm probe bypass a session hidden path', async () => {
+    const w = await ws(await vfsOf())
+    try {
+      expect(await out(w, `cat ${PATH}`)).toBe(OLD)
+      const session = w.createSession('hidden')
+      session.hiddenPaths = { paths: [PATH] }
+      const result = await w.shell(`cat ${PATH}`, { sessionId: 'hidden' })
+      expect(DEC.decode(result.stdout)).toBe('')
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).toContain('No such file or directory')
+    } finally {
+      await w.close()
+    }
+  })
+
   // A mount at /src over a repository holding a src/ directory is the decoy:
   // a record labelled repo-relative or mount-relative lands on a key the
   // cache never asks for, so the entry would carry no token.
@@ -100,14 +117,14 @@ describe('github under read: fresh', () => {
   }
 
   // Each cell is [dir listings, whole-tree walks, blob downloads] for one line
-  // on a warm fresh mount: cat pays two probes (routing, then the cache
-  // door), as hf's table does; cp skips routing's probe. The one walk is
-  // fresh checking the listing the path resolves through: a new command
-  // re-lists it once, and on github the listing is the whole tree (Task 1.3
-  // makes it cheaper).
+  // on a warm fresh mount: cat pays one probe, at routing, as hf's table
+  // does; its own stat and the cache door both reuse that answer. cp skips
+  // routing's probe, so the cache door asks, and cp's stat resolves through
+  // the listing, which fresh re-checks once per command: on github that
+  // listing is the whole tree (Task 1.3 makes it cheaper).
   const WARM: [string, [number, number, number]][] = [
-    [`cat ${PATH}`, [2, 1, 0]],
-    [`cat ${PATH} | head -c 1`, [2, 1, 0]],
+    [`cat ${PATH}`, [1, 0, 0]],
+    [`cat ${PATH} | head -c 1`, [1, 0, 0]],
     [`cp ${PATH} /r/a.txt`, [1, 1, 0]],
   ]
   for (const [line, cost] of WARM) {
@@ -124,6 +141,41 @@ describe('github under read: fresh', () => {
     })
   }
 
+  // The command's stat now comes from the freshness probe rather than from
+  // the command's own lookup; what it prints must not change with it.
+  it('prints the same warm stat as a bounded mount', async () => {
+    const outs: string[] = []
+    for (const policy of [ReadPolicy.FRESH, ReadPolicy.BOUNDED]) {
+      const w = await ws(await vfsOf(), policy)
+      try {
+        await out(w, `cat ${PATH}`)
+        outs.push(await out(w, `stat ${PATH}`))
+      } finally {
+        await w.close()
+      }
+    }
+    expect(outs[0]).toBe(outs[1])
+    expect(outs[0]).not.toBe('')
+  })
+
+  // Routing probes a path that carries an attribute overlay even when nothing
+  // is cached, so under fresh the command's stat of it comes from the probe;
+  // the overlay must still apply on top.
+  it('prints the same cold stat of an overlaid path as a bounded mount', async () => {
+    const outs: string[] = []
+    for (const policy of [ReadPolicy.FRESH, ReadPolicy.BOUNDED]) {
+      const w = await ws(await vfsOf(), policy)
+      try {
+        await w.namespace.setAttrs(PATH, { mode: 0o600 })
+        outs.push(await out(w, `stat -c '%a %s %n' ${PATH}`))
+      } finally {
+        await w.close()
+      }
+    }
+    expect(outs[0]).toBe(outs[1])
+    expect(outs[0]).toBe(`600 ${String(OLD.length)} ${PATH}\n`)
+  })
+
   it('refetches a changed file once, then serves it warm', async () => {
     const w = await ws(await vfsOf())
     try {
@@ -131,13 +183,13 @@ describe('github under read: fresh', () => {
       gh.set('docs/a.txt', NEW)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      // The probe finds a new sha; cat's own stat asks the cleared index's one
-      // directory; the read refills and downloads.
-      expect(gh.counts()).toEqual([2, 1, 1])
+      // The probe finds a new sha; cat's own stat serves the probe's answer;
+      // the read refills and downloads.
+      expect(gh.counts()).toEqual([1, 1, 1])
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      // Warm now, but a new command re-checks the listing once.
-      expect(gh.counts()).toEqual([2, 1, 0])
+      // Warm now: the routing probe, and nothing else.
+      expect(gh.counts()).toEqual([1, 0, 0])
     } finally {
       await w.close()
     }
@@ -367,10 +419,10 @@ describe('github cannot-see versus gone', () => {
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       expect(kept(w)).toBe(true)
-      // One listing of docs/ per probe, each cut short, so each defers to one
-      // walk of the whole tree, which finds the file; plus the command's one
-      // re-check of the listing under fresh.
-      expect(gh.counts()).toEqual([2, 3, 0])
+      // The routing probe's listing of docs/ is cut short, so it defers to one
+      // walk of the whole tree, which finds the file; cat's own stat and the
+      // cache door reuse its answer.
+      expect(gh.counts()).toEqual([1, 1, 0])
     } finally {
       await w.close()
     }
@@ -389,11 +441,11 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      // A truncated tree never refills, so the command's re-check of the
-      // listing goes folder by folder: one more listing, reached through the
-      // folder's own tree sha.
-      expect(gh.counts()).toEqual([3, 0, 0])
-      expect(gh.count('sha_dir')).toBe(1)
+      // One listing of docs/, by the routing probe; cat's own stat and the
+      // cache door reuse its answer, so the truncated tree is never walked
+      // folder by folder, which would reach docs/ by its sha.
+      expect(gh.counts()).toEqual([1, 0, 0])
+      expect(gh.count('sha_dir')).toBe(0)
     } finally {
       await w.close()
     }
@@ -525,3 +577,40 @@ it.each(['find /gh', 'du -a /gh', 'ls -R /gh'])(
     }
   },
 )
+
+// The op door is what FUSE, ws.vfs and the agent file tools reach, and none
+// of them runs inside a shell command. One `ls -l` over FUSE is a readdir and
+// a stat per entry; fresh trusts a listing that recent instead of refetching
+// the whole tree for every call.
+describe('github op door under read: fresh', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('fetches the tree once for a burst', async () => {
+    gh.files.clear()
+    for (let n = 0; n < 20; n++) gh.set(`docs/f${String(n).padStart(2, '0')}.txt`, 'x')
+    const w = await ws(await vfsOf())
+    try {
+      const names = await w.readdir('/gh/docs')
+      expect(names).toHaveLength(20)
+      for (const name of names) await w.stat(name)
+      expect(gh.count('recursive')).toBe(1)
+    } finally {
+      await w.close()
+    }
+  })
+
+  it('sees an outside change after the window', async () => {
+    const clock = shiftPerformanceNow()
+    const w = await ws(await vfsOf())
+    try {
+      expect(await w.readdir('/gh/docs')).not.toContain('/gh/docs/c.txt')
+      gh.set('docs/c.txt', 'new')
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
+      expect(await w.readdir('/gh/docs')).toContain('/gh/docs/c.txt')
+    } finally {
+      await w.close()
+    }
+  })
+})

@@ -20,11 +20,12 @@ from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.config import IndexEntry
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.cache.index.scope import command_scope, command_started
+from mirage.cache.index.scope import command_scope
 from mirage.cache.index.view import IndexView
 from mirage.cache.manager import CacheManager
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -536,11 +537,9 @@ async def test_a_write_through_the_locked_view_counts_for_the_shared_one():
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
     async with command_scope():
-        started = command_started()
         await manager.scope_index_locked(index).set_dir("/data", [])
-        assert started is not None
-        assert manager.listed_since("/data", started) is True
-        assert manager.listed_since("/data/other", started) is False
+        assert manager.listing_trusted("/data") is True
+        assert manager.listing_trusted("/data/other") is False
 
 
 @pytest.mark.asyncio
@@ -549,9 +548,7 @@ async def test_a_write_before_the_command_does_not_count():
     manager = CacheManager(cache, index, "/data/", True)
     await manager.scope_index(index).set_dir("/data", [])
     async with command_scope():
-        started = command_started()
-        assert started is not None
-        assert manager.listed_since("/data", started) is False
+        assert manager.listing_trusted("/data") is False
 
 
 @pytest.mark.asyncio
@@ -559,8 +556,203 @@ async def test_a_replaced_store_forgets_what_the_old_one_was_written():
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
     async with command_scope():
-        started = command_started()
         await manager.scope_index(index).set_dir("/data", [])
         manager.scope_index(RAMIndexCacheStore(ttl=600))
-        assert started is not None
-        assert manager.listed_since("/data", started) is False
+        assert manager.listing_trusted("/data") is False
+
+
+class _Clock:
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch) -> _Clock:
+    fake = _Clock()
+    monkeypatch.setattr("mirage.cache.manager._now", fake)
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_outside_a_command_a_listing_is_trusted_for_the_window(clock):
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now += LISTING_TRUST_WINDOW - 0.01
+    assert manager.listing_trusted("/data") is True
+    assert manager.listing_trusted("/data/other") is False
+    clock.now += 0.02
+    assert manager.listing_trusted("/data") is False
+
+
+@pytest.mark.asyncio
+async def test_inside_a_command_the_window_does_not_apply(clock):
+    # A listing the previous command wrote a moment ago is still re-listed by
+    # the next one: the window is only for reads that belong to no command.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now += 0.01
+    async with command_scope():
+        assert manager.listing_trusted("/data") is False
+        await manager.scope_index(index).set_dir("/data", [])
+        clock.now += LISTING_TRUST_WINDOW * 10
+        assert manager.listing_trusted("/data") is True
+
+
+def _probed() -> FileStat:
+    return FileStat(name="h.txt", size=4, type=FileType.FILE)
+
+
+@pytest.mark.asyncio
+async def test_a_probed_stat_is_served_for_the_rest_of_its_command_only():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    stat = _probed()
+    async with command_scope():
+        manager.note_probed(path, stat)
+        assert manager.probed_stat(path) is stat
+        assert manager.probed_stat(
+            PathSpec.from_str_path("/data/arch/other")) is None
+    assert manager.probed_stat(path) is None
+    async with command_scope():
+        assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
+async def test_a_probe_outside_a_command_is_never_served():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    manager.note_probed(path, _probed())
+    assert manager.probed_stat(path) is None
+
+
+async def _write(manager: CacheManager, index) -> None:
+    await manager.invalidate_after_write(
+        PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _unlink(manager: CacheManager, index) -> None:
+    await manager.invalidate_after_unlink(
+        PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _subtree(manager: CacheManager, index) -> None:
+    await manager.invalidate_subtree(PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _external(manager: CacheManager, index) -> None:
+    await manager.clear_index(index)
+
+
+async def _prefix(manager: CacheManager, index) -> None:
+    await manager.drop_prefix()
+
+
+async def _relisted_gone(manager: CacheManager, index) -> None:
+    view = manager.scope_index(index)
+    await view.set_dir("/data/arch", [
+        ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
+    ])
+    await view.set_dir("/data/arch", [])
+
+
+# Every door that drops cached state: a write the command makes, a clear
+# after native code ran (an external program, a remote runtime line), a
+# path-less CLI mutation, and a re-list that found the file gone. Each one
+# means the backend may no longer match what the probe saw.
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drop", [_write, _unlink, _subtree, _external, _prefix, _relisted_gone])
+async def test_every_cache_drop_in_the_command_retires_its_probed_stats(drop):
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True, on_gone=_ignore_gone)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    async with command_scope():
+        manager.note_probed(path, _probed())
+        assert manager.probed_stat(path) is not None
+        await drop(manager, index)
+        assert manager.probed_stat(path) is None
+
+
+async def _ignore_gone(_gone) -> None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_probed_stats_of_finished_commands_are_dropped_past_the_bound(
+        monkeypatch):
+    # Only the probing command can be served an answer, so once the map is
+    # full the other commands' entries are dead weight; dropping one costs at
+    # most a backend stat, never a wrong answer.
+    monkeypatch.setattr("mirage.cache.manager.PROBED_LIMIT", 4)
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    for n in range(4):
+        async with command_scope():
+            manager.note_probed(PathSpec.from_str_path(f"/data/old{n}"),
+                                _probed())
+    async with command_scope():
+        mine = PathSpec.from_str_path("/data/mine")
+        manager.note_probed(mine, _probed())
+        assert manager.probed_stat(mine) is not None
+        assert len(manager._probed) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scoped", [False, True])
+async def test_an_overlapping_probe_belongs_only_to_its_command(scoped):
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def note():
+        ready.set()
+        await release.wait()
+        manager.note_probed(path, _probed())
+
+    async def produce():
+        if scoped:
+            async with command_scope():
+                await note()
+        else:
+            await note()
+
+    producer = asyncio.create_task(produce())
+    await ready.wait()
+    async with command_scope():
+        release.set()
+        await producer
+        assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
+async def test_one_large_command_does_not_rescan_its_probes_on_every_insert(
+        monkeypatch):
+    # Past the bound, a prune that frees nothing (every entry is the running
+    # command's) must not run again on the next insert, or a large walk turns
+    # quadratic: the next prune waits until the map has doubled.
+    monkeypatch.setattr("mirage.cache.manager.PROBED_LIMIT", 4)
+    scans = []
+    original = CacheManager._prune_probes
+
+    def counting(self, started):
+        scans.append(len(self._probed))
+        original(self, started)
+
+    monkeypatch.setattr(CacheManager, "_prune_probes", counting)
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    async with command_scope():
+        for n in range(64):
+            manager.note_probed(PathSpec.from_str_path(f"/data/f{n}"),
+                                _probed())
+        assert len(manager._probed) == 64
+    assert len(scans) <= 5

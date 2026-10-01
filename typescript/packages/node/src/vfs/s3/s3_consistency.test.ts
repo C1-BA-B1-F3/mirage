@@ -366,12 +366,13 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
-  it('a warm read costs a gate probe', async () => {
-    // A warm `cat` is three stats: the routing reconcile, cat's own operand
-    // stat, and the gate's probe. Two means the gate stopped probing a named
-    // warm operand -- which is what main does, so this number is what
-    // separates the two. Counting starts after the warm-up, because a
-    // cold+warm total is the same either way.
+  it('a warm read costs one probe', async () => {
+    // A warm `cat` is one stat: the routing reconcile. cat's own operand stat
+    // and the gate both reuse its answer for the rest of the command, so a
+    // count cannot tell the gate on from off here; the gate's own reach -- the
+    // reads routing never sees -- is pinned by 'fresh revalidates a walk and a
+    // glob, not just a named operand'. Counting starts after the warm-up,
+    // because a cold+warm total is the same either way.
     const ws = new Workspace(
       { '/s3/': new S3VFS(makeConfig()) },
       { mode: MountMode.WRITE, read: FRESH },
@@ -380,12 +381,40 @@ describe('S3 cache consistency (mocked)', () => {
       await ws.shell('cat /s3/c.txt')
       mock.resetCalls()
       expect(DEC.decode((await ws.shell('cat /s3/c.txt')).stdout)).toBe('v1')
-      expect(mock.commandCalls(HeadObjectCommand)).toBe(3)
+      expect(mock.commandCalls(HeadObjectCommand)).toBe(1)
       expect(mock.commandCalls(GetObjectCommand)).toBe(0)
     } finally {
       await ws.close()
     }
   })
+
+  // s3 and gridfs register their own stat rather than the generic's, so they
+  // get the probe answer only if the override's adapter carries it: one HEAD,
+  // the routing reconcile, where it cost two. The answer is served below every
+  // guard: a trailing slash still refuses, and `nope/..` -- a directory only
+  // the walk guard proves missing -- still answers ENOENT, as GNU does.
+  for (const [line, code, out, err] of [
+    ['stat -c %s /s3/c.txt', 0, '2\n', ''],
+    ['stat /s3/c.txt/', 1, '', 'Not a directory'],
+    ['stat -c %s /s3/nope/../c.txt', 1, '', 'No such file or directory'],
+  ] as const) {
+    it(`a warm keyed-store stat reuses the probe: ${line}`, async () => {
+      const ws = new Workspace(
+        { '/s3/': new S3VFS(makeConfig()) },
+        { mode: MountMode.WRITE, read: FRESH },
+      )
+      try {
+        await ws.shell('cat /s3/c.txt')
+        mock.resetCalls()
+        const result = await ws.shell(line)
+        expect([result.exitCode, DEC.decode(result.stdout)]).toEqual([code, out])
+        expect(DEC.decode(result.stderr)).toContain(err)
+        if (code === 0) expect(mock.commandCalls(HeadObjectCommand)).toBe(1)
+      } finally {
+        await ws.close()
+      }
+    })
+  }
 
   it('bounded keeps serving the cached bytes after an out-of-band change', async () => {
     const ws = new Workspace(
@@ -478,8 +507,12 @@ describe('S3 cache consistency (mocked)', () => {
   it('a metadata command reconciles its operand', async () => {
     // `ls` reads no bytes, so the cache gate never fires for it. Routing is
     // the one door a metadata command has to backend truth and must keep
-    // probing there: a warm `ls -l` is three stats, and two means the
-    // routing reconcile stopped firing for a command the gate never covers.
+    // probing there. The stat count cannot show it any more: ls's own operand
+    // stat serves the routing probe's answer, so a warm `ls -l` is the probe
+    // plus ls's readdir check of its operand, and with routing dark it is
+    // ls's stat plus that same check -- two either way. What only the routing
+    // probe does is evict a copy the backend replaced, so that is what this
+    // pins.
     const ws = new Workspace(
       { '/s3/': new S3VFS(makeConfig()) },
       { mode: MountMode.WRITE, read: FRESH },
@@ -488,7 +521,11 @@ describe('S3 cache consistency (mocked)', () => {
       await ws.shell('cat /s3/c.txt')
       mock.resetCalls()
       expect((await ws.shell('ls -l /s3/c.txt')).exitCode).toBe(0)
-      expect(mock.commandCalls(HeadObjectCommand)).toBe(3)
+      expect(await ws.cache.exists('/s3/c.txt')).toBe(true)
+      mock.store.set(BUCKET, 'c.txt', ENC.encode('v2'))
+      expect((await ws.shell('ls -l /s3/c.txt')).exitCode).toBe(0)
+      expect(await ws.cache.exists('/s3/c.txt')).toBe(false)
+      expect(mock.commandCalls(HeadObjectCommand)).toBe(4)
     } finally {
       await ws.close()
     }

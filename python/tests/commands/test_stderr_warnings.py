@@ -53,20 +53,24 @@ async def test_rg_scan_collects_warnings_on_unreadable_file():
         raise FileNotFoundError(path.virtual)
 
     readdir = _make_readdir({"/": ["/good.py", "/bad.py"]})
-    stat_fn = _make_stat({
-        "/good.py":
-        FileStat(name="good.py",
-                 size=12,
-                 modified=None,
-                 type=FileType.FILE,
-                 content=ContentType.TEXT),
-        "/bad.py":
-        FileStat(name="bad.py",
-                 size=10,
-                 modified=None,
-                 type=FileType.FILE,
-                 content=ContentType.TEXT),
-    })
+    stat_fn = _make_stat(
+        {
+            "/good.py": FileStat(
+                name="good.py",
+                size=12,
+                modified=None,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
+            "/bad.py": FileStat(
+                name="bad.py",
+                size=10,
+                modified=None,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
+        }
+    )
 
     async def async_readdir(path):
         return readdir(path.virtual)
@@ -75,12 +79,15 @@ async def test_rg_scan_collects_warnings_on_unreadable_file():
         return stat_fn(path.virtual)
 
     # The scan reports the file it could not read and keeps searching.
-    out, io = await generic_rg([PathSpec.from_str_path("/")], ["hello"],
-                               CommandOpts(),
-                               readdir=async_readdir,
-                               stat=async_stat,
-                               read_bytes=read_bytes,
-                               read_stream=None)
+    out, io = await generic_rg(
+        [PathSpec.from_str_path("/")],
+        ["hello"],
+        CommandOpts(),
+        readdir=async_readdir,
+        stat=async_stat,
+        read_bytes=read_bytes,
+        read_stream=None,
+    )
     results = (await materialize(out)).decode().splitlines()
     warnings = (await materialize(io.stderr)).decode().splitlines()
     assert any("hello" in r for r in results)
@@ -90,9 +97,11 @@ async def test_rg_scan_collects_warnings_on_unreadable_file():
 
 async def _seed_ws(ws):
     await ws.dispatch("mkdir", PathSpec.from_str_path("/data"))
-    await ws.dispatch("write",
-                      PathSpec.from_str_path("/data/hello.txt"),
-                      data=b"hello world\nfoo bar\n")
+    await ws.dispatch(
+        "write",
+        PathSpec.from_str_path("/data/hello.txt"),
+        data=b"hello world\nfoo bar\n",
+    )
 
 
 def _ws():

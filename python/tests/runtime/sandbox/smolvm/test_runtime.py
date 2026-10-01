@@ -22,12 +22,13 @@ from mirage.types import PathSpec
 
 
 class FakeSmolvmRuntime(SmolvmRuntime):
-
-    def __init__(self,
-                 state: str = "running",
-                 status_code: int = 0,
-                 status_stdout: bytes | None = None,
-                 **options):
+    def __init__(
+        self,
+        state: str = "running",
+        status_code: int = 0,
+        status_stdout: bytes | None = None,
+        **options,
+    ):
         super().__init__(**options)
         self.state = state
         self.status_code = status_code
@@ -41,10 +42,11 @@ class FakeSmolvmRuntime(SmolvmRuntime):
                 return self.status_stdout, b"", self.status_code
             if self.status_code != 0:
                 return b"", b"machine 'vm' not found", self.status_code
-            return json.dumps({
-                "name": "vm",
-                "state": self.state
-            }).encode(), b"", 0
+            return (
+                json.dumps({"name": "vm", "state": self.state}).encode(),
+                b"",
+                0,
+            )
         script = args[-1]
         return f"out:{script}".encode(), b"warn", 0
 
@@ -65,11 +67,14 @@ async def test_connect_fails_loud_on_a_stopped_machine():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("state", "hint"), [
-    ("unreachable", "guest agent is not answering"),
-    ("frozen", "frozen fork base"),
-    ("created", "never been started"),
-])
+@pytest.mark.parametrize(
+    ("state", "hint"),
+    [
+        ("unreachable", "guest agent is not answering"),
+        ("frozen", "frozen fork base"),
+        ("created", "never been started"),
+    ],
+)
 async def test_connect_names_why_a_state_cannot_take_a_line(state, hint):
     runtime = FakeSmolvmRuntime(state=state, config={"machine": "vm"})
     with pytest.raises(RuntimeError, match=hint):
@@ -92,8 +97,9 @@ async def test_connect_fails_loud_when_the_cli_errors():
 
 @pytest.mark.asyncio
 async def test_connect_fails_loud_on_unreadable_json():
-    runtime = FakeSmolvmRuntime(status_stdout=b"not json",
-                                config={"machine": "vm"})
+    runtime = FakeSmolvmRuntime(
+        status_stdout=b"not json", config={"machine": "vm"}
+    )
     with pytest.raises(RuntimeError, match="unreadable json"):
         await runtime.connect()
 
@@ -106,15 +112,27 @@ def test_machine_is_required():
 @pytest.mark.asyncio
 async def test_exec_line_threads_cwd_env_stdin_and_real_stderr():
     runtime = FakeSmolvmRuntime(config={"machine": "vm"})
-    result = await runtime.exec_line("wc -l", b"a\nb\n", {"E": "1"},
-                                     "/root/workspace")
+    result = await runtime.exec_line(
+        "wc -l", b"a\nb\n", {"E": "1"}, "/root/workspace"
+    )
     assert result.exit_code == 0
     assert result.stdout == b"out:wc -l"
     assert result.stderr == b"warn"
     args, stdin = runtime.calls[-1]
     assert args == [
-        "machine", "exec", "--name", "vm", "-i", "-w", "/root/workspace", "-e",
-        "E=1", "--", "sh", "-c", "wc -l"
+        "machine",
+        "exec",
+        "--name",
+        "vm",
+        "-i",
+        "-w",
+        "/root/workspace",
+        "-e",
+        "E=1",
+        "--",
+        "sh",
+        "-c",
+        "wc -l",
     ]
     assert stdin == b"a\nb\n"
 
@@ -130,26 +148,39 @@ async def test_exec_line_ends_flags_so_a_dashed_line_is_not_parsed():
 
 @pytest.mark.asyncio
 async def test_process_preserves_argv_and_shares_the_shell_connection():
-    runtime = FakeSmolvmRuntime(config={
-        "machine": "vm",
-        "env": {
-            "E": "config"
-        }
-    })
+    runtime = FakeSmolvmRuntime(
+        config={"machine": "vm", "env": {"E": "config"}}
+    )
     argv = ("node", "a b", "$(echo literal)", "", "--flag")
     result = await runtime.execute(
-        ProcessExecution(argv=argv,
-                         cwd=PathSpec.from_str_path("/work"),
-                         env={"E": "request"},
-                         stdin=b"input"))
+        ProcessExecution(
+            argv=argv,
+            cwd=PathSpec.from_str_path("/work"),
+            env={"E": "request"},
+            stdin=b"input",
+        )
+    )
     assert result.stdout == b"out:--flag"
     assert result.stderr == b"warn"
-    assert runtime.calls[-1] == ([
-        "machine", "exec", "--name", "vm", "-i", "-w", "/work", "-e",
-        "E=request", "--", *argv
-    ], b"input")
+    assert runtime.calls[-1] == (
+        [
+            "machine",
+            "exec",
+            "--name",
+            "vm",
+            "-i",
+            "-w",
+            "/work",
+            "-e",
+            "E=request",
+            "--",
+            *argv,
+        ],
+        b"input",
+    )
     await runtime.execute(
-        ShellExecution(line="pwd", cwd=PathSpec.from_str_path("/work")))
+        ShellExecution(line="pwd", cwd=PathSpec.from_str_path("/work"))
+    )
     assert sum(args[1] == "status" for args, _ in runtime.calls) == 1
     assert runtime.capabilities.process and runtime.capabilities.shell
     assert runtime.capabilities.filesystem == ()
@@ -160,9 +191,11 @@ async def test_process_refuses_a_stopped_vm_and_empty_argv():
     runtime = FakeSmolvmRuntime(state="stopped", config={"machine": "vm"})
     with pytest.raises(ValueError, match="argv must not be empty"):
         await runtime.execute(
-            ProcessExecution(argv=(), cwd=PathSpec.from_str_path("/")))
+            ProcessExecution(argv=(), cwd=PathSpec.from_str_path("/"))
+        )
     assert not runtime.calls
     with pytest.raises(RuntimeError, match="not running"):
         await runtime.execute(
-            ProcessExecution(argv=("node", ), cwd=PathSpec.from_str_path("/")))
+            ProcessExecution(argv=("node",), cwd=PathSpec.from_str_path("/"))
+        )
     assert len(runtime.calls) == 1

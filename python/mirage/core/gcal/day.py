@@ -41,8 +41,9 @@ def zone(tz: str) -> ZoneInfo:
         # A calendar can name a zone this platform's tzdata does not carry.
         # Failing the whole listing over it would let one bad calendar hide
         # every other one, so fall back loudly and keep going.
-        logger.debug("gcal: unknown time zone %r, bucketing in %s", tz,
-                     DEFAULT_TZ)
+        logger.debug(
+            "gcal: unknown time zone %r, bucketing in %s", tz, DEFAULT_TZ
+        )
         return ZoneInfo(DEFAULT_TZ)
 
 
@@ -143,8 +144,9 @@ def slot_instant(slot: dict[str, JsonValue], tz: str) -> datetime | None:
     return None
 
 
-def event_span(event: dict[str, JsonValue],
-               tz: str) -> tuple[datetime, datetime] | None:
+def event_span(
+    event: dict[str, JsonValue], tz: str
+) -> tuple[datetime, datetime] | None:
     """The absolute [start, end) span of an event.
 
     An all-day event's ``end.date`` is exclusive, so a one-day event is
@@ -189,8 +191,10 @@ def days_covered(span: tuple[datetime, datetime], tz: str) -> list[str]:
     zi = zone(tz)
     first = span[0].astimezone(zi).date()
     last = span[1].astimezone(zi).date()
-    if span[1] > span[0] and span[1].astimezone(
-            zi).time() == datetime.min.time():
+    if (
+        span[1] > span[0]
+        and span[1].astimezone(zi).time() == datetime.min.time()
+    ):
         last = last - timedelta(days=1)
     if last < first:
         last = first

@@ -39,8 +39,9 @@ class FlagBag(dict[str, T], Generic[T]):
 
     def __init__(self, values: Mapping[str, T] | None = None) -> None:
         super().__init__(values or {})
-        self.occurrences: list[tuple[str, str | bool | int]] = (list(
-            values.occurrences) if isinstance(values, FlagBag) else [])
+        self.occurrences: list[tuple[str, str | bool | int]] = (
+            list(values.occurrences) if isinstance(values, FlagBag) else []
+        )
 
 
 class FlagView:
@@ -58,16 +59,20 @@ class FlagView:
             would silently read as False/None.
     """
 
-    def __init__(self,
-                 flags: Mapping[str, FlagValue] | None,
-                 spec: CommandSpec | None = None) -> None:
+    def __init__(
+        self,
+        flags: Mapping[str, FlagValue] | None,
+        spec: CommandSpec | None = None,
+    ) -> None:
         self._flags = flags if flags is not None else {}
         self._allowed = spec_flag_names(spec) if spec is not None else None
 
     def _key(self, name: str) -> str:
         if self._allowed is not None and name not in self._allowed:
-            raise KeyError(f"flag {name!r} is not declared by the command "
-                           f"spec (known: {sorted(self._allowed)})")
+            raise KeyError(
+                f"flag {name!r} is not declared by the command "
+                f"spec (known: {sorted(self._allowed)})"
+            )
         return name
 
     def typed_order(self, *names: str) -> list[str]:
@@ -102,13 +107,14 @@ class FlagView:
                 REFUSED.
         """
         wanted = {
-            name if name in _TAPE_ONLY else self._key(name)
-            for name in names
+            name if name in _TAPE_ONLY else self._key(name) for name in names
         }
-        tape = self._flags.occurrences if isinstance(self._flags,
-                                                     FlagBag) else []
+        tape = (
+            self._flags.occurrences if isinstance(self._flags, FlagBag) else []
+        )
         result: list[tuple[str, FlagValue]] = [
-            (name, value) for name, value in tape
+            (name, value)
+            for name, value in tape
             if name in wanted and (name in _TAPE_ONLY or name in self._flags)
         ]
         seen = {name for name, _ in result}
@@ -139,8 +145,9 @@ class FlagView:
         try:
             return int(value)
         except ValueError as exc:
-            raise ValueError(f"flag '{name}' expects an integer, "
-                             f"got '{value}'") from exc
+            raise ValueError(
+                f"flag '{name}' expects an integer, got '{value}'"
+            ) from exc
 
     def as_float(self, name: str) -> float | None:
         value = self._flags.get(self._key(name))
@@ -153,8 +160,9 @@ class FlagView:
         try:
             return float(value)
         except ValueError as exc:
-            raise ValueError(f"flag '{name}' expects a number, "
-                             f"got '{value}'") from exc
+            raise ValueError(
+                f"flag '{name}' expects a number, got '{value}'"
+            ) from exc
 
     def as_str(self, name: str) -> str | None:
         value = self._flags.get(self._key(name))

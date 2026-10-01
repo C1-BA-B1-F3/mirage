@@ -33,8 +33,9 @@ HEAD_LOG = "logs/HEAD"
 ZERO = b"0" * 40
 
 
-def entry(before: bytes, after: bytes, who: bytes, when: int,
-          message: str) -> bytes:
+def entry(
+    before: bytes, after: bytes, who: bytes, when: int, message: str
+) -> bytes:
     """One reflog line, in git's own format.
 
     ``<old> <new> <identity> <epoch> <offset>\\t<message>``, with the
@@ -49,12 +50,18 @@ def entry(before: bytes, after: bytes, who: bytes, when: int,
         when (int): epoch seconds.
         message (str): what happened, e.g. ``commit: add delta``.
     """
-    return (b"%s %s %s %d +0000\t%s\n" %
-            (before, after, who, when, message.encode()))
+    return b"%s %s %s %d +0000\t%s\n" % (
+        before,
+        after,
+        who,
+        when,
+        message.encode(),
+    )
 
 
-async def append(dispatch: DispatchFn, gitdir: str, path: str,
-                 line: bytes) -> None:
+async def append(
+    dispatch: DispatchFn, gitdir: str, path: str, line: bytes
+) -> None:
     """Add one line to a reflog, creating it if it is not there.
 
     Read-modify-write rather than an append op, because not every
@@ -75,9 +82,17 @@ async def append(dispatch: DispatchFn, gitdir: str, path: str,
     await write_file(dispatch, target, (existing or b"") + line)
 
 
-async def record(dispatch: DispatchFn, gitdir: str, commondir: str,
-                 ref: str | None, before: bytes | None, after: bytes,
-                 who: bytes, when: int, message: str) -> None:
+async def record(
+    dispatch: DispatchFn,
+    gitdir: str,
+    commondir: str,
+    ref: str | None,
+    before: bytes | None,
+    after: bytes,
+    who: bytes,
+    when: int,
+    message: str,
+) -> None:
     """Record one move of HEAD, and of the branch it is on.
 
     git writes both logs on every update: ``logs/HEAD`` always, and the
@@ -105,8 +120,9 @@ async def record(dispatch: DispatchFn, gitdir: str, commondir: str,
         await append(dispatch, commondir, posixpath.join(LOGS_DIR, ref), line)
 
 
-async def _log_of(dispatch: DispatchFn, location: RepoLocation,
-                  ref: str) -> bytes | None:
+async def _log_of(
+    dispatch: DispatchFn, location: RepoLocation, ref: str
+) -> bytes | None:
     """A ref's reflog, from the git directory that owns it.
 
     Args:
@@ -118,8 +134,9 @@ async def _log_of(dispatch: DispatchFn, location: RepoLocation,
     return await read_optional(dispatch, posixpath.join(root, LOGS_DIR, ref))
 
 
-async def _named_log(dispatch: DispatchFn, location: RepoLocation,
-                     revision: str) -> tuple[str, bytes | None]:
+async def _named_log(
+    dispatch: DispatchFn, location: RepoLocation, revision: str
+) -> tuple[str, bytes | None]:
     """The log a reflog walk reads, and the name its rows print.
 
     As git's ``read_complete_reflog`` then ``dwim_log``: the name as
@@ -136,8 +153,11 @@ async def _named_log(dispatch: DispatchFn, location: RepoLocation,
         data = await _log_of(dispatch, location, ref)
         if data:
             return revision, data
-    for ref in (f"refs/tags/{revision}", f"refs/remotes/{revision}",
-                f"refs/remotes/{revision}/HEAD"):
+    for ref in (
+        f"refs/tags/{revision}",
+        f"refs/remotes/{revision}",
+        f"refs/remotes/{revision}/HEAD",
+    ):
         data = await _log_of(dispatch, location, ref)
         if data:
             return ref, data
@@ -145,7 +165,8 @@ async def _named_log(dispatch: DispatchFn, location: RepoLocation,
 
 
 async def reflog(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Read a ref's log newest first through the dispatcher.
 
     Args:
@@ -156,7 +177,7 @@ async def reflog(
         doors = inv.doors or CLIDoors()
         repo, location = await opened(fl, doors)
         assert doors.dispatch is not None
-        texts = inv.texts[1:] if inv.texts[:1] == ("show", ) else inv.texts
+        texts = inv.texts[1:] if inv.texts[:1] == ("show",) else inv.texts
         revision = texts[0] if texts else HEAD
         await asyncio.to_thread(resolve_commit, repo, revision)
         name, data = await _named_log(doors.dispatch, location, revision)
@@ -169,8 +190,10 @@ async def reflog(
         for index, row in enumerate(rows):
             record, _, message = row.partition(b"\t")
             oid = record.split(b" ")[1]
-            out.append(f"{oid.decode()[:width]} {name}@{{{index}}}: "
-                       f"{message.decode('utf-8', 'replace')}\n")
+            out.append(
+                f"{oid.decode()[:width]} {name}@{{{index}}}: "
+                f"{message.decode('utf-8', 'replace')}\n"
+            )
         return "".join(out).encode(), IOResult()
     except GitError as exc:
         return fatal(exc)

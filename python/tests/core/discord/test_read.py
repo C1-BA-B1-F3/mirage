@@ -29,9 +29,9 @@ CHAT = f"/{CHANNEL}/{DAY}/chat.jsonl"
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_read_jsonl(api, accessor, index):
@@ -45,9 +45,11 @@ async def test_read_jsonl_bogus_channel_is_enoent(api, accessor, index):
     # The typed `name__id` is only trusted once the listing proves it, so
     # a fabricated channel id is ENOENT rather than a raw API error.
     with pytest.raises(FileNotFoundError):
-        await read(accessor,
-                   spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}/chat.jsonl"),
-                   index)
+        await read(
+            accessor,
+            spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}/chat.jsonl"),
+            index,
+        )
 
 
 async def test_read_not_found(api, accessor, index):
@@ -63,28 +65,34 @@ async def test_read_jsonl_window_is_sliced_locally(api, accessor, index):
 
 
 async def test_read_chat_on_a_sealed_day_reproduces_the_api_answer(
-        api, accessor, index):
+    api, accessor, index
+):
     # The sealed day lists nothing but the file still reads through the
     # channel; the fetch then answers what the API answers.
     import aiohttp
+
     with pytest.raises(aiohttp.ClientResponseError):
-        await read(accessor, spec(f"/{CHANNEL}/{SEALED_DAY}/chat.jsonl"),
-                   index)
+        await read(
+            accessor, spec(f"/{CHANNEL}/{SEALED_DAY}/chat.jsonl"), index
+        )
 
 
 async def test_read_member_json(api, accessor, index):
-    data = await read(accessor, spec(f"/{GUILD_DIR}/members/alice__U001.json"),
-                      index)
+    data = await read(
+        accessor, spec(f"/{GUILD_DIR}/members/alice__U001.json"), index
+    )
     payload = json.loads(data)
     assert payload["user"]["id"] == "U001"
 
 
 async def test_read_blob_pushes_the_range_to_the_source(api, accessor, index):
-    result = await read_range(accessor,
-                              spec(f"/{CHANNEL}/{DAY}/files/kept__A1.txt"),
-                              index,
-                              offset=2,
-                              size=3)
+    result = await read_range(
+        accessor,
+        spec(f"/{CHANNEL}/{DAY}/files/kept__A1.txt"),
+        index,
+        offset=2,
+        size=3,
+    )
     assert result == b"234"
     assert api.downloads == [("https://cdn.example/kept.txt", 2, 3)]
 
@@ -98,5 +106,6 @@ async def test_read_dir_is_enoent_when_unproven(api, accessor, index):
 
 async def test_read_tombstoned_attachment_is_enoent(api, accessor, index):
     with pytest.raises(FileNotFoundError):
-        await read(accessor,
-                   spec(f"/{CHANNEL}/{DAY}/files/tombstoned__A2.txt"), index)
+        await read(
+            accessor, spec(f"/{CHANNEL}/{DAY}/files/tombstoned__A2.txt"), index
+        )

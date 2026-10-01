@@ -27,21 +27,18 @@ from mirage.server.registry import WorkspaceRegistry
 def _minimal_config() -> dict:
     return {
         "config": {
-            "mounts": {
-                "/": {
-                    "vfs": "ram",
-                    "mode": "WRITE"
-                }
-            },
+            "mounts": {"/": {"vfs": "ram", "mode": "WRITE"}},
         },
     }
 
 
 def _make_app_with_short_grace(grace: float = 0.2, snapshot_root=None):
     exit_event = asyncio.Event()
-    app = build_app(idle_grace_seconds=grace,
-                    exit_event=exit_event,
-                    snapshot_root=snapshot_root)
+    app = build_app(
+        idle_grace_seconds=grace,
+        exit_event=exit_event,
+        snapshot_root=snapshot_root,
+    )
     return app, exit_event
 
 
@@ -49,8 +46,9 @@ def _make_app_with_short_grace(grace: float = 0.2, snapshot_root=None):
 async def test_create_list_get_delete_round_trip():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         assert r.status_code == 201, r.text
         detail = r.json()
@@ -82,8 +80,9 @@ async def test_create_list_get_delete_round_trip():
 async def test_create_with_explicit_id():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {**_minimal_config(), "id": "myws"}
         r = await client.post("/v1/workspaces", json=body)
         assert r.status_code == 201
@@ -97,8 +96,9 @@ async def test_create_with_explicit_id():
 async def test_get_verbose_includes_internals():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
 
@@ -113,17 +113,13 @@ async def test_get_verbose_includes_internals():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not os.environ.get("REDIS_URL"),
-                    reason="REDIS_URL not set")
+@pytest.mark.skipif(
+    not os.environ.get("REDIS_URL"), reason="REDIS_URL not set"
+)
 async def test_get_verbose_internals_with_redis_cache():
     body = {
         "config": {
-            "mounts": {
-                "/": {
-                    "vfs": "ram",
-                    "mode": "WRITE"
-                }
-            },
+            "mounts": {"/": {"vfs": "ram", "mode": "WRITE"}},
             "cache": {
                 "type": "redis",
                 "url": os.environ["REDIS_URL"],
@@ -133,8 +129,9 @@ async def test_get_verbose_internals_with_redis_cache():
     }
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=body)
         assert r.status_code == 201, r.text
         wid = r.json()["id"]
@@ -156,8 +153,9 @@ async def test_get_verbose_internals_with_redis_cache():
 async def test_clone_returns_new_workspace_with_same_mounts():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
 
@@ -176,8 +174,9 @@ async def test_clone_returns_new_workspace_with_same_mounts():
 async def test_clone_with_explicit_id_409_on_collision():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {**_minimal_config(), "id": "src"}
         await client.post("/v1/workspaces", json=body)
 
@@ -192,8 +191,9 @@ async def test_clone_with_explicit_id_409_on_collision():
 async def test_health_endpoint():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.get("/v1/health")
         assert r.status_code == 200
         body = r.json()
@@ -210,13 +210,15 @@ async def test_health_endpoint():
 async def test_snapshot_writes_tar_to_path(tmp_path):
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         target = tmp_path / "snap.tar"
-        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
-                              json={"path": str(target)})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/snapshot", json={"path": str(target)}
+        )
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["path"] == str(target)
@@ -229,16 +231,19 @@ async def test_snapshot_writes_tar_to_path(tmp_path):
 async def test_snapshot_load_round_trip(tmp_path):
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         target = tmp_path / "snap.tar"
-        await client.post(f"/v1/workspaces/{wid}/snapshot",
-                          json={"path": str(target)})
+        await client.post(
+            f"/v1/workspaces/{wid}/snapshot", json={"path": str(target)}
+        )
 
-        r = await client.post("/v1/workspaces/load",
-                              json={"path": str(target)})
+        r = await client.post(
+            "/v1/workspaces/load", json={"path": str(target)}
+        )
         assert r.status_code == 201, r.text
         new_id = r.json()["id"]
         assert new_id != wid
@@ -252,12 +257,14 @@ async def test_snapshot_load_round_trip(tmp_path):
 async def test_snapshot_rejects_path_outside_root(tmp_path):
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
-        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
-                              json={"path": "../escape.tar"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/snapshot", json={"path": "../escape.tar"}
+        )
         assert r.status_code == 400, r.text
         assert not (tmp_path.parent / "escape.tar").exists()
 
@@ -266,10 +273,12 @@ async def test_snapshot_rejects_path_outside_root(tmp_path):
 async def test_load_missing_path_returns_400(tmp_path):
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
-        r = await client.post("/v1/workspaces/load",
-                              json={"path": str(tmp_path / "nope.tar")})
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        r = await client.post(
+            "/v1/workspaces/load", json={"path": str(tmp_path / "nope.tar")}
+        )
         assert r.status_code == 400, r.text
 
 
@@ -277,8 +286,9 @@ async def test_load_missing_path_returns_400(tmp_path):
 async def test_two_workspaces_run_in_isolation():
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid_a = r.json()["id"]
         r = await client.post("/v1/workspaces", json=_minimal_config())
@@ -288,7 +298,8 @@ async def test_two_workspaces_run_in_isolation():
         runner_b = registry.get(wid_b).runner
 
         slow = asyncio.create_task(
-            runner_a.call(runner_a.ws.shell("sleep 1.0")))
+            runner_a.call(runner_a.ws.shell("sleep 1.0"))
+        )
         await asyncio.sleep(0.05)
         start = time.monotonic()
         result = await runner_b.call(runner_b.ws.shell("echo quick"))
@@ -296,7 +307,8 @@ async def test_two_workspaces_run_in_isolation():
         assert result.exit_code == 0
         assert elapsed < 0.5, (
             f"workspace B took {elapsed:.2f}s while A was sleeping; "
-            "isolation violated")
+            "isolation violated"
+        )
         await slow
 
 
@@ -304,8 +316,9 @@ async def test_two_workspaces_run_in_isolation():
 async def test_idle_shutdown_event_fires_after_grace():
     app, exit_event = _make_app_with_short_grace(grace=0.2)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         await client.delete(f"/v1/workspaces/{wid}")
@@ -317,8 +330,9 @@ async def test_idle_shutdown_event_fires_after_grace():
 async def test_idle_timer_canceled_when_new_workspace_created():
     app, exit_event = _make_app_with_short_grace(grace=0.5)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         await client.delete(f"/v1/workspaces/{wid}")
@@ -337,23 +351,22 @@ async def test_create_workspace_bridges_fuse_through_manager(monkeypatch):
         calls.append((prefix, mountpoint))
         return mountpoint or "/tmp/fake"
 
-    monkeypatch.setattr("mirage.workspace.workspace.Workspace.add_fuse_mount",
-                        _fake_add)
+    monkeypatch.setattr(
+        "mirage.workspace.workspace.Workspace.add_fuse_mount", _fake_add
+    )
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {
             "config": {
                 "mounts": {
-                    "/data/": {
-                        "vfs": "ram",
-                        "backend": "fuse"
-                    },
+                    "/data/": {"vfs": "ram", "backend": "fuse"},
                     "/pinned/": {
                         "vfs": "ram",
                         "backend": "fuse",
-                        "mountpoint": "/tmp/pinned"
+                        "mountpoint": "/tmp/pinned",
                     },
                 },
             },
@@ -379,19 +392,18 @@ async def test_create_workspace_rolls_back_on_fuse_failure(monkeypatch):
             self.close = _spy
         raise ValueError("boom collision")
 
-    monkeypatch.setattr("mirage.workspace.workspace.Workspace.add_fuse_mount",
-                        _boom_add)
+    monkeypatch.setattr(
+        "mirage.workspace.workspace.Workspace.add_fuse_mount", _boom_add
+    )
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {
             "config": {
                 "mounts": {
-                    "/data/": {
-                        "vfs": "ram",
-                        "backend": "fuse"
-                    },
+                    "/data/": {"vfs": "ram", "backend": "fuse"},
                 },
             },
         }
@@ -409,6 +421,7 @@ def test_registry_zero_grace_fires_immediately():
         registry = WorkspaceRegistry(idle_grace_seconds=0)
         from mirage import MountMode, Workspace
         from mirage.vfs.ram import RAMVFS
+
         ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)})
         entry = registry.add(ws)
         await registry.remove(entry.id)
@@ -422,17 +435,19 @@ async def test_create_defaults_to_disk_store_under_state_root(tmp_path):
     """The daemon default is disk: a workspace created without a store:
     block persists its sessions+meta under the app's state root."""
     exit_event = asyncio.Event()
-    app = build_app(idle_grace_seconds=10.0,
-                    exit_event=exit_event,
-                    state_root=tmp_path)
+    app = build_app(
+        idle_grace_seconds=10.0, exit_event=exit_event, state_root=tmp_path
+    )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {**_minimal_config(), "id": "diskws"}
         r = await client.post("/v1/workspaces", json=body)
         assert r.status_code == 201, r.text
-        r = await client.post("/v1/workspaces/diskws/execute",
-                              json={"command": "echo hi"})
+        r = await client.post(
+            "/v1/workspaces/diskws/execute", json={"command": "echo hi"}
+        )
         assert r.status_code == 200
     assert (tmp_path / "workspaces" / "diskws" / "workspace.json").is_file()
 
@@ -440,18 +455,17 @@ async def test_create_defaults_to_disk_store_under_state_root(tmp_path):
 @pytest.mark.asyncio
 async def test_create_explicit_store_block_wins_over_disk_default(tmp_path):
     exit_event = asyncio.Event()
-    app = build_app(idle_grace_seconds=10.0,
-                    exit_event=exit_event,
-                    state_root=tmp_path)
+    app = build_app(
+        idle_grace_seconds=10.0, exit_event=exit_event, state_root=tmp_path
+    )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = {
             "config": {
                 **_minimal_config()["config"],
-                "store": {
-                    "type": "ram"
-                },
+                "store": {"type": "ram"},
             },
             "id": "ramws",
         }
@@ -466,8 +480,9 @@ async def test_create_with_an_unresolvable_secrets_block_is_a_bad_request():
     the caller's mistake, like a mount whose VFS is unknown."""
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         body = _minimal_config()
         body["config"]["secrets"] = {"prod": {"source": "nope"}}
         r = await client.post("/v1/workspaces", json=body)
@@ -481,77 +496,78 @@ async def test_clone_with_a_bad_secrets_override_is_a_bad_request():
     load and the historical clone all answer 400."""
     app, _ = _make_app_with_short_grace(grace=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
-        for bad in ({
-                "prod": {
-                    "source": "nope"
-                }
-        }, {
-                "prod": {
-                    "nosource": 1
-                }
-        }, []):
-            r = await client.post(f"/v1/workspaces/{wid}/clone",
-                                  json={"override": {
-                                      "secrets": bad
-                                  }})
+        for bad in (
+            {"prod": {"source": "nope"}},
+            {"prod": {"nosource": 1}},
+            [],
+        ):
+            r = await client.post(
+                f"/v1/workspaces/{wid}/clone",
+                json={"override": {"secrets": bad}},
+            )
             assert r.status_code == 400, r.text
 
 
 @pytest.mark.asyncio
 async def test_load_with_a_non_mapping_secrets_override_is_a_bad_request(
-        tmp_path):
+    tmp_path,
+):
     """Filtering it to None here turned a bad override into a
     successful load whose every restored pointer was unresolvable."""
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         target = tmp_path / "snap.tar"
-        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
-                              json={"path": str(target)})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/snapshot", json={"path": str(target)}
+        )
         assert r.status_code == 200, r.text
-        r = await client.post("/v1/workspaces/load",
-                              json={
-                                  "path": str(target),
-                                  "override": {
-                                      "secrets": []
-                                  },
-                              })
+        r = await client.post(
+            "/v1/workspaces/load",
+            json={
+                "path": str(target),
+                "override": {"secrets": []},
+            },
+        )
         assert r.status_code == 400, r.text
 
 
 @pytest.mark.asyncio
 async def test_load_with_an_unbuildable_vfs_override_is_a_bad_request(
-        tmp_path):
+    tmp_path,
+):
     """A ref the daemon cannot load is the caller's mistake, so it is
     answered like the other bad overrides; it used to escape as a 500."""
     app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
         target = tmp_path / "snap.tar"
-        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
-                              json={"path": str(target)})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/snapshot", json={"path": str(target)}
+        )
         assert r.status_code == 200, r.text
-        r = await client.post("/v1/workspaces/load",
-                              json={
-                                  "path": str(target),
-                                  "override": {
-                                      "mounts": {
-                                          "/": {
-                                              "vfs": f"{tmp_path}/gone.py:Wiki"
-                                          }
-                                      }
-                                  },
-                              })
+        r = await client.post(
+            "/v1/workspaces/load",
+            json={
+                "path": str(target),
+                "override": {
+                    "mounts": {"/": {"vfs": f"{tmp_path}/gone.py:Wiki"}}
+                },
+            },
+        )
         assert r.status_code == 400, r.text
         assert r.json()["detail"].startswith("override build failed: ")
         assert "gone.py" in r.json()["detail"]

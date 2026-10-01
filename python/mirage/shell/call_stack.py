@@ -24,15 +24,18 @@ class CallFrame:
 
 
 class CallStack:
-
     def __init__(self) -> None:
         self._frames: list[CallFrame] = [CallFrame()]
 
     def fork(self) -> "CallStack":
         child = CallStack()
         child._frames = [
-            CallFrame(list(frame.positional), dict(frame.locals),
-                      frame.function_name, frame.loop_level)
+            CallFrame(
+                list(frame.positional),
+                dict(frame.locals),
+                frame.function_name,
+                frame.loop_level,
+            )
             for frame in self._frames
         ]
         return child
@@ -41,14 +44,15 @@ class CallStack:
     def current(self) -> CallFrame:
         return self._frames[-1]
 
-    def push(self,
-             positional: list[str] | None = None,
-             function_name: str = "") -> None:
+    def push(
+        self, positional: list[str] | None = None, function_name: str = ""
+    ) -> None:
         self._frames.append(
             CallFrame(
                 positional=positional or [],
                 function_name=function_name,
-            ))
+            )
+        )
 
     def pop(self) -> CallFrame:
         if len(self._frames) <= 1:

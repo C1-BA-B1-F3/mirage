@@ -35,32 +35,37 @@ PATH = "/gh/docs/a.txt"
 
 
 def _hub(files: dict[str, bytes] | None = None, **kwargs) -> FakeGitHub:
-    return FakeGitHub(files=dict(
-        files or {
-            "docs/a.txt": OLD,
-            "docs/b.txt": b"bravo",
-            "top.txt": b"top"
-        }),
-                      **kwargs)
+    return FakeGitHub(
+        files=dict(
+            files
+            or {"docs/a.txt": OLD, "docs/b.txt": b"bravo", "top.txt": b"top"}
+        ),
+        **kwargs,
+    )
 
 
 def _vfs(hub: FakeGitHub):
     return build_vfs(
-        "github", {
+        "github",
+        {
             "token": "t",
             "owner": "o",
             "repo": "r",
             "ref": "main",
-            "base_url": hub.url
-        })
+            "base_url": hub.url,
+        },
+    )
 
 
 def _ws(vfs, policy: ReadPolicy = ReadPolicy.FRESH, prefix: str = "/gh"):
-    return Workspace({
-        prefix:
-        Mount(vfs=vfs, mode=MountMode.READ, read=ReadSpec(policy=policy)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            prefix: Mount(
+                vfs=vfs, mode=MountMode.READ, read=ReadSpec(policy=policy)
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _out(ws: Workspace, line: str) -> bytes:
@@ -145,7 +150,7 @@ async def test_a_warm_probe_does_not_bypass_a_sessions_hidden_path():
         try:
             assert await _out(ws, f"cat {PATH}") == OLD
             session = ws.create_session("hidden")
-            session.hidden_paths = HiddenPaths(paths=(PATH, ))
+            session.hidden_paths = HiddenPaths(paths=(PATH,))
             result = await ws.shell(f"cat {PATH}", session_id="hidden")
             assert await result.materialize_stdout() == b""
             assert result.exit_code == 1
@@ -155,8 +160,7 @@ async def test_a_warm_probe_does_not_bypass_a_sessions_hidden_path():
 
 
 @pytest.mark.asyncio
-async def test_a_cold_stat_of_an_overlaid_path_prints_what_a_bounded_one_does(
-):
+async def test_a_cold_stat_of_an_overlaid_path_prints_what_a_bounded_one_does():
     # Routing probes a path that carries an attribute overlay even when
     # nothing is cached, so under fresh the command's stat of it comes from
     # the probe; the overlay must still apply on top.
@@ -284,7 +288,9 @@ async def test_a_probe_leaves_find_its_whole_listing():
             walks = hub.count("recursive")
             listed = await _out(ws, "find /gh -type f")
             assert sorted(listed.decode().split()) == [
-                "/gh/docs/a.txt", "/gh/docs/b.txt", "/gh/top.txt"
+                "/gh/docs/a.txt",
+                "/gh/docs/b.txt",
+                "/gh/top.txt",
             ]
             # The probe left the whole listing; find, a new command, re-checks
             # it once under fresh.
@@ -311,23 +317,26 @@ async def test_a_repository_it_cannot_see_keeps_the_overlay():
             await _overlaid(ws)
             # Lost access answers 404 on both endpoints: cannot verify, so the
             # copy is dropped and the cold read fails, but nothing is gone.
-            hub.fail.update({
-                "dir": (404, "Not Found"),
-                "recursive": (404, "Not Found")
-            })
+            hub.fail.update(
+                {"dir": (404, "Not Found"), "recursive": (404, "Not Found")}
+            )
             err = await _fails(ws, f"cat {PATH}")
             # The HTTP error propagates as the cold read's message, unchanged
             # from any other refused github read; it is never ENOENT.
-            assert err == ("cat: 404, message='Not Found', url='"
-                           f"{hub.url}/repos/o/r/git/trees/main"
-                           "?recursive=1'\n")
+            assert err == (
+                "cat: 404, message='Not Found', url='"
+                f"{hub.url}/repos/o/r/git/trees/main"
+                "?recursive=1'\n"
+            )
             assert _kept(ws)
             err = await _fails(ws, f"cp {PATH} /r/x")
             # cp renders a backend error without its own prefix, as it does
             # for any backend (unchanged here).
-            assert err == ("404, message='Not Found', url='"
-                           f"{hub.url}/repos/o/r/git/trees/main"
-                           "?recursive=1'\n")
+            assert err == (
+                "404, message='Not Found', url='"
+                f"{hub.url}/repos/o/r/git/trees/main"
+                "?recursive=1'\n"
+            )
             assert _kept(ws)
         finally:
             await ws.close()
@@ -345,8 +354,10 @@ async def test_a_refused_token_keeps_the_overlay():
             hub.fail["dir"] = (401, "Bad credentials")
             hub.log.clear()
             err = await _fails(ws, f"cat {PATH}")
-            assert err == ("cat: 401, message='Unauthorized', url='"
-                           f"{hub.url}/repos/o/r/git/trees/main:docs'\n")
+            assert err == (
+                "cat: 401, message='Unauthorized', url='"
+                f"{hub.url}/repos/o/r/git/trees/main:docs'\n"
+            )
             assert hub.count("recursive") == 0
             assert _kept(ws)
         finally:
@@ -397,10 +408,9 @@ async def _cleared_with_overlay(ws: Workspace, hub: FakeGitHub) -> None:
     mount = ws._registry.mount_for(PATH)
     await mount.index.clear()
     await _overlaid(ws)
-    hub.fail.update({
-        "dir": (404, "Not Found"),
-        "recursive": (401, "Bad credentials")
-    })
+    hub.fail.update(
+        {"dir": (404, "Not Found"), "recursive": (401, "Bad credentials")}
+    )
 
 
 @pytest.mark.asyncio
@@ -412,9 +422,11 @@ async def test_the_dispatcher_door_never_reads_cannot_see_as_gone():
         try:
             await _cleared_with_overlay(ws, hub)
             err = await _fails(ws, f"cp {PATH} /r/x")
-            assert err == ("401, message='Unauthorized', url='"
-                           f"{hub.url}/repos/o/r/git/trees/main"
-                           "?recursive=1'\n")
+            assert err == (
+                "401, message='Unauthorized', url='"
+                f"{hub.url}/repos/o/r/git/trees/main"
+                "?recursive=1'\n"
+            )
             assert _kept(ws)
         finally:
             await ws.close()
@@ -427,9 +439,11 @@ async def test_the_xattr_door_never_reads_cannot_see_as_gone():
         try:
             await _cleared_with_overlay(ws, hub)
             err = await _fails(ws, f"getfattr -d {PATH}")
-            assert err == ("401, message='Unauthorized', url='"
-                           f"{hub.url}/repos/o/r/git/trees/main"
-                           "?recursive=1'\n")
+            assert err == (
+                "401, message='Unauthorized', url='"
+                f"{hub.url}/repos/o/r/git/trees/main"
+                "?recursive=1'\n"
+            )
             assert _kept(ws)
         finally:
             await ws.close()
@@ -460,13 +474,15 @@ async def test_a_truncated_repository_probes_one_directory():
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
         tree, truncated = await fetch_tree(config, "o", "r", "main")
-        vfs = GitHubVFS(config,
-                        "o",
-                        "r",
-                        "main",
-                        default_branch="main",
-                        tree=tree,
-                        truncated=truncated)
+        vfs = GitHubVFS(
+            config,
+            "o",
+            "r",
+            "main",
+            default_branch="main",
+            tree=tree,
+            truncated=truncated,
+        )
         # Built truncated, as TypeScript's create builds it.
         ws = _ws(vfs)
         try:
@@ -491,13 +507,15 @@ async def test_a_directory_github_cuts_short_is_not_absence():
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
         tree, truncated = await fetch_tree(config, "o", "r", "main")
-        vfs = GitHubVFS(config,
-                        "o",
-                        "r",
-                        "main",
-                        default_branch="main",
-                        tree=tree,
-                        truncated=truncated)
+        vfs = GitHubVFS(
+            config,
+            "o",
+            "r",
+            "main",
+            default_branch="main",
+            tree=tree,
+            truncated=truncated,
+        )
         ws = _ws(vfs)
         try:
             assert await _out(ws, f"cat {PATH}") == OLD
@@ -505,7 +523,8 @@ async def test_a_directory_github_cuts_short_is_not_absence():
             hub.truncated_dirs["docs"] = 0
             err = await _fails(ws, f"cat {PATH}")
             assert err.startswith(
-                "cat: GitHub truncated the tree listing of o/r ")
+                "cat: GitHub truncated the tree listing of o/r "
+            )
             assert _kept(ws)
         finally:
             await ws.close()
@@ -539,9 +558,10 @@ async def test_a_read_pins_its_sha_and_a_changed_file_drifts():
         hub.files["docs/a.txt"] = NEW
         with pytest.raises(ContentDriftError) as caught:
             await _load(state, _vfs(hub))
-        assert (caught.value.snapshot_fingerprint,
-                caught.value.live_fingerprint) == (blob_sha(OLD),
-                                                   blob_sha(NEW))
+        assert (
+            caught.value.snapshot_fingerprint,
+            caught.value.live_fingerprint,
+        ) == (blob_sha(OLD), blob_sha(NEW))
 
 
 @pytest.mark.asyncio
@@ -584,7 +604,8 @@ async def test_a_snapshot_from_before_github_pinned_still_loads():
     with serve(_hub()) as hub:
         state = await _pinned_state(hub)
         state[StateKey.FINGERPRINTS] = [
-            f for f in state[StateKey.FINGERPRINTS]
+            f
+            for f in state[StateKey.FINGERPRINTS]
             if not f["path"].startswith("/gh/")
         ]
         state[StateKey.LIVE_ONLY_MOUNTS] = ["/gh/"]
@@ -631,8 +652,11 @@ async def test_an_ops_door_burst_fetches_the_tree_once():
             names = await ws.readdir("/gh/docs")
             assert len(names) == 20
             for name in names:
-                await ws.stat(name if name.startswith("/") else
-                              f"/gh/docs/{name.rsplit('/', 1)[-1]}")
+                await ws.stat(
+                    name
+                    if name.startswith("/")
+                    else f"/gh/docs/{name.rsplit('/', 1)[-1]}"
+                )
             assert hub.count("recursive") == 1
         finally:
             await ws.close()
@@ -640,7 +664,8 @@ async def test_an_ops_door_burst_fetches_the_tree_once():
 
 @pytest.mark.asyncio
 async def test_an_ops_door_read_sees_an_outside_change_after_the_window(
-        monkeypatch):
+    monkeypatch,
+):
     now = [100.0]
     monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
     with serve(_hub()) as hub:

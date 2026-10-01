@@ -25,5 +25,6 @@ __all__ = ["JaegerConfig", "JaegerVFS"]
 def __getattr__(name: str) -> "type[JaegerVFS]":
     if name == "JaegerVFS":
         from mirage.vfs.jaeger.jaeger import JaegerVFS
+
         return JaegerVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

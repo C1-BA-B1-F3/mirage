@@ -77,7 +77,8 @@ def test_collection_schema_json():
 
 def test_collection_documents_jsonl():
     scope = detect_scope(
-        _ps("/sample_mflix/collections/movies/documents.jsonl"))
+        _ps("/sample_mflix/collections/movies/documents.jsonl")
+    )
     assert scope.kind == "documents"
     assert scope.slots["database"] == "sample_mflix"
     assert entity_kind(scope) == EntityKind.COLLECTION
@@ -125,8 +126,8 @@ def test_pathspec_with_prefix_database():
 def test_pathspec_with_prefix_documents():
     p = PathSpec(
         vfs_path=mount_key(
-            "/mongo/sample_mflix/collections/movies/documents.jsonl",
-            "/mongo"),
+            "/mongo/sample_mflix/collections/movies/documents.jsonl", "/mongo"
+        ),
         virtual="/mongo/sample_mflix/collections/movies/documents.jsonl",
         directory="/mongo/sample_mflix/collections/movies/",
     )

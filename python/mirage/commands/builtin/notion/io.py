@@ -22,7 +22,9 @@ from mirage.vfs.types import NativeReadOps, ReadOps
 # Notion pages/databases are read through the generic factory; writes go
 # through the bespoke notion_* commands, so the generic byte-mutation commands
 # are intentionally absent (no write op wired).
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(find=_find),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(find=_find),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

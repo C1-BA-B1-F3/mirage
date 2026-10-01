@@ -18,13 +18,15 @@ from mirage.runtime.python.monty.binding import pydantic_monty
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.types import VFSStat
 
-pytestmark = pytest.mark.skipif(pydantic_monty is None,
-                                reason="the monty extra is not installed")
+pytestmark = pytest.mark.skipif(
+    pydantic_monty is None, reason="the monty extra is not installed"
+)
 
 
 def test_file_row_keeps_size_mode_and_stamp() -> None:
     st = stat_result(
-        VFSStat(size=5, is_dir=False, mtime_ns=1_500_000_000, mode=0o100644))
+        VFSStat(size=5, is_dir=False, mtime_ns=1_500_000_000, mode=0o100644)
+    )
     assert st.st_size == 5
     assert st.st_mode == 0o100644
     assert st.st_mtime == 1.5
@@ -33,7 +35,8 @@ def test_file_row_keeps_size_mode_and_stamp() -> None:
 
 def test_directory_row_is_monty_s_own_four_kilobytes_and_two_links() -> None:
     st = stat_result(
-        VFSStat(size=17, is_dir=True, mtime_ns=2_000_000_000, mode=0o40755))
+        VFSStat(size=17, is_dir=True, mtime_ns=2_000_000_000, mode=0o40755)
+    )
     assert st.st_mode == 0o40755
     assert st.st_size == 4096
     assert st.st_nlink == 2
@@ -42,8 +45,12 @@ def test_directory_row_is_monty_s_own_four_kilobytes_and_two_links() -> None:
 def test_unknown_stamp_stays_zero_rather_than_becoming_now() -> None:
     # 0 is the door's spelling of "no stamp"; monty reads 0.0 as epoch
     # zero rather than substituting the host clock.
-    assert stat_result(VFSStat(size=0, is_dir=False, mtime_ns=0,
-                               mode=0o644)).st_mtime == 0.0
+    assert (
+        stat_result(
+            VFSStat(size=0, is_dir=False, mtime_ns=0, mode=0o644)
+        ).st_mtime
+        == 0.0
+    )
 
 
 def test_the_sequence_half_is_this_host_s_alone() -> None:

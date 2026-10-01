@@ -73,7 +73,7 @@ async def test_installed_tree_dispatches_send_message(monkeypatch):
     monkeypatch.setitem(send_message.__globals__, "post_message", fake_post)
     ws = Workspace({})
     ws.register_cli("slack", SLACK, CONFIG)
-    io = await ws.shell('slack send-message --channel C001 --text hello')
+    io = await ws.shell("slack send-message --channel C001 --text hello")
     assert io.exit_code == 0
     out = json.loads(await materialize(io.stdout))
     assert out["channel"] == "C001"

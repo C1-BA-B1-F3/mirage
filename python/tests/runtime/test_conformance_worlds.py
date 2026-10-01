@@ -37,10 +37,12 @@ def _quickjs_available() -> bool:
 
 wasi_live = pytest.mark.skipif(
     not _wasi_available(),
-    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build")
+    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build",
+)
 quickjs_live = pytest.mark.skipif(
     not _quickjs_available(),
-    reason=f"{QUICKJS_HOME_ENV} does not point at a quickjs WASI build")
+    reason=f"{QUICKJS_HOME_ENV} does not point at a quickjs WASI build",
+)
 
 # One world, three surfaces, one door. The suite pins the facts a mount
 # tree must present identically through the shell (virtual commands),
@@ -123,9 +125,9 @@ def scoped_world(runtime: str) -> Workspace:
     return ws
 
 
-async def _sh(ws: Workspace,
-              line: str,
-              session_id: str | None = None) -> tuple[int, str, str]:
+async def _sh(
+    ws: Workspace, line: str, session_id: str | None = None
+) -> tuple[int, str, str]:
     """Run one shell line, returning exit code and decoded streams.
 
     Args:
@@ -140,7 +142,7 @@ async def _sh(ws: Workspace,
     return io.exit_code, out, err
 
 
-GUARDS = {"monty": (), "wasi": (wasi_live, ), "quickjs": (quickjs_live, )}
+GUARDS = {"monty": (), "wasi": (wasi_live,), "quickjs": (quickjs_live,)}
 
 
 def _guest_cases(spellings: dict[str, str]) -> list[object]:
@@ -154,7 +156,8 @@ def _guest_cases(spellings: dict[str, str]) -> list[object]:
     out: list[object] = []
     for runtime, line in spellings.items():
         out.append(
-            pytest.param(runtime, line, id=runtime, marks=GUARDS[runtime]))
+            pytest.param(runtime, line, id=runtime, marks=GUARDS[runtime])
+        )
     return out
 
 
@@ -205,16 +208,15 @@ async def test_fuse_readdir_merges_child_mount_and_link():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "monty":
-        "python3 -c \"from pathlib import Path; "
-        "print(sorted(p.name for p in Path('/base').iterdir()))\"",
-        "wasi":
-        "python3 -c \"import os; print(sorted(os.listdir('/base')))\"",
-        "quickjs":
-        "node -e \"const [n] = os.readdir('/base'); "
-        "console.log(n.sort().join(','))\"",
-    }),
+    _guest_cases(
+        {
+            "monty": 'python3 -c "from pathlib import Path; '
+            "print(sorted(p.name for p in Path('/base').iterdir()))\"",
+            "wasi": "python3 -c \"import os; print(sorted(os.listdir('/base')))\"",
+            "quickjs": "node -e \"const [n] = os.readdir('/base'); "
+            "console.log(n.sort().join(','))\"",
+        }
+    ),
 )
 async def test_guest_lists_child_mount(runtime: str, line: str):
     """A guest listing ``/base`` must see the nested mount ``inner``.
@@ -235,13 +237,13 @@ async def test_guest_lists_child_mount(runtime: str, line: str):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "monty":
-        "python3 -c \"from pathlib import Path; "
-        "print(sorted(p.name for p in Path('/base').iterdir()))\"",
-        "wasi":
-        "python3 -c \"import os; print(sorted(os.listdir('/base')))\"",
-    }),
+    _guest_cases(
+        {
+            "monty": 'python3 -c "from pathlib import Path; '
+            "print(sorted(p.name for p in Path('/base').iterdir()))\"",
+            "wasi": "python3 -c \"import os; print(sorted(os.listdir('/base')))\"",
+        }
+    ),
 )
 async def test_guest_lists_namespace_link(runtime: str, line: str):
     """A guest listing ``/base`` must see the namespace symlink ``lnk``.
@@ -272,7 +274,8 @@ async def test_guest_reads_through_link_by_exact_path():
     try:
         assert (await _sh(ws, "ln -s /base/inner /base/lnk"))[0] == 0
         code, out, err = await _sh(
-            ws, "python3 -c \"print(open('/base/lnk/deep.txt').read())\"")
+            ws, "python3 -c \"print(open('/base/lnk/deep.txt').read())\""
+        )
         assert code == 0, err
         assert "needle" in out
     finally:
@@ -295,8 +298,10 @@ async def test_door_stats_structure_only_directory():
         st = await ws.vfs.stat("/base/inner")
         assert st.type.value == "directory"
         code, out, err = await _sh(
-            ws, "python3 -c \"from pathlib import Path; "
-            "print(Path('/base/inner').is_dir())\"")
+            ws,
+            'python3 -c "from pathlib import Path; '
+            "print(Path('/base/inner').is_dir())\"",
+        )
         assert code == 0, err
         assert "True" in out
     finally:
@@ -328,8 +333,10 @@ async def test_link_ancestors_synthesize_on_every_surface():
         assert code == 0
         assert "deep" in out
         code, out, err = await _sh(
-            ws, "python3 -c \"from pathlib import Path; "
-            "print(sorted(str(p) for p in Path('/ghost').iterdir()))\"")
+            ws,
+            'python3 -c "from pathlib import Path; '
+            "print(sorted(str(p) for p in Path('/ghost').iterdir()))\"",
+        )
         assert code == 0, err
         assert "/ghost/deep" in out
     finally:
@@ -370,13 +377,16 @@ async def test_namespace_only_ancestor_serves_every_ls_variant():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "cat /closed/sec.txt",
-    "ls /closed",
-    "grep -r SECRET /closed",
-    "find /closed",
-    "du /closed",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "cat /closed/sec.txt",
+        "ls /closed",
+        "grep -r SECRET /closed",
+        "find /closed",
+        "du /closed",
+    ],
+)
 async def test_explicit_operand_at_boundary_reads_as_absent(line: str):
     """A named operand on a hidden mount is nonexistent, not refused.
 
@@ -490,12 +500,15 @@ async def test_scoped_walk_reaches_a_child_below_hidden_content():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,needle", [
-    ("grep -r SECRET /", "SECRET-xyz"),
-    ("ls -R /", "sec.txt"),
-    ("find /", "/closed/sec.txt"),
-    ("du -a /", "/closed"),
-])
+@pytest.mark.parametrize(
+    "line,needle",
+    [
+        ("grep -r SECRET /", "SECRET-xyz"),
+        ("ls -R /", "sec.txt"),
+        ("find /", "/closed/sec.txt"),
+        ("du -a /", "/closed"),
+    ],
+)
 async def test_fanout_does_not_cross_boundary(line: str, needle: str):
     """A fan-out from ``/`` must not surface a hidden mount.
 
@@ -525,13 +538,13 @@ def shadowed_world(runtime: str) -> Workspace:
     """
     ws = Workspace(
         {
-            "/base":
-            _seed({
-                "/a.txt": b"top",
-                "/inner/leftover.txt": b"SHADOWED-xyz",
-            }),
-            "/base/inner":
-            _seed({"/deep.txt": b"needle"}),
+            "/base": _seed(
+                {
+                    "/a.txt": b"top",
+                    "/inner/leftover.txt": b"SHADOWED-xyz",
+                }
+            ),
+            "/base/inner": _seed({"/deep.txt": b"needle"}),
         },
         mode=MountMode.EXEC,
         runtimes=[runtime, "workspace"],
@@ -541,12 +554,16 @@ def shadowed_world(runtime: str) -> Workspace:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,needle", [
-    ("find /base", "leftover"),
-    ("grep -r SHADOWED /base", "SHADOWED-xyz"),
-])
+@pytest.mark.parametrize(
+    "line,needle",
+    [
+        ("find /base", "leftover"),
+        ("grep -r SHADOWED /base", "SHADOWED-xyz"),
+    ],
+)
 async def test_fanout_hides_shadowed_keys_when_the_descendant_is_hidden(
-        line: str, needle: str):
+    line: str, needle: str
+):
     """Fan-out still engages when every descendant mount is hidden.
 
     The parent backend's keys under the hidden mount's prefix are
@@ -569,15 +586,14 @@ async def test_fanout_hides_shadowed_keys_when_the_descendant_is_hidden(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "monty":
-        "python3 -c \"print(open('/closed/sec.txt').read())\"",
-        "wasi":
-        "python3 -c \"print(open('/closed/sec.txt').read())\"",
-        "quickjs":
-        "node -e \"const f = std.open('/closed/sec.txt', 'r'); "
-        "console.log(f.readAsString())\"",
-    }),
+    _guest_cases(
+        {
+            "monty": "python3 -c \"print(open('/closed/sec.txt').read())\"",
+            "wasi": "python3 -c \"print(open('/closed/sec.txt').read())\"",
+            "quickjs": "node -e \"const f = std.open('/closed/sec.txt', 'r'); "
+            'console.log(f.readAsString())"',
+        }
+    ),
 )
 async def test_guest_cannot_read_a_hidden_mount(runtime: str, line: str):
     """A confined guest reading ``/closed`` must be refused, not served.
@@ -599,8 +615,10 @@ async def test_guest_cannot_read_a_hidden_mount(runtime: str, line: str):
 async def test_guest_cannot_write_a_hidden_mount():
     ws = scoped_world("monty")
     try:
-        line = ("python3 -c \"from pathlib import Path; "
-                "Path('/closed/planted.txt').write_text('X')\"")
+        line = (
+            'python3 -c "from pathlib import Path; '
+            "Path('/closed/planted.txt').write_text('X')\""
+        )
         await _sh(ws, line, session_id="agent")
         # Read back through the unrestricted default session: the
         # confined one cannot see the mount at all.
@@ -620,7 +638,8 @@ async def test_guest_cannot_follow_link_out_of_scope():
         code, out, _ = await _sh(
             ws,
             "python3 -c \"print(open('/open/esc/sec.txt').read())\"",
-            session_id="agent")
+            session_id="agent",
+        )
         assert code != 0
         assert "SECRET-xyz" not in out
     finally:
@@ -651,7 +670,8 @@ async def test_guest_cannot_follow_link_out_of_scope():
     ],
 )
 async def test_guest_resolves_relative_path_against_cwd(
-        runtime: str, line: str):
+    runtime: str, line: str
+):
     """A guest launched in ``/base`` reads ``a.txt`` relatively.
 
     Args:
@@ -694,14 +714,14 @@ def exclusive_world(runtime: str) -> Workspace:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "wasi":
-        "python3 -c \"\ntry:\n    open('/w/keep.txt', 'x')\n"
-        "except FileExistsError:\n    print('refused')\"",
-        "quickjs":
-        "node -e \"console.log(std.open('/w/keep.txt', 'wx') === null "
-        "? 'refused' : 'OPENED')\"",
-    }),
+    _guest_cases(
+        {
+            "wasi": "python3 -c \"\ntry:\n    open('/w/keep.txt', 'x')\n"
+            "except FileExistsError:\n    print('refused')\"",
+            "quickjs": "node -e \"console.log(std.open('/w/keep.txt', 'wx') === null "
+            "? 'refused' : 'OPENED')\"",
+        }
+    ),
 )
 async def test_guest_exclusive_open_refuses_existing(runtime: str, line: str):
     """An exclusive open over an existing file refuses and leaves it be.
@@ -725,14 +745,14 @@ async def test_guest_exclusive_open_refuses_existing(runtime: str, line: str):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "wasi":
-        "python3 -c \"f = open('/w/made.txt', 'x'); f.write('made'); "
-        "f.close()\"",
-        "quickjs":
-        "node -e \"const f = std.open('/w/made.txt', 'wx'); "
-        "f.puts('made'); f.close()\"",
-    }),
+    _guest_cases(
+        {
+            "wasi": "python3 -c \"f = open('/w/made.txt', 'x'); f.write('made'); "
+            'f.close()"',
+            "quickjs": "node -e \"const f = std.open('/w/made.txt', 'wx'); "
+            "f.puts('made'); f.close()\"",
+        }
+    ),
 )
 async def test_guest_exclusive_open_creates_missing(runtime: str, line: str):
     """The same mode on a missing file creates it.

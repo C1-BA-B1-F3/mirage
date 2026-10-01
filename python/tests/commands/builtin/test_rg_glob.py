@@ -14,33 +14,41 @@
 
 import pytest
 
-from mirage.commands.builtin.rg_glob import (Overrides, Verdict, compile_glob,
-                                             override_glob, walk_candidate)
+from mirage.commands.builtin.rg_glob import (
+    Overrides,
+    Verdict,
+    compile_glob,
+    override_glob,
+    walk_candidate,
+)
 from mirage.commands.errors import UsageError
 
 
-@pytest.mark.parametrize("glob, path, hit", [
-    ("*.py", "a.py", True),
-    ("*.py", "sub/a.py", False),
-    ("?.py", "a.py", True),
-    ("?.py", "ab.py", False),
-    ("**", "a/b/c", True),
-    ("**/c", "c", True),
-    ("**/c", "a/b/c", True),
-    ("a/**/c", "a/c", True),
-    ("a/**/c", "a/x/y/c", True),
-    ("a/**", "a/b/c", True),
-    ("a**", "ab/c", False),
-    ("[ab].*", "b.py", True),
-    ("[!ab].*", "b.py", False),
-    ("[^ab].*", "c.py", True),
-    ("[a-c]x", "bx", True),
-    ("[]]x", "]x", True),
-    ("*.{py,md}", "c.md", True),
-    ("*.{py,md}", "c.rs", False),
-    ("\\*x", "*x", True),
-    ("\\*x", "ax", False),
-])
+@pytest.mark.parametrize(
+    "glob, path, hit",
+    [
+        ("*.py", "a.py", True),
+        ("*.py", "sub/a.py", False),
+        ("?.py", "a.py", True),
+        ("?.py", "ab.py", False),
+        ("**", "a/b/c", True),
+        ("**/c", "c", True),
+        ("**/c", "a/b/c", True),
+        ("a/**/c", "a/c", True),
+        ("a/**/c", "a/x/y/c", True),
+        ("a/**", "a/b/c", True),
+        ("a**", "ab/c", False),
+        ("[ab].*", "b.py", True),
+        ("[!ab].*", "b.py", False),
+        ("[^ab].*", "c.py", True),
+        ("[a-c]x", "bx", True),
+        ("[]]x", "]x", True),
+        ("*.{py,md}", "c.md", True),
+        ("*.{py,md}", "c.rs", False),
+        ("\\*x", "*x", True),
+        ("\\*x", "ax", False),
+    ],
+)
 def test_compile_glob_keeps_single_stars_inside_a_component(glob, path, hit):
     # globset with literal separators, which ripgrep builds -g with.
     assert bool(compile_glob(glob).fullmatch(path)) is hit
@@ -51,15 +59,24 @@ def test_compile_glob_folds_case_on_request():
     assert not compile_glob("*.PY").fullmatch("a.py")
 
 
-@pytest.mark.parametrize("glob, reason", [
-    ("[", "unclosed character class; missing ']'"),
-    ("a{b", "unclosed alternate group; missing '}' "
-     "(maybe escape '{' with '[{]'?)"),
-    ("a}b", "unopened alternate group; missing '{' "
-     "(maybe escape '}' with '[}]'?)"),
-    ("{a,{b}}", "nested alternate groups are not allowed"),
-    ("a\\", "dangling '\\'"),
-])
+@pytest.mark.parametrize(
+    "glob, reason",
+    [
+        ("[", "unclosed character class; missing ']'"),
+        (
+            "a{b",
+            "unclosed alternate group; missing '}' "
+            "(maybe escape '{' with '[{]'?)",
+        ),
+        (
+            "a}b",
+            "unopened alternate group; missing '{' "
+            "(maybe escape '}' with '[}]'?)",
+        ),
+        ("{a,{b}}", "nested alternate groups are not allowed"),
+        ("a\\", "dangling '\\'"),
+    ],
+)
 def test_compile_glob_refuses_in_globsets_words(glob, reason):
     with pytest.raises(UsageError) as info:
         compile_glob(glob)
@@ -149,21 +166,27 @@ def test_only_negated_globs_leave_the_rest_alone():
 def test_iglob_folds_case_and_comes_after_every_glob():
     overrides = Overrides(["!*.py"], ["*.PY"], False)
     assert overrides.verdict("a.py", False) is Verdict.WHITELIST
-    assert Overrides(["*.PY"], [], True).verdict("a.py",
-                                                 False) is Verdict.WHITELIST
+    assert (
+        Overrides(["*.PY"], [], True).verdict("a.py", False)
+        is Verdict.WHITELIST
+    )
 
 
 def test_no_globs_say_nothing():
     assert Overrides([], [], False).verdict("a", False) is Verdict.NONE
 
 
-@pytest.mark.parametrize("shown, cwd, candidate", [
-    ("./sub/a.py", "/data", "sub/a.py"),
-    ("sub/a.py", "/data", "sub/a.py"),
-    ("/data/rgt/a.py", "/data", "rgt/a.py"),
-    ("/data/rgt/a.py", "/", "data/rgt/a.py"),
-    ("/elsewhere/a.py", "/data", "/elsewhere/a.py"),
-])
+@pytest.mark.parametrize(
+    "shown, cwd, candidate",
+    [
+        ("./sub/a.py", "/data", "sub/a.py"),
+        ("sub/a.py", "/data", "sub/a.py"),
+        ("/data/rgt/a.py", "/data", "rgt/a.py"),
+        ("/data/rgt/a.py", "/", "data/rgt/a.py"),
+        ("/elsewhere/a.py", "/data", "/elsewhere/a.py"),
+    ],
+)
 def test_walk_candidate_matches_from_the_working_directory(
-        shown, cwd, candidate):
+    shown, cwd, candidate
+):
     assert walk_candidate(shown, cwd) == candidate

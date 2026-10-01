@@ -80,7 +80,8 @@ async def test_both_repository_files_are_read(workspace, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_a_tracked_gitignore_overrides_the_private_list(
-        workspace, repo_path: Path):
+    workspace, repo_path: Path
+):
     info = repo_path / ".git" / "info"
     info.mkdir(exist_ok=True)
     (info / "exclude").write_text("*.log\n", encoding="utf-8")
@@ -99,8 +100,10 @@ def test_a_location_carries_the_two_directories_apart():
     # The ignore stack reads the private list from the git directory and
     # the tracked one from the working tree, which are not the same
     # place for a linked worktree.
-    location = RepoLocation(gitdir="/repo/.git/worktrees/w",
-                            commondir="/repo/.git",
-                            worktree="/work",
-                            mount_root="/")
+    location = RepoLocation(
+        gitdir="/repo/.git/worktrees/w",
+        commondir="/repo/.git",
+        worktree="/work",
+        mount_root="/",
+    )
     assert location.gitdir != location.worktree

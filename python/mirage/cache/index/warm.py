@@ -59,9 +59,10 @@ async def entry_or_warm(
         if listing.entries is not None and virtual_key not in listing.entries:
             return None
         hit = await index.get(virtual_key)
-        if hit.entry is not None and (listing.entries is not None
-                                      or virtual_key
-                                      in (listing.partial_entries or [])):
+        if hit.entry is not None and (
+            listing.entries is not None
+            or virtual_key in (listing.partial_entries or [])
+        ):
             return hit.entry
         if warm is None:
             return None

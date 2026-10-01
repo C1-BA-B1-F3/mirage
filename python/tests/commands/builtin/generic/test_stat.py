@@ -7,8 +7,15 @@ from mirage.io.types import materialize
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.types import LinkView
 from mirage.policy.profile import SessionProfile
-from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, ContentType,
-                          FileStat, FileType, MountMode, PathSpec)
+from mirage.types import (
+    DEVICE_NUMBERS_KEY,
+    LINK_TARGET_KEY,
+    ContentType,
+    FileStat,
+    FileType,
+    MountMode,
+    PathSpec,
+)
 from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -27,11 +34,13 @@ class _OverlayRAMVFS(RAMVFS):
 
 
 def _fs(**kw: object) -> FileStat:
-    base: dict[str, object] = dict(name="f.txt",
-                                   size=6,
-                                   modified=_MTIME,
-                                   type=FileType.FILE,
-                                   content=ContentType.TEXT)
+    base: dict[str, object] = dict(
+        name="f.txt",
+        size=6,
+        modified=_MTIME,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+    )
     base.update(kw)
     if base.get("type") is not FileType.FILE and "content" not in kw:
         base.pop("content", None)
@@ -43,9 +52,11 @@ async def _const_stat(fs: FileStat, _p: PathSpec) -> FileStat:
 
 
 async def _render(fmt: str, fs: FileStat) -> str:
-    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
-                         stat_fn=partial(_const_stat, fs),
-                         c=fmt)
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/f.txt")],
+        stat_fn=partial(_const_stat, fs),
+        c=fmt,
+    )
     assert io.exit_code == 0
     return (await materialize(out)).decode().rstrip("\n")
 
@@ -57,9 +68,11 @@ async def _render_named(fmt: str, name: str) -> str:
         fmt (str): the format string.
         name (str): the operand, kept verbatim for %n and %N.
     """
-    out, io = await stat([PathSpec.from_str_path(name)],
-                         stat_fn=partial(_const_stat, _fs()),
-                         c=fmt)
+    out, io = await stat(
+        [PathSpec.from_str_path(name)],
+        stat_fn=partial(_const_stat, _fs()),
+        c=fmt,
+    )
     assert io.exit_code == 0
     return (await materialize(out)).decode().rstrip("\n")
 
@@ -84,13 +97,16 @@ async def test_default_record_sizes_a_directory_as_percent_s_does():
     # A directory is DIR_SIZE whatever the backend put in size: None for
     # a synthetic one, a subtree total for a Graph folder. A file keeps
     # its own size, None when unknown.
-    cases = [(_fs(type=FileType.DIRECTORY, size=None), f"  Size: {DIR_SIZE} "),
-             (_fs(type=FileType.DIRECTORY,
-                  size=123456), f"  Size: {DIR_SIZE} "),
-             (_fs(size=None), "  Size: - ")]
+    cases = [
+        (_fs(type=FileType.DIRECTORY, size=None), f"  Size: {DIR_SIZE} "),
+        (_fs(type=FileType.DIRECTORY, size=123456), f"  Size: {DIR_SIZE} "),
+        (_fs(size=None), "  Size: - "),
+    ]
     for fs, want in cases:
-        out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
-                             stat_fn=partial(_const_stat, fs))
+        out, io = await stat(
+            [PathSpec.from_str_path("/data/f.txt")],
+            stat_fn=partial(_const_stat, fs),
+        )
         assert io.exit_code == 0
         assert want in (await materialize(out)).decode()
 
@@ -153,16 +169,16 @@ _GNU_QUOTED = [
     ("/data/f.txt", "'/data/f.txt'"),
     ("a$b", "'a$b'"),
     ('a"b', "'a\"b'"),
-    ("a'b", "\"a'b\""),
-    ("a'b c", "\"a'b c\""),
+    ("a'b", '"a\'b"'),
+    ("a'b c", '"a\'b c"'),
     ("a'b$c", "'a'\\''b$c'"),
     ("a'b`c", "'a'\\''b`c'"),
     ("a'b\\c", "'a'\\''b\\c'"),
     ("a'b\"c", "'a'\\''b\"c'"),
     ("a'b!c", "'a'\\''b!c'"),
     # # and ~ count as special only away from the front.
-    ("#a'b", "\"#a'b\""),
-    ("~a'b", "\"~a'b\""),
+    ("#a'b", '"#a\'b"'),
+    ("~a'b", '"~a\'b"'),
     ("a#'b", "'a#'\\''b'"),
     ("$a'b", "'$a'\\''b'"),
     ("a\tb", "'a'$'\\t''b'"),
@@ -177,7 +193,7 @@ _GNU_QUOTED = [
     ("a\t\nb", "'a'$'\\t\\n''b'"),
     ("a'b\tc", "'a'\\''b'$'\\t''c'"),
     ("café", "'café'"),
-    ("a'béc", "\"a'béc\""),
+    ("a'béc", '"a\'béc"'),
 ]
 
 
@@ -190,11 +206,15 @@ async def test_quoted_name_is_shell_safe(name: str, quoted: str):
 @pytest.mark.asyncio
 async def test_a_link_target_is_quoted_by_the_same_rule():
     """The target is a second field, so it gets its own quoting."""
-    assert await _render("%N",
-                         _link_fs("a'b$c")) == "'/data/f.txt' -> 'a'\\''b$c'"
+    assert (
+        await _render("%N", _link_fs("a'b$c"))
+        == "'/data/f.txt' -> 'a'\\''b$c'"
+    )
     assert await _render("%N", _link_fs("a'b")) == "'/data/f.txt' -> \"a'b\""
-    assert await _render("%N",
-                         _link_fs("a\tb")) == "'/data/f.txt' -> 'a'$'\\t''b'"
+    assert (
+        await _render("%N", _link_fs("a\tb"))
+        == "'/data/f.txt' -> 'a'$'\\t''b'"
+    )
 
 
 @pytest.mark.asyncio
@@ -270,8 +290,10 @@ async def test_unbacked_directives_render_question_mark():
 async def test_literal_percent_and_unknown_and_text():
     assert await _render("100%%", _fs()) == "100%"
     assert await _render("%q", _fs()) == "?"
-    assert await _render("size=%s type=%F",
-                         _fs(size=6)) == "size=6 type=regular file"
+    assert (
+        await _render("size=%s type=%F", _fs(size=6))
+        == "size=6 type=regular file"
+    )
 
 
 @pytest.mark.asyncio
@@ -305,9 +327,11 @@ async def test_error_operand_continues_and_exits_one():
 @pytest.mark.asyncio
 async def test_f_flag_shares_c_formatter():
     # `stat -f` is not filesystem-mode yet (#609 Tier 3); it reuses -c.
-    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
-                         stat_fn=partial(_const_stat, _fs(size=6)),
-                         f="%s")
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/f.txt")],
+        stat_fn=partial(_const_stat, _fs(size=6)),
+        f="%s",
+    )
     assert (await materialize(out)).decode() == "6\n"
 
 
@@ -327,9 +351,11 @@ async def test_stat_reflects_overlay_chmod_chown():
 async def test_owner_defaults_to_workspace_agent():
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello"
-    ws = Workspace({"/data/": (vfs, MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   agent_id="agent7")
+    ws = Workspace(
+        {"/data/": (vfs, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        agent_id="agent7",
+    )
     code, out, _ = await _run(ws, 'stat -c "%U:%G" /data/f.txt')
     assert code == 0
     # The owner is the workspace user; the group is the session's
@@ -341,11 +367,13 @@ async def test_owner_defaults_to_workspace_agent():
 async def test_group_is_the_session_profile():
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello"
-    ws = Workspace({"/data/": (vfs, MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   agent_id="agent7",
-                   profiles={"admin": SessionProfile()},
-                   profile="admin")
+    ws = Workspace(
+        {"/data/": (vfs, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        agent_id="agent7",
+        profiles={"admin": SessionProfile()},
+        profile="admin",
+    )
     code, out, _ = await _run(ws, 'stat -c "%U:%G" /data/f.txt')
     assert code == 0
     assert out == "agent7:admin\n"
@@ -365,9 +393,11 @@ async def test_owner_falls_back_to_dash_when_unclaimed():
 async def test_stat_and_ls_agree_on_owner():
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello"
-    ws = Workspace({"/data/": (vfs, MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   agent_id="agent7")
+    ws = Workspace(
+        {"/data/": (vfs, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        agent_id="agent7",
+    )
     _, stat_owner, _ = await _run(ws, 'stat -c "%U %G" /data/f.txt')
     _, ls_long, _ = await _run(ws, "ls -l /data/f.txt")
     assert stat_owner.strip() == "agent7 -"
@@ -375,11 +405,13 @@ async def test_stat_and_ls_agree_on_owner():
 
 
 def _link_fs(target: str = "/data/f.txt") -> FileStat:
-    return FileStat(name="link",
-                    size=len(target.encode()),
-                    modified=_MTIME,
-                    type=FileType.SYMLINK,
-                    extra={LINK_TARGET_KEY: target})
+    return FileStat(
+        name="link",
+        size=len(target.encode()),
+        modified=_MTIME,
+        type=FileType.SYMLINK,
+        extra={LINK_TARGET_KEY: target},
+    )
 
 
 def _link_lookup(virtual: str) -> FileStat | None:
@@ -394,20 +426,24 @@ async def _no_target(virtual: str) -> FileStat | None:
     return None
 
 
-_LINKS = LinkView(stat_at=_link_lookup,
-                  children=lambda directory: [],
-                  subtree=lambda directory: [],
-                  resolve=lambda virtual: virtual,
-                  exists=_always_exists,
-                  target_stat=_no_target)
+_LINKS = LinkView(
+    stat_at=_link_lookup,
+    children=lambda directory: [],
+    subtree=lambda directory: [],
+    resolve=lambda virtual: virtual,
+    exists=_always_exists,
+    target_stat=_no_target,
+)
 
 
 @pytest.mark.asyncio
 async def test_a_link_operand_reports_the_link_not_its_target():
     """GNU stat lstats: no -L means the link is what gets reported."""
-    out, io = await stat([PathSpec.from_str_path("/data/link")],
-                         stat_fn=partial(_const_stat, _fs()),
-                         links=_LINKS)
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/link")],
+        stat_fn=partial(_const_stat, _fs()),
+        links=_LINKS,
+    )
     assert io.exit_code == 0
     text = (await materialize(out)).decode()
     assert "  File: /data/link -> /data/f.txt" in text
@@ -416,10 +452,12 @@ async def test_a_link_operand_reports_the_link_not_its_target():
 
 @pytest.mark.asyncio
 async def test_dash_l_dereferences_instead_of_reporting_the_link():
-    out, io = await stat([PathSpec.from_str_path("/data/link")],
-                         stat_fn=partial(_const_stat, _fs()),
-                         links=_LINKS,
-                         L=True)
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/link")],
+        stat_fn=partial(_const_stat, _fs()),
+        links=_LINKS,
+        L=True,
+    )
     assert io.exit_code == 0
     text = (await materialize(out)).decode()
     assert "  File: /data/link\n" in text
@@ -428,9 +466,11 @@ async def test_dash_l_dereferences_instead_of_reporting_the_link():
 
 @pytest.mark.asyncio
 async def test_a_non_link_operand_still_reaches_the_backend():
-    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
-                         stat_fn=partial(_const_stat, _fs()),
-                         links=_LINKS)
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/f.txt")],
+        stat_fn=partial(_const_stat, _fs()),
+        links=_LINKS,
+    )
     assert io.exit_code == 0
     assert "  File: /data/f.txt\n" in (await materialize(out)).decode()
 
@@ -446,34 +486,40 @@ async def test_format_directives_describe_a_link_as_gnu_does():
 @pytest.mark.asyncio
 async def test_link_size_is_the_target_string_length():
     assert await _render("%s", _link_fs("/a/very/long/target")) == str(
-        len("/a/very/long/target"))
+        len("/a/very/long/target")
+    )
 
 
 @pytest.mark.asyncio
 async def test_default_stat_layout_and_unknown_metadata():
     info = _fs(size=None, modified=None, ctime=None)
-    out, io = await stat([PathSpec.from_str_path('/data/f.txt')],
-                         stat_fn=partial(_const_stat, info))
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/f.txt")],
+        stat_fn=partial(_const_stat, info),
+    )
     assert io.exit_code == 0
     assert (await materialize(out)).decode() == (
-        '  File: /data/f.txt\n'
-        '  Size: -         \tBlocks: ?          '
-        'IO Block: ?      regular file\n'
-        'Device: ?\tInode: ?           Links: ?\n'
-        'Access: (0644/-rw-r--r--)  Uid: (    -/       -)   '
-        'Gid: (    -/       -)\n'
-        'Access: -\nModify: -\nChange: -\n Birth: -\n')
-    assert await _render('%z %Z %w %W', info) == '- 0 - 0'
-    info = _fs(ctime='2026-03-04T05:06:07Z', birthtime=_MTIME)
-    assert await _render(
-        '%z %Z %w %W',
-        info) == (f'2026-03-04 05:06:07.000000000 +0000 1772600767 '
-                  f'{_GNU_MTIME} {_MTIME_EPOCH}')
+        "  File: /data/f.txt\n"
+        "  Size: -         \tBlocks: ?          "
+        "IO Block: ?      regular file\n"
+        "Device: ?\tInode: ?           Links: ?\n"
+        "Access: (0644/-rw-r--r--)  Uid: (    -/       -)   "
+        "Gid: (    -/       -)\n"
+        "Access: -\nModify: -\nChange: -\n Birth: -\n"
+    )
+    assert await _render("%z %Z %w %W", info) == "- 0 - 0"
+    info = _fs(ctime="2026-03-04T05:06:07Z", birthtime=_MTIME)
+    assert await _render("%z %Z %w %W", info) == (
+        f"2026-03-04 05:06:07.000000000 +0000 1772600767 "
+        f"{_GNU_MTIME} {_MTIME_EPOCH}"
+    )
 
 
 async def _default(fs: FileStat) -> list[str]:
-    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
-                         stat_fn=partial(_const_stat, fs))
+    out, io = await stat(
+        [PathSpec.from_str_path("/data/f.txt")],
+        stat_fn=partial(_const_stat, fs),
+    )
     assert io.exit_code == 0
     return (await materialize(out)).decode().splitlines()
 
@@ -484,9 +530,12 @@ async def test_default_times_are_the_directives_times_in_gnu_layout():
     # is UTC and an offset one is moved to UTC; the fraction is the digits
     # the stamp carries, so both hosts print the same line.
     lines = await _default(
-        _fs(modified="2026-03-04T05:06:07.123456789",
+        _fs(
+            modified="2026-03-04T05:06:07.123456789",
             ctime="2026-03-04T07:06:07.5+02:00",
-            birthtime="2026-03-04T05:06:07Z"))
+            birthtime="2026-03-04T05:06:07Z",
+        )
+    )
     assert lines[4:] == [
         "Access: 2026-03-04 05:06:07.123456789 +0000",
         "Modify: 2026-03-04 05:06:07.123456789 +0000",
@@ -499,9 +548,13 @@ async def test_default_times_are_the_directives_times_in_gnu_layout():
 @pytest.mark.asyncio
 async def test_default_layout_names_a_device_type():
     lines = await _default(
-        _fs(type=FileType.CHAR_DEVICE,
+        _fs(
+            type=FileType.CHAR_DEVICE,
             size=None,
-            extra={DEVICE_NUMBERS_KEY: [1, 3]}))
+            extra={DEVICE_NUMBERS_KEY: [1, 3]},
+        )
+    )
     assert lines[1].endswith("character special file")
-    assert lines[2] == ("Device: ?\tInode: ?           Links: ?     "
-                        "Device type: 1,3")
+    assert lines[2] == (
+        "Device: ?\tInode: ?           Links: ?     Device type: 1,3"
+    )

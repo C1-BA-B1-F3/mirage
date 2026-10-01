@@ -20,10 +20,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enotsup
 
 
-async def truncate(accessor: BoxAccessor,
-                   path: PathSpec,
-                   length: int,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: BoxAccessor, path: PathSpec, length: int, no_create: bool = False
+) -> None:
     if no_create:
         raise enotsup("box", "truncate --no-create", path)
     item = await resolve_item(accessor, path_parts(path))

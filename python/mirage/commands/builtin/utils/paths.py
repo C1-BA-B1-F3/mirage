@@ -19,11 +19,21 @@ from collections.abc import Callable
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, StatFn
-from mirage.utils.errors import (DotWalkError, DotWalkMissing, DotWalkNotDir,
-                                 enoent)
+from mirage.utils.errors import (
+    DotWalkError,
+    DotWalkMissing,
+    DotWalkNotDir,
+    enoent,
+)
 from mirage.utils.key_prefix import rekey
-from mirage.utils.path import (CycleError, dot_prefixes, dotted_spelling, norm,
-                               parent, resolve_path)
+from mirage.utils.path import (
+    CycleError,
+    dot_prefixes,
+    dotted_spelling,
+    norm,
+    parent,
+    resolve_path,
+)
 
 
 def has_unresolved_glob(paths: list[PathSpec]) -> bool:
@@ -55,16 +65,19 @@ def resolve_script(name: str, cwd: PathSpec | str | None) -> PathSpec:
     base = cwd.virtual if isinstance(cwd, PathSpec) else (cwd or "/")
     path = resolve_path(name, base)
     last_slash = path.rfind("/")
-    directory = path[:last_slash + 1] if last_slash >= 0 else "/"
-    return PathSpec(vfs_path=path.strip("/"),
-                    virtual=path,
-                    directory=directory,
-                    resolved=True,
-                    raw_path=name)
+    directory = path[: last_slash + 1] if last_slash >= 0 else "/"
+    return PathSpec(
+        vfs_path=path.strip("/"),
+        virtual=path,
+        directory=directory,
+        resolved=True,
+        raw_path=name,
+    )
 
 
-def default_paths(paths: list[PathSpec],
-                  cwd: PathSpec | None) -> list[PathSpec]:
+def default_paths(
+    paths: list[PathSpec], cwd: PathSpec | None
+) -> list[PathSpec]:
     """Default a command's path operands the way the shell would.
 
     Args:
@@ -112,12 +125,14 @@ def typed_spec(word: str | PathSpec, cwd: str) -> PathSpec:
     if isinstance(word, PathSpec):
         return word
     virtual = resolve_path(word, cwd)
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1] or "/",
-                    vfs_path=virtual.strip("/"),
-                    raw_path=word,
-                    dotted=dotted_spelling(word, cwd),
-                    walk_error="ENOENT" if word == "" else None)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1] or "/",
+        vfs_path=virtual.strip("/"),
+        raw_path=word,
+        dotted=dotted_spelling(word, cwd),
+        walk_error="ENOENT" if word == "" else None,
+    )
 
 
 async def stat_or_enoent(stat_path: StatPath, path: PathSpec) -> FileStat:
@@ -144,8 +159,9 @@ def descendant_path(root: PathSpec, virtual: str) -> PathSpec:
         root (PathSpec): A path whose backend key is known.
         virtual (str): The path to key, on the same mount.
     """
-    return PathSpec.from_str_path(virtual,
-                                  rekey(root.virtual, root.vfs_path, virtual))
+    return PathSpec.from_str_path(
+        virtual, rekey(root.virtual, root.vfs_path, virtual)
+    )
 
 
 async def entry_kind(stat: StatFn, path: PathSpec) -> tuple[bool, bool]:
@@ -223,8 +239,9 @@ def link_follow(links: LinkView | None) -> Callable[[str], str] | None:
     return links.resolve if links is not None else None
 
 
-def _spells(dotted: str, virtual: str,
-            follow: Callable[[str], str] | None) -> bool:
+def _spells(
+    dotted: str, virtual: str, follow: Callable[[str], str] | None
+) -> bool:
     """Whether ``virtual`` is the path a dotted spelling names.
 
     It is the textual simplification, or that simplification taken
@@ -253,9 +270,8 @@ def _spells(dotted: str, virtual: str,
 
 
 async def dot_refusal(
-        stat: StatFn,
-        path: PathSpec,
-        follow: Callable[[str], str] | None = None) -> DotWalkError | None:
+    stat: StatFn, path: PathSpec, follow: Callable[[str], str] | None = None
+) -> DotWalkError | None:
     """What a path's dot components answer, None when every one resolves.
 
     The kernel resolves ``.`` and ``..`` against the directory they sit
@@ -298,7 +314,8 @@ async def dot_refusal(
             proved.append(prefix)
             continue
         if not exists and (await nearest_ancestor(stat, spec))[1]:
-            return DotWalkMissing(errno.ENOENT, os.strerror(errno.ENOENT),
-                                  name)
+            return DotWalkMissing(
+                errno.ENOENT, os.strerror(errno.ENOENT), name
+            )
         return DotWalkNotDir(errno.ENOTDIR, os.strerror(errno.ENOTDIR), name)
     return None

@@ -25,10 +25,11 @@ def _channel_base_params(types: str, limit: int) -> dict[str, Any]:
 
 
 def list_channels_stream(
-        config: SlackConfig,
-        types: str = "public_channel,private_channel",
-        limit: int = 200,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: SlackConfig,
+    types: str = "public_channel,private_channel",
+    limit: int = 200,
+    session: SessionArg = None,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Page-streaming variant: yields one Slack page per HTTP round-trip.
 
     Args:
@@ -40,17 +41,21 @@ def list_channels_stream(
     Yields:
         list[dict]: channels in one Slack page.
     """
-    return cursor_pages(config,
-                        "conversations.list",
-                        base_params=_channel_base_params(types, limit),
-                        items_key="channels",
-                        session=session)
+    return cursor_pages(
+        config,
+        "conversations.list",
+        base_params=_channel_base_params(types, limit),
+        items_key="channels",
+        session=session,
+    )
 
 
-async def list_channels(config: SlackConfig,
-                        types: str = "public_channel,private_channel",
-                        limit: int = 200,
-                        session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_channels(
+    config: SlackConfig,
+    types: str = "public_channel,private_channel",
+    limit: int = 200,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     """List channels via conversations.list (eager; collects all pages).
 
     Args:
@@ -63,17 +68,16 @@ async def list_channels(config: SlackConfig,
         list[dict]: channel metadata dicts.
     """
     out: list[dict[str, Any]] = []
-    async for page in list_channels_stream(config,
-                                           types=types,
-                                           limit=limit,
-                                           session=session):
+    async for page in list_channels_stream(
+        config, types=types, limit=limit, session=session
+    ):
         out.extend(page)
     return out
 
 
-async def list_dms(config: SlackConfig,
-                   limit: int = 200,
-                   session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_dms(
+    config: SlackConfig, limit: int = 200, session: SessionArg = None
+) -> list[dict[str, Any]]:
     """List direct messages via conversations.list (eager).
 
     Args:
@@ -84,7 +88,6 @@ async def list_dms(config: SlackConfig,
     Returns:
         list[dict]: DM channel dicts.
     """
-    return await list_channels(config,
-                               types="im,mpim",
-                               limit=limit,
-                               session=session)
+    return await list_channels(
+        config, types="im,mpim", limit=limit, session=session
+    )

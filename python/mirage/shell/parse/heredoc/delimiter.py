@@ -14,8 +14,11 @@
 
 from mirage.shell.escapes import decode_ansi_c
 from mirage.shell.parse.heredoc.constants import DQUOTE_ESCAPABLE
-from mirage.shell.parse.heredoc.line import (construct_closer, construct_end,
-                                             quote_end)
+from mirage.shell.parse.heredoc.line import (
+    construct_closer,
+    construct_end,
+    quote_end,
+)
 
 
 def ansi_c_end(token: str, start: int) -> int:
@@ -56,8 +59,9 @@ def literal_construct_end(token: str, start: int) -> int | None:
         return None
     data = token.encode()
     offset = len(token[:start].encode())
-    closer = construct_closer(data, offset,
-                              False) if token[start] == "$" else None
+    closer = (
+        construct_closer(data, offset, False) if token[start] == "$" else None
+    )
     if closer is not None:
         end = construct_end(data, offset, closer)
     elif token[start] == "`":
@@ -108,24 +112,27 @@ def clean_delimiter(token: str) -> str:
         elif quote == '"':
             if char == '"':
                 quote = None
-            elif char == "\\" and token[index + 1:index + 2] == "\n":
+            elif char == "\\" and token[index + 1 : index + 2] == "\n":
                 index += 1
-            elif (char == "\\" and index + 1 < len(token)
-                  and token[index + 1] in DQUOTE_ESCAPABLE):
+            elif (
+                char == "\\"
+                and index + 1 < len(token)
+                and token[index + 1] in DQUOTE_ESCAPABLE
+            ):
                 index += 1
                 out.append(token[index])
             else:
                 out.append(char)
-        elif char == "$" and token[index + 1:index + 2] == "'":
+        elif char == "$" and token[index + 1 : index + 2] == "'":
             end = ansi_c_end(token, index + 2)
-            out.append(decode_ansi_c(token[index + 2:end]))
+            out.append(decode_ansi_c(token[index + 2 : end]))
             index = end
-        elif char == "$" and token[index + 1:index + 2] == '"':
+        elif char == "$" and token[index + 1 : index + 2] == '"':
             quote = '"'
             index += 1
         elif char in ("'", '"'):
             quote = char
-        elif char == "\\" and token[index + 1:index + 2] == "\n":
+        elif char == "\\" and token[index + 1 : index + 2] == "\n":
             index += 1
         elif char == "\\" and index + 1 < len(token):
             index += 1
@@ -159,7 +166,7 @@ def delimiter_quoted(token: str) -> bool:
         if end is not None:
             index = end
             continue
-        if char == "\\" and token[index + 1:index + 2] == "\n":
+        if char == "\\" and token[index + 1 : index + 2] == "\n":
             index += 1
         elif char in ("\\", "'", '"'):
             return True

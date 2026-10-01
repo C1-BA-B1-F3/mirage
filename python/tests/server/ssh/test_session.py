@@ -21,12 +21,15 @@ import pytest
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.server.ssh import stream
 from mirage.server.ssh.session import ends_shell, login_env
-from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
-                                       vault_workspace)
+from tests.server.ssh.conftest import (
+    bind_key,
+    start_harness,
+    stop_harness,
+    vault_workspace,
+)
 
 
 class StubProcess:
-
     def __init__(self, term_type: str | None) -> None:
         self.term_type = term_type
 
@@ -38,9 +41,9 @@ class StubProcess:
         }[name]
 
 
-async def _read_until(process: asyncssh.SSHClientProcess,
-                      needle: str,
-                      seconds: float = 10.0) -> str:
+async def _read_until(
+    process: asyncssh.SSHClientProcess, needle: str, seconds: float = 10.0
+) -> str:
     seen = ""
     deadline = time.monotonic() + seconds
     while needle not in seen:
@@ -51,14 +54,17 @@ async def _read_until(process: asyncssh.SSHClientProcess,
     return seen
 
 
-@pytest.mark.parametrize("line, leaves", [
-    ("exit", True),
-    ("  exit 3  ", True),
-    ("exit 1 2", False),
-    ("exitcode", False),
-    ("echo exit", False),
-    ("", False),
-])
+@pytest.mark.parametrize(
+    "line, leaves",
+    [
+        ("exit", True),
+        ("  exit 3  ", True),
+        ("exit 1 2", False),
+        ("exitcode", False),
+        ("echo exit", False),
+        ("", False),
+    ],
+)
 def test_ends_shell_reads_the_words(line, leaves):
     assert ends_shell(line) is leaves
 
@@ -87,8 +93,9 @@ async def test_exec_returns_both_streams_and_the_status(ssh):
 @pytest.mark.asyncio
 async def test_exec_reads_piped_stdin(ssh):
     async with ssh.connect() as conn:
-        result = await conn.run("cat > /notes && wc -l < /notes",
-                                input="a\nb\nc\n")
+        result = await conn.run(
+            "cat > /notes && wc -l < /notes", input="a\nb\nc\n"
+        )
     assert result.stdout.strip() == "3"
 
 
@@ -126,13 +133,11 @@ async def test_login_env_is_set_on_the_session(ssh):
 
 @pytest.mark.asyncio
 async def test_a_profile_value_wins_over_the_login_default(tmp_path):
-    ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)},
-                   profiles={"agent": {
-                       "env": {
-                           "HOME": "/work"
-                       }
-                   }},
-                   profile="agent")
+    ws = Workspace(
+        {"/": (RAMVFS(), MountMode.WRITE)},
+        profiles={"agent": {"env": {"HOME": "/work"}}},
+        profile="agent",
+    )
     harness = await start_harness(tmp_path, ws)
     try:
         async with harness.connect() as conn:
@@ -270,7 +275,8 @@ async def test_failed_login_setup_closes_session(ssh, monkeypatch):
             assert result.exit_status == 1
             assert "login export failed" in result.stderr
             assert not any(
-                s.session_id.startswith("ssh_") for s in ws.list_sessions())
+                s.session_id.startswith("ssh_") for s in ws.list_sessions()
+            )
 
 
 @pytest.mark.asyncio
@@ -315,12 +321,15 @@ async def test_a_key_bound_to_a_profile_runs_under_it(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("options", "reason"), [
-    ('mirage-profile="nope"', "nope"),
-    ('mirage-profile="a",mirage-profile="b"', "exactly one profile"),
-    ('mirage-profile=""', "exactly one profile"),
-    ("mirage-profile", "exactly one profile"),
-])
+@pytest.mark.parametrize(
+    ("options", "reason"),
+    [
+        ('mirage-profile="nope"', "nope"),
+        ('mirage-profile="a",mirage-profile="b"', "exactly one profile"),
+        ('mirage-profile=""', "exactly one profile"),
+        ("mirage-profile", "exactly one profile"),
+    ],
+)
 async def test_a_key_with_a_bad_profile_is_refused(tmp_path, options, reason):
     harness = await start_harness(tmp_path, await vault_workspace())
     bad = bind_key(harness, options)

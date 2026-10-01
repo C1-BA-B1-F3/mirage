@@ -21,7 +21,7 @@ from mirage.runtime.types import RunArgs, RunResult
 
 class StubRuntime(Runtime):
     name = "monty"
-    captures = ("python3", )
+    captures = ("python3",)
 
     async def run(self, args: RunArgs) -> RunResult:
         return RunResult(stdout=b"", stderr=None, exit_code=0)
@@ -30,22 +30,28 @@ class StubRuntime(Runtime):
 def sample_ctx() -> RouteContext:
     return RouteContext(
         line="slack send /data/x | python3 p.py",
-        commands=(ParsedCommand(command="slack",
-                                words=("slack", "send", "/data/x"),
-                                builtin=False,
-                                paths=("/data/x", ),
-                                cli="slack"),
-                  ParsedCommand(command="python3",
-                                words=("python3", "p.py"),
-                                builtin=True,
-                                paths=())),
+        commands=(
+            ParsedCommand(
+                command="slack",
+                words=("slack", "send", "/data/x"),
+                builtin=False,
+                paths=("/data/x",),
+                cli="slack",
+            ),
+            ParsedCommand(
+                command="python3",
+                words=("python3", "p.py"),
+                builtin=True,
+                paths=(),
+            ),
+        ),
         command="slack",
         builtin=False,
         cwd="/data",
         env={"K": "V"},
         session_id="s1",
         agent_id="a1",
-        mounts=("/data", ),
+        mounts=("/data",),
     )
 
 

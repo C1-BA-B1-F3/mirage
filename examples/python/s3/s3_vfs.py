@@ -44,11 +44,8 @@ deep_vfs = S3VFS(deep_config)
 
 async def main():
     with Workspace(
-        {
-            "/s3/": vfs,
-            "/deep/": deep_vfs
-        },
-            mode=MountMode.READ,
+        {"/s3/": vfs, "/deep/": deep_vfs},
+        mode=MountMode.READ,
     ) as ws:
         print("=== VFS MODE: open() reads from S3 transparently ===\n")
 
@@ -89,12 +86,18 @@ async def main():
             print(f"  {e}")
 
         print("\n--- os.path.exists / isdir / getsize ---")
-        print(f"  /deep/example.jsonl  exists: "
-              f"{os.path.exists('/deep/example.jsonl')}")
-        print(f"  /deep/example.json   isdir : "
-              f"{os.path.isdir('/deep/example.json')}")
-        print(f"  /deep/example.json   size  : "
-              f"{os.path.getsize('/deep/example.json')} bytes")
+        print(
+            f"  /deep/example.jsonl  exists: "
+            f"{os.path.exists('/deep/example.jsonl')}"
+        )
+        print(
+            f"  /deep/example.json   isdir : "
+            f"{os.path.isdir('/deep/example.json')}"
+        )
+        print(
+            f"  /deep/example.json   size  : "
+            f"{os.path.getsize('/deep/example.json')} bytes"
+        )
 
         print("\n--- open() + read first 3 records ---")
         with open("/deep/example.jsonl") as f:

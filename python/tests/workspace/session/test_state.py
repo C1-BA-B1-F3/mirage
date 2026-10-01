@@ -27,16 +27,28 @@ from mirage.types import HiddenVars
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.errors import ReadonlyVariableError
 from mirage.workspace.session.session import vars_from_env
-
-from mirage.workspace.session.state import (  # isort: skip
-    element_index, env_snapshot, gate_rendering, gate_restored_vars,
-    in_call_env, next_random, outlive_call, positional_params, seed_var,
-    session_elements, session_view, set_attr, set_positional_params, set_var,
-    strip_key_quotes, subscript_index, visible_env)
+from mirage.workspace.session.state import (
+    element_index,
+    env_snapshot,
+    gate_rendering,
+    gate_restored_vars,
+    in_call_env,
+    next_random,
+    outlive_call,
+    positional_params,
+    seed_var,
+    session_elements,
+    session_view,
+    set_attr,
+    set_positional_params,
+    set_var,
+    strip_key_quotes,
+    subscript_index,
+    visible_env,
+)
 
 
 class DenySecrets(Policy):
-
     async def pre_session(self, ctx: SessionContext) -> Action | None:
         if ctx.key.startswith("SECRET"):
             return Deny("SECRET_* refused by policy\n")
@@ -44,10 +56,11 @@ class DenySecrets(Policy):
 
 
 def _view(
-        policies: Policies | None = None) -> tuple[SessionView, SessionState]:
-    session = SessionState(session_id="s",
-                           cwd="/",
-                           vars=vars_from_env({"A": "1"}))
+    policies: Policies | None = None,
+) -> tuple[SessionView, SessionState]:
+    session = SessionState(
+        session_id="s", cwd="/", vars=vars_from_env({"A": "1"})
+    )
     return session_view(session, policies), session
 
 
@@ -93,7 +106,6 @@ def test_an_array_write_renders_the_gate_value_as_words():
     seen: list[str | None] = []
 
     class Capture(Policy):
-
         async def pre_session(self, ctx: SessionContext) -> Action | None:
             seen.append(ctx.value)
             return None
@@ -150,9 +162,9 @@ def test_pre_session_gate_vetoes_a_write():
 
 
 def test_env_snapshot_is_a_copy():
-    session = SessionState(session_id="s",
-                           cwd="/",
-                           vars=vars_from_env({"A": "1"}))
+    session = SessionState(
+        session_id="s", cwd="/", vars=vars_from_env({"A": "1"})
+    )
     snap = env_snapshot(session)
     assert snap == {"A": "1", "PWD": "/"}
     assert snap is not session.env
@@ -166,16 +178,16 @@ def test_the_view_carries_no_session_handle():
 
 
 def _hidden_view(
-        policies: Policies | None = None) -> tuple[SessionView, SessionState]:
-    session = SessionState(session_id="s",
-                           cwd="/",
-                           vars=vars_from_env({
-                               "PUBLIC": "1",
-                               "SLACK_TOKEN": "xoxb",
-                               "AWS_SECRET_KEY": "k"
-                           }),
-                           hidden_vars=HiddenVars(names=("SLACK_TOKEN", ),
-                                                  patterns=("AWS_*", )))
+    policies: Policies | None = None,
+) -> tuple[SessionView, SessionState]:
+    session = SessionState(
+        session_id="s",
+        cwd="/",
+        vars=vars_from_env(
+            {"PUBLIC": "1", "SLACK_TOKEN": "xoxb", "AWS_SECRET_KEY": "k"}
+        ),
+        hidden_vars=HiddenVars(names=("SLACK_TOKEN",), patterns=("AWS_*",)),
+    )
     return session_view(session, policies), session
 
 
@@ -236,9 +248,9 @@ def test_a_hidden_readonly_var_reports_not_readonly():
 def test_visible_env_matches_the_scalars_when_nothing_is_hidden():
     # $X expansion is the hot path; no hiding means no wrapper and no
     # copy.
-    session = SessionState(session_id="s",
-                           cwd="/",
-                           vars=vars_from_env({"A": "1"}))
+    session = SessionState(
+        session_id="s", cwd="/", vars=vars_from_env({"A": "1"})
+    )
     assert dict(visible_env(session)) == dict(session.env)
 
 
@@ -263,7 +275,6 @@ def test_a_shaped_write_gates_the_value_that_lands():
     seen: list[str | None] = []
 
     class Capture(Policy):
-
         async def pre_session(self, ctx: SessionContext) -> Action | None:
             seen.append(ctx.value)
             if ctx.value == "admin":
@@ -397,9 +408,11 @@ def test_read_by_kind():
 
 
 def _managed(value: str | None) -> ShellVar:
-    return ShellVar(value,
-                    frozenset({VarAttr.EXPORT}),
-                    managed=ManagedRef("env", "", "TOKEN", False))
+    return ShellVar(
+        value,
+        frozenset({VarAttr.EXPORT}),
+        managed=ManagedRef("env", "", "TOKEN", False),
+    )
 
 
 def test_set_var_detaches_a_fetched_managed_var():
@@ -476,8 +489,9 @@ async def test_gate_restored_vars_refuses_a_denied_name():
     table = vars_from_env({"SECRET_A": "1", "PUBLIC": "2"})
     with pytest.raises(PolicyDenied):
         await gate_restored_vars(Policies([DenySecrets()]), "s", table)
-    await gate_restored_vars(Policies([DenySecrets()]), "s",
-                             vars_from_env({"PUBLIC": "2"}))
+    await gate_restored_vars(
+        Policies([DenySecrets()]), "s", vars_from_env({"PUBLIC": "2"})
+    )
     await gate_restored_vars(None, "s", table)
 
 
@@ -487,18 +501,16 @@ async def test_gate_restored_vars_refuses_a_denied_name():
 async def test_gate_restored_vars_leaves_the_shell_bookkeeping_alone():
 
     class DenyAll(Policy):
-
         async def pre_session(self, ctx: SessionContext) -> Action | None:
             return Deny("nothing may be set\n")
 
-    await gate_restored_vars(Policies([DenyAll()]), "s",
-                             vars_from_env({
-                                 "PWD": "/",
-                                 "OLDPWD": "/"
-                             }))
+    await gate_restored_vars(
+        Policies([DenyAll()]), "s", vars_from_env({"PWD": "/", "OLDPWD": "/"})
+    )
     with pytest.raises(PolicyDenied):
-        await gate_restored_vars(Policies([DenyAll()]), "s",
-                                 vars_from_env({"X": "1"}))
+        await gate_restored_vars(
+            Policies([DenyAll()]), "s", vars_from_env({"X": "1"})
+        )
 
 
 def test_gate_rendering_is_what_set_var_shows_a_hook():
@@ -522,8 +534,9 @@ def test_positional_params_are_a_functions_own_even_when_empty():
     assert session.positional_args == ["y"]
 
 
-def _in_function(session: SessionState,
-                 temp: TempEnv) -> dict[str, ShellVar | None]:
+def _in_function(
+    session: SessionState, temp: TempEnv
+) -> dict[str, ShellVar | None]:
     locals_frame: dict[str, ShellVar | None] = {}
     session._local_frames.extend([temp, locals_frame])
     session._local_vars = locals_frame

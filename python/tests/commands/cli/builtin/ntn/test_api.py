@@ -16,8 +16,12 @@ from typing import Any
 
 import pytest
 
-from mirage.commands.cli.builtin.ntn.api import (METHODS, InlineRefusal, api,
-                                                 classify)
+from mirage.commands.cli.builtin.ntn.api import (
+    METHODS,
+    InlineRefusal,
+    api,
+    classify,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.core.notion.config import NotionConfig
 from mirage.io.stream import yield_bytes
@@ -65,9 +69,11 @@ def test_malformed_typed_input_carries_serdes_own_words():
     # in double quotes"). The whole token is echoed, Rust-debug quoted.
     with pytest.raises(InlineRefusal) as caught:
         sorted_inputs("a:={")
-    assert caught.value.detail == ('invalid JSON value in "a:={": '
-                                   "EOF while parsing an object at line 1 "
-                                   "column 1")
+    assert caught.value.detail == (
+        'invalid JSON value in "a:={": '
+        "EOF while parsing an object at line 1 "
+        "column 1"
+    )
 
 
 def test_an_input_with_no_separator_is_named_unexpected():
@@ -84,16 +90,18 @@ async def test_inline_headers_reach_the_request(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_get(
-            config: NotionConfig,
-            path: str,
-            params: dict[str, Any] | None = None,
-            extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        params: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         seen["headers"] = extra_headers
         return {"ok": True}
 
     monkeypatch.setitem(api.__globals__, "notion_get", fake_get)
     await api(
-        CLIInvocation(CONFIG, texts=("v1/search", "X-Foo:bar", "X-Two:baz")))
+        CLIInvocation(CONFIG, texts=("v1/search", "X-Foo:bar", "X-Two:baz"))
+    )
     assert seen["headers"] == {"X-Foo": "bar", "X-Two": "baz"}
 
 
@@ -102,15 +110,16 @@ async def test_no_inline_header_sends_none(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_get(
-            config: NotionConfig,
-            path: str,
-            params: dict[str, Any] | None = None,
-            extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        params: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         seen["headers"] = extra_headers
         return {"ok": True}
 
     monkeypatch.setitem(api.__globals__, "notion_get", fake_get)
-    await api(CLIInvocation(CONFIG, texts=("v1/search", )))
+    await api(CLIInvocation(CONFIG, texts=("v1/search",)))
     assert seen["headers"] is None
 
 
@@ -119,7 +128,8 @@ async def test_malformed_data_matches_upstream_exactly():
     # Probed against ntn 0.21.9: exit 1 with this wording, which is
     # neither python's raw JSONDecodeError nor a generic usage error.
     out, io = await api(
-        CLIInvocation(CONFIG, texts=("v1/search", ), flags={"data": "{"}))
+        CLIInvocation(CONFIG, texts=("v1/search",), flags={"data": "{"})
+    )
     assert out is None
     assert io.exit_code == 1
     assert io.stderr == b"error: Invalid JSON from --data\n"
@@ -133,17 +143,19 @@ async def test_a_non_object_data_is_sent_rather_than_refused(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["body"] = body
         return {"ok": True}
 
     monkeypatch.setitem(METHODS, "POST", fake_post)
     _out, io = await api(
-        CLIInvocation(CONFIG, texts=("v1/search", ), flags={"data": "[]"}))
+        CLIInvocation(CONFIG, texts=("v1/search",), flags={"data": "[]"})
+    )
     assert io.exit_code == 0
     assert seen["body"] == []
 
@@ -156,31 +168,34 @@ async def test_an_empty_data_object_still_posts(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["body"] = body
         return {"ok": True}
 
     monkeypatch.setitem(METHODS, "POST", fake_post)
     await api(
-        CLIInvocation(CONFIG, texts=("v1/search", ), flags={"data": "{}"}))
+        CLIInvocation(CONFIG, texts=("v1/search",), flags={"data": "{}"})
+    )
     assert seen["body"] == {}
 
 
 @pytest.mark.asyncio
 async def test_data_and_inline_body_conflict():
     _out, io = await api(
-        CLIInvocation(CONFIG, texts=("v1/search", "a=1"), flags={"data":
-                                                                 "{}"}))
+        CLIInvocation(CONFIG, texts=("v1/search", "a=1"), flags={"data": "{}"})
+    )
     assert io.exit_code == 5
     assert io.stderr.decode() == (
         "error: Request body can come from only one source, but got: "
         "--data, inline body inputs.\n"
         "  hint: Use only one of: stdin JSON, `--data`, or "
-        "`path=value` / `path:=json` inputs.\n")
+        "`path=value` / `path:=json` inputs.\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -188,20 +203,25 @@ async def test_the_pipe_is_a_body_source_and_outranks_data():
     # Upstream names the sources in a fixed order and validates the pipe
     # first, so a malformed pipe wins over a conflict it is part of.
     _out, io = await api(
-        CLIInvocation(CONFIG,
-                      texts=("v1/search", ),
-                      flags={"data": "{}"},
-                      stdin=yield_bytes(b'{"q":1}')))
+        CLIInvocation(
+            CONFIG,
+            texts=("v1/search",),
+            flags={"data": "{}"},
+            stdin=yield_bytes(b'{"q":1}'),
+        )
+    )
     assert io.exit_code == 5
     assert io.stderr.decode().splitlines()[0] == (
         "error: Request body can come from only one source, but got: "
-        "stdin JSON, --data.")
+        "stdin JSON, --data."
+    )
 
 
 @pytest.mark.asyncio
 async def test_malformed_stdin_is_its_own_exit_one():
     _out, io = await api(
-        CLIInvocation(CONFIG, texts=("v1/search", ), stdin=yield_bytes(b"{")))
+        CLIInvocation(CONFIG, texts=("v1/search",), stdin=yield_bytes(b"{"))
+    )
     assert io.exit_code == 1
     assert io.stderr == b"error: Invalid JSON from stdin\n"
 
@@ -213,20 +233,24 @@ async def test_blank_stdin_is_not_a_body_source(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["body"] = body
         return {"ok": True}
 
     monkeypatch.setitem(METHODS, "POST", fake_post)
     _out, io = await api(
-        CLIInvocation(CONFIG,
-                      texts=("v1/search", ),
-                      flags={"data": "{}"},
-                      stdin=yield_bytes(b"  \n")))
+        CLIInvocation(
+            CONFIG,
+            texts=("v1/search",),
+            flags={"data": "{}"},
+            stdin=yield_bytes(b"  \n"),
+        )
+    )
     assert io.exit_code == 0
     assert seen["body"] == {}
 
@@ -234,12 +258,14 @@ async def test_blank_stdin_is_not_a_body_source(monkeypatch):
 @pytest.mark.asyncio
 async def test_an_empty_data_names_its_own_refusal():
     _out, io = await api(
-        CLIInvocation(CONFIG, texts=("v1/search", ), flags={"data": "  "}))
+        CLIInvocation(CONFIG, texts=("v1/search",), flags={"data": "  "})
+    )
     assert io.exit_code == 5
     assert io.stderr.decode() == (
         "error: --data requires a valid JSON value.\n"
-        "  hint: Pass a JSON string such as `--data '{\"foo\":\"bar\"}'`, "
-        "a file such as `--data @body.json`, or stdin with `--data @-`.\n")
+        '  hint: Pass a JSON string such as `--data \'{"foo":"bar"}\'`, '
+        "a file such as `--data @body.json`, or stdin with `--data @-`.\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -250,7 +276,8 @@ async def test_an_inline_refusal_carries_the_hint_and_exits_five():
         "error: Failed to parse inline request input: invalid JSON value "
         'in "a:={": EOF while parsing an object at line 1 column 1\n'
         "  hint: Use `Header:Value`, `name==value`, `path=value`, or "
-        "`path:=json`.\n")
+        "`path:=json`.\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -260,11 +287,12 @@ async def test_a_query_parameter_survives_a_non_get(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["params"] = params
         return {"ok": True}
 
@@ -278,11 +306,12 @@ async def test_body_infers_post_and_output_is_compact(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_post(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["path"] = path
         seen["body"] = body
         return {"b": 1, "a": 2}
@@ -309,20 +338,22 @@ async def test_delete_is_a_reachable_method(monkeypatch):
     seen: dict[str, Any] = {}
 
     async def fake_delete(
-            config: NotionConfig,
-            path: str,
-            body: JsonValue = None,
-            extra_headers: dict[str, str] | None = None,
-            params: dict[str, Any] | None = None) -> dict[str, Any]:
+        config: NotionConfig,
+        path: str,
+        body: JsonValue = None,
+        extra_headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         seen["path"] = path
         seen["body"] = body
         return {"object": "block", "in_trash": True}
 
     monkeypatch.setitem(METHODS, "DELETE", fake_delete)
     out, io = await api(
-        CLIInvocation(CONFIG,
-                      texts=("v1/blocks/abc-123", ),
-                      flags={"method": "delete"}))
+        CLIInvocation(
+            CONFIG, texts=("v1/blocks/abc-123",), flags={"method": "delete"}
+        )
+    )
     assert io.exit_code == 0
     assert seen["path"] == "/blocks/abc-123"
     # No body source on the line, so nothing is invented for one.

@@ -30,11 +30,13 @@ async def test_resolve_glob_passes_through_resolved_paths(make_acc):
 
 @pytest.mark.asyncio
 async def test_resolve_glob_expands_basename_pattern(make_acc):
-    acc = make_acc({
-        "data/a.txt": b"a",
-        "data/b.json": b"b",
-        "data/sub/c.txt": b"c",
-    })
+    acc = make_acc(
+        {
+            "data/a.txt": b"a",
+            "data/b.json": b"b",
+            "data/sub/c.txt": b"c",
+        }
+    )
     index = RAMIndexCacheStore(ttl=60)
     pattern = PathSpec(
         vfs_path="data/*.txt",

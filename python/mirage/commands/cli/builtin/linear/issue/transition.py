@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.linear.util import (first_text, resolve_issue,
-                                                     resolve_state_id)
+from mirage.commands.cli.builtin.linear.util import (
+    first_text,
+    resolve_issue,
+    resolve_state_id,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.linear.client import issue_update
@@ -24,16 +27,20 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def transition(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
-    issue_id = await resolve_issue(inv.config,
-                                   first_text(inv.texts, "issue key"))
-    state_id = await resolve_state_id(inv.config, fl.as_str("state_id"),
-                                      fl.as_str("state_name"))
-    issue = await issue_update(inv.config,
-                               issue_id=issue_id,
-                               title=None,
-                               description=None,
-                               state_id=state_id)
+    issue_id = await resolve_issue(
+        inv.config, first_text(inv.texts, "issue key")
+    )
+    state_id = await resolve_state_id(
+        inv.config, fl.as_str("state_id"), fl.as_str("state_name")
+    )
+    issue = await issue_update(
+        inv.config,
+        issue_id=issue_id,
+        title=None,
+        description=None,
+        state_id=state_id,
+    )
     return yield_bytes(to_json_bytes(normalize_issue(issue))), IOResult()

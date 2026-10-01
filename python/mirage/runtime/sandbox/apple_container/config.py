@@ -34,15 +34,20 @@ class AppleContainerConfig(SandboxConfig):
     def __post_init__(self) -> None:
         if self.container is None and not self.containers:
             raise ValueError(
-                "apple_container config needs container or containers")
+                "apple_container config needs container or containers"
+            )
         if self.container is not None and not nonblank(self.container):
             raise ValueError("apple_container container must be a nonblank id")
-        blank = sorted(session
-                       for session, container in self.containers.items()
-                       if not nonblank(container))
+        blank = sorted(
+            session
+            for session, container in self.containers.items()
+            if not nonblank(container)
+        )
         if blank:
-            raise ValueError("apple_container containers must map each "
-                             "session to a nonblank id: " + ", ".join(blank))
+            raise ValueError(
+                "apple_container containers must map each "
+                "session to a nonblank id: " + ", ".join(blank)
+            )
 
 
 def nonblank(value: str) -> bool:

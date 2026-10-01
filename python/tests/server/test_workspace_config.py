@@ -1,8 +1,10 @@
 import pytest
 
-from mirage.server.workspace_config import (WORKSPACE_CONFIG_CANDIDATES,
-                                            build_workspace_from_config,
-                                            resolve_workspace_config)
+from mirage.server.workspace_config import (
+    WORKSPACE_CONFIG_CANDIDATES,
+    build_workspace_from_config,
+    resolve_workspace_config,
+)
 
 MINIMAL = "mounts:\n  /:\n    vfs: ram\n    mode: WRITE\n"
 
@@ -17,8 +19,9 @@ def tree(tmp_path):
 
 
 def test_explicit_path_wins(tree):
-    assert resolve_workspace_config("other.yaml",
-                                    cwd=tree).name == "other.yaml"
+    assert (
+        resolve_workspace_config("other.yaml", cwd=tree).name == "other.yaml"
+    )
 
 
 def test_explicit_missing_path_raises(tree):
@@ -27,24 +30,26 @@ def test_explicit_missing_path_raises(tree):
 
 
 def test_env_name_is_consulted(tree):
-    found = resolve_workspace_config(cwd=tree,
-                                     env={"MIRAGE_CONFIG": "other.yaml"})
+    found = resolve_workspace_config(
+        cwd=tree, env={"MIRAGE_CONFIG": "other.yaml"}
+    )
     assert found.name == "other.yaml"
 
 
 def test_env_names_are_tried_in_order(tree):
-    found = resolve_workspace_config(cwd=tree,
-                                     env={"MIRAGE_CONFIG": "other.yaml"},
-                                     env_names=("MIRAGE_MCP_CONFIG",
-                                                "MIRAGE_CONFIG"))
+    found = resolve_workspace_config(
+        cwd=tree,
+        env={"MIRAGE_CONFIG": "other.yaml"},
+        env_names=("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG"),
+    )
     assert found.name == "other.yaml"
 
 
 def test_explicit_path_beats_env(tree):
     (tree / "explicit.yaml").write_text(MINIMAL)
-    found = resolve_workspace_config("explicit.yaml",
-                                     cwd=tree,
-                                     env={"MIRAGE_CONFIG": "other.yaml"})
+    found = resolve_workspace_config(
+        "explicit.yaml", cwd=tree, env={"MIRAGE_CONFIG": "other.yaml"}
+    )
     assert found.name == "explicit.yaml"
 
 
@@ -82,10 +87,9 @@ def test_missing_config_message_names_the_env_vars(tmp_path):
     empty = (tmp_path / "empty2").resolve()
     empty.mkdir()
     with pytest.raises(FileNotFoundError, match="MIRAGE_MCP_CONFIG or"):
-        resolve_workspace_config(cwd=empty,
-                                 env={},
-                                 env_names=("MIRAGE_MCP_CONFIG",
-                                            "MIRAGE_CONFIG"))
+        resolve_workspace_config(
+            cwd=empty, env={}, env_names=("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG")
+        )
 
 
 @pytest.mark.asyncio

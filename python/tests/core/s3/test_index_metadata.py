@@ -67,9 +67,9 @@ def test_stat_returns_modified_from_index():
         cache = RAMIndexCacheStore(ttl=60)
         scope = PathSpec(vfs_path="dir", virtual="/dir", directory="/dir")
         asyncio.run(readdir(accessor, scope, cache))
-        target = PathSpec(vfs_path="dir/a.txt",
-                          virtual="/dir/a.txt",
-                          directory="/dir")
+        target = PathSpec(
+            vfs_path="dir/a.txt", virtual="/dir/a.txt", directory="/dir"
+        )
         result = asyncio.run(stat(accessor, target, index=cache))
         assert result.modified == EXPECTED_MODIFIED
         assert result.size == 5

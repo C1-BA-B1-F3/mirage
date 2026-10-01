@@ -26,7 +26,9 @@ if TYPE_CHECKING:
     from mirage.workspace.workspace import Workspace
 
 
-def patch_process(ws: "Workspace", ) -> None:
+def patch_process(
+    ws: "Workspace",
+) -> None:
     """Point ``open`` and ``os`` at the workspace for a ``with`` block.
 
     Each door is installed as an attribute on the module that owns the
@@ -62,7 +64,9 @@ def patch_process(ws: "Workspace", ) -> None:
         setattr(os, name, fn)
 
 
-def unpatch_process(ws: "Workspace", ) -> None:
+def unpatch_process(
+    ws: "Workspace",
+) -> None:
     """Restore the process-level ``open`` and ``os`` patched on entry.
 
     Args:
@@ -77,7 +81,9 @@ def unpatch_process(ws: "Workspace", ) -> None:
     ws._original_os_names = None
 
 
-def stop_vfs_loop(ws: "Workspace", ) -> None:
+def stop_vfs_loop(
+    ws: "Workspace",
+) -> None:
     """Close the loop ``patch_process`` opened, after the workspace close.
 
     Args:
@@ -90,7 +96,9 @@ def stop_vfs_loop(ws: "Workspace", ) -> None:
     loop.close()
 
 
-def close_sync_parts(ws: "Workspace", ) -> None:
+def close_sync_parts(
+    ws: "Workspace",
+) -> None:
     """Tear down everything that needs no event loop (idempotent).
 
     Kernel mounts, running jobs, and in-flight cache drains; the
@@ -114,7 +122,9 @@ def close_sync_parts(ws: "Workspace", ) -> None:
     ws._cache._drain_tasks.clear()
 
 
-async def close_async(ws: "Workspace", ) -> None:
+async def close_async(
+    ws: "Workspace",
+) -> None:
     """Release everything the workspace owns, exactly once.
 
     Order matters: the watch runtime goes first (it reads mounts), then
@@ -151,9 +161,12 @@ async def close_async(ws: "Workspace", ) -> None:
         await ws.processes.drain()
         await ws.job_table.close_consoles()
         retirements = await asyncio.gather(
-            *(asyncio.shield(task)
-              for task in list(ws._registry.retiring_mounts.values())),
-            return_exceptions=True)
+            *(
+                asyncio.shield(task)
+                for task in list(ws._registry.retiring_mounts.values())
+            ),
+            return_exceptions=True,
+        )
         for result in retirements:
             if isinstance(result, BaseException):
                 raise result

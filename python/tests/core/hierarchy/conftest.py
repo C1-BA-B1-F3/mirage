@@ -17,28 +17,39 @@ import pytest
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.codec import DATE, INT_JSON, JSON_NAME, Codec
-from mirage.core.hierarchy.scope import (Scope, ScopeMatch, Slot,
-                                         make_detect_scope)
+from mirage.core.hierarchy.scope import (
+    Scope,
+    ScopeMatch,
+    Slot,
+    make_detect_scope,
+)
 from mirage.types import ContentType, PathSpec
 
 SCOPES = (
-    Scope(kind="rooms", segments=("rooms", ), probed=False),
+    Scope(kind="rooms", segments=("rooms",), probed=False),
     Scope(kind="room", segments=("rooms", Slot("room"))),
-    Scope(kind="note",
-          segments=("rooms", Slot("room"), Slot("note", JSON_NAME)),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="note",
+        segments=("rooms", Slot("room"), Slot("note", JSON_NAME)),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="room_atts", segments=("rooms", Slot("room"), "atts")),
-    Scope(kind="room_day", segments=("rooms", Slot("room"), Slot("day",
-                                                                 DATE))),
-    Scope(kind="revision",
-          segments=("rooms", Slot("room"), "revisions", Slot("rev", INT_JSON)),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="tagged",
-          segments=("tags", Slot("tag", Codec(validate=str.islower))),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="room_day", segments=("rooms", Slot("room"), Slot("day", DATE))
+    ),
+    Scope(
+        kind="revision",
+        segments=("rooms", Slot("room"), "revisions", Slot("rev", INT_JSON)),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="tagged",
+        segments=("tags", Slot("tag", Codec(validate=str.islower))),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)
@@ -51,41 +62,56 @@ TREE: dict[str, list[str]] = {
 
 
 class FakeAccessor(Accessor):
-
     def __init__(self) -> None:
         self.calls: list[str] = []
 
 
 def spec(mount_path: str) -> PathSpec:
     key = mount_path.strip("/")
-    return PathSpec(virtual="/h" + mount_path if key else "/h",
-                    directory="/h/",
-                    vfs_path=key)
+    return PathSpec(
+        virtual="/h" + mount_path if key else "/h",
+        directory="/h/",
+        vfs_path=key,
+    )
 
 
-async def list_rooms(accessor: FakeAccessor,
-                     match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def list_rooms(
+    accessor: FakeAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     accessor.calls.append("rooms")
-    return [(room,
-             IndexEntry(id=room,
-                        name=room,
-                        resource_type="fake/room",
-                        vfs_name=room)) for room in TREE["rooms"]]
+    return [
+        (
+            room,
+            IndexEntry(
+                id=room, name=room, resource_type="fake/room", vfs_name=room
+            ),
+        )
+        for room in TREE["rooms"]
+    ]
 
 
-async def list_notes(accessor: FakeAccessor,
-                     match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def list_notes(
+    accessor: FakeAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     accessor.calls.append(f"notes:{match.slots['room']}")
-    return [(note,
-             IndexEntry(id=note,
-                        name=note,
-                        resource_type="fake/note",
-                        vfs_name=note,
-                        size=7)) for note in TREE[match.slots["room"]]]
+    return [
+        (
+            note,
+            IndexEntry(
+                id=note,
+                name=note,
+                resource_type="fake/note",
+                vfs_name=note,
+                size=7,
+            ),
+        )
+        for note in TREE[match.slots["room"]]
+    ]
 
 
-async def room_guard(accessor: FakeAccessor, match: ScopeMatch,
-                     virtual: str) -> None:
+async def room_guard(
+    accessor: FakeAccessor, match: ScopeMatch, virtual: str
+) -> None:
     accessor.calls.append(f"guard:{match.slots['room']}")
     if match.slots["room"] not in TREE["rooms"]:
         raise FileNotFoundError(virtual)

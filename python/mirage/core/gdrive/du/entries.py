@@ -20,9 +20,9 @@ from mirage.types import FileType, PathSpec
 
 
 async def entries(
-        accessor: GDriveAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
 ) -> tuple[list[tuple[str, int]], int]:
     """Per-file sizes under a path plus their total.
 

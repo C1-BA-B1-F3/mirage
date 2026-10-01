@@ -12,8 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.spec import (SPECS, CommandSpec, Operand, Option,
-                                  ParsedArgs, parse_command, parse_to_kwargs)
+from mirage.commands.spec import (
+    SPECS,
+    CommandSpec,
+    Operand,
+    Option,
+    ParsedArgs,
+    parse_command,
+    parse_to_kwargs,
+)
 
 
 def test_parse_simple_path_args():
@@ -30,41 +37,46 @@ def test_parse_absolute_path():
 
 
 def test_parse_bool_flags():
-    spec = CommandSpec(options=(Option(short="-r"), Option(short="-f"),
-                                Option(short="-v")),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(short="-r"), Option(short="-f"), Option(short="-v")),
+        rest=Operand(type="path"),
+    )
     parsed = parse_command(spec, ["-rf", "file.txt"], cwd="/")
     assert parsed.flags == {"-r": True, "-f": True}
     assert parsed.args == [("/file.txt", "path")]
 
 
 def test_parse_value_flag_space():
-    spec = CommandSpec(options=(Option(short="-n", type="str"), ),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(short="-n", type="str"),), rest=Operand(type="path")
+    )
     parsed = parse_command(spec, ["-n", "10", "file.txt"], cwd="/")
     assert parsed.flags == {"-n": "10"}
     assert parsed.args == [("/file.txt", "path")]
 
 
 def test_parse_value_flag_joined():
-    spec = CommandSpec(options=(Option(short="-n", type="str"), ),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(short="-n", type="str"),), rest=Operand(type="path")
+    )
     parsed = parse_command(spec, ["-n10", "file.txt"], cwd="/")
     assert parsed.flags == {"-n": "10"}
     assert parsed.args == [("/file.txt", "path")]
 
 
 def test_parse_long_bool_flag():
-    spec = CommandSpec(options=(Option(long="--hidden"), ),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(long="--hidden"),), rest=Operand(type="path")
+    )
     parsed = parse_command(spec, ["--hidden", "dir/"], cwd="/")
     assert parsed.flags == {"--hidden": True}
     assert parsed.args == [("/dir", "path")]
 
 
 def test_parse_long_value_flag():
-    spec = CommandSpec(options=(Option(long="--type", type="str"), ),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(long="--type", type="str"),), rest=Operand(type="path")
+    )
     parsed = parse_command(spec, ["--type", "py", "src/"], cwd="/")
     assert parsed.flags == {"--type": "py"}
     assert parsed.args == [("/src", "path")]
@@ -73,11 +85,12 @@ def test_parse_long_value_flag():
 def test_parse_positional_text_then_path():
     spec = CommandSpec(
         options=(Option(short="-i"), Option(short="-v")),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     )
-    parsed = parse_command(spec, ["-i", "pattern", "file1.txt", "file2.txt"],
-                           cwd="/data")
+    parsed = parse_command(
+        spec, ["-i", "pattern", "file1.txt", "file2.txt"], cwd="/data"
+    )
     assert parsed.flags == {"-i": True}
     assert parsed.args == [
         ("pattern", "str"),
@@ -90,8 +103,14 @@ def test_search_spec_parses_query_paths_and_options():
     parsed = parse_command(
         SPECS["search"],
         [
-            "--method", "hybrid", "--top-k", "5", "--threshold", "0.4",
-            "login docs", "guides/*.md"
+            "--method",
+            "hybrid",
+            "--top-k",
+            "5",
+            "--threshold",
+            "0.4",
+            "login docs",
+            "guides/*.md",
         ],
         cwd="/knowledge",
     )
@@ -99,13 +118,16 @@ def test_search_spec_parses_query_paths_and_options():
     assert parsed.flag("--method") == "hybrid"
     assert parsed.flag("--top-k") == "5"
     assert parsed.flag("--threshold") == "0.4"
-    assert parsed.args == [("login docs", "str"),
-                           ("/knowledge/guides/*.md", "path")]
+    assert parsed.args == [
+        ("login docs", "str"),
+        ("/knowledge/guides/*.md", "path"),
+    ]
 
 
 def test_parse_double_dash_stops_flags():
-    spec = CommandSpec(options=(Option(short="-r"), ),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(Option(short="-r"),), rest=Operand(type="path")
+    )
     parsed = parse_command(spec, ["--", "-r"], cwd="/")
     assert parsed.flags == {}
     assert parsed.args == [("/-r", "path")]
@@ -118,8 +140,9 @@ def test_parse_text_rest():
 
 
 def test_parsed_args_paths():
-    p = ParsedArgs(flags={},
-                   args=[("/a", "path"), ("text", "str"), ("/b", "path")])
+    p = ParsedArgs(
+        flags={}, args=[("/a", "path"), ("text", "str"), ("/b", "path")]
+    )
     assert p.paths() == ["/a", "/b"]
 
 
@@ -137,9 +160,14 @@ def test_parsed_args_flag():
 
 
 def test_parse_combined_bool_and_value():
-    spec = CommandSpec(options=(Option(short="-r"), Option(short="-i"),
-                                Option(short="-m", type="str")),
-                       rest=Operand(type="path"))
+    spec = CommandSpec(
+        options=(
+            Option(short="-r"),
+            Option(short="-i"),
+            Option(short="-m", type="str"),
+        ),
+        rest=Operand(type="path"),
+    )
     parsed = parse_command(spec, ["-ri", "-m", "5", "file.txt"], cwd="/")
     assert parsed.flags == {"-r": True, "-i": True, "-m": "5"}
     assert parsed.args == [("/file.txt", "path")]
@@ -151,14 +179,16 @@ def test_clustered_flags_with_unknown_short_reported_as_invalid():
     # The offending character is reported as invalid instead of the token
     # becoming the pattern and shifting the real pattern into the paths.
     spec_missing_I = CommandSpec(
-        options=(Option(short="-R"),
-                 Option(short="-l")),  # -I deliberately missing
-        positional=(Operand(type="str"), ),
+        options=(
+            Option(short="-R"),
+            Option(short="-l"),
+        ),  # -I deliberately missing
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     )
-    parsed = parse_command(spec_missing_I,
-                           ["-RIl", "Base3\\|base3", "/r2/Review"],
-                           cwd="/")
+    parsed = parse_command(
+        spec_missing_I, ["-RIl", "Base3\\|base3", "/r2/Review"], cwd="/"
+    )
     assert parsed.texts() == ["Base3\\|base3"]
     assert parsed.paths() == ["/r2/Review"]
     assert parsed.invalid_options == ["I"]
@@ -167,11 +197,12 @@ def test_clustered_flags_with_unknown_short_reported_as_invalid():
 def test_clustered_flags_with_all_known_short_classifies_correctly():
     spec_full = CommandSpec(
         options=(Option(short="-R"), Option(short="-I"), Option(short="-l")),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     )
-    parsed = parse_command(spec_full, ["-RIl", "Base3\\|base3", "/r2/Review"],
-                           cwd="/")
+    parsed = parse_command(
+        spec_full, ["-RIl", "Base3\\|base3", "/r2/Review"], cwd="/"
+    )
     assert parsed.flags == {"-R": True, "-I": True, "-l": True}
     assert parsed.texts() == ["Base3\\|base3"]
     assert parsed.paths() == ["/r2/Review"]
@@ -179,8 +210,9 @@ def test_clustered_flags_with_all_known_short_classifies_correctly():
 
 def test_grep_spec_recognizes_capital_I_for_ignore_binary():
     grep_spec = SPECS["grep"]
-    parsed = parse_command(grep_spec, ["-RIl", "Base3\\|base3", "/r2/Review"],
-                           cwd="/")
+    parsed = parse_command(
+        grep_spec, ["-RIl", "Base3\\|base3", "/r2/Review"], cwd="/"
+    )
     assert parsed.flags.get("-I") is True
     assert parsed.flags.get("-R") is True
     assert parsed.flags.get("-l") is True
@@ -292,8 +324,9 @@ def test_all_commands_have_specs():
 
 def test_grep_spec_parses_correctly():
     spec = SPECS["grep"]
-    parsed = parse_command(spec, ["-rni", "pattern", "/data/file.txt"],
-                           cwd="/")
+    parsed = parse_command(
+        spec, ["-rni", "pattern", "/data/file.txt"], cwd="/"
+    )
     assert parsed.flags["-r"] is True
     assert parsed.flags["-n"] is True
     assert parsed.flags["-i"] is True
@@ -338,9 +371,9 @@ def test_cp_spec():
 
 def test_rg_spec_with_long_flags():
     spec = SPECS["rg"]
-    parsed = parse_command(spec,
-                           ["--type", "py", "--hidden", "pattern", "src/"],
-                           cwd="/")
+    parsed = parse_command(
+        spec, ["--type", "py", "--hidden", "pattern", "src/"], cwd="/"
+    )
     assert parsed.flag("--type") == ["py"]
     assert parsed.flag("--hidden") is True
     assert parsed.args[0] == ("pattern", "str")
@@ -349,8 +382,9 @@ def test_rg_spec_with_long_flags():
 
 def test_find_spec():
     spec = SPECS["find"]
-    parsed = parse_command(spec, ["/data", "-name", "*.py", "-type", "f"],
-                           cwd="/")
+    parsed = parse_command(
+        spec, ["/data", "-name", "*.py", "-type", "f"], cwd="/"
+    )
     assert parsed.paths() == ["/data"]
     assert parsed.flag("-name") == ["*.py"]
     assert parsed.flag("-type") == ["f"]
@@ -358,8 +392,9 @@ def test_find_spec():
 
 def test_curl_spec():
     spec = SPECS["curl"]
-    parsed = parse_command(spec, ["-H", "Accept: json", "http://example.com"],
-                           cwd="/")
+    parsed = parse_command(
+        spec, ["-H", "Accept: json", "http://example.com"], cwd="/"
+    )
     # Both spellings land on the long dest, the way every aliased option does.
     assert parsed.flag("--header") == "Accept: json"
     assert parsed.texts() == ["http://example.com"]
@@ -372,8 +407,9 @@ def test_curl_spec():
 
 def test_wget_spec():
     spec = SPECS["wget"]
-    parsed = parse_command(spec, ["http://example.com/file.zip", "out.zip"],
-                           cwd="/data")
+    parsed = parse_command(
+        spec, ["http://example.com/file.zip", "out.zip"], cwd="/data"
+    )
     assert parsed.args[0] == ("http://example.com/file.zip", "str")
     assert parsed.args[1] == ("/data/out.zip", "path")
 
@@ -388,8 +424,9 @@ def test_sed_spec():
 
 def test_sort_spec():
     spec = SPECS["sort"]
-    parsed = parse_command(spec, ["-k", "2", "-t", ",", "-rn", "data.csv"],
-                           cwd="/")
+    parsed = parse_command(
+        spec, ["-k", "2", "-t", ",", "-rn", "data.csv"], cwd="/"
+    )
     assert parsed.flag("--key") == ["2"]
     assert parsed.flag("--field-separator") == ","
     assert parsed.flag("--reverse") is True
@@ -416,12 +453,9 @@ def test_parse_to_kwargs_long_flags():
 
 
 def test_parse_to_kwargs_mixed():
-    parsed = ParsedArgs(flags={
-        "-i": True,
-        "--glob": "*.py",
-        "-m": "10"
-    },
-                        args=[])
+    parsed = ParsedArgs(
+        flags={"-i": True, "--glob": "*.py", "-m": "10"}, args=[]
+    )
     kw = parse_to_kwargs(parsed)
     assert kw == {"i": True, "glob": "*.py", "m": "10"}
 
@@ -452,11 +486,15 @@ def test_parse_to_kwargs_empty():
 
 
 def test_cache_is_an_unrecognized_option():
-    parsed = parse_command(SPECS["grep"], ["--cache", "/c", "bar", "f.txt"],
-                           "/data", "grep")
+    parsed = parse_command(
+        SPECS["grep"], ["--cache", "/c", "bar", "f.txt"], "/data", "grep"
+    )
     assert parsed.invalid_options == ["--cache"]
-    assert parsed.args == [("/c", "str"), ("/data/bar", "path"),
-                           ("/data/f.txt", "path")]
+    assert parsed.args == [
+        ("/c", "str"),
+        ("/data/bar", "path"),
+        ("/data/f.txt", "path"),
+    ]
     assert parsed.word_kinds == ["str", "str", "path", "path"]
 
 
@@ -506,7 +544,7 @@ def test_command_spec_new_style():
             Option(short="-n", type="str"),
             Option(long="--hidden"),
         ),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     )
     assert len(spec.options) == 3
@@ -526,7 +564,7 @@ def test_parse_new_spec_bool_flag():
 
 def test_parse_new_spec_value_flag():
     spec = CommandSpec(
-        options=(Option(short="-n", type="str"), ),
+        options=(Option(short="-n", type="str"),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-n", "10", "file.txt"], cwd="/")
@@ -549,7 +587,7 @@ def test_parse_new_spec_long_flags():
 
 def test_parse_new_spec_aliased_option():
     spec = CommandSpec(
-        options=(Option(short="-r", long="--recursive"), ),
+        options=(Option(short="-r", long="--recursive"),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["--recursive", "dir/"], cwd="/")
@@ -568,8 +606,9 @@ def test_parse_new_spec_path_value_flag():
         ),
         rest=Operand(type="path"),
     )
-    parsed = parse_command(spec, ["-c", "-f", "archive.tar", "file.txt"],
-                           cwd="/data")
+    parsed = parse_command(
+        spec, ["-c", "-f", "archive.tar", "file.txt"], cwd="/data"
+    )
     assert parsed.flags == {"-c": True, "-f": "/data/archive.tar"}
     assert parsed.paths() == ["/data/file.txt"]
     assert parsed.path_flag_values == ["/data/archive.tar"]
@@ -577,8 +616,8 @@ def test_parse_new_spec_path_value_flag():
 
 def test_parse_new_spec_positional_text_then_path():
     spec = CommandSpec(
-        options=(Option(short="-i"), ),
-        positional=(Operand(type="str"), ),
+        options=(Option(short="-i"),),
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-i", "pattern", "file1.txt"], cwd="/data")
@@ -592,7 +631,9 @@ def test_parse_new_spec_positional_text_then_path():
 def test_parse_new_spec_no_rest():
     # Overflow past a fixed arity is classified like the last positional
     # slot and passed through; the command owns the refusal (#452).
-    spec = CommandSpec(positional=(Operand(type="str"), Operand(type="str")), )
+    spec = CommandSpec(
+        positional=(Operand(type="str"), Operand(type="str")),
+    )
     parsed = parse_command(spec, ["hello", "world", "extra"], cwd="/")
     assert parsed.args == [
         ("hello", "str"),
@@ -603,7 +644,7 @@ def test_parse_new_spec_no_rest():
 
 def test_parse_new_spec_joined_value_flag():
     spec = CommandSpec(
-        options=(Option(short="-n", type="str"), ),
+        options=(Option(short="-n", type="str"),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-n10", "file.txt"], cwd="/")
@@ -613,7 +654,7 @@ def test_parse_new_spec_joined_value_flag():
 
 def test_numeric_shorthand_treats_dash_n_as_flag():
     spec = CommandSpec(
-        options=(Option(short="-n", type="str", numeric_shorthand=True), ),
+        options=(Option(short="-n", type="str", numeric_shorthand=True),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-3", "file.txt"], cwd="/")
@@ -623,7 +664,7 @@ def test_numeric_shorthand_treats_dash_n_as_flag():
 
 def test_numeric_shorthand_keeps_dash_n_value_form():
     spec = CommandSpec(
-        options=(Option(short="-n", type="str", numeric_shorthand=True), ),
+        options=(Option(short="-n", type="str", numeric_shorthand=True),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-n", "3", "file.txt"], cwd="/")
@@ -632,7 +673,7 @@ def test_numeric_shorthand_keeps_dash_n_value_form():
 
 def test_numeric_shorthand_opt_in_only():
     spec = CommandSpec(
-        options=(Option(short="-n", type="str"), ),
+        options=(Option(short="-n", type="str"),),
         rest=Operand(type="path"),
     )
     parsed = parse_command(spec, ["-3", "file.txt"], cwd="/")

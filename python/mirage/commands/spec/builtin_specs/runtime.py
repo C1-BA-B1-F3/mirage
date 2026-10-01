@@ -31,61 +31,94 @@ from mirage.commands.spec.types import CommandSpec, Operand, Option
 # buffers every stream and returns it whole. Pinned against CPython
 # 3.12.11.
 _PYTHON_OPTIONS: tuple[Option, ...] = (
-    Option(short="-c",
-           type="str",
-           description="Run the next argument as a program."),
-    Option(short="-m",
-           type="str",
-           description="Run the named module as __main__."),
-    Option(short="-u",
-           description=("(Ignored) Unbuffered output. Mirage buffers "
-                        "every stream and returns it whole.")),
-    Option(short="-b",
-           count=True,
-           description=("Warn on str(bytes) and on comparing bytes with "
-                        "str; -bb raises instead.")),
+    Option(
+        short="-c",
+        type="str",
+        description="Run the next argument as a program.",
+    ),
+    Option(
+        short="-m", type="str", description="Run the named module as __main__."
+    ),
+    Option(
+        short="-u",
+        description=(
+            "(Ignored) Unbuffered output. Mirage buffers "
+            "every stream and returns it whole."
+        ),
+    ),
+    Option(
+        short="-b",
+        count=True,
+        description=(
+            "Warn on str(bytes) and on comparing bytes with "
+            "str; -bb raises instead."
+        ),
+    ),
     Option(short="-B", description="Do not write .pyc files on import."),
     Option(short="-E", description="Ignore PYTHON* environment variables."),
     Option(short="-I", description="Isolated mode: implies -E and -s."),
-    Option(short="-O",
-           count=True,
-           description=("Remove assert and __debug__ blocks; -OO also "
-                        "strips docstrings.")),
-    Option(short="-P",
-           description=("Do not prepend the script's directory to "
-                        "sys.path.")),
-    Option(short="-q",
-           description=("(Ignored) Suppress the version banner. Mirage "
-                        "prints none.")),
-    Option(short="-s",
-           description="Do not add the user site directory to sys.path."),
-    Option(short="-S",
-           description="Do not run 'import site' on initialization."),
-    Option(short="-W",
-           type="str",
-           multiple=True,
-           description="Set a warning control filter."),
-    Option(short="-x",
-           description=("Skip the script file's first line, for a "
-                        "non-Unix #! form.")),
-    Option(short="-X",
-           type="str",
-           multiple=True,
-           description="Set an implementation-specific option."),
+    Option(
+        short="-O",
+        count=True,
+        description=(
+            "Remove assert and __debug__ blocks; -OO also strips docstrings."
+        ),
+    ),
+    Option(
+        short="-P",
+        description=("Do not prepend the script's directory to sys.path."),
+    ),
+    Option(
+        short="-q",
+        description=(
+            "(Ignored) Suppress the version banner. Mirage prints none."
+        ),
+    ),
+    Option(
+        short="-s",
+        description="Do not add the user site directory to sys.path.",
+    ),
+    Option(
+        short="-S", description="Do not run 'import site' on initialization."
+    ),
+    Option(
+        short="-W",
+        type="str",
+        multiple=True,
+        description="Set a warning control filter.",
+    ),
+    Option(
+        short="-x",
+        description=(
+            "Skip the script file's first line, for a non-Unix #! form."
+        ),
+    ),
+    Option(
+        short="-X",
+        type="str",
+        multiple=True,
+        description="Set an implementation-specific option.",
+    ),
     # CPython parses this one by hand and so rejects the --opt=value
     # spelling it accepts everywhere else; mirage's parser takes both,
     # which is the harmless direction to diverge in.
-    Option(long="--check-hash-based-pycs",
-           type="str",
-           choices=("always", "default", "never"),
-           description="How to validate hash-based .pyc files."),
+    Option(
+        long="--check-hash-based-pycs",
+        type="str",
+        choices=("always", "default", "never"),
+        description="How to validate hash-based .pyc files.",
+    ),
     # -VV shares the concise version line; build details are not exposed.
-    Option(short="-h",
-           long="--help",
-           description="Show this help message and exit."),
-    Option(short="-V",
-           long="--version",
-           description="Show version information and exit."),
+    Option(
+        short="-h",
+        long="--help",
+        description="Show this help message and exit.",
+    ),
+    Option(
+        short="-V",
+        long="--version",
+        description="Show version information and exit.",
+    ),
 )
 
 # CPython's own synopsis, `[-c cmd | -m mod | file | -] [arg] ...`: the
@@ -97,21 +130,19 @@ _PYTHON_OPTIONS: tuple[Option, ...] = (
 _PYTHON_SCRIPT = Operand(type="path", provided_by=("-c", "-m"))
 
 # node's `[script.js | -e "script" | -] [arguments]`, the same shape.
-_JS_SCRIPT = Operand(type="path", provided_by=("-e", ))
+_JS_SCRIPT = Operand(type="path", provided_by=("-e",))
 
 SPECS: dict[str, CommandSpec] = {
-    'python':
-    CommandSpec(
+    "python": CommandSpec(
         description="Run Python on the workspace's bound runtime.",
         options=_PYTHON_OPTIONS,
-        positional=(_PYTHON_SCRIPT, ),
+        positional=(_PYTHON_SCRIPT,),
         rest=Operand(type="str", remainder=True),
     ),
-    'python3':
-    CommandSpec(
+    "python3": CommandSpec(
         description="Run Python on the workspace's bound runtime.",
         options=_PYTHON_OPTIONS,
-        positional=(_PYTHON_SCRIPT, ),
+        positional=(_PYTHON_SCRIPT,),
         rest=Operand(type="str", remainder=True),
     ),
     # js and node take the remainder for the same reason python does: the
@@ -119,46 +150,59 @@ SPECS: dict[str, CommandSpec] = {
     # argv, not the interpreter's flags. `node - -e x` runs the piped
     # program and hands it `-e x`; `node s.js -m` hands s.js its own -m.
     # Pinned against node 22.8.0.
-    'js':
-    CommandSpec(
+    "js": CommandSpec(
         description="Run JavaScript on a sandboxed quickjs engine.",
         options=(
-            Option(short="-v",
-                   long="--version",
-                   description="Show runtime version information and exit."),
-            Option(short="-e",
-                   type="str",
-                   description="Evaluate the next argument as a script."),
-            Option(short="-m",
-                   long="--module",
-                   description=("Run as an ES module (top-level "
-                                "import/export/await); .mjs files "
-                                "select this automatically.")),
+            Option(
+                short="-v",
+                long="--version",
+                description="Show runtime version information and exit.",
+            ),
+            Option(
+                short="-e",
+                type="str",
+                description="Evaluate the next argument as a script.",
+            ),
+            Option(
+                short="-m",
+                long="--module",
+                description=(
+                    "Run as an ES module (top-level "
+                    "import/export/await); .mjs files "
+                    "select this automatically."
+                ),
+            ),
         ),
-        positional=(_JS_SCRIPT, ),
+        positional=(_JS_SCRIPT,),
         rest=Operand(type="str", remainder=True),
     ),
-    'node':
-    CommandSpec(
+    "node": CommandSpec(
         description="Run JavaScript on a sandboxed quickjs engine.",
         options=(
-            Option(short="-v",
-                   long="--version",
-                   description="Show runtime version information and exit."),
-            Option(short="-e",
-                   type="str",
-                   description="Evaluate the next argument as a script."),
-            Option(short="-m",
-                   long="--module",
-                   description=("Run as an ES module (top-level "
-                                "import/export/await); .mjs files "
-                                "select this automatically.")),
+            Option(
+                short="-v",
+                long="--version",
+                description="Show runtime version information and exit.",
+            ),
+            Option(
+                short="-e",
+                type="str",
+                description="Evaluate the next argument as a script.",
+            ),
+            Option(
+                short="-m",
+                long="--module",
+                description=(
+                    "Run as an ES module (top-level "
+                    "import/export/await); .mjs files "
+                    "select this automatically."
+                ),
+            ),
         ),
-        positional=(_JS_SCRIPT, ),
+        positional=(_JS_SCRIPT,),
         rest=Operand(type="str", remainder=True),
     ),
-    'mktemp':
-    CommandSpec(
+    "mktemp": CommandSpec(
         options=(
             Option(short="-d", long="--directory"),
             Option(short="-p", type="path"),
@@ -168,10 +212,9 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-q", long="--quiet"),
             Option(long="--suffix", type="str"),
         ),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
     ),
-    'bc':
-    CommandSpec(
+    "bc": CommandSpec(
         description="Arbitrary precision calculator language.",
         options=(
             Option(short="-l", description="Load the standard math library."),
@@ -179,151 +222,210 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="str"),
     ),
-    'expr':
-    CommandSpec(
+    "expr": CommandSpec(
         description="Evaluate expressions.",
         rest=Operand(type="str"),
     ),
-    'history':
-    CommandSpec(
+    "history": CommandSpec(
         description="Show command history for the session.",
         options=(
             Option(short="-c", description="Clear the command history."),
-            Option(short="-d",
-                   type="str",
-                   description=("Delete the entry at the given position; "
-                                "negative counts back from the end.")),
-            Option(short="-s",
-                   description=("Append the args to the history as a "
-                                "single entry without executing them.")),
-            Option(short="-p",
-                   description="Print the args without storing them."),
-            Option(short="-a",
-                   description=("Append: no-op (file and store are "
-                                "the same).")),
-            Option(short="-r",
-                   description=("Read: no-op (file and store are "
-                                "the same).")),
-            Option(short="-w",
-                   description=("Write: no-op (file and store are "
-                                "the same).")),
-            Option(short="-n",
-                   description=("Read-new: no-op (file and store are "
-                                "the same).")),
+            Option(
+                short="-d",
+                type="str",
+                description=(
+                    "Delete the entry at the given position; "
+                    "negative counts back from the end."
+                ),
+            ),
+            Option(
+                short="-s",
+                description=(
+                    "Append the args to the history as a "
+                    "single entry without executing them."
+                ),
+            ),
+            Option(
+                short="-p", description="Print the args without storing them."
+            ),
+            Option(
+                short="-a",
+                description=("Append: no-op (file and store are the same)."),
+            ),
+            Option(
+                short="-r",
+                description=("Read: no-op (file and store are the same)."),
+            ),
+            Option(
+                short="-w",
+                description=("Write: no-op (file and store are the same)."),
+            ),
+            Option(
+                short="-n",
+                description=("Read-new: no-op (file and store are the same)."),
+            ),
         ),
         rest=Operand(type="str"),
     ),
-    'date':
-    CommandSpec(
+    "date": CommandSpec(
         description="Print or set the system date and time.",
         options=(
             Option(
                 short="-d",
                 long="--date",
                 type="str",
-                description=("Display the time described by the given "
-                             "date string."),
+                description=(
+                    "Display the time described by the given date string."
+                ),
             ),
             # GNU -I[FMT]: the precision rides attached (-Is) or after
             # `=`, never as the next word, and matches by prefix in
             # GNU's own table order.
-            Option(short="-I",
-                   long="--iso-8601",
-                   type="str",
-                   value_optional=True,
-                   choices=("hours", "minutes", "date", "seconds", "ns"),
-                   description=("Output date/time in ISO 8601 format, to "
-                                "the given precision (default date).")),
-            Option(short="-R",
-                   long="--rfc-email",
-                   description="Output date in RFC 5322 email format."),
-            Option(long="--rfc-3339",
-                   type="str",
-                   choices=("date", "seconds", "ns"),
-                   description=("Output date/time in RFC 3339 format, to "
-                                "the given precision.")),
-            Option(short="-u",
-                   long="--utc",
-                   description="Use Coordinated Universal Time (UTC)."),
-            Option(long="--universal",
-                   description="Use Coordinated Universal Time (UTC)."),
+            Option(
+                short="-I",
+                long="--iso-8601",
+                type="str",
+                value_optional=True,
+                choices=("hours", "minutes", "date", "seconds", "ns"),
+                description=(
+                    "Output date/time in ISO 8601 format, to "
+                    "the given precision (default date)."
+                ),
+            ),
+            Option(
+                short="-R",
+                long="--rfc-email",
+                description="Output date in RFC 5322 email format.",
+            ),
+            Option(
+                long="--rfc-3339",
+                type="str",
+                choices=("date", "seconds", "ns"),
+                description=(
+                    "Output date/time in RFC 3339 format, to "
+                    "the given precision."
+                ),
+            ),
+            Option(
+                short="-u",
+                long="--utc",
+                description="Use Coordinated Universal Time (UTC).",
+            ),
+            Option(
+                long="--universal",
+                description="Use Coordinated Universal Time (UTC).",
+            ),
         ),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
     ),
-    'uname':
-    CommandSpec(
+    "uname": CommandSpec(
         description="Print certain system information.",
         options=(
-            Option(short="-a",
-                   long="--all",
-                   description=("Print all information, omitting -p and -i "
-                                "if unknown.")),
-            Option(short="-s",
-                   long="--kernel-name",
-                   description="Print the kernel name."),
-            Option(short="-n",
-                   long="--nodename",
-                   description="Print the network node hostname."),
-            Option(short="-r",
-                   long="--kernel-release",
-                   description="Print the kernel release."),
-            Option(short="-v",
-                   long="--kernel-version",
-                   description="Print the kernel version."),
-            Option(short="-m",
-                   long="--machine",
-                   description="Print the machine hardware name."),
-            Option(short="-p",
-                   long="--processor",
-                   description="Print the processor type."),
-            Option(short="-i",
-                   long="--hardware-platform",
-                   description="Print the hardware platform."),
-            Option(short="-o",
-                   long="--operating-system",
-                   description="Print the operating system."),
+            Option(
+                short="-a",
+                long="--all",
+                description=(
+                    "Print all information, omitting -p and -i if unknown."
+                ),
+            ),
+            Option(
+                short="-s",
+                long="--kernel-name",
+                description="Print the kernel name.",
+            ),
+            Option(
+                short="-n",
+                long="--nodename",
+                description="Print the network node hostname.",
+            ),
+            Option(
+                short="-r",
+                long="--kernel-release",
+                description="Print the kernel release.",
+            ),
+            Option(
+                short="-v",
+                long="--kernel-version",
+                description="Print the kernel version.",
+            ),
+            Option(
+                short="-m",
+                long="--machine",
+                description="Print the machine hardware name.",
+            ),
+            Option(
+                short="-p",
+                long="--processor",
+                description="Print the processor type.",
+            ),
+            Option(
+                short="-i",
+                long="--hardware-platform",
+                description="Print the hardware platform.",
+            ),
+            Option(
+                short="-o",
+                long="--operating-system",
+                description="Print the operating system.",
+            ),
         ),
         rest=Operand(type="str"),
     ),
-    'sleep':
-    CommandSpec(
+    "sleep": CommandSpec(
         description="Delay for a specified amount of time.",
         rest=Operand(type="str"),
     ),
-    'bash':
-    CommandSpec(
-        description=("Run a command string through Mirage's shell. "
-                     "Only `-c` is meaningful; other flags are accepted "
-                     "and ignored. `bash` and `sh` are aliases."),
+    "bash": CommandSpec(
+        description=(
+            "Run a command string through Mirage's shell. "
+            "Only `-c` is meaningful; other flags are accepted "
+            "and ignored. `bash` and `sh` are aliases."
+        ),
         options=(
             Option(
                 short="-c",
                 type="str",
-                description=("Read commands from the next argument "
-                             "and execute them."),
+                description=(
+                    "Read commands from the next argument and execute them."
+                ),
             ),
             Option(
                 short="-s",
-                description=("Read commands from stdin instead of "
-                             "from an argument."),
+                description=(
+                    "Read commands from stdin instead of from an argument."
+                ),
             ),
-            Option(short="-l",
-                   description=("(Ignored) Login shell. Mirage does "
-                                "not source profile files.")),
-            Option(short="-i",
-                   description=("(Ignored) Interactive flag. Mirage "
-                                "shells are non-interactive.")),
+            Option(
+                short="-l",
+                description=(
+                    "(Ignored) Login shell. Mirage does "
+                    "not source profile files."
+                ),
+            ),
+            Option(
+                short="-i",
+                description=(
+                    "(Ignored) Interactive flag. Mirage "
+                    "shells are non-interactive."
+                ),
+            ),
             Option(short="-e", description="(Ignored) Exit on first error."),
-            Option(short="-u",
-                   description="(Ignored) Treat unset variables as errors."),
-            Option(short="-x",
-                   description="(Ignored) Print commands as they execute."),
+            Option(
+                short="-u",
+                description="(Ignored) Treat unset variables as errors.",
+            ),
+            Option(
+                short="-x",
+                description="(Ignored) Print commands as they execute.",
+            ),
             Option(long="--login", description="(Ignored) Login shell."),
             Option(long="--norc", description="(Ignored) Skip rc files."),
-            Option(long="--noprofile",
-                   description="(Ignored) Skip profile files."),
-            Option(long="--posix",
-                   description="(Ignored) POSIX-conformant mode."),
+            Option(
+                long="--noprofile", description="(Ignored) Skip profile files."
+            ),
+            Option(
+                long="--posix", description="(Ignored) POSIX-conformant mode."
+            ),
         ),
         rest=Operand(type="str"),
     ),

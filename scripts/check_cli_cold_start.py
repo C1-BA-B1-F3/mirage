@@ -84,8 +84,10 @@ def static_imports(text: str) -> list[tuple[str, bool]]:
     Returns:
         list[tuple[str, bool]]: (specifier, is_type_only) in source order.
     """
-    return [(m.group("spec"), m.group("type") is not None)
-            for m in STATIC_IMPORT_RE.finditer(text)]
+    return [
+        (m.group("spec"), m.group("type") is not None)
+        for m in STATIC_IMPORT_RE.finditer(text)
+    ]
 
 
 def bare_specifiers(entry: Path) -> tuple[set[str], list[str]]:
@@ -120,7 +122,8 @@ def bare_specifiers(entry: Path) -> tuple[set[str], list[str]]:
             if not target.is_file():
                 raise UnresolvedImport(
                     f"{current.name} imports {spec}, which resolves to no "
-                    f"file ({target}); the walk below it would be silent")
+                    f"file ({target}); the walk below it would be silent"
+                )
             queue.append(target)
     return bare, sorted(p.name for p in seen)
 
@@ -156,8 +159,10 @@ def check_entries() -> list[str]:
     problems: list[str] = []
     for name, path in sorted(gated_entries().items()):
         if not path.is_file():
-            problems.append(f"{name}: {path} is missing; run "
-                            f"`pnpm -r build` before this gate")
+            problems.append(
+                f"{name}: {path} is missing; run "
+                f"`pnpm -r build` before this gate"
+            )
             continue
         try:
             bare, walked = bare_specifiers(path)
@@ -166,8 +171,9 @@ def check_entries() -> list[str]:
             continue
         for spec in sorted(bare):
             if spec.startswith(HEAVY):
-                problems.append(f"{name} reaches {spec} "
-                                f"(walked {', '.join(walked)})")
+                problems.append(
+                    f"{name} reaches {spec} (walked {', '.join(walked)})"
+                )
     return problems
 
 
@@ -189,7 +195,8 @@ def check_cli_sources() -> list[str]:
             if spec == SERVER_PKG and not type_only:
                 problems.append(
                     f"{path.relative_to(TS)} imports {SERVER_PKG} bare; "
-                    f"use the subpath that supplies the symbol")
+                    f"use the subpath that supplies the symbol"
+                )
                 break
     return problems
 
@@ -206,13 +213,18 @@ def heavy_python_modules(statement: str) -> list[str]:
         list[str]: the loaded module names under a `PY_HEAVY` prefix.
     """
     probe = f"{statement}\nimport sys\nprint('\\n'.join(sys.modules))"
-    out = subprocess.run([sys.executable, "-c", probe],
-                         cwd=ROOT / "python",
-                         capture_output=True,
-                         text=True,
-                         check=True).stdout.split()
-    return sorted(name for name in out if any(
-        name == h or name.startswith(h + ".") for h in PY_HEAVY))
+    out = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=ROOT / "python",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    return sorted(
+        name
+        for name in out
+        if any(name == h or name.startswith(h + ".") for h in PY_HEAVY)
+    )
 
 
 def check_python_cli() -> list[str]:
@@ -242,9 +254,12 @@ def barrel_collisions(init: Path) -> list[str]:
     """
     exports: dict[str, tuple[str, ...]] = {}
     for node in ast.parse(init.read_text()).body:
-        if (isinstance(node, ast.AnnAssign)
-                and isinstance(node.target, ast.Name)
-                and node.target.id == "_EXPORTS" and node.value is not None):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "_EXPORTS"
+            and node.value is not None
+        ):
             exports = ast.literal_eval(node.value)
     children = {p.stem for p in init.parent.glob("*.py")}
     children |= {p.parent.name for p in init.parent.glob("*/__init__.py")}
@@ -279,17 +294,19 @@ def check_splitting() -> list[str]:
         list[str]: one line per place splitting is disabled.
     """
     problems: list[str] = []
-    if re.search(r"splitting:\s*false",
-                 (SERVER / "tsup.config.ts").read_text()):
-        problems.append("packages/server/tsup.config.ts sets "
-                        "`splitting: false`")
+    if re.search(
+        r"splitting:\s*false", (SERVER / "tsup.config.ts").read_text()
+    ):
+        problems.append(
+            "packages/server/tsup.config.ts sets `splitting: false`"
+        )
     manifest = json.loads((SERVER / "package.json").read_text())
     if "--no-splitting" in manifest.get("scripts", {}).get("build", ""):
-        problems.append("packages/server build script passes "
-                        "`--no-splitting`")
+        problems.append("packages/server build script passes `--no-splitting`")
     return [
         f"{p}; that duplicates a shared module into every entry and "
-        f"breaks `instanceof` across two of them" for p in problems
+        f"breaks `instanceof` across two of them"
+        for p in problems
     ]
 
 
@@ -306,8 +323,10 @@ SELFTEST_IMPORTS = (
     ("const { a } = await import(\n  '@struktoai/mirage-node'\n)", False),
     ("import { a } from 'node:fs'", False),
     ("import { a } from '@struktoai/mirage-core/utils/sort'", False),
-    ("program.option('--from <branch>', 'Branch to fork from', 'jose')",
-     False),
+    (
+        "program.option('--from <branch>', 'Branch to fork from', 'jose')",
+        False,
+    ),
 )
 
 # The other half of the gate: which spellings count as importing the
@@ -350,8 +369,10 @@ def selftest(tmp: Path) -> int:
             failures += 1
             print(f"  walker: {source!r} -> heavy={got}, want {want}")
     for source, want in SELFTEST_BARREL:
-        got = any(spec == SERVER_PKG and not type_only
-                  for spec, type_only in static_imports(source))
+        got = any(
+            spec == SERVER_PKG and not type_only
+            for spec, type_only in static_imports(source)
+        )
         if got != want:
             failures += 1
             print(f"  barrel: {source!r} -> bare={got}, want {want}")
@@ -362,8 +383,10 @@ def selftest(tmp: Path) -> int:
         pass
     else:
         failures += 1
-        print("  walker: an unresolvable relative import was skipped in "
-              "silence instead of raising")
+        print(
+            "  walker: an unresolvable relative import was skipped in "
+            "silence instead of raising"
+        )
     for statement, want in SELFTEST_PYTHON:
         got = bool(heavy_python_modules(statement))
         if got != want:
@@ -378,13 +401,15 @@ def selftest(tmp: Path) -> int:
         shadowed = barrel_collisions(init)
         if shadowed != expected:
             failures += 1
-            print(f"  barrel name {exported!r} -> {shadowed}, "
-                  f"want {expected}")
-    total = (len(SELFTEST_IMPORTS) + len(SELFTEST_BARREL) +
-             len(SELFTEST_PYTHON) + 3)
+            print(f"  barrel name {exported!r} -> {shadowed}, want {expected}")
+    total = (
+        len(SELFTEST_IMPORTS) + len(SELFTEST_BARREL) + len(SELFTEST_PYTHON) + 3
+    )
     if failures:
-        print(f"\n{failures} of {total} selftest case(s) failed; the gate "
-              f"is blind to a shape it claims to catch")
+        print(
+            f"\n{failures} of {total} selftest case(s) failed; the gate "
+            f"is blind to a shape it claims to catch"
+        )
         return 1
     print(f"selftest OK: {total} import shapes covered")
     return 0
@@ -394,19 +419,28 @@ def main() -> int:
     if "--selftest" in sys.argv[1:]:
         with tempfile.TemporaryDirectory() as tmp:
             return selftest(Path(tmp))
-    problems = (check_entries() + check_cli_sources() + check_splitting() +
-                check_python_cli() + check_python_barrels())
+    problems = (
+        check_entries()
+        + check_cli_sources()
+        + check_splitting()
+        + check_python_cli()
+        + check_python_barrels()
+    )
     if problems:
         print(f"{len(problems)} cold-start regression(s):")
         for line in problems:
             print(f"  {line}")
-        print("\nEach one costs every mirage spawn or breaks a lazy barrel. "
-              "See the barrel note under Patterns in CLAUDE.md.")
+        print(
+            "\nEach one costs every mirage spawn or breaks a lazy barrel. "
+            "See the barrel note under Patterns in CLAUDE.md."
+        )
         return 1
-    print(f"cli cold start: {len(gated_entries())} entries reach no heavy "
-          f"package; no cli source imports the server barrel bare; "
-          f"python {PY_CLI_ENTRY} loads no heavy module; no lazy barrel "
-          f"name is a submodule's")
+    print(
+        f"cli cold start: {len(gated_entries())} entries reach no heavy "
+        f"package; no cli source imports the server barrel bare; "
+        f"python {PY_CLI_ENTRY} loads no heavy module; no lazy barrel "
+        f"name is a submodule's"
+    )
     return 0
 
 

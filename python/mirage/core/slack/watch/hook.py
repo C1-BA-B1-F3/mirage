@@ -17,11 +17,20 @@ from collections.abc import Sequence
 from mirage.accessor.slack import SlackAccessor
 from mirage.core.slack.client import slack_get
 from mirage.core.slack.formatters import channel_dirname, dm_dirname
-from mirage.core.slack.watch.constants import (CHANNEL_LIST_EVENTS, CHAT_FILE,
-                                               DM_LIST_EVENTS, FILES_DIR,
-                                               ITEM_EVENTS, USER_LIST_EVENTS)
-from mirage.core.slack.watch.payload import (affected_ts, channel_id_of,
-                                             day_of, item_channel)
+from mirage.core.slack.watch.constants import (
+    CHANNEL_LIST_EVENTS,
+    CHAT_FILE,
+    DM_LIST_EVENTS,
+    FILES_DIR,
+    ITEM_EVENTS,
+    USER_LIST_EVENTS,
+)
+from mirage.core.slack.watch.payload import (
+    affected_ts,
+    channel_id_of,
+    day_of,
+    item_channel,
+)
 from mirage.core.slack.watch.types import ConversationDir
 from mirage.types import FileChangeKind, FileEvent, JsonValue, PathSpec
 from mirage.watch.events import event_at, text_field
@@ -84,8 +93,8 @@ class SlackEventHook:
 
     def __init__(self, accessor: SlackAccessor) -> None:
         """Args:
-            accessor (SlackAccessor): Backend handle, read for its
-                config and used to resolve conversation ids.
+        accessor (SlackAccessor): Backend handle, read for its
+            config and used to resolve conversation ids.
         """
         self._accessor = accessor
         self._dirs: dict[str, ConversationDir] = {}
@@ -100,9 +109,12 @@ class SlackEventHook:
         cached = self._users.get(user_id)
         if cached is not None:
             return cached
-        data = await slack_get(self._accessor.config,
-                               "users.info", {"user": user_id},
-                               session=self._accessor.pool)
+        data = await slack_get(
+            self._accessor.config,
+            "users.info",
+            {"user": user_id},
+            session=self._accessor.pool,
+        )
         user = data.get("user") or {}
         name = str(user.get("name") or user_id)
         self._users[user_id] = name
@@ -117,16 +129,19 @@ class SlackEventHook:
         cached = self._dirs.get(channel_id)
         if cached is not None:
             return cached
-        data = await slack_get(self._accessor.config,
-                               "conversations.info", {"channel": channel_id},
-                               session=self._accessor.pool)
+        data = await slack_get(
+            self._accessor.config,
+            "conversations.info",
+            {"channel": channel_id},
+            session=self._accessor.pool,
+        )
         channel = data.get("channel") or {}
         channel.setdefault("id", channel_id)
         if channel.get("is_im") or channel.get("is_mpim"):
             user_id = str(channel.get("user") or "")
-            user_map = ({
-                user_id: await self._user_name(user_id)
-            } if user_id else {})
+            user_map = (
+                {user_id: await self._user_name(user_id)} if user_id else {}
+            )
             resolved = ConversationDir("dms", dm_dirname(channel, user_map))
         else:
             resolved = ConversationDir("channels", channel_dirname(channel))
@@ -146,8 +161,9 @@ class SlackEventHook:
         where = await self._resolve(channel_id)
         return f"{where.container}/{where.dirname}/{day}"
 
-    async def _transcripts(self, root: PathSpec, channel_id: str | None,
-                           stamps: Sequence[str]) -> Sequence[FileEvent]:
+    async def _transcripts(
+        self, root: PathSpec, channel_id: str | None, stamps: Sequence[str]
+    ) -> Sequence[FileEvent]:
         """One UPDATE per day directory the stamps land in.
 
         Args:
@@ -160,8 +176,9 @@ class SlackEventHook:
             out.extend(await self._transcript(root, channel_id, ts))
         return tuple(out)
 
-    async def _transcript(self, root: PathSpec, channel_id: str | None,
-                          ts: str | None) -> Sequence[FileEvent]:
+    async def _transcript(
+        self, root: PathSpec, channel_id: str | None, ts: str | None
+    ) -> Sequence[FileEvent]:
         """One UPDATE on the transcript a conversation and ts name.
 
         Args:
@@ -174,11 +191,13 @@ class SlackEventHook:
         day_dir = await self._day_dir(channel_id, ts)
         if day_dir is None:
             return ()
-        return (event_at(root, f"{day_dir}/{CHAT_FILE}",
-                         FileChangeKind.UPDATE), )
+        return (
+            event_at(root, f"{day_dir}/{CHAT_FILE}", FileChangeKind.UPDATE),
+        )
 
-    async def _file_shared(self, root: PathSpec,
-                           payload: JsonValue) -> Sequence[FileEvent]:
+    async def _file_shared(
+        self, root: PathSpec, payload: JsonValue
+    ) -> Sequence[FileEvent]:
         """Map a shared file onto that day's attachment directory.
 
         Args:
@@ -192,8 +211,9 @@ class SlackEventHook:
         day_dir = await self._day_dir(channel_id, ts)
         if day_dir is None:
             return ()
-        return (event_at(root, f"{day_dir}/{FILES_DIR}",
-                         FileChangeKind.UNKNOWN), )
+        return (
+            event_at(root, f"{day_dir}/{FILES_DIR}", FileChangeKind.UNKNOWN),
+        )
 
     def _forget(self, payload: JsonValue) -> None:
         """Drop a memoized directory name the event just invalidated.
@@ -205,8 +225,9 @@ class SlackEventHook:
         if channel_id is not None:
             self._dirs.pop(channel_id, None)
 
-    async def to_events(self, root: PathSpec, event_type: str,
-                        payload: JsonValue) -> Sequence[FileEvent]:
+    async def to_events(
+        self, root: PathSpec, event_type: str, payload: JsonValue
+    ) -> Sequence[FileEvent]:
         """Map one Slack event to the changes it implies.
 
         Args:
@@ -215,9 +236,9 @@ class SlackEventHook:
             payload (JsonValue): The inner event body.
         """
         if event_type == "message":
-            return await self._transcripts(root,
-                                           text_field(payload, "channel"),
-                                           affected_ts(payload))
+            return await self._transcripts(
+                root, text_field(payload, "channel"), affected_ts(payload)
+            )
         if event_type in ITEM_EVENTS:
             channel_id, ts = item_channel(payload)
             return await self._transcript(root, channel_id, ts)
@@ -225,9 +246,9 @@ class SlackEventHook:
             return await self._file_shared(root, payload)
         if event_type in CHANNEL_LIST_EVENTS:
             self._forget(payload)
-            return (event_at(root, "channels", FileChangeKind.UNKNOWN), )
+            return (event_at(root, "channels", FileChangeKind.UNKNOWN),)
         if event_type in DM_LIST_EVENTS:
-            return (event_at(root, "dms", FileChangeKind.UNKNOWN), )
+            return (event_at(root, "dms", FileChangeKind.UNKNOWN),)
         if event_type in USER_LIST_EVENTS:
-            return (event_at(root, "users", FileChangeKind.UNKNOWN), )
+            return (event_at(root, "users", FileChangeKind.UNKNOWN),)
         return ()

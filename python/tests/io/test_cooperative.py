@@ -20,7 +20,7 @@ async def test_wc_timeout_closes_producer():
             closed = True
 
     with pytest.raises(CommandTimeoutError):
-        await run_with_timeout(wc(source()), .001, "wc")
+        await run_with_timeout(wc(source()), 0.001, "wc")
     assert closed
 
 
@@ -35,7 +35,7 @@ async def test_readline_allows_timer_progress():
     async def source():
         yield b"line\n" * 100_000
 
-    timer = asyncio.get_running_loop().call_later(.001, tick)
+    timer = asyncio.get_running_loop().call_later(0.001, tick)
     reader = AsyncLineIterator(source())
     try:
         for _ in range(100_000):
@@ -48,6 +48,7 @@ async def test_readline_allows_timer_progress():
 @pytest.mark.asyncio
 async def test_empty_chunks_allow_timer_progress():
     from mirage.io.cooperative import chunks
+
     fired = asyncio.Event()
     produced = 0
 
@@ -58,7 +59,7 @@ async def test_empty_chunks_allow_timer_progress():
             yield b""
         yield b"late"
 
-    timer = asyncio.get_running_loop().call_later(.001, fired.set)
+    timer = asyncio.get_running_loop().call_later(0.001, fired.set)
     try:
         assert [c async for c in chunks(source())] == [b"late"]
         # Without a yield per pull the loop never suspends, the
@@ -82,7 +83,7 @@ async def test_caller_cancel_joins_producer():
         finally:
             closed = True
 
-    timer = asyncio.get_running_loop().call_later(.001, cancel.set)
+    timer = asyncio.get_running_loop().call_later(0.001, cancel.set)
     try:
         with pytest.raises(MirageAbortError):
             await run_cancellable(wc(source()), cancel)
@@ -106,8 +107,13 @@ async def test_long_line_preserves_delimiter_and_tail():
 @pytest.mark.asyncio
 async def test_wc_keeps_utf8_and_word_state_across_chunks():
     counts = await wc(("a" * 16_383 + "é x\n").encode())
-    assert (counts.lines, counts.words, counts.bytes_, counts.chars,
-            counts.max_line_length) == (1, 2, 16_388, 16_387, 16_386)
+    assert (
+        counts.lines,
+        counts.words,
+        counts.bytes_,
+        counts.chars,
+        counts.max_line_length,
+    ) == (1, 2, 16_388, 16_387, 16_386)
 
 
 @pytest.mark.asyncio
@@ -126,6 +132,7 @@ async def test_delimiter_spanning_chunk_boundary():
 @pytest.mark.asyncio
 async def test_cancelled_read_chars_closes_source():
     from mirage.io.async_line_iterator import AsyncLineIterator
+
     closed = False
 
     async def source():
@@ -146,11 +153,12 @@ async def test_aborted_execution_records_failure():
     from mirage import Workspace
     from mirage.vfs.ram import RAMVFS
     from mirage.workspace.abort import MirageAbortError
+
     ws = Workspace({"/data": RAMVFS()})
     cancel = asyncio.Event()
 
     async def source():
-        asyncio.get_running_loop().call_later(.001, cancel.set)
+        asyncio.get_running_loop().call_later(0.001, cancel.set)
         yield b"line\n" * 500_000
         # Keep the command unfinished even if the fast scan beats the timer.
         await asyncio.Event().wait()
@@ -173,6 +181,7 @@ async def test_aborted_execution_records_failure():
 async def test_cancel_discards_cacheable_input():
     from mirage.io import CachableAsyncIterator
     from mirage.io.cooperative import chunks
+
     closed = False
 
     async def source():
@@ -199,6 +208,7 @@ async def test_pipeline_cache_lifecycle(failure):
     from mirage.workspace.executor.pipes import handle_pipe
     from mirage.workspace.session import SessionState
     from mirage.workspace.types import ExecutionNode
+
     closed = False
 
     async def source():
@@ -213,9 +223,11 @@ async def test_pipeline_cache_lifecycle(failure):
 
     async def execute(cmd, session, stdin, call_stack, *, sink=None):
         if cmd == "cat":
-            return async_chain([stream]), IOResult(
-                reads={"/remote": stream},
-                cache=["/remote"]), ExecutionNode(command="cat")
+            return (
+                async_chain([stream]),
+                IOResult(reads={"/remote": stream}, cache=["/remote"]),
+                ExecutionNode(command="cat"),
+            )
         await anext(stdin)
         if failure == "abort":
             raise asyncio.CancelledError()
@@ -223,15 +235,19 @@ async def test_pipeline_cache_lifecycle(failure):
             raise CommandTimeoutError("wc", 1)
         return b"first", IOResult(), ExecutionNode(command="head")
 
-    run = handle_pipe(execute, ["cat", "wc"], [],
-                      SessionState(session_id="test"))
+    run = handle_pipe(
+        execute, ["cat", "wc"], [], SessionState(session_id="test")
+    )
     if failure == "early":
         await run
         assert not closed
         assert await stream.drain() == b"firstrest"
     else:
-        with pytest.raises(asyncio.CancelledError if failure ==
-                           "abort" else CommandTimeoutError):
+        with pytest.raises(
+            asyncio.CancelledError
+            if failure == "abort"
+            else CommandTimeoutError
+        ):
             await run
         assert stream.buffered_chunks == []
     assert closed
@@ -241,6 +257,7 @@ async def test_pipeline_cache_lifecycle(failure):
 async def test_value_barrier_discards_hidden_cache_read():
     from mirage.io import CachableAsyncIterator, IOResult
     from mirage.shell.barrier import BarrierPolicy, apply_barrier
+
     closed = False
 
     async def source():
@@ -267,6 +284,7 @@ async def test_value_barrier_discards_hidden_cache_read():
 @pytest.mark.parametrize("method", ["read_until", "read_chars"])
 async def test_line_reader_discards_cache_on_cancel(method, monkeypatch):
     from mirage.io import CachableAsyncIterator
+
     closed = False
 
     async def source():
@@ -299,6 +317,7 @@ async def test_cancel_during_cache_fill_aborts():
     from mirage import Workspace
     from mirage.vfs.ram import RAMVFS
     from mirage.workspace.abort import MirageAbortError
+
     ws = Workspace({"/data": RAMVFS()})
     cancel = asyncio.Event()
 
@@ -333,16 +352,16 @@ async def test_cancel_reaches_a_whole_line_runtime():
 
     class Hanging(Runtime, LineExecutorMixin):
         name = "hanging"
-        captures = ("hangcmd", )
+        captures = ("hangcmd",)
 
         async def run_line(self, line, stdin, env, cwd):
             await asyncio.Event().wait()
 
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[Hanging(), "workspace"])
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[Hanging(), "workspace"]
+    )
     cancel = asyncio.Event()
-    asyncio.get_running_loop().call_later(.01, cancel.set)
+    asyncio.get_running_loop().call_later(0.01, cancel.set)
     try:
         with pytest.raises(MirageAbortError):
             await ws.shell("hangcmd now", cancel=cancel)

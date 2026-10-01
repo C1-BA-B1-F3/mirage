@@ -18,18 +18,23 @@ from pathlib import Path
 import pytest
 
 from mirage.commands.cli.builtin.git.types import RepoLocation
-from mirage.commands.cli.builtin.git.worktree import (UNTRACKED_ALL,
-                                                      UNTRACKED_NO,
-                                                      UNTRACKED_NORMAL, scan,
-                                                      tracked_directories)
+from mirage.commands.cli.builtin.git.worktree import (
+    UNTRACKED_ALL,
+    UNTRACKED_NO,
+    UNTRACKED_NORMAL,
+    scan,
+    tracked_directories,
+)
 from mirage.types import LINK_TARGET_KEY, FileType
 from mirage.workspace.mount.namespace.probe import path_stat
 from mirage.workspace.mount.namespace.view import namespace_view_of
 
-LOCATION = RepoLocation(gitdir="/repo/.git",
-                        commondir="/repo/.git",
-                        worktree="/repo",
-                        mount_root="/repo/")
+LOCATION = RepoLocation(
+    gitdir="/repo/.git",
+    commondir="/repo/.git",
+    worktree="/repo",
+    mount_root="/repo/",
+)
 TRACKED = {"a.txt", "b.txt"}
 
 
@@ -42,8 +47,14 @@ async def walk(ws, tracked: set[str], mode: str = UNTRACKED_NORMAL):
         mode (str): which untracked files to report.
     """
     ns = namespace_view_of(ws._registry, ws._namespace, ws.dispatch)
-    return await scan(ws.dispatch, functools.partial(path_stat, ws.dispatch),
-                      LOCATION, tracked, mode, ns.links)
+    return await scan(
+        ws.dispatch,
+        functools.partial(path_stat, ws.dispatch),
+        LOCATION,
+        tracked,
+        mode,
+        ns.links,
+    )
 
 
 def test_a_path_contributes_every_directory_above_it():
@@ -69,15 +80,17 @@ async def test_tracked_files_come_back_with_their_stat(workspace):
 
 @pytest.mark.asyncio
 async def test_a_file_the_index_does_not_hold_is_untracked(
-        workspace, repo_path: Path):
+    workspace, repo_path: Path
+):
     (repo_path / "fresh.txt").write_text("x\n", encoding="utf-8")
     found = await walk(workspace, TRACKED)
     assert found.untracked == ["fresh.txt"]
 
 
 @pytest.mark.asyncio
-async def test_an_untracked_directory_is_named_once(workspace,
-                                                    repo_path: Path):
+async def test_an_untracked_directory_is_named_once(
+    workspace, repo_path: Path
+):
     (repo_path / "sub").mkdir()
     (repo_path / "sub" / "one.txt").write_text("x\n", encoding="utf-8")
     (repo_path / "sub" / "two.txt").write_text("y\n", encoding="utf-8")
@@ -103,7 +116,8 @@ async def test_untracked_no_reports_none_of_them(workspace, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_a_directory_holding_a_tracked_file_is_descended_into(
-        workspace, repo_path: Path):
+    workspace, repo_path: Path
+):
     (repo_path / "src").mkdir()
     (repo_path / "src" / "tracked.txt").write_text("t\n", encoding="utf-8")
     (repo_path / "src" / "loose.txt").write_text("l\n", encoding="utf-8")
@@ -122,7 +136,8 @@ async def test_an_empty_directory_is_invisible(workspace, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_a_directory_of_only_ignored_files_is_invisible_too(
-        workspace, repo_path: Path):
+    workspace, repo_path: Path
+):
     (repo_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
     (repo_path / "logs").mkdir()
     (repo_path / "logs" / "a.log").write_text("x\n", encoding="utf-8")
@@ -132,7 +147,8 @@ async def test_a_directory_of_only_ignored_files_is_invisible_too(
 
 @pytest.mark.asyncio
 async def test_an_ignored_directory_holding_a_tracked_file_is_still_walked(
-        workspace, repo_path: Path):
+    workspace, repo_path: Path
+):
     # Ignore rules govern untracked files only. Skipping the directory
     # would leave the tracked file unfound and reported as deleted.
     (repo_path / ".gitignore").write_text("vendor/\n", encoding="utf-8")
@@ -167,7 +183,8 @@ async def test_a_broken_symlink_is_still_found(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_symlink_to_a_directory_is_not_descended(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "sub").mkdir()
     (repo_path / "sub" / "in.txt").write_text("x\n", encoding="utf-8")
     await git_rw.shell("ln -s sub /repo/dirlink")

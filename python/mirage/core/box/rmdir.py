@@ -22,9 +22,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir, enotempty
 
 
-async def rmdir(accessor: BoxAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: BoxAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> None:
     parts = path_parts(path)
     item = await resolve_item(accessor, parts)
     if item is None:
@@ -37,9 +37,9 @@ async def rmdir(accessor: BoxAccessor,
     # `classify` could not name -- EIO over FUSE, no errno at all for
     # `ws.vfs` and the sandbox runtimes.
     try:
-        await delete_folder(accessor.token_manager,
-                            item["id"],
-                            recursive=False)
+        await delete_folder(
+            accessor.token_manager, item["id"], recursive=False
+        )
     except BoxApiError as exc:
         if exc.status == 409:
             raise enotempty(path) from exc

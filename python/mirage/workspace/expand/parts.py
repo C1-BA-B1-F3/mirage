@@ -24,11 +24,16 @@ from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import mark_escaped_globs
 from mirage.utils.path import expand_tilde
-from mirage.workspace.expand.brace import (expand_template, make_inert,
-                                           substitute)
+from mirage.workspace.expand.brace import (
+    expand_template,
+    make_inert,
+    substitute,
+)
 from mirage.workspace.expand.classify import classify_word
-from mirage.workspace.expand.constants import (BRACE_LITERAL_TYPES,
-                                               BRACE_WORD_TYPES)
+from mirage.workspace.expand.constants import (
+    BRACE_LITERAL_TYPES,
+    BRACE_WORD_TYPES,
+)
 from mirage.workspace.expand.fields import split_fields
 from mirage.workspace.expand.node import expand_chunks
 from mirage.workspace.expand.types import Chunk
@@ -86,7 +91,9 @@ async def _expand_brace_word(
     return [
         substitute(
             expand_tilde(unescape_unquoted(mark_escaped_globs(w)), home),
-            values) for w in words
+            values,
+        )
+        for w in words
     ]
 
 
@@ -118,22 +125,19 @@ async def expand_words(
         # The default comes from the option table, not a literal here:
         # two spellings of "brace expansion is on unless told otherwise"
         # is one to drift.
-        if (p.type in BRACE_WORD_TYPES and session.shell_options.get(
-                "braceexpand", SET_OPTION_DEFAULTS["braceexpand"])):
-            brace_words = await _expand_brace_word(p,
-                                                   session,
-                                                   execute_fn,
-                                                   call_stack,
-                                                   view=view)
+        if p.type in BRACE_WORD_TYPES and session.shell_options.get(
+            "braceexpand", SET_OPTION_DEFAULTS["braceexpand"]
+        ):
+            brace_words = await _expand_brace_word(
+                p, session, execute_fn, call_stack, view=view
+            )
             if brace_words is not None:
                 for chunks in brace_words:
                     result.extend(split_fields(chunks, ifs))
                 continue
-        chunks = await expand_chunks(p,
-                                     session,
-                                     execute_fn,
-                                     call_stack,
-                                     view=view)
+        chunks = await expand_chunks(
+            p, session, execute_fn, call_stack, view=view
+        )
         result.extend(split_fields(chunks, ifs))
     return result
 
@@ -155,9 +159,7 @@ async def expand_and_classify(
     off): `for f in '/data/*.txt'` iterates once over the name as typed,
     like bash, while `for f in '/data/*'?.txt` still globs on the `?`.
     """
-    expanded = await expand_words(words,
-                                  session,
-                                  execute_fn,
-                                  call_stack,
-                                  view=view)
+    expanded = await expand_words(
+        words, session, execute_fn, call_stack, view=view
+    )
     return [classify_word(w, registry, cwd) for w in expanded]

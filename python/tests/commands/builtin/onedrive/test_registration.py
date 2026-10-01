@@ -26,7 +26,8 @@ WRITE_COMMANDS = {
 
 def registered_onedrive_commands():
     return [
-        registered for command in COMMANDS
+        registered
+        for command in COMMANDS
         for registered in command._registered_commands
     ]
 

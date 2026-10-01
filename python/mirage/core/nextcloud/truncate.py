@@ -7,10 +7,12 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enotsup
 
 
-async def truncate(accessor: NextcloudAccessor,
-                   path: PathSpec,
-                   length: int,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    length: int,
+    no_create: bool = False,
+) -> None:
     if no_create:
         raise enotsup("nextcloud", "truncate --no-create", path)
     key = path.mount_path.lstrip("/")

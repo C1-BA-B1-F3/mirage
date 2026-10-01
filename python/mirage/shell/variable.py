@@ -40,6 +40,7 @@ class VarAttr(StrEnum):
     *is*, so storing it a second time as an attribute would let the two
     contradict each other. `attr_letters` derives them from the value.
     """
+
     INTEGER = "i"
     NAMEREF = "n"
     READONLY = "r"
@@ -51,6 +52,7 @@ class VarAttr(StrEnum):
 
 class VarKind(StrEnum):
     """What a variable's value is, derived from the value itself."""
+
     SCALAR = "scalar"
     INDEXED = "indexed"
     ASSOC = "assoc"
@@ -76,6 +78,7 @@ class ManagedRef:
         eager (bool): join every line's fetch set instead of waiting
             for a line that references the name.
     """
+
     source: str
     ref: str
     key: str
@@ -111,6 +114,7 @@ class ShellVar:
             carries this field (the fill step writes through it) and
             `detach` is the agent-write arm.
     """
+
     value: ShellValue | None = None
     attrs: frozenset[VarAttr] = field(default_factory=frozenset)
     managed: ManagedRef | None = None
@@ -183,8 +187,9 @@ def with_attr(var: ShellVar, attr: VarAttr, on: bool = True) -> ShellVar:
     return replace(var, attrs=frozenset(attrs))
 
 
-def coerce_scalar(text: str, attrs: frozenset[VarAttr],
-                  integer: Coercer | None) -> str:
+def coerce_scalar(
+    text: str, attrs: frozenset[VarAttr], integer: Coercer | None
+) -> str:
     """Apply the value-shaping attributes to one scalar being stored.
 
     bash applies these at assignment, not at read: `declare -l s; s=ABC`
@@ -211,8 +216,9 @@ def coerce_scalar(text: str, attrs: frozenset[VarAttr],
     return text
 
 
-def coerce_value(value: ShellValue, attrs: frozenset[VarAttr],
-                 integer: Coercer | None) -> ShellValue:
+def coerce_value(
+    value: ShellValue, attrs: frozenset[VarAttr], integer: Coercer | None
+) -> ShellValue:
     """`coerce_scalar` lifted over every value shape.
 
     An array applies the attribute per element, which is GNU's

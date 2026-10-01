@@ -31,9 +31,14 @@ def _typed(value: str | PathSpec | None) -> str:
     return value or ""
 
 
-def plan_template(template: str | None, suffix: str | None, dest_dir: str,
-                  use_dest_dir: bool, t: bool,
-                  env_tmpdir: str) -> tuple[str, int, int]:
+def plan_template(
+    template: str | None,
+    suffix: str | None,
+    dest_dir: str,
+    use_dest_dir: bool,
+    t: bool,
+    env_tmpdir: str,
+) -> tuple[str, int, int]:
     """The template a create names, formed as GNU mktemp forms it.
 
     The name stays as typed, so a relative template or directory prints
@@ -63,33 +68,42 @@ def plan_template(template: str | None, suffix: str | None, dest_dir: str,
         if not template.endswith("X"):
             raise UsageError(
                 f"mktemp: with --suffix, template '{quote_text(template)}' "
-                "must end in X", 1)
+                "must end in X",
+                1,
+            )
         template += suffix
     else:
         last_x = template.rfind("X")
-        suffix = template[last_x + 1:] if last_x >= 0 else ""
+        suffix = template[last_x + 1 :] if last_x >= 0 else ""
     if "/" in suffix:
         raise UsageError(
             f"mktemp: invalid suffix '{quote_text(suffix)}', contains "
-            "directory separator", 1)
-    body = template[:len(template) - len(suffix)]
+            "directory separator",
+            1,
+        )
+    body = template[: len(template) - len(suffix)]
     x_count = len(body) - len(body.rstrip("X"))
     if x_count < 3:
         raise UsageError(
-            f"mktemp: too few X's in template '{quote_text(template)}'", 1)
+            f"mktemp: too few X's in template '{quote_text(template)}'", 1
+        )
     if use_dest_dir or t:
         if t:
             directory = env_tmpdir or dest_dir or "/tmp"
             if "/" in template:
                 raise UsageError(
                     f"mktemp: invalid template, '{quote_text(template)}', "
-                    "contains directory separator", 1)
+                    "contains directory separator",
+                    1,
+                )
         else:
             directory = dest_dir or env_tmpdir or "/tmp"
             if template.startswith("/"):
                 raise UsageError(
                     f"mktemp: invalid template, '{quote_text(template)}'; "
-                    "with --tmpdir, it may not be absolute", 1)
+                    "with --tmpdir, it may not be absolute",
+                    1,
+                )
         separator = "" if directory.endswith("/") else "/"
         template = directory + separator + template
     return template, x_count, len(suffix)
@@ -143,16 +157,23 @@ async def mktemp(
         raise extra_operand_error(CommandName.MKTEMP, texts[1])
     dest_dir = _typed(p)
     use_dest_dir = use_dest_dir or p is not None
-    template, x_count, suffix_len = plan_template(texts[0] if texts else None,
-                                                  suffix, dest_dir,
-                                                  use_dest_dir, t, env_tmpdir)
-    fallback = ((not texts or use_dest_dir or t) and not dest_dir
-                and not env_tmpdir)
+    template, x_count, suffix_len = plan_template(
+        texts[0] if texts else None,
+        suffix,
+        dest_dir,
+        use_dest_dir,
+        t,
+        env_tmpdir,
+    )
+    fallback = (
+        (not texts or use_dest_dir or t) and not dest_dir and not env_tmpdir
+    )
     end = len(template) - suffix_len
 
     def draw() -> str:
-        return (template[:end - x_count] + _rand_suffix(x_count) +
-                template[end:])
+        return (
+            template[: end - x_count] + _rand_suffix(x_count) + template[end:]
+        )
 
     async def create(path: PathSpec) -> None:
         if d:
@@ -187,7 +208,9 @@ async def mktemp(
             exit_code=1,
             stderr=(
                 f"mktemp: failed to create {kind} via template "
-                f"'{quote_text(template)}': {fs_strerror(exc)}\n").encode())
+                f"'{quote_text(template)}': {fs_strerror(exc)}\n"
+            ).encode(),
+        )
     return (name + "\n").encode(), IOResult()
 
 
@@ -236,16 +259,18 @@ async def mktemp_generic(
     exists_fn: Callable[[PathSpec], Awaitable[bool]] | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await mktemp(*texts,
-                        mkdir_fn=mkdir_fn,
-                        write_bytes_fn=write_bytes_fn,
-                        d=parsed.directory,
-                        p=parsed.tmpdir,
-                        use_dest_dir=parsed.use_dest_dir,
-                        t=parsed.template_mode,
-                        dry_run=parsed.dry_run,
-                        suffix=parsed.suffix,
-                        quiet=parsed.quiet,
-                        env_tmpdir=(opts.env or {}).get("TMPDIR", ""),
-                        cwd=opts.cwd.virtual,
-                        exists_fn=exists_fn)
+    return await mktemp(
+        *texts,
+        mkdir_fn=mkdir_fn,
+        write_bytes_fn=write_bytes_fn,
+        d=parsed.directory,
+        p=parsed.tmpdir,
+        use_dest_dir=parsed.use_dest_dir,
+        t=parsed.template_mode,
+        dry_run=parsed.dry_run,
+        suffix=parsed.suffix,
+        quiet=parsed.quiet,
+        env_tmpdir=(opts.env or {}).get("TMPDIR", ""),
+        cwd=opts.cwd.virtual,
+        exists_fn=exists_fn,
+    )

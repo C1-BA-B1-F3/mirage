@@ -18,6 +18,7 @@ off), takes effect from the next line read (a use on the defining line
 does not expand), rewrites the head word into a fresh line so a value
 holding a pipe is a pipe, and reports through ``type``/``command -v``.
 """
+
 import pytest
 
 from mirage.types import MountMode
@@ -59,7 +60,8 @@ async def test_value_is_reparsed_as_a_line():
     ws = _ws()
     await _run(ws, "touch /data/foo /data/bar")
     out, _ = await _run(
-        ws, "shopt -s expand_aliases\nalias lg='ls /data | grep'\nlg foo")
+        ws, "shopt -s expand_aliases\nalias lg='ls /data | grep'\nlg foo"
+    )
     assert out == "foo\n"
     await ws.close()
 
@@ -68,8 +70,10 @@ async def test_value_is_reparsed_as_a_line():
 async def test_trailing_space_checks_next_word():
     ws = _ws()
     out, _ = await _run(
-        ws, "shopt -s expand_aliases\nalias run='do '\n"
-        "alias do='echo DID'\nrun echo hi")
+        ws,
+        "shopt -s expand_aliases\nalias run='do '\n"
+        "alias do='echo DID'\nrun echo hi",
+    )
     assert out == "DID echo hi\n"
     await ws.close()
 
@@ -109,6 +113,6 @@ async def test_bad_names():
 @pytest.mark.asyncio
 async def test_a_value_holding_a_quote_prints_re_readably():
     ws = _ws()
-    out, _ = await _run(ws, "alias x=\"it's a test\"; alias x")
+    out, _ = await _run(ws, 'alias x="it\'s a test"; alias x')
     assert out == "alias x='it'\\''s a test'\n"
     await ws.close()

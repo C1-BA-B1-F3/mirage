@@ -24,8 +24,10 @@ def test_defaults_to_no_build_directory():
 
 
 def test_coerces_a_dict():
-    assert WasmFsConfig.coerce({"host_root": "/opt/wasi"}).host_root == \
-        "/opt/wasi"
+    assert (
+        WasmFsConfig.coerce({"host_root": "/opt/wasi"}).host_root
+        == "/opt/wasi"
+    )
 
 
 def test_unknown_field_fails_loud():

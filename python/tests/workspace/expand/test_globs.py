@@ -44,7 +44,8 @@ def _mock_registry(resolve_result=None):
 
     mount = MountEntry("/data/", RAMVFS(), MountMode.READ)
     mount.register_fns(
-        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=_glob)])
+        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=_glob)]
+    )
 
     reg = MagicMock()
     reg.file_cache = None
@@ -67,10 +68,12 @@ def test_text_passes_through():
 
 def test_pathspec_without_pattern_preserved():
     reg = _mock_registry()
-    ps = PathSpec(vfs_path="data/file.txt",
-                  virtual="/data/file.txt",
-                  directory="/data/",
-                  resolved=True)
+    ps = PathSpec(
+        vfs_path="data/file.txt",
+        virtual="/data/file.txt",
+        directory="/data/",
+        resolved=True,
+    )
     classified = ["cat", ps]
     result = _run(resolve_globs(classified, reg))
     assert len(result) == 2
@@ -104,14 +107,18 @@ def test_glob_pathspec_resolved_to_pathspec():
 
 def test_glob_multiple_matches_expand():
     matches = [
-        PathSpec(vfs_path="data/a.txt",
-                 virtual="/data/a.txt",
-                 directory="/data/",
-                 resolved=True),
-        PathSpec(vfs_path="data/b.txt",
-                 virtual="/data/b.txt",
-                 directory="/data/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="data/a.txt",
+            virtual="/data/a.txt",
+            directory="/data/",
+            resolved=True,
+        ),
+        PathSpec(
+            vfs_path="data/b.txt",
+            virtual="/data/b.txt",
+            directory="/data/",
+            resolved=True,
+        ),
     ]
     reg = _mock_registry(resolve_result=matches)
     glob_ps = PathSpec(
@@ -173,14 +180,18 @@ def test_match_named_like_the_glob_word_survives():
     match was thrown away.
     """
     matches = [
-        PathSpec(vfs_path="*a.txt",
-                 virtual="/data/*a.txt",
-                 directory="/data/",
-                 resolved=True),
-        PathSpec(vfs_path="xa.txt",
-                 virtual="/data/xa.txt",
-                 directory="/data/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="*a.txt",
+            virtual="/data/*a.txt",
+            directory="/data/",
+            resolved=True,
+        ),
+        PathSpec(
+            vfs_path="xa.txt",
+            virtual="/data/xa.txt",
+            directory="/data/",
+            resolved=True,
+        ),
     ]
     reg = _mock_registry(resolve_result=matches)
     glob_ps = PathSpec(
@@ -219,10 +230,12 @@ def test_vfs_reinstating_the_literal_itself_yields_no_match():
 
 def test_mixed_text_and_pathspec():
     reg = _mock_registry()
-    ps = PathSpec(vfs_path="data/file.txt",
-                  virtual="/data/file.txt",
-                  directory="/data/",
-                  resolved=True)
+    ps = PathSpec(
+        vfs_path="data/file.txt",
+        virtual="/data/file.txt",
+        directory="/data/",
+        resolved=True,
+    )
     classified = ["grep", "-i", "pattern", ps]
     result = _run(resolve_globs(classified, reg))
     assert result[0] == "grep"
@@ -299,10 +312,12 @@ def test_scope_error_truncates_instead_of_crash():
 
 def test_relative_glob_matches_spelled_as_typed():
     matches = [
-        PathSpec(vfs_path="data/sub/a.txt",
-                 virtual="/data/sub/a.txt",
-                 directory="/data/sub/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="data/sub/a.txt",
+            virtual="/data/sub/a.txt",
+            directory="/data/sub/",
+            resolved=True,
+        ),
     ]
     reg = _mock_registry(resolve_result=matches)
     glob_ps = PathSpec(
@@ -321,10 +336,12 @@ def test_relative_glob_matches_spelled_as_typed():
 
 def test_absolute_glob_matches_keep_virtual():
     matches = [
-        PathSpec(vfs_path="data/a.txt",
-                 virtual="/data/a.txt",
-                 directory="/data/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="data/a.txt",
+            virtual="/data/a.txt",
+            directory="/data/",
+            resolved=True,
+        ),
     ]
     reg = _mock_registry(resolve_result=matches)
     glob_ps = PathSpec(
@@ -342,10 +359,12 @@ def test_absolute_glob_matches_keep_virtual():
 
 def test_bare_relative_glob_raw_has_no_dir_prefix():
     matches = [
-        PathSpec(vfs_path="data/a.txt",
-                 virtual="/data/a.txt",
-                 directory="/data/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="data/a.txt",
+            virtual="/data/a.txt",
+            directory="/data/",
+            resolved=True,
+        ),
     ]
     reg = _mock_registry(resolve_result=matches)
     glob_ps = PathSpec(
@@ -363,11 +382,9 @@ def test_bare_relative_glob_raw_has_no_dir_prefix():
 
 def _ws():
     """Workspace with a nested mount and a symlink under /base."""
-    ws = Workspace({
-        "/": RAMVFS(),
-        "/base/inner": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/": RAMVFS(), "/base/inner": RAMVFS()}, mode=MountMode.WRITE
+    )
     ws.create_session("s")
     return ws
 
@@ -394,7 +411,10 @@ def test_glob_enumerates_nested_mount_root_and_symlink():
     ws = _ws()
     _run(_seed(ws))
     assert _out(ws, "echo /base/*").split() == [
-        "/base/f1", "/base/inner", "/base/link", "/base/sub"
+        "/base/f1",
+        "/base/inner",
+        "/base/link",
+        "/base/sub",
     ]
 
 
@@ -415,21 +435,37 @@ def test_glob_operand_commands_see_mount_and_link():
     ws = _ws()
     _run(_seed(ws))
     assert _out(ws, "ls -d /base/*").split() == [
-        "/base/f1", "/base/inner", "/base/link", "/base/sub"
+        "/base/f1",
+        "/base/inner",
+        "/base/link",
+        "/base/sub",
     ]
     assert _out(ws, "find /base/* -maxdepth 0").split() == [
-        "/base/f1", "/base/inner", "/base/link", "/base/sub"
+        "/base/f1",
+        "/base/inner",
+        "/base/link",
+        "/base/sub",
     ]
     assert _out(ws, "stat /base/* | grep '^  File:'").splitlines() == [
-        "  File: /base/f1", "  File: /base/inner",
-        "  File: /base/link -> /base/sub/f2", "  File: /base/sub"
+        "  File: /base/f1",
+        "  File: /base/inner",
+        "  File: /base/link -> /base/sub/f2",
+        "  File: /base/sub",
     ]
     # wc follows the link and reports the target's bytes under the link's
     # name, and gives each directory operand a row of zeros beside its
     # stderr line, like GNU.
     assert _out(ws, "wc -c /base/*").split() == [
-        "3", "/base/f1", "0", "/base/inner", "7", "/base/link", "0",
-        "/base/sub", "10", "total"
+        "3",
+        "/base/f1",
+        "0",
+        "/base/inner",
+        "7",
+        "/base/link",
+        "0",
+        "/base/sub",
+        "10",
+        "total",
     ]
 
 
@@ -451,8 +487,10 @@ def test_glob_keeps_a_match_spelled_like_the_word():
     _run(_seed(ws))
     _run(ws.shell("touch '/base/*a.txt'", session_id="s"))
     _run(ws.shell("touch /base/xa.txt", session_id="s"))
-    assert _out(
-        ws, "echo /base/*a.txt").split() == ["/base/*a.txt", "/base/xa.txt"]
+    assert _out(ws, "echo /base/*a.txt").split() == [
+        "/base/*a.txt",
+        "/base/xa.txt",
+    ]
 
 
 def test_glob_lists_a_directory_whose_name_holds_a_quoted_glob_char():
@@ -471,7 +509,8 @@ def test_glob_lists_a_directory_whose_name_holds_a_quoted_glob_char():
     _run(ws.shell("touch '/base/*d/one.txt'", session_id="s"))
     _run(ws.shell("touch '/base/*d/two.txt'", session_id="s"))
     assert _out(ws, "echo '/base/*d'/*.txt").split() == [
-        "/base/*d/one.txt", "/base/*d/two.txt"
+        "/base/*d/one.txt",
+        "/base/*d/two.txt",
     ]
     assert _out(ws, "echo '/base/*d'/o*.txt").split() == ["/base/*d/one.txt"]
     # Nothing under it still falls back to the literal word.
@@ -543,8 +582,10 @@ def test_glob_reports_a_link_and_its_target():
     """``echo base/*/f2`` -> ``base/dlink/f2 base/sub/f2`` on GNU bash."""
     ws = _ws()
     _seed_links(ws)
-    assert _out(
-        ws, "echo /base/*/f2").split() == ["/base/dlink/f2", "/base/sub/f2"]
+    assert _out(ws, "echo /base/*/f2").split() == [
+        "/base/dlink/f2",
+        "/base/sub/f2",
+    ]
 
 
 def test_glob_follows_a_link_into_a_nested_mount():
@@ -570,11 +611,9 @@ def test_midpath_glob_does_not_descend_into_a_file():
 
 def _dirs_ws():
     """Workspace whose /data/records holds directories, a file and links."""
-    ws = Workspace({
-        "/": RAMVFS(),
-        "/data/records/inner": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/": RAMVFS(), "/data/records/inner": RAMVFS()}, mode=MountMode.WRITE
+    )
     ws.create_session("s")
     return ws
 
@@ -582,14 +621,18 @@ def _dirs_ws():
 async def _seed_dirs(ws):
     await ws.shell(
         "mkdir -p /data/records/2026-09-10 /data/records/2026-09-11",
-        session_id="s")
-    await ws.shell("echo sample > /data/records/2026-09-10/sample.txt",
-                   session_id="s")
+        session_id="s",
+    )
+    await ws.shell(
+        "echo sample > /data/records/2026-09-10/sample.txt", session_id="s"
+    )
     await ws.shell("echo plain > /data/records/plain.txt", session_id="s")
-    await ws.shell("ln -s /data/records/2026-09-10 /data/records/lnk",
-                   session_id="s")
-    await ws.shell("ln -s /data/records/nowhere /data/records/broken",
-                   session_id="s")
+    await ws.shell(
+        "ln -s /data/records/2026-09-10 /data/records/lnk", session_id="s"
+    )
+    await ws.shell(
+        "ln -s /data/records/nowhere /data/records/broken", session_id="s"
+    )
 
 
 # Trailing-slash pathname expansion, pinned against bash 5.2.37
@@ -603,43 +646,48 @@ def test_trailing_slash_glob_keeps_the_slash_and_only_directories():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
     assert _out(ws, "cd /data/records && printf '<%s>\\n' */") == (
-        "<2026-09-10/>\n<2026-09-11/>\n<inner/>\n<lnk/>\n")
+        "<2026-09-10/>\n<2026-09-11/>\n<inner/>\n<lnk/>\n"
+    )
 
 
 def test_trailing_slash_glob_spells_an_absolute_word():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
     assert _out(ws, "printf '<%s>\\n' /data/records/2026*/") == (
-        "</data/records/2026-09-10/>\n</data/records/2026-09-11/>\n")
+        "</data/records/2026-09-10/>\n</data/records/2026-09-11/>\n"
+    )
 
 
 def test_trailing_slash_glob_spells_a_relative_head():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
     assert _out(ws, "cd /data && printf '<%s>\\n' records/2026*/") == (
-        "<records/2026-09-10/>\n<records/2026-09-11/>\n")
+        "<records/2026-09-10/>\n<records/2026-09-11/>\n"
+    )
 
 
 def test_trailing_slash_glob_walks_a_mid_path_pattern():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
     assert _out(ws, "cd /data && printf '<%s>\\n' */2026*/") == (
-        "<records/2026-09-10/>\n<records/2026-09-11/>\n")
+        "<records/2026-09-10/>\n<records/2026-09-11/>\n"
+    )
 
 
 def test_trailing_slash_glob_zero_match_stays_literal():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
-    assert _out(
-        ws,
-        "cd /data/records && printf '<%s>\\n' nomatch*/") == ("<nomatch*/>\n")
+    assert _out(ws, "cd /data/records && printf '<%s>\\n' nomatch*/") == (
+        "<nomatch*/>\n"
+    )
 
 
 def test_doubled_trailing_slash_keeps_one():
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
     assert _out(ws, "cd /data/records && printf '<%s>\\n' 2026*//") == (
-        "<2026-09-10/>\n<2026-09-11/>\n")
+        "<2026-09-10/>\n<2026-09-11/>\n"
+    )
 
 
 def test_trailing_slash_glob_drives_the_issue_loop():
@@ -647,8 +695,10 @@ def test_trailing_slash_glob_drives_the_issue_loop():
     # directory, so a missing slash made every file invisible.
     ws = _dirs_ws()
     _run(_seed_dirs(ws))
-    line = ("cd /data/records && for d in */; do for f in \"$d\"*.txt; do "
-            "[ -f \"$f\" ] || continue; cat \"$f\"; done; done")
+    line = (
+        'cd /data/records && for d in */; do for f in "$d"*.txt; do '
+        '[ -f "$f" ] || continue; cat "$f"; done; done'
+    )
     assert _out(ws, line) == "sample\nsample\n"
 
 
@@ -661,8 +711,9 @@ class KeyRecordingRAM(RAMVFS):
 
     def ops(self) -> list[RegisteredOp]:
         table = super().ops()
-        derived = next(ro for ro in table
-                       if ro.name == "glob" and ro.filetype is None)
+        derived = next(
+            ro for ro in table if ro.name == "glob" and ro.filetype is None
+        )
         seen = self.seen
 
         @op("glob", vfs=self.name)
@@ -682,8 +733,12 @@ def test_glob_op_is_handed_keys_below_a_non_root_prefix():
     vfs = KeyRecordingRAM()
     ws = Workspace({"/mnt/x/": vfs}, mode=MountMode.WRITE)
     ws.create_session("s")
-    for line in ("mkdir -p /mnt/x/team/sub", "printf 1 > /mnt/x/team/f1",
-                 "printf 2 > /mnt/x/tea.txt", "printf 3 > /mnt/x/other"):
+    for line in (
+        "mkdir -p /mnt/x/team/sub",
+        "printf 1 > /mnt/x/team/f1",
+        "printf 2 > /mnt/x/tea.txt",
+        "printf 3 > /mnt/x/other",
+    ):
         _run(ws.shell(line, session_id="s"))
     cases = [
         ("echo /mnt/x/*", "/mnt/x/other /mnt/x/tea.txt /mnt/x/team"),
@@ -695,8 +750,9 @@ def test_glob_op_is_handed_keys_below_a_non_root_prefix():
     for line, want in cases:
         assert _out(ws, line).strip() == want, line
     assert vfs.seen
-    assert [(v, key) for v, key in vfs.seen
-            if key != mount_key(v, "/mnt/x")] == []
+    assert [
+        (v, key) for v, key in vfs.seen if key != mount_key(v, "/mnt/x")
+    ] == []
 
 
 class NoStatRAM(RAMVFS):
@@ -729,24 +785,32 @@ def _flat_ws(vfs: RAMVFS) -> Workspace:
 
 # A match the mount cannot stat is not a directory, on both hosts.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stat,expected", [
-    ("missing", b"/m/*/\n"),
-    ("none", b"/m/*/\n"),
-    ("one", b"/m/a/ /m/b/\n"),
-],
-                         ids=["missing", "none", "one"])
+@pytest.mark.parametrize(
+    "stat,expected",
+    [
+        ("missing", b"/m/*/\n"),
+        ("none", b"/m/*/\n"),
+        ("one", b"/m/a/ /m/b/\n"),
+    ],
+    ids=["missing", "none", "one"],
+)
 async def test_trailing_slash_glob_keeps_nothing_a_mount_cannot_stat(
-        stat, expected):
+    stat, expected
+):
     vfs = NoStatRAM() if stat == "missing" else RAMVFS()
     ws = _flat_ws(vfs)
     if stat != "missing":
         ram_stat = next(op.fn for op in vfs.ops() if op.name == "stat")
         ws.mount("/m").register_op(
-            RegisteredOp(name="stat",
-                         vfs="ram",
-                         filetype=None,
-                         fn=_answers_nothing
-                         if stat == "none" else _unstatable("/m/f", ram_stat)))
+            RegisteredOp(
+                name="stat",
+                vfs="ram",
+                filetype=None,
+                fn=_answers_nothing
+                if stat == "none"
+                else _unstatable("/m/f", ram_stat),
+            )
+        )
     try:
         listed = await ws.shell("echo /m/*", session_id="s")
         assert listed.stdout == b"/m/a /m/b /m/f\n"

@@ -19,43 +19,54 @@ import pytest
 from mirage.shell.errors import ExitSignal
 from mirage.shell.parse import parse
 from mirage.shell.variable import ShellVar
-from mirage.workspace.expand.variable import (_ArithOperand, _case_mod,
-                                              _glob_replace, _glob_strip,
-                                              _lookup_var, _pattern_text,
-                                              _slice_array)
+from mirage.workspace.expand.variable import (
+    _ArithOperand,
+    _case_mod,
+    _glob_replace,
+    _glob_strip,
+    _lookup_var,
+    _pattern_text,
+    _slice_array,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.session import vars_from_env
 from mirage.workspace.session.state import seed_var
 
 
-@pytest.mark.parametrize("value,pattern,replacement,all_,anchor,expected", [
-    ("hello", "l", "L", False, None, "heLlo"),
-    ("hello", "l", "L", True, None, "heLLo"),
-    ("banana", "a*", "X", False, None, "bX"),
-    ("hello", "l?", "X", False, None, "heXo"),
-    ("hello", "he", "HE", False, "#", "HEllo"),
-    ("hello", "lo", "X", False, "#", "hello"),
-    ("hello", "lo", "LO", False, "%", "helLO"),
-    ("hello", "he", "X", False, "%", "hello"),
-    ("a b c", " ", "_", True, None, "a_b_c"),
-    ("abc", "*", "X", False, None, "X"),
-    ("abc", "*", "X", True, None, "X"),
-    ("", "*", "X", False, None, "X"),
-    ("hello", "", "X", False, None, "hello"),
-    ("hello", "xyz", "X", True, None, "hello"),
-])
+@pytest.mark.parametrize(
+    "value,pattern,replacement,all_,anchor,expected",
+    [
+        ("hello", "l", "L", False, None, "heLlo"),
+        ("hello", "l", "L", True, None, "heLLo"),
+        ("banana", "a*", "X", False, None, "bX"),
+        ("hello", "l?", "X", False, None, "heXo"),
+        ("hello", "he", "HE", False, "#", "HEllo"),
+        ("hello", "lo", "X", False, "#", "hello"),
+        ("hello", "lo", "LO", False, "%", "helLO"),
+        ("hello", "he", "X", False, "%", "hello"),
+        ("a b c", " ", "_", True, None, "a_b_c"),
+        ("abc", "*", "X", False, None, "X"),
+        ("abc", "*", "X", True, None, "X"),
+        ("", "*", "X", False, None, "X"),
+        ("hello", "", "X", False, None, "hello"),
+        ("hello", "xyz", "X", True, None, "hello"),
+    ],
+)
 def test_glob_replace(value, pattern, replacement, all_, anchor, expected):
     assert _glob_replace(value, pattern, replacement, all_, anchor) == expected
 
 
-@pytest.mark.parametrize("op,val,pattern,expected", [
-    ("^^", "hello", "", "HELLO"),
-    ("^^", "hello", "[el]", "hELLo"),
-    ("^", "hello", "", "Hello"),
-    ("^", "hello", "[x]", "hello"),
-    (",,", "HELLO", "", "hello"),
-    (",", "HELLO", "[H]", "hELLO"),
-])
+@pytest.mark.parametrize(
+    "op,val,pattern,expected",
+    [
+        ("^^", "hello", "", "HELLO"),
+        ("^^", "hello", "[el]", "hELLo"),
+        ("^", "hello", "", "Hello"),
+        ("^", "hello", "[x]", "hello"),
+        (",,", "HELLO", "", "hello"),
+        (",", "HELLO", "[H]", "hELLO"),
+    ],
+)
 def test_case_mod(op, val, pattern, expected):
     assert _case_mod(op, val, pattern) == expected
 
@@ -66,11 +77,9 @@ def test_glob_strip_class_negation():
 
 
 def test_pattern_text_splices_refs_live():
-    session = SessionState(session_id="t",
-                           vars=vars_from_env({
-                               "ext": ".txt",
-                               "pat": "l"
-                           }))
+    session = SessionState(
+        session_id="t", vars=vars_from_env({"ext": ".txt", "pat": "l"})
+    )
     assert _pattern_text("$ext", session, None) == ".txt"
     assert _pattern_text("*${ext}", session, None) == "*.txt"
     assert _pattern_text("a$pat*b", session, None) == "al*b"
@@ -89,24 +98,33 @@ def test_pattern_text_binds_backslash_escapes():
 
 
 def test_lookup_var_array_first_element():
-    session = SessionState(session_id="t",
-                           vars={"a": ShellVar(["one", "two"])})
+    session = SessionState(
+        session_id="t", vars={"a": ShellVar(["one", "two"])}
+    )
     assert _lookup_var("a", session, None) == "one"
 
 
-@pytest.mark.parametrize("groups,expected", [
-    (["1"], ["2", "3", "4"]),
-    (["1", "2"], ["2", "3"]),
-    (["-2"], ["3", "4"]),
-    (["1", "-1"], ["2", "3"]),
-])
+@pytest.mark.parametrize(
+    "groups,expected",
+    [
+        (["1"], ["2", "3", "4"]),
+        (["1", "2"], ["2", "3"]),
+        (["-2"], ["3", "4"]),
+        (["1", "-1"], ["2", "3"]),
+    ],
+)
 @pytest.mark.asyncio
 async def test_slice_array(groups, expected):
     operand = _ArithOperand(SessionState(session_id="s", cwd="/"))
-    node = parse("echo ${a[@]: " + ":".join(groups) +
-                 "}").named_children[0].named_children[-1]
-    assert await _slice_array(["1", "2", "3", "4"], node, AsyncMock(),
-                              operand) == expected
+    node = (
+        parse("echo ${a[@]: " + ":".join(groups) + "}")
+        .named_children[0]
+        .named_children[-1]
+    )
+    assert (
+        await _slice_array(["1", "2", "3", "4"], node, AsyncMock(), operand)
+        == expected
+    )
 
 
 @pytest.mark.asyncio

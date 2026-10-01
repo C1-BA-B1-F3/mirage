@@ -17,20 +17,23 @@ import pytest
 from mirage.utils.fnmatch import _normalize_negation, fnmatch
 
 
-@pytest.mark.parametrize("name,pattern,expected", [
-    ("c.txt", "[!ab].txt", True),
-    ("a.txt", "[!ab].txt", False),
-    ("c.txt", "[^ab].txt", True),
-    ("a.txt", "[^ab].txt", False),
-    ("b.txt", "[ab].txt", True),
-    ("c.txt", "[a-c].txt", True),
-    ("d.txt", "[a-c].txt", False),
-    ("hello", "h*o", True),
-    ("hello", "h?llo", True),
-    ("Hello", "hello", False),
-    ("x", "[x^]", True),
-    ("^", "[x^]", True),
-])
+@pytest.mark.parametrize(
+    "name,pattern,expected",
+    [
+        ("c.txt", "[!ab].txt", True),
+        ("a.txt", "[!ab].txt", False),
+        ("c.txt", "[^ab].txt", True),
+        ("a.txt", "[^ab].txt", False),
+        ("b.txt", "[ab].txt", True),
+        ("c.txt", "[a-c].txt", True),
+        ("d.txt", "[a-c].txt", False),
+        ("hello", "h*o", True),
+        ("hello", "h?llo", True),
+        ("Hello", "hello", False),
+        ("x", "[x^]", True),
+        ("^", "[x^]", True),
+    ],
+)
 def test_fnmatch(name, pattern, expected):
     assert fnmatch(name, pattern) is expected
 

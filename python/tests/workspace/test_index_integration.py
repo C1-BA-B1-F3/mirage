@@ -43,7 +43,9 @@ def _ram_ws():
     p._store.files["/sub/a.txt"] = b"aaa\n"
     p._store.files["/sub/b.txt"] = b"bbb\n"
     p._store.files["/sub/c.csv"] = b"col\n"
-    ws = Workspace(mounts={"/data/": (p, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/data/": (p, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/data"
     return ws, ws.mount("/data/").index_store
 
@@ -95,7 +97,9 @@ def test_index_expired_refetches():
     p = RAMVFS()
     p._store.dirs.add("/sub")
     p._store.files["/sub/a.txt"] = b"aaa\n"
-    ws = Workspace(mounts={"/data/": (p, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/data/": (p, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/data"
     _run(ws.shell("cat /data/sub/*.txt"))
     listing = _run(ws.mount("/data/").index_store.list_dir("/data/sub"))

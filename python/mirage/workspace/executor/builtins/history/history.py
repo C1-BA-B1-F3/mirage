@@ -23,8 +23,10 @@ from mirage.workspace.types import ExecutionNode
 
 # bash 5.2.21's own string, letters in ITS order (`history -anrw`, not
 # the accepted-set order the flag table is written in).
-_USAGE = ("history: usage: history [-c] [-d offset] [n] or "
-          "history -anrw [filename] or history -ps arg [arg...]\n")
+_USAGE = (
+    "history: usage: history [-c] [-d offset] [n] or "
+    "history -anrw [filename] or history -ps arg [arg...]\n"
+)
 _OPTION_CHARS = "cdanrwsp"
 
 
@@ -35,7 +37,8 @@ def _usage_error(message: str) -> tuple[None, IOResult, ExecutionNode]:
 
 
 def _parse_args(
-        args: list[str]) -> tuple[dict[str, FlagValue], list[str], str | None]:
+    args: list[str],
+) -> tuple[dict[str, FlagValue], list[str], str | None]:
     """Parse history builtin args the way bash getopt does.
 
     Args:
@@ -70,15 +73,18 @@ def _parse_args(
                     return {}, [], f"history: -{ch}: invalid option\n"
                 flags[ch] = True
                 if ch == "d":
-                    rest = token[j + 1:]
+                    rest = token[j + 1 :]
                     if rest:
                         flags["d"] = rest
                     elif i + 1 < len(args):
                         i += 1
                         flags["d"] = args[i]
                     else:
-                        return ({}, [],
-                                "history: -d: option requires an argument\n")
+                        return (
+                            {},
+                            [],
+                            "history: -d: option requires an argument\n",
+                        )
                     break
                 j += 1
         i += 1
@@ -108,20 +114,29 @@ async def handle_history(
     mount = registry.try_mount_for(HISTORY_PREFIX)
     if mount is None:
         err = b"history: not enabled for this workspace\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="history",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="history", exit_code=1, stderr=err),
+        )
     stream, io = await mount.execute_cmd(
-        "history", [], texts, flags,
-        ExecContext(cwd=session.cwd, session_id=session.session_id))
+        "history",
+        [],
+        texts,
+        flags,
+        ExecContext(cwd=session.cwd, session_id=session.session_id),
+    )
     # The view command always returns byte stderr, but io.stderr is typed
     # as a ByteSource (a possible lazy stream); resolve it to bytes so the
     # execution-tree node holds concrete stderr, never an unread stream.
     stderr = await io.materialize_stderr()
-    return stream, io, ExecutionNode(command="history",
-                                     exit_code=io.exit_code,
-                                     stderr=stderr)
+    return (
+        stream,
+        io,
+        ExecutionNode(
+            command="history", exit_code=io.exit_code, stderr=stderr
+        ),
+    )
 
 
 async def history_builtin(call: BuiltinCall) -> Result:
@@ -130,5 +145,6 @@ async def history_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_history(call.registry, list(call.argv.args),
-                                call.session)
+    return await handle_history(
+        call.registry, list(call.argv.args), call.session
+    )

@@ -27,14 +27,18 @@ def _read_only_gunzip_mount() -> tuple[Workspace, RAMVFS]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,stdout", [
-    ("gunzip -c /ro/f.txt.gz", b"hello\n"),
-    ("gunzip -t /ro/f.txt.gz && echo ok", b"ok\n"),
-    ("cd /ro && gunzip < f.txt.gz", b"hello\n"),
-    ("cd /ro && gunzip - < f.txt.gz", b"hello\n"),
-])
+@pytest.mark.parametrize(
+    "line,stdout",
+    [
+        ("gunzip -c /ro/f.txt.gz", b"hello\n"),
+        ("gunzip -t /ro/f.txt.gz && echo ok", b"ok\n"),
+        ("cd /ro && gunzip < f.txt.gz", b"hello\n"),
+        ("cd /ro && gunzip - < f.txt.gz", b"hello\n"),
+    ],
+)
 async def test_a_read_only_mount_runs_gunzip_where_it_writes_nothing(
-        line: str, stdout: bytes):
+    line: str, stdout: bytes
+):
     ws, vfs = _read_only_gunzip_mount()
     before = dict(vfs._store.files)
     result = await ws.shell(line)
@@ -43,8 +47,9 @@ async def test_a_read_only_mount_runs_gunzip_where_it_writes_nothing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line",
-                         ["gunzip /ro/f.txt.gz", "gunzip -k /ro/f.txt.gz"])
+@pytest.mark.parametrize(
+    "line", ["gunzip /ro/f.txt.gz", "gunzip -k /ro/f.txt.gz"]
+)
 async def test_a_read_only_mount_refuses_gunzip_at_the_write(line: str):
     ws, vfs = _read_only_gunzip_mount()
     before = dict(vfs._store.files)
@@ -56,35 +61,41 @@ async def test_a_read_only_mount_refuses_gunzip_at_the_write(line: str):
 
 @pytest.mark.asyncio
 async def test_a_dash_goes_to_stdout_while_files_decompress_in_place():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/b.txt > /dev/null", stdin=b"file\n")
     r = await ws.shell(
         "cd /data && gzip b.txt && gunzip - b.txt.gz; ls; cat b.txt",
-        stdin=gzip.compress(b"hi\n"))
+        stdin=gzip.compress(b"hi\n"),
+    )
     assert await r.materialize_stdout() == b"hi\nb.txt\nfile\n"
 
 
 @pytest.mark.asyncio
 async def test_a_plain_file_is_reported_and_left_in_place():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/b.txt > /dev/null", stdin=b"file\n")
     await ws.shell("tee /data/p.gz > /dev/null", stdin=b"plain\n")
     r = await ws.shell("cd /data && gzip b.txt && gunzip p.gz b.txt.gz; ls")
     assert await r.materialize_stdout() == b"b.txt\np.gz\n"
-    assert await r.materialize_stderr(
-    ) == b"\ngzip: p.gz: not in gzip format\n"
+    assert (
+        await r.materialize_stderr() == b"\ngzip: p.gz: not in gzip format\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_plain_stdin_is_not_in_gzip_format():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     r = await ws.shell("gunzip", stdin=b"hello\n")
     assert r.exit_code == 1
-    assert await r.materialize_stderr(
-    ) == b"\ngzip: stdin: not in gzip format\n"
+    assert (
+        await r.materialize_stderr() == b"\ngzip: stdin: not in gzip format\n"
+    )
 
 
 # gzip -n of "hello\n" with its CRC-32 and length trailer zeroed.
@@ -93,8 +104,9 @@ DAMAGED = gzip.compress(b"hello\n", mtime=0)[:-8] + b"\0" * 8
 
 @pytest.mark.asyncio
 async def test_a_damaged_trailer_keeps_the_inflated_bytes():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/bad.gz > /dev/null", stdin=DAMAGED)
     await ws.shell("tee /data/ok.gz > /dev/null", stdin=gzip.compress(b"x\n"))
     r = await ws.shell("gunzip -c /data/bad.gz /data/ok.gz")
@@ -102,7 +114,8 @@ async def test_a_damaged_trailer_keeps_the_inflated_bytes():
     assert await r.materialize_stdout() == b"hello\n"
     assert await r.materialize_stderr() == (
         b"\ngzip: /data/bad.gz: invalid compressed data--crc error\n"
-        b"\ngzip: /data/bad.gz: invalid compressed data--length error\n")
+        b"\ngzip: /data/bad.gz: invalid compressed data--length error\n"
+    )
     r = await ws.shell("gunzip -t /data/bad.gz /data/ok.gz; ls /data")
     assert await r.materialize_stdout() == b"bad.gz\nok.gz\n"
 
@@ -110,14 +123,18 @@ async def test_a_damaged_trailer_keeps_the_inflated_bytes():
 @pytest.mark.asyncio
 async def test_a_later_members_bad_header_keeps_the_members_before_it():
     good = gzip.compress(b"hello\n", mtime=0)
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
-    await ws.shell("tee /data/two.gz > /dev/null",
-                   stdin=good + good[:2] + b"\x07" + good[3:])
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
+    await ws.shell(
+        "tee /data/two.gz > /dev/null",
+        stdin=good + good[:2] + b"\x07" + good[3:],
+    )
     r = await ws.shell("cd /data && gunzip two.gz; ls; cat two")
     assert await r.materialize_stdout() == b"two\nhello\n"
     assert await r.materialize_stderr() == (
-        b"gzip: two.gz: unknown method 7 -- not supported\n")
+        b"gzip: two.gz: unknown method 7 -- not supported\n"
+    )
 
 
 async def _linked(line: str) -> tuple[Workspace, str, str, int]:
@@ -130,27 +147,45 @@ async def _linked(line: str) -> tuple[Workspace, str, str, int]:
             "/data": (RAMVFS(), MountMode.WRITE),
             "/ro": (ro, MountMode.READ),
         },
-        mode=MountMode.WRITE)
-    await ws.shell("tee /data/t.gz > /dev/null",
-                   stdin=gzip.compress(b"hello\n"))
+        mode=MountMode.WRITE,
+    )
+    await ws.shell(
+        "tee /data/t.gz > /dev/null", stdin=gzip.compress(b"hello\n")
+    )
     await ws.shell("mkdir /data/dir && cd /data && ln -s t.gz tl.gz")
     r = await ws.shell(f"cd /data && {line}")
-    return (ws, (await r.materialize_stdout()).decode(),
-            (await r.materialize_stderr()).decode(), r.exit_code)
+    return (
+        ws,
+        (await r.materialize_stdout()).decode(),
+        (await r.materialize_stderr()).decode(),
+        r.exit_code,
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,err", [
-    ("gunzip tl.gz", "gzip: tl.gz: Too many levels of symbolic links\n"),
-    ("gunzip -k -q tl.gz", "gzip: tl.gz: Too many levels of symbolic links\n"),
-    ("gzip -d tl.gz", "gzip: tl.gz: Too many levels of symbolic links\n"),
-    ("ln -s nowhere d.gz && gunzip d.gz",
-     "gzip: d.gz: Too many levels of symbolic links\n"),
-    ("ln -s dir dl && gunzip dl",
-     "gzip: dl: Too many levels of symbolic links\n"),
-    ("ln -s t.gz x.gz && gunzip x",
-     "gzip: x.gz: Too many levels of symbolic links\n"),
-])
+@pytest.mark.parametrize(
+    "line,err",
+    [
+        ("gunzip tl.gz", "gzip: tl.gz: Too many levels of symbolic links\n"),
+        (
+            "gunzip -k -q tl.gz",
+            "gzip: tl.gz: Too many levels of symbolic links\n",
+        ),
+        ("gzip -d tl.gz", "gzip: tl.gz: Too many levels of symbolic links\n"),
+        (
+            "ln -s nowhere d.gz && gunzip d.gz",
+            "gzip: d.gz: Too many levels of symbolic links\n",
+        ),
+        (
+            "ln -s dir dl && gunzip dl",
+            "gzip: dl: Too many levels of symbolic links\n",
+        ),
+        (
+            "ln -s t.gz x.gz && gunzip x",
+            "gzip: x.gz: Too many levels of symbolic links\n",
+        ),
+    ],
+)
 async def test_in_place_refuses_a_link_as_o_nofollow_does(line: str, err: str):
     ws, out, stderr, code = await _linked(line)
     assert (stderr, code) == (err, 1)
@@ -170,8 +205,10 @@ async def test_f_decodes_beside_the_link_and_removes_the_link():
 async def test_k_f_keeps_the_link():
     ws, _, _, code = await _linked("gunzip -kf tl.gz")
     r = await ws.shell("cd /data && ls -F")
-    assert (code, await
-            r.materialize_stdout()) == (0, b"dir/\nt.gz\ntl\ntl.gz@\n")
+    assert (code, await r.materialize_stdout()) == (
+        0,
+        b"dir/\nt.gz\ntl\ntl.gz@\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -194,8 +231,10 @@ async def test_a_link_standing_at_the_output_name_is_an_output_already_there():
     assert (stderr, code) == ("gzip: t already exists;\tnot overwritten\n", 2)
     ws, _, stderr, code = await _linked("ln -s dir t && gunzip -f t.gz")
     r = await ws.shell("cd /data && ls -F && cat t")
-    assert (code, await
-            r.materialize_stdout()) == (0, b"dir/\nt\ntl.gz@\nhello\n")
+    assert (code, await r.materialize_stdout()) == (
+        0,
+        b"dir/\nt\ntl.gz@\nhello\n",
+    )
 
 
 @pytest.mark.asyncio

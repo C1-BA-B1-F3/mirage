@@ -38,20 +38,11 @@ async def test_ls_no_args_after_cd_returns_cwd_entries(config):
     vfs = SlackVFS(config)
     ws = Workspace({"/slack": vfs}, mode=MountMode.READ)
     channels_page = {
-        "channels": [{
-            "id": "C001",
-            "name": "general",
-            "created": 1700000000
-        }],
-        "response_metadata": {
-            "next_cursor": ""
-        },
+        "channels": [{"id": "C001", "name": "general", "created": 1700000000}],
+        "response_metadata": {"next_cursor": ""},
     }
     history_page = {
-        "messages": [{
-            "ts": "1700050000.0",
-            "text": "hi"
-        }],
+        "messages": [{"ts": "1700050000.0", "text": "hi"}],
         "has_more": False,
     }
 
@@ -62,18 +53,22 @@ async def test_ls_no_args_after_cd_returns_cwd_entries(config):
             return history_page
         raise AssertionError(f"unexpected method: {method}")
 
-    with patch("mirage.core.slack.paginate.slack_get", new=fake_get), \
-         patch("mirage.core.slack.readdir.slack_get", new=fake_get):
+    with (
+        patch("mirage.core.slack.paginate.slack_get", new=fake_get),
+        patch("mirage.core.slack.readdir.slack_get", new=fake_get),
+    ):
         r = await ws.shell("cd /slack/channels/general__C001")
         assert r.exit_code == 0
         r = await ws.shell("pwd")
-        assert (await
-                r.stdout_str()).strip() == "/slack/channels/general__C001"
+        assert (
+            await r.stdout_str()
+        ).strip() == "/slack/channels/general__C001"
 
         r = await ws.shell("ls")
         out = (await r.stdout_str()).strip()
     assert r.exit_code == 0
     assert out != "", "ls no-args after cd returned empty"
     first_line = out.splitlines()[0]
-    assert len(
-        first_line) == 10 and first_line[4] == "-" and first_line[7] == "-"
+    assert (
+        len(first_line) == 10 and first_line[4] == "-" and first_line[7] == "-"
+    )

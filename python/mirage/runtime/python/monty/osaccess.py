@@ -19,11 +19,17 @@ from typing import Any
 
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import parse_mode
-from mirage.runtime.python.monty.binding import (MemoryFile, MontyFileHandle,
-                                                 OSAccess, path_from_arg)
-from mirage.runtime.python.monty.constants import (EXDEV_MESSAGE,
-                                                   FILE_EXISTS_MESSAGE,
-                                                   MAX_URANDOM_BYTES)
+from mirage.runtime.python.monty.binding import (
+    MemoryFile,
+    MontyFileHandle,
+    OSAccess,
+    path_from_arg,
+)
+from mirage.runtime.python.monty.constants import (
+    EXDEV_MESSAGE,
+    FILE_EXISTS_MESSAGE,
+    MAX_URANDOM_BYTES,
+)
 from mirage.runtime.python.monty.list import merge_entries
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.python.monty.vfs import MontyVFS
@@ -54,11 +60,12 @@ class MirageOSAccess(OSAccess):
         environ (dict[str, str]): the guest's environment.
     """
 
-    def __init__(self, core: RuntimeVFS | None, environ: dict[str,
-                                                              str]) -> None:
-        super().__init__([],
-                         environ=dict(environ),
-                         max_urandom_bytes=MAX_URANDOM_BYTES)
+    def __init__(
+        self, core: RuntimeVFS | None, environ: dict[str, str]
+    ) -> None:
+        super().__init__(
+            [], environ=dict(environ), max_urandom_bytes=MAX_URANDOM_BYTES
+        )
         self._vfs = MontyVFS(core)
 
     def _fetch(self, virtual: str) -> bytes | None:
@@ -226,36 +233,41 @@ class MirageOSAccess(OSAccess):
         self._ensure_file(path_from_arg(path))
         return super().path_read_bytes(path)
 
-    def path_write_text(self, path: PurePosixPath | MontyFileHandle,
-                        data: str) -> int:
+    def path_write_text(
+        self, path: PurePosixPath | MontyFileHandle, data: str
+    ) -> int:
         self._ensure_dir(path_from_arg(path).parent)
         out = super().path_write_text(path, data)
         self._flush(path_from_arg(path))
         return out
 
-    def path_write_bytes(self, path: PurePosixPath | MontyFileHandle,
-                         data: bytes) -> int:
+    def path_write_bytes(
+        self, path: PurePosixPath | MontyFileHandle, data: bytes
+    ) -> int:
         self._ensure_dir(path_from_arg(path).parent)
         out = super().path_write_bytes(path, data)
         self._flush(path_from_arg(path))
         return out
 
-    def path_append_text(self, path: PurePosixPath | MontyFileHandle,
-                         data: str) -> int:
+    def path_append_text(
+        self, path: PurePosixPath | MontyFileHandle, data: str
+    ) -> int:
         self._ensure_file(path_from_arg(path))
         out = super().path_append_text(path, data)
         self._append_remote(path_from_arg(path), data.encode())
         return out
 
-    def path_append_bytes(self, path: PurePosixPath | MontyFileHandle,
-                          data: bytes) -> int:
+    def path_append_bytes(
+        self, path: PurePosixPath | MontyFileHandle, data: bytes
+    ) -> int:
         self._ensure_file(path_from_arg(path))
         out = super().path_append_bytes(path, data)
         self._append_remote(path_from_arg(path), bytes(data))
         return out
 
-    def path_mkdir(self, path: PurePosixPath, parents: bool,
-                   exist_ok: bool) -> None:
+    def path_mkdir(
+        self, path: PurePosixPath, parents: bool, exist_ok: bool
+    ) -> None:
         """Create a directory on the mount, keeping pathlib's flags.
 
         `parents` rides through to the backend op, which takes it;
@@ -322,8 +334,9 @@ class MirageOSAccess(OSAccess):
         try:
             self._vfs.rename(str(path), str(target))
         except CrossMountError as exc:
-            raise OSError(errno.EXDEV, EXDEV_MESSAGE, str(path), None,
-                          str(target)) from exc
+            raise OSError(
+                errno.EXDEV, EXDEV_MESSAGE, str(path), None, str(target)
+            ) from exc
         super().path_rename(path, target)
         self._restamp(target)
 

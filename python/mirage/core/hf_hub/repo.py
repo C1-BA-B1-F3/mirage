@@ -47,9 +47,9 @@ async def head_commit(accessor: HfHubAccessor) -> str:
     Returns:
         str: the commit sha, or "" when the Hub reported none.
     """
-    data: JsonValue = await hub_get(accessor.token,
-                                    revision_url(accessor),
-                                    session=accessor.pool)
+    data: JsonValue = await hub_get(
+        accessor.token, revision_url(accessor), session=accessor.pool
+    )
     if not isinstance(data, dict):
         return ""
     sha = data.get("sha")
@@ -78,9 +78,9 @@ async def classify_absence(accessor: HfHubAccessor) -> Absence:
         revision resolves and the empty listing means an empty subtree.
     """
     try:
-        await hub_get(accessor.token,
-                      revision_url(accessor),
-                      session=accessor.pool)
+        await hub_get(
+            accessor.token, revision_url(accessor), session=accessor.pool
+        )
     except HfHubError as exc:
         if exc.error_code == "RepoNotFound":
             return Absence.REPO
@@ -99,5 +99,9 @@ def revision_url(accessor: HfHubAccessor) -> str:
     Returns:
         str: the absolute ``/api/<kind>s/<id>/revision/<rev>`` url.
     """
-    return api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                   f"/revision/{rev_segment(accessor.revision)}")
+    return api_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        f"/revision/{rev_segment(accessor.revision)}",
+    )

@@ -25,26 +25,54 @@ from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
 from mirage.commands.builtin.utils.paths import dot_refusal
-from mirage.context import (get_current_session, hidden_paths_intersect,
-                            hidden_refusal, path_allowed)
+from mirage.context import (
+    get_current_session,
+    hidden_paths_intersect,
+    hidden_refusal,
+    path_allowed,
+)
 from mirage.errors import POSIX, FsCondition
 from mirage.io import IOResult, OpReport
 from mirage.observe.context import record, start_op
 from mirage.observe.record import OpRecord
 from mirage.ops.config import NO_FOLLOW_OPS, STAMP_WRITE_OPS
-from mirage.ops.namespace_view import (merge_readdir, namespace_listing,
-                                       namespace_stat)
+from mirage.ops.namespace_view import (
+    merge_readdir,
+    namespace_listing,
+    namespace_stat,
+)
 from mirage.policy import post_ops_gate, pre_ops_gate
 from mirage.policy.errors import PolicyDenied, PolicyError
-from mirage.types import (DEFAULT_READ_TTL, CacheFacts, FileStat, FileType,
-                          PathSpec, VFSName)
-from mirage.utils.errors import (MISS_ERRORS, eloop, enoent, no_mount,
-                                 walk_refusal)
+from mirage.types import (
+    DEFAULT_READ_TTL,
+    CacheFacts,
+    FileStat,
+    FileType,
+    PathSpec,
+    VFSName,
+)
+from mirage.utils.errors import (
+    MISS_ERRORS,
+    eloop,
+    enoent,
+    no_mount,
+    walk_refusal,
+)
 from mirage.utils.hidden import move_reveals
 from mirage.utils.key_prefix import mount_key
 from mirage.utils.path import CycleError, norm, norm_dir, owner_prefix, parent
 from mirage.utils.ranges import slice_window
 from mirage.utils.remnants import remove_remnants, visible_below
+from mirage.workspace.dispatcher.constants import (
+    DISPATCH_READ_OPS,
+    DISPATCH_WRITE_OPS,
+    HIDDEN_CREATE_OPS,
+    LINK_ENTRY_OPS,
+    NAMESPACE_TABLE_OPS,
+    POLICY_WRITE_OPS,
+    SETATTR_KEYS,
+    XATTR_OPS,
+)
 from mirage.workspace.dispatcher.lineage import require_turf_writable
 from mirage.workspace.mount import MountEntry
 from mirage.workspace.mount.namespace import Namespace
@@ -52,13 +80,10 @@ from mirage.workspace.mount.namespace.overlay import merge_overlay_stat
 from mirage.workspace.reconcile import Reconciler
 from mirage.workspace.snapshot.drift import DriftQueue
 
-from mirage.workspace.dispatcher.constants import (  # isort: skip
-    DISPATCH_READ_OPS, DISPATCH_WRITE_OPS, HIDDEN_CREATE_OPS, LINK_ENTRY_OPS,
-    NAMESPACE_TABLE_OPS, POLICY_WRITE_OPS, SETATTR_KEYS, XATTR_OPS)
 
-
-def _memory_answered(report: OpReport | None,
-                     moved: int | None = None) -> None:
+def _memory_answered(
+    report: OpReport | None, moved: int | None = None
+) -> None:
     """Stamp the caller's report: memory answered, no backend ran.
 
     Fires at the moment a warm file-cache hit or a synthetic namespace
@@ -97,7 +122,8 @@ def _visible_entries(entries: list[str], parent: str) -> list[str]:
     """
     base = parent.rstrip("/")
     return [
-        e for e in entries
+        e
+        for e in entries
         if path_allowed(f"{base}/{e.rstrip('/').rsplit('/', 1)[-1]}")
     ]
 
@@ -115,7 +141,8 @@ def _lists(listing: list[str], virtual: str) -> bool:
     """
     name = virtual.rstrip("/").rsplit("/", 1)[-1]
     return any(
-        str(entry).rstrip("/").rsplit("/", 1)[-1] == name for entry in listing)
+        str(entry).rstrip("/").rsplit("/", 1)[-1] == name for entry in listing
+    )
 
 
 def _session_id() -> str:
@@ -134,8 +161,10 @@ def _window(kwargs: dict[str, Any]) -> tuple[int, int | None]:
     """
     offset = kwargs.get("offset")
     size = kwargs.get("size")
-    return (offset if isinstance(offset, int) else 0,
-            size if isinstance(size, int) else None)
+    return (
+        offset if isinstance(offset, int) else 0,
+        size if isinstance(size, int) else None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,10 +237,9 @@ class Dispatcher:
     reach here without passing Workspace.dispatch.
     """
 
-    def __init__(self,
-                 namespace: Namespace,
-                 cache,
-                 drift: DriftQueue | None = None) -> None:
+    def __init__(
+        self, namespace: Namespace, cache, drift: DriftQueue | None = None
+    ) -> None:
         self._namespace = namespace
         self._cache = cache
         self._reconciler = Reconciler(cache, namespace)
@@ -221,8 +249,9 @@ class Dispatcher:
     def reconciler(self) -> Reconciler:
         return self._reconciler
 
-    def _namespace_result(self, op: str,
-                          virtual: str) -> list[str] | FileStat | None:
+    def _namespace_result(
+        self, op: str, virtual: str
+    ) -> list[str] | FileStat | None:
         """The namespace's own answer for a path no backend serves.
 
         Child mounts and symlinks are structure the door owns, so a
@@ -241,9 +270,13 @@ class Dispatcher:
             return namespace_stat(prefixes, self._namespace, virtual)
         return None
 
-    async def _gated_namespace(self, op: str, path: PathSpec,
-                               fallback: "list[str] | FileStat",
-                               report: OpReport | None) -> Any:
+    async def _gated_namespace(
+        self,
+        op: str,
+        path: PathSpec,
+        fallback: "list[str] | FileStat",
+        report: OpReport | None,
+    ) -> Any:
         """Gate a namespace-served answer exactly like a backend one.
 
         The answer has no owning prefix (the gates see ""), but
@@ -270,12 +303,14 @@ class Dispatcher:
             return await apply_op_limit(fallback, bound)
         return fallback
 
-    async def dispatch(self,
-                       op: str,
-                       path: PathSpec,
-                       *,
-                       report: OpReport | None = None,
-                       **kwargs: Any) -> tuple[Any, IOResult]:
+    async def dispatch(
+        self,
+        op: str,
+        path: PathSpec,
+        *,
+        report: OpReport | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, IOResult]:
         await self._namespace.ensure_loaded()
         # Pending fingerprint checks from a strict snapshot restore run
         # before the op can touch a mount, whichever surface called:
@@ -292,8 +327,11 @@ class Dispatcher:
         if not path_allowed(path.virtual):
             raise hidden_refusal(path.virtual, op in HIDDEN_CREATE_OPS)
         dst = kwargs.get("dst")
-        if (op == "rename" and isinstance(dst, PathSpec)
-                and not path_allowed(dst.virtual)):
+        if (
+            op == "rename"
+            and isinstance(dst, PathSpec)
+            and not path_allowed(dst.virtual)
+        ):
             raise hidden_refusal(dst.virtual, True)
         # An operand the walk already refused (the empty name, a link
         # loop) names nothing an op can reach, whatever `virtual` says.
@@ -328,14 +366,24 @@ class Dispatcher:
             # relocating it into view is refused. Only a directory has
             # anything below it to re-anchor, so a file source passes.
             sess = get_current_session()
-            if (sess is not None
-                    and move_reveals(sess.hidden_paths, sess.shown_paths,
-                                     path.virtual, dst.virtual)
-                    and await self._moved_source_is_dir(path)):
-                raise PermissionError(errno.EACCES, os.strerror(errno.EACCES),
-                                      path.virtual)
-        if (op == "rename" and isinstance(dst, PathSpec)
-                and self._namespace.link_stats_below(dst.virtual)):
+            if (
+                sess is not None
+                and move_reveals(
+                    sess.hidden_paths,
+                    sess.shown_paths,
+                    path.virtual,
+                    dst.virtual,
+                )
+                and await self._moved_source_is_dir(path)
+            ):
+                raise PermissionError(
+                    errno.EACCES, os.strerror(errno.EACCES), path.virtual
+                )
+        if (
+            op == "rename"
+            and isinstance(dst, PathSpec)
+            and self._namespace.link_stats_below(dst.virtual)
+        ):
             # rename(2) replaces a destination directory only when it
             # is empty, and the node table is half of what empty means
             # here: a link is invisible to every backend, so a
@@ -343,11 +391,14 @@ class Dispatcher:
             # one. Left to the backend the rename succeeded and the
             # purge below then deleted the link with it, losing
             # namespace state silently where POSIX promises ENOTEMPTY.
-            raise OSError(errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY),
-                          dst.virtual)
+            raise OSError(
+                errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY), dst.virtual
+            )
         if self._table_answers(op, path.virtual, kwargs):
-            return (await self._namespace_table_op(op, path, kwargs,
-                                                   report), IOResult())
+            return (
+                await self._namespace_table_op(op, path, kwargs, report),
+                IOResult(),
+            )
         # `nofollow` is the caller's AT_SYMLINK_NOFOLLOW: an op that acts
         # on a link entry itself (chown -h writing the link's own attrs)
         # keeps the typed path. Consumed here, never forwarded.
@@ -381,32 +432,39 @@ class Dispatcher:
             fallback = self._namespace_result(op, path.virtual)
             if fallback is None:
                 raise no_mount(path.virtual)
-            return (await self._gated_namespace(op, path, fallback,
-                                                report), IOResult())
+            return (
+                await self._gated_namespace(op, path, fallback, report),
+                IOResult(),
+            )
         # Admission policies fire at the door, before the warm-cache
         # early return below: a cached read must be refused exactly
         # like a cold one, or the cache becomes a policy bypass.
         policies = self._namespace.registry.policies
         write = op in POLICY_WRITE_OPS
-        await pre_ops_gate(policies, op, path, write, mount.prefix,
-                           _session_id())
+        await pre_ops_gate(
+            policies, op, path, write, mount.prefix, _session_id()
+        )
         # A rename's destination is a create there: it passes the same
         # gate as the source, so a path rule holds against moving into
         # a protected scope (or onto the directory that holds one) the
         # way it holds against writing there.
         if op == "rename" and isinstance(dst, PathSpec):
-            await pre_ops_gate(policies, op, dst, True, mount.prefix,
-                               _session_id())
+            await pre_ops_gate(
+                policies, op, dst, True, mount.prefix, _session_id()
+            )
         if write:
             require_turf_writable(mount, path)
             if op == "rename" and isinstance(dst, PathSpec):
                 require_turf_writable(
-                    self._namespace.try_mount_for(dst.virtual), dst)
+                    self._namespace.try_mount_for(dst.virtual), dst
+                )
         if op == "rmdir" and any(
-                path_allowed(link)
-                for link, _ in self._namespace.link_stats_below(path.virtual)):
-            raise OSError(errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY),
-                          path.virtual)
+            path_allowed(link)
+            for link, _ in self._namespace.link_stats_below(path.virtual)
+        ):
+            raise OSError(
+                errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY), path.virtual
+            )
         await mount.ensure_ready()
         caches_reads = mount.vfs.caches_reads
         # The file cache is keyed on the path alone, and what a command
@@ -418,9 +476,14 @@ class Dispatcher:
 
         if caches_reads and not raw and op in DISPATCH_READ_OPS:
             cached = await self._cache.get(path.virtual)
-            if (cached is not None and await self._reconciler.may_serve_cached(
-                    mount, path.virtual) and not mount.retiring
-                    and self._namespace.try_mount_for(path.virtual) is mount):
+            if (
+                cached is not None
+                and await self._reconciler.may_serve_cached(
+                    mount, path.virtual
+                )
+                and not mount.retiring
+                and self._namespace.try_mount_for(path.virtual) is mount
+            ):
                 # The cache holds the whole object, so a ranged read is
                 # answered by slicing it, never by handing back the
                 # whole file: the window is what the caller asked for
@@ -434,8 +497,9 @@ class Dispatcher:
                 # stamp a refused warm read is recorded against the
                 # backend and counted as traffic that never happened.
                 _memory_answered(report, len(served))
-                bound = await post_ops_gate(policies, op, path, write,
-                                            mount.prefix, served)
+                bound = await post_ops_gate(
+                    policies, op, path, write, mount.prefix, served
+                )
                 if bound is not None:
                     served = await apply_op_limit(served, bound)
                 return served, IOResult(reads={path.virtual: served})
@@ -466,8 +530,10 @@ class Dispatcher:
                 raise
             _memory_answered(report)
         except OSError as exc:
-            if op != "rmdir" or exc.errno not in (errno.ENOTEMPTY,
-                                                  errno.EEXIST):
+            if op != "rmdir" or exc.errno not in (
+                errno.ENOTEMPTY,
+                errno.EEXIST,
+            ):
                 raise
             await self._rmdir_remnants(mount, path, exc)
             result = None
@@ -480,29 +546,37 @@ class Dispatcher:
             if report is not None:
                 report.served(
                     None,
-                    len(result) if isinstance(result,
-                                              (bytes, bytearray)) else None)
+                    len(result)
+                    if isinstance(result, (bytes, bytearray))
+                    else None,
+                )
         if op == "readdir":
             result = _visible_entries(
                 merge_readdir(
                     result,
                     [m.prefix for m in self._namespace.registry.mounts()],
-                    self._namespace, path.virtual), path.virtual)
+                    self._namespace,
+                    path.virtual,
+                ),
+                path.virtual,
+            )
         if op == "stat" and isinstance(result, FileStat):
-            result = merge_overlay_stat(self._namespace.meta_for(path.virtual),
-                                        result)
+            result = merge_overlay_stat(
+                self._namespace.meta_for(path.virtual), result
+            )
         if op in DISPATCH_WRITE_OPS:
             # A removed name takes what was set on it (overlay mode and
             # owner, extended attributes) with it, so a file created there
             # next starts bare on every surface; settle_write is the one
             # place that says so.
             observed = time.time() if op in STAMP_WRITE_OPS else None
-            await self.invalidate_after_write(mount,
-                                              path,
-                                              observed=observed,
-                                              op=op,
-                                              parents=kwargs.get("parents")
-                                              is True)
+            await self.invalidate_after_write(
+                mount,
+                path,
+                observed=observed,
+                op=op,
+                parents=kwargs.get("parents") is True,
+            )
             if op == "rename" and isinstance(kwargs.get("dst"), PathSpec):
                 await self.invalidate_after_rename(mount, path, kwargs["dst"])
                 # rename(2) replaces the destination, so a node the
@@ -527,12 +601,15 @@ class Dispatcher:
                 # the old name next. Shell mv compensates for this in
                 # its own prepare step; a verb reaching the dispatcher
                 # directly, as git mv does, had nothing to.
-                await self._namespace.rename(path.virtual,
-                                             kwargs["dst"].virtual)
-                await self._namespace.rename_under(path.virtual,
-                                                   kwargs["dst"].virtual)
-        bound = await post_ops_gate(policies, op, path, write, mount.prefix,
-                                    result)
+                await self._namespace.rename(
+                    path.virtual, kwargs["dst"].virtual
+                )
+                await self._namespace.rename_under(
+                    path.virtual, kwargs["dst"].virtual
+                )
+        bound = await post_ops_gate(
+            policies, op, path, write, mount.prefix, result
+        )
         if bound is not None:
             # The transfer already happened, so the limit changes what
             # the caller receives, not what the backend moved; the
@@ -563,8 +640,9 @@ class Dispatcher:
             return True
         return not isinstance(row, FileStat) or row.type is FileType.DIRECTORY
 
-    async def _rmdir_remnants(self, mount: MountEntry, path: PathSpec,
-                              refusal: OSError) -> None:
+    async def _rmdir_remnants(
+        self, mount: MountEntry, path: PathSpec, refusal: OSError
+    ) -> None:
         """Take a visibly-empty directory's hidden remnants with it.
 
         The backend refused the rmdir because entries remain, but when
@@ -601,13 +679,18 @@ class Dispatcher:
         # see keeps the refusal instead of reporting a successful rmdir
         # while the mounted child remains.
         merged = merge_readdir(
-            entries, [m.prefix for m in self._namespace.registry.mounts()],
-            self._namespace, path.virtual)
+            entries,
+            [m.prefix for m in self._namespace.registry.mounts()],
+            self._namespace,
+            path.virtual,
+        )
         if not entries or visible_below(path.virtual, merged, path_allowed):
             raise refusal
         channel = _MountChannel(
-            mount, functools.partial(self._admit_cascade, mount),
-            functools.partial(self.invalidate_after_write, mount))
+            mount,
+            functools.partial(self._admit_cascade, mount),
+            functools.partial(self.invalidate_after_write, mount),
+        )
         try:
             await remove_remnants(channel, path_allowed, path)
         except Exception as exc:
@@ -631,8 +714,9 @@ class Dispatcher:
             raise refusal
         await self._namespace.purge_under(path.virtual)
 
-    async def _admit_cascade(self, mount: MountEntry, op: str,
-                             path: PathSpec) -> None:
+    async def _admit_cascade(
+        self, mount: MountEntry, op: str, path: PathSpec
+    ) -> None:
         """Hold one cascade deletion to the pre-ops admission a
         dispatched op answers.
 
@@ -646,8 +730,14 @@ class Dispatcher:
             op (str): the deletion op ("unlink" or "rmdir").
             path (PathSpec): the child being removed.
         """
-        await pre_ops_gate(self._namespace.registry.policies, op, path, True,
-                           mount.prefix, _session_id())
+        await pre_ops_gate(
+            self._namespace.registry.policies,
+            op,
+            path,
+            True,
+            mount.prefix,
+            _session_id(),
+        )
 
     async def _walk_stat(self, path: PathSpec) -> FileStat:
         """The door's own stat in the shape a chain walk reads.
@@ -690,8 +780,9 @@ class Dispatcher:
             raise hidden_refusal(walked, create)
         return PathSpec.from_str_path(walked)
 
-    def _table_answers(self, op: str, virtual: str, kwargs: dict[str,
-                                                                 Any]) -> bool:
+    def _table_answers(
+        self, op: str, virtual: str, kwargs: dict[str, Any]
+    ) -> bool:
         """Whether the node table answers this op instead of a backend.
 
         ``symlink`` and ``readlink`` always, because a link exists
@@ -717,9 +808,13 @@ class Dispatcher:
             return False
         return self._namespace.is_link(virtual)
 
-    async def _namespace_table_op(self, op: str, path: PathSpec,
-                                  kwargs: dict[str, Any],
-                                  report: OpReport | None) -> Any:
+    async def _namespace_table_op(
+        self,
+        op: str,
+        path: PathSpec,
+        kwargs: dict[str, Any],
+        report: OpReport | None,
+    ) -> Any:
         """Answer a node-table op at the door itself, gated like a backend.
 
         A symlink is namespace state with no backend behind it, so the
@@ -751,8 +846,9 @@ class Dispatcher:
         owner = mount.prefix if mount is not None else None
         policies = self._namespace.registry.policies
         write = op in POLICY_WRITE_OPS
-        await pre_ops_gate(policies, op, path, write, owner or "",
-                           _session_id())
+        await pre_ops_gate(
+            policies, op, path, write, owner or "", _session_id()
+        )
         if write:
             require_turf_writable(mount, path)
         result: str | FileStat | None = None
@@ -769,8 +865,9 @@ class Dispatcher:
             # link, an attr overlay) goes.
             dst_mount = self._namespace.try_mount_for(dst.virtual)
             dst_owner = dst_mount.prefix if dst_mount is not None else ""
-            await pre_ops_gate(policies, op, dst, True, dst_owner,
-                               _session_id())
+            await pre_ops_gate(
+                policies, op, dst, True, dst_owner, _session_id()
+            )
             require_turf_writable(dst_mount, dst)
             # The name the link moves to must have a directory above it,
             # as for a new link: the table alone would file it under an
@@ -781,9 +878,9 @@ class Dispatcher:
             if not self._namespace.is_link(dst.virtual):
                 kind = await self._entry_type(dst.virtual)
                 if kind == FileType.DIRECTORY:
-                    raise IsADirectoryError(errno.EISDIR,
-                                            os.strerror(errno.EISDIR),
-                                            dst.virtual)
+                    raise IsADirectoryError(
+                        errno.EISDIR, os.strerror(errno.EISDIR), dst.virtual
+                    )
                 if kind is not None:
                     await self.dispatch("unlink", dst)
             await self._namespace.unlink(dst.virtual)
@@ -805,9 +902,9 @@ class Dispatcher:
         elif op == "stat":
             row = self._namespace.link_stat_at(path.virtual)
             if row is None:
-                raise FileNotFoundError(errno.ENOENT,
-                                        os.strerror(errno.ENOENT),
-                                        path.virtual)
+                raise FileNotFoundError(
+                    errno.ENOENT, os.strerror(errno.ENOENT), path.virtual
+                )
             target = self._namespace.readlink(path.virtual) or ""
             result = row
         else:
@@ -816,11 +913,17 @@ class Dispatcher:
                 raise await self._readlink_miss(path)
             target = found
             result = found
-        record(op, path.virtual, VFSName.RAM.value,
-               len(target.encode("utf-8")), timer)
+        record(
+            op,
+            path.virtual,
+            VFSName.RAM.value,
+            len(target.encode("utf-8")),
+            timer,
+        )
         _memory_answered(report)
-        bound = await post_ops_gate(policies, op, path, write, owner or "",
-                                    result)
+        bound = await post_ops_gate(
+            policies, op, path, write, owner or "", result
+        )
         if bound is not None:
             return await apply_op_limit(result, bound)
         return result
@@ -841,13 +944,16 @@ class Dispatcher:
         """
         present, _ = await self._occupancy(path)
         if present:
-            return OSError(errno.EINVAL, os.strerror(errno.EINVAL),
-                           path.virtual)
-        return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
-                                 path.virtual)
+            return OSError(
+                errno.EINVAL, os.strerror(errno.EINVAL), path.virtual
+            )
+        return FileNotFoundError(
+            errno.ENOENT, os.strerror(errno.ENOENT), path.virtual
+        )
 
-    async def _occupancy(self,
-                         path: PathSpec) -> tuple[bool, list[str] | None]:
+    async def _occupancy(
+        self, path: PathSpec
+    ) -> tuple[bool, list[str] | None]:
         """Whether anything at all is at `path`, and the parent's listing.
 
         Four channels, asked in the order of what they prove. The
@@ -913,8 +1019,9 @@ class Dispatcher:
         """
         present, listing = await self._occupancy(path)
         if present:
-            return FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST),
-                                   path.virtual)
+            return FileExistsError(
+                errno.EEXIST, os.strerror(errno.EEXIST), path.virtual
+            )
         if listing:
             return None
         return await self._parent_refusal(path)
@@ -951,11 +1058,13 @@ class Dispatcher:
         except (PolicyError, PolicyDenied):
             return None
         if kind is not FileType.DIRECTORY:
-            return NotADirectoryError(errno.ENOTDIR,
-                                      os.strerror(errno.ENOTDIR), path.virtual)
+            return NotADirectoryError(
+                errno.ENOTDIR, os.strerror(errno.ENOTDIR), path.virtual
+            )
         if node != immediate:
-            return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
-                                     path.virtual)
+            return FileNotFoundError(
+                errno.ENOENT, os.strerror(errno.ENOENT), path.virtual
+            )
         return None
 
     async def _entry_type(self, virtual: str) -> FileType | None:
@@ -1002,11 +1111,13 @@ class Dispatcher:
         mount = self._namespace.try_mount_for(above or "/")
         if not name or mount is None:
             return None
-        return await self._probe_op("readdir", mount,
-                                    PathSpec.from_str_path(above or "/"))
+        return await self._probe_op(
+            "readdir", mount, PathSpec.from_str_path(above or "/")
+        )
 
-    async def _probe_op(self, op: str, mount: MountEntry,
-                        path: PathSpec) -> Any:
+    async def _probe_op(
+        self, op: str, mount: MountEntry, path: PathSpec
+    ) -> Any:
         """Run one read op for a probe, or None when it found nothing.
 
         The probe reads on the caller's behalf but not at its request, so
@@ -1022,8 +1133,14 @@ class Dispatcher:
         """
         if not mount.supports_op(op, path.virtual):
             return None
-        await pre_ops_gate(self._namespace.registry.policies, op, path, False,
-                           mount.prefix, _session_id())
+        await pre_ops_gate(
+            self._namespace.registry.policies,
+            op,
+            path,
+            False,
+            mount.prefix,
+            _session_id(),
+        )
         try:
             return await mount.execute_op(op, path.virtual)
         except NotADirectoryError:
@@ -1036,8 +1153,13 @@ class Dispatcher:
             # not absence on its own, so the caller tries the other.
             return None
 
-    async def _xattr_op(self, op: str, path: PathSpec, kwargs: dict[str, Any],
-                        report: OpReport | None) -> bytes | list[str] | None:
+    async def _xattr_op(
+        self,
+        op: str,
+        path: PathSpec,
+        kwargs: dict[str, Any],
+        report: OpReport | None,
+    ) -> bytes | list[str] | None:
         """Answer an extended-attribute op from the node table.
 
         The attributes a caller sets live on the path's node, so they
@@ -1078,18 +1200,25 @@ class Dispatcher:
             result = found
         elif op == "setxattr":
             if kwargs.get("create") and name in stored:
-                raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST),
-                                      path.virtual)
+                raise FileExistsError(
+                    errno.EEXIST, os.strerror(errno.EEXIST), path.virtual
+                )
             if kwargs.get("replace") and name not in stored:
                 raise _no_xattr(path)
-            await self._namespace.set_xattr(path.virtual, name,
-                                            bytes(kwargs.get("value") or b""))
+            await self._namespace.set_xattr(
+                path.virtual, name, bytes(kwargs.get("value") or b"")
+            )
         else:
             if name not in stored:
                 raise _no_xattr(path)
             await self._namespace.remove_xattr(path.virtual, name)
-        record(op, path.virtual, VFSName.RAM.value,
-               len(result) if isinstance(result, bytes) else 0, timer)
+        record(
+            op,
+            path.virtual,
+            VFSName.RAM.value,
+            len(result) if isinstance(result, bytes) else 0,
+            timer,
+        )
         if report is not None:
             report.served(None, None)
         bound = await post_ops_gate(policies, op, path, write, owner, result)
@@ -1097,8 +1226,9 @@ class Dispatcher:
             return await apply_op_limit(result, bound)
         return result
 
-    async def _xattr_target(self, mount: MountEntry | None,
-                            path: PathSpec) -> None:
+    async def _xattr_target(
+        self, mount: MountEntry | None, path: PathSpec
+    ) -> None:
         """Settle that an attribute op's path exists, which it answers first.
 
         A link node's own attributes and a directory that exists only in
@@ -1119,10 +1249,12 @@ class Dispatcher:
                 stat = await mount.execute_op("stat", path.virtual)
             except (FileNotFoundError, NotADirectoryError) as exc:
                 missing = exc
-                await self._reconciler.on_op_missing(mount, "stat",
-                                                     path.virtual)
+                await self._reconciler.on_op_missing(
+                    mount, "stat", path.virtual
+                )
         if stat is not None or isinstance(
-                self._namespace_result("stat", path.virtual), FileStat):
+            self._namespace_result("stat", path.virtual), FileStat
+        ):
             return
         if mount is None:
             raise no_mount(path.virtual)
@@ -1130,8 +1262,9 @@ class Dispatcher:
             raise missing
         raise enoent(path)
 
-    async def _apply_setattr(self, mount: MountEntry, path: PathSpec,
-                             kwargs: dict[str, Any]) -> dict[str, Any]:
+    async def _apply_setattr(
+        self, mount: MountEntry, path: PathSpec, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
         """Apply attributes natively where the backend can, overlay the rest.
 
         A mount with a native setattr op applies what it can and returns
@@ -1148,12 +1281,14 @@ class Dispatcher:
             kwargs (dict[str, Any]): the requested attribute fields.
         """
         requested = {key: kwargs.get(key) for key in SETATTR_KEYS}
-        if (self._namespace.is_link(path.virtual)
-                or not mount.supports_op("setattr", path.virtual)):
+        if self._namespace.is_link(path.virtual) or not mount.supports_op(
+            "setattr", path.virtual
+        ):
             return await self._overlay_setattr(path, kwargs)
         residual = await mount.execute_op("setattr", path.virtual, **kwargs)
         applied = [
-            key for key, value in requested.items()
+            key
+            for key, value in requested.items()
             if value is not None and key not in residual
         ]
         if applied:
@@ -1162,8 +1297,9 @@ class Dispatcher:
             await self._write_overlay(path.virtual, residual)
         return dict(residual)
 
-    async def _overlay_setattr(self, path: PathSpec,
-                               kwargs: dict[str, Any]) -> dict[str, Any]:
+    async def _overlay_setattr(
+        self, path: PathSpec, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
         """Store every requested field in the namespace overlay.
 
         Args:
@@ -1173,14 +1309,16 @@ class Dispatcher:
         timer = start_op()
         overlay = {
             key: value
-            for key in SETATTR_KEYS if (value := kwargs.get(key)) is not None
+            for key in SETATTR_KEYS
+            if (value := kwargs.get(key)) is not None
         }
         await self._write_overlay(path.virtual, overlay)
         record("setattr", path.virtual, VFSName.RAM.value, 0, timer)
         return overlay
 
-    async def _write_overlay(self, virtual: str, fields: dict[str,
-                                                              Any]) -> None:
+    async def _write_overlay(
+        self, virtual: str, fields: dict[str, Any]
+    ) -> None:
         """Write one overlay entry, converting an ISO mtime to epoch.
 
         Args:
@@ -1190,38 +1328,41 @@ class Dispatcher:
         mtime = fields.get("mtime")
         if isinstance(mtime, str):
             mtime = datetime.fromisoformat(mtime).timestamp()
-        await self._namespace.set_attrs(virtual,
-                                        mode=fields.get("mode"),
-                                        uid=fields.get("uid"),
-                                        gid=fields.get("gid"),
-                                        atime=fields.get("atime"),
-                                        mtime=mtime)
+        await self._namespace.set_attrs(
+            virtual,
+            mode=fields.get("mode"),
+            uid=fields.get("uid"),
+            gid=fields.get("gid"),
+            atime=fields.get("atime"),
+            mtime=mtime,
+        )
 
     async def stat(self, path: str) -> FileStat:
-        scope = PathSpec(virtual=path,
-                         directory=path,
-                         vfs_path="",
-                         resolved=True)
+        scope = PathSpec(
+            virtual=path, directory=path, vfs_path="", resolved=True
+        )
         result, _ = await self.dispatch("stat", scope)
         return result
 
     async def readdir(self, path: str) -> list[str]:
-        scope = PathSpec(virtual=path,
-                         directory=path,
-                         vfs_path="",
-                         resolved=False)
+        scope = PathSpec(
+            virtual=path, directory=path, vfs_path="", resolved=False
+        )
         raw, _ = await self.dispatch("readdir", scope)
         return raw
 
     async def apply_io(
-            self,
-            io: IOResult,
-            records: list[OpRecord] | None = None,
-            cache_facts: Callable[[str], CacheFacts] | None = None) -> None:
-        await cache_io.apply_io(self._cache,
-                                io,
-                                cache_facts or self.cache_facts_for,
-                                records=records)
+        self,
+        io: IOResult,
+        records: list[OpRecord] | None = None,
+        cache_facts: Callable[[str], CacheFacts] | None = None,
+    ) -> None:
+        await cache_io.apply_io(
+            self._cache,
+            io,
+            cache_facts or self.cache_facts_for,
+            records=records,
+        )
 
     def capture_cache_facts(self) -> Callable[[str], CacheFacts]:
         """Bind deferred command results to the mounts that produced them.
@@ -1236,8 +1377,12 @@ class Dispatcher:
             prefix = owner_prefix(mounts, path)
             original = mounts.get(prefix) if prefix is not None else None
             mount = self._namespace.try_mount_for(path)
-            if (mount is None or original is not mount or mount.retiring
-                    or not mount.vfs.caches_reads):
+            if (
+                mount is None
+                or original is not mount
+                or mount.retiring
+                or not mount.vfs.caches_reads
+            ):
                 return CacheFacts(cacheable=False, ttl=DEFAULT_READ_TTL)
             return CacheFacts(cacheable=True, ttl=mount.read.ttl)
 
@@ -1277,26 +1422,32 @@ class Dispatcher:
         """
         manager = mount.cache_manager
         if manager is None:
-            manager = CacheManager(self._cache, mount.index_store,
-                                   mount.prefix, mount.vfs.caches_reads)
+            manager = CacheManager(
+                self._cache,
+                mount.index_store,
+                mount.prefix,
+                mount.vfs.caches_reads,
+            )
         return manager
 
-    async def invalidate_after_write(self,
-                                     mount: MountEntry,
-                                     path: PathSpec,
-                                     observed: float | None = None,
-                                     op: str = "write",
-                                     parents: bool = False) -> None:
-        await self._namespace.settle_write(op,
-                                           path.virtual,
-                                           observed,
-                                           parents=parents)
+    async def invalidate_after_write(
+        self,
+        mount: MountEntry,
+        path: PathSpec,
+        observed: float | None = None,
+        op: str = "write",
+        parents: bool = False,
+    ) -> None:
+        await self._namespace.settle_write(
+            op, path.virtual, observed, parents=parents
+        )
         manager = self._manager_for(mount)
         await manager.invalidate_after_write(path)
         await manager.invalidate_ancestors(path)
 
-    async def invalidate_after_rename(self, mount: MountEntry,
-                                      source: PathSpec, dst: PathSpec) -> None:
+    async def invalidate_after_rename(
+        self, mount: MountEntry, source: PathSpec, dst: PathSpec
+    ) -> None:
         """Drop everything cached below both ends of a rename.
 
         A rename re-anchors the whole subtree under its source, so the

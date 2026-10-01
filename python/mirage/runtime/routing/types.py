@@ -114,12 +114,14 @@ class RouteContext:
                 external fallback by the workspace's command lookup.
         """
         for parsed in self.commands:
-            if (parsed.command in runtime.captures
-                    or EXTERNAL_COMMANDS in runtime.captures
-                    and parsed.command in external_commands):
-                return replace(self,
-                               command=parsed.command,
-                               builtin=parsed.builtin)
+            if (
+                parsed.command in runtime.captures
+                or EXTERNAL_COMMANDS in runtime.captures
+                and parsed.command in external_commands
+            ):
+                return replace(
+                    self, command=parsed.command, builtin=parsed.builtin
+                )
         return self
 
     def to_dict(self, runtime: Runtime | None = None) -> dict[str, Any]:
@@ -140,29 +142,24 @@ class RouteContext:
                 ctx["runtime"] for per-runtime scripts.
         """
         payload: dict[str, Any] = {
-            "line":
-            self.line,
-            "commands": [{
-                "command": c.command,
-                "words": list(c.words),
-                "builtin": c.builtin,
-                "paths": list(c.paths),
-                "cli": c.cli,
-            } for c in self.commands],
-            "command":
-            self.command,
-            "builtin":
-            self.builtin,
-            "cwd":
-            self.cwd,
-            "env":
-            dict(self.env),
-            "session_id":
-            self.session_id,
-            "agent_id":
-            self.agent_id,
-            "mounts":
-            list(self.mounts),
+            "line": self.line,
+            "commands": [
+                {
+                    "command": c.command,
+                    "words": list(c.words),
+                    "builtin": c.builtin,
+                    "paths": list(c.paths),
+                    "cli": c.cli,
+                }
+                for c in self.commands
+            ],
+            "command": self.command,
+            "builtin": self.builtin,
+            "cwd": self.cwd,
+            "env": dict(self.env),
+            "session_id": self.session_id,
+            "agent_id": self.agent_id,
+            "mounts": list(self.mounts),
         }
         if runtime is not None:
             payload["runtime"] = {
@@ -191,8 +188,10 @@ class RouteContext:
                     words=tuple(c["words"]),
                     builtin=bool(c["builtin"]),
                     paths=tuple(c["paths"]),
-                    cli=(str(c["cli"]) if c.get("cli") is not None else None))
-                for c in payload["commands"]),
+                    cli=(str(c["cli"]) if c.get("cli") is not None else None),
+                )
+                for c in payload["commands"]
+            ),
             command=str(payload["command"]),
             builtin=bool(payload["builtin"]),
             cwd=str(payload["cwd"]),
@@ -280,8 +279,10 @@ RouteVerdict = RouteOutcome | str | Mapping[str, Any] | None
 #
 #     # workspace yaml: policy.py next to the config file
 #     route_policy: policy.py
-RoutePolicy = Callable[[RouteContext],
-                       RouteVerdict | Awaitable[RouteVerdict]] | ScriptSource
+RoutePolicy = (
+    Callable[[RouteContext], RouteVerdict | Awaitable[RouteVerdict]]
+    | ScriptSource
+)
 
 
 @dataclass(frozen=True, slots=True)

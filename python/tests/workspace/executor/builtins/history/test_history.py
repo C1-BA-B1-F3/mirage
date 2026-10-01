@@ -16,29 +16,26 @@ import pytest
 
 from mirage.commands.config import ExecContext
 from mirage.io.types import IOResult
-from mirage.workspace.executor.builtins.history.history import (_parse_args,
-                                                                handle_history)
+from mirage.workspace.executor.builtins.history.history import (
+    _parse_args,
+    handle_history,
+)
 from mirage.workspace.session import SessionState
 
 
 class FakeMount:
-
     def __init__(self, io=None):
         self.io = io or IOResult()
         self.calls = []
 
-    async def execute_cmd(self,
-                          name,
-                          paths,
-                          texts,
-                          flags,
-                          context=ExecContext()):
+    async def execute_cmd(
+        self, name, paths, texts, flags, context=ExecContext()
+    ):
         self.calls.append((name, texts, flags, context))
         return b"1  ls\n", self.io
 
 
 class FakeRegistry:
-
     def __init__(self, mount=None):
         self.mount = mount
 
@@ -113,8 +110,9 @@ def test_parse_args_reads_a_bare_dash_as_an_operand():
 
 @pytest.mark.asyncio
 async def test_history_reports_a_usage_error_with_status_2():
-    _, io, node = await handle_history(FakeRegistry(FakeMount()), ["-x"],
-                                       session())
+    _, io, node = await handle_history(
+        FakeRegistry(FakeMount()), ["-x"], session()
+    )
     assert io.exit_code == 2
     assert node.exit_code == 2
     assert io.stderr.startswith(b"history: -x: invalid option\n")
@@ -131,8 +129,9 @@ async def test_history_reports_when_the_workspace_has_no_history_mount():
 @pytest.mark.asyncio
 async def test_history_routes_flags_and_operands_to_the_view_mount():
     mount = FakeMount()
-    stream, io, node = await handle_history(FakeRegistry(mount),
-                                            ["-s", "echo hi"], session())
+    stream, io, node = await handle_history(
+        FakeRegistry(mount), ["-s", "echo hi"], session()
+    )
     name, texts, flags, context = mount.calls[0]
     assert name == "history"
     assert texts == ["echo hi"]

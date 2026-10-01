@@ -17,8 +17,10 @@ from unittest.mock import patch
 import pytest
 
 from mirage.core.slack.config import SlackConfig
-from mirage.core.slack.history import (fetch_messages_for_day,
-                                       stream_messages_for_day)
+from mirage.core.slack.history import (
+    fetch_messages_for_day,
+    stream_messages_for_day,
+)
 from mirage.core.time_range import TimeRange
 
 
@@ -27,22 +29,12 @@ async def test_stream_messages_for_day_applies_day_bounds_and_yields_pages():
     cfg = SlackConfig(token="xoxb-t")
     pages = [
         {
-            "messages": [{
-                "ts": "1778371201.0",
-                "text": "a"
-            }],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            },
+            "messages": [{"ts": "1778371201.0", "text": "a"}],
+            "response_metadata": {"next_cursor": "cur1"},
         },
         {
-            "messages": [{
-                "ts": "1778371202.0",
-                "text": "b"
-            }],
-            "response_metadata": {
-                "next_cursor": ""
-            },
+            "messages": [{"ts": "1778371202.0", "text": "b"}],
+            "response_metadata": {"next_cursor": ""},
         },
     ]
     calls = []
@@ -54,8 +46,9 @@ async def test_stream_messages_for_day_applies_day_bounds_and_yields_pages():
 
     with patch("mirage.core.slack.paginate.slack_get", new=fake_get):
         seen = []
-        async for page in stream_messages_for_day(cfg, "C1", "2026-05-10",
-                                                  TimeRange()):
+        async for page in stream_messages_for_day(
+            cfg, "C1", "2026-05-10", TimeRange()
+        ):
             seen.append(page)
 
     assert [m["text"] for m in seen[0]] == ["a"]
@@ -72,22 +65,12 @@ async def test_fetch_messages_for_day_collects_and_sorts_across_pages():
     cfg = SlackConfig(token="xoxb-t")
     pages = [
         {
-            "messages": [{
-                "ts": "1778371203.0"
-            }, {
-                "ts": "1778371201.0"
-            }],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            },
+            "messages": [{"ts": "1778371203.0"}, {"ts": "1778371201.0"}],
+            "response_metadata": {"next_cursor": "cur1"},
         },
         {
-            "messages": [{
-                "ts": "1778371202.0"
-            }],
-            "response_metadata": {
-                "next_cursor": ""
-            },
+            "messages": [{"ts": "1778371202.0"}],
+            "response_metadata": {"next_cursor": ""},
         },
     ]
     calls = {"n": 0}
@@ -98,8 +81,12 @@ async def test_fetch_messages_for_day_collects_and_sorts_across_pages():
         return page
 
     with patch("mirage.core.slack.paginate.slack_get", new=fake_get):
-        result = await fetch_messages_for_day(cfg, "C1", "2026-05-10",
-                                              TimeRange())
+        result = await fetch_messages_for_day(
+            cfg, "C1", "2026-05-10", TimeRange()
+        )
 
-    assert [m["ts"] for m in result
-            ] == ["1778371201.0", "1778371202.0", "1778371203.0"]
+    assert [m["ts"] for m in result] == [
+        "1778371201.0",
+        "1778371202.0",
+        "1778371203.0",
+    ]

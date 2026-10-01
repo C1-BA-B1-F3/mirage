@@ -4,12 +4,19 @@ from dataclasses import dataclass
 from functools import partial
 
 from mirage.commands.builtin.generic.decompress import decompress_inputs
-from mirage.commands.builtin.grep_offsets import (decode_line, line_offsets,
-                                                  match_offset, prefix_of)
-from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, compile_pattern,
-                                                  matcher_syntax,
-                                                  pattern_warnings,
-                                                  resolve_pattern)
+from mirage.commands.builtin.grep_offsets import (
+    decode_line,
+    line_offsets,
+    match_offset,
+    prefix_of,
+)
+from mirage.commands.builtin.grep_pattern import (
+    NEVER_MATCH,
+    compile_pattern,
+    matcher_syntax,
+    pattern_warnings,
+    resolve_pattern,
+)
 from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.lines import split_lines
@@ -67,8 +74,12 @@ def _zgrep_search(
             if hits:
                 for m in hits:
                     matched.append(
-                        (idx, match_offset(start, line,
-                                           match_start(m)), match_text(m)))
+                        (
+                            idx,
+                            match_offset(start, line, match_start(m)),
+                            match_text(m),
+                        )
+                    )
                     if max_count is not None and len(matched) >= max_count:
                         break
         else:
@@ -87,14 +98,16 @@ def _zgrep_search(
     result: list[str] = []
     for idx, offset, line in matched:
         prefix = filename + ":" if filename else ""
-        prefix += prefix_of(idx if line_numbers else None,
-                            offset if byte_offsets else None)
+        prefix += prefix_of(
+            idx if line_numbers else None, offset if byte_offsets else None
+        )
         result.append(prefix + line)
     return result, len(matched) > 0
 
 
-def _files_only_match(data: bytes, pattern: re.Pattern[str],
-                      invert: bool) -> bool:
+def _files_only_match(
+    data: bytes, pattern: re.Pattern[str], invert: bool
+) -> bool:
     text = decode_line(data)
     for line in split_lines(text):
         hit = bool(pattern.search(line))
@@ -108,6 +121,7 @@ def _files_only_match(data: bytes, pattern: re.Pattern[str],
 @dataclass(frozen=True, slots=True)
 class ZgrepFlags:
     """Parsed zgrep flags; the complete set zgrep honors."""
+
     ignore_case: bool
     invert: bool
     count: bool
@@ -172,34 +186,47 @@ async def zgrep(
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(flags, spec=SPECS["zgrep"])
     pattern, never_match = await resolve_pattern(
-        texts, fl, partial(_read_plain, read_bytes),
-        "zgrep: usage: zgrep [flags] pattern [path]")
+        texts,
+        fl,
+        partial(_read_plain, read_bytes),
+        "zgrep: usage: zgrep [flags] pattern [path]",
+    )
     f = parse_flags(fl, never_match)
     # GNU grep 3.11 skips regex validation and selection under -m0.
-    compiled = (None if f.max_count == 0 else
-                re.compile(NEVER_MATCH) if never_match else compile_pattern(
-                    pattern, f.ignore_case, f.fixed, f.whole_word, f.syntax))
+    compiled = (
+        None
+        if f.max_count == 0
+        else re.compile(NEVER_MATCH)
+        if never_match
+        else compile_pattern(
+            pattern, f.ignore_case, f.fixed, f.whole_word, f.syntax
+        )
+    )
     multi = len(paths) > 1
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
     all_results: list[str] = []
 
     # zgrep runs grep, so grep's compile warnings come first, in its name.
-    errors: list[str] = [] if compiled is None or never_match or f.fixed else [
-        pattern_warnings(pattern, f.syntax).decode()
-    ]
+    errors: list[str] = (
+        []
+        if compiled is None or never_match or f.fixed
+        else [pattern_warnings(pattern, f.syntax).decode()]
+    )
     failed = False
     for p in paths or [STDIN_OPERAND]:
         # zgrep decompresses each operand with `gzip -cdfq -- FILE`,
         # which reports its own failures and hands grep what it decoded.
-        body, io = await decompress_inputs([p],
-                                           read=read_bytes,
-                                           stdin=stdin,
-                                           to_stdout=True,
-                                           force=True,
-                                           quiet=True,
-                                           stat=stat,
-                                           door=door)
+        body, io = await decompress_inputs(
+            [p],
+            read=read_bytes,
+            stdin=stdin,
+            to_stdout=True,
+            force=True,
+            quiet=True,
+            stat=stat,
+            door=door,
+        )
         data = await materialize(body)
         errors.append(await io.stderr_str())
         failed = failed or io.exit_code == 1
@@ -219,10 +246,17 @@ async def zgrep(
                 all_results.append(p.raw_path)
             any_match = any_match or matched
         else:
-            result, had_match = _zgrep_search(data, compiled, f.invert,
-                                              f.count, f.line_numbers, fname,
-                                              f.only_matching, f.max_count,
-                                              f.byte_offsets)
+            result, had_match = _zgrep_search(
+                data,
+                compiled,
+                f.invert,
+                f.count,
+                f.line_numbers,
+                fname,
+                f.only_matching,
+                f.max_count,
+                f.byte_offsets,
+            )
             if had_match:
                 any_match = True
             all_results.extend(result)
@@ -234,8 +268,9 @@ async def zgrep(
     # Under -m0, GNU still prints -L's operands even with -q.
     if (f.quiet and f.max_count != 0) or not all_results:
         return None, IOResult(exit_code=exit_code, stderr=stderr)
-    return format_records(all_results), IOResult(exit_code=exit_code,
-                                                 stderr=stderr)
+    return format_records(all_results), IOResult(
+        exit_code=exit_code, stderr=stderr
+    )
 
 
 __all__ = ["zgrep"]

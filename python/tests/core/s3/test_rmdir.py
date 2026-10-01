@@ -34,13 +34,14 @@ def _accessor(key_prefix: str | None = None) -> S3Accessor:
             aws_access_key_id="fake",
             aws_secret_access_key="fake",
             key_prefix=key_prefix,
-        ))
+        )
+    )
 
 
 def _path(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 def _run(fn, store: dict[str, bytes], virtual: str, key_prefix: str = ""):

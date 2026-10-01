@@ -28,8 +28,9 @@ from mirage.vfs.gsheets.sheet_entry import make_filename
 GRID_DATA_PARAM = "true"
 
 
-async def read_spreadsheet(token_manager: TokenManager,
-                           spreadsheet_id: str) -> bytes:
+async def read_spreadsheet(
+    token_manager: TokenManager, spreadsheet_id: str
+) -> bytes:
     """Fetch full spreadsheet JSON, cell values included.
 
     `spreadsheets.get` returns no grid data unless asked, so without
@@ -44,13 +45,15 @@ async def read_spreadsheet(token_manager: TokenManager,
         bytes: JSON response as bytes.
     """
     url = f"{sheets_base(token_manager)}/spreadsheets/{spreadsheet_id}"
-    data = await google_get(token_manager, url,
-                            {"includeGridData": GRID_DATA_PARAM})
+    data = await google_get(
+        token_manager, url, {"includeGridData": GRID_DATA_PARAM}
+    )
     return compact_json_bytes(data)
 
 
-async def read_values(token_manager: TokenManager, spreadsheet_id: str,
-                      range_: str) -> bytes:
+async def read_values(
+    token_manager: TokenManager, spreadsheet_id: str, range_: str
+) -> bytes:
     """Read cell values via Values API. Returns JSON array.
 
     Args:
@@ -67,18 +70,31 @@ async def read_values(token_manager: TokenManager, spreadsheet_id: str,
     return compact_json_bytes(data)
 
 
-async def _read_file(accessor: GSheetsAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
-    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
-                                    MIME, "gsheets/file", make_filename)
+async def _read_file(
+    accessor: GSheetsAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    entry = await resolve_app_entry(
+        accessor.token_manager,
+        match,
+        path,
+        index,
+        MIME,
+        "gsheets/file",
+        make_filename,
+    )
     timer = start_op()
     data = await read_spreadsheet(accessor.token_manager, entry.id)
-    record("read",
-           path.virtual,
-           "gsheets",
-           len(data),
-           timer,
-           fingerprint=entry.remote_time or None)
+    record(
+        "read",
+        path.virtual,
+        "gsheets",
+        len(data),
+        timer,
+        fingerprint=entry.remote_time or None,
+    )
     return data
 
 

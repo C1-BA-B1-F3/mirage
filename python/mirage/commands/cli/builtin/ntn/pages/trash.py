@@ -19,12 +19,14 @@ from mirage.core.notion.config import NotionConfig
 from mirage.core.notion.pages import update_page
 from mirage.io.types import ByteSource, IOResult
 
-NEEDS_YES = ("error: Cannot confirm in a non-interactive environment.\n"
-             "  hint: Use --yes to skip the confirmation prompt.\n")
+NEEDS_YES = (
+    "error: Cannot confirm in a non-interactive environment.\n"
+    "  hint: Use --yes to skip the confirmation prompt.\n"
+)
 
 
 async def trash(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     page_id = first_text(inv.texts, "page id")

@@ -24,8 +24,7 @@ def test_ifs_default_whitespace(shell):
 
 
 def test_ifs_prefix_does_not_persist(shell):
-    out = shell.mirage('IFS=, read a b c <<< "1,2,3"; '
-                       'echo "${IFS-default}"')
+    out = shell.mirage('IFS=, read a b c <<< "1,2,3"; echo "${IFS-default}"')
     assert "," not in out
 
 

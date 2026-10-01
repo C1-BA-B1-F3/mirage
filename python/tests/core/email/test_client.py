@@ -17,23 +17,34 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mirage.accessor.email import EmailAccessor
-from mirage.core.email.client import (fetch_headers, fetch_message,
-                                      list_folder_entries, list_folders,
-                                      list_message_uids, parse_folder_line,
-                                      quote_mailbox, quote_string, read_quoted,
-                                      select_folder)
+from mirage.core.email.client import (
+    fetch_headers,
+    fetch_message,
+    list_folder_entries,
+    list_folders,
+    list_message_uids,
+    parse_folder_line,
+    quote_mailbox,
+    quote_string,
+    read_quoted,
+    select_folder,
+)
 from mirage.core.email.config import EmailConfig
 
-MESSAGE = (b"From: alice@example.com\r\n"
-           b"To: bob@example.com\r\n"
-           b"Subject: Hello\r\n"
-           b"MIME-Version: 1.0\r\n"
-           b"Content-Type: text/plain; charset=utf-8\r\n"
-           b"\r\n"
-           b"a message with no Date header at all\r\n")
+MESSAGE = (
+    b"From: alice@example.com\r\n"
+    b"To: bob@example.com\r\n"
+    b"Subject: Hello\r\n"
+    b"MIME-Version: 1.0\r\n"
+    b"Content-Type: text/plain; charset=utf-8\r\n"
+    b"\r\n"
+    b"a message with no Date header at all\r\n"
+)
 
-FETCH_LINE = (b'1 FETCH (FLAGS () INTERNALDATE "07-Aug-2026 20:54:05 +0000" '
-              b"UID 101 BODY[] {%d}" % len(MESSAGE))
+FETCH_LINE = (
+    b'1 FETCH (FLAGS () INTERNALDATE "07-Aug-2026 20:54:05 +0000" '
+    b"UID 101 BODY[] {%d}" % len(MESSAGE)
+)
 
 
 @pytest.fixture
@@ -85,7 +96,7 @@ async def test_list_folder_entries_reports_special_use_attributes(accessor):
 
     entries = await list_folder_entries(accessor)
     assert entries == [
-        ("INBOX", ("\\HasNoChildren", )),
+        ("INBOX", ("\\HasNoChildren",)),
         ("[Gmail]/Sent Mail", ("\\HasNoChildren", "\\Sent")),
     ]
 
@@ -96,24 +107,32 @@ def test_parse_folder_line_skips_the_completion_line():
 
 def test_parse_folder_line_reads_a_name_holding_a_paren():
     assert parse_folder_line(b'(\\HasNoChildren) "/" "Notes (old)"') == (
-        "Notes (old)", ("\\HasNoChildren", ))
+        "Notes (old)",
+        ("\\HasNoChildren",),
+    )
 
 
 def test_parse_folder_line_reads_an_atom_mailbox():
     # A mailbox is an astring, so a name needing no quoting may arrive
     # bare. Splitting on quotes reads the delimiter as the name here.
     assert parse_folder_line(b'(\\HasNoChildren \\Sent) "/" Sent') == (
-        "Sent", ("\\HasNoChildren", "\\Sent"))
+        "Sent",
+        ("\\HasNoChildren", "\\Sent"),
+    )
 
 
 def test_parse_folder_line_reads_an_atom_after_a_nil_delimiter():
-    assert parse_folder_line(b"(\\HasNoChildren) NIL INBOX") == ("INBOX", (
-        "\\HasNoChildren", ))
+    assert parse_folder_line(b"(\\HasNoChildren) NIL INBOX") == (
+        "INBOX",
+        ("\\HasNoChildren",),
+    )
 
 
 def test_parse_folder_line_unescapes_a_quoted_name():
-    assert parse_folder_line(b'(\\HasNoChildren) "/" "od\\"d"') == ('od"d', (
-        "\\HasNoChildren", ))
+    assert parse_folder_line(b'(\\HasNoChildren) "/" "od\\"d"') == (
+        'od"d',
+        ("\\HasNoChildren",),
+    )
 
 
 def test_an_atom_sent_mailbox_survives_into_resolution():

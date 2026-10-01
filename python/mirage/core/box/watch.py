@@ -20,15 +20,33 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mirage.accessor.box import BoxAccessor
-from mirage.core.box.api import (absent_on_404, events_now, events_since,
-                                 list_folder_items)
+from mirage.core.box.api import (
+    absent_on_404,
+    events_now,
+    events_since,
+    list_folder_items,
+)
 from mirage.core.box.client import BoxTokenManager
-from mirage.core.box.constants import (EVENT_REPLAY_DAYS, EVENT_STREAM,
-                                       PLACE_EVENTS, TRASH_EVENTS)
-from mirage.core.box.resolve import (mount_relative_key, path_parts,
-                                     resolve_chain, root_id)
-from mirage.types import (Delta, FileChangeKind, FileEvent, JsonValue,
-                          PathSpec, WalkEntry)
+from mirage.core.box.constants import (
+    EVENT_REPLAY_DAYS,
+    EVENT_STREAM,
+    PLACE_EVENTS,
+    TRASH_EVENTS,
+)
+from mirage.core.box.resolve import (
+    mount_relative_key,
+    path_parts,
+    resolve_chain,
+    root_id,
+)
+from mirage.types import (
+    Delta,
+    FileChangeKind,
+    FileEvent,
+    JsonValue,
+    PathSpec,
+    WalkEntry,
+)
 from mirage.watch.base import DeltaHook
 from mirage.watch.constants import DIR_FINGERPRINT
 from mirage.watch.delta import diff_snapshots
@@ -80,7 +98,7 @@ def _rebase(key: str, old: str, new: str) -> str:
         old (str): Place a folder left.
         new (str): Place it arrived at.
     """
-    return new + key[len(old):] if _inside(key, old) else key
+    return new + key[len(old) :] if _inside(key, old) else key
 
 
 def _entry(virtual: str, item: dict[str, Any]) -> WalkEntry:
@@ -98,16 +116,20 @@ def _entry(virtual: str, item: dict[str, Any]) -> WalkEntry:
     modified = item.get("modified_at") or None
     size = item.get("size")
     size = size if isinstance(size, int) else None
-    return WalkEntry(virtual=virtual,
-                     is_dir=False,
-                     fingerprint=stat_fingerprint(
-                         item.get("sha1") or modified, modified, size),
-                     size=size,
-                     modified=modified)
+    return WalkEntry(
+        virtual=virtual,
+        is_dir=False,
+        fingerprint=stat_fingerprint(
+            item.get("sha1") or modified, modified, size
+        ),
+        size=size,
+        modified=modified,
+    )
 
 
-async def _walk(tm: BoxTokenManager, folder_id: str,
-                virtual: str) -> AsyncIterator[tuple[str, WalkEntry]]:
+async def _walk(
+    tm: BoxTokenManager, folder_id: str, virtual: str
+) -> AsyncIterator[tuple[str, WalkEntry]]:
     """Yield (ref, entry) for everything under one folder.
 
     Web links are skipped, as readdir hides them. A folder removed
@@ -119,8 +141,9 @@ async def _walk(tm: BoxTokenManager, folder_id: str,
         virtual (str): Virtual path the folder sits at.
     """
     try:
-        items = await absent_on_404(virtual,
-                                    lambda: list_folder_items(tm, folder_id))
+        items = await absent_on_404(
+            virtual, lambda: list_folder_items(tm, folder_id)
+        )
     except FileNotFoundError:
         return
     for item in items:
@@ -143,9 +166,9 @@ class _Tree:
 
     def __init__(self, snapshot: dict[str, str], refs: dict[str, str]) -> None:
         """Args:
-            snapshot (dict[str, str]): ``{virtual: fingerprint}``.
-            refs (dict[str, str]): ``{ref: virtual}`` for the same
-                entries.
+        snapshot (dict[str, str]): ``{virtual: fingerprint}``.
+        refs (dict[str, str]): ``{ref: virtual}`` for the same
+            entries.
         """
         self.snapshot = dict(snapshot)
         self.refs = dict(refs)
@@ -158,8 +181,9 @@ class _Tree:
             ref (str): The item's ref.
             entry (WalkEntry): Its row.
         """
-        self.snapshot[entry.virtual] = (DIR_FINGERPRINT if entry.is_dir else
-                                        entry.fingerprint or "")
+        self.snapshot[entry.virtual] = (
+            DIR_FINGERPRINT if entry.is_dir else entry.fingerprint or ""
+        )
         self.refs[ref] = entry.virtual
         self.entries[entry.virtual] = entry
 
@@ -180,8 +204,7 @@ class _Tree:
             if not _inside(key, virtual)
         }
         self.refs = {
-            r: key
-            for r, key in self.refs.items() if not _inside(key, virtual)
+            r: key for r, key in self.refs.items() if not _inside(key, virtual)
         }
 
     def move(self, old: str, new: str) -> None:
@@ -209,14 +232,16 @@ class _Native:
         chain (list[str]): Folder ids from the mount root down to the
             watch root, as far as the last walk resolved it.
     """
+
     position: str
     walked: datetime
     refs: dict[str, str]
     chain: list[str]
 
 
-def _encode(position: str, walked: datetime, tree: _Tree,
-            chain: Sequence[str]) -> str:
+def _encode(
+    position: str, walked: datetime, tree: _Tree, chain: Sequence[str]
+) -> str:
     return json.dumps(
         {
             "_box": _NATIVE,
@@ -226,11 +251,12 @@ def _encode(position: str, walked: datetime, tree: _Tree,
             "i": tree.refs,
             "r": list(chain),
         },
-        sort_keys=True)
+        sort_keys=True,
+    )
 
 
 def _decode(
-        checkpoint: str | None
+    checkpoint: str | None,
 ) -> tuple[dict[str, str] | None, _Native | None]:
     """Return (last snapshot, native state).
 
@@ -248,10 +274,12 @@ def _decode(
         return None, None
     if data.get("_box") != _NATIVE:
         return data, None
-    return data["s"], _Native(position=data["p"],
-                              walked=datetime.fromisoformat(data["w"]),
-                              refs=data["i"],
-                              chain=data["r"])
+    return data["s"], _Native(
+        position=data["p"],
+        walked=datetime.fromisoformat(data["w"]),
+        refs=data["i"],
+        chain=data["r"],
+    )
 
 
 def _source(value: JsonValue) -> dict[str, Any] | None:
@@ -264,8 +292,10 @@ def _source(value: JsonValue) -> dict[str, Any] | None:
     Args:
         value (JsonValue): The event's ``source``.
     """
-    if not isinstance(value, dict) or value.get("type") not in ("file",
-                                                                "folder"):
+    if not isinstance(value, dict) or value.get("type") not in (
+        "file",
+        "folder",
+    ):
         return None
     if not value.get("id"):
         return None
@@ -284,8 +314,11 @@ def _created(event: dict[str, Any]) -> datetime | None:
     try:
         stamp = datetime.fromisoformat(value)
     except ValueError:
-        logger.debug("box event %s: unreadable created_at %r",
-                     event.get("event_id"), value)
+        logger.debug(
+            "box event %s: unreadable created_at %r",
+            event.get("event_id"),
+            value,
+        )
         return None
     if stamp.tzinfo is None:
         return stamp.replace(tzinfo=timezone.utc)
@@ -355,7 +388,7 @@ class BoxDeltaHook:
 
     def __init__(self, accessor: BoxAccessor) -> None:
         """Args:
-            accessor (BoxAccessor): Backend handle.
+        accessor (BoxAccessor): Backend handle.
         """
         self._accessor = accessor
 
@@ -381,7 +414,8 @@ class BoxDeltaHook:
         parts = path_parts(root)
         try:
             found = await absent_on_404(
-                root.virtual, lambda: resolve_chain(self._accessor, parts))
+                root.virtual, lambda: resolve_chain(self._accessor, parts)
+            )
         except FileNotFoundError:
             found = []
         chain = [root_id(self._accessor)]
@@ -391,8 +425,9 @@ class BoxDeltaHook:
             chain.append(str(item["id"]))
         return chain
 
-    def _moves_root(self, root: PathSpec, chain: Sequence[str],
-                    event: dict[str, Any]) -> bool:
+    def _moves_root(
+        self, root: PathSpec, chain: Sequence[str], event: dict[str, Any]
+    ) -> bool:
         """Whether ``event`` moves, removes or replaces the watch root.
 
         A folder of the chain that is trashed, or placed anywhere but its
@@ -407,22 +442,29 @@ class BoxDeltaHook:
         """
         source = _source(event.get("source"))
         kind = event.get("event_type")
-        if (source is None or source.get("type") != "folder"
-                or (kind not in PLACE_EVENTS and kind not in TRASH_EVENTS)):
+        if (
+            source is None
+            or source.get("type") != "folder"
+            or (kind not in PLACE_EVENTS and kind not in TRASH_EVENTS)
+        ):
             return False
         place = self._place(root, source)
         folder_id = str(source["id"])
         if folder_id in chain:
             if kind in TRASH_EVENTS:
                 return True
-            above = path_parts(root)[:chain.index(folder_id)]
+            above = path_parts(root)[: chain.index(folder_id)]
             return place != virtual_of(root, "/".join(above))
         if kind in TRASH_EVENTS or place is None:
             return False
         return _inside(virtual_of(root, root.vfs_path), place)
 
-    async def _relist(self, root: PathSpec, previous: dict[str, str] | None,
-                      observed: datetime) -> Delta:
+    async def _relist(
+        self,
+        root: PathSpec,
+        previous: dict[str, str] | None,
+        observed: datetime,
+    ) -> Delta:
         """Walk ``root`` afresh, from the current stream head.
 
         Args:
@@ -436,16 +478,25 @@ class BoxDeltaHook:
         chain = await self._chain(root)
         tree = _Tree({}, {})
         if len(chain) > len(path_parts(root)):
-            async for ref, entry in _walk(tm, chain[-1],
-                                          virtual_of(root, root.vfs_path)):
+            async for ref, entry in _walk(
+                tm, chain[-1], virtual_of(root, root.vfs_path)
+            ):
                 tree.put(ref, entry)
-        changes = () if previous is None else diff_snapshots(
-            root, previous, tree.snapshot, tree.entries, observed)
-        return Delta(changes=changes,
-                     checkpoint=_encode(position, observed, tree, chain))
+        changes = (
+            ()
+            if previous is None
+            else diff_snapshots(
+                root, previous, tree.snapshot, tree.entries, observed
+            )
+        )
+        return Delta(
+            changes=changes,
+            checkpoint=_encode(position, observed, tree, chain),
+        )
 
-    async def _apply(self, root: PathSpec, here: str, tree: _Tree,
-                     event: dict[str, Any]) -> None:
+    async def _apply(
+        self, root: PathSpec, here: str, tree: _Tree, event: dict[str, Any]
+    ) -> None:
         """Bring the tree up to date with one event.
 
         Args:
@@ -479,8 +530,9 @@ class BoxDeltaHook:
             return
         tree.put(ref, _entry(place, source))
         if is_dir and old is None:
-            async for row in _walk(self._accessor.token_manager,
-                                   str(source["id"]), place):
+            async for row in _walk(
+                self._accessor.token_manager, str(source["id"]), place
+            ):
                 tree.put(*row)
 
     async def pull(self, root: PathSpec, checkpoint: str | None) -> Delta:
@@ -493,11 +545,13 @@ class BoxDeltaHook:
         """
         previous, native = _decode(checkpoint)
         observed = datetime.now(timezone.utc)
-        if (native is None or observed - native.walked
-                > timedelta(days=EVENT_REPLAY_DAYS)):
+        if native is None or observed - native.walked > timedelta(
+            days=EVENT_REPLAY_DAYS
+        ):
             return await self._relist(root, previous, observed)
-        found, position = await events_since(self._accessor.token_manager,
-                                             native.position, EVENT_STREAM)
+        found, position = await events_since(
+            self._accessor.token_manager, native.position, EVENT_STREAM
+        )
         events = _ordered(found)
         if any(self._moves_root(root, native.chain, e) for e in events):
             return await self._relist(root, previous, observed)
@@ -505,11 +559,12 @@ class BoxDeltaHook:
         tree = _Tree(previous or {}, native.refs)
         for event in events:
             await self._apply(root, here, tree, event)
-        return Delta(changes=diff_snapshots(root, previous or {},
-                                            tree.snapshot, tree.entries,
-                                            observed),
-                     checkpoint=_encode(position, native.walked, tree,
-                                        native.chain))
+        return Delta(
+            changes=diff_snapshots(
+                root, previous or {}, tree.snapshot, tree.entries, observed
+            ),
+            checkpoint=_encode(position, native.walked, tree, native.chain),
+        )
 
 
 class BoxEventHook:
@@ -541,14 +596,15 @@ class BoxEventHook:
 
     def __init__(self, accessor: BoxAccessor) -> None:
         """Args:
-            accessor (BoxAccessor): Backend handle, read for its root
-                folder.
+        accessor (BoxAccessor): Backend handle, read for its root
+            folder.
         """
         self._accessor = accessor
         self._paths: dict[str, str] = {}
 
-    def _leave(self, root: PathSpec, ref: str, old: str | None,
-               is_dir: bool) -> Sequence[FileEvent]:
+    def _leave(
+        self, root: PathSpec, ref: str, old: str | None, is_dir: bool
+    ) -> Sequence[FileEvent]:
         """Forget an item that left the mount, and report where it was.
 
         Args:
@@ -562,14 +618,16 @@ class BoxEventHook:
         if is_dir:
             self._paths = {
                 r: path
-                for r, path in self._paths.items() if not _inside(path, old)
+                for r, path in self._paths.items()
+                if not _inside(path, old)
             }
-            return (event_at(root, old, FileChangeKind.UNKNOWN), )
+            return (event_at(root, old, FileChangeKind.UNKNOWN),)
         self._paths.pop(ref, None)
-        return (event_at(root, old, FileChangeKind.DELETE), )
+        return (event_at(root, old, FileChangeKind.DELETE),)
 
-    def _move(self, root: PathSpec, ref: str, old: str, new: str,
-              is_dir: bool) -> Sequence[FileEvent]:
+    def _move(
+        self, root: PathSpec, ref: str, old: str, new: str, is_dir: bool
+    ) -> Sequence[FileEvent]:
         """Follow an item that moved within the mount.
 
         Args:
@@ -581,16 +639,18 @@ class BoxEventHook:
         """
         if is_dir:
             self._paths = {
-                r: _rebase(path, old, new)
-                for r, path in self._paths.items()
+                r: _rebase(path, old, new) for r, path in self._paths.items()
             }
-            return (event_at(root, old, FileChangeKind.UNKNOWN),
-                    event_at(root, new, FileChangeKind.UNKNOWN))
+            return (
+                event_at(root, old, FileChangeKind.UNKNOWN),
+                event_at(root, new, FileChangeKind.UNKNOWN),
+            )
         self._paths[ref] = new
-        return (event_at(root, new, FileChangeKind.MOVE, previous=old), )
+        return (event_at(root, new, FileChangeKind.MOVE, previous=old),)
 
-    async def to_events(self, root: PathSpec, event_type: str,
-                        payload: JsonValue) -> Sequence[FileEvent]:
+    async def to_events(
+        self, root: PathSpec, event_type: str, payload: JsonValue
+    ) -> Sequence[FileEvent]:
         """Map one Box event to the changes it implies.
 
         Args:
@@ -604,9 +664,11 @@ class BoxEventHook:
         is_dir = source.get("type") == "folder"
         mount_root = root_id(self._accessor)
         if is_dir and str(source["id"]) == mount_root:
-            if (event_type in TRASH_EVENTS
-                    or event_type == "ITEM_UNDELETE_VIA_TRASH"):
-                return (event_at(root, "", FileChangeKind.UNKNOWN), )
+            if (
+                event_type in TRASH_EVENTS
+                or event_type == "ITEM_UNDELETE_VIA_TRASH"
+            ):
+                return (event_at(root, "", FileChangeKind.UNKNOWN),)
             return ()
         ref = _ref(source)
         old = self._paths.get(ref)
@@ -622,15 +684,18 @@ class BoxEventHook:
         self._paths[ref] = relative
         if old is None and event_type in ("ITEM_MOVE", "ITEM_RENAME"):
             parent = relative.rsplit("/", 1)[0] if "/" in relative else ""
-            return (event_at(root, parent, FileChangeKind.UNKNOWN), )
+            return (event_at(root, parent, FileChangeKind.UNKNOWN),)
         if is_dir:
-            kind = (FileChangeKind.CREATE
-                    if event_type == "ITEM_CREATE" else FileChangeKind.UNKNOWN)
+            kind = (
+                FileChangeKind.CREATE
+                if event_type == "ITEM_CREATE"
+                else FileChangeKind.UNKNOWN
+            )
         elif old is not None or event_type == "ITEM_MAKE_CURRENT_VERSION":
             kind = FileChangeKind.UPDATE
         else:
             kind = FileChangeKind.CREATE
-        return (event_at(root, relative, kind), )
+        return (event_at(root, relative, kind),)
 
 
 def build_delta_hook(accessor: BoxAccessor) -> DeltaHook:

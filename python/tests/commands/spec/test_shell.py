@@ -34,8 +34,9 @@ def test_double_dash_ends_options():
 
 
 def test_given_lists_every_option_in_order():
-    parse = parse_shell_options(SHELL_SPECS["xargs"],
-                                ["-L1", "-I", "{}", "-n2", "-L3", "echo"])
+    parse = parse_shell_options(
+        SHELL_SPECS["xargs"], ["-L1", "-I", "{}", "-n2", "-L3", "echo"]
+    )
     assert parse.given == [("L", "1"), ("I", "{}"), ("n", "2"), ("L", "3")]
     assert parse.flags == {"L": "3", "I": "{}", "n": "2"}
     assert parse.operands == ["echo"]
@@ -69,18 +70,25 @@ def test_long_option_resolves_an_abbreviation():
     assert parse.operands == ["e"]
     assert parse_shell_options(spec, ["--hel"]).given == [("help", True)]
     assert parse_shell_options(spec, ["--rep=Z"]).given == [("i", "Z")]
-    assert parse_shell_options(SHELL_SPECS["timeout"],
-                               ["--si", "KILL"]).given == [("s", "KILL")]
+    assert parse_shell_options(
+        SHELL_SPECS["timeout"], ["--si", "KILL"]
+    ).given == [("s", "KILL")]
 
 
 def test_ambiguous_abbreviation_names_every_candidate_in_order():
     spec = SHELL_SPECS["xargs"]
     parse = parse_shell_options(spec, ["--max", "1"])
     assert parse.invalid == "--max"
-    assert parse.candidates == ("--max-lines", "--max-args", "--max-chars",
-                                "--max-procs")
-    assert parse_shell_options(spec, ["--ver"]).candidates == ("--verbose",
-                                                               "--version")
+    assert parse.candidates == (
+        "--max-lines",
+        "--max-args",
+        "--max-chars",
+        "--max-procs",
+    )
+    assert parse_shell_options(spec, ["--ver"]).candidates == (
+        "--verbose",
+        "--version",
+    )
     empty = parse_shell_options(spec, ["--=x"])
     assert empty.invalid == "--=x"
     assert empty.candidates[:2] == ("--null", "--arg-file")
@@ -92,8 +100,9 @@ def test_ambiguous_abbreviation_names_every_candidate_in_order():
 def test_value_on_a_no_argument_long_option_is_reported():
     spec = SHELL_SPECS["xargs"]
     assert parse_shell_options(spec, ["--nu=x"]).unexpected_value == "--null=x"
-    assert parse_shell_options(spec,
-                               ["--help=x"]).unexpected_value == "--help=x"
+    assert (
+        parse_shell_options(spec, ["--help=x"]).unexpected_value == "--help=x"
+    )
 
 
 def test_invalid_short_option_reported():
@@ -112,8 +121,9 @@ def test_value_flag_missing_value_reported():
 
 
 def test_timeout_long_bool_flag():
-    parse = parse_shell_options(SHELL_SPECS["timeout"],
-                                ["--preserve-status", "1", "sleep", "3"])
+    parse = parse_shell_options(
+        SHELL_SPECS["timeout"], ["--preserve-status", "1", "sleep", "3"]
+    )
     assert parse.flags == {"p": True}
     assert parse.operands == ["1", "sleep", "3"]
 
@@ -126,10 +136,16 @@ def test_read_dash_r():
 
 def test_options_preserve_aliases_clusters_and_partial_parse():
     for tail in (["-q"], ["--max-args"]):
-        parse = parse_shell_options(SHELL_SPECS["xargs"],
-                                    ["-0rn0", "--max-args=2", *tail])
-        assert parse.given == [("0", True), ("r", True), ("n", "0"),
-                               ("n", "2")]
+        parse = parse_shell_options(
+            SHELL_SPECS["xargs"], ["-0rn0", "--max-args=2", *tail]
+        )
+        assert parse.given == [
+            ("0", True),
+            ("r", True),
+            ("n", "0"),
+            ("n", "2"),
+        ]
         assert parse.invalid == ("q" if tail == ["-q"] else None)
-        assert parse.needs_value == ("--max-args"
-                                     if tail == ["--max-args"] else None)
+        assert parse.needs_value == (
+            "--max-args" if tail == ["--max-args"] else None
+        )

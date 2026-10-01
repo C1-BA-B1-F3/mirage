@@ -29,7 +29,6 @@ _MTIME = 1_750_000_000
 
 
 class _FakeFile:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
         self._pos = 0
@@ -45,9 +44,9 @@ class _FakeFile:
 
     async def read(self, size: int = -1) -> bytes:
         if size is None or size < 0:
-            out = self._data[self._pos:]
+            out = self._data[self._pos :]
         else:
-            out = self._data[self._pos:self._pos + size]
+            out = self._data[self._pos : self._pos + size]
         self._pos += len(out)
         return out
 
@@ -66,16 +65,20 @@ class _FakeSFTP:
 
     def _attrs(self, path: str) -> SimpleNamespace:
         if path in self.dirs:
-            return SimpleNamespace(type=asyncssh.FILEXFER_TYPE_DIRECTORY,
-                                   size=4096,
-                                   mtime=_MTIME,
-                                   permissions=None,
-                                   atime=None)
-        return SimpleNamespace(type=asyncssh.FILEXFER_TYPE_REGULAR,
-                               size=len(self.files[path]),
-                               mtime=_MTIME,
-                               permissions=None,
-                               atime=None)
+            return SimpleNamespace(
+                type=asyncssh.FILEXFER_TYPE_DIRECTORY,
+                size=4096,
+                mtime=_MTIME,
+                permissions=None,
+                atime=None,
+            )
+        return SimpleNamespace(
+            type=asyncssh.FILEXFER_TYPE_REGULAR,
+            size=len(self.files[path]),
+            mtime=_MTIME,
+            permissions=None,
+            atime=None,
+        )
 
     async def readdir(self, path: str):
         base = path.rstrip("/") or "/"
@@ -87,8 +90,9 @@ class _FakeSFTP:
             if parent != base or child == base:
                 continue
             leaf = child.rsplit("/", 1)[-1]
-            out.append(SimpleNamespace(filename=leaf,
-                                       attrs=self._attrs(child)))
+            out.append(
+                SimpleNamespace(filename=leaf, attrs=self._attrs(child))
+            )
         return out
 
     async def stat(self, path: str) -> SimpleNamespace:
@@ -129,10 +133,7 @@ async def test_readdir_under_a_file_is_enotdir(index):
 @pytest.mark.asyncio
 async def test_readdir_stores_sftp_attrs_in_index(index):
     accessor = _accessor(
-        {
-            "/a.txt": b"hello",
-            "/docs/b.bin": b"abc"
-        },
+        {"/a.txt": b"hello", "/docs/b.bin": b"abc"},
         {"/", "/docs"},
     )
     listing = await readdir(accessor, PathSpec.from_str_path("/"), index)
@@ -153,27 +154,25 @@ async def test_stat_size_matches_read_for_every_file(index):
     # The fskit invariant behind sizes_always_known: the size stat reports
     # must equal the byte length a read delivers, 0-byte files included.
     accessor = _accessor(
-        {
-            "/a.txt": b"hello",
-            "/empty.txt": b"",
-            "/docs/b.bin": b"abc"
-        },
+        {"/a.txt": b"hello", "/empty.txt": b"", "/docs/b.bin": b"abc"},
         {"/", "/docs"},
     )
     files: list[str] = []
     stack = ["/"]
     while stack:
         current = stack.pop()
-        listing = await readdir(accessor, PathSpec.from_str_path(current),
-                                index)
+        listing = await readdir(
+            accessor, PathSpec.from_str_path(current), index
+        )
         for child in listing:
             info = await stat(accessor, PathSpec.from_str_path(child), index)
             if info.type == FileType.DIRECTORY:
                 stack.append(child)
                 continue
             assert info.size is not None, child
-            body = await read_bytes(accessor, PathSpec.from_str_path(child),
-                                    index)
+            body = await read_bytes(
+                accessor, PathSpec.from_str_path(child), index
+            )
             assert info.size == len(body), child
             files.append(child)
     assert sorted(files) == ["/a.txt", "/docs/b.bin", "/empty.txt"]

@@ -14,8 +14,14 @@
 
 from collections.abc import Iterable
 
-from mirage.types import (HiddenPaths, HiddenVars, MountMode, ShowEntry,
-                          ShownPaths, weaker_mode)
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    MountMode,
+    ShowEntry,
+    ShownPaths,
+    weaker_mode,
+)
 from mirage.utils.fnmatch import fnmatch
 
 # The characters that make a document entry a pattern rather than an
@@ -228,7 +234,8 @@ def show_depth(shown: ShownPaths | None, virtual: str) -> int | None:
     for entry in shown.entries:
         if is_glob(entry.path):
             if "/" not in entry.path or not _matches_anchored(
-                    entry.path, parts):
+                entry.path, parts
+            ):
                 continue
         elif not _matches_exact(entry.path, norm):
             continue
@@ -238,8 +245,9 @@ def show_depth(shown: ShownPaths | None, virtual: str) -> int | None:
     return best
 
 
-def path_visible(hidden: HiddenPaths | None, shown: ShownPaths | None,
-                 virtual: str) -> bool:
+def path_visible(
+    hidden: HiddenPaths | None, shown: ShownPaths | None, virtual: str
+) -> bool:
     """Whether one session's path axis leaves this virtual path
     visible: the whole composition law for the VFS axis.
 
@@ -277,13 +285,15 @@ def path_visible(hidden: HiddenPaths | None, shown: ShownPaths | None,
                 return True
             continue
         if (norm == "/" or head.startswith(norm + "/")) and path_visible(
-                hidden, shown, head):
+            hidden, shown, head
+        ):
             return True
     return False
 
 
-def shown_mode(shown: ShownPaths | None,
-               virtual: str) -> tuple[int, MountMode] | None:
+def shown_mode(
+    shown: ShownPaths | None, virtual: str
+) -> tuple[int, MountMode] | None:
     """The deepest mode-carrying show entry covering this path, as
     (anchor depth, mode); None when none does.
 
@@ -305,7 +315,8 @@ def shown_mode(shown: ShownPaths | None,
             continue
         if is_glob(entry.path):
             if "/" not in entry.path or not _matches_anchored(
-                    entry.path, parts):
+                entry.path, parts
+            ):
                 continue
         elif not _matches_exact(entry.path, norm):
             continue
@@ -332,9 +343,9 @@ def _pattern_head(pattern: str) -> str:
     return _norm_abs("/".join(fixed))
 
 
-def path_covers(hidden: HiddenPaths | None,
-                virtual: str,
-                ancestors: bool = True) -> bool:
+def path_covers(
+    hidden: HiddenPaths | None, virtual: str, ancestors: bool = True
+) -> bool:
     """Whether a spec has anything at or under this virtual path.
 
     Asked for an op that acts on a whole subtree (a rename of a
@@ -360,12 +371,14 @@ def path_covers(hidden: HiddenPaths | None,
     heads.extend(_pattern_head(p) for p in hidden.patterns if "/" in p)
     if any(head == norm for head in heads):
         return True
-    return ancestors and any(norm == "/" or head.startswith(norm + "/")
-                             for head in heads)
+    return ancestors and any(
+        norm == "/" or head.startswith(norm + "/") for head in heads
+    )
 
 
-def move_reveals(hidden: HiddenPaths | None, shown: ShownPaths | None,
-                 src: str, dst: str) -> bool:
+def move_reveals(
+    hidden: HiddenPaths | None, shown: ShownPaths | None, src: str, dst: str
+) -> bool:
     """Whether relocating ``src`` to ``dst`` could surface a hidden path.
 
     The reveal half of the subtree law: a session's mutation may destroy
@@ -402,15 +415,19 @@ def move_reveals(hidden: HiddenPaths | None, shown: ShownPaths | None,
         e = _norm_abs(entry)
         if not e.startswith(s + "/"):
             continue
-        mapped = ("" if d == "/" else d) + e[len(s):]
+        mapped = ("" if d == "/" else d) + e[len(s) :]
         if path_visible(hidden, shown, mapped):
             return True
     for pat in hidden.patterns:
         if "/" not in pat:
             continue
         head = _pattern_head(pat)
-        if (head == s or head.startswith(s + "/") or head == "/"
-                or s.startswith(head + "/")):
+        if (
+            head == s
+            or head.startswith(s + "/")
+            or head == "/"
+            or s.startswith(head + "/")
+        ):
             return True
     return False
 
@@ -457,9 +474,10 @@ def hides_intersect(hidden: HiddenPaths | None, virtual: str) -> bool:
     # `/repo/public`) even though the operand itself is neither hidden
     # nor an ancestor of the head.
     norm = _norm_abs(virtual)
-    return any(head == "/" or norm.startswith(head + "/")
-               for head in (_pattern_head(p) for p in hidden.patterns
-                            if "/" in p))
+    return any(
+        head == "/" or norm.startswith(head + "/")
+        for head in (_pattern_head(p) for p in hidden.patterns if "/" in p)
+    )
 
 
 def var_hidden(hidden: HiddenVars | None, name: str) -> bool:

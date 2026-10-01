@@ -29,8 +29,9 @@ from mirage.vfs.mongodb.config import MongoDBConfig
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -38,8 +39,10 @@ def visible_collections(monkeypatch):
     # The documents stream proves its collection through the entity guard
     # before it queries it; these tests are about streaming, so the
     # catalog says yes.
-    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
-                        AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "mirage.core.mongodb.readdir.entity_exists",
+        AsyncMock(return_value=True),
+    )
 
 
 def _path(s: str = "/db1/collections/coll1/documents.jsonl") -> PathSpec:
@@ -55,12 +58,14 @@ async def _unused(*_args, **_kwargs):
 
 
 def _fake_io() -> CommandIO:
-    return CommandIO(readdir=_unused,
-                     read_bytes=_unused,
-                     read_stream=_unused,
-                     stat=_fake_stat,
-                     is_mounted=lambda _a: True,
-                     local=False)
+    return CommandIO(
+        readdir=_unused,
+        read_bytes=_unused,
+        read_stream=_unused,
+        stat=_fake_stat,
+        is_mounted=lambda _a: True,
+        local=False,
+    )
 
 
 async def _drain(source) -> bytes:
@@ -82,12 +87,17 @@ async def test_cat_streams_all_docs_as_extended_json(accessor):
         for d in docs:
             yield d
 
-    with patch("mirage.core.mongodb.stream.iter_documents", new=_fake), patch(
-            "mirage.commands.builtin.mongodb.cat.IO", new=_fake_io()), patch(
-                "mirage.commands.builtin.mongodb.cat.resolve_or_empty",
-                new=AsyncMock(return_value=[_path()])):
-        source, _ = await cat(accessor, [_path()], [],
-                              CommandOpts(index=NULL_INDEX))
+    with (
+        patch("mirage.core.mongodb.stream.iter_documents", new=_fake),
+        patch("mirage.commands.builtin.mongodb.cat.IO", new=_fake_io()),
+        patch(
+            "mirage.commands.builtin.mongodb.cat.resolve_or_empty",
+            new=AsyncMock(return_value=[_path()]),
+        ),
+    ):
+        source, _ = await cat(
+            accessor, [_path()], [], CommandOpts(index=NULL_INDEX)
+        )
         data = await _drain(source)
     lines = [line for line in data.decode().split("\n") if line]
     assert len(lines) == 7
@@ -105,13 +115,20 @@ async def test_cat_n_prepends_line_numbers(accessor):
         for d in docs:
             yield d
 
-    with patch("mirage.core.mongodb.stream.iter_documents", new=_fake), patch(
-            "mirage.commands.builtin.mongodb.cat.IO", new=_fake_io()), patch(
-                "mirage.commands.builtin.mongodb.cat.resolve_or_empty",
-                new=AsyncMock(return_value=[_path()])):
+    with (
+        patch("mirage.core.mongodb.stream.iter_documents", new=_fake),
+        patch("mirage.commands.builtin.mongodb.cat.IO", new=_fake_io()),
+        patch(
+            "mirage.commands.builtin.mongodb.cat.resolve_or_empty",
+            new=AsyncMock(return_value=[_path()]),
+        ),
+    ):
         source, _ = await cat(
-            accessor, [_path()], [],
-            CommandOpts(index=NULL_INDEX, flags={'number': True}))
+            accessor,
+            [_path()],
+            [],
+            CommandOpts(index=NULL_INDEX, flags={"number": True}),
+        )
         data = await _drain(source)
     lines = data.decode().splitlines()
     assert lines[0].lstrip().startswith("1\t")

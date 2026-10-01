@@ -2,9 +2,15 @@ from collections.abc import Awaitable, Callable
 from typing import Protocol, TypeVar
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               keep, start_basename,
-                                               tree_has_empty, tree_has_type)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    keep,
+    start_basename,
+    tree_has_empty,
+    tree_has_type,
+)
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import matches_mtime
 from mirage.utils.key_prefix import mount_prefix_of
@@ -12,10 +18,8 @@ from mirage.utils.stat_view import DIR_SIZE
 
 
 class ResolvedPath(Protocol):
-
     @property
-    def is_dir(self) -> bool:
-        ...
+    def is_dir(self) -> bool: ...
 
 
 # The accessor stays a type variable rather than the `Accessor` base:
@@ -23,8 +27,9 @@ class ResolvedPath(Protocol):
 # not fit an `Accessor` slot. Mirrors the TS factory's `<A>`.
 A = TypeVar("A")
 
-ResolvePathFn = Callable[[A, PathSpec, IndexCacheStore],
-                         Awaitable[ResolvedPath]]
+ResolvePathFn = Callable[
+    [A, PathSpec, IndexCacheStore], Awaitable[ResolvedPath]
+]
 
 StatFn = Callable[[A, PathSpec, IndexCacheStore], Awaitable[FileStat]]
 
@@ -93,8 +98,11 @@ async def _matches(
     """
     root_norm = root.rstrip("/") or "/"
     item_norm = item.rstrip("/") or "/"
-    item_name = (start_name if item_norm == root_norm else
-                 item.rstrip("/").rsplit("/", 1)[-1])
+    item_name = (
+        start_name
+        if item_norm == root_norm
+        else item.rstrip("/").rsplit("/", 1)[-1]
+    )
     # The walk strips its mount prefix; backend probes still need both paths.
     virtual = (prefix.rstrip("/") + "/" + item.lstrip("/")).rstrip("/") or "/"
     spec = PathSpec.from_str_path(virtual, item.lstrip("/"))
@@ -103,25 +111,32 @@ async def _matches(
         resolved = await resolve_path(accessor, spec, index)
         kind = "d" if resolved.is_dir else "f"
     item_stat = None
-    need_stat = ((min_size is not None or max_size is not None) and kind
-                 != "d") or mtime_min is not None or mtime_max is not None
+    need_stat = (
+        ((min_size is not None or max_size is not None) and kind != "d")
+        or mtime_min is not None
+        or mtime_max is not None
+    )
     if need_stat:
         item_stat = await stat(accessor, spec, index)
     is_empty = None
     if tree_has_empty(tree):
         if kind == "d":
             child_prefix = item.rstrip("/") + "/"
-            is_empty = not any(other != item and other.startswith(child_prefix)
-                               for other in all_items)
+            is_empty = not any(
+                other != item and other.startswith(child_prefix)
+                for other in all_items
+            )
         else:
             if item_stat is None:
                 item_stat = await stat(accessor, spec, index)
             is_empty = item_stat.type is FileType.FILE and item_stat.size == 0
-    entry = FindEntry(key=item,
-                      name=item_name,
-                      kind=kind,
-                      depth=relative_depth(item, root),
-                      is_empty=is_empty)
+    entry = FindEntry(
+        key=item,
+        name=item_name,
+        kind=kind,
+        depth=relative_depth(item, root),
+        is_empty=is_empty,
+    )
     if not keep(entry, tree, mindepth):
         return False
     if min_size is not None or max_size is not None:
@@ -137,14 +152,18 @@ async def _matches(
             return False
         if max_size is not None and size > max_size:
             return False
-    if not matches_mtime(item_stat.modified if item_stat is not None else None,
-                         mtime_min, mtime_max):
+    if not matches_mtime(
+        item_stat.modified if item_stat is not None else None,
+        mtime_min,
+        mtime_max,
+    ):
         return False
     return True
 
 
-def make_search_backed_find(resolve_path: ResolvePathFn[A], stat: StatFn[A],
-                            walk: WalkFn) -> FindFn:
+def make_search_backed_find(
+    resolve_path: ResolvePathFn[A], stat: StatFn[A], walk: WalkFn
+) -> FindFn:
     """Build ``find`` for a backend whose walk comes from a search index.
 
     The search-backed backends (chroma, dify) get the whole subtree from
@@ -179,30 +198,55 @@ def make_search_backed_find(resolve_path: ResolvePathFn[A], stat: StatFn[A],
         *,
         index: IndexCacheStore = NULL_INDEX,
     ) -> list[str]:
-        results = await walk(accessor,
-                             path,
-                             index,
-                             include_root=True,
-                             maxdepth=maxdepth,
-                             strip_prefix=True)
-        node = tree if tree is not None else build_tree(
-            name=name,
-            iname=iname,
-            path_pattern=path_pattern,
-            type=type,
-            name_exclude=name_exclude,
-            or_names=or_names,
-            empty=empty)
-        needs_kind = (tree_has_type(node) or min_size is not None
-                      or max_size is not None or tree_has_empty(node))
+        results = await walk(
+            accessor,
+            path,
+            index,
+            include_root=True,
+            maxdepth=maxdepth,
+            strip_prefix=True,
+        )
+        node = (
+            tree
+            if tree is not None
+            else build_tree(
+                name=name,
+                iname=iname,
+                path_pattern=path_pattern,
+                type=type,
+                name_exclude=name_exclude,
+                or_names=or_names,
+                empty=empty,
+            )
+        )
+        needs_kind = (
+            tree_has_type(node)
+            or min_size is not None
+            or max_size is not None
+            or tree_has_empty(node)
+        )
         start_name = start_basename(path)
         prefix = mount_prefix_of(path.virtual, path.vfs_path)
         filtered: list[str] = []
         for item in results:
-            if await _matches(resolve_path, stat, accessor, item, prefix,
-                              index, path.mount_path, node, needs_kind,
-                              min_size, max_size, mtime_min, mtime_max,
-                              mindepth, start_name, results):
+            if await _matches(
+                resolve_path,
+                stat,
+                accessor,
+                item,
+                prefix,
+                index,
+                path.mount_path,
+                node,
+                needs_kind,
+                min_size,
+                max_size,
+                mtime_min,
+                mtime_max,
+                mindepth,
+                start_name,
+                results,
+            ):
                 filtered.append(item)
         return sorted(filtered)
 

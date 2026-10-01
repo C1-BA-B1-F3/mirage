@@ -36,9 +36,11 @@ stat = _op("stat")
 
 
 def _scope(path: str, prefix: str = "/gslides") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -60,18 +62,26 @@ async def test_stat_root_is_directory(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_slide(accessor, index):
-    await index.set_dir('/gslides/owned',
-                        [('Deck__slide1.gslide.json',
-                          IndexEntry(
-                              id="slide1",
-                              name="Deck",
-                              resource_type="gslides/slide",
-                              remote_time="2026-04-01T00:00:00Z",
-                              vfs_name="Deck__slide1.gslide.json",
-                          ))])
-    result = await stat(accessor,
-                        _scope("/gslides/owned/Deck__slide1.gslide.json"),
-                        index=index)
+    await index.set_dir(
+        "/gslides/owned",
+        [
+            (
+                "Deck__slide1.gslide.json",
+                IndexEntry(
+                    id="slide1",
+                    name="Deck",
+                    resource_type="gslides/slide",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="Deck__slide1.gslide.json",
+                ),
+            )
+        ],
+    )
+    result = await stat(
+        accessor,
+        _scope("/gslides/owned/Deck__slide1.gslide.json"),
+        index=index,
+    )
     assert result.name == "Deck__slide1.gslide.json"
     assert result.extra["doc_id"] == "slide1"
 
@@ -80,6 +90,8 @@ async def test_stat_slide(accessor, index):
 async def test_stat_not_found(accessor, index):
     await index.set_dir("/gslides/owned", [])
     with pytest.raises(FileNotFoundError):
-        await stat(accessor,
-                   _scope("/gslides/owned/Nonexistent__slide9.gslide.json"),
-                   index=index)
+        await stat(
+            accessor,
+            _scope("/gslides/owned/Nonexistent__slide9.gslide.json"),
+            index=index,
+        )

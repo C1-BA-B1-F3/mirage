@@ -27,7 +27,6 @@ from mirage.vfs.gsheets.prompt import PROMPT, WRITE_PROMPT
 
 
 class GSheetsVFS(BaseVFS):
-
     accessor: GSheetsAccessor
     name: str = VFSName.GSHEETS
     caches_reads: bool = True

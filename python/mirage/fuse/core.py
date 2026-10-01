@@ -28,8 +28,13 @@ from mirage.fuse.platform.macos import is_macos_metadata
 from mirage.ops import Ops
 from mirage.runtime.handles import FileTable, merge_writes
 from mirage.types import FileStat, FileType
-from mirage.utils.stat_view import (DIR_MODE, DIR_SIZE, FILE_MODE, LINK_MODE,
-                                    mtime_ns)
+from mirage.utils.stat_view import (
+    DIR_MODE,
+    DIR_SIZE,
+    FILE_MODE,
+    LINK_MODE,
+    mtime_ns,
+)
 from mirage.workspace.session.session import SessionState
 
 # How long prefetched bytes for size-unknown files outlive their handle, so a
@@ -77,11 +82,13 @@ class MountCore:
             what a kernel mount wants.
     """
 
-    def __init__(self,
-                 ops: Ops,
-                 root_prefix: str = "",
-                 session: SessionState | None = None,
-                 loop: asyncio.AbstractEventLoop | None = None) -> None:
+    def __init__(
+        self,
+        ops: Ops,
+        root_prefix: str = "",
+        session: SessionState | None = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
         self._ops = ops
         self._session = session
         self._now = time.time_ns()
@@ -179,8 +186,9 @@ class MountCore:
             "st_ctime": self._now,
         }
 
-    def _apply_stat_attrs(self, entry: dict[str, Any],
-                          s: FileStat) -> dict[str, Any]:
+    def _apply_stat_attrs(
+        self, entry: dict[str, Any], s: FileStat
+    ) -> dict[str, Any]:
         """Fold merged stat attributes into a POSIX attr dict.
 
         The ops stat already carries the namespace overlay (chmod bits,
@@ -239,7 +247,7 @@ class MountCore:
             if target == self._root:
                 virtual_target = "/"
             elif target.startswith(self._root + "/"):
-                virtual_target = target[len(self._root):]
+                virtual_target = target[len(self._root) :]
             else:
                 # points outside the scoped root: unreachable through this
                 # mount, keep the stored form (a dangling link is legal)
@@ -331,12 +339,16 @@ class MountCore:
         except Exception as err:
             logger.debug(
                 "fuse: hydration read of %s failed, deferring to read(): %r",
-                path, err)
+                path,
+                err,
+            )
             return None
         # No inflight dedup: FUSE mounts run nothreads=True, so callbacks are
         # serialized and two opens cannot race (TS needs the dedup map).
-        self._prefetch[self.identity(path)] = (data,
-                                               time.monotonic() + PREFETCH_TTL)
+        self._prefetch[self.identity(path)] = (
+            data,
+            time.monotonic() + PREFETCH_TTL,
+        )
         return data
 
     def getattr(self, path: str, fh: int | None = None) -> dict[str, Any]:
@@ -368,8 +380,9 @@ class MountCore:
         # Reject early to avoid hitting the ops layer.
         name = path.rsplit("/", 1)[-1]
         if is_macos_metadata(name):
-            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
-                                    path)
+            raise FileNotFoundError(
+                errno.ENOENT, os.strerror(errno.ENOENT), path
+            )
         # Link check must precede the ops stat: the ops facade follows
         # namespace links, so stat on a link path reports the target.
         target = self.link_target(path)
@@ -429,7 +442,7 @@ class MountCore:
         """
         ctx = self._ctx(fh)
         if ctx is not None and ctx.data is not None:
-            return ctx.data[offset:offset + size]
+            return ctx.data[offset : offset + size]
         if ctx is not None:
             path = ctx.path
         data = self.cached_data(path)
@@ -437,7 +450,7 @@ class MountCore:
             data = self._run(self._ops.read(self.resolve(path)))
         if ctx is not None:
             ctx.data = data
-        return data[offset:offset + size]
+        return data[offset : offset + size]
 
     def _apply_writes(self, path: str, writes: WriteBuf) -> None:
         """Merge buffered writes over the raw base and persist the result.
@@ -459,8 +472,9 @@ class MountCore:
         self._run(self._ops.write(self.resolve(path), merged))
         self._changed(path)
 
-    def write(self, path: str, data: bytes, offset: int,
-              fh: int | None) -> int:
+    def write(
+        self, path: str, data: bytes, offset: int, fh: int | None
+    ) -> int:
         """Write bytes at an offset, buffering when a handle is open.
 
         Args:
@@ -555,8 +569,8 @@ class MountCore:
         self._run(self._ops.rename(source, target))
         for ctx in self._handles.values():
             if ctx.key == source or ctx.key.startswith(source + "/"):
-                ctx.key = target + ctx.key[len(source):]
-                ctx.path = ctx.key[len(self._root):]
+                ctx.key = target + ctx.key[len(source) :]
+                ctx.path = ctx.key[len(self._root) :]
         self._changed(old, rehydrate=False)
         self._changed(new, rehydrate=False)
 
@@ -576,12 +590,14 @@ class MountCore:
             "f_namemax": 255,
         }
 
-    def setxattr(self,
-                 path: str,
-                 name: str,
-                 value: bytes,
-                 create: bool = False,
-                 replace: bool = False) -> None:
+    def setxattr(
+        self,
+        path: str,
+        name: str,
+        value: bytes,
+        create: bool = False,
+        replace: bool = False,
+    ) -> None:
         """Store an extended attribute through the workspace door.
 
         The door keeps it on the path's namespace node, so it outlives
@@ -599,11 +615,14 @@ class MountCore:
             replace (bool): refuse when it is not set yet.
         """
         self._run(
-            self._ops.setxattr(self.resolve(path),
-                               name,
-                               bytes(value),
-                               create=create,
-                               replace=replace))
+            self._ops.setxattr(
+                self.resolve(path),
+                name,
+                bytes(value),
+                create=create,
+                replace=replace,
+            )
+        )
 
     def getxattr(self, path: str, name: str) -> bytes:
         """Read an extended attribute, the backend's own facts included.
@@ -745,7 +764,8 @@ class MountCore:
         if not rehydrate:
             return
         hydrated = [
-            ctx for ctx in self._handles.values()
+            ctx
+            for ctx in self._handles.values()
             if ctx.key == key and ctx.data is not None
         ]
         if not hydrated:
@@ -759,8 +779,9 @@ class MountCore:
             # over content that already holds them. Drop the hydrated bytes
             # instead, so the next read through those handles fetches and
             # surfaces any error itself.
-            logger.warning("fuse: refresh of %s after a change failed: %r",
-                           path, err)
+            logger.warning(
+                "fuse: refresh of %s after a change failed: %r", path, err
+            )
             for ctx in hydrated:
                 ctx.data = None
             return

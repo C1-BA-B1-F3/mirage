@@ -23,14 +23,17 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def set_priority(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
-    issue_id = await resolve_issue(inv.config,
-                                   first_text(inv.texts, "issue key"))
-    issue = await issue_update(inv.config,
-                               issue_id=issue_id,
-                               title=None,
-                               description=None,
-                               priority=fl.as_int("priority") or 0)
+    issue_id = await resolve_issue(
+        inv.config, first_text(inv.texts, "issue key")
+    )
+    issue = await issue_update(
+        inv.config,
+        issue_id=issue_id,
+        title=None,
+        description=None,
+        priority=fl.as_int("priority") or 0,
+    )
     return yield_bytes(to_json_bytes(normalize_issue(issue))), IOResult()

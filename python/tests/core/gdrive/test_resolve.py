@@ -18,10 +18,15 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
 import mirage.core.gdrive.resolve as resolve_mod
-from mirage.core.gdrive.resolve import (DriveNode, drive_target_name,
-                                        eacces_on_denied, query_candidates,
-                                        resolve_dir, resolve_key,
-                                        resolve_parent)
+from mirage.core.gdrive.resolve import (
+    DriveNode,
+    drive_target_name,
+    eacces_on_denied,
+    query_candidates,
+    resolve_dir,
+    resolve_key,
+    resolve_parent,
+)
 from mirage.types import PathSpec
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -133,8 +138,9 @@ async def test_root_context_shared_drive_scope(fake_drive, scoped_accessor):
 
 
 @pytest.mark.asyncio
-async def test_root_context_memoizes_drive_lookup(fake_drive, scoped_accessor,
-                                                  monkeypatch):
+async def test_root_context_memoizes_drive_lookup(
+    fake_drive, scoped_accessor, monkeypatch
+):
     scope = fake_drive.add("team", mime=FOLDER_MIME, drive_id="d1")
     accessor = scoped_accessor(scope)
     calls = 0
@@ -152,10 +158,12 @@ async def test_root_context_memoizes_drive_lookup(fake_drive, scoped_accessor,
 
 @pytest.mark.asyncio
 async def test_eacces_on_denied_maps_403():
-    request_info = aiohttp.RequestInfo(url=URL("https://x"),
-                                       method="POST",
-                                       headers=CIMultiDictProxy(CIMultiDict()),
-                                       real_url=URL("https://x"))
+    request_info = aiohttp.RequestInfo(
+        url=URL("https://x"),
+        method="POST",
+        headers=CIMultiDictProxy(CIMultiDict()),
+        real_url=URL("https://x"),
+    )
 
     @eacces_on_denied
     async def denied(accessor, path: PathSpec) -> None:

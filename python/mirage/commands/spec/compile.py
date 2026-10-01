@@ -132,7 +132,7 @@ def _git_spelling(long: str, unset: bool) -> str:
     """
     if not unset:
         return f"--{long}"
-    return f"--{long[len(NO):]}" if long.startswith(NO) else f"--{NO}{long}"
+    return f"--{long[len(NO) :]}" if long.startswith(NO) else f"--{NO}{long}"
 
 
 def _git_shown(long: str, unset: bool) -> str:
@@ -145,8 +145,9 @@ def _git_shown(long: str, unset: bool) -> str:
     return f"--{NO if unset else ''}{long}"
 
 
-def expand_git_long(table: Sequence[str],
-                    typed: str) -> str | tuple[str, str] | None:
+def expand_git_long(
+    table: Sequence[str], typed: str
+) -> str | tuple[str, str] | None:
     """git's parse-options resolution of one long option against the
     program's own table, which lists each option in git's ``--[no-]``
     notation.
@@ -171,10 +172,9 @@ def expand_git_long(table: Sequence[str],
     earlier: tuple[str, bool] | None = None
     for entry in table:
         negatable = entry.startswith(NEGATABLE)
-        long = entry[len(NEGATABLE):] if negatable else entry
-        inverted = (not arg.startswith(NO) and negatable
-                    and long.startswith(NO))
-        name = long[len(NO):] if inverted else long
+        long = entry[len(NEGATABLE) :] if negatable else entry
+        inverted = not arg.startswith(NO) and negatable and long.startswith(NO)
+        name = long[len(NO) :] if inverted else long
         unset = False
         exact = arg == name
         abbreviated = not exact and name.startswith(arg)
@@ -184,8 +184,8 @@ def expand_git_long(table: Sequence[str],
                 abbreviated = True
             elif arg.startswith(NO):
                 unset = True
-                exact = arg[len(NO):] == name
-                abbreviated = not exact and name.startswith(arg[len(NO):])
+                exact = arg[len(NO) :] == name
+                abbreviated = not exact and name.startswith(arg[len(NO) :])
         if exact:
             return _git_spelling(long, unset != inverted)
         if abbreviated:
@@ -198,9 +198,9 @@ def expand_git_long(table: Sequence[str],
     return _git_spelling(*found)
 
 
-def expand_long(cs: CompiledSpec,
-                spelling: str,
-                synonyms: Mapping[str, str] | None = None) -> tuple[str, ...]:
+def expand_long(
+    cs: CompiledSpec, spelling: str, synonyms: Mapping[str, str] | None = None
+) -> tuple[str, ...]:
     """getopt_long prefix matching for a long spelling.
 
     An exact declared spelling always wins (GNU: ``--binary`` never
@@ -224,21 +224,25 @@ def expand_long(cs: CompiledSpec,
             grammar has none.
     """
     if spelling in cs.dest:
-        return (spelling, )
+        return (spelling,)
     if len(spelling) <= 2:
         return ()
-    matches = tuple(declared for declared in cs.long_spellings
-                    if declared.startswith(spelling))
+    matches = tuple(
+        declared
+        for declared in cs.long_spellings
+        if declared.startswith(spelling)
+    )
     if not matches:
         return ()
     same = synonyms or {}
     if len({same.get(declared, declared) for declared in matches}) == 1:
-        return (matches[0], )
+        return (matches[0],)
     return matches
 
 
-def expand_table_long(table: Sequence[Sequence[str]],
-                      spelling: str) -> tuple[str, ...]:
+def expand_table_long(
+    table: Sequence[Sequence[str]], spelling: str
+) -> tuple[str, ...]:
     """getopt_long prefix matching against a program's whole table.
 
     An entry spelled exactly names its option; otherwise every entry the
@@ -258,17 +262,22 @@ def expand_table_long(table: Sequence[Sequence[str]],
     entries = [(name, group[0]) for group in table for name in group]
     for name, primary in entries:
         if name == spelling:
-            return (primary, )
+            return (primary,)
     if len(spelling) <= 2:
         return ()
-    matches = [(name, primary) for name, primary in entries
-               if name.startswith(spelling)]
+    matches = [
+        (name, primary)
+        for name, primary in entries
+        if name.startswith(spelling)
+    ]
     if not matches:
         return ()
     first = matches[0][1]
-    listed = (matches[0][0],
-              *(name for name, primary in matches[1:] if primary != first))
-    return (first, ) if len(listed) == 1 else listed
+    listed = (
+        matches[0][0],
+        *(name for name, primary in matches[1:] if primary != first),
+    )
+    return (first,) if len(listed) == 1 else listed
 
 
 @lru_cache(maxsize=512)
@@ -311,36 +320,54 @@ def compile_spec(spec: CommandSpec) -> CompiledSpec:
                 raise ValueError(f"duplicate option spelling {spelling!r}")
             seen_spellings.add(spelling)
         if opt.count and opt.type != "bool":
-            raise ValueError(f"option {canonical!r}: count requires a "
-                             "boolean flag (type 'bool')")
+            raise ValueError(
+                f"option {canonical!r}: count requires a "
+                "boolean flag (type 'bool')"
+            )
         if opt.pair and opt.type == "bool":
-            raise ValueError(f"option {canonical!r}: pair requires a value "
-                             "flag (a boolean consumes no token)")
+            raise ValueError(
+                f"option {canonical!r}: pair requires a value "
+                "flag (a boolean consumes no token)"
+            )
         if opt.pair and opt.value_optional:
-            raise ValueError(f"option {canonical!r}: pair and value_optional "
-                             "are mutually exclusive")
+            raise ValueError(
+                f"option {canonical!r}: pair and value_optional "
+                "are mutually exclusive"
+            )
         if opt.pair and opt.short:
             # A short spelling clusters and takes an attached value, both
             # of which are single-token rules; jq's own two-token options
             # are long-only for the same reason.
-            raise ValueError(f"option {canonical!r}: pair requires a long "
-                             "spelling only")
+            raise ValueError(
+                f"option {canonical!r}: pair requires a long spelling only"
+            )
         if opt.type == "bool" and (opt.choices or opt.default is not None):
-            raise ValueError(f"option {canonical!r}: choices and default "
-                             "require a value flag")
-        if (opt.choices and opt.default is not None
-                and opt.default not in opt.choices):
-            raise ValueError(f"option {canonical!r}: default "
-                             f"{opt.default!r} is not one of its choices")
+            raise ValueError(
+                f"option {canonical!r}: choices and default "
+                "require a value flag"
+            )
+        if (
+            opt.choices
+            and opt.default is not None
+            and opt.default not in opt.choices
+        ):
+            raise ValueError(
+                f"option {canonical!r}: default "
+                f"{opt.default!r} is not one of its choices"
+            )
         if opt.type == "int":
             if opt.default is not None and not INT_VALUE.match(opt.default):
-                raise ValueError(f"option {canonical!r}: default "
-                                 f"{opt.default!r} is not an integer")
+                raise ValueError(
+                    f"option {canonical!r}: default "
+                    f"{opt.default!r} is not an integer"
+                )
             int_dests.add(canonical)
         if opt.type == "float":
             if opt.default is not None and not FLOAT_VALUE.match(opt.default):
-                raise ValueError(f"option {canonical!r}: default "
-                                 f"{opt.default!r} is not a number")
+                raise ValueError(
+                    f"option {canonical!r}: default "
+                    f"{opt.default!r} is not a number"
+                )
             float_dests.add(canonical)
         if opt.short:
             dest[opt.short] = canonical
@@ -396,11 +423,14 @@ def compile_spec(spec: CommandSpec) -> CompiledSpec:
     if spec.operand_base is not None:
         base_dest = dest.get(spec.operand_base)
         if base_dest is None:
-            raise ValueError(f"operand_base {spec.operand_base!r} is not a "
-                             "declared option")
+            raise ValueError(
+                f"operand_base {spec.operand_base!r} is not a declared option"
+            )
         if kind_by_dest.get(base_dest) != "path" or base_dest in pair_dests:
-            raise ValueError(f"operand_base {spec.operand_base!r} must be a "
-                             "single-token path option")
+            raise ValueError(
+                f"operand_base {spec.operand_base!r} must be a "
+                "single-token path option"
+            )
 
     # Longest first so an attached match can never be stolen by a
     # shorter spelling that happens to prefix it (-name vs -n).

@@ -24,10 +24,14 @@ from agents.sandbox.capabilities import Capabilities
 from agents.sandbox.session.base_sandbox_session import BaseSandboxSession
 from agents.sandbox.types import ExecResult
 
-from mirage.agents.openai_agents.capability import (MirageCapability,
-                                                    mirage_session)
-from mirage.agents.openai_agents.constants import (MOUNTS_INTRO,
-                                                   NOT_MIRAGE_SESSION)
+from mirage.agents.openai_agents.capability import (
+    MirageCapability,
+    mirage_session,
+)
+from mirage.agents.openai_agents.constants import (
+    MOUNTS_INTRO,
+    NOT_MIRAGE_SESSION,
+)
 from mirage.agents.openai_agents.sandbox import MirageSandboxClient
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -35,10 +39,9 @@ from mirage.workspace import Workspace
 
 
 class ForeignSession(BaseSandboxSession):
-
-    async def _exec_internal(self,
-                             *command: str | Path,
-                             timeout: float | None = None) -> ExecResult:
+    async def _exec_internal(
+        self, *command: str | Path, timeout: float | None = None
+    ) -> ExecResult:
         raise NotImplementedError
 
     async def read(self, path: Path, *, user=None) -> io.IOBase:
@@ -76,7 +79,7 @@ def test_instructions_list_each_mount_with_its_mode():
         text = await capability.instructions(Manifest(root="/"))
         assert text is not None
         assert text.startswith(MOUNTS_INTRO)
-        data = text[text.index("/data"):]
+        data = text[text.index("/data") :]
         assert "Mode: read-only" in data.split("\n\n")[0]
 
     asyncio.run(_run())
@@ -104,12 +107,12 @@ def test_the_agent_prompt_carries_the_mounts(scripted_model):
         agent = SandboxAgent(
             name="mounts",
             model=model,
-            capabilities=[*Capabilities.default(),
-                          MirageCapability()],
+            capabilities=[*Capabilities.default(), MirageCapability()],
         )
         config = RunConfig(
             sandbox=SandboxRunConfig(client=MirageSandboxClient(_workspace())),
-            tracing_disabled=True)
+            tracing_disabled=True,
+        )
         await Runner.run(agent, "hi", run_config=config)
         prompt = model.instructions[0]
         assert prompt is not None

@@ -32,12 +32,15 @@ def keyed_word(word: str) -> tuple[str, str] | None:
     pos = word.find("]=", 1)
     if pos <= 1:
         return None
-    return word[1:pos], word[pos + 2:]
+    return word[1:pos], word[pos + 2 :]
 
 
 async def build_indexed_literal(
-        base: ShellArray | None, words: list[str], append: bool,
-        index_of: Callable[[str], Awaitable[int]]) -> ShellArray:
+    base: ShellArray | None,
+    words: list[str],
+    append: bool,
+    index_of: Callable[[str], Awaitable[int]],
+) -> ShellArray:
     """The indexed array a compound literal produces.
 
     A ``[i]=v`` element places at ``i`` and moves the cursor past it, a
@@ -72,8 +75,9 @@ async def build_indexed_literal(
     return arr
 
 
-def build_assoc_literal(base: dict[str, str] | None, words: list[str],
-                        append: bool) -> tuple[dict[str, str], list[str]]:
+def build_assoc_literal(
+    base: dict[str, str] | None, words: list[str], append: bool
+) -> tuple[dict[str, str], list[str]]:
     """The associative array a compound literal produces.
 
     The first word picks the grammar, as GNU does: a ``[key]=value``
@@ -234,7 +238,7 @@ def array_slice(arr: ShellArray, offset: int, length: int | None) -> list[str]:
     if length is None:
         return picked
     if length < 0:
-        return picked[:max(0, len(picked) + length)]
+        return picked[: max(0, len(picked) + length)]
     return picked[:length]
 
 

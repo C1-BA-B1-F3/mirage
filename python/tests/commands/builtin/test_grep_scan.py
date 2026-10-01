@@ -4,21 +4,35 @@ from mirage.io.types import IOResult
 
 
 class TestGrepLines:
-
     def test_basic(self):
         compiled = compile_pattern("hello")
-        result = grep_lines("/f.txt", ["hello world", "foo"], compiled, False,
-                            False, False, False, False, None)
+        result = grep_lines(
+            "/f.txt",
+            ["hello world", "foo"],
+            compiled,
+            False,
+            False,
+            False,
+            False,
+            False,
+            None,
+        )
         assert result == ["hello world"]
 
 
 def _only(lines, pattern, **kwargs):
-    return grep_lines("/f.txt", lines, compile_pattern(pattern),
-                      kwargs.get("invert", False),
-                      kwargs.get("line_numbers", False),
-                      kwargs.get("count_only", False),
-                      kwargs.get("files_only", False), True,
-                      kwargs.get("max_count"), kwargs.get("io"))
+    return grep_lines(
+        "/f.txt",
+        lines,
+        compile_pattern(pattern),
+        kwargs.get("invert", False),
+        kwargs.get("line_numbers", False),
+        kwargs.get("count_only", False),
+        kwargs.get("files_only", False),
+        True,
+        kwargs.get("max_count"),
+        kwargs.get("io"),
+    )
 
 
 class TestGrepLinesReportsSelection:
@@ -88,42 +102,113 @@ class TestByteOffsetsInTheSelectPath:
     """-b through grep_lines (GNU grep 3.11, section Q)."""
 
     def test_lines_print_the_line_start_offset(self):
-        hits = grep_lines("/f.txt", ["abc", "defabc", "abc abc"],
-                          compile_pattern("abc"), False, False, False, False,
-                          False, None, None, True)
+        hits = grep_lines(
+            "/f.txt",
+            ["abc", "defabc", "abc abc"],
+            compile_pattern("abc"),
+            False,
+            False,
+            False,
+            False,
+            False,
+            None,
+            None,
+            True,
+        )
         assert hits == ["0:abc", "4:defabc", "11:abc abc"]
 
     def test_lines_print_the_match_offset_under_only_matching(self):
-        hits = grep_lines("/f.txt", ["abc", "defabc", "abc abc"],
-                          compile_pattern("abc"), False, False, False, False,
-                          True, None, None, True)
+        hits = grep_lines(
+            "/f.txt",
+            ["abc", "defabc", "abc abc"],
+            compile_pattern("abc"),
+            False,
+            False,
+            False,
+            False,
+            True,
+            None,
+            None,
+            True,
+        )
         assert hits == ["0:abc", "7:abc", "11:abc", "15:abc"]
 
     def test_lines_keep_gnu_field_order_whatever_the_flags(self):
-        hits = grep_lines("/f.txt", ["abc", "defabc"], compile_pattern("abc"),
-                          False, True, False, False, False, None, None, True)
+        hits = grep_lines(
+            "/f.txt",
+            ["abc", "defabc"],
+            compile_pattern("abc"),
+            False,
+            True,
+            False,
+            False,
+            False,
+            None,
+            None,
+            True,
+        )
         assert hits == ["1:0:abc", "2:4:defabc"]
 
     def test_lines_count_bytes_not_characters(self):
         # `caf` + U+00E9 (two bytes) + a space is six bytes.
-        hits = grep_lines("/f.txt", ["café abc", "xéy abc"],
-                          compile_pattern("abc"), False, False, False, False,
-                          True, None, None, True)
+        hits = grep_lines(
+            "/f.txt",
+            ["café abc", "xéy abc"],
+            compile_pattern("abc"),
+            False,
+            False,
+            False,
+            False,
+            True,
+            None,
+            None,
+            True,
+        )
         assert hits == ["6:abc", "15:abc"]
 
     def test_lines_leave_a_count_and_a_file_list_alone(self):
-        counted = grep_lines("/f.txt", ["abc", "defabc"],
-                             compile_pattern("abc"), False, False, True, False,
-                             False, None, None, True)
-        listed = grep_lines("/f.txt", ["abc"], compile_pattern("abc"), False,
-                            False, False, True, False, None, None, True)
+        counted = grep_lines(
+            "/f.txt",
+            ["abc", "defabc"],
+            compile_pattern("abc"),
+            False,
+            False,
+            True,
+            False,
+            False,
+            None,
+            None,
+            True,
+        )
+        listed = grep_lines(
+            "/f.txt",
+            ["abc"],
+            compile_pattern("abc"),
+            False,
+            False,
+            False,
+            True,
+            False,
+            None,
+            None,
+            True,
+        )
         assert (counted, listed) == (["2"], ["/f.txt"])
 
     def test_lines_print_the_offsets_of_the_lines_v_selected(self):
-        hits = grep_lines("/f.txt",
-                          ["one", "two abc", "three", "four abc", "five"],
-                          compile_pattern("abc"), True, False, False, False,
-                          False, None, None, True)
+        hits = grep_lines(
+            "/f.txt",
+            ["one", "two abc", "three", "four abc", "five"],
+            compile_pattern("abc"),
+            True,
+            False,
+            False,
+            False,
+            False,
+            None,
+            None,
+            True,
+        )
         assert hits == ["0:one", "12:three", "27:five"]
 
 
@@ -166,12 +251,14 @@ class TestOnlyMatchingWithInvertPrintsNothing:
         assert _only(["abc", "def"], "abc", invert=True) == []
 
     def test_lines_still_count_the_selected_line(self):
-        assert _only(["abc", "def"], "abc", invert=True,
-                     count_only=True) == ["1"]
+        assert _only(["abc", "def"], "abc", invert=True, count_only=True) == [
+            "1"
+        ]
 
     def test_lines_still_name_the_file(self):
-        assert _only(["abc", "def"], "abc", invert=True,
-                     files_only=True) == ["/f.txt"]
+        assert _only(["abc", "def"], "abc", invert=True, files_only=True) == [
+            "/f.txt"
+        ]
 
     def test_lines_still_report_selection(self):
         io = IOResult(exit_code=1)
@@ -188,14 +275,36 @@ class TestOffsetsOverSmuggledBytes:
     """
 
     def test_lines_count_a_smuggled_byte_as_one(self):
-        rows = grep_lines("/f.txt", ["\udcffa"], compile_pattern("a"), False,
-                          False, False, False, True, None, None, True)
+        rows = grep_lines(
+            "/f.txt",
+            ["\udcffa"],
+            compile_pattern("a"),
+            False,
+            False,
+            False,
+            False,
+            True,
+            None,
+            None,
+            True,
+        )
         assert rows == ["1:a"]
 
     def test_lines_replace_a_smuggled_byte_on_the_way_out(self):
         # A list-returning scan hands its lines to `format_records`, which
         # puts a surrogate escape back as the byte it stands for, so the
         # line keeps it: GNU grep and ripgrep both print the byte raw.
-        rows = grep_lines("/f.txt", ["\udcffa"], compile_pattern("a"), False,
-                          False, False, False, False, None, None, True)
+        rows = grep_lines(
+            "/f.txt",
+            ["\udcffa"],
+            compile_pattern("a"),
+            False,
+            False,
+            False,
+            False,
+            False,
+            None,
+            None,
+            True,
+        )
         assert rows == ["0:\udcffa"]

@@ -42,8 +42,9 @@ class ContextScope:
 
         return call
 
-    def wrap_async(self,
-                   fn: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+    def wrap_async(
+        self, fn: Callable[P, Awaitable[T]]
+    ) -> Callable[P, Awaitable[T]]:
 
         async def call(*args: P.args, **kwargs: P.kwargs) -> T:
             return await self.run(lambda: fn(*args, **kwargs))
@@ -70,8 +71,9 @@ class ContextScope:
             try:
                 while True:
                     try:
-                        value = await asyncio.create_task(advance(),
-                                                          context=context)
+                        value = await asyncio.create_task(
+                            advance(), context=context
+                        )
                     except StopAsyncIteration:
                         return
                     yield value

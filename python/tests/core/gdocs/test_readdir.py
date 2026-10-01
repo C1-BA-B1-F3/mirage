@@ -38,9 +38,13 @@ def index():
 async def test_readdir_root(accessor, index):
     result = await readdir(
         accessor,
-        PathSpec(vfs_path=mount_key("/gdocs", "/gdocs"),
-                 virtual="/gdocs",
-                 directory="/gdocs"), index)
+        PathSpec(
+            vfs_path=mount_key("/gdocs", "/gdocs"),
+            virtual="/gdocs",
+            directory="/gdocs",
+        ),
+        index,
+    )
     assert result == ["/gdocs/owned", "/gdocs/shared"]
 
 
@@ -51,21 +55,23 @@ async def test_readdir_owned(accessor, index):
             "id": "doc1",
             "name": "My Doc",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }],
+            "owners": [{"me": True}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
         assert len(result) == 1
         assert "doc1" in result[0]
 
@@ -77,21 +83,23 @@ async def test_readdir_shared(accessor, index):
             "id": "doc2",
             "name": "Shared Doc",
             "modifiedTime": "2026-03-15T00:00:00.000Z",
-            "owners": [{
-                "me": False
-            }],
+            "owners": [{"me": False}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/shared", "/gdocs"),
-                     virtual="/gdocs/shared",
-                     directory="/gdocs/shared"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/shared", "/gdocs"),
+                virtual="/gdocs/shared",
+                directory="/gdocs/shared",
+            ),
+            index,
+        )
         assert len(result) == 1
         assert "doc2" in result[0]
 
@@ -101,10 +109,13 @@ async def test_readdir_file_path_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/file.gdoc.json",
-                                        "/gdocs"),
-                     virtual="/gdocs/owned/file.gdoc.json",
-                     directory="/gdocs/owned/file.gdoc.json"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned/file.gdoc.json", "/gdocs"),
+                virtual="/gdocs/owned/file.gdoc.json",
+                directory="/gdocs/owned/file.gdoc.json",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -112,9 +123,13 @@ async def test_readdir_invalid_path_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/bogus", "/gdocs"),
-                     virtual="/gdocs/bogus",
-                     directory="/gdocs/bogus"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/bogus", "/gdocs"),
+                virtual="/gdocs/bogus",
+                directory="/gdocs/bogus",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -129,10 +144,14 @@ async def test_readdir_owned_pushes_modified_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
-                     virtual="/gdocs/owned/2026-05-*",
-                     directory="/gdocs/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
+                virtual="/gdocs/owned/2026-05-*",
+                directory="/gdocs/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
 
     assert captured["modified_after"] == "2026-05-01T00:00:00Z"
     assert captured["modified_before"] == "2026-06-01T00:00:00Z"
@@ -140,30 +159,32 @@ async def test_readdir_owned_pushes_modified_range(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_owned_filtered_does_not_cache(accessor, index):
-    files = [{
-        "id": "may",
-        "name": "MayDoc",
-        "modifiedTime": "2026-05-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
-    full_files = files + [{
-        "id": "jan",
-        "name": "JanDoc",
-        "modifiedTime": "2026-01-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
+    files = [
+        {
+            "id": "may",
+            "name": "MayDoc",
+            "modifiedTime": "2026-05-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
+    full_files = files + [
+        {
+            "id": "jan",
+            "name": "JanDoc",
+            "modifiedTime": "2026-01-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
 
     call_count = {"n": 0}
 
-    async def fake_list(token_manager,
-                        mime_type=None,
-                        modified_after=None,
-                        modified_before=None,
-                        **kwargs):
+    async def fake_list(
+        token_manager,
+        mime_type=None,
+        modified_after=None,
+        modified_before=None,
+        **kwargs,
+    ):
         call_count["n"] += 1
         if modified_after:
             return files, True
@@ -172,15 +193,23 @@ async def test_readdir_owned_filtered_does_not_cache(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
-                     virtual="/gdocs/owned/2026-05-*",
-                     directory="/gdocs/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
+                virtual="/gdocs/owned/2026-05-*",
+                directory="/gdocs/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
 
     assert call_count["n"] == 2
     assert len(result) == 2
@@ -193,28 +222,26 @@ async def test_readdir_owned_filtered_bypasses_warm_cache(accessor, index):
             "id": "may",
             "name": "MayDoc",
             "modifiedTime": "2026-05-15T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
         {
             "id": "jan",
             "name": "JanDoc",
             "modifiedTime": "2026-01-15T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
     ]
     may_only = [full_files[0]]
 
     call_count = {"n": 0}
 
-    async def fake_list(token_manager,
-                        mime_type=None,
-                        modified_after=None,
-                        modified_before=None,
-                        **kwargs):
+    async def fake_list(
+        token_manager,
+        mime_type=None,
+        modified_after=None,
+        modified_before=None,
+        **kwargs,
+    ):
         call_count["n"] += 1
         if modified_after:
             return may_only, True
@@ -223,15 +250,23 @@ async def test_readdir_owned_filtered_bypasses_warm_cache(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
-                     virtual="/gdocs/owned/2026-05-*",
-                     directory="/gdocs/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned/2026-05-*", "/gdocs"),
+                virtual="/gdocs/owned/2026-05-*",
+                directory="/gdocs/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
 
     assert call_count["n"] == 2
 
@@ -247,9 +282,13 @@ async def test_readdir_owned_no_pattern_omits_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
 
     assert captured.get("modified_after") is None
     assert captured.get("modified_before") is None
@@ -266,10 +305,14 @@ async def test_readdir_owned_non_date_pattern_omits_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/*foo*", "/gdocs"),
-                     virtual="/gdocs/owned/*foo*",
-                     directory="/gdocs/owned",
-                     pattern="*foo*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned/*foo*", "/gdocs"),
+                virtual="/gdocs/owned/*foo*",
+                directory="/gdocs/owned",
+                pattern="*foo*",
+            ),
+            index,
+        )
 
     assert captured.get("modified_after") is None
     assert captured.get("modified_before") is None
@@ -277,35 +320,46 @@ async def test_readdir_owned_non_date_pattern_omits_range(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_filtered_then_stat_succeeds(accessor, index):
-    files = [{
-        "id": "may1",
-        "mimeType": "application/vnd.google-apps.document",
-        "name": "MayDoc",
-        "modifiedTime": "2026-05-15T00:00:00.000Z",
-        "owners": [{
-            "me": False
-        }]
-    }]
-    with patch(
+    files = [
+        {
+            "id": "may1",
+            "mimeType": "application/vnd.google-apps.document",
+            "name": "MayDoc",
+            "modifiedTime": "2026-05-15T00:00:00.000Z",
+            "owners": [{"me": False}],
+        }
+    ]
+    with (
+        patch(
             "mirage.core.google.readdir.list_all_files",
             new_callable=AsyncMock,
             return_value=(files, True),
-    ) as mock_list, patch("mirage.core.google.entry.get_file",
-                          new_callable=AsyncMock,
-                          return_value=files[0]) as mock_get:
+        ) as mock_list,
+        patch(
+            "mirage.core.google.entry.get_file",
+            new_callable=AsyncMock,
+            return_value=files[0],
+        ) as mock_get,
+    ):
         listed = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/shared/2026-05-*", "/gdocs"),
-                     virtual="/gdocs/shared/2026-05-*",
-                     directory="/gdocs/shared",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/shared/2026-05-*", "/gdocs"),
+                virtual="/gdocs/shared/2026-05-*",
+                directory="/gdocs/shared",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
         assert len(listed) == 1
         matched = listed[0]
         result = await stat(
             accessor,
-            PathSpec(vfs_path=mount_key(matched, "/gdocs"),
-                     virtual=matched,
-                     directory=matched),
+            PathSpec(
+                vfs_path=mount_key(matched, "/gdocs"),
+                virtual=matched,
+                directory=matched,
+            ),
             index,
         )
     assert result.extra["doc_id"] == "may1"
@@ -322,42 +376,44 @@ async def test_readdir_owned_newest_first_across_cache(accessor, index):
             "id": "new",
             "name": "Latest",
             "modifiedTime": "2026-05-03T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
         {
             "id": "mid",
             "name": "Middle",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
         {
             "id": "old",
             "name": "Oldest",
             "modifiedTime": "2026-01-01T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ) as mock_list:
         first = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
         second = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
         assert mock_list.call_count == 1
     assert first == second
     assert "new" in first[0]
@@ -373,21 +429,23 @@ async def test_readdir_entry_size_none_source_size_in_extra(accessor, index):
             "name": "My Doc",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
             "size": "1234",
-            "owners": [{
-                "me": True
-            }],
+            "owners": [{"me": True}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
 
     # Drive's source size never becomes the entry size: the rendered
     # JSON length is unknown until read.
@@ -398,29 +456,32 @@ async def test_readdir_entry_size_none_source_size_in_extra(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_incomplete_search_is_not_cached_as_the_directory(
-        accessor, index):
+    accessor, index
+):
     """Drive reporting a corpus it skipped means the listing is short.
 
     Caching it would pin the short listing until it expires, so a Shared
     Drive document stays invisible long after the cause clears. The entries
     are real, so they stay cached; only the directory is withheld.
     """
-    files = [{
-        "id": "d1",
-        "name": "Doc",
-        "modifiedTime": "2026-05-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
+    files = [
+        {
+            "id": "d1",
+            "name": "Doc",
+            "modifiedTime": "2026-05-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     complete = {"v": False}
 
     async def fake_list(token_manager, mime_type=None, **kwargs):
         return files, complete["v"]
 
-    owned = PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned")
+    owned = PathSpec(
+        vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+        virtual="/gdocs/owned",
+        directory="/gdocs/owned",
+    )
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         listed = await readdir(accessor, owned, index)
         assert len(listed) == 1

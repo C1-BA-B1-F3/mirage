@@ -54,7 +54,8 @@ def test_s3_always_refetches_after_external_mutation():
         first, second = asyncio.run(run())
         assert first == b"v1"
         assert second == b"v2", (
-            "S3 ALWAYS must refetch after external write to the mocked store")
+            "S3 ALWAYS must refetch after external write to the mocked store"
+        )
     finally:
         stack.close()
 
@@ -77,6 +78,7 @@ def test_s3_lazy_serves_cache():
         first, second = asyncio.run(run())
         assert first == b"v1"
         assert second == b"v1", (
-            "S3 LAZY must serve cached bytes even after store mutation")
+            "S3 LAZY must serve cached bytes even after store mutation"
+        )
     finally:
         stack.close()

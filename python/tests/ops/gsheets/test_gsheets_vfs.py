@@ -34,16 +34,21 @@ def _make_gsheets_ops() -> tuple[Ops, IndexCacheStore]:
 @pytest.mark.asyncio
 async def test_readdir():
     ops, index = _make_gsheets_ops()
-    await index.set_dir("/gsheets/owned", [(
-        "Budget__sheet1.gsheet.json",
-        IndexEntry(
-            id="sheet1",
-            name="Budget",
-            resource_type="gsheets/sheet",
-            remote_time="2026-04-01T00:00:00Z",
-            vfs_name="Budget__sheet1.gsheet.json",
-        ),
-    )])
+    await index.set_dir(
+        "/gsheets/owned",
+        [
+            (
+                "Budget__sheet1.gsheet.json",
+                IndexEntry(
+                    id="sheet1",
+                    name="Budget",
+                    resource_type="gsheets/sheet",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="Budget__sheet1.gsheet.json",
+                ),
+            )
+        ],
+    )
     result = await ops.readdir("/gsheets/owned")
     assert "/gsheets/owned/Budget__sheet1.gsheet.json" in result
 
@@ -53,9 +58,9 @@ async def test_read_spreadsheet():
     ops, _ = _make_gsheets_ops()
     sheet_json = json.dumps({"spreadsheetId": "sheet1"}).encode()
     with patch(
-            "mirage.ops.gsheets.read.core_read",
-            new_callable=AsyncMock,
-            return_value=sheet_json,
+        "mirage.ops.gsheets.read.core_read",
+        new_callable=AsyncMock,
+        return_value=sheet_json,
     ):
         result = await ops.read("/gsheets/owned/Budget__sheet1.gsheet.json")
         parsed = json.loads(result)

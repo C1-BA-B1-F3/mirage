@@ -17,6 +17,7 @@ Both `echo x > f` and `exec > f` route here, so the mode a fresh file
 gets is decided once: 0666 masked by the session's umask, and left alone
 under the default mask because a fresh file already renders as 644.
 """
+
 import pytest
 
 from mirage.types import MountMode, PathSpec
@@ -28,7 +29,6 @@ from mirage.workspace.session.session import SessionState
 
 
 class _Dispatch:
-
     def __init__(self, exists: bool) -> None:
         self.exists = exists
         self.calls: list[tuple[str, dict]] = []
@@ -76,8 +76,10 @@ async def test_both_redirect_forms_agree_end_to_end():
     plain-redirect path, so `exec > f` created a 644 file where
     `echo x > f` created a 600 one."""
     ws = Workspace({"data": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("umask 077; echo z > /data/p; "
-                        "( exec > /data/e; echo z ); "
-                        "stat -c '%a %n' /data/p /data/e")
+    io = await ws.shell(
+        "umask 077; echo z > /data/p; "
+        "( exec > /data/e; echo z ); "
+        "stat -c '%a %n' /data/p /data/e"
+    )
     assert (await io.stdout_str()) == "600 /data/p\n600 /data/e\n"
     await ws.close()

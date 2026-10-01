@@ -16,8 +16,12 @@ import posixpath
 from io import BytesIO
 from typing import IO, BinaryIO, cast
 
-from dulwich.index import (ConflictedIndexEntry, IndexEntry, read_index_dict,
-                           write_index_dict)
+from dulwich.index import (
+    ConflictedIndexEntry,
+    IndexEntry,
+    read_index_dict,
+    write_index_dict,
+)
 
 from mirage.commands.cli.builtin.git.errors import ResolveIndexError
 from mirage.commands.cli.builtin.git.io import read_optional, write_file
@@ -53,9 +57,9 @@ async def read_index(dispatch: DispatchFn, gitdir: str) -> IndexState:
     data = await read_optional(dispatch, posixpath.join(gitdir, INDEX_FILE))
     merging = await read_optional(dispatch, posixpath.join(gitdir, MERGE_HEAD))
     if data is None:
-        return IndexState(entries={},
-                          conflicts={},
-                          merging=merging is not None)
+        return IndexState(
+            entries={}, conflicts={}, merging=merging is not None
+        )
     # Cast because dulwich types the parameter as BinaryIO while reading
     # it through the buffer protocol, which BytesIO satisfies.
     parsed = read_index_dict(cast(BinaryIO, BytesIO(data)))
@@ -66,13 +70,14 @@ async def read_index(dispatch: DispatchFn, gitdir: str) -> IndexState:
             conflicts[path] = entry
         else:
             entries[path] = entry
-    return IndexState(entries=entries,
-                      conflicts=conflicts,
-                      merging=merging is not None)
+    return IndexState(
+        entries=entries, conflicts=conflicts, merging=merging is not None
+    )
 
 
-async def write_index(dispatch: DispatchFn, gitdir: str,
-                      state: IndexState) -> None:
+async def write_index(
+    dispatch: DispatchFn, gitdir: str, state: IndexState
+) -> None:
     """Write ``.git/index`` back through the dispatcher.
 
     Written whole, because that is what the format is: a header, every
@@ -94,8 +99,9 @@ async def write_index(dispatch: DispatchFn, gitdir: str,
     merged.update(state.conflicts)
     buffer = BytesIO()
     write_index_dict(cast(IO[bytes], buffer), merged)
-    await write_file(dispatch, posixpath.join(gitdir, INDEX_FILE),
-                     buffer.getvalue())
+    await write_file(
+        dispatch, posixpath.join(gitdir, INDEX_FILE), buffer.getvalue()
+    )
 
 
 def refuse_unresolved(state: IndexState) -> None:
@@ -116,4 +122,5 @@ def refuse_unresolved(state: IndexState) -> None:
     if not state.conflicts:
         return
     raise ResolveIndexError(
-        [path.decode("utf-8", errors="replace") for path in state.conflicts])
+        [path.decode("utf-8", errors="replace") for path in state.conflicts]
+    )

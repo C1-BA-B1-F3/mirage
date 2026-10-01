@@ -39,41 +39,43 @@ class CPythonError:
 # able to `except`, with CPython-on-Linux numbering. The table is total
 # over the vocabulary; test_errors.py fails a half-added member.
 CPYTHON: dict[FsCondition, CPythonError] = {
-    FsCondition.ENOENT:
-    CPythonError("FileNotFoundError", 2, "No such file or directory"),
-    FsCondition.ENOTDIR:
-    CPythonError("NotADirectoryError", 20, "Not a directory"),
-    FsCondition.EISDIR:
-    CPythonError("IsADirectoryError", 21, "Is a directory"),
-    FsCondition.EEXIST:
-    CPythonError("FileExistsError", 17, "File exists"),
-    FsCondition.EACCES:
-    CPythonError("PermissionError", 13, "Permission denied"),
-    FsCondition.EPERM:
-    CPythonError("PermissionError", 1, "Operation not permitted"),
-    FsCondition.ENOTEMPTY:
-    CPythonError("OSError", 39, "Directory not empty"),
-    FsCondition.EXDEV:
-    CPythonError("OSError", 18, "Invalid cross-device link"),
+    FsCondition.ENOENT: CPythonError(
+        "FileNotFoundError", 2, "No such file or directory"
+    ),
+    FsCondition.ENOTDIR: CPythonError(
+        "NotADirectoryError", 20, "Not a directory"
+    ),
+    FsCondition.EISDIR: CPythonError(
+        "IsADirectoryError", 21, "Is a directory"
+    ),
+    FsCondition.EEXIST: CPythonError("FileExistsError", 17, "File exists"),
+    FsCondition.EACCES: CPythonError(
+        "PermissionError", 13, "Permission denied"
+    ),
+    FsCondition.EPERM: CPythonError(
+        "PermissionError", 1, "Operation not permitted"
+    ),
+    FsCondition.ENOTEMPTY: CPythonError("OSError", 39, "Directory not empty"),
+    FsCondition.EXDEV: CPythonError(
+        "OSError", 18, "Invalid cross-device link"
+    ),
     # pathlib's answer for a cross-mount rename: monty ships no shutil,
     # so guest code writes the copy-and-delete fallback by hand and the
     # errno is what tells it to.
-    FsCondition.CROSS_MOUNT:
-    CPythonError("OSError", 18, "Invalid cross-device link"),
-    FsCondition.ENOTSUP:
-    CPythonError("OSError", 95, "Operation not supported"),
-    FsCondition.ELOOP:
-    CPythonError("OSError", 40, "Too many levels of symbolic links"),
-    FsCondition.EINVAL:
-    CPythonError("OSError", 22, "Invalid argument"),
-    FsCondition.EIO:
-    CPythonError("OSError", 5, "Input/output error"),
-    FsCondition.EBUSY:
-    CPythonError("OSError", 16, "Device or resource busy"),
-    FsCondition.EROFS:
-    CPythonError("OSError", 30, "Read-only file system"),
-    FsCondition.NO_XATTR:
-    CPythonError("OSError", 61, "No data available"),
+    FsCondition.CROSS_MOUNT: CPythonError(
+        "OSError", 18, "Invalid cross-device link"
+    ),
+    FsCondition.ENOTSUP: CPythonError(
+        "OSError", 95, "Operation not supported"
+    ),
+    FsCondition.ELOOP: CPythonError(
+        "OSError", 40, "Too many levels of symbolic links"
+    ),
+    FsCondition.EINVAL: CPythonError("OSError", 22, "Invalid argument"),
+    FsCondition.EIO: CPythonError("OSError", 5, "Input/output error"),
+    FsCondition.EBUSY: CPythonError("OSError", 16, "Device or resource busy"),
+    FsCondition.EROFS: CPythonError("OSError", 30, "Read-only file system"),
+    FsCondition.NO_XATTR: CPythonError("OSError", 61, "No data available"),
 }
 
 

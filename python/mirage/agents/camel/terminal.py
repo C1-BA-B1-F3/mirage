@@ -30,10 +30,9 @@ def _parse_pid(stdout: str) -> int | None:
 
 
 class MirageTerminalToolkit(BaseToolkit):
-
-    def __init__(self,
-                 workspace: Workspace,
-                 timeout: float | None = 20.0) -> None:
+    def __init__(
+        self, workspace: Workspace, timeout: float | None = 20.0
+    ) -> None:
         super().__init__(timeout=timeout)
         self._ws = workspace
         self._runner = AsyncRunner()
@@ -73,7 +72,8 @@ class MirageTerminalToolkit(BaseToolkit):
         pid = _parse_pid(stdout)
         if pid is None:
             stderr = decode(
-                io.stderr if isinstance(io.stderr, bytes) else None)
+                io.stderr if isinstance(io.stderr, bytes) else None
+            )
             return f"Failed to launch background job: {stderr}"
         self._sessions[id] = pid
         return f"Started session '{id}' as Mirage process {pid}"
@@ -93,7 +93,8 @@ class MirageTerminalToolkit(BaseToolkit):
             return f"Error: no session '{id}'"
         ps_io = self._runner.run(self._ws.shell("ps"))
         ps_out = decode(
-            ps_io.stdout if isinstance(ps_io.stdout, bytes) else None)
+            ps_io.stdout if isinstance(ps_io.stdout, bytes) else None
+        )
         if any(line.startswith(f"{pid}\t") for line in ps_out.splitlines()):
             return ps_out
         wait_io = self._runner.run(self._ws.shell(f"wait {pid}"))
@@ -109,9 +110,11 @@ class MirageTerminalToolkit(BaseToolkit):
         Returns:
             str: Explanatory error message.
         """
-        return ("Mirage shell is not interactive. Re-run shell_exec with "
-                "stdin redirected via the command, e.g. "
-                "'cat <<EOF | yourcmd\\nINPUT\\nEOF'.")
+        return (
+            "Mirage shell is not interactive. Re-run shell_exec with "
+            "stdin redirected via the command, e.g. "
+            "'cat <<EOF | yourcmd\\nINPUT\\nEOF'."
+        )
 
     def shell_kill_process(self, id: str) -> str:
         """Kill the Mirage process for a session.
@@ -155,7 +158,8 @@ class MirageTerminalToolkit(BaseToolkit):
         """
         quoted = shlex.quote(file_path)
         io = self._runner.run(
-            self._ws.shell(f"cat > {quoted}", stdin=content.encode()))
+            self._ws.shell(f"cat > {quoted}", stdin=content.encode())
+        )
         if io.exit_code != 0:
             return f"Error writing {file_path}: {io_to_str(io)}"
         return f"Wrote {len(content)} bytes to {file_path}"

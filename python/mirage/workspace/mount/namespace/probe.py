@@ -25,8 +25,9 @@ from mirage.workspace.mount.namespace import Namespace
 _ABSENT: tuple[type[Exception], ...] = (*MISS_ERRORS, DotWalkLoop)
 
 
-async def resolve_path_stat(dispatch: DispatchFn,
-                            path: PathSpec) -> FileStat | None:
+async def resolve_path_stat(
+    dispatch: DispatchFn, path: PathSpec
+) -> FileStat | None:
     """What a path is, asked on both channels a backend can answer on.
 
     A point lookup alone cannot decide. On a prefix store a directory is
@@ -64,8 +65,10 @@ async def resolve_path_stat(dispatch: DispatchFn,
         return None
     if not entries:
         return None
-    return FileStat(name=posixpath.basename(path.virtual.rstrip("/")),
-                    type=FileType.DIRECTORY)
+    return FileStat(
+        name=posixpath.basename(path.virtual.rstrip("/")),
+        type=FileType.DIRECTORY,
+    )
 
 
 async def path_stat(dispatch: DispatchFn, virtual: str) -> FileStat | None:
@@ -80,9 +83,11 @@ async def path_stat(dispatch: DispatchFn, virtual: str) -> FileStat | None:
         dispatch (DispatchFn): op dispatcher.
         virtual (str): absolute virtual path.
     """
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1] or "/",
-                    vfs_path="")
+    spec = PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1] or "/",
+        vfs_path="",
+    )
     return await resolve_path_stat(dispatch, spec)
 
 
@@ -122,9 +127,11 @@ async def path_readdir(dispatch: DispatchFn, virtual: str) -> list[str]:
         dispatch (DispatchFn): op dispatcher.
         virtual (str): absolute virtual path of the directory.
     """
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1] or "/",
-                    vfs_path="")
+    spec = PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1] or "/",
+        vfs_path="",
+    )
     entries, _ = await dispatch("readdir", spec)
     return list(entries)
 
@@ -161,8 +168,9 @@ def resolve_link(namespace: Namespace, virtual: str) -> str:
     return posixpath.normpath(namespace.follow(virtual))
 
 
-async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
-                           virtual: str) -> FileStat | None:
+async def link_target_stat(
+    namespace: Namespace, dispatch: DispatchFn, virtual: str
+) -> FileStat | None:
     """The stat of what a link points at, or None when it dangles.
 
     Under ``-L`` the reported entity is the target, so its type drives
@@ -185,14 +193,17 @@ async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
         target = resolve_link(namespace, virtual)
     except CycleError:
         return None
-    spec = PathSpec(virtual=target,
-                    directory=target[:target.rfind("/") + 1] or "/",
-                    vfs_path="")
+    spec = PathSpec(
+        virtual=target,
+        directory=target[: target.rfind("/") + 1] or "/",
+        vfs_path="",
+    )
     return await stat_or_none(dispatch, spec)
 
 
-async def stat_or_none(dispatch: DispatchFn,
-                       path: PathSpec) -> FileStat | None:
+async def stat_or_none(
+    dispatch: DispatchFn, path: PathSpec
+) -> FileStat | None:
     """Stat a path via dispatch, mapping a missing file to ``None``.
 
     ENOTDIR counts as missing too: a path under a plain file cannot

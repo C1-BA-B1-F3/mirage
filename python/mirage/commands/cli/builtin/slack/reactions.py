@@ -23,13 +23,15 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def reactions(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     message = await get_reactions(
         inv.config,
         fl.as_str("channel") or "",
         fl.as_str("ts") or "",
     )
-    out = json.dumps(message, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        message, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

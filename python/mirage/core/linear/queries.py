@@ -83,11 +83,14 @@ creator { id name email }
 labels { nodes { id name } }
 """
 
-TEAM_ISSUES_QUERY = """
+TEAM_ISSUES_QUERY = (
+    """
 query TeamIssues($teamId: String!, $first: Int!, $after: String) {
   team(id: $teamId) {
     issues(first: $first, after: $after) {
-      nodes {""" + ISSUE_FIELDS + """}
+      nodes {"""
+    + ISSUE_FIELDS
+    + """}
       pageInfo {
         hasNextPage
         endCursor
@@ -96,6 +99,7 @@ query TeamIssues($teamId: String!, $first: Int!, $after: String) {
   }
 }
 """
+)
 
 TEAM_PROJECTS_QUERY = """
 query TeamProjects($teamId: String!, $first: Int!, $after: String) {
@@ -192,11 +196,15 @@ query TeamDocuments($teamId: String!, $first: Int!, $after: String) {
 }
 """
 
-ISSUE_QUERY = """
+ISSUE_QUERY = (
+    """
 query Issue($issueId: String!) {
-  issue(id: $issueId) {""" + ISSUE_FIELDS + """}
+  issue(id: $issueId) {"""
+    + ISSUE_FIELDS
+    + """}
 }
 """
+)
 
 ISSUE_COMMENTS_QUERY = """
 query IssueComments($issueId: String!, $first: Int!, $after: String) {

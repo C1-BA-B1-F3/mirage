@@ -23,8 +23,9 @@ from mirage.utils.errors import enoent
 from mirage.utils.path import norm
 
 
-async def stream(accessor: RAMAccessor,
-                 path_spec: PathSpec) -> AsyncIterator[bytes]:
+async def stream(
+    accessor: RAMAccessor, path_spec: PathSpec
+) -> AsyncIterator[bytes]:
     virtual = path_spec.virtual
     path = norm(path_spec.vfs_path)
     store = accessor.store
@@ -39,9 +40,8 @@ async def stream(accessor: RAMAccessor,
 
 
 async def read_stream(
-        accessor: RAMAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> AsyncIterator[bytes]:
+    accessor: RAMAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> AsyncIterator[bytes]:
     try:
         async for chunk in stream(accessor, path):
             yield chunk

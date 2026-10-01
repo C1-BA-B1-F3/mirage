@@ -23,9 +23,11 @@ from mirage.utils.errors import eacces, enoent
 from mirage.utils.filetype import content_type_for_path
 
 
-async def stat(accessor: SSHAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: SSHAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     virtual = path_spec.virtual
     path = path_spec.mount_path
     config = accessor.config
@@ -51,10 +53,14 @@ async def stat(accessor: SSHAccessor,
             fingerprint=mod_str or None,
             type=FileType.DIRECTORY if is_dir else FileType.FILE,
             content=None if is_dir else content_type_for_path(path),
-            mode=(attrs.permissions
-                  & 0o7777 if attrs.permissions is not None else None),
-            atime=(epoch_to_iso(attrs.atime)
-                   if attrs.atime is not None else None),
+            mode=(
+                attrs.permissions & 0o7777
+                if attrs.permissions is not None
+                else None
+            ),
+            atime=(
+                epoch_to_iso(attrs.atime) if attrs.atime is not None else None
+            ),
         )
     except asyncssh.SFTPPermissionDenied as exc:
         raise eacces(virtual) from exc

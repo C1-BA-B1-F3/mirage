@@ -39,13 +39,16 @@ async def main() -> None:
     ws.register_cli("gws", GWS, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /gdocs/__nf_missing__.txt",
-                "head /gdocs/__nf_missing__.txt",
-                "stat /gdocs/__nf_missing__.txt"):
+    for cmd in (
+        "cat /gdocs/__nf_missing__.txt",
+        "head /gdocs/__nf_missing__.txt",
+        "stat /gdocs/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /gdocs/ ===")
     r = await ws.shell("ls /gdocs/")
@@ -81,14 +84,19 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on /gdocs/owned/{first} ===")
-    r = await ws.shell(f'chmod 640 "/gdocs/owned/{first}"'
-                       f' && chown 500:dev "/gdocs/owned/{first}"'
-                       f' && touch -t 202601021530 "/gdocs/owned/{first}"')
+    r = await ws.shell(
+        f'chmod 640 "/gdocs/owned/{first}"'
+        f' && chown 500:dev "/gdocs/owned/{first}"'
+        f' && touch -t 202601021530 "/gdocs/owned/{first}"'
+    )
     print(f"  chmod/chown/touch exit={r.exit_code}")
-    st, _ = await ws.dispatch("stat",
-                              PathSpec.from_str_path(f"/gdocs/owned/{first}"))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+    st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path(f"/gdocs/owned/{first}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     print("=== jq .title ===")
     r = await ws.shell(f'jq ".title" /gdocs/owned/{first}')
@@ -127,32 +135,38 @@ async def main() -> None:
     print(await r.stdout_str())
 
     print("=== gws docs documents create ===")
-    r = await ws.shell('gws docs documents create'
-                       ' --json \'{"title": "MIRAGE Example Doc"}\'')
+    r = await ws.shell(
+        'gws docs documents create --json \'{"title": "MIRAGE Example Doc"}\''
+    )
     doc = json.loads(await r.stdout_str())
     doc_id = doc["documentId"]
     print(f"Created: {doc_id}")
 
     print("\n=== gws docs documents batchUpdate ===")
-    body = json.dumps({
-        "requests": [{
-            "insertText": {
-                "location": {
-                    "index": 1
-                },
-                "text": "Hello from MIRAGE!\n",
-            }
-        }]
-    })
+    body = json.dumps(
+        {
+            "requests": [
+                {
+                    "insertText": {
+                        "location": {"index": 1},
+                        "text": "Hello from MIRAGE!\n",
+                    }
+                }
+            ]
+        }
+    )
     params = json.dumps({"documentId": doc_id})
-    r = await ws.shell(f"gws docs documents batchUpdate"
-                       f" --params '{params}' --json '{body}'")
+    r = await ws.shell(
+        f"gws docs documents batchUpdate --params '{params}' --json '{body}'"
+    )
     print(f"Updated: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws docs write ===")
-    r = await ws.shell(f'gws docs write'
-                       f' --document {doc_id}'
-                       f' --text "Appended via gws docs write."')
+    r = await ws.shell(
+        f"gws docs write"
+        f" --document {doc_id}"
+        f' --text "Appended via gws docs write."'
+    )
     print(f"Written: {(await r.stdout_str())[:80]}")
 
     url = f"https://docs.google.com/document/d/{doc_id}/edit"

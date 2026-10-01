@@ -28,7 +28,8 @@ def _config():
             region="us-east-1",
             aws_access_key_id="fake",
             aws_secret_access_key="fake",
-        ))
+        )
+    )
 
 
 def _mock_session(data: bytes, chunk_size: int = 8192):
@@ -57,13 +58,15 @@ def _mock_session(data: bytes, chunk_size: int = 8192):
 
 def test_read_stream_returns_async_iterator():
     from mirage.core.s3.stream import read_stream
+
     config = _config()
     session = _mock_session(b"hello world")
 
     async def _run():
         chunks = []
-        async for chunk in read_stream(config,
-                                       PathSpec.from_str_path("test.txt")):
+        async for chunk in read_stream(
+            config, PathSpec.from_str_path("test.txt")
+        ):
             chunks.append(chunk)
         return chunks
 
@@ -74,14 +77,15 @@ def test_read_stream_returns_async_iterator():
 
 def test_read_stream_yields_chunks():
     from mirage.core.s3.stream import read_stream
+
     config = _config()
     session = _mock_session(b"a" * 100, chunk_size=30)
 
     async def _run():
         chunks = []
-        async for chunk in read_stream(config,
-                                       PathSpec.from_str_path("test.txt"),
-                                       chunk_size=30):
+        async for chunk in read_stream(
+            config, PathSpec.from_str_path("test.txt"), chunk_size=30
+        ):
             chunks.append(chunk)
         return chunks
 
@@ -93,11 +97,13 @@ def test_read_stream_yields_chunks():
 
 def test_read_bytes_returns_bytes():
     from mirage.core.s3.read import read_bytes
+
     config = _config()
     session = _mock_session(b"file content here")
 
     with patch("mirage.core.s3.read.async_session", return_value=session):
         result = asyncio.run(
-            read_bytes(config, PathSpec.from_str_path("test.txt")))
+            read_bytes(config, PathSpec.from_str_path("test.txt"))
+        )
     assert isinstance(result, bytes)
     assert result == b"file content here"

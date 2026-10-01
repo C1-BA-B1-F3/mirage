@@ -25,8 +25,8 @@ from mirage.types import PathSpec
 
 
 def make_touch(
-        vfs: str, io_for: Callable[[CommandOpts],
-                                   CommandIO]) -> Callable[..., Any]:
+    vfs: str, io_for: Callable[[CommandOpts], CommandIO]
+) -> Callable[..., Any]:
     """Build the create-if-missing touch override for one keyed store.
 
     Args:
@@ -58,9 +58,7 @@ def make_touch(
                 writes[p.mount_path] = b""
         return None, IOResult(writes=writes)
 
-    wrapped: Callable[..., Any] = command("touch",
-                                          vfs=vfs,
-                                          spec=SPECS["touch"],
-                                          write=True,
-                                          path_guarded=True)(touch)
+    wrapped: Callable[..., Any] = command(
+        "touch", vfs=vfs, spec=SPECS["touch"], write=True, path_guarded=True
+    )(touch)
     return wrapped

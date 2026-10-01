@@ -31,7 +31,10 @@ class BinAccessor(Accessor):
             is what gives it a file.
     """
 
-    def __init__(self, programs: Callable[[], list[str]],
-                 note: Callable[[str], str | None]) -> None:
+    def __init__(
+        self,
+        programs: Callable[[], list[str]],
+        note: Callable[[str], str | None],
+    ) -> None:
         self.programs = programs
         self.note = note

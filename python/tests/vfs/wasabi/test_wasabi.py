@@ -28,19 +28,24 @@ def test_wasabi_default_region_endpoint():
 
 
 def test_wasabi_regional_endpoint():
-    config = WasabiConfig(bucket="b",
-                          region="us-west-1",
-                          access_key_id="k",
-                          secret_access_key="s")
+    config = WasabiConfig(
+        bucket="b",
+        region="us-west-1",
+        access_key_id="k",
+        secret_access_key="s",
+    )
     assert config.resolved_endpoint_url() == (
-        "https://s3.us-west-1.wasabisys.com")
+        "https://s3.us-west-1.wasabisys.com"
+    )
 
 
 def test_wasabi_custom_endpoint_override():
-    config = WasabiConfig(bucket="b",
-                          endpoint_url="https://custom.example.com",
-                          access_key_id="k",
-                          secret_access_key="s")
+    config = WasabiConfig(
+        bucket="b",
+        endpoint_url="https://custom.example.com",
+        access_key_id="k",
+        secret_access_key="s",
+    )
     assert config.resolved_endpoint_url() == "https://custom.example.com"
 
 
@@ -51,10 +56,12 @@ def test_wasabi_config_immutable():
 
 
 def test_wasabi_to_s3_config():
-    config = WasabiConfig(bucket="b",
-                          region="us-east-2",
-                          access_key_id="key",
-                          secret_access_key="secret")
+    config = WasabiConfig(
+        bucket="b",
+        region="us-east-2",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
     s3 = config.to_s3_config()
     assert isinstance(s3, S3Config)
     assert s3.endpoint_url == "https://s3.us-east-2.wasabisys.com"
@@ -64,6 +71,7 @@ def test_wasabi_to_s3_config():
 
 def test_wasabi_resource_uses_s3_resource_type():
     vfs = WasabiVFS(
-        WasabiConfig(bucket="b", access_key_id="k", secret_access_key="s"))
+        WasabiConfig(bucket="b", access_key_id="k", secret_access_key="s")
+    )
     assert vfs.name == VFSName.S3
     assert isinstance(vfs.config, S3Config)

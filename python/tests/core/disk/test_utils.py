@@ -36,19 +36,28 @@ def tree(tmp_path):
 
 
 def test_answers_the_host_path_with_no_link_in_it(tree):
-    assert resolve_inside_sync(tree, PathSpec.from_str_path("/lib/a.txt"),
-                               "/lib/a.txt") == tree / "lib" / "a.txt"
+    assert (
+        resolve_inside_sync(
+            tree, PathSpec.from_str_path("/lib/a.txt"), "/lib/a.txt"
+        )
+        == tree / "lib" / "a.txt"
+    )
 
 
 def test_answers_a_path_past_an_absent_component(tree):
-    assert resolve_inside_sync(tree, PathSpec.from_str_path("/new/x.txt"),
-                               "/new/x.txt") == tree / "new" / "x.txt"
+    assert (
+        resolve_inside_sync(
+            tree, PathSpec.from_str_path("/new/x.txt"), "/new/x.txt"
+        )
+        == tree / "new" / "x.txt"
+    )
 
 
 def test_refuses_a_directory_link_on_the_way_naming_the_operand(tree):
     with pytest.raises(FileNotFoundError) as caught:
-        resolve_inside_sync(tree, PathSpec.from_str_path("/data/lib64/a.txt"),
-                            "/lib64/a.txt")
+        resolve_inside_sync(
+            tree, PathSpec.from_str_path("/data/lib64/a.txt"), "/lib64/a.txt"
+        )
     assert str(caught.value) == "/data/lib64/a.txt"
 
 
@@ -59,14 +68,16 @@ def test_refuses_a_link_out_of_the_root_as_the_leaf(tree):
 
 def test_refuses_a_dangling_link(tree):
     with pytest.raises(FileNotFoundError):
-        resolve_inside_sync(tree, PathSpec.from_str_path("/dangling"),
-                            "/dangling")
+        resolve_inside_sync(
+            tree, PathSpec.from_str_path("/dangling"), "/dangling"
+        )
 
 
 def test_still_refuses_a_dotdot_escape(tree):
     with pytest.raises(ValueError, match="escapes root"):
-        resolve_inside_sync(tree, PathSpec.from_str_path("/../escaped"),
-                            "/../escaped")
+        resolve_inside_sync(
+            tree, PathSpec.from_str_path("/../escaped"), "/../escaped"
+        )
 
 
 def test_a_permission_error_names_the_operand_not_the_host(tree):
@@ -76,9 +87,11 @@ def test_a_permission_error_names_the_operand_not_the_host(tree):
     locked.chmod(0)
     try:
         with pytest.raises(PermissionError) as caught:
-            resolve_inside_sync(tree,
-                                PathSpec.from_str_path("/data/locked/f.txt"),
-                                "/locked/f.txt")
+            resolve_inside_sync(
+                tree,
+                PathSpec.from_str_path("/data/locked/f.txt"),
+                "/locked/f.txt",
+            )
     finally:
         locked.chmod(0o755)
     assert caught.value.filename == "/data/locked/f.txt"
@@ -100,7 +113,8 @@ async def test_guard_does_not_block_the_event_loop(tree, monkeypatch):
 
     monkeypatch.setattr("mirage.core.disk.utils.os.lstat", blocked_stat)
     task = asyncio.create_task(
-        resolve_inside(tree, PathSpec.from_str_path("/lib/a.txt")))
+        resolve_inside(tree, PathSpec.from_str_path("/lib/a.txt"))
+    )
     try:
         assert await asyncio.to_thread(entered.wait, 2)
     finally:
@@ -111,7 +125,9 @@ async def test_guard_does_not_block_the_event_loop(tree, monkeypatch):
 def test_root_alias_is_infrastructure(tree, tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(tree)
-    assert resolve_inside_sync(
-        alias, PathSpec.from_str_path("/lib/a.txt")) == alias / "lib/a.txt"
+    assert (
+        resolve_inside_sync(alias, PathSpec.from_str_path("/lib/a.txt"))
+        == alias / "lib/a.txt"
+    )
     with pytest.raises(FileNotFoundError):
         resolve_inside_sync(alias, PathSpec.from_str_path("/lib64/a.txt"))

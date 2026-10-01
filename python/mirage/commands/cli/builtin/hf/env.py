@@ -20,7 +20,8 @@ from mirage.version import __version__
 
 
 async def env_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Print what this install is pointed at.
 
     Upstream prints the local machine's python, platform and cache
@@ -39,7 +40,8 @@ async def env_cmd(
 
 
 async def version_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Print the version."""
     del inv
     return text_out(f"hf version {__version__} (mirage)\n")

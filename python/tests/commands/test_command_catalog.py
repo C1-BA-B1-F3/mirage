@@ -25,8 +25,9 @@ async def _handler(accessor, paths, texts, opts):
 
 
 def _decorated(name: str, filetype: str | None = None):
-    return command(name, vfs="s3", spec=CommandSpec(),
-                   filetype=filetype)(_handler)
+    return command(name, vfs="s3", spec=CommandSpec(), filetype=filetype)(
+        _handler
+    )
 
 
 def test_catalog_iterates_definitions_and_resolves_decorated_commands():
@@ -39,11 +40,9 @@ def test_catalog_iterates_definitions_and_resolves_decorated_commands():
 
 
 def test_catalog_accepts_registered_command_values():
-    registered = RegisteredCommand(name="cat",
-                                   spec=CommandSpec(),
-                                   vfs="s3",
-                                   filetype=None,
-                                   fn=_handler)
+    registered = RegisteredCommand(
+        name="cat", spec=CommandSpec(), vfs="s3", filetype=None, fn=_handler
+    )
     catalog = CommandCatalog([registered])
 
     assert catalog.require("cat") is registered
@@ -68,22 +67,18 @@ def test_catalog_is_a_snapshot_of_its_source():
 
 
 def test_registered_command_is_immutable():
-    registered = RegisteredCommand(name="cat",
-                                   spec=CommandSpec(),
-                                   vfs="s3",
-                                   filetype=None,
-                                   fn=_handler)
+    registered = RegisteredCommand(
+        name="cat", spec=CommandSpec(), vfs="s3", filetype=None, fn=_handler
+    )
 
     with pytest.raises(FrozenInstanceError):
         registered.name = "tail"
 
 
 def test_with_overrides_returns_an_independent_definition():
-    original = RegisteredCommand(name="cat",
-                                 spec=CommandSpec(),
-                                 vfs="s3",
-                                 filetype=None,
-                                 fn=_handler)
+    original = RegisteredCommand(
+        name="cat", spec=CommandSpec(), vfs="s3", filetype=None, fn=_handler
+    )
 
     async def replacement(accessor, paths, texts, opts):
         return None, None

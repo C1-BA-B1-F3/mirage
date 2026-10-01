@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class BackblazeConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://s3.{region}.backblazeb2.com"

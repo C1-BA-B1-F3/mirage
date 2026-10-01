@@ -23,7 +23,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def list_members(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     query = fl.as_str("query")
     if query:

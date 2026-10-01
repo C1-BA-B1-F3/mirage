@@ -15,14 +15,20 @@
 import posixpath
 from functools import partial
 
-from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
-                                                 typed_spec)
+from mirage.commands.builtin.utils.paths import (
+    dispatch_stat,
+    dot_refusal,
+    typed_spec,
+)
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.utils.path import CycleError
-from mirage.workspace.executor.builtins.shared import (abs_path, fail,
-                                                       split_flags)
+from mirage.workspace.executor.builtins.shared import (
+    abs_path,
+    fail,
+    split_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.probe import path_exists
@@ -65,8 +71,9 @@ async def handle_readlink(
         # The walk refused the operand before readlink ran: the empty
         # name answers ENOENT in every mode, a link loop in every mode
         # but -m, which leaves it unresolved as spelled (coreutils 9.7).
-        if spec.walk_error == "ENOENT" or (spec.walk_error is not None
-                                           and walks):
+        if spec.walk_error == "ENOENT" or (
+            spec.walk_error is not None and walks
+        ):
             exit_code = 1
             continue
         if walks and await dot_refusal(walker, spec) is not None:
@@ -91,8 +98,13 @@ async def handle_readlink(
                     exit_code = 1
                     continue
                 resolved = posixpath.normpath(abs_op)
-            probe = (resolved if "e" in flags else
-                     posixpath.dirname(resolved) if "f" in flags else None)
+            probe = (
+                resolved
+                if "e" in flags
+                else posixpath.dirname(resolved)
+                if "f" in flags
+                else None
+            )
             if probe is not None and not await path_exists(dispatch, probe):
                 exit_code = 1
                 continue
@@ -104,8 +116,9 @@ async def handle_readlink(
         # loop above the name (the door's walk) all land on GNU
         # readlink's silent exit 1.
         try:
-            target, _ = await dispatch("readlink",
-                                       PathSpec.from_str_path(abs_op))
+            target, _ = await dispatch(
+                "readlink", PathSpec.from_str_path(abs_op)
+            )
         except OSError:
             exit_code = 1
             continue
@@ -114,5 +127,8 @@ async def handle_readlink(
         text = "".join(lines)
     else:
         text = "".join(line + "\n" for line in lines)
-    return (text.encode() if text else None, IOResult(exit_code=exit_code),
-            ExecutionNode(command="readlink", exit_code=exit_code))
+    return (
+        text.encode() if text else None,
+        IOResult(exit_code=exit_code),
+        ExecutionNode(command="readlink", exit_code=exit_code),
+    )

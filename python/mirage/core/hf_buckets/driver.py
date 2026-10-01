@@ -24,8 +24,12 @@ from mirage.accessor.hf_buckets import HfBucketsAccessor
 from mirage.core.hf_buckets.constants import SCOPE_ERROR
 from mirage.core.hf_buckets.hub import fetch_row
 from mirage.core.hf_hub.client import HfHubError
-from mirage.core.object_store.driver import (ChildEntry, ObjectMeta,
-                                             ObjectStoreDriver, TreeEntry)
+from mirage.core.object_store.driver import (
+    ChildEntry,
+    ObjectMeta,
+    ObjectStoreDriver,
+    TreeEntry,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,14 +112,18 @@ async def _list_tree(conn: HfConn, pfx: str) -> AsyncIterator[TreeEntry]:
                 yield TreeEntry(key=pfx)
                 continue
             meta = entry.metadata
-            is_dir = rel.endswith("/") or (meta is not None
-                                           and meta.mode == EntryMode.Dir)
+            is_dir = rel.endswith("/") or (
+                meta is not None and meta.mode == EntryMode.Dir
+            )
             if is_dir:
                 yield TreeEntry(key=rel.rstrip("/") + "/")
                 continue
             size = meta.content_length if meta is not None else None
-            modified = (meta.last_modified.isoformat()
-                        if meta is not None and meta.last_modified else "")
+            modified = (
+                meta.last_modified.isoformat()
+                if meta is not None and meta.last_modified
+                else ""
+            )
             yield TreeEntry(key=rel, size=size, modified=modified)
     except NotFound:
         return
@@ -132,9 +140,9 @@ async def _list_subtree(conn: HfConn, stem: str) -> AsyncIterator[TreeEntry]:
             # A repo cannot hold a file and a directory of the same name,
             # so a stem that is a file has nothing under it.
             modified = md.last_modified.isoformat() if md.last_modified else ""
-            yield TreeEntry(key=stem,
-                            size=md.content_length,
-                            modified=modified)
+            yield TreeEntry(
+                key=stem, size=md.content_length, modified=modified
+            )
             return
     base = stem + "/" if stem else "/"
     try:
@@ -144,8 +152,11 @@ async def _list_subtree(conn: HfConn, stem: str) -> AsyncIterator[TreeEntry]:
                 continue
             meta = entry.metadata
             size = meta.content_length if meta is not None else None
-            modified = (meta.last_modified.isoformat()
-                        if meta is not None and meta.last_modified else "")
+            modified = (
+                meta.last_modified.isoformat()
+                if meta is not None and meta.last_modified
+                else ""
+            )
             yield TreeEntry(key=rel, size=size, modified=modified)
     except NotFound:
         return
@@ -165,16 +176,19 @@ async def _head(conn: HfConn, key: str) -> ObjectMeta | None:
     if not isinstance(size, int):
         # A file row always carries its size; one that does not is an
         # answer the client cannot read, not a zero-byte file.
-        raise HfHubError(f"paths-info answered no size for {key}", 0,
-                         "InvalidResponse")
+        raise HfHubError(
+            f"paths-info answered no size for {key}", 0, "InvalidResponse"
+        )
     # No mtime, though the row carries uploadedAt: a listing reads its
     # times through opendal, which reports none for a bucket file, and a
     # stat that disagreed with the listing about one file would be the
     # worse answer.
-    return ObjectMeta(size=size,
-                      modified=None,
-                      fingerprint=fingerprint,
-                      extra={"etag": fingerprint} if fingerprint else {})
+    return ObjectMeta(
+        size=size,
+        modified=None,
+        fingerprint=fingerprint,
+        extra={"etag": fingerprint} if fingerprint else {},
+    )
 
 
 async def _get(conn: HfConn, key: str) -> bytes | None:

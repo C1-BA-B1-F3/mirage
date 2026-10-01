@@ -64,7 +64,8 @@ def test_grep_r_root_no_match_returns_exit_1():
 
 def test_grep_r_root_in_if_then():
     code, out = asyncio.run(
-        _run('if grep -rEn "legacyFetch" /; then echo FOUND; fi'))
+        _run('if grep -rEn "legacyFetch" /; then echo FOUND; fi')
+    )
     assert "FOUND" in out
 
 
@@ -75,7 +76,8 @@ def test_grep_r_root_with_and():
 
 def test_grep_r_root_with_or_does_not_run_right_arm():
     _, out = asyncio.run(
-        _run('grep -rEn "legacyFetch" / || echo SHOULD_NOT_PRINT'))
+        _run('grep -rEn "legacyFetch" / || echo SHOULD_NOT_PRINT')
+    )
     assert "SHOULD_NOT_PRINT" not in out
 
 
@@ -86,10 +88,12 @@ async def test_binary_only_match_survives_nested_mount_fanout():
     outer._store.dirs.add("/")
     outer._store.dirs.add("/work")
     inner._store.files["/paper.pdf"] = b"needle\0tail\n"
-    ws = Workspace({
-        "/": (outer, MountMode.WRITE),
-        "/work/remote": (inner, MountMode.WRITE)
-    })
+    ws = Workspace(
+        {
+            "/": (outer, MountMode.WRITE),
+            "/work/remote": (inner, MountMode.WRITE),
+        }
+    )
     try:
         io = await ws.shell("grep -r needle /work")
         assert await io.materialize_stdout() == b""

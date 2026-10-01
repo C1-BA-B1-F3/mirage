@@ -19,12 +19,20 @@ from pathlib import Path
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               emit_start_path, keep,
-                                               start_basename)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    emit_start_path,
+    keep,
+    start_basename,
+)
 from mirage.core.disk.errors import disk_errors
-from mirage.core.disk.utils import (read_entries, resolve_inside_sync,
-                                    walk_entries)
+from mirage.core.disk.utils import (
+    read_entries,
+    resolve_inside_sync,
+    walk_entries,
+)
 from mirage.types import PathSpec
 from mirage.utils.stat_view import DIR_SIZE
 
@@ -70,29 +78,37 @@ def _find_sync(
     base = "/" + path.strip("/")
     base_depth = 0 if base == "/" else base.count("/")
     results: list[str] = []
-    tree = tree if tree is not None else build_tree(name=name,
-                                                    iname=iname,
-                                                    path_pattern=path_pattern,
-                                                    type=type,
-                                                    name_exclude=name_exclude,
-                                                    or_names=or_names,
-                                                    empty=empty)
+    tree = (
+        tree
+        if tree is not None
+        else build_tree(
+            name=name,
+            iname=iname,
+            path_pattern=path_pattern,
+            type=type,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            empty=empty,
+        )
+    )
 
     if not stat.S_ISDIR(info.st_mode):
         return []
 
     root_empty = _empty_dir(p) if empty else None
-    emit_start_path(results,
-                    base,
-                    start_name,
-                    kind="d",
-                    is_empty=root_empty,
-                    exists=True,
-                    tree=tree,
-                    maxdepth=maxdepth,
-                    mindepth=mindepth,
-                    min_size=min_size,
-                    max_size=max_size)
+    emit_start_path(
+        results,
+        base,
+        start_name,
+        kind="d",
+        is_empty=root_empty,
+        exists=True,
+        tree=tree,
+        maxdepth=maxdepth,
+        mindepth=mindepth,
+        min_size=min_size,
+        max_size=max_size,
+    )
 
     for dirpath, dirnames, filenames in walk_entries(p):
         dp = Path(dirpath)
@@ -125,15 +141,20 @@ def _find_sync(
             is_empty: bool | None = None
             if empty:
                 try:
-                    is_empty = (full.stat().st_size
-                                == 0) if kind == "f" else (_empty_dir(full))
+                    is_empty = (
+                        (full.stat().st_size == 0)
+                        if kind == "f"
+                        else (_empty_dir(full))
+                    )
                 except (FileNotFoundError, NotADirectoryError):
                     is_empty = None
-            entry = FindEntry(key=entry_path,
-                              name=entry_name,
-                              kind=kind,
-                              depth=depth,
-                              is_empty=is_empty)
+            entry = FindEntry(
+                key=entry_path,
+                name=entry_name,
+                kind=kind,
+                depth=depth,
+                is_empty=is_empty,
+            )
             if not keep(entry, tree, mindepth):
                 continue
 
@@ -154,7 +175,8 @@ def _find_sync(
                 try:
                     st = full.stat()
                     mtime = datetime.fromtimestamp(
-                        st.st_mtime, tz=timezone.utc).timestamp()
+                        st.st_mtime, tz=timezone.utc
+                    ).timestamp()
                 except (FileNotFoundError, NotADirectoryError):
                     continue
                 if mtime_min is not None and mtime < mtime_min:

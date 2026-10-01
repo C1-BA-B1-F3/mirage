@@ -14,8 +14,13 @@
 
 from typing import Literal
 
-from pydantic import (BaseModel, ConfigDict, PositiveInt, SecretStr,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    PositiveInt,
+    SecretStr,
+    model_validator,
+)
 
 ScopeKind = Literal["user", "agent", "run"]
 
@@ -34,13 +39,15 @@ class Mem0Config(BaseModel):
     @model_validator(mode="after")
     def _exactly_one_entity(self) -> "Mem0Config":
         present = [
-            key for key in ("user_id", "agent_id", "run_id")
+            key
+            for key in ("user_id", "agent_id", "run_id")
             if getattr(self, key) is not None
         ]
         if len(present) != 1:
             raise ValueError(
                 "Mem0Config requires exactly one of "
-                f"user_id, agent_id, run_id; got {present or 'none'}")
+                f"user_id, agent_id, run_id; got {present or 'none'}"
+            )
         return self
 
     @property

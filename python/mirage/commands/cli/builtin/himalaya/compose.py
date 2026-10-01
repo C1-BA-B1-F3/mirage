@@ -20,6 +20,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def compose(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
-    return await route(inv.config, FlagView(inv.flags), inv.stdin, None,
-                       inv.doors)
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
+    return await route(
+        inv.config, FlagView(inv.flags), inv.stdin, None, inv.doors
+    )

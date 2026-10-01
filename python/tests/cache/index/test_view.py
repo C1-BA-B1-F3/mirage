@@ -24,8 +24,13 @@ from fakeredis.aioredis import FakeRedis
 
 from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.ram import RAMFileCacheStore
-from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
-                                       LookupStatus, RedisIndexConfig)
+from mirage.cache.index.config import (
+    Evicted,
+    IndexConfig,
+    IndexEntry,
+    LookupStatus,
+    RedisIndexConfig,
+)
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.cache.index.store import IndexCacheStore
@@ -38,13 +43,21 @@ from mirage.workspace import Workspace
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store_kind", ["ram", "redis"])
 @pytest.mark.parametrize("phase", ["backend", "store"])
-@pytest.mark.parametrize("method", [
-    "put", "set_dir", "set_partial_dir", "seed_get", "seed_list_dir",
-    "seed_entries"
-])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "put",
+        "set_dir",
+        "set_partial_dir",
+        "seed_get",
+        "seed_list_dir",
+        "seed_entries",
+    ],
+)
 @pytest.mark.parametrize("shadow", [False, True])
 async def test_late_index_write_cannot_cross_mount_ownership(
-        monkeypatch, store_kind, phase, method, shadow):
+    monkeypatch, store_kind, phase, method, shadow
+):
     config = IndexConfig()
     if store_kind == "redis":
         url = os.environ.get("REDIS_URL")
@@ -84,8 +97,11 @@ async def test_late_index_write_cannot_cross_mount_ownership(
         elif method == "set_partial_dir":
             await index.set_partial_dir("/data", [("stale", entry)])
         else:
-            index.seed({"/data/stale": entry}, {"/data": ["/data/stale"]},
-                       datetime.now(timezone.utc) + timedelta(hours=1))
+            index.seed(
+                {"/data/stale": entry},
+                {"/data": ["/data/stale"]},
+                datetime.now(timezone.utc) + timedelta(hours=1),
+            )
             if method == "seed_get":
                 await index.get("/data/stale")
             elif method == "seed_list_dir":
@@ -94,12 +110,13 @@ async def test_late_index_write_cannot_cross_mount_ownership(
                 await index.entries()
         return ["/data/stale"]
 
-    ws.mount(prefix).register_fns([
-        RegisteredOp(name="readdir",
-                     vfs="ram",
-                     filetype=None,
-                     fn=delayed_readdir)
-    ])
+    ws.mount(prefix).register_fns(
+        [
+            RegisteredOp(
+                name="readdir", vfs="ram", filetype=None, fn=delayed_readdir
+            )
+        ]
+    )
     reading = asyncio.create_task(ws.vfs.readdir("/data"))
     changing = None
     replacement = RAMVFS()
@@ -126,23 +143,25 @@ async def test_late_index_write_cannot_cross_mount_ownership(
         await asyncio.wait_for(reading, timeout=5)
         for candidate in (index, replaced):
             assert (
-                await
-                candidate.get("/data/stale")).status == LookupStatus.NOT_FOUND
-            assert "/data/stale" not in ((await
-                                          candidate.list_dir("/data")).entries
-                                         or [])
+                await candidate.get("/data/stale")
+            ).status == LookupStatus.NOT_FOUND
+            assert "/data/stale" not in (
+                (await candidate.list_dir("/data")).entries or []
+            )
             if method in ("set_dir", "set_partial_dir"):
                 listing = await candidate.list_dir("/data")
-                shares = (candidate is replaced or store_kind == "redis")
+                shares = candidate is replaced or store_kind == "redis"
                 own = ["/data/own"] if shares else None
-                assert (listing.entries, listing.partial_entries) == (own,
-                                                                      None)
+                assert (listing.entries, listing.partial_entries) == (
+                    own,
+                    None,
+                )
         assert (await replaced.get("/data/fresh")).entry.id == "new"
     finally:
         release.set()
-        await asyncio.gather(reading,
-                             *([changing] if changing else []),
-                             return_exceptions=True)
+        await asyncio.gather(
+            reading, *([changing] if changing else []), return_exceptions=True
+        )
         await index.clear()
         await ws.close()
 
@@ -181,10 +200,12 @@ async def _store(kind: str, ttl: float) -> AsyncIterator[IndexCacheStore]:
     if kind == "redis" and not url:
         pytest.skip("REDIS_URL not set")
     client = FakeRedis() if kind == "fake-redis" else None
-    store = RedisIndexCacheStore(ttl=ttl,
-                                 client=client,
-                                 url=url or "redis://localhost:6379/0",
-                                 key_prefix=f"view:[{uuid4()}]:")
+    store = RedisIndexCacheStore(
+        ttl=ttl,
+        client=client,
+        url=url or "redis://localhost:6379/0",
+        key_prefix=f"view:[{uuid4()}]:",
+    )
     try:
         yield store
     finally:
@@ -195,29 +216,21 @@ async def _store(kind: str, ttl: float) -> AsyncIterator[IndexCacheStore]:
 
 
 class _SpyStore(RAMIndexCacheStore):
-
     def __init__(self, ttl: float) -> None:
         super().__init__(ttl=ttl)
         self.asked: list[datetime | None] = []
 
-    async def set_dir(self,
-                      vfs_path,
-                      entries,
-                      expired_at=None,
-                      *,
-                      window=False,
-                      excluded=()) -> list[Evicted]:
+    async def set_dir(
+        self, vfs_path, entries, expired_at=None, *, window=False, excluded=()
+    ) -> list[Evicted]:
         self.asked.append(expired_at)
-        return await super().set_dir(vfs_path,
-                                     entries,
-                                     expired_at,
-                                     window=window,
-                                     excluded=excluded)
+        return await super().set_dir(
+            vfs_path, entries, expired_at, window=window, excluded=excluded
+        )
 
-    async def set_partial_dir(self,
-                              vfs_path,
-                              entries,
-                              expired_at=None) -> None:
+    async def set_partial_dir(
+        self, vfs_path, entries, expired_at=None
+    ) -> None:
         self.asked.append(expired_at)
         await super().set_partial_dir(vfs_path, entries, expired_at)
 
@@ -239,8 +252,9 @@ _FENCED = {
     "list_dir": lambda view: view.list_dir("/data"),
     "put": lambda view: view.put("/data/a", _row()),
     "set_dir": lambda view: view.set_dir("/data", [("a", _row())]),
-    "set_partial_dir":
-    lambda view: view.set_partial_dir("/data", [("a", _row())]),
+    "set_partial_dir": lambda view: view.set_partial_dir(
+        "/data", [("a", _row())]
+    ),
     "entries": lambda view: view.entries(),
     "invalidate_dir": lambda view: view.invalidate_dir("/data"),
     "invalidate_prefix": lambda view: view.invalidate_prefix("/data"),
@@ -326,31 +340,31 @@ def _expiry(explicit: str | None) -> datetime | None:
 @pytest.mark.parametrize("method", ["set_dir", "set_partial_dir"])
 @pytest.mark.parametrize("store_ttl,read_ttl,explicit,after,status", CAP_ROWS)
 async def test_the_view_caps_a_listing_only_when_it_must(
-        clock, kind, method, store_ttl, read_ttl, explicit, after, status):
+    clock, kind, method, store_ttl, read_ttl, explicit, after, status
+):
     async with _store(kind, store_ttl) as store:
-        view = IndexView(store,
-                         RAMFileCacheStore(),
-                         "/data",
-                         _owns_all,
-                         read_ttl=read_ttl)
-        await getattr(view, method)("/data", [("a", _row())],
-                                    _expiry(explicit))
+        view = IndexView(
+            store, RAMFileCacheStore(), "/data", _owns_all, read_ttl=read_ttl
+        )
+        await getattr(view, method)(
+            "/data", [("a", _row())], _expiry(explicit)
+        )
         clock.advance(after)
         assert (await store.list_dir("/data")).status == status
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["ram", "fake-redis", "redis"])
-@pytest.mark.parametrize("after,status", [(1, None),
-                                          (3, LookupStatus.EXPIRED)])
+@pytest.mark.parametrize(
+    "after,status", [(1, None), (3, LookupStatus.EXPIRED)]
+)
 async def test_the_cap_counts_from_the_write_not_the_view(
-        clock, kind, after, status):
+    clock, kind, after, status
+):
     async with _store(kind, 86400) as store:
-        view = IndexView(store,
-                         RAMFileCacheStore(),
-                         "/data",
-                         _owns_all,
-                         read_ttl=2)
+        view = IndexView(
+            store, RAMFileCacheStore(), "/data", _owns_all, read_ttl=2
+        )
         clock.advance(5)
         await view.set_dir("/data", [("a", _row())])
         clock.advance(after)
@@ -359,18 +373,20 @@ async def test_the_cap_counts_from_the_write_not_the_view(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["set_dir", "set_partial_dir"])
-@pytest.mark.parametrize("store_ttl,read_ttl,asked", [
-    (60, 600, None),
-    (86400, 2, T0 + timedelta(seconds=2)),
-])
+@pytest.mark.parametrize(
+    "store_ttl,read_ttl,asked",
+    [
+        (60, 600, None),
+        (86400, 2, T0 + timedelta(seconds=2)),
+    ],
+)
 async def test_the_view_passes_the_writer_expiry_through_unless_it_caps(
-        clock, method, store_ttl, read_ttl, asked):
+    clock, method, store_ttl, read_ttl, asked
+):
     store = _SpyStore(store_ttl)
-    view = IndexView(store,
-                     RAMFileCacheStore(),
-                     "/data",
-                     _owns_all,
-                     read_ttl=read_ttl)
+    view = IndexView(
+        store, RAMFileCacheStore(), "/data", _owns_all, read_ttl=read_ttl
+    )
     await getattr(view, method)("/data", [("a", _row())])
     assert store.asked == [asked]
 
@@ -380,19 +396,19 @@ async def test_the_view_passes_the_writer_expiry_through_unless_it_caps(
 @pytest.mark.parametrize("explicit,after", [("year", 3), ("epoch", 0)])
 async def test_a_seed_is_capped_for_every_folder(clock, kind, explicit, after):
     async with _store(kind, 86400) as store:
-        view = IndexView(store,
-                         RAMFileCacheStore(),
-                         "/data",
-                         _owns_all,
-                         read_ttl=2)
+        view = IndexView(
+            store, RAMFileCacheStore(), "/data", _owns_all, read_ttl=2
+        )
         folders = ["/data/one", "/data/two", "/data/three"]
-        view.seed({folder + "/f": _row("f")
-                   for folder in folders},
-                  {folder: [folder + "/f"]
-                   for folder in folders}, _expiry(explicit))
+        view.seed(
+            {folder + "/f": _row("f") for folder in folders},
+            {folder: [folder + "/f"] for folder in folders},
+            _expiry(explicit),
+        )
         clock.advance(after)
-        assert [(await store.list_dir(folder)).status
-                for folder in folders] == [LookupStatus.EXPIRED] * 3
+        assert [
+            (await store.list_dir(folder)).status for folder in folders
+        ] == [LookupStatus.EXPIRED] * 3
 
 
 @pytest.mark.asyncio
@@ -429,16 +445,19 @@ async def test_a_view_reports_the_lifetime_its_listings_get(kind):
     async with _store(kind, 42) as store:
         cache = RAMFileCacheStore()
         assert IndexView(store, cache, "/data", _owns_all).ttl == 42
-        assert IndexView(store, cache, "/data", _owns_all,
-                         read_ttl=10).ttl == 10
-        assert IndexView(store, cache, "/data", _owns_all,
-                         read_ttl=600).ttl == 42
+        assert (
+            IndexView(store, cache, "/data", _owns_all, read_ttl=10).ttl == 10
+        )
+        assert (
+            IndexView(store, cache, "/data", _owns_all, read_ttl=600).ttl == 42
+        )
         await store.clear()
         await store.close()
 
 
-def _gone_ledger(
-) -> tuple[list[Evicted], Callable[[list[Evicted]], Awaitable[None]]]:
+def _gone_ledger() -> tuple[
+    list[Evicted], Callable[[list[Evicted]], Awaitable[None]]
+]:
     ledger: list[Evicted] = []
 
     async def on_gone(gone: list[Evicted]) -> None:
@@ -456,28 +475,29 @@ def _child(name: str, kind: str = "file") -> IndexEntry:
 async def test_the_view_hands_each_dropped_child_to_cleanup(kind):
     ledger, on_gone = _gone_ledger()
     async with _store(kind, 600) as store:
-        view = IndexView(store,
-                         RAMFileCacheStore(),
-                         "/data",
-                         _owns_all,
-                         on_gone=on_gone)
-        await view.set_dir("/data", [("a", _child("a")),
-                                     ("sub", _child("sub", "folder"))])
+        view = IndexView(
+            store, RAMFileCacheStore(), "/data", _owns_all, on_gone=on_gone
+        )
+        await view.set_dir(
+            "/data", [("a", _child("a")), ("sub", _child("sub", "folder"))]
+        )
         await view.set_dir("/data", [])
         assert ledger == [
             Evicted("/data/a", folder=False),
-            Evicted("/data/sub", folder=True)
+            Evicted("/data/sub", folder=True),
         ]
 
 
 @pytest.mark.asyncio
 async def test_a_window_hands_nothing_to_cleanup():
     ledger, on_gone = _gone_ledger()
-    view = IndexView(RAMIndexCacheStore(),
-                     RAMFileCacheStore(),
-                     "/data",
-                     _owns_all,
-                     on_gone=on_gone)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        RAMFileCacheStore(),
+        "/data",
+        _owns_all,
+        on_gone=on_gone,
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     await view.set_dir("/data", [], window=True)
     assert ledger == []
@@ -489,16 +509,19 @@ async def test_cleanup_skips_a_key_the_mount_no_longer_owns():
     # overlay are that mount's now.
     ledger, on_gone = _gone_ledger()
     owned = {"/data", "/data/a", "/data/n"}
-    view = IndexView(RAMIndexCacheStore(),
-                     RAMFileCacheStore(),
-                     "/data",
-                     lambda key: key in owned,
-                     on_gone=on_gone)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        RAMFileCacheStore(),
+        "/data",
+        lambda key: key in owned,
+        on_gone=on_gone,
+    )
     await view.set_dir("/data", [("a", _child("a")), ("n", _child("n"))])
     owned.discard("/data/n")
     # What set_dir hands back is filtered too, not only what cleanup sees.
-    assert await view.set_dir("/data",
-                              []) == [Evicted("/data/a", folder=False)]
+    assert await view.set_dir("/data", []) == [
+        Evicted("/data/a", folder=False)
+    ]
     assert ledger == [Evicted("/data/a", folder=False)]
 
 
@@ -509,11 +532,13 @@ async def test_cleanup_rechecks_ownership_after_the_write():
     ledger, on_gone = _gone_ledger()
     owned = {"/data", "/data/a"}
     store = RAMIndexCacheStore()
-    view = IndexView(store,
-                     RAMFileCacheStore(),
-                     "/data",
-                     lambda key: key in owned,
-                     on_gone=on_gone)
+    view = IndexView(
+        store,
+        RAMFileCacheStore(),
+        "/data",
+        lambda key: key in owned,
+        on_gone=on_gone,
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     original = store.set_dir
 
@@ -538,11 +563,9 @@ async def test_cleanup_runs_after_the_fence():
         async with mutation_lock(cache):
             done.extend(child.path for child in gone)
 
-    view = IndexView(RAMIndexCacheStore(),
-                     cache,
-                     "/data",
-                     _owns_all,
-                     on_gone=on_gone)
+    view = IndexView(
+        RAMIndexCacheStore(), cache, "/data", _owns_all, on_gone=on_gone
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     await asyncio.wait_for(view.set_dir("/data", []), 2)
     assert done == ["/data/a"]
@@ -551,14 +574,16 @@ async def test_cleanup_runs_after_the_fence():
 @pytest.mark.asyncio
 async def test_report_gone_hands_owned_keys_to_cleanup():
     ledger, on_gone = _gone_ledger()
-    view = IndexView(RAMIndexCacheStore(),
-                     RAMFileCacheStore(),
-                     "/data",
-                     lambda key: key != "/data/n",
-                     on_gone=on_gone)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        RAMFileCacheStore(),
+        "/data",
+        lambda key: key != "/data/n",
+        on_gone=on_gone,
+    )
     await view.report_gone(
-        [Evicted("/data/a", folder=False),
-         Evicted("/data/n", folder=True)])
+        [Evicted("/data/a", folder=False), Evicted("/data/n", folder=True)]
+    )
     assert ledger == [Evicted("/data/a", folder=False)]
 
 
@@ -585,11 +610,13 @@ async def test_a_refused_listing_reads_expired_and_stays_stored(kind, partial):
     # against, and every reader already re-lists an EXPIRED answer.
     asked, may_serve = _gate(False)
     async with _store(kind, 600) as store:
-        view = IndexView(store,
-                         RAMFileCacheStore(),
-                         "/data",
-                         _owns_all,
-                         may_serve_listing=may_serve)
+        view = IndexView(
+            store,
+            RAMFileCacheStore(),
+            "/data",
+            _owns_all,
+            may_serve_listing=may_serve,
+        )
         writer = view.set_partial_dir if partial else view.set_dir
         await writer("/data", [("a", _child("a"))])
         assert (await view.list_dir("/data")).status == LookupStatus.EXPIRED
@@ -603,11 +630,13 @@ async def test_a_refused_listing_reads_expired_and_stays_stored(kind, partial):
 @pytest.mark.asyncio
 async def test_a_served_listing_passes_through():
     _, may_serve = _gate(True)
-    view = IndexView(RAMIndexCacheStore(),
-                     RAMFileCacheStore(),
-                     "/data",
-                     _owns_all,
-                     may_serve_listing=may_serve)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        RAMFileCacheStore(),
+        "/data",
+        _owns_all,
+        may_serve_listing=may_serve,
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     assert (await view.list_dir("/data")).entries == ["/data/a"]
 
@@ -620,14 +649,19 @@ async def test_the_gate_is_asked_only_about_a_listing_the_store_has():
     asked, may_serve = _gate(False)
     store = RAMIndexCacheStore()
     owned = {"/data", "/data/old"}
-    view = IndexView(store,
-                     RAMFileCacheStore(),
-                     "/data",
-                     lambda key: key in owned or key.startswith("/data/x"),
-                     may_serve_listing=may_serve)
+    view = IndexView(
+        store,
+        RAMFileCacheStore(),
+        "/data",
+        lambda key: key in owned or key.startswith("/data/x"),
+        may_serve_listing=may_serve,
+    )
     assert (await view.list_dir("/data/x")).status == LookupStatus.NOT_FOUND
-    await store.set_dir("/data/old", [("a", _child("a"))],
-                        datetime.now(timezone.utc) - timedelta(seconds=1))
+    await store.set_dir(
+        "/data/old",
+        [("a", _child("a"))],
+        datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
     assert (await view.list_dir("/data/old")).status == LookupStatus.EXPIRED
     assert (await view.list_dir("/elsewhere")).status == LookupStatus.NOT_FOUND
     assert asked == []
@@ -647,11 +681,13 @@ async def test_ownership_lost_during_the_read_stays_not_found():
         return result
 
     store.list_dir = unmount_mid_read
-    view = IndexView(store,
-                     RAMFileCacheStore(),
-                     "/data",
-                     lambda key: key in owned,
-                     may_serve_listing=may_serve)
+    view = IndexView(
+        store,
+        RAMFileCacheStore(),
+        "/data",
+        lambda key: key in owned,
+        may_serve_listing=may_serve,
+    )
     assert (await view.list_dir("/data")).status == LookupStatus.NOT_FOUND
     assert asked == []
 
@@ -668,11 +704,13 @@ async def test_the_gate_runs_outside_the_fence():
         await release.wait()
         return True
 
-    view = IndexView(RAMIndexCacheStore(),
-                     cache,
-                     "/data",
-                     _owns_all,
-                     may_serve_listing=slow_gate)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        cache,
+        "/data",
+        _owns_all,
+        may_serve_listing=slow_gate,
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     reading = asyncio.create_task(view.list_dir("/data"))
     await entered.wait()
@@ -700,16 +738,18 @@ async def test_every_written_folder_is_noted_after_its_write():
         return await original(*args, **kwargs)
 
     store.set_dir = write_then_check
-    view = IndexView(store,
-                     RAMFileCacheStore(),
-                     "/data",
-                     _owns_all,
-                     note_written=noted.append)
+    view = IndexView(
+        store,
+        RAMFileCacheStore(),
+        "/data",
+        _owns_all,
+        note_written=noted.append,
+    )
     await view.set_dir("/data", [("a", _child("a"))])
     await view.set_partial_dir("/data/p", [("b", _child("b"))])
-    view.seed({"/data/s/c": _child("c")}, {
-        "/data/s": ["/data/s/c"],
-        "/data/t": []
-    },
-              datetime.now(timezone.utc) + timedelta(hours=1))
+    view.seed(
+        {"/data/s/c": _child("c")},
+        {"/data/s": ["/data/s/c"], "/data/t": []},
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     assert noted == ["/data", "/data/p", "/data/s", "/data/t"]

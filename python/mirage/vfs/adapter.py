@@ -7,9 +7,17 @@ from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES
-from mirage.vfs.types import (ContentSearchOps, IsMountedOp, NativeReadOps,
-                              ReadBytesOp, ReadOps, SearchOps, StatOp, WriteOp,
-                              WriteOps)
+from mirage.vfs.types import (
+    ContentSearchOps,
+    IsMountedOp,
+    NativeReadOps,
+    ReadBytesOp,
+    ReadOps,
+    SearchOps,
+    StatOp,
+    WriteOp,
+    WriteOps,
+)
 
 
 def _mounted(accessor: Accessor) -> bool:

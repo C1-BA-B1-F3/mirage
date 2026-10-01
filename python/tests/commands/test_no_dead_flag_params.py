@@ -27,8 +27,8 @@ from mirage.commands.spec.types import CommandSpec
 # the namespace facts -- rides the CommandOpts bag. A handler that names
 # anything else in its signature can never receive it.
 HANDLER_PARAMS = ("accessor", "paths", "texts", "opts")
-BUILDER_PARAMS = ("ops", ) + HANDLER_PARAMS
-AGGREGATE_PARAMS = ("results", )
+BUILDER_PARAMS = ("ops",) + HANDLER_PARAMS
+AGGREGATE_PARAMS = ("results",)
 
 
 def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
@@ -38,8 +38,9 @@ def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
     itself and for any aggregate function registered with it.
     """
     seen: set[int] = set()
-    for info in pkgutil.walk_packages(mirage.commands.__path__,
-                                      prefix="mirage.commands."):
+    for info in pkgutil.walk_packages(
+        mirage.commands.__path__, prefix="mirage.commands."
+    ):
         module = importlib.import_module(info.name)
         for value in vars(module).values():
             if not callable(value):
@@ -52,12 +53,17 @@ def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
                 label = source.split("/mirage/")[-1]
                 yield rc.name, label, rc.spec, rc.fn
                 if rc.aggregate is not None:
-                    yield rc.name, f"{label} [aggregate]", rc.spec, \
-                        rc.aggregate
+                    yield (
+                        rc.name,
+                        f"{label} [aggregate]",
+                        rc.spec,
+                        rc.aggregate,
+                    )
 
     for info in pkgutil.iter_modules(builders_pkg.__path__):
         module = importlib.import_module(
-            f"{builders_pkg.__name__}.{info.name}")
+            f"{builders_pkg.__name__}.{info.name}"
+        )
         builder = getattr(module, "BUILDER", None)
         spec = SPECS.get(getattr(builder, "name", ""))
         if builder is None or spec is None:
@@ -88,14 +94,15 @@ def test_handlers_take_accessor_paths_texts_opts():
         if params is None:
             continue
         if label.startswith("builders/"):
-            expected: tuple[tuple[str, ...], ...] = (BUILDER_PARAMS, )
+            expected: tuple[tuple[str, ...], ...] = (BUILDER_PARAMS,)
         elif label.endswith("[aggregate]"):
-            expected = (AGGREGATE_PARAMS, )
+            expected = (AGGREGATE_PARAMS,)
         else:
-            expected = (HANDLER_PARAMS, )
+            expected = (HANDLER_PARAMS,)
         if params not in expected:
             offenders.append(f"{label}: {name}({', '.join(params)})")
     assert not offenders, (
         "handlers are called as fn(accessor, paths, texts, opts) — flags "
         "and dispatcher facts ride CommandOpts, so any other parameter "
-        "is never filled:\n" + "\n".join(sorted(set(offenders))))
+        "is never filled:\n" + "\n".join(sorted(set(offenders)))
+    )

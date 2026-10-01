@@ -29,26 +29,31 @@ async def _run(ws: Workspace, line: str) -> tuple[str, str, int]:
 # in, and -a drops the processor and hardware platform when unknown.
 # The values are mirage's fixed identity. Mirrored in uname.test.ts.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected", [
-    ("uname", "Linux\n"),
-    ("uname -s", "Linux\n"),
-    ("uname --kernel-name", "Linux\n"),
-    ("uname -n", "mirage\n"),
-    ("uname -r", "mirage\n"),
-    ("uname -v", "#1 Mirage\n"),
-    ("uname -m", "x86_64\n"),
-    ("uname -p", "unknown\n"),
-    ("uname -i", "unknown\n"),
-    ("uname -o", "GNU/Linux\n"),
-    ("uname -a", _ALL),
-    ("uname --all", _ALL),
-    ("uname -a -p", _ALL),
-    ("uname -snrvmpio",
-     "Linux mirage mirage #1 Mirage x86_64 unknown unknown GNU/Linux\n"),
-    ("uname -ms", "Linux x86_64\n"),
-    ("uname -o -n", "mirage GNU/Linux\n"),
-    ("uname -s -s", "Linux\n"),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("uname", "Linux\n"),
+        ("uname -s", "Linux\n"),
+        ("uname --kernel-name", "Linux\n"),
+        ("uname -n", "mirage\n"),
+        ("uname -r", "mirage\n"),
+        ("uname -v", "#1 Mirage\n"),
+        ("uname -m", "x86_64\n"),
+        ("uname -p", "unknown\n"),
+        ("uname -i", "unknown\n"),
+        ("uname -o", "GNU/Linux\n"),
+        ("uname -a", _ALL),
+        ("uname --all", _ALL),
+        ("uname -a -p", _ALL),
+        (
+            "uname -snrvmpio",
+            "Linux mirage mirage #1 Mirage x86_64 unknown unknown GNU/Linux\n",
+        ),
+        ("uname -ms", "Linux x86_64\n"),
+        ("uname -o -n", "mirage GNU/Linux\n"),
+        ("uname -s -s", "Linux\n"),
+    ],
+)
 async def test_uname_fields(line, expected):
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     try:
@@ -58,14 +63,26 @@ async def test_uname_fields(line, expected):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,stderr", [
-    ("uname x", "uname: extra operand 'x'\n"
-     "Try 'uname --help' for more information.\n"),
-    ("uname -s x", "uname: extra operand 'x'\n"
-     "Try 'uname --help' for more information.\n"),
-    ("uname -z", "uname: invalid option -- 'z'\n"
-     "Try 'uname --help' for more information.\n"),
-])
+@pytest.mark.parametrize(
+    "line,stderr",
+    [
+        (
+            "uname x",
+            "uname: extra operand 'x'\n"
+            "Try 'uname --help' for more information.\n",
+        ),
+        (
+            "uname -s x",
+            "uname: extra operand 'x'\n"
+            "Try 'uname --help' for more information.\n",
+        ),
+        (
+            "uname -z",
+            "uname: invalid option -- 'z'\n"
+            "Try 'uname --help' for more information.\n",
+        ),
+    ],
+)
 async def test_uname_refusals(line, stderr):
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     try:

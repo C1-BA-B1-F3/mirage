@@ -45,14 +45,12 @@ _CORE_MODULES = [
 
 
 class MockS3Error(Exception):
-
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.response = {"Error": {"Code": code}}
 
 
 class AsyncMockBody:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
 
@@ -61,18 +59,16 @@ class AsyncMockBody:
 
     async def iter_chunks(self, chunk_size: int = 8192):
         for i in range(0, len(self._data), chunk_size):
-            yield self._data[i:i + chunk_size]
+            yield self._data[i : i + chunk_size]
 
 
 class AsyncMockPaginator:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
 
-    async def paginate(self,
-                       Bucket: str,
-                       Prefix: str = "",
-                       Delimiter: str | None = None):
+    async def paginate(
+        self, Bucket: str, Prefix: str = "", Delimiter: str | None = None
+    ):
         del Bucket
         if Delimiter == "/":
             yield _paginate_directory(self.objects, Prefix)
@@ -81,14 +77,12 @@ class AsyncMockPaginator:
 
 
 class AsyncMockS3Client:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
 
-    async def get_object(self,
-                         Bucket: str,
-                         Key: str,
-                         Range: str | None = None) -> dict:
+    async def get_object(
+        self, Bucket: str, Key: str, Range: str | None = None
+    ) -> dict:
         del Bucket
         if Key not in self.objects:
             raise MockS3Error("NoSuchKey")
@@ -118,8 +112,9 @@ class AsyncMockS3Client:
     async def delete_object(self, Bucket: str, Key: str) -> None:
         self.objects.pop(Key, None)
 
-    async def copy_object(self, Bucket: str, CopySource: dict,
-                          Key: str) -> None:
+    async def copy_object(
+        self, Bucket: str, CopySource: dict, Key: str
+    ) -> None:
         src_key = CopySource["Key"]
         if src_key in self.objects:
             self.objects[Key] = self.objects[src_key]
@@ -136,7 +131,6 @@ class AsyncMockS3Client:
 
 
 class MockAsyncSession:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self._client = AsyncMockS3Client(objects)
 
@@ -150,7 +144,7 @@ def _paginate_directory(objects, prefix):
     for key, data in sorted(objects.items()):
         if not key.startswith(prefix):
             continue
-        relative = key[len(prefix):]
+        relative = key[len(prefix) :]
         if not relative:
             continue
         if "/" in relative:
@@ -159,19 +153,18 @@ def _paginate_directory(objects, prefix):
             continue
         contents.append({"Key": key, "Size": len(data)})
     return {
-        "CommonPrefixes": [{
-            "Prefix": v
-        } for v in sorted(common_prefixes)],
+        "CommonPrefixes": [{"Prefix": v} for v in sorted(common_prefixes)],
         "Contents": contents,
     }
 
 
 def _paginate_flat(objects, prefix):
     return {
-        "Contents": [{
-            "Key": k,
-            "Size": len(v)
-        } for k, v in sorted(objects.items()) if k.startswith(prefix)]
+        "Contents": [
+            {"Key": k, "Size": len(v)}
+            for k, v in sorted(objects.items())
+            if k.startswith(prefix)
+        ]
     }
 
 
@@ -181,7 +174,7 @@ def _slice_range(data: bytes, range_spec: str) -> bytes:
     bounds = range_spec.removeprefix("bytes=").split("-", 1)
     start = int(bounds[0]) if bounds[0] else 0
     end = int(bounds[1]) if bounds[1] else len(data) - 1
-    return data[start:end + 1]
+    return data[start : end + 1]
 
 
 def _load_example_jsonl(limit: int = 20) -> bytes:
@@ -219,7 +212,8 @@ def _patch_async_session(objects):
     stack = ExitStack()
     for mod in _CORE_MODULES:
         stack.enter_context(
-            patch(f"{mod}.async_session", return_value=mock_session))
+            patch(f"{mod}.async_session", return_value=mock_session)
+        )
     return stack
 
 
@@ -263,7 +257,8 @@ async def test_file_report_through_redirect_chain(ws):
             ">> /tmp/file_report.txt && "
             "file /s3/reports/summary.txt >> /tmp/file_report.txt && "
             "echo >> /tmp/file_report.txt && "
-            "cat /tmp/file_report.txt")
+            "cat /tmp/file_report.txt"
+        )
         assert (await io.stdout_str()).strip().splitlines() == [
             "=== /s3/data/example.json ===",
             "/s3/data/example.json: json",
@@ -285,7 +280,8 @@ async def test_wc_report_through_redirect_chain(ws):
             "wc -c /s3/data/example.json >> /tmp/size_report.txt && "
             "echo -n '/s3/data/example.jsonl ' >> /tmp/size_report.txt && "
             "wc -c /s3/data/example.jsonl >> /tmp/size_report.txt && "
-            "cat /tmp/size_report.txt")
+            "cat /tmp/size_report.txt"
+        )
         json_size = len(objects["data/example.json"])
         jsonl_size = len(objects["data/example.jsonl"])
         assert (await io.stdout_str()).strip().splitlines() == [
@@ -304,7 +300,8 @@ async def test_grep_then_jq_with_and_or_list(ws):
             "echo >> /tmp/search_report.txt && "
             "jq .company /s3/data/example.json >> /tmp/search_report.txt || "
             "echo missing > /tmp/search_report.txt; "
-            "cat /tmp/search_report.txt")
+            "cat /tmp/search_report.txt"
+        )
         assert (await io.stdout_str()).strip().splitlines() == [
             "/s3/data/example.jsonl",
             "",
@@ -313,10 +310,12 @@ async def test_grep_then_jq_with_and_or_list(ws):
 
 
 def _resolved(original: str) -> PathSpec:
-    return PathSpec(vfs_path=mount_key(original, "/s3"),
-                    virtual=original,
-                    directory=original,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=mount_key(original, "/s3"),
+        virtual=original,
+        directory=original,
+        resolved=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -332,11 +331,13 @@ async def test_cat_multifile_caches_materialized_bytes_per_file():
     with _patch_async_session(objects):
         a = _resolved("/s3/reports/summary.txt")
         b = _resolved("/s3/archive/2026/q1/deep.txt")
-        source, io = await s3_cat(backend.accessor, [a, b], [],
-                                  CommandOpts(index=NULL_INDEX))
+        source, io = await s3_cat(
+            backend.accessor, [a, b], [], CommandOpts(index=NULL_INDEX)
+        )
 
-        assert io.reads[
-            "/reports/summary.txt"] == b"alpha report\nbeta report\n"
+        assert (
+            io.reads["/reports/summary.txt"] == b"alpha report\nbeta report\n"
+        )
         assert io.reads["/archive/2026/q1/deep.txt"] == b"deep archive\n"
         assert all(isinstance(v, bytes) for v in io.reads.values())
 
@@ -352,7 +353,8 @@ async def test_cat_single_file_keeps_streaming_cachable():
     backend = _s3_backend()
     with _patch_async_session(objects):
         a = _resolved("/s3/reports/summary.txt")
-        source, io = await s3_cat(backend.accessor, [a], [],
-                                  CommandOpts(index=NULL_INDEX))
+        source, io = await s3_cat(
+            backend.accessor, [a], [], CommandOpts(index=NULL_INDEX)
+        )
         assert isinstance(source, CachableAsyncIterator)
         assert io.reads["/reports/summary.txt"] is source

@@ -16,6 +16,7 @@
 Each operand is one expression; the status is 1 when the last evaluated
 to 0; the writes land in order; a malformed operand aborts the builtin.
 """
+
 import pytest
 
 from mirage.types import MountMode

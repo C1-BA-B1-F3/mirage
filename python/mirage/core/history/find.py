@@ -14,8 +14,12 @@
 
 from mirage.accessor.history import HistoryAccessor
 from mirage.cache.index import NULL_INDEX
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               keep)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    keep,
+)
 from mirage.core.history.read import VIEW_KEYS, VIEW_NAME, read
 from mirage.types import FindType, PathSpec
 
@@ -78,19 +82,23 @@ async def find(
         if max_size is not None and size > max_size:
             return []
         is_empty = size == 0
-    tree = tree if tree is not None else build_tree(name=name,
-                                                    iname=iname,
-                                                    path_pattern=path_pattern,
-                                                    type=type,
-                                                    name_exclude=name_exclude,
-                                                    or_names=or_names,
-                                                    empty=empty)
+    tree = (
+        tree
+        if tree is not None
+        else build_tree(
+            name=name,
+            iname=iname,
+            path_pattern=path_pattern,
+            type=type,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            empty=empty,
+        )
+    )
     full = path.virtual if isinstance(path, PathSpec) else path
-    entry = FindEntry(key=full,
-                      name=VIEW_NAME,
-                      kind="f",
-                      depth=0,
-                      is_empty=is_empty)
+    entry = FindEntry(
+        key=full, name=VIEW_NAME, kind="f", depth=0, is_empty=is_empty
+    )
     if not keep(entry, tree, mindepth):
         return []
     return [""]

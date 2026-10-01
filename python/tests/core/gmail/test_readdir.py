@@ -19,8 +19,12 @@ import pytest
 from mirage.accessor.gmail import GmailAccessor
 from mirage.cache.index import IndexEntry, RAMIndexCacheStore
 from mirage.core.gmail.messages import message_json_bytes
-from mirage.core.gmail.readdir import (_date_from_internal, _msg_filename,
-                                       _sanitize, readdir)
+from mirage.core.gmail.readdir import (
+    _date_from_internal,
+    _msg_filename,
+    _sanitize,
+    readdir,
+)
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 from tests.fixtures.index_spy import WindowSpy
@@ -68,113 +72,147 @@ def test_date_from_internal():
 
 @pytest.mark.asyncio
 async def test_readdir_root(accessor, index):
-    await index.set_dir("/gmail", [
-        ("INBOX",
-         IndexEntry(
-             id="INBOX",
-             name="INBOX",
-             resource_type="gmail/label",
-             vfs_name="INBOX",
-         )),
-        ("SENT",
-         IndexEntry(
-             id="SENT",
-             name="SENT",
-             resource_type="gmail/label",
-             vfs_name="SENT",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail",
+        [
+            (
+                "INBOX",
+                IndexEntry(
+                    id="INBOX",
+                    name="INBOX",
+                    resource_type="gmail/label",
+                    vfs_name="INBOX",
+                ),
+            ),
+            (
+                "SENT",
+                IndexEntry(
+                    id="SENT",
+                    name="SENT",
+                    resource_type="gmail/label",
+                    vfs_name="SENT",
+                ),
+            ),
+        ],
+    )
     result = await readdir(
-        accessor, PathSpec(vfs_path="", virtual="/gmail", directory="/gmail"),
-        index)
+        accessor,
+        PathSpec(vfs_path="", virtual="/gmail", directory="/gmail"),
+        index,
+    )
     assert "/gmail/INBOX" in result
     assert "/gmail/SENT" in result
 
 
 @pytest.mark.asyncio
 async def test_readdir_label(accessor, index):
-    await index.set_dir("/gmail", [
-        ("INBOX",
-         IndexEntry(
-             id="INBOX",
-             name="INBOX",
-             resource_type="gmail/label",
-             vfs_name="INBOX",
-         )),
-    ])
-    await index.set_dir("/gmail/INBOX", [
-        ("2026-04-12",
-         IndexEntry(
-             id="2026-04-12",
-             name="2026-04-12",
-             resource_type="gmail/date",
-             vfs_name="2026-04-12",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail",
+        [
+            (
+                "INBOX",
+                IndexEntry(
+                    id="INBOX",
+                    name="INBOX",
+                    resource_type="gmail/label",
+                    vfs_name="INBOX",
+                ),
+            ),
+        ],
+    )
+    await index.set_dir(
+        "/gmail/INBOX",
+        [
+            (
+                "2026-04-12",
+                IndexEntry(
+                    id="2026-04-12",
+                    name="2026-04-12",
+                    resource_type="gmail/date",
+                    vfs_name="2026-04-12",
+                ),
+            ),
+        ],
+    )
     result = await readdir(
         accessor,
-        PathSpec(vfs_path=mount_key("/gmail/INBOX", "/gmail"),
-                 virtual="/gmail/INBOX",
-                 directory="/gmail/INBOX"), index)
+        PathSpec(
+            vfs_path=mount_key("/gmail/INBOX", "/gmail"),
+            virtual="/gmail/INBOX",
+            directory="/gmail/INBOX",
+        ),
+        index,
+    )
     assert "/gmail/INBOX/2026-04-12" in result
 
 
 @pytest.mark.asyncio
 async def test_readdir_not_found(accessor, index):
     with patch(
-            "mirage.core.gmail.readdir.list_labels",
-            new_callable=AsyncMock,
-            return_value=[{
-                "type": "system",
-                "id": "INBOX"
-            }],
+        "mirage.core.gmail.readdir.list_labels",
+        new_callable=AsyncMock,
+        return_value=[{"type": "system", "id": "INBOX"}],
     ):
         with pytest.raises(FileNotFoundError):
             await readdir(
                 accessor,
-                PathSpec(vfs_path=mount_key("/gmail/NONEXISTENT", "/gmail"),
-                         virtual="/gmail/NONEXISTENT",
-                         directory="/gmail/NONEXISTENT"), index)
+                PathSpec(
+                    vfs_path=mount_key("/gmail/NONEXISTENT", "/gmail"),
+                    virtual="/gmail/NONEXISTENT",
+                    directory="/gmail/NONEXISTENT",
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_readdir_date_dir_uses_after_before_query(accessor, index):
-    with patch("mirage.core.gmail.readdir.list_labels",
-               new_callable=AsyncMock,
-               return_value=[{
-                   "id": "INBOX",
-                   "type": "system"
-               }]):
+    with patch(
+        "mirage.core.gmail.readdir.list_labels",
+        new_callable=AsyncMock,
+        return_value=[{"id": "INBOX", "type": "system"}],
+    ):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail", "/gmail"),
-                     virtual="/gmail",
-                     directory="/gmail"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail", "/gmail"),
+                virtual="/gmail",
+                directory="/gmail",
+            ),
+            index,
+        )
 
     captured_calls: list[dict] = []
 
-    async def fake_list_messages(token_manager,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
-        captured_calls.append({
-            "label_id": label_id,
-            "query": query,
-            "max_results": max_results,
-        })
+    async def fake_list_messages(
+        token_manager, label_id=None, query=None, max_results=50
+    ):
+        captured_calls.append(
+            {
+                "label_id": label_id,
+                "query": query,
+                "max_results": max_results,
+            }
+        )
         return []
 
-    with patch("mirage.core.gmail.readdir.list_messages",
-               new=fake_list_messages):
+    with patch(
+        "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+    ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-05-03", "/gmail"),
-                     virtual="/gmail/INBOX/2026-05-03",
-                     directory="/gmail/INBOX/2026-05-03"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-05-03", "/gmail"),
+                virtual="/gmail/INBOX/2026-05-03",
+                directory="/gmail/INBOX/2026-05-03",
+            ),
+            index,
+        )
 
     assert result == []
     date_calls = [
-        c for c in captured_calls
+        c
+        for c in captured_calls
         if c["query"] and "after:1777766399" in c["query"]
     ]
     assert len(date_calls) == 1
@@ -187,17 +225,15 @@ def _msg_stub(mid, subject, internal_date_ms):
         "id": mid,
         "internalDate": str(internal_date_ms),
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": subject
-            }],
+            "headers": [{"name": "Subject", "value": subject}],
         },
     }
 
 
 @pytest.mark.asyncio
 async def test_readdir_date_dir_returns_msg_files_not_date_strings(
-        accessor, index):
+    accessor, index
+):
     target_msgs = [{"id": "x1"}, {"id": "x2"}]
     raws = {
         "x1": _msg_stub("x1", "Hi 27", 1777291200000),
@@ -207,29 +243,34 @@ async def test_readdir_date_dir_returns_msg_files_not_date_strings(
     async def fake_get_message_raw(_tm, mid):
         return raws[mid]
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        _tm, label_id=None, query=None, max_results=50
+    ):
         return target_msgs
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
 
     assert result == [
         "/gmail/INBOX/2026-04-27/Hi_27__x1.gmail.json",
@@ -238,7 +279,8 @@ async def test_readdir_date_dir_returns_msg_files_not_date_strings(
     for entry in result:
         basename = entry.rsplit("/", 1)[-1]
         assert basename.endswith(".gmail.json"), (
-            f"expected .gmail.json file, got: {basename}")
+            f"expected .gmail.json file, got: {basename}"
+        )
 
 
 @pytest.mark.asyncio
@@ -254,35 +296,44 @@ async def test_readdir_date_dir_warm_cache_matches_cold(accessor, index):
 
     fetch_count = {"n": 0}
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        _tm, label_id=None, query=None, max_results=50
+    ):
         fetch_count["n"] += 1
         return target_msgs
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         cold = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
         warm = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
 
     assert warm == cold
     assert fetch_count["n"] == 1, "warm call should not re-fetch"
@@ -293,59 +344,66 @@ def _msg_with_attachment(mid, subject, internal_date_ms, att_id, att_filename):
         "id": mid,
         "internalDate": str(internal_date_ms),
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": subject
-            }],
-            "parts": [{
-                "filename": att_filename,
-                "mimeType": "application/pdf",
-                "body": {
-                    "attachmentId": att_id,
-                    "size": 1234,
-                },
-            }],
+            "headers": [{"name": "Subject", "value": subject}],
+            "parts": [
+                {
+                    "filename": att_filename,
+                    "mimeType": "application/pdf",
+                    "body": {
+                        "attachmentId": att_id,
+                        "size": 1234,
+                    },
+                }
+            ],
         },
     }
 
 
 @pytest.mark.asyncio
 async def test_readdir_date_dir_lists_msg_file_and_attachment_dir(
-        accessor, index):
-    raw = _msg_with_attachment("m1", "Quote", 1777291200000, "att1",
-                               "quote.pdf")
+    accessor, index
+):
+    raw = _msg_with_attachment(
+        "m1", "Quote", 1777291200000, "att1", "quote.pdf"
+    )
 
     async def fake_get_message_raw(_tm, mid):
         return raw
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        _tm, label_id=None, query=None, max_results=50
+    ):
         return [{"id": "m1"}]
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         date_listing = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
         att_listing = await readdir(
             accessor,
             PathSpec(
-                vfs_path=mount_key("/gmail/INBOX/2026-04-27/Quote__m1",
-                                   "/gmail"),
+                vfs_path=mount_key(
+                    "/gmail/INBOX/2026-04-27/Quote__m1", "/gmail"
+                ),
                 virtual="/gmail/INBOX/2026-04-27/Quote__m1",
                 directory="/gmail/INBOX/2026-04-27/Quote__m1",
             ),
@@ -367,39 +425,41 @@ async def test_readdir_date_dir_without_attachments_omits_dir(accessor, index):
         "id": "m1",
         "internalDate": str(1777291200000),
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": "No Attach"
-            }],
+            "headers": [{"name": "Subject", "value": "No Attach"}],
         },
     }
 
     async def fake_get_message_raw(_tm, mid):
         return raw
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        _tm, label_id=None, query=None, max_results=50
+    ):
         return [{"id": "m1"}]
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         date_listing = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
 
     assert date_listing == [
         "/gmail/INBOX/2026-04-27/No_Attach__m1.gmail.json",
@@ -408,36 +468,42 @@ async def test_readdir_date_dir_without_attachments_omits_dir(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_message_entry_rendered_size_estimate_in_extra(
-        accessor, index):
+    accessor, index
+):
     raw = _msg_stub("m1", "Sized", 1777291200000)
     raw["sizeEstimate"] = 54321
 
     async def fake_get_message_raw(_tm, mid):
         return raw
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        _tm, label_id=None, query=None, max_results=50
+    ):
         return [{"id": "m1"}]
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
-                     virtual="/gmail/INBOX/2026-04-27",
-                     directory="/gmail/INBOX/2026-04-27"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-04-27", "/gmail"),
+                virtual="/gmail/INBOX/2026-04-27",
+                directory="/gmail/INBOX/2026-04-27",
+            ),
+            index,
+        )
 
     result = await index.get("/gmail/INBOX/2026-04-27/Sized__m1.gmail.json")
     assert result.entry is not None
@@ -451,32 +517,41 @@ async def test_readdir_message_entry_rendered_size_estimate_in_extra(
 async def test_label_glob_pushes_its_span_into_the_query(accessor, index):
     # The bare listing is the most recent MAX_MESSAGES, so a glob for an
     # older month can only be answered by querying that month.
-    await index.set_dir("/gmail", [
-        ("INBOX",
-         IndexEntry(
-             id="INBOX",
-             name="INBOX",
-             resource_type="gmail/label",
-             vfs_name="INBOX",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail",
+        [
+            (
+                "INBOX",
+                IndexEntry(
+                    id="INBOX",
+                    name="INBOX",
+                    resource_type="gmail/label",
+                    vfs_name="INBOX",
+                ),
+            ),
+        ],
+    )
     captured: list[str | None] = []
 
-    async def fake_list_messages(token_manager,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        token_manager, label_id=None, query=None, max_results=50
+    ):
         captured.append(query)
         return []
 
-    with patch("mirage.core.gmail.readdir.list_messages",
-               new=fake_list_messages):
+    with patch(
+        "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+    ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-01-*", "/gmail"),
-                     virtual="/gmail/INBOX/2026-01-*",
-                     directory="/gmail/INBOX/",
-                     pattern="2026-01-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-01-*", "/gmail"),
+                virtual="/gmail/INBOX/2026-01-*",
+                directory="/gmail/INBOX/",
+                pattern="2026-01-*",
+            ),
+            index,
+        )
 
     assert result == []
     assert captured == ["after:1767225599 before:1769904000"]
@@ -484,52 +559,65 @@ async def test_label_glob_pushes_its_span_into_the_query(accessor, index):
 
 @pytest.mark.asyncio
 async def test_a_globbed_label_listing_is_not_cached_as_the_label(
-        accessor, index):
-    await index.set_dir("/gmail", [
-        ("INBOX",
-         IndexEntry(
-             id="INBOX",
-             name="INBOX",
-             resource_type="gmail/label",
-             vfs_name="INBOX",
-         )),
-    ])
+    accessor, index
+):
+    await index.set_dir(
+        "/gmail",
+        [
+            (
+                "INBOX",
+                IndexEntry(
+                    id="INBOX",
+                    name="INBOX",
+                    resource_type="gmail/label",
+                    vfs_name="INBOX",
+                ),
+            ),
+        ],
+    )
     raw = {
         "id": "m1",
         "internalDate": "1767225600000",
-        "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": "Hi"
-            }]
-        },
+        "payload": {"headers": [{"name": "Subject", "value": "Hi"}]},
     }
 
-    async def fake_list_messages(token_manager,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
+    async def fake_list_messages(
+        token_manager, label_id=None, query=None, max_results=50
+    ):
         return [{"id": "m1"}] if query else []
 
-    with (patch("mirage.core.gmail.readdir.list_messages",
-                new=fake_list_messages),
-          patch("mirage.core.gmail.readdir.get_message_raw",
-                new=AsyncMock(return_value=raw))):
+    with (
+        patch(
+            "mirage.core.gmail.readdir.list_messages", new=fake_list_messages
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=AsyncMock(return_value=raw),
+        ),
+    ):
         globbed = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/2026-01-*", "/gmail"),
-                     virtual="/gmail/INBOX/2026-01-*",
-                     directory="/gmail/INBOX/",
-                     pattern="2026-01-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX/2026-01-*", "/gmail"),
+                virtual="/gmail/INBOX/2026-01-*",
+                directory="/gmail/INBOX/",
+                pattern="2026-01-*",
+            ),
+            index,
+        )
         assert globbed == ["/gmail/INBOX/2026-01-01"]
         # The label directory is untouched, so the unglobbed listing goes
         # back to the recent window rather than answering with January.
         assert (await index.list_dir("/gmail/INBOX")).entries is None
         plain = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX", "/gmail"),
-                     virtual="/gmail/INBOX",
-                     directory="/gmail/INBOX"), index)
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX", "/gmail"),
+                virtual="/gmail/INBOX",
+                directory="/gmail/INBOX",
+            ),
+            index,
+        )
     assert plain == []
 
 
@@ -548,22 +636,27 @@ async def test_a_label_and_its_day_are_written_as_windows(accessor):
         return raws[mid]
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         for path in ("/gmail/INBOX", "/gmail/INBOX/2026-04-27"):
             await readdir(
                 accessor,
-                PathSpec(vfs_path=mount_key(path, "/gmail"),
-                         virtual=path,
-                         directory=path), index)
+                PathSpec(
+                    vfs_path=mount_key(path, "/gmail"),
+                    virtual=path,
+                    directory=path,
+                ),
+                index,
+            )
     assert index.windows["/gmail/INBOX"] is True
     assert index.windows["/gmail/INBOX/2026-04-27"] is True
 
@@ -579,20 +672,25 @@ async def test_a_day_listed_first_is_written_as_a_window(accessor):
         return raws[mid]
 
     with (
-            patch("mirage.core.gmail.readdir.list_labels",
-                  new_callable=AsyncMock,
-                  return_value=[{
-                      "id": "INBOX",
-                      "type": "system"
-                  }]),
-            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
-            patch("mirage.core.gmail.readdir.get_message_raw",
-                  new=fake_get_message_raw),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "type": "system"}],
+        ),
+        patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new=fake_get_message_raw,
+        ),
     ):
         path = "/gmail/INBOX/2026-04-27"
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key(path, "/gmail"),
-                     virtual=path,
-                     directory=path), index)
+            PathSpec(
+                vfs_path=mount_key(path, "/gmail"),
+                virtual=path,
+                directory=path,
+            ),
+            index,
+        )
     assert index.windows["/gmail/INBOX/2026-04-27"] is True

@@ -13,16 +13,22 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
-from mirage.core.object_store.driver import (A, C, ExistsFn, ObjectStoreDriver,
-                                             PairFn)
+from mirage.core.object_store.driver import (
+    A,
+    C,
+    ExistsFn,
+    ObjectStoreDriver,
+    PairFn,
+)
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
 from mirage.utils.errors import enoent
 
 
-def make_copy(driver: ObjectStoreDriver[A, C],
-              exists: ExistsFn[A]) -> PairFn[A]:
+def make_copy(
+    driver: ObjectStoreDriver[A, C], exists: ExistsFn[A]
+) -> PairFn[A]:
     """Build single-object copy over one driver.
 
     Args:
@@ -34,11 +40,14 @@ def make_copy(driver: ObjectStoreDriver[A, C],
     """
     copy_file = driver.copy_file
     if copy_file is None:
-        raise ValueError(f"{driver.vfs} driver has no native copy; leave copy "
-                         "unwired instead of building it")
+        raise ValueError(
+            f"{driver.vfs} driver has no native copy; leave copy "
+            "unwired instead of building it"
+        )
 
-    async def copy(accessor: A, src_spec: PathSpec,
-                   dst_spec: PathSpec) -> None:
+    async def copy(
+        accessor: A, src_spec: PathSpec, dst_spec: PathSpec
+    ) -> None:
         src = src_spec.mount_path
         dst = dst_spec.mount_path
         kpfx = driver.key_prefix_of(accessor)

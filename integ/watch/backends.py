@@ -72,9 +72,9 @@ class WorkspaceWriter:
 
     def __init__(self, ws: Workspace, mount: str) -> None:
         """Args:
-            ws (Workspace): Writer workspace, distinct from the watched
-                one.
-            mount (str): Mount prefix both workspaces share.
+        ws (Workspace): Writer workspace, distinct from the watched
+            one.
+        mount (str): Mount prefix both workspaces share.
         """
         self._ws = ws
         self._mount = mount.rstrip("/")
@@ -84,15 +84,15 @@ class WorkspaceWriter:
 
     async def create_dir(self, path: str) -> None:
         """Args:
-            path (str): Mount-relative directory, trailing slash
-                optional.
+        path (str): Mount-relative directory, trailing slash
+            optional.
         """
         await self._ws.shell(f"mkdir -p {self._virtual(path)}")
 
     async def write(self, path: str, data: bytes) -> None:
         """Args:
-            path (str): Mount-relative file path.
-            data (bytes): Content to store.
+        path (str): Mount-relative file path.
+        data (bytes): Content to store.
         """
         key = path.strip("/")
         parent = key.rsplit("/", 1)[0]
@@ -102,21 +102,21 @@ class WorkspaceWriter:
 
     async def delete(self, path: str) -> None:
         """Args:
-            path (str): Mount-relative path; a directory goes with its
-                subtree, matching opendal's delete.
+        path (str): Mount-relative path; a directory goes with its
+            subtree, matching opendal's delete.
         """
         await self._ws.shell(f"rm -rf {self._virtual(path)}")
 
     async def remove_all(self, path: str) -> None:
         """Args:
-            path (str): Mount-relative subtree to empty.
+        path (str): Mount-relative subtree to empty.
         """
         await self.delete(path)
 
     async def rename(self, path: str, to: str) -> None:
         """Args:
-            path (str): Mount-relative source.
-            to (str): Mount-relative destination.
+        path (str): Mount-relative source.
+        to (str): Mount-relative destination.
         """
         await self._ws.vfs.rename(self._virtual(path), self._virtual(to))
 
@@ -141,13 +141,14 @@ class GitHubWriter:
     one marker, and why ``rename`` is a write plus a delete.
     """
 
-    def __init__(self, config: GitHubConfig, owner: str, repo: str,
-                 ref: str) -> None:
+    def __init__(
+        self, config: GitHubConfig, owner: str, repo: str, ref: str
+    ) -> None:
         """Args:
-            config (GitHubConfig): Token and API base of the fake.
-            owner (str): Repository owner.
-            repo (str): Repository name.
-            ref (str): Branch the mount is pinned to.
+        config (GitHubConfig): Token and API base of the fake.
+        owner (str): Repository owner.
+        repo (str): Repository name.
+        ref (str): Branch the mount is pinned to.
         """
         self._config = config
         self._owner = owner
@@ -162,18 +163,21 @@ class GitHubWriter:
         is an empty listing, and the first PUT creates the tree.
         """
         try:
-            tree, _truncated = await fetch_tree(self._config, self._owner,
-                                                self._repo, self._ref)
+            tree, _truncated = await fetch_tree(
+                self._config, self._owner, self._repo, self._ref
+            )
         except aiohttp.ClientResponseError as exc:
             if exc.status != 409:
                 raise
-            logger.debug("%s/%s has no tree yet: %s", self._owner, self._repo,
-                         exc)
+            logger.debug(
+                "%s/%s has no tree yet: %s", self._owner, self._repo, exc
+            )
             return {}
         return tree
 
-    async def _commit(self, method: str, path: str, body: dict[str,
-                                                               str]) -> None:
+    async def _commit(
+        self, method: str, path: str, body: dict[str, str]
+    ) -> None:
         """Send one contents-API call against the pinned branch.
 
         Args:
@@ -184,12 +188,14 @@ class GitHubWriter:
         await github_request(
             self._config.token,
             method,
-            f"/repos/{self._owner}/{self._repo}/contents/{path}", {
+            f"/repos/{self._owner}/{self._repo}/contents/{path}",
+            {
                 "branch": self._ref,
                 "message": f"integ watch {path}",
                 **body,
             },
-            base_url=self._config.base_url)
+            base_url=self._config.base_url,
+        )
 
     async def create_dir(self, path: str) -> None:
         """No-op: git has no directory object to create.
@@ -200,8 +206,8 @@ class GitHubWriter:
 
     async def write(self, path: str, data: bytes) -> None:
         """Args:
-            path (str): Mount-relative file path.
-            data (bytes): Content to commit.
+        path (str): Mount-relative file path.
+        data (bytes): Content to commit.
         """
         key = path.strip("/")
         entry = (await self._tree()).get(key)
@@ -212,7 +218,7 @@ class GitHubWriter:
 
     async def delete(self, path: str) -> None:
         """Args:
-            path (str): Mount-relative file path.
+        path (str): Mount-relative file path.
         """
         entry = (await self._tree()).get(path.strip("/"))
         if entry is not None:
@@ -220,7 +226,7 @@ class GitHubWriter:
 
     async def remove_all(self, path: str) -> None:
         """Args:
-            path (str): Mount-relative subtree to empty.
+        path (str): Mount-relative subtree to empty.
         """
         stem = path.strip("/")
         base = f"{stem}/" if stem else ""
@@ -231,12 +237,13 @@ class GitHubWriter:
 
     async def rename(self, path: str, to: str) -> None:
         """Args:
-            path (str): Mount-relative source.
-            to (str): Mount-relative destination.
+        path (str): Mount-relative source.
+        to (str): Mount-relative destination.
         """
         entry = (await self._tree())[path.strip("/")]
-        data = await read_bytes(self._config, self._owner, self._repo,
-                                entry.sha)
+        data = await read_bytes(
+            self._config, self._owner, self._repo, entry.sha
+        )
         await self.write(to, data)
         await self._commit("DELETE", entry.path, {"sha": entry.sha})
 
@@ -294,12 +301,17 @@ async def build_ssh(spec: dict) -> Pair | None:
     server = await module.start_server(root)
     port = server.get_port()
     return _pair(
-        spec, lambda: SSHVFS(
-            SSHConfig(host="127.0.0.1",
-                      port=port,
-                      username="integ",
-                      known_hosts=None,
-                      root="/")))
+        spec,
+        lambda: SSHVFS(
+            SSHConfig(
+                host="127.0.0.1",
+                port=port,
+                username="integ",
+                known_hosts=None,
+                root="/",
+            )
+        ),
+    )
 
 
 async def build_dropbox(spec: dict) -> Pair | None:
@@ -326,12 +338,17 @@ async def build_dropbox(spec: dict) -> Pair | None:
     # different accounts, so every poll would see an empty tree.
     account = f"watch-{uuid.uuid4().hex[:8]}"
     return _pair(
-        spec, lambda: DropboxVFS(
-            DropboxConfig(client_id="integ-client",
-                          client_secret="integ-secret",
-                          refresh_token=account,
-                          endpoint=url,
-                          root_path="/")))
+        spec,
+        lambda: DropboxVFS(
+            DropboxConfig(
+                client_id="integ-client",
+                client_secret="integ-secret",
+                refresh_token=account,
+                endpoint=url,
+                root_path="/",
+            )
+        ),
+    )
 
 
 async def build_s3(spec: dict) -> Pair | None:
@@ -349,15 +366,19 @@ async def build_s3(spec: dict) -> Pair | None:
         return None
     prefix = f"watch-{uuid.uuid4().hex[:8]}/"
     return _pair(
-        spec, lambda: S3VFS(
-            S3Config(bucket=bucket,
-                     region=os.environ.get("S3_REGION", "us-east-1"),
-                     endpoint_url=endpoint,
-                     aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-                     aws_secret_access_key=os.environ.get(
-                         "AWS_SECRET_ACCESS_KEY"),
-                     path_style=True,
-                     key_prefix=prefix)))
+        spec,
+        lambda: S3VFS(
+            S3Config(
+                bucket=bucket,
+                region=os.environ.get("S3_REGION", "us-east-1"),
+                endpoint_url=endpoint,
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                path_style=True,
+                key_prefix=prefix,
+            )
+        ),
+    )
 
 
 async def build_gridfs(spec: dict) -> Pair | None:
@@ -373,8 +394,11 @@ async def build_gridfs(spec: dict) -> Pair | None:
         return None
     database = f"watch_{uuid.uuid4().hex[:8]}"
     return _pair(
-        spec, lambda: GridFSVFS(
-            GridFSConfig(uri=uri, database=database, bucket="fs")))
+        spec,
+        lambda: GridFSVFS(
+            GridFSConfig(uri=uri, database=database, bucket="fs")
+        ),
+    )
 
 
 async def build_onedrive(spec: dict) -> Pair | None:
@@ -397,8 +421,11 @@ async def build_onedrive(spec: dict) -> Pair | None:
     # accounts, so every poll would see an empty tree.
     token = f"watch-{uuid.uuid4().hex[:8]}"
     return _pair(
-        spec, lambda: OneDriveVFS(
-            OneDriveConfig(access_token=token, graph_base_url=url)))
+        spec,
+        lambda: OneDriveVFS(
+            OneDriveConfig(access_token=token, graph_base_url=url)
+        ),
+    )
 
 
 async def build_box(spec: dict) -> Pair | None:
@@ -422,20 +449,21 @@ async def build_box(spec: dict) -> Pair | None:
     # watcher in different accounts.
     token = f"watch-{uuid.uuid4().hex[:8]}"
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{url}/2.0/folders",
-                                headers={"Authorization": f"Bearer {token}"},
-                                json={
-                                    "name": "watch",
-                                    "parent": {
-                                        "id": "0"
-                                    }
-                                }) as resp:
+        async with session.post(
+            f"{url}/2.0/folders",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "watch", "parent": {"id": "0"}},
+        ) as resp:
             resp.raise_for_status()
             folder_id = (await resp.json())["id"]
     return _pair(
-        spec, lambda: BoxVFS(
+        spec,
+        lambda: BoxVFS(
             BoxConfig(
-                access_token=token, endpoint=url, root_folder_id=folder_id)))
+                access_token=token, endpoint=url, root_folder_id=folder_id
+            )
+        ),
+    )
 
 
 async def build_hf(spec: dict) -> Pair | None:
@@ -457,9 +485,13 @@ async def build_hf(spec: dict) -> Pair | None:
         return None
     token = f"watch-hf-{uuid.uuid4().hex[:8]}"
     return _pair(
-        spec, lambda: HfBucketsVFS(
+        spec,
+        lambda: HfBucketsVFS(
             HfBucketsConfig(
-                bucket="integ/watch", token=token, endpoint=url.rstrip("/"))))
+                bucket="integ/watch", token=token, endpoint=url.rstrip("/")
+            )
+        ),
+    )
 
 
 async def build_gdrive(spec: dict) -> Pair | None:
@@ -480,22 +512,27 @@ async def build_gdrive(spec: dict) -> Pair | None:
         async with session.post(f"{url}/reset", json={}) as resp:
             resp.raise_for_status()
         folder = f"watch-{uuid.uuid4().hex[:8]}"
-        async with session.post(f"{url}/drive/v3/files",
-                                json={
-                                    "name":
-                                    folder,
-                                    "mimeType":
-                                    "application/vnd.google-apps.folder",
-                                }) as resp:
+        async with session.post(
+            f"{url}/drive/v3/files",
+            json={
+                "name": folder,
+                "mimeType": "application/vnd.google-apps.folder",
+            },
+        ) as resp:
             resp.raise_for_status()
             folder_id = (await resp.json())["id"]
     return _pair(
-        spec, lambda: GoogleDriveVFS(
-            GoogleDriveConfig(client_id="integ-client",
-                              client_secret="integ-secret",
-                              refresh_token=GWS_TOKEN,
-                              api_base=url,
-                              folder_id=folder_id)))
+        spec,
+        lambda: GoogleDriveVFS(
+            GoogleDriveConfig(
+                client_id="integ-client",
+                client_secret="integ-secret",
+                refresh_token=GWS_TOKEN,
+                api_base=url,
+                folder_id=folder_id,
+            )
+        ),
+    )
 
 
 async def build_github(spec: dict) -> Pair | None:
@@ -519,17 +556,20 @@ async def build_github(spec: dict) -> Pair | None:
     url = url.rstrip("/")
     async with aiohttp.ClientSession() as session:
         async with session.post(
-                f"{url}/orgs/{GITHUB_OWNER}/repos",
-                headers={"Authorization": "Bearer integ-github-token"},
-                json={"name": GITHUB_REPO}) as resp:
+            f"{url}/orgs/{GITHUB_OWNER}/repos",
+            headers={"Authorization": "Bearer integ-github-token"},
+            json={"name": GITHUB_REPO},
+        ) as resp:
             # 422 is "it is already there", which a re-run makes ordinary.
             if resp.status not in (201, 422):
                 resp.raise_for_status()
-    config = GitHubConfig(token=SecretStr("integ-github-token"),
-                          owner=GITHUB_OWNER,
-                          repo=GITHUB_REPO,
-                          ref=GITHUB_REF,
-                          base_url=url)
+    config = GitHubConfig(
+        token=SecretStr("integ-github-token"),
+        owner=GITHUB_OWNER,
+        repo=GITHUB_REPO,
+        ref=GITHUB_REF,
+        base_url=url,
+    )
     vfs = GitHubVFS(config)
     ws = Workspace({spec["mount"]: vfs}, mode=MountMode.WRITE)
     return ws, GitHubWriter(config, GITHUB_OWNER, GITHUB_REPO, GITHUB_REF)

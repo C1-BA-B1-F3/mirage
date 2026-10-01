@@ -14,10 +14,14 @@
 
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import (
-    flat_scopes, transfer_primitives)
+    flat_scopes,
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.tar.tar import parse_flags, tar
-from mirage.commands.builtin.generic_bind.archive_io import (relay_is_dir_of,
-                                                             relay_walk_of)
+from mirage.commands.builtin.generic_bind.archive_io import (
+    relay_is_dir_of,
+    relay_walk_of,
+)
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView
@@ -47,12 +51,14 @@ def _operands(scopes: list[PathSpec], taken: list[str]) -> list[PathSpec]:
     return rest
 
 
-async def run_tar(scopes: list[PathSpec],
-                  text_args: list[str],
-                  flag_kwargs: dict[str, FlagValue],
-                  dispatch: DispatchFn,
-                  ns: NamespaceView | None,
-                  stdin: ByteSource | None = None) -> CrossResult:
+async def run_tar(
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    ns: NamespaceView | None,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Run a tar whose archive, operands and -C destination span mounts.
 
     Pure wiring: the shared generic runs on dispatch-relayed doors, so
@@ -75,17 +81,20 @@ async def run_tar(scopes: list[PathSpec],
     prim = transfer_primitives(dispatch)
     archive = parsed.archive
     directories = list(parsed.directories)
-    operands = (_operands(scopes,
-                          [archive.virtual, *[d.virtual for d in directories]])
-                if parsed.create and archive else [])
+    operands = (
+        _operands(scopes, [archive.virtual, *[d.virtual for d in directories]])
+        if parsed.create and archive
+        else []
+    )
     return await tar(
         flat_scopes(operands),
         read_bytes=prim["read_bytes"],
         write_bytes=prim["write"],
         mkdir_fn=prim["mkdir"],
         stat=prim["stat"],
-        walk=relay_walk_of(dispatch,
-                           ns.child_mounts if ns is not None else None),
+        walk=relay_walk_of(
+            dispatch, ns.child_mounts if ns is not None else None
+        ),
         is_dir=relay_is_dir_of(dispatch),
         selectors=list(text_args),
         c=parsed.create,

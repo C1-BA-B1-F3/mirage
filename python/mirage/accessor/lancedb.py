@@ -34,6 +34,7 @@ class _Connection:
         db (Any): the open ``AsyncConnection``.
         tables (dict[str, Any]): the tables opened so far, by name.
     """
+
     db: Any
     tables: dict[str, Any] = field(default_factory=dict)
 
@@ -57,16 +58,17 @@ async def _open(config: LanceDBConfig) -> AsyncIterator[_Connection]:
 
 
 class LanceDBAccessor(Accessor):
-
     def __init__(self, config: LanceDBConfig) -> None:
         self.config = config
         self._connections = LoopClientCache("lancedb")
-        self.search_cache: dict[tuple[str, str, int], list[dict[str,
-                                                                Any]]] = {}
+        self.search_cache: dict[
+            tuple[str, str, int], list[dict[str, Any]]
+        ] = {}
 
     async def _connection(self) -> _Connection:
         conn: _Connection = await self._connections.get(
-            partial(_open, self.config))
+            partial(_open, self.config)
+        )
         return conn
 
     async def db(self) -> Any:

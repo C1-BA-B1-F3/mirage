@@ -23,8 +23,13 @@ import aiohttp
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.core.google.client import TokenManager
-from mirage.core.google.drive import (FOLDER_MIME, MIME_TO_EXT, get_file,
-                                      list_files, list_shared_drives)
+from mirage.core.google.drive import (
+    FOLDER_MIME,
+    MIME_TO_EXT,
+    get_file,
+    list_files,
+    list_shared_drives,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -37,7 +42,8 @@ T = TypeVar("T")
 
 
 def eacces_on_denied(
-        fn: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+    fn: Callable[P, Awaitable[T]],
+) -> Callable[P, Awaitable[T]]:
     """Map a Drive HTTP 403 during a mutation to EACCES.
 
     Drive access is per-item (shared-drive roles, folder-level grants),
@@ -54,7 +60,8 @@ def eacces_on_denied(
             if exc.status == 403:
                 spec = next((a for a in args if isinstance(a, PathSpec)), None)
                 raise PermissionError(
-                    spec.virtual if spec is not None else "") from exc
+                    spec.virtual if spec is not None else ""
+                ) from exc
             raise
 
     return wrapper
@@ -87,6 +94,7 @@ async def root_context(accessor: GDriveAccessor) -> tuple[str, str | None]:
 @dataclass(frozen=True, slots=True)
 class DriveNode:
     """A resolved Drive item: enough identity to mutate it."""
+
     id: str
     name: str
     mime_type: str
@@ -122,7 +130,7 @@ def query_candidates(segment: str) -> list[tuple[str, str | None]]:
     candidates: list[tuple[str, str | None]] = [(segment, None)]
     for ext, mime in SUFFIX_TO_MIME.items():
         if segment.endswith(ext) and len(segment) > len(ext):
-            candidates.append((segment[:-len(ext)], mime))
+            candidates.append((segment[: -len(ext)], mime))
     return candidates
 
 
@@ -139,7 +147,7 @@ def drive_target_name(basename: str, node: DriveNode) -> str:
     """
     ext = MIME_TO_EXT.get(node.mime_type)
     if ext and basename.endswith(ext) and len(basename) > len(ext):
-        return basename[:-len(ext)]
+        return basename[: -len(ext)]
     return basename
 
 
@@ -170,11 +178,13 @@ async def resolve_segment(
             shared drive name is also a valid directory.
     """
     for name, mime in query_candidates(segment):
-        matches = await list_files(token_manager,
-                                   folder_id=parent_id,
-                                   drive_id=drive_id,
-                                   name=name,
-                                   mime_type=mime)
+        matches = await list_files(
+            token_manager,
+            folder_id=parent_id,
+            drive_id=drive_id,
+            name=name,
+            mime_type=mime,
+        )
         if matches:
             return node_from_item(matches[0], drive_id)
     if at_root:
@@ -187,10 +197,12 @@ async def resolve_segment(
             shared = []
         for d in shared:
             if d.get("name") == segment:
-                return DriveNode(id=d["id"],
-                                 name=segment,
-                                 mime_type=FOLDER_MIME,
-                                 drive_id=d["id"])
+                return DriveNode(
+                    id=d["id"],
+                    name=segment,
+                    mime_type=FOLDER_MIME,
+                    drive_id=d["id"],
+                )
     return None
 
 
@@ -208,23 +220,26 @@ async def resolve_key(accessor: GDriveAccessor, key: str) -> DriveNode | None:
     for i, segment in enumerate(segments):
         # Shared drive names are only directories at the real Drive root,
         # never inside a folder-scoped mount.
-        node = await resolve_segment(token_manager,
-                                     parent_id,
-                                     segment,
-                                     drive_id,
-                                     at_root=i == 0 and parent_id == "root")
+        node = await resolve_segment(
+            token_manager,
+            parent_id,
+            segment,
+            drive_id,
+            at_root=i == 0 and parent_id == "root",
+        )
         if node is None:
             return None
         if i < len(segments) - 1:
             if not node.is_folder:
-                raise NotADirectoryError("/" + "/".join(segments[:i + 1]))
+                raise NotADirectoryError("/" + "/".join(segments[: i + 1]))
             parent_id = node.id
             drive_id = node.drive_id
     return node
 
 
-async def resolve_dir(accessor: GDriveAccessor, key: str,
-                      virtual: str) -> tuple[str, str | None]:
+async def resolve_dir(
+    accessor: GDriveAccessor, key: str, virtual: str
+) -> tuple[str, str | None]:
     """Resolve a mount-relative key that must be a directory.
 
     Args:
@@ -245,8 +260,9 @@ async def resolve_dir(accessor: GDriveAccessor, key: str,
     return node.id, node.drive_id
 
 
-async def resolve_parent(accessor: GDriveAccessor,
-                         path: PathSpec) -> tuple[str, str | None]:
+async def resolve_parent(
+    accessor: GDriveAccessor, path: PathSpec
+) -> tuple[str, str | None]:
     """Resolve the parent directory of a path for a create-style op.
 
     Args:

@@ -29,5 +29,6 @@ __all__ = [
 def __getattr__(name: str):
     if name == "RedisIndexCacheStore":
         from mirage.cache.index import RedisIndexCacheStore
+
         return RedisIndexCacheStore
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

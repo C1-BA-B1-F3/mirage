@@ -9,29 +9,26 @@ from mirage.vfs.mem0.config import Mem0Config
 
 
 class FakeClient:
-
     def __init__(self):
         self.get_all_calls = 0
 
     async def get_all(self, options=None):
         self.get_all_calls += 1
         return {
-            "count":
-            2,
-            "next":
-            None,
+            "count": 2,
+            "next": None,
             "results": [
                 {
                     "id": "aaa",
                     "memory": "first",
                     "created_at": "2026-06-15T00:34:18-07:00",
-                    "updated_at": "2026-06-15T00:34:22-07:00"
+                    "updated_at": "2026-06-15T00:34:22-07:00",
                 },
                 {
                     "id": "bbb",
                     "memory": "second",
                     "created_at": "2026-06-15T01:00:00-07:00",
-                    "updated_at": "2026-06-15T01:00:05-07:00"
+                    "updated_at": "2026-06-15T01:00:05-07:00",
                 },
             ],
         }
@@ -71,5 +68,7 @@ async def test_readdir_primes_remote_time():
     await readdir(acc, p, index)
     lookup = await index.get("/mem/aaa.json")
     assert lookup.entry.remote_time == "2026-06-15T00:34:22-07:00"
-    assert lookup.entry.extra["memory"]["created_at"] == \
-        "2026-06-15T00:34:18-07:00"
+    assert (
+        lookup.entry.extra["memory"]["created_at"]
+        == "2026-06-15T00:34:18-07:00"
+    )

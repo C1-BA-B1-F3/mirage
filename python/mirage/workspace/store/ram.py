@@ -35,9 +35,9 @@ class RAMWorkspaceStateStore(WorkspaceStateStore):
         observer: WorkspaceStateStore | None = None,
         workspace: WorkspaceStateStore | None = None,
     ) -> None:
-        super().__init__(namespace=namespace,
-                         observer=observer,
-                         workspace=workspace)
+        super().__init__(
+            namespace=namespace, observer=observer, workspace=workspace
+        )
         self._namespaces: dict[str, RAMNamespaceStore] = {}
         self._observers: dict[str, RAMObserverStore] = {}
         self._sessions: dict[str, RAMSessionStore] = {}
@@ -62,12 +62,17 @@ class RAMWorkspaceStateStore(WorkspaceStateStore):
         fields = self._meta.get(workspace_id)
         return dict(fields) if fields is not None else None
 
-    async def _set_meta(self, workspace_id: str,
-                        fields: WorkspaceFields) -> None:
+    async def _set_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> None:
         self._meta[workspace_id] = dict(fields)
 
-    async def _cas_set_meta(self, workspace_id: str, fields: WorkspaceFields,
-                            expected_generation: int) -> bool:
+    async def _cas_set_meta(
+        self,
+        workspace_id: str,
+        fields: WorkspaceFields,
+        expected_generation: int,
+    ) -> bool:
         stored = self._meta.get(workspace_id)
         if generation_of(stored) != expected_generation:
             return False

@@ -25,10 +25,8 @@ from mirage.workspace.types import ExecutionNode
 
 
 def script_error(
-        prefix: str,
-        message: str,
-        code: int,
-        command: str | None = None) -> tuple[None, IOResult, ExecutionNode]:
+    prefix: str, message: str, code: int, command: str | None = None
+) -> tuple[None, IOResult, ExecutionNode]:
     """A diagnostic from a shell that never got as far as running.
 
     ``prefix`` and ``command`` come apart because bash reports itself by
@@ -43,14 +41,16 @@ def script_error(
             that is not the prefix.
     """
     err = f"{prefix}: {message}\n".encode()
-    return None, IOResult(exit_code=code,
-                          stderr=err), ExecutionNode(command=command or prefix,
-                                                     exit_code=code,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=code, stderr=err),
+        ExecutionNode(command=command or prefix, exit_code=code, stderr=err),
+    )
 
 
-async def read_script_bytes(dispatch: DispatchFn, path: str,
-                            cwd: str) -> bytes:
+async def read_script_bytes(
+    dispatch: DispatchFn, path: str, cwd: str
+) -> bytes:
     """Read a script file through the op dispatcher.
 
     Every way of running a script off a mount comes through here, so a
@@ -92,8 +92,9 @@ async def read_script_text(dispatch: DispatchFn, path: str, cwd: str) -> str:
         path (str): the script operand, as typed.
         cwd (str): working directory a relative operand resolves against.
     """
-    return (await read_script_bytes(dispatch, path,
-                                    cwd)).decode(errors="replace")
+    return (await read_script_bytes(dispatch, path, cwd)).decode(
+        errors="replace"
+    )
 
 
 async def read_script_file(
@@ -126,9 +127,8 @@ async def read_script_file(
     except FS_ERRORS as exc:
         strerror = fs_strerror(exc)
         if isinstance(exc, IsADirectoryError):
-            return None, script_error(path,
-                                      f"{path}: {strerror}",
-                                      126,
-                                      command=name)
+            return None, script_error(
+                path, f"{path}: {strerror}", 126, command=name
+            )
         code = 127 if isinstance(exc, FileNotFoundError) else 126
         return None, script_error(name, f"{path}: {strerror}", code)

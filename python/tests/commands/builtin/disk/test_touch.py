@@ -28,8 +28,9 @@ async def test_touch_into_missing_parent_reports_cannot_touch(workspace):
     # backends answer ENOENT, so both have to reach the same GNU line.
     io = await workspace.shell("touch /missing/f.txt")
     assert io.exit_code == 1
-    assert io.stderr == (b"touch: cannot touch '/missing/f.txt': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"touch: cannot touch '/missing/f.txt': No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -43,8 +44,9 @@ async def test_touch_under_a_plain_file_reports_not_a_directory(workspace):
     await workspace.vfs.write("/plain", b"x")
     io = await workspace.shell("touch /plain/f.txt")
     assert io.exit_code == 1
-    assert io.stderr == (b"touch: cannot touch '/plain/f.txt': "
-                         b"Not a directory\n")
+    assert io.stderr == (
+        b"touch: cannot touch '/plain/f.txt': Not a directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -64,7 +66,8 @@ async def test_touch_keeps_going_after_a_failed_operand(workspace):
 
 @pytest.mark.asyncio
 async def test_redirect_into_missing_parent_does_not_create_it(
-        workspace, tmp_path):
+    workspace, tmp_path
+):
     io = await workspace.shell("echo hi > /missing/f.txt")
     assert io.exit_code == 1
     assert io.stderr == b"/missing/f.txt: No such file or directory\n"
@@ -73,7 +76,8 @@ async def test_redirect_into_missing_parent_does_not_create_it(
 
 @pytest.mark.asyncio
 async def test_append_into_missing_parent_does_not_create_it(
-        workspace, tmp_path):
+    workspace, tmp_path
+):
     io = await workspace.shell("echo hi >> /missing/f.txt")
     assert io.exit_code == 1
     assert io.stderr == b"/missing/f.txt: No such file or directory\n"

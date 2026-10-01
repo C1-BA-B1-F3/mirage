@@ -48,8 +48,11 @@ async def rm_link_refusal(
     if links.stat_at(p.virtual) is None:
         return None
     target = await links.target_stat(p.virtual)
-    if (target is not None and target.type == FileType.DIRECTORY
-            and not recursive):
+    if (
+        target is not None
+        and target.type == FileType.DIRECTORY
+        and not recursive
+    ):
         return f"rm: cannot remove '{p.raw_path}': Is a directory"
     if force:
         return None
@@ -63,8 +66,11 @@ def is_slashed_link(p: PathSpec, links: LinkView | None) -> bool:
         p (PathSpec): the operand, as typed.
         links (LinkView | None): the namespace's symlink facts.
     """
-    return (links is not None and p.raw_path.endswith("/")
-            and links.stat_at(p.virtual) is not None)
+    return (
+        links is not None
+        and p.raw_path.endswith("/")
+        and links.stat_at(p.virtual) is not None
+    )
 
 
 async def mkdir_link_refusal(
@@ -100,8 +106,9 @@ async def mkdir_link_refusal(
         try:
             links.resolve(p.virtual)
         except CycleError:
-            return True, (f"mkdir: cannot stat '{p.raw_path}': "
-                          f"{ELOOP_STRERROR}")
+            return True, (
+                f"mkdir: cannot stat '{p.raw_path}': {ELOOP_STRERROR}"
+            )
     target = await links.target_stat(p.virtual)
     if parents and target is not None and target.type == FileType.DIRECTORY:
         return True, None

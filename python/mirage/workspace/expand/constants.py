@@ -30,64 +30,70 @@ NUM_SEQ = re.compile(r"^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$")
 CHAR_SEQ = re.compile(r"^([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?$")
 
 # Node types that may carry a brace-expandable word.
-BRACE_WORD_TYPES = frozenset({
-    NT.CONCATENATION,
-    NT.BRACE_EXPRESSION,
-})
+BRACE_WORD_TYPES = frozenset(
+    {
+        NT.CONCATENATION,
+        NT.BRACE_EXPRESSION,
+    }
+)
 
 # Children of a brace word whose raw text joins the template as
 # literal, brace-eligible text; everything else expands first and
 # joins as an inert atom.
-BRACE_LITERAL_TYPES = frozenset({
-    NT.WORD,
-    NT.NUMBER,
-    NT.BRACE_EXPRESSION,
-})
+BRACE_LITERAL_TYPES = frozenset(
+    {
+        NT.WORD,
+        NT.NUMBER,
+        NT.BRACE_EXPRESSION,
+    }
+)
 
 # Arithmetic operator tokens from tree-sitter that pass through as-is
 # when the expression text is reconstructed for the shared evaluator
 # (mirage.shell.arith).
-ARITH_OPERATORS = frozenset({
-    "+",
-    "-",
-    "*",
-    "/",
-    "%",
-    "**",
-    "==",
-    "!=",
-    "<",
-    ">",
-    "<=",
-    ">=",
-    "<<",
-    ">>",
-    "&",
-    "|",
-    "^",
-    "~",
-    "&&",
-    "||",
-    "!",
-    "?",
-    ":",
-    "(",
-    ")",
-    ",",
-    "=",
-    "+=",
-    "-=",
-    "*=",
-    "/=",
-    "%=",
-    "<<=",
-    ">>=",
-    "&=",
-    "^=",
-    "|=",
-    "++",
-    "--",
-})
+ARITH_OPERATORS = frozenset(
+    {
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "**",
+        "==",
+        "!=",
+        "<",
+        ">",
+        "<=",
+        ">=",
+        "<<",
+        ">>",
+        "&",
+        "|",
+        "^",
+        "~",
+        "&&",
+        "||",
+        "!",
+        "?",
+        ":",
+        "(",
+        ")",
+        ",",
+        "=",
+        "+=",
+        "-=",
+        "*=",
+        "/=",
+        "%=",
+        "<<=",
+        ">>=",
+        "&=",
+        "^=",
+        "|=",
+        "++",
+        "--",
+    }
+)
 
 # Arithmetic delimiter tokens that mark the start/end of $((...)), $[...], and
 # the (( ... )) arithmetic command.

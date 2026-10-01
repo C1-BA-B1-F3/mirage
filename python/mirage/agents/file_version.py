@@ -19,10 +19,11 @@ from mirage.workspace.workspace import Workspace
 
 
 class StaleMirageFileError(Exception):
-
     def __init__(self, path: str) -> None:
-        super().__init__(f"File changed since it was last read: {path}. "
-                         f"Read the file again before modifying it.")
+        super().__init__(
+            f"File changed since it was last read: {path}. "
+            f"Read the file again before modifying it."
+        )
         self.path = path
 
 

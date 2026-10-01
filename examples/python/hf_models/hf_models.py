@@ -42,12 +42,16 @@ async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /m/ ===")
 
     print("\n=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /m/__nf_missing__.txt", "head /m/__nf_missing__.txt",
-                "stat /m/__nf_missing__.txt"):
+    for cmd in (
+        "cat /m/__nf_missing__.txt",
+        "head /m/__nf_missing__.txt",
+        "stat /m/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ── discover structure ──────────────────────────────
     print("\n=== ls /m/ ===")
@@ -71,14 +75,19 @@ async def main():
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print("=== metadata overlay on /m/config.json ===")
-    meta_res = await ws.shell('chmod 640 "/m/config.json"'
-                              ' && chown 500:dev "/m/config.json"'
-                              ' && touch -t 202601021530 "/m/config.json"')
+    meta_res = await ws.shell(
+        'chmod 640 "/m/config.json"'
+        ' && chown 500:dev "/m/config.json"'
+        ' && touch -t 202601021530 "/m/config.json"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path("/m/config.json"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path("/m/config.json")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("=== stat /m/model.safetensors (no download) ===")
     r = await ws.shell("stat /m/model.safetensors")
@@ -106,18 +115,24 @@ async def main():
     r = await ws.shell("jq .architectures /m/config.json")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print("=== jq '{hidden_size, num_hidden_layers, num_attention_heads,"
-          " vocab_size}' /m/config.json ===")
-    r = await ws.shell("jq '{hidden_size, num_hidden_layers,"
-                       " num_attention_heads, vocab_size}'"
-                       " /m/config.json")
+    print(
+        "=== jq '{hidden_size, num_hidden_layers, num_attention_heads,"
+        " vocab_size}' /m/config.json ==="
+    )
+    r = await ws.shell(
+        "jq '{hidden_size, num_hidden_layers,"
+        " num_attention_heads, vocab_size}'"
+        " /m/config.json"
+    )
     print(await r.stdout_str())
 
     # ── tokenizer config ────────────────────────────────
     print("=== cat /m/tokenizer_config.json | jq .pad_token_id ===")
-    r = await ws.shell("cat /m/tokenizer_config.json"
-                       " | jq .pad_token_id 2>/dev/null"
-                       " || echo '(no pad_token_id)'")
+    r = await ws.shell(
+        "cat /m/tokenizer_config.json"
+        " | jq .pad_token_id 2>/dev/null"
+        " || echo '(no pad_token_id)'"
+    )
     print(f"  {(await r.stdout_str()).strip()}")
 
     # ── README inspection ───────────────────────────────
@@ -134,8 +149,9 @@ async def main():
     r = await ws.shell("sed -n '1,3p' /m/config.json")
     print(await r.stdout_str())
 
-    print("=== cat /m/config.json | sed 's/\"//g' | head -n 3"
-          " (strip quotes) ===")
+    print(
+        "=== cat /m/config.json | sed 's/\"//g' | head -n 3 (strip quotes) ==="
+    )
     r = await ws.shell("cat /m/config.json | sed 's/\"//g' | head -n 3")
     print(await r.stdout_str())
 
@@ -163,8 +179,10 @@ async def main():
 
     # ── barriers ────────────────────────────────────────
     print("\n=== test for safetensors via grep -q ===")
-    r = await ws.shell("ls /m/ | grep -q safetensors"
-                       " && echo 'has weights' || echo 'no weights'")
+    r = await ws.shell(
+        "ls /m/ | grep -q safetensors"
+        " && echo 'has weights' || echo 'no weights'"
+    )
     print(f"  {(await r.stdout_str()).strip()}")
 
     # ── quoting + command substitution ──────────────────
@@ -178,10 +196,12 @@ async def main():
 
     # ── background jobs ─────────────────────────────────
     print("\n=== background: jq fields in parallel ===")
-    r = await ws.shell("jq .hidden_size /m/config.json &"
-                       " jq .num_hidden_layers /m/config.json &"
-                       " jq .vocab_size /m/config.json &"
-                       " wait; echo done")
+    r = await ws.shell(
+        "jq .hidden_size /m/config.json &"
+        " jq .num_hidden_layers /m/config.json &"
+        " jq .vocab_size /m/config.json &"
+        " wait; echo done"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     # ── byte-range read of the safetensors header ───────
@@ -194,25 +214,34 @@ async def main():
         dt = time.monotonic() - t0
         net = sum(rec.bytes for rec in ws.vfs.records) - before_bytes
         out = (await r.stdout_str()).rstrip().splitlines()
-        first = (out[0][:40] + "..." if out else "")
-        print(f"  {label:42s} bytes={net:>9,}  t={dt:4.2f}s  "
-              f"lines={len(out):>3}  out0={first!r}")
+        first = out[0][:40] + "..." if out else ""
+        print(
+            f"  {label:42s} bytes={net:>9,}  t={dt:4.2f}s  "
+            f"lines={len(out):>3}  out0={first!r}"
+        )
 
     await ws.cache.clear()
-    await measure("head -c 128 model.safetensors (range)",
-                  "head -c 128 /m/model.safetensors | xxd | head -n 4")
+    await measure(
+        "head -c 128 model.safetensors (range)",
+        "head -c 128 /m/model.safetensors | xxd | head -n 4",
+    )
     await ws.cache.clear()
-    await measure("stat -c '%s' model.safetensors",
-                  "stat -c '%s' /m/model.safetensors")
+    await measure(
+        "stat -c '%s' model.safetensors", "stat -c '%s' /m/model.safetensors"
+    )
     await ws.cache.clear()
-    await measure("cat config.json | jq .vocab_size",
-                  "cat /m/config.json | jq .vocab_size")
+    await measure(
+        "cat config.json | jq .vocab_size",
+        "cat /m/config.json | jq .vocab_size",
+    )
     await ws.cache.clear()
     await measure("wc -c config.json", "wc -c /m/config.json")
 
     print(f"\nFinal: {ops_summary()}")
-    print("(2GB safetensors never fully downloaded; only header range "
-          "+ configs read)")
+    print(
+        "(2GB safetensors never fully downloaded; only header range "
+        "+ configs read)"
+    )
 
 
 if __name__ == "__main__":

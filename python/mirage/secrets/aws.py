@@ -73,7 +73,8 @@ def fields_from_secret_string(text: str) -> dict[str, str]:
     except ValueError:
         return {"value": text}
     if isinstance(decoded, dict) and all(
-            isinstance(value, str) for value in decoded.values()):
+        isinstance(value, str) for value in decoded.values()
+    ):
         return decoded
     return {"value": text}
 
@@ -94,12 +95,15 @@ async def fetch_aws_sm(config: AWSSMConfig, ref: str) -> ResolvedSecret:
     """
     if not ref:
         raise SecretsError(
-            "the 'aws-sm' source needs a ref: the SecretId (name or ARN)")
+            "the 'aws-sm' source needs a ref: the SecretId (name or ARN)"
+        )
     session = aws_session(config)
     async with session.client(**_client_kwargs(config)) as client:
         response = await client.get_secret_value(SecretId=ref)
     text = response.get("SecretString")
     if text is None:
-        raise SecretsError(f"secret {ref!r} is binary (SecretBinary); "
-                           "v1 reads SecretString only")
+        raise SecretsError(
+            f"secret {ref!r} is binary (SecretBinary); "
+            "v1 reads SecretString only"
+        )
     return ResolvedSecret(fields=fields_from_secret_string(text))

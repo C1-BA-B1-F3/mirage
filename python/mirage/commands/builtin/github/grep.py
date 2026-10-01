@@ -32,9 +32,12 @@ from mirage.types import PathSpec
 
 
 @command("grep", vfs="github", spec=SPECS["grep"], aggregate=prefix_aggregate)
-async def grep(accessor: GitHubAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def grep(
+    accessor: GitHubAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern = pattern_arg(texts, fl)
     recursive = fl.as_bool("r") or fl.as_bool("R")

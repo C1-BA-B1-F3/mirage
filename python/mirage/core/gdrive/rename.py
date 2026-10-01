@@ -16,16 +16,21 @@ import posixpath
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.gdrive.resolve import (drive_target_name, eacces_on_denied,
-                                        resolve_key, resolve_parent)
+from mirage.core.gdrive.resolve import (
+    drive_target_name,
+    eacces_on_denied,
+    resolve_key,
+    resolve_parent,
+)
 from mirage.core.google.drive import delete_file, list_files, patch_file
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotempty
 
 
 @eacces_on_denied
-async def rename(accessor: GDriveAccessor, src: PathSpec,
-                 dst: PathSpec) -> None:
+async def rename(
+    accessor: GDriveAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     token_manager = accessor.token_manager
     src_node = await resolve_key(accessor, src.vfs_path)
     if src_node is None:
@@ -36,10 +41,12 @@ async def rename(accessor: GDriveAccessor, src: PathSpec,
         # empty folder) before the move. A non-empty folder conflict is mv's
         # "Directory not empty", mirroring the msgraph rename_replace.
         if dst_node.is_folder:
-            children = await list_files(token_manager,
-                                        folder_id=dst_node.id,
-                                        drive_id=dst_node.drive_id,
-                                        limit=1)
+            children = await list_files(
+                token_manager,
+                folder_id=dst_node.id,
+                drive_id=dst_node.drive_id,
+                limit=1,
+            )
             if children:
                 raise enotempty(dst)
         await delete_file(token_manager, dst_node.id)
@@ -48,9 +55,12 @@ async def rename(accessor: GDriveAccessor, src: PathSpec,
     name = drive_target_name(posixpath.basename(dst.vfs_path), src_node)
     add_parents = dst_parent_id if dst_parent_id != src_parent_id else None
     remove_parents = src_parent_id if add_parents else None
-    await patch_file(token_manager,
-                     src_node.id, {"name": name},
-                     add_parents=add_parents,
-                     remove_parents=remove_parents)
+    await patch_file(
+        token_manager,
+        src_node.id,
+        {"name": name},
+        add_parents=add_parents,
+        remove_parents=remove_parents,
+    )
     await invalidate_subtree(dst)
     await invalidate_subtree(src)

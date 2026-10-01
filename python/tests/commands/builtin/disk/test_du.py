@@ -90,7 +90,8 @@ async def test_du_without_operand_measures_the_working_directory(workspace):
     io = await workspace.shell("du")
     assert io.exit_code == 0
     assert any(
-        line.endswith("\t.") for line in io.stdout.decode().splitlines())
+        line.endswith("\t.") for line in io.stdout.decode().splitlines()
+    )
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,8 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 
 MAILMAP_LINE = re.compile(
-    r"^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]*)>)?")
+    r"^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]*)>)?"
+)
 IDENTITY = re.compile(r"(.*?)\s*<([^<>]*)>")
 
 
@@ -43,9 +44,13 @@ def parse_mailmap(text: str) -> tuple[MailmapEntry, ...]:
             continue
         name, email, old_name, old_email = match.groups()
         entries.append(
-            MailmapEntry((email if old_email is None else old_email).lower(),
-                         old_name.lower() if old_name else None, name or None,
-                         None if old_email is None else email))
+            MailmapEntry(
+                (email if old_email is None else old_email).lower(),
+                old_name.lower() if old_name else None,
+                name or None,
+                None if old_email is None else email,
+            )
+        )
     return tuple(entries)
 
 
@@ -80,8 +85,9 @@ def mapped_identity(identity: str, entries: tuple[MailmapEntry, ...]) -> str:
     return f"{simple_name or name} <{simple_email or email}>"
 
 
-async def load_mailmap(dispatch: DispatchFn,
-                       location: RepoLocation) -> tuple[MailmapEntry, ...]:
+async def load_mailmap(
+    dispatch: DispatchFn, location: RepoLocation
+) -> tuple[MailmapEntry, ...]:
     """Read the worktree mailmap through the workspace data plane.
 
     Args:
@@ -99,7 +105,8 @@ def use_mailmap(fl: FlagView, enabled: bool) -> bool:
         fl (FlagView): spec-bound options.
         enabled (bool): configured default.
     """
-    for key, _ in fl.occurrences("mailmap", "use_mailmap", "no_mailmap",
-                                 "no_use_mailmap"):
+    for key, _ in fl.occurrences(
+        "mailmap", "use_mailmap", "no_mailmap", "no_use_mailmap"
+    ):
         enabled = not key.startswith("no_")
     return enabled

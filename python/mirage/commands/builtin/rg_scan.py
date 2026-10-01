@@ -58,8 +58,9 @@ def walk_error_line(shown: str, exc: BaseException) -> str:
         shown (str): the path as ripgrep names it.
         exc (BaseException): the failure.
     """
-    return (f"rg: {shown}: IO error for operation on {shown}: "
-            f"{os_error_text(exc)}")
+    return (
+        f"rg: {shown}: IO error for operation on {shown}: {os_error_text(exc)}"
+    )
 
 
 def loop_error_line(shown: str, ancestor: str) -> str:
@@ -73,8 +74,9 @@ def loop_error_line(shown: str, ancestor: str) -> str:
         shown (str): the link as the walker names it.
         ancestor (str): the directory it leads back to, named the same way.
     """
-    return (f"rg: File system loop found: {shown} points to an ancestor "
-            f"{ancestor}")
+    return (
+        f"rg: File system loop found: {shown} points to an ancestor {ancestor}"
+    )
 
 
 def open_error_line(shown: str, exc: BaseException) -> str:
@@ -134,11 +136,15 @@ class WalkFilter:
         typed = self.types.verdict(name, is_dir)
         if typed is Verdict.IGNORE:
             return False
-        return (typed is Verdict.WHITELIST or self.hidden
-                or not name.startswith("."))
+        return (
+            typed is Verdict.WHITELIST
+            or self.hidden
+            or not name.startswith(".")
+        )
 
-    def admits_file(self, candidate: str, name: str,
-                    stat: FileStat | None) -> bool:
+    def admits_file(
+        self, candidate: str, name: str, stat: FileStat | None
+    ) -> bool:
         """Whether a walked file is searched.
 
         Args:
@@ -149,8 +155,11 @@ class WalkFilter:
         if not self.admits(candidate, name, False):
             return False
         size = stat.size if stat is not None else None
-        if (self.max_filesize is not None and size is not None
-                and size > self.max_filesize):
+        if (
+            self.max_filesize is not None
+            and size is not None
+            and size > self.max_filesize
+        ):
             return False
         return self.binary or get_extension(name) not in BINARY_EXTENSIONS
 
@@ -202,17 +211,19 @@ def on_other_mount(root_of: MountRoot, home: str, path: str) -> bool:
     return root_of(path) != home
 
 
-async def walk_haystacks(readdir_fn: AsyncReaddir,
-                         stat_fn: AsyncStat,
-                         root: str,
-                         shown_root: str,
-                         cwd: str,
-                         walk: WalkFilter,
-                         sort_by_name: bool,
-                         warnings: list[str] | None,
-                         boundary: MountIsRoot | None = None,
-                         door: LinkDoor | None = None,
-                         follow: bool = False) -> AsyncIterator[Haystack]:
+async def walk_haystacks(
+    readdir_fn: AsyncReaddir,
+    stat_fn: AsyncStat,
+    root: str,
+    shown_root: str,
+    cwd: str,
+    walk: WalkFilter,
+    sort_by_name: bool,
+    warnings: list[str] | None,
+    boundary: MountIsRoot | None = None,
+    door: LinkDoor | None = None,
+    follow: bool = False,
+) -> AsyncIterator[Haystack]:
     """The files a walk of one directory operand searches, in walk order.
 
     A link the walk meets is skipped, as ripgrep skips one, unless
@@ -241,11 +252,22 @@ async def walk_haystacks(readdir_fn: AsyncReaddir,
             them, None outside a workspace, where no link can stand.
         follow (bool): -L, walk through a link rather than skip it.
     """
-    walker = _Walker(readdir_fn, stat_fn, cwd, walk, sort_by_name, warnings,
-                     boundary, door, follow, shown_root == "")
+    walker = _Walker(
+        readdir_fn,
+        stat_fn,
+        cwd,
+        walk,
+        sort_by_name,
+        warnings,
+        boundary,
+        door,
+        follow,
+        shown_root == "",
+    )
     top = walker.named(shown_root)
-    async for found in walker.below(root, root, shown_root, 0, ((root, top), ),
-                                    False):
+    async for found in walker.below(
+        root, root, shown_root, 0, ((root, top),), False
+    ):
         yield found
 
 
@@ -306,12 +328,20 @@ class _Walker:
         Args:
             virtual (str): the entry's virtual path.
         """
-        return (self.door is not None
-                and self.door.links.stat_at(virtual) is not None)
+        return (
+            self.door is not None
+            and self.door.links.stat_at(virtual) is not None
+        )
 
-    async def below(self, here: str, base: str, shown_base: str, depth: int,
-                    chain: tuple[tuple[str, str], ...],
-                    linked: bool) -> AsyncIterator[Haystack]:
+    async def below(
+        self,
+        here: str,
+        base: str,
+        shown_base: str,
+        depth: int,
+        chain: tuple[tuple[str, str], ...],
+        linked: bool,
+    ) -> AsyncIterator[Haystack]:
         """The files under one directory the walk lists.
 
         Args:
@@ -344,8 +374,11 @@ class _Walker:
             listed = {_entry_name(entry) for entry in entries}
             entries = [
                 *entries,
-                *(link
-                  for link in self.door.children(here) if link not in listed)
+                *(
+                    link
+                    for link in self.door.children(here)
+                    if link not in listed
+                ),
             ]
         if self.sort_by_name:
             entries = sorted(entries, key=_entry_name)
@@ -355,8 +388,9 @@ class _Walker:
             shown = respell_one(child, base, shown_base)
             if self.is_link(child):
                 if self.follow:
-                    async for found in self.through(child, shown, depth,
-                                                    chain):
+                    async for found in self.through(
+                        child, shown, depth, chain
+                    ):
                         yield found
                 continue
             try:
@@ -374,16 +408,26 @@ class _Walker:
                     continue
                 if self.walk.admits(candidate, name, True):
                     async for found in self.below(
-                            child, base, shown_base, depth + 1,
-                        ((child, self.named(shown)), *chain), linked):
+                        child,
+                        base,
+                        shown_base,
+                        depth + 1,
+                        ((child, self.named(shown)), *chain),
+                        linked,
+                    ):
                         yield found
             elif s.type is FileType.FILE and self.walk.admits_file(
-                    candidate, name, s):
+                candidate, name, s
+            ):
                 yield Haystack(child, shown, s, door=door)
 
     async def through(
-            self, link: str, shown: str, depth: int,
-            chain: tuple[tuple[str, str], ...]) -> AsyncIterator[Haystack]:
+        self,
+        link: str,
+        shown: str,
+        depth: int,
+        chain: tuple[tuple[str, str], ...],
+    ) -> AsyncIterator[Haystack]:
         """What -L walks in place of one link.
 
         The ignore crate's order: the link is followed first, so one that
@@ -418,16 +462,27 @@ class _Walker:
             if self.boundary is not None and self.boundary(target):
                 return
             if self.walk.admits(candidate, name, True):
-                async for found in self.below(target, target, shown, depth + 1,
-                                              ((target, named), *chain), True):
+                async for found in self.below(
+                    target,
+                    target,
+                    shown,
+                    depth + 1,
+                    ((target, named), *chain),
+                    True,
+                ):
                     yield found
         elif s.type is FileType.FILE and self.walk.admits_file(
-                candidate, name, s):
+            candidate, name, s
+        ):
             yield Haystack(target, shown, s, door=door)
 
 
-def walk_candidates(candidates: list[PathSpec], scopes: list[PathSpec],
-                    walk: WalkFilter, cwd: str) -> list[PathSpec]:
+def walk_candidates(
+    candidates: list[PathSpec],
+    scopes: list[PathSpec],
+    walk: WalkFilter,
+    cwd: str,
+) -> list[PathSpec]:
     """The candidates a walk of ``scopes`` would have searched.
 
     A search push-down narrows a directory search to candidate files and
@@ -450,24 +505,26 @@ def walk_candidates(candidates: list[PathSpec], scopes: list[PathSpec],
         best = -1
         for scope in scopes:
             root = scope.virtual.rstrip("/")
-            if len(root) > best and (p.virtual == root
-                                     or p.virtual.startswith(root + "/")):
+            if len(root) > best and (
+                p.virtual == root or p.virtual.startswith(root + "/")
+            ):
                 base, raw, best = root, scope.raw_path, len(root)
         if best < 0 or p.virtual == base:
             kept.append(p)
             continue
-        segments = p.virtual[len(base) + 1:].split("/")
+        segments = p.virtual[len(base) + 1 :].split("/")
         if walk.max_depth is not None and len(segments) > walk.max_depth:
             continue
         admitted = True
         for i, segment in enumerate(segments[:-1]):
-            below = base + "/" + "/".join(segments[:i + 1])
+            below = base + "/" + "/".join(segments[: i + 1])
             shown = respell_one(below, base, raw)
             if not walk.admits(walk_candidate(shown, cwd), segment, True):
                 admitted = False
                 break
         shown = respell_one(p.virtual, base, raw)
-        if admitted and walk.admits_file(walk_candidate(shown, cwd),
-                                         segments[-1], None):
+        if admitted and walk.admits_file(
+            walk_candidate(shown, cwd), segments[-1], None
+        ):
             kept.append(p)
     return kept

@@ -26,7 +26,10 @@ _search = partial(run_search, IO, "rg")
 
 
 @command("rg", vfs="langfuse", spec=SPECS["rg"])
-async def rg(accessor: LangfuseAccessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: LangfuseAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     return await _search(accessor, paths, texts, opts)

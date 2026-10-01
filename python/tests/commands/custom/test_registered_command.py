@@ -65,10 +65,12 @@ def test_command_decorator_stacking():
 
 def test_command_decorator_with_filetype():
 
-    @command("cat",
-             vfs="s3",
-             filetype=".avro",
-             spec=CommandSpec(rest=Operand(type="path")))
+    @command(
+        "cat",
+        vfs="s3",
+        filetype=".avro",
+        spec=CommandSpec(rest=Operand(type="path")),
+    )
     async def cat_avro(backend, paths, *texts, stdin=None, **flags):
         return b"ok", IOResult()
 

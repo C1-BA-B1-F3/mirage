@@ -45,9 +45,11 @@ def refusals() -> None:
 
     _banner("read: pinned names the layer it needs")
     try:
-        Workspace({"/data": RAMVFS()},
-                  mode=MountMode.WRITE,
-                  read=ReadSpec(policy=ReadPolicy.PINNED))
+        Workspace(
+            {"/data": RAMVFS()},
+            mode=MountMode.WRITE,
+            read=ReadSpec(policy=ReadPolicy.PINNED),
+        )
     except ValueError as exc:
         print(exc)
 

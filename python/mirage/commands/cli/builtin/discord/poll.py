@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def poll(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     answers = fl.as_list("answer")
@@ -35,6 +35,7 @@ async def poll(
         duration_hours=fl.as_int("duration") or 24,
         multiselect=fl.as_bool("multiselect"),
     )
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

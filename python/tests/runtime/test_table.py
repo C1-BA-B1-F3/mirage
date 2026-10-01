@@ -18,12 +18,20 @@ from mirage.runtime.base import Runtime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.python import LocalRuntime
 from mirage.runtime.python.base import PythonRuntime
-from mirage.runtime.table import (BUILTIN_RUNTIMES, DEFAULT_ENTRIES,
-                                  DEFAULT_PYTHON, NAMED, RUNTIMES,
-                                  WorkspaceRuntime, bind_commands,
-                                  build_runtime, known_runtimes,
-                                  register_runtime, runtime_bindings_for,
-                                  whole_line_runtime)
+from mirage.runtime.table import (
+    BUILTIN_RUNTIMES,
+    DEFAULT_ENTRIES,
+    DEFAULT_PYTHON,
+    NAMED,
+    RUNTIMES,
+    WorkspaceRuntime,
+    bind_commands,
+    build_runtime,
+    known_runtimes,
+    register_runtime,
+    runtime_bindings_for,
+    whole_line_runtime,
+)
 from mirage.runtime.types import RunArgs, RunResult
 
 
@@ -111,10 +119,11 @@ def test_runtime_bindings_for_unknown_name_lists_entries():
 
 class _LineRuntime(Runtime, LineExecutorMixin):
     name = "boxy"
-    captures = ("nvidia-smi", )
+    captures = ("nvidia-smi",)
 
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         return RunResult(stdout=b"", stderr=None, exit_code=0)
 
 
@@ -160,9 +169,9 @@ def test_register_runtime_makes_a_host_class_buildable_by_name():
     try:
         register_runtime("fake", FakeRuntime)
         assert "fake" in known_runtimes()
-        built = build_runtime("fake", captures=("python3", ))
+        built = build_runtime("fake", captures=("python3",))
         assert isinstance(built, FakeRuntime)
-        assert built.captures == ("python3", )
+        assert built.captures == ("python3",)
     finally:
         NAMED.pop("fake", None)
 

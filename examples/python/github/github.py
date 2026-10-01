@@ -43,13 +43,16 @@ async def main() -> None:
     ws = Workspace({"/github": vfs}, mode=MountMode.READ)
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /github/__nf_missing__.txt",
-                "head /github/__nf_missing__.txt",
-                "stat /github/__nf_missing__.txt"):
+    for cmd in (
+        "cat /github/__nf_missing__.txt",
+        "head /github/__nf_missing__.txt",
+        "stat /github/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     r = await ws.shell("ls /github")
     print(await r.stdout_str())
@@ -85,12 +88,16 @@ async def main() -> None:
     meta_res = await ws.shell(
         'chmod 640 "/github/python/mirage/types.py"'
         ' && chown 500:dev "/github/python/mirage/types.py"'
-        ' && touch -t 202601021530 "/github/python/mirage/types.py"')
+        ' && touch -t 202601021530 "/github/python/mirage/types.py"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/github/python/mirage/types.py"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/github/python/mirage/types.py")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     r = await ws.shell("du /github/python/mirage/core")
     print(await r.stdout_str())
@@ -130,13 +137,19 @@ async def main() -> None:
     # ── native search dispatch (GitHub code search narrows files) ──
     s3_dir = "/github/python/mirage/core/s3/"
     for label, cmd in [
-        (f"grep -r mirage {s3_dir} (narrows via search.code)",
-         f"grep -r mirage {s3_dir}"),
-        (f"grep -r FileType {s3_dir} (recursive scope)",
-         f"grep -r FileType {s3_dir}"),
+        (
+            f"grep -r mirage {s3_dir} (narrows via search.code)",
+            f"grep -r mirage {s3_dir}",
+        ),
+        (
+            f"grep -r FileType {s3_dir} (recursive scope)",
+            f"grep -r FileType {s3_dir}",
+        ),
         (f"rg mirage {s3_dir} (rg recursive scope)", f"rg mirage {s3_dir}"),
-        ("grep -r GitHubAccessor /github/ (repo-root search narrowing)",
-         "grep -r GitHubAccessor /github/ | sort"),
+        (
+            "grep -r GitHubAccessor /github/ (repo-root search narrowing)",
+            "grep -r GitHubAccessor /github/ | sort",
+        ),
     ]:
         print(f"\n=== {label} ===")
         r = await ws.shell(cmd)
@@ -153,40 +166,50 @@ async def main() -> None:
     # A large subdir (>100 files) is what makes the per-file fallback slow;
     # these cases narrow via GitHub code search instead of fetching each file.
     big_dir = "/github/python/mirage/"
-    print(f"\n=== grep -rln BaseVFS {big_dir} "
-          "(subdir narrowing, -l short-circuit) ===")
+    print(
+        f"\n=== grep -rln BaseVFS {big_dir} "
+        "(subdir narrowing, -l short-circuit) ==="
+    )
     ms, out = await _timed(ws, f"grep -rln BaseVFS {big_dir}")
     files = out.strip().splitlines() if out.strip() else []
     print(f"  {ms:.0f}ms  files-with-matches: {len(files)}")
     for line in files[:3]:
         print(f"  {line}")
 
-    print(f"\n=== grep -rn 'async def .*self' {big_dir} "
-          "(regex narrows via required literal 'async def ') ===")
+    print(
+        f"\n=== grep -rn 'async def .*self' {big_dir} "
+        "(regex narrows via required literal 'async def ') ==="
+    )
     ms, out = await _timed(ws, f"grep -rn 'async def .*self' {big_dir}")
     lines = out.strip().splitlines() if out.strip() else []
     print(f"  {ms:.0f}ms  matches: {len(lines)}")
     for line in lines[:3]:
         print(f"  {line[:150]}")
 
-    print(f"\n=== rg -l GitHubAccessor {big_dir} "
-          "(rg subdir narrowing, -l short-circuit) ===")
+    print(
+        f"\n=== rg -l GitHubAccessor {big_dir} "
+        "(rg subdir narrowing, -l short-circuit) ==="
+    )
     ms, out = await _timed(ws, f"rg -l GitHubAccessor {big_dir}")
     files = out.strip().splitlines() if out.strip() else []
     print(f"  {ms:.0f}ms  files-with-matches: {len(files)}")
     for line in files[:3]:
         print(f"  {line}")
 
-    print(f"\n=== rg -l --glob '*.py' GitHubAccessor {big_dir} "
-          "(file filter applied to narrowed set) ===")
+    print(
+        f"\n=== rg -l --glob '*.py' GitHubAccessor {big_dir} "
+        "(file filter applied to narrowed set) ==="
+    )
     ms, out = await _timed(ws, f"rg -l --glob '*.py' GitHubAccessor {big_dir}")
     files = out.strip().splitlines() if out.strip() else []
     print(f"  {ms:.0f}ms  files-with-matches: {len(files)}")
     for line in files[:3]:
         print(f"  {line}")
 
-    print(f"\n=== rg -l --type py GitHubAccessor {big_dir} "
-          "(--type filter applied to narrowed set) ===")
+    print(
+        f"\n=== rg -l --type py GitHubAccessor {big_dir} "
+        "(--type filter applied to narrowed set) ==="
+    )
     ms, out = await _timed(ws, f"rg -l --type py GitHubAccessor {big_dir}")
     files = out.strip().splitlines() if out.strip() else []
     print(f"  {ms:.0f}ms  files-with-matches: {len(files)}")
@@ -202,13 +225,16 @@ async def main() -> None:
     print(await r.stdout_str())
 
     print("=== find | sort ===")
-    r = await ws.shell("find /github/python/mirage/core/s3 -name '*.py' | sort"
-                       )
+    r = await ws.shell(
+        "find /github/python/mirage/core/s3 -name '*.py' | sort"
+    )
     print(await r.stdout_str())
 
     print("=== diff ===")
-    r = await ws.shell("diff /github/python/mirage/core/s3/stat.py"
-                       " /github/python/mirage/core/s3/read.py")
+    r = await ws.shell(
+        "diff /github/python/mirage/core/s3/stat.py"
+        " /github/python/mirage/core/s3/read.py"
+    )
     print(await r.stdout_str())
 
     print("=== cat + pipe to wc ===")
@@ -217,12 +243,14 @@ async def main() -> None:
 
     print("=== grep + cut ===")
     r = await ws.shell(
-        "grep -n 'class ' /github/python/mirage/types.py | cut -d: -f1")
+        "grep -n 'class ' /github/python/mirage/types.py | cut -d: -f1"
+    )
     print(await r.stdout_str())
 
     print("=== grep + awk ===")
     r = await ws.shell(
-        "grep 'class ' /github/python/mirage/types.py | awk '{print $2}'")
+        "grep 'class ' /github/python/mirage/types.py | awk '{print $2}'"
+    )
     print(await r.stdout_str())
 
     print("=== md5 ===")
@@ -259,7 +287,8 @@ async def main() -> None:
 
     print("=== sort | uniq ===")
     r = await ws.shell(
-        "grep 'import' /github/python/mirage/types.py | sort | uniq")
+        "grep 'import' /github/python/mirage/types.py | sort | uniq"
+    )
     print(await r.stdout_str())
 
     print("=== uniq (file path, streams via github read) ===")
@@ -292,12 +321,14 @@ async def main() -> None:
 
     print("=== sed s/// (file) ===")
     r = await ws.shell(
-        "sed 's/import/IMPORT/' /github/python/mirage/core/s3/read.py")
+        "sed 's/import/IMPORT/' /github/python/mirage/core/s3/read.py"
+    )
     print(await r.stdout_str())
 
     print("=== awk (file) ===")
-    r = await ws.shell("awk '{print $1}' /github/python/mirage/core/s3/read.py"
-                       )
+    r = await ws.shell(
+        "awk '{print $1}' /github/python/mirage/core/s3/read.py"
+    )
     print(await r.stdout_str())
 
     print("=== cut -c (file) ===")
@@ -309,14 +340,17 @@ async def main() -> None:
     out = (await r.stdout_str()).strip()
     err = (await r.stderr_str()).strip()
     print(
-        f"  exit={r.exit_code} matches: {len(out.splitlines()) if out else 0}")
+        f"  exit={r.exit_code} matches: {len(out.splitlines()) if out else 0}"
+    )
     for line in err.splitlines()[:3]:
         print(f"  {line}")
     print()
 
     print("=== diff -u ===")
-    r = await ws.shell("diff -u /github/python/mirage/core/s3/stat.py"
-                       " /github/python/mirage/core/s3/read.py")
+    r = await ws.shell(
+        "diff -u /github/python/mirage/core/s3/stat.py"
+        " /github/python/mirage/core/s3/read.py"
+    )
     print(await r.stdout_str())
 
     print("=== tree -L ===")
@@ -328,7 +362,8 @@ async def main() -> None:
     print(await r.stdout_str())
 
     print(
-        "=== caching: a warm read is served from cache (no backend fetch) ===")
+        "=== caching: a warm read is served from cache (no backend fetch) ==="
+    )
     cache_file = "/github/python/mirage/workspace/workspace.py"
     cold_ms, body = await _timed(ws, f"cat {cache_file}")
     warm_ms, _ = await _timed(ws, f"cat {cache_file}")
@@ -337,11 +372,15 @@ async def main() -> None:
     tail_ms, _ = await _timed(ws, f"tail -n 5 {cache_file}")
     wc_ms, _ = await _timed(ws, f"wc -l {cache_file}")
     print(f"  file={cache_file} size={len(body)}B")
-    print(f"  cold cat={cold_ms:.0f}ms  warm cat={warm_ms:.0f}ms  "
-          f"grep={grep_ms:.0f}ms head={head_ms:.0f}ms tail={tail_ms:.0f}ms "
-          f"wc={wc_ms:.0f}ms")
-    print(f"  served_from_cache={warm_ms < cold_ms / 5} "
-          f"(warm speedup {cold_ms / max(warm_ms, 0.001):.0f}x)")
+    print(
+        f"  cold cat={cold_ms:.0f}ms  warm cat={warm_ms:.0f}ms  "
+        f"grep={grep_ms:.0f}ms head={head_ms:.0f}ms tail={tail_ms:.0f}ms "
+        f"wc={wc_ms:.0f}ms"
+    )
+    print(
+        f"  served_from_cache={warm_ms < cold_ms / 5} "
+        f"(warm speedup {cold_ms / max(warm_ms, 0.001):.0f}x)"
+    )
 
 
 if __name__ == "__main__":

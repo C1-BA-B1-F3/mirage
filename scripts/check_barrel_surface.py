@@ -16,7 +16,8 @@ CLAUSE = r"\s+(type\s+)?\{([^{}]*)\}\s*from\s*['\"]([^'\"]+)['\"]"
 BLOCK_RE = re.compile(r"^(?:import|export)" + CLAUSE, re.M | re.S)
 DYNAMIC_RE = re.compile(r"import\(\s*['\"]([^'\"]+)['\"]\s*\)")
 NAMESPACE_RE = re.compile(
-    r"^(?:import|export)\s+\*\s+as\s+(\w+)\s+from\s*['\"]([^'\"]+)['\"]", re.M)
+    r"^(?:import|export)\s+\*\s+as\s+(\w+)\s+from\s*['\"]([^'\"]+)['\"]", re.M
+)
 STAR_RE = re.compile(r"^export\s+\*\s+from\s*['\"]([^'\"]+)['\"]", re.M)
 
 
@@ -56,9 +57,12 @@ def source_files(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
     return [
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix in SOURCE_SUFFIXES
-        and "node_modules" not in p.parts and "dist" not in p.parts
+        p
+        for p in root.rglob("*")
+        if p.is_file()
+        and p.suffix in SOURCE_SUFFIXES
+        and "node_modules" not in p.parts
+        and "dist" not in p.parts
     ]
 
 
@@ -153,8 +157,10 @@ def names_consumers_import() -> set[str]:
                     continue
                 for pkg in RUNTIME_PKGS:
                     if module == f"@struktoai/mirage-{pkg}":
-                        used |= set(specifier_names(
-                            m.group(2), "local")) - runtime_own[pkg]
+                        used |= (
+                            set(specifier_names(m.group(2), "local"))
+                            - runtime_own[pkg]
+                        )
             for m in NAMESPACE_RE.finditer(src):
                 if m.group(2) == CORE_PKG:
                     used |= barrel_names(CORE_INDEX)
@@ -175,7 +181,8 @@ def main() -> int:
             f"{len(offenders)} package source(s) import core through its "
             f"barrel. Name the module instead -- the `./*` subpath map makes "
             f"every core module importable, and a barrel import is what grew "
-            f"index.ts to 1500 lines:\n  " + "\n  ".join(offenders[:20]))
+            f"index.ts to 1500 lines:\n  " + "\n  ".join(offenders[:20])
+        )
 
     declared = barrel_names(CORE_INDEX)
     used = names_consumers_import()
@@ -185,8 +192,9 @@ def main() -> int:
             f"{len(unused)} name(s) in packages/core/src/index.ts have no "
             f"consumer under {', '.join(CONSUMER_ROOTS)}. knip cannot see "
             f"this: its project root is typescript/, which leaves the "
-            f"barrel's real consumers outside its graph.\n  " +
-            "\n  ".join(unused))
+            f"barrel's real consumers outside its graph.\n  "
+            + "\n  ".join(unused)
+        )
 
     # The other direction, which tsc only half covers: it reads examples and
     # integ, but a name in a docs page is prose to it. A consumer asking for
@@ -198,13 +206,16 @@ def main() -> int:
             f"{len(missing)} name(s) imported from {CORE_PKG} by a consumer "
             f"under {', '.join(CONSUMER_ROOTS)} are not exported by "
             f"packages/core/src/index.ts. Add the line, or point the consumer "
-            f"at the module that declares it.\n  " + "\n  ".join(missing))
+            f"at the module that declares it.\n  " + "\n  ".join(missing)
+        )
 
     if failures:
         print("\n\n".join(failures), file=sys.stderr)
         return 1
-    print(f"core barrel: {len(declared)} names, every one imported by a "
-          f"consumer; no package source imports the barrel")
+    print(
+        f"core barrel: {len(declared)} names, every one imported by a "
+        f"consumer; no package source imports the barrel"
+    )
     return 0
 
 

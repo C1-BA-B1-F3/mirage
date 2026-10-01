@@ -7,8 +7,10 @@ from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import (extra_operand_error,
-                                        missing_operand_error)
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    missing_operand_error,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -64,8 +66,10 @@ def _format_comm(
     if include_total:
         visible = [
             str(count)
-            for count, suppressed in zip(counts, (suppress1, suppress2,
-                                                  suppress3)) if not suppressed
+            for count, suppressed in zip(
+                counts, (suppress1, suppress2, suppress3)
+            )
+            if not suppressed
         ]
         out.append(delimiter.join(visible + ["total"]))
     return record_separator.join(out) + record_separator if out else ""
@@ -85,19 +89,27 @@ async def comm(
     zero_terminated: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
-        raise extra_operand_error(CommandName.COMM, paths[2].raw_path
-                                  or paths[2].virtual)
+        raise extra_operand_error(
+            CommandName.COMM, paths[2].raw_path or paths[2].virtual
+        )
     if len(paths) < 2:
         raise missing_operand_error(
             CommandName.COMM,
-            paths[-1].raw_path or paths[-1].virtual if paths else None)
+            paths[-1].raw_path or paths[-1].virtual if paths else None,
+        )
     read = stdin_bytes(read_bytes, stdin)
     data1 = (await read(paths[0])).decode(errors="replace")
     data2 = (await read(paths[1])).decode(errors="replace")
-    lines1 = data1.rstrip("\0").split(
-        "\0") if zero_terminated else split_lines(data1)
-    lines2 = data2.rstrip("\0").split(
-        "\0") if zero_terminated else split_lines(data2)
+    lines1 = (
+        data1.rstrip("\0").split("\0")
+        if zero_terminated
+        else split_lines(data1)
+    )
+    lines2 = (
+        data2.rstrip("\0").split("\0")
+        if zero_terminated
+        else split_lines(data2)
+    )
     stderr = ""
     if check_order:
         if lines1 != sorted(lines1):
@@ -105,9 +117,15 @@ async def comm(
         elif lines2 != sorted(lines2):
             stderr = "comm: file 2 is not in sorted order\n"
     merged = _comm_merge(lines1, lines2)
-    output = _format_comm(merged, suppress1, suppress2, suppress3,
-                          output_delimiter, "\0" if zero_terminated else "\n",
-                          total)
+    output = _format_comm(
+        merged,
+        suppress1,
+        suppress2,
+        suppress3,
+        output_delimiter,
+        "\0" if zero_terminated else "\n",
+        total,
+    )
     return output.encode(), IOResult(
         stderr=stderr.encode() if stderr else None,
         exit_code=1 if stderr else 0,
@@ -148,13 +166,15 @@ async def comm_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await comm(paths,
-                      read_bytes=read_bytes,
-                      stdin=opts.stdin,
-                      suppress1=parsed.suppress1,
-                      suppress2=parsed.suppress2,
-                      suppress3=parsed.suppress3,
-                      check_order=parsed.check_order,
-                      output_delimiter=parsed.output_delimiter,
-                      total=parsed.total,
-                      zero_terminated=parsed.zero_terminated)
+    return await comm(
+        paths,
+        read_bytes=read_bytes,
+        stdin=opts.stdin,
+        suppress1=parsed.suppress1,
+        suppress2=parsed.suppress2,
+        suppress3=parsed.suppress3,
+        check_order=parsed.check_order,
+        output_delimiter=parsed.output_delimiter,
+        total=parsed.total,
+        zero_terminated=parsed.zero_terminated,
+    )

@@ -33,8 +33,10 @@ ENTRY_POINT_GROUP = "mirage.vfs"
 # its unknown keys under the same code so the two read alike.
 EXTRA_FORBIDDEN = "extra_forbidden"
 
-_NAMED_PARAMETERS = (inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                     inspect.Parameter.KEYWORD_ONLY)
+_NAMED_PARAMETERS = (
+    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    inspect.Parameter.KEYWORD_ONLY,
+)
 
 
 class VFSEntry(NamedTuple):
@@ -43,139 +45,153 @@ class VFSEntry(NamedTuple):
 
 
 REGISTRY: dict[str, VFSEntry] = {
-    "ram":
-    VFSEntry("mirage.vfs.ram:RAMVFS", None),
-    "disk":
-    VFSEntry("mirage.vfs.disk:DiskVFS", None),
-    "redis":
-    VFSEntry("mirage.vfs.redis:RedisVFS", None),
-    "s3":
-    VFSEntry("mirage.vfs.s3:S3VFS", "mirage.vfs.s3:S3Config"),
-    "gridfs":
-    VFSEntry("mirage.vfs.gridfs:GridFSVFS", "mirage.vfs.gridfs:GridFSConfig"),
-    "r2":
-    VFSEntry("mirage.vfs.r2:R2VFS", "mirage.vfs.r2:R2Config"),
-    "oci":
-    VFSEntry("mirage.vfs.oci:OCIVFS", "mirage.vfs.oci:OCIConfig"),
-    "supabase":
-    VFSEntry("mirage.vfs.supabase:SupabaseVFS",
-             "mirage.vfs.supabase:SupabaseConfig"),
-    "gcs":
-    VFSEntry("mirage.vfs.gcs:GCSVFS", "mirage.vfs.gcs:GCSConfig"),
-    "minio":
-    VFSEntry("mirage.vfs.minio:MinIOVFS", "mirage.vfs.minio:MinIOConfig"),
-    "ceph":
-    VFSEntry("mirage.vfs.ceph:CephVFS", "mirage.vfs.ceph:CephConfig"),
-    "seaweedfs":
-    VFSEntry("mirage.vfs.seaweedfs:SeaweedFSVFS",
-             "mirage.vfs.seaweedfs:SeaweedFSConfig"),
-    "wasabi":
-    VFSEntry("mirage.vfs.wasabi:WasabiVFS", "mirage.vfs.wasabi:WasabiConfig"),
-    "backblaze":
-    VFSEntry("mirage.vfs.backblaze:BackblazeVFS",
-             "mirage.vfs.backblaze:BackblazeConfig"),
-    "digitalocean":
-    VFSEntry("mirage.vfs.digitalocean:DigitalOceanVFS",
-             "mirage.vfs.digitalocean:DigitalOceanConfig"),
-    "tencent":
-    VFSEntry("mirage.vfs.tencent:TencentVFS",
-             "mirage.vfs.tencent:TencentConfig"),
-    "aliyun":
-    VFSEntry("mirage.vfs.aliyun:AliyunVFS", "mirage.vfs.aliyun:AliyunConfig"),
-    "scaleway":
-    VFSEntry("mirage.vfs.scaleway:ScalewayVFS",
-             "mirage.vfs.scaleway:ScalewayConfig"),
-    "qingstor":
-    VFSEntry("mirage.vfs.qingstor:QingStorVFS",
-             "mirage.vfs.qingstor:QingStorConfig"),
-    "hf_buckets":
-    VFSEntry("mirage.vfs.hf_buckets:HfBucketsVFS",
-             "mirage.vfs.hf_buckets:HfBucketsConfig"),
-    "hf_datasets":
-    VFSEntry("mirage.vfs.hf_datasets:HfDatasetsVFS",
-             "mirage.vfs.hf_datasets:HfDatasetsConfig"),
-    "hf_models":
-    VFSEntry("mirage.vfs.hf_models:HfModelsVFS",
-             "mirage.vfs.hf_models:HfModelsConfig"),
-    "hf_spaces":
-    VFSEntry("mirage.vfs.hf_spaces:HfSpacesVFS",
-             "mirage.vfs.hf_spaces:HfSpacesConfig"),
-    "onedrive":
-    VFSEntry("mirage.vfs.onedrive:OneDriveVFS",
-             "mirage.vfs.onedrive:OneDriveConfig"),
-    "sharepoint":
-    VFSEntry("mirage.vfs.sharepoint:SharePointVFS",
-             "mirage.vfs.sharepoint:SharePointConfig"),
-    "box":
-    VFSEntry("mirage.vfs.box:BoxVFS", "mirage.vfs.box:BoxConfig"),
-    "dropbox":
-    VFSEntry("mirage.vfs.dropbox:DropboxVFS",
-             "mirage.vfs.dropbox:DropboxConfig"),
-    "github":
-    VFSEntry("mirage.vfs.github:GitHubVFS", "mirage.vfs.github:GitHubConfig"),
-    "wandb":
-    VFSEntry("mirage.vfs.wandb:WandbVFS", "mirage.vfs.wandb:WandbConfig"),
-    "linear":
-    VFSEntry("mirage.vfs.linear:LinearVFS", "mirage.vfs.linear:LinearConfig"),
-    "gcal":
-    VFSEntry("mirage.vfs.gcal:GCalVFS", "mirage.vfs.gcal:GCalConfig"),
-    "gdocs":
-    VFSEntry("mirage.vfs.gdocs:GDocsVFS", "mirage.vfs.gdocs:GDocsConfig"),
-    "gsheets":
-    VFSEntry("mirage.vfs.gsheets:GSheetsVFS",
-             "mirage.vfs.gsheets:GSheetsConfig"),
-    "gslides":
-    VFSEntry("mirage.vfs.gslides:GSlidesVFS",
-             "mirage.vfs.gslides:GSlidesConfig"),
-    "gdrive":
-    VFSEntry("mirage.vfs.gdrive:GoogleDriveVFS",
-             "mirage.vfs.gdrive:GoogleDriveConfig"),
-    "slack":
-    VFSEntry("mirage.vfs.slack:SlackVFS", "mirage.vfs.slack:SlackConfig"),
-    "discord":
-    VFSEntry("mirage.vfs.discord:DiscordVFS",
-             "mirage.vfs.discord:DiscordConfig"),
-    "gmail":
-    VFSEntry("mirage.vfs.gmail:GmailVFS", "mirage.vfs.gmail:GmailConfig"),
-    "trello":
-    VFSEntry("mirage.vfs.trello:TrelloVFS", "mirage.vfs.trello:TrelloConfig"),
-    "airtable":
-    VFSEntry("mirage.vfs.airtable:AirtableVFS",
-             "mirage.vfs.airtable:AirtableConfig"),
-    "mongodb":
-    VFSEntry("mirage.vfs.mongodb:MongoDBVFS",
-             "mirage.vfs.mongodb:MongoDBConfig"),
-    "postgres":
-    VFSEntry("mirage.vfs.postgres:PostgresVFS",
-             "mirage.vfs.postgres:PostgresConfig"),
-    "notion":
-    VFSEntry("mirage.vfs.notion:NotionVFS", "mirage.vfs.notion:NotionConfig"),
-    "langfuse":
-    VFSEntry("mirage.vfs.langfuse:LangfuseVFS",
-             "mirage.vfs.langfuse:LangfuseConfig"),
-    "jaeger":
-    VFSEntry("mirage.vfs.jaeger:JaegerVFS", "mirage.vfs.jaeger:JaegerConfig"),
-    "ssh":
-    VFSEntry("mirage.vfs.ssh:SSHVFS", "mirage.vfs.ssh:SSHConfig"),
-    "email":
-    VFSEntry("mirage.vfs.email:EmailVFS", "mirage.vfs.email:EmailConfig"),
-    "dify":
-    VFSEntry("mirage.vfs.dify:DifyVFS", "mirage.vfs.dify:DifyConfig"),
-    "mem0":
-    VFSEntry("mirage.vfs.mem0:Mem0VFS", "mirage.vfs.mem0:Mem0Config"),
-    "chroma":
-    VFSEntry("mirage.vfs.chroma:ChromaVFS", "mirage.vfs.chroma:ChromaConfig"),
-    "databricks_volume":
-    VFSEntry("mirage.vfs.databricks_volume:DatabricksVolumeVFS",
-             "mirage.vfs.databricks_volume:DatabricksVolumeConfig"),
-    "nextcloud":
-    VFSEntry("mirage.vfs.nextcloud:NextcloudVFS",
-             "mirage.vfs.nextcloud:NextcloudConfig"),
-    "lancedb":
-    VFSEntry("mirage.vfs.lancedb:LanceDBVFS",
-             "mirage.vfs.lancedb:LanceDBConfig"),
-    "qdrant":
-    VFSEntry("mirage.vfs.qdrant:QdrantVFS", "mirage.vfs.qdrant:QdrantConfig"),
+    "ram": VFSEntry("mirage.vfs.ram:RAMVFS", None),
+    "disk": VFSEntry("mirage.vfs.disk:DiskVFS", None),
+    "redis": VFSEntry("mirage.vfs.redis:RedisVFS", None),
+    "s3": VFSEntry("mirage.vfs.s3:S3VFS", "mirage.vfs.s3:S3Config"),
+    "gridfs": VFSEntry(
+        "mirage.vfs.gridfs:GridFSVFS", "mirage.vfs.gridfs:GridFSConfig"
+    ),
+    "r2": VFSEntry("mirage.vfs.r2:R2VFS", "mirage.vfs.r2:R2Config"),
+    "oci": VFSEntry("mirage.vfs.oci:OCIVFS", "mirage.vfs.oci:OCIConfig"),
+    "supabase": VFSEntry(
+        "mirage.vfs.supabase:SupabaseVFS", "mirage.vfs.supabase:SupabaseConfig"
+    ),
+    "gcs": VFSEntry("mirage.vfs.gcs:GCSVFS", "mirage.vfs.gcs:GCSConfig"),
+    "minio": VFSEntry(
+        "mirage.vfs.minio:MinIOVFS", "mirage.vfs.minio:MinIOConfig"
+    ),
+    "ceph": VFSEntry("mirage.vfs.ceph:CephVFS", "mirage.vfs.ceph:CephConfig"),
+    "seaweedfs": VFSEntry(
+        "mirage.vfs.seaweedfs:SeaweedFSVFS",
+        "mirage.vfs.seaweedfs:SeaweedFSConfig",
+    ),
+    "wasabi": VFSEntry(
+        "mirage.vfs.wasabi:WasabiVFS", "mirage.vfs.wasabi:WasabiConfig"
+    ),
+    "backblaze": VFSEntry(
+        "mirage.vfs.backblaze:BackblazeVFS",
+        "mirage.vfs.backblaze:BackblazeConfig",
+    ),
+    "digitalocean": VFSEntry(
+        "mirage.vfs.digitalocean:DigitalOceanVFS",
+        "mirage.vfs.digitalocean:DigitalOceanConfig",
+    ),
+    "tencent": VFSEntry(
+        "mirage.vfs.tencent:TencentVFS", "mirage.vfs.tencent:TencentConfig"
+    ),
+    "aliyun": VFSEntry(
+        "mirage.vfs.aliyun:AliyunVFS", "mirage.vfs.aliyun:AliyunConfig"
+    ),
+    "scaleway": VFSEntry(
+        "mirage.vfs.scaleway:ScalewayVFS", "mirage.vfs.scaleway:ScalewayConfig"
+    ),
+    "qingstor": VFSEntry(
+        "mirage.vfs.qingstor:QingStorVFS", "mirage.vfs.qingstor:QingStorConfig"
+    ),
+    "hf_buckets": VFSEntry(
+        "mirage.vfs.hf_buckets:HfBucketsVFS",
+        "mirage.vfs.hf_buckets:HfBucketsConfig",
+    ),
+    "hf_datasets": VFSEntry(
+        "mirage.vfs.hf_datasets:HfDatasetsVFS",
+        "mirage.vfs.hf_datasets:HfDatasetsConfig",
+    ),
+    "hf_models": VFSEntry(
+        "mirage.vfs.hf_models:HfModelsVFS",
+        "mirage.vfs.hf_models:HfModelsConfig",
+    ),
+    "hf_spaces": VFSEntry(
+        "mirage.vfs.hf_spaces:HfSpacesVFS",
+        "mirage.vfs.hf_spaces:HfSpacesConfig",
+    ),
+    "onedrive": VFSEntry(
+        "mirage.vfs.onedrive:OneDriveVFS", "mirage.vfs.onedrive:OneDriveConfig"
+    ),
+    "sharepoint": VFSEntry(
+        "mirage.vfs.sharepoint:SharePointVFS",
+        "mirage.vfs.sharepoint:SharePointConfig",
+    ),
+    "box": VFSEntry("mirage.vfs.box:BoxVFS", "mirage.vfs.box:BoxConfig"),
+    "dropbox": VFSEntry(
+        "mirage.vfs.dropbox:DropboxVFS", "mirage.vfs.dropbox:DropboxConfig"
+    ),
+    "github": VFSEntry(
+        "mirage.vfs.github:GitHubVFS", "mirage.vfs.github:GitHubConfig"
+    ),
+    "wandb": VFSEntry(
+        "mirage.vfs.wandb:WandbVFS", "mirage.vfs.wandb:WandbConfig"
+    ),
+    "linear": VFSEntry(
+        "mirage.vfs.linear:LinearVFS", "mirage.vfs.linear:LinearConfig"
+    ),
+    "gcal": VFSEntry("mirage.vfs.gcal:GCalVFS", "mirage.vfs.gcal:GCalConfig"),
+    "gdocs": VFSEntry(
+        "mirage.vfs.gdocs:GDocsVFS", "mirage.vfs.gdocs:GDocsConfig"
+    ),
+    "gsheets": VFSEntry(
+        "mirage.vfs.gsheets:GSheetsVFS", "mirage.vfs.gsheets:GSheetsConfig"
+    ),
+    "gslides": VFSEntry(
+        "mirage.vfs.gslides:GSlidesVFS", "mirage.vfs.gslides:GSlidesConfig"
+    ),
+    "gdrive": VFSEntry(
+        "mirage.vfs.gdrive:GoogleDriveVFS",
+        "mirage.vfs.gdrive:GoogleDriveConfig",
+    ),
+    "slack": VFSEntry(
+        "mirage.vfs.slack:SlackVFS", "mirage.vfs.slack:SlackConfig"
+    ),
+    "discord": VFSEntry(
+        "mirage.vfs.discord:DiscordVFS", "mirage.vfs.discord:DiscordConfig"
+    ),
+    "gmail": VFSEntry(
+        "mirage.vfs.gmail:GmailVFS", "mirage.vfs.gmail:GmailConfig"
+    ),
+    "trello": VFSEntry(
+        "mirage.vfs.trello:TrelloVFS", "mirage.vfs.trello:TrelloConfig"
+    ),
+    "airtable": VFSEntry(
+        "mirage.vfs.airtable:AirtableVFS", "mirage.vfs.airtable:AirtableConfig"
+    ),
+    "mongodb": VFSEntry(
+        "mirage.vfs.mongodb:MongoDBVFS", "mirage.vfs.mongodb:MongoDBConfig"
+    ),
+    "postgres": VFSEntry(
+        "mirage.vfs.postgres:PostgresVFS", "mirage.vfs.postgres:PostgresConfig"
+    ),
+    "notion": VFSEntry(
+        "mirage.vfs.notion:NotionVFS", "mirage.vfs.notion:NotionConfig"
+    ),
+    "langfuse": VFSEntry(
+        "mirage.vfs.langfuse:LangfuseVFS", "mirage.vfs.langfuse:LangfuseConfig"
+    ),
+    "jaeger": VFSEntry(
+        "mirage.vfs.jaeger:JaegerVFS", "mirage.vfs.jaeger:JaegerConfig"
+    ),
+    "ssh": VFSEntry("mirage.vfs.ssh:SSHVFS", "mirage.vfs.ssh:SSHConfig"),
+    "email": VFSEntry(
+        "mirage.vfs.email:EmailVFS", "mirage.vfs.email:EmailConfig"
+    ),
+    "dify": VFSEntry("mirage.vfs.dify:DifyVFS", "mirage.vfs.dify:DifyConfig"),
+    "mem0": VFSEntry("mirage.vfs.mem0:Mem0VFS", "mirage.vfs.mem0:Mem0Config"),
+    "chroma": VFSEntry(
+        "mirage.vfs.chroma:ChromaVFS", "mirage.vfs.chroma:ChromaConfig"
+    ),
+    "databricks_volume": VFSEntry(
+        "mirage.vfs.databricks_volume:DatabricksVolumeVFS",
+        "mirage.vfs.databricks_volume:DatabricksVolumeConfig",
+    ),
+    "nextcloud": VFSEntry(
+        "mirage.vfs.nextcloud:NextcloudVFS",
+        "mirage.vfs.nextcloud:NextcloudConfig",
+    ),
+    "lancedb": VFSEntry(
+        "mirage.vfs.lancedb:LanceDBVFS", "mirage.vfs.lancedb:LanceDBConfig"
+    ),
+    "qdrant": VFSEntry(
+        "mirage.vfs.qdrant:QdrantVFS", "mirage.vfs.qdrant:QdrantConfig"
+    ),
 }
 
 _CUSTOM: dict[str, VFSEntry] = {}
@@ -302,8 +318,9 @@ def _vfs_defect(built: BaseVFS) -> str | None:
         built (BaseVFS): the instance the referenced class produced.
     """
     if not isinstance(built, BaseVFS):
-        return (f"built a {type(built).__name__}, which is not a "
-                "BaseVFS subclass")
+        return (
+            f"built a {type(built).__name__}, which is not a BaseVFS subclass"
+        )
     # A VFS is keyed by its name: it is how a command or op
     # registered for this backend is found, so an empty one silently
     # registers nothing.
@@ -397,9 +414,10 @@ def build_vfs(name: str, config: dict[str, Any] | None = None) -> BaseVFS:
         if config_ref is None:
             unknown = _unknown_kwargs(vfs_cls, cfg_dict)
             if unknown:
-                raise ValueError(f"{name}: " +
-                                 "; ".join(f"{key}: {EXTRA_FORBIDDEN}"
-                                           for key in unknown))
+                raise ValueError(
+                    f"{name}: "
+                    + "; ".join(f"{key}: {EXTRA_FORBIDDEN}" for key in unknown)
+                )
             built = vfs_cls(**cfg_dict)
         else:
             config_cls = resolve_class(config_ref)

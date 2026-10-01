@@ -17,8 +17,14 @@ import time
 from typing import Any
 
 from mirage.io.types import IOResult
-from mirage.observe.log_entry import (EVENT_CLEAR, EVENT_COMMAND, EVENT_DELETE,
-                                      EVENT_OP, STDOUT_TRUNCATE, LogEntry)
+from mirage.observe.log_entry import (
+    EVENT_CLEAR,
+    EVENT_COMMAND,
+    EVENT_DELETE,
+    EVENT_OP,
+    STDOUT_TRUNCATE,
+    LogEntry,
+)
 from mirage.observe.record import OpRecord
 from mirage.observe.store import ObserverStore, RAMObserverStore
 from mirage.utils.dates import utc_date_folder
@@ -62,8 +68,9 @@ class Observer:
 
     async def _log(self, entry: LogEntry) -> None:
         line = (entry.to_json_line() + "\n").encode()
-        await self._store.append(f"/{utc_date_folder()}/{entry.session}.jsonl",
-                                 line)
+        await self._store.append(
+            f"/{utc_date_folder()}/{entry.session}.jsonl", line
+        )
 
     async def log_op(
         self,
@@ -120,13 +127,16 @@ class Observer:
                 command=command,
                 exit_code=io.exit_code,
                 stdout=stdout.decode(errors="replace")[:STDOUT_TRUNCATE],
-            ))
+            )
+        )
 
-    async def log_command_text(self,
-                               command: str,
-                               session: str,
-                               agent: str = "",
-                               cwd: str | None = None) -> None:
+    async def log_command_text(
+        self,
+        command: str,
+        session: str,
+        agent: str = "",
+        cwd: str | None = None,
+    ) -> None:
         """Append a command entry without an execution (history -s).
 
         Args:
@@ -144,7 +154,8 @@ class Observer:
                 cwd=cwd,
                 command=command,
                 exit_code=0,
-            ))
+            )
+        )
 
     async def log_clear(self, session: str, agent: str = "") -> None:
         """Append a clear tombstone for a session (history -c).
@@ -159,12 +170,12 @@ class Observer:
                 agent=agent,
                 session=session,
                 timestamp=_now_ms(),
-            ))
+            )
+        )
 
-    async def log_delete(self,
-                         session: str,
-                         offset: int,
-                         agent: str = "") -> None:
+    async def log_delete(
+        self, session: str, offset: int, agent: str = ""
+    ) -> None:
         """Append a delete event for one listing entry (history -d).
 
         Args:
@@ -180,7 +191,8 @@ class Observer:
                 session=session,
                 timestamp=_now_ms(),
                 offset=offset,
-            ))
+            )
+        )
 
     async def events(self) -> list[dict[str, Any]]:
         """All recorded events across sessions, in timestamp order.
@@ -208,8 +220,9 @@ class Observer:
             e for e in await self.events() if e.get("type") == EVENT_COMMAND
         ]
 
-    async def session_command_events(self,
-                                     session: str) -> list[dict[str, Any]]:
+    async def session_command_events(
+        self, session: str
+    ) -> list[dict[str, Any]]:
         """One session's visible history listing, append order.
 
         Projects the session's events: commands after the last clear
@@ -230,7 +243,7 @@ class Observer:
             if e.get("type") == EVENT_CLEAR:
                 last_clear = i
         visible: list[dict[str, Any]] = []
-        for e in entries[last_clear + 1:]:
+        for e in entries[last_clear + 1 :]:
             kind = e.get("type")
             if kind == EVENT_COMMAND:
                 visible.append(e)
@@ -272,7 +285,9 @@ class Observer:
                 continue
             session = e.get("session", "default")
             by_session.setdefault(session, []).append(
-                json.dumps(e, separators=(",", ":")))
+                json.dumps(e, separators=(",", ":"))
+            )
         for session, lines in by_session.items():
-            await self._store.write(f"/{day}/{session}.jsonl",
-                                    ("\n".join(lines) + "\n").encode())
+            await self._store.write(
+                f"/{day}/{session}.jsonl", ("\n".join(lines) + "\n").encode()
+            )

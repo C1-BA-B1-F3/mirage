@@ -23,8 +23,9 @@ from mirage.vfs.hf_datasets import HfDatasetsConfig, HfDatasetsVFS
 load_dotenv(".env.development")
 
 config = HfDatasetsConfig(
-    repo_id=os.environ.get("HF_DATASET_REPO",
-                           "AlienKevin/SWE-ZERO-12M-trajectories"),
+    repo_id=os.environ.get(
+        "HF_DATASET_REPO", "AlienKevin/SWE-ZERO-12M-trajectories"
+    ),
     token=os.environ.get("HF_TOKEN"),
 )
 vfs = HfDatasetsVFS(config)

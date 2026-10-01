@@ -16,14 +16,22 @@ import asyncio
 
 import pytest
 
+from mirage.commands.builtin.generic.shuf import (
+    MAX_OUTPUT_LINES,
+    MEMORY_EXHAUSTED,
+    NO_WRITE_OP,
+    SIZE_MAX,
+    UINTMAX_MAX,
+    RangeRefusal,
+    emit_count,
+    parse_flags,
+    parse_input_range,
+    range_error,
+    shuf,
+)
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-
-from mirage.commands.builtin.generic.shuf import (  # isort: skip
-    MAX_OUTPUT_LINES, MEMORY_EXHAUSTED, NO_WRITE_OP, SIZE_MAX, UINTMAX_MAX,
-    RangeRefusal, emit_count, parse_flags, parse_input_range, range_error,
-    shuf)
 
 
 def _ws():
@@ -138,21 +146,24 @@ def test_shuf_input_range_refusal_is_uniform(raw):
     """
     with pytest.raises(ValueError) as refusal:
         asyncio.run(
-            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw))
+            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw)
+        )
     assert str(refusal.value) == f"shuf: invalid input range: '{raw}'"
 
 
 def test_shuf_input_range_single_element_is_valid():
     """GNU `-i 2-2` is a one-element range, not a degenerate one."""
     rendered, io = asyncio.run(
-        shuf([], [], read_bytes=_unused_read_bytes, input_range="2-2"))
+        shuf([], [], read_bytes=_unused_read_bytes, input_range="2-2")
+    )
     assert io.exit_code == 0
     assert rendered == b"2\n"
 
 
 def test_shuf_input_range_stays_valid():
     rendered, io = asyncio.run(
-        shuf([], [], read_bytes=_unused_read_bytes, input_range="1-3"))
+        shuf([], [], read_bytes=_unused_read_bytes, input_range="1-3")
+    )
     assert io.exit_code == 0
     assert sorted(rendered.decode().strip().split("\n")) == ["1", "2", "3"]
 
@@ -165,22 +176,31 @@ def test_shuf_input_range_stays_valid():
 # TypeScript twin always did, so the fix is `fullmatch`. The value is
 # rendered through gnulib `quote()`, so the newline is the two characters
 # `\n` and not the byte (NL3-A).
-@pytest.mark.parametrize("raw,quoted", [("2\n", "2\\n"), ("1\n2", "1\\n2"),
-                                        ("0\n", "0\\n"), ("2\r", "2\\r"),
-                                        ("2\x01", "2\\001")])
+@pytest.mark.parametrize(
+    "raw,quoted",
+    [
+        ("2\n", "2\\n"),
+        ("1\n2", "1\\n2"),
+        ("0\n", "0\\n"),
+        ("2\r", "2\\r"),
+        ("2\x01", "2\\001"),
+    ],
+)
 def test_shuf_head_count_refuses_a_trailing_newline(raw, quoted):
     with pytest.raises(ValueError) as refusal:
         parse_flags({"head_count": raw})
     assert str(refusal.value) == f"shuf: invalid line count: '{quoted}'"
 
 
-@pytest.mark.parametrize("raw,quoted", [("1-3\n", "1-3\\n"),
-                                        ("1-3\n5", "1-3\\n5"),
-                                        ("2-2\n", "2-2\\n")])
+@pytest.mark.parametrize(
+    "raw,quoted",
+    [("1-3\n", "1-3\\n"), ("1-3\n5", "1-3\\n5"), ("2-2\n", "2-2\\n")],
+)
 def test_shuf_input_range_refuses_a_trailing_newline(raw, quoted):
     with pytest.raises(ValueError) as refusal:
         asyncio.run(
-            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw))
+            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw)
+        )
     assert str(refusal.value) == f"shuf: invalid input range: '{quoted}'"
 
 
@@ -195,13 +215,16 @@ def test_shuf_head_count_without_a_newline_is_still_accepted(raw):
 # same reason as in nl: python calls 0x1c-0x1f whitespace and GNU does
 # not. Ground truth NL3-C.
 @pytest.mark.parametrize(
-    "raw", [" 2", "\t2", "\n2", "\x0b2", "\f2", "\r2", "  2", " +2"])
+    "raw", [" 2", "\t2", "\n2", "\x0b2", "\f2", "\r2", "  2", " +2"]
+)
 def test_shuf_head_count_skips_leading_c_whitespace(raw):
     assert parse_flags({"head_count": raw}) is not None
 
 
-@pytest.mark.parametrize("raw,quoted", [("2 ", "2 "), (" -2", " -2"),
-                                        ("+ 2", "+ 2"), ("\x1c2", "\\0342")])
+@pytest.mark.parametrize(
+    "raw,quoted",
+    [("2 ", "2 "), (" -2", " -2"), ("+ 2", "+ 2"), ("\x1c2", "\\0342")],
+)
 def test_shuf_head_count_refuses_the_rest_of_the_prefix(raw, quoted):
     """`-n` is unsigned, so ` -2` is refused where nl's `-v` accepts it."""
     with pytest.raises(ValueError) as refusal:
@@ -212,39 +235,45 @@ def test_shuf_head_count_refuses_the_rest_of_the_prefix(raw, quoted):
 # `-i` splits at the FIRST dash and scans each bound on its own, so a `+`
 # and a leading blank ride on either bound independently. Every row
 # measured against GNU (ground truth NL3-D).
-@pytest.mark.parametrize("raw,bounds", [
-    ("1-3", (1, 3)),
-    ("+1-3", (1, 3)),
-    ("1-+3", (1, 3)),
-    ("+1-+3", (1, 3)),
-    (" +1-3", (1, 3)),
-    ("1- 3", (1, 3)),
-    ("+0-0", (0, 0)),
-    ("10-20", (10, 20)),
-    ("2-2", (2, 2)),
-    ("01-03", (1, 3)),
-])
+@pytest.mark.parametrize(
+    "raw,bounds",
+    [
+        ("1-3", (1, 3)),
+        ("+1-3", (1, 3)),
+        ("1-+3", (1, 3)),
+        ("+1-+3", (1, 3)),
+        (" +1-3", (1, 3)),
+        ("1- 3", (1, 3)),
+        ("+0-0", (0, 0)),
+        ("10-20", (10, 20)),
+        ("2-2", (2, 2)),
+        ("01-03", (1, 3)),
+    ],
+)
 def test_shuf_input_range_accepts_a_bound_prefix(raw, bounds):
     assert parse_input_range(raw) == bounds
 
 
-@pytest.mark.parametrize("raw", [
-    "-1-3",
-    "1--3",
-    "++1-3",
-    "1-2-3",
-    "1-3-",
-    " 1 - 3 ",
-    "1 -3",
-    "-",
-    "1-",
-    "-3",
-    "3-1",
-    "1-3\n",
-    "abc",
-    "1",
-    "",
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "-1-3",
+        "1--3",
+        "++1-3",
+        "1-2-3",
+        "1-3-",
+        " 1 - 3 ",
+        "1 -3",
+        "-",
+        "1-",
+        "-3",
+        "3-1",
+        "1-3\n",
+        "abc",
+        "1",
+        "",
+    ],
+)
 def test_shuf_input_range_refuses_every_other_shape(raw):
     """A `-` is never a sign, and shuf has one message for all of it."""
     assert parse_input_range(raw) is RangeRefusal.INVALID
@@ -280,14 +309,20 @@ def test_shuf_no_write_op_is_not_swallowed_by_that_catch():
     assert NO_WRITE_OP == "shuf: backend provides no write op"
     with pytest.raises(ValueError, match="backend provides no write op"):
         asyncio.run(
-            shuf([], [],
-                 read_bytes=_unused_read_bytes,
-                 stdin=b"a\n",
-                 output=PathSpec(vfs_path="o.txt",
-                                 virtual="/o.txt",
-                                 directory="/",
-                                 resolved=True),
-                 write_bytes=None))
+            shuf(
+                [],
+                [],
+                read_bytes=_unused_read_bytes,
+                stdin=b"a\n",
+                output=PathSpec(
+                    vfs_path="o.txt",
+                    virtual="/o.txt",
+                    directory="/",
+                    resolved=True,
+                ),
+                write_bytes=None,
+            )
+        )
 
 
 # `-i`'s bounds are `uintmax_t`, so UINTMAX_MAX is a legal bound and one past
@@ -295,30 +330,36 @@ def test_shuf_no_write_op_is_not_swallowed_by_that_catch():
 # limit at SIZE_MAX and that one reads as the PLAIN message, the same one a
 # decreasing range gets. Every row measured against GNU coreutils 9.4 (ground
 # truth SH1, SH3, SH4).
-@pytest.mark.parametrize("raw,bounds", [
-    ("9007199254740992-9007199254740992", (2**53, 2**53)),
-    ("9007199254740993-9007199254740993", (2**53 + 1, 2**53 + 1)),
-    ("9223372036854775807-9223372036854775807", (2**63 - 1, 2**63 - 1)),
-    ("9223372036854775808-9223372036854775808", (2**63, 2**63)),
-    (f"{UINTMAX_MAX}-{UINTMAX_MAX}", (UINTMAX_MAX, UINTMAX_MAX)),
-    (f"{UINTMAX_MAX - 1}-{UINTMAX_MAX}", (UINTMAX_MAX - 1, UINTMAX_MAX)),
-    (f"0-{UINTMAX_MAX - 1}", (0, UINTMAX_MAX - 1)),
-    (f"1-{UINTMAX_MAX}", (1, UINTMAX_MAX)),
-])
+@pytest.mark.parametrize(
+    "raw,bounds",
+    [
+        ("9007199254740992-9007199254740992", (2**53, 2**53)),
+        ("9007199254740993-9007199254740993", (2**53 + 1, 2**53 + 1)),
+        ("9223372036854775807-9223372036854775807", (2**63 - 1, 2**63 - 1)),
+        ("9223372036854775808-9223372036854775808", (2**63, 2**63)),
+        (f"{UINTMAX_MAX}-{UINTMAX_MAX}", (UINTMAX_MAX, UINTMAX_MAX)),
+        (f"{UINTMAX_MAX - 1}-{UINTMAX_MAX}", (UINTMAX_MAX - 1, UINTMAX_MAX)),
+        (f"0-{UINTMAX_MAX - 1}", (0, UINTMAX_MAX - 1)),
+        (f"1-{UINTMAX_MAX}", (1, UINTMAX_MAX)),
+    ],
+)
 def test_shuf_input_range_accepts_a_bound_up_to_uintmax_max(raw, bounds):
     assert parse_input_range(raw) == bounds
 
 
-@pytest.mark.parametrize("raw", [
-    "18446744073709551616-18446744073709551616",
-    "1-18446744073709551616",
-    "18446744073709551616-1",
-    "18446744073709551616-x",
-    "99999999999999999999-1",
-    "+18446744073709551616-1",
-    " 18446744073709551616-1",
-    "99999999999999999999999999-99999999999999999999999999",
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "18446744073709551616-18446744073709551616",
+        "1-18446744073709551616",
+        "18446744073709551616-1",
+        "18446744073709551616-x",
+        "99999999999999999999-1",
+        "+18446744073709551616-1",
+        " 18446744073709551616-1",
+        "99999999999999999999999999-99999999999999999999999999",
+    ],
+)
 def test_shuf_input_range_overflow_earns_the_clause(raw):
     """A bound past UINTMAX_MAX is OVERFLOW, and the clause is EOVERFLOW's.
 
@@ -329,9 +370,12 @@ def test_shuf_input_range_overflow_earns_the_clause(raw):
     assert parse_input_range(raw) is RangeRefusal.OVERFLOW
     with pytest.raises(ValueError) as refusal:
         asyncio.run(
-            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw))
-    assert str(refusal.value) == (f"shuf: invalid input range: '{raw}'"
-                                  ": Value too large for defined data type")
+            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw)
+        )
+    assert str(refusal.value) == (
+        f"shuf: invalid input range: '{raw}'"
+        ": Value too large for defined data type"
+    )
 
 
 def test_shuf_input_range_scans_left_to_right():
@@ -356,21 +400,24 @@ def test_shuf_input_range_span_limit_is_the_plain_message():
     assert parse_input_range(raw) is RangeRefusal.INVALID
     with pytest.raises(ValueError) as refusal:
         asyncio.run(
-            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw))
+            shuf([], [], read_bytes=_unused_read_bytes, input_range=raw)
+        )
     assert str(refusal.value) == f"shuf: invalid input range: '{raw}'"
     assert parse_input_range(f"+0-{SIZE_MAX}") is RangeRefusal.INVALID
     assert parse_input_range(f"0-{SIZE_MAX - 1}") == (0, SIZE_MAX - 1)
 
 
 def test_shuf_range_error_renders_the_clause_only_when_earned():
-    assert range_error(
-        "3-1", RangeRefusal.INVALID) == ("shuf: invalid input range: '3-1'")
-    assert range_error(
-        "1-3\n",
-        RangeRefusal.INVALID) == ("shuf: invalid input range: '1-3\\n'")
+    assert range_error("3-1", RangeRefusal.INVALID) == (
+        "shuf: invalid input range: '3-1'"
+    )
+    assert range_error("1-3\n", RangeRefusal.INVALID) == (
+        "shuf: invalid input range: '1-3\\n'"
+    )
     assert range_error("18446744073709551616-1", RangeRefusal.OVERFLOW) == (
         "shuf: invalid input range: '18446744073709551616-1'"
-        ": Value too large for defined data type")
+        ": Value too large for defined data type"
+    )
 
 
 # The reviewed bug, and the one shape that proves the bounds are exact rather
@@ -379,17 +426,20 @@ def test_shuf_range_error_renders_the_clause_only_when_earned():
 # prints the WRONG integer with exit 0 (ground truth SH2). Both are
 # one-element ranges, so the assertion is on the byte, and neither can hang
 # the suite even if the fix regresses in some other direction.
-@pytest.mark.parametrize("low", [
-    2**53,
-    2**53 + 1,
-    2**63 - 1,
-    2**63,
-    UINTMAX_MAX,
-])
+@pytest.mark.parametrize(
+    "low",
+    [
+        2**53,
+        2**53 + 1,
+        2**63 - 1,
+        2**63,
+        UINTMAX_MAX,
+    ],
+)
 def test_shuf_input_range_emits_a_large_bound_exactly(low):
     rendered, io = asyncio.run(
-        shuf([], [], read_bytes=_unused_read_bytes,
-             input_range=f"{low}-{low}"))
+        shuf([], [], read_bytes=_unused_read_bytes, input_range=f"{low}-{low}")
+    )
     assert io.exit_code == 0
     assert rendered == f"{low}\n".encode()
 
@@ -399,14 +449,18 @@ def test_shuf_input_range_emits_a_large_bound_exactly(low):
 # SH5). Each case here names a range far too large to enumerate, so an
 # implementation that enumerates fails by timing out rather than by assertion
 # -- which is exactly the failure the reviewer reported.
-@pytest.mark.parametrize("raw", [
-    f"1-{UINTMAX_MAX}",
-    "1-1000000000000",
-    "1-100000000",
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        f"1-{UINTMAX_MAX}",
+        "1-1000000000000",
+        "1-100000000",
+    ],
+)
 def test_shuf_samples_a_huge_range_without_enumerating_it(raw):
     rendered, io = asyncio.run(
-        shuf([], [], read_bytes=_unused_read_bytes, input_range=raw, count=3))
+        shuf([], [], read_bytes=_unused_read_bytes, input_range=raw, count=3)
+    )
     assert io.exit_code == 0
     low, high = parse_input_range(raw)
     values = [int(line) for line in rendered.decode().split("\n")[:-1]]
@@ -418,21 +472,29 @@ def test_shuf_samples_a_huge_range_without_enumerating_it(raw):
 def test_shuf_head_count_zero_on_a_huge_range_emits_nothing():
     """GNU answers `-n 0` instantly however large the range is."""
     rendered, io = asyncio.run(
-        shuf([], [],
-             read_bytes=_unused_read_bytes,
-             input_range=f"1-{UINTMAX_MAX}",
-             count=0))
+        shuf(
+            [],
+            [],
+            read_bytes=_unused_read_bytes,
+            input_range=f"1-{UINTMAX_MAX}",
+            count=0,
+        )
+    )
     assert io.exit_code == 0
     assert rendered == b""
 
 
 def test_shuf_repeat_draws_from_a_huge_range_without_enumerating_it():
     rendered, io = asyncio.run(
-        shuf([], [],
-             read_bytes=_unused_read_bytes,
-             input_range=f"1-{UINTMAX_MAX}",
-             count=4,
-             with_replacement=True))
+        shuf(
+            [],
+            [],
+            read_bytes=_unused_read_bytes,
+            input_range=f"1-{UINTMAX_MAX}",
+            count=4,
+            with_replacement=True,
+        )
+    )
     assert io.exit_code == 0
     assert len(rendered.decode().split("\n")[:-1]) == 4
 
@@ -441,26 +503,20 @@ def test_shuf_repeat_draws_from_a_huge_range_without_enumerating_it():
 # own `xalloc_die` line for exactly that situation (ground truth SH5). mirage
 # renders one byte object rather than streaming, so the ceiling is stated
 # rather than left to whatever the host survives.
-@pytest.mark.parametrize("kwargs", [
-    {
-        "input_range": f"1-{UINTMAX_MAX}"
-    },
-    {
-        "input_range": "1-1000000000000"
-    },
-    {
-        "input_range": f"1-{MAX_OUTPUT_LINES + 1}"
-    },
-    {
-        "input_range": f"1-{UINTMAX_MAX}",
-        "with_replacement": True
-    },
-    {
-        "input_range": "1-3",
-        "count": MAX_OUTPUT_LINES + 1,
-        "with_replacement": True
-    },
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"input_range": f"1-{UINTMAX_MAX}"},
+        {"input_range": "1-1000000000000"},
+        {"input_range": f"1-{MAX_OUTPUT_LINES + 1}"},
+        {"input_range": f"1-{UINTMAX_MAX}", "with_replacement": True},
+        {
+            "input_range": "1-3",
+            "count": MAX_OUTPUT_LINES + 1,
+            "with_replacement": True,
+        },
+    ],
+)
 def test_shuf_refuses_an_output_it_cannot_render(kwargs):
     with pytest.raises(ValueError) as refusal:
         asyncio.run(shuf([], [], read_bytes=_unused_read_bytes, **kwargs))
@@ -476,17 +532,25 @@ def test_shuf_repeat_with_a_huge_count_on_stdin_is_refused_too():
     """
     with pytest.raises(ValueError) as refusal:
         asyncio.run(
-            shuf([], [],
-                 read_bytes=_unused_read_bytes,
-                 stdin=b"a\n",
-                 count=MAX_OUTPUT_LINES + 1,
-                 with_replacement=True))
+            shuf(
+                [],
+                [],
+                read_bytes=_unused_read_bytes,
+                stdin=b"a\n",
+                count=MAX_OUTPUT_LINES + 1,
+                with_replacement=True,
+            )
+        )
     assert str(refusal.value) == MEMORY_EXHAUSTED
     rendered, io = asyncio.run(
-        shuf([], [],
-             read_bytes=_unused_read_bytes,
-             stdin=b"a\nb\n",
-             count=MAX_OUTPUT_LINES + 1))
+        shuf(
+            [],
+            [],
+            read_bytes=_unused_read_bytes,
+            stdin=b"a\nb\n",
+            count=MAX_OUTPUT_LINES + 1,
+        )
+    )
     assert io.exit_code == 0
     assert sorted(rendered.decode().split("\n")[:-1]) == ["a", "b"]
 
@@ -496,13 +560,16 @@ def test_shuf_repeat_with_a_huge_count_on_stdin_is_refused_too():
 # than left to the host's integers: python would carry the bignum and
 # `Number.parseInt` answers `Infinity`, which is not a number either host can
 # act on. Measured, ground truth SH6.
-@pytest.mark.parametrize("raw", [
-    str(UINTMAX_MAX),
-    "18446744073709551616",
-    "+18446744073709551616",
-    "99999999999999999999999999",
-    "9" * 400,
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        str(UINTMAX_MAX),
+        "18446744073709551616",
+        "+18446744073709551616",
+        "99999999999999999999999999",
+        "9" * 400,
+    ],
+)
 def test_shuf_head_count_past_uintmax_max_is_clamped_not_refused(raw):
     assert parse_flags({"head_count": raw}).count == SIZE_MAX
 
@@ -517,22 +584,26 @@ def test_shuf_head_count_below_the_clamp_is_kept_verbatim():
 # `emit_count` is what lets the range path sample rather than enumerate, so it
 # is pinned on its own: `-r` emits exactly the count it was asked for however
 # few values it draws from, while a head count cannot exceed what is there.
-@pytest.mark.parametrize("available,count,repeat,expected", [
-    (3, None, False, 3),
-    (3, 5, False, 3),
-    (3, 2, False, 2),
-    (3, 0, False, 0),
-    (3, None, True, 3),
-    (3, 5, True, 5),
-    (1, 7, True, 7),
-    (0, 5, True, 0),
-    (0, None, True, 0),
-    (0, 5, False, 0),
-    (2**64 - 1, 3, False, 3),
-    (2**64 - 1, None, False, 2**64 - 1),
-])
+@pytest.mark.parametrize(
+    "available,count,repeat,expected",
+    [
+        (3, None, False, 3),
+        (3, 5, False, 3),
+        (3, 2, False, 2),
+        (3, 0, False, 0),
+        (3, None, True, 3),
+        (3, 5, True, 5),
+        (1, 7, True, 7),
+        (0, 5, True, 0),
+        (0, None, True, 0),
+        (0, 5, False, 0),
+        (2**64 - 1, 3, False, 3),
+        (2**64 - 1, None, False, 2**64 - 1),
+    ],
+)
 def test_shuf_emit_count_is_decided_before_anything_is_built(
-        available, count, repeat, expected):
+    available, count, repeat, expected
+):
     assert emit_count(available, count, repeat) == expected
 
 
@@ -550,8 +621,10 @@ def test_shuf_input_range_overflow_reaches_the_shell_with_its_clause():
     stdout, io = _run_raw(ws, "shuf -i 1-18446744073709551616", stdin=b"a\n")
     assert io.exit_code == 1
     assert not _bytes(stdout)
-    assert io.stderr == (b"shuf: invalid input range: '1-18446744073709551616'"
-                         b": Value too large for defined data type\n")
+    assert io.stderr == (
+        b"shuf: invalid input range: '1-18446744073709551616'"
+        b": Value too large for defined data type\n"
+    )
 
 
 # GNU validates options as getopt hands them over, so the first bad one on
@@ -560,20 +633,31 @@ def test_shuf_input_range_overflow_reaches_the_shell_with_its_clause():
 # documented divergence: the options are walked in the order they were
 # FIRST typed, each value in turn, so `-i 1-2 -n abc -i 3-4` refuses the
 # second -i where GNU names the count.
-@pytest.mark.parametrize("line,stderr", [
-    ("shuf -i 1-x -n abc", "shuf: invalid input range: '1-x'\n"),
-    ("shuf -n abc -i 1-x", "shuf: invalid line count: 'abc'\n"),
-    ("shuf -i 1-2 -i 3-4", "shuf: multiple -i options specified\n"),
-    ("shuf -i 1-2 -i 1-2", "shuf: multiple -i options specified\n"),
-    ("shuf -i 1-x -i 2-3", "shuf: invalid input range: '1-x'\n"),
-    ("shuf -i 1-2 -n abc -i 3-4", "shuf: multiple -i options specified\n"),
-    ("shuf -i 1-2 -o /data/a -o /data/b",
-     "shuf: multiple output files specified\n"),
-    ("shuf -e a -i 1-2", "shuf: cannot combine -e and -i options\n"
-     "Try 'shuf --help' for more information.\n"),
-    ("shuf -i 1-2 /data/f", "shuf: extra operand '/data/f'\n"
-     "Try 'shuf --help' for more information.\n"),
-])
+@pytest.mark.parametrize(
+    "line,stderr",
+    [
+        ("shuf -i 1-x -n abc", "shuf: invalid input range: '1-x'\n"),
+        ("shuf -n abc -i 1-x", "shuf: invalid line count: 'abc'\n"),
+        ("shuf -i 1-2 -i 3-4", "shuf: multiple -i options specified\n"),
+        ("shuf -i 1-2 -i 1-2", "shuf: multiple -i options specified\n"),
+        ("shuf -i 1-x -i 2-3", "shuf: invalid input range: '1-x'\n"),
+        ("shuf -i 1-2 -n abc -i 3-4", "shuf: multiple -i options specified\n"),
+        (
+            "shuf -i 1-2 -o /data/a -o /data/b",
+            "shuf: multiple output files specified\n",
+        ),
+        (
+            "shuf -e a -i 1-2",
+            "shuf: cannot combine -e and -i options\n"
+            "Try 'shuf --help' for more information.\n",
+        ),
+        (
+            "shuf -i 1-2 /data/f",
+            "shuf: extra operand '/data/f'\n"
+            "Try 'shuf --help' for more information.\n",
+        ),
+    ],
+)
 def test_shuf_refuses_in_command_line_order(line, stderr):
     ws, _ = _ws()
     stdout, io = _run_raw(ws, line, cwd="/data")

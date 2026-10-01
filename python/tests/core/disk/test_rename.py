@@ -21,7 +21,6 @@ from mirage.types import PathSpec
 
 
 class _FakeManager:
-
     def __init__(self) -> None:
         self.writes: list[str] = []
         self.unlinks: list[str] = []

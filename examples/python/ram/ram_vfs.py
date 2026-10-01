@@ -74,10 +74,14 @@ async def main():
 
         print("\n--- os.stat() ---")
         st = os.stat("/data/hello.txt")
-        print(f"  hello.txt: {st.st_size} bytes, "
-              f"regular file: {stat_mod.S_ISREG(st.st_mode)}")
-        print(f"  sub: directory: "
-              f"{stat_mod.S_ISDIR(os.stat('/data/sub').st_mode)}")
+        print(
+            f"  hello.txt: {st.st_size} bytes, "
+            f"regular file: {stat_mod.S_ISREG(st.st_mode)}"
+        )
+        print(
+            f"  sub: directory: "
+            f"{stat_mod.S_ISDIR(os.stat('/data/sub').st_mode)}"
+        )
 
         print("\n--- os.walk() ---")
         for top, dirs, files in os.walk("/data"):
@@ -86,8 +90,7 @@ async def main():
         print("\n--- os.scandir() ---")
         with os.scandir("/data") as it:
             for entry in sorted(it, key=lambda e: e.name):
-                print(f"  {entry.name}: "
-                      f"{'dir' if entry.is_dir() else 'file'}")
+                print(f"  {entry.name}: {'dir' if entry.is_dir() else 'file'}")
 
         print("\n--- os.path.* ---")
         print(f"  exists hello.txt: {os.path.exists('/data/hello.txt')}")
@@ -103,24 +106,29 @@ async def main():
         os.symlink("hello.txt", "/data/link")
         print(f"  readlink: {os.readlink('/data/link')}")
         print(f"  islink: {os.path.islink('/data/link')}")
-        print("  lstat is a link: "
-              f"{stat_mod.S_ISLNK(os.lstat('/data/link').st_mode)}")
+        print(
+            "  lstat is a link: "
+            f"{stat_mod.S_ISLNK(os.lstat('/data/link').st_mode)}"
+        )
         print(f"  stat follows it: {os.stat('/data/link').st_size} bytes")
         # A link has an owner of its own that chown -h writes, so lstat
         # reads the link's row rather than rebuilding one from the
         # target string. Its bits stay lrwxrwxrwx whatever chmod -h says.
         os.lchown("/data/link", 4242, 4343)
         link_st = os.lstat("/data/link")
-        print(f"  lchown then lstat: {link_st.st_uid}:{link_st.st_gid} "
-              f"mode {oct(stat_mod.S_IMODE(link_st.st_mode))}")
+        print(
+            f"  lchown then lstat: {link_st.st_uid}:{link_st.st_gid} "
+            f"mode {oct(stat_mod.S_IMODE(link_st.st_mode))}"
+        )
 
         print("\n--- metadata ---")
         os.chmod("/data/hello.txt", 0o600)
         mode = stat_mod.S_IMODE(os.stat("/data/hello.txt").st_mode)
         print(f"  chmod: {oct(mode)}")
         os.utime("/data/hello.txt", (STAMP, STAMP))
-        stamped = datetime.fromtimestamp(os.path.getmtime("/data/hello.txt"),
-                                         timezone.utc)
+        stamped = datetime.fromtimestamp(
+            os.path.getmtime("/data/hello.txt"), timezone.utc
+        )
         print(f"  utime: {stamped.isoformat()}")
 
         print("\n--- pathlib ---")
@@ -155,8 +163,10 @@ async def main():
         except OSError as exc:
             print(f"  os.rename to the host: {label(exc)}")
         Path(f"{host}/from_host.txt").write_text("host bytes\n")
-        print(f"  host path still reads: "
-              f"{Path(f'{host}/from_host.txt').read_text().strip()}")
+        print(
+            f"  host path still reads: "
+            f"{Path(f'{host}/from_host.txt').read_text().strip()}"
+        )
         os.symlink(f"{host}/from_host.txt", f"{host}/host_link")
         # A bytes path is a host spelling no mount serves, and
         # os.readlink answers one with bytes, not with a str of them.

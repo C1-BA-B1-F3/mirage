@@ -40,14 +40,17 @@ class _ListWords:
 
 # GNU words the two modes differently and never shares a string between
 # them; only "invalid decreasing range" carries no mode noun.
-_FIELD_WORDS = _ListWords("invalid field value", "invalid field range",
-                          "fields are numbered from 1")
+_FIELD_WORDS = _ListWords(
+    "invalid field value", "invalid field range", "fields are numbered from 1"
+)
 # The two range strings are worded differently from each other on
 # purpose: the position one joins the nouns with a slash, the range one
 # spells out " or ". Both are byte-exact against coreutils 9.4.
-_POSITION_WORDS = _ListWords("invalid byte/character position",
-                             "invalid byte or character range",
-                             "byte/character positions are numbered from 1")
+_POSITION_WORDS = _ListWords(
+    "invalid byte/character position",
+    "invalid byte or character range",
+    "byte/character positions are numbered from 1",
+)
 
 
 def _cut_error(message: str) -> ValueError:
@@ -123,8 +126,9 @@ def parse_ranges(spec: str, mode: str) -> list[tuple[int, int]]:
     return ranges
 
 
-def _select_positions(ranges: list[tuple[int, int]], n: int,
-                      complement: bool) -> list[int]:
+def _select_positions(
+    ranges: list[tuple[int, int]], n: int, complement: bool
+) -> list[int]:
     in_set: set[int] = set()
     for lo, hi in ranges:
         start = max(1, lo)
@@ -146,8 +150,9 @@ def _split_records(raw: bytes, zero_terminated: bool) -> list[bytes]:
     return records
 
 
-def _join_position_groups(parts: list[bytes], positions: list[int],
-                          output_delimiter: bytes | None) -> bytes:
+def _join_position_groups(
+    parts: list[bytes], positions: list[int], output_delimiter: bytes | None
+) -> bytes:
     if not positions:
         return b""
     groups: list[bytes] = []
@@ -163,12 +168,18 @@ def _join_position_groups(parts: list[bytes], positions: list[int],
     return (output_delimiter or b"").join(groups)
 
 
-def _cut_bytes(rec: bytes, ranges: list[tuple[int, int]], complement: bool,
-               no_partial: bool, output_delimiter: bytes | None) -> bytes:
+def _cut_bytes(
+    rec: bytes,
+    ranges: list[tuple[int, int]],
+    complement: bool,
+    no_partial: bool,
+    output_delimiter: bytes | None,
+) -> bytes:
     positions = _select_positions(ranges, len(rec), complement)
     if not no_partial:
-        return _join_position_groups([bytes((byte, )) for byte in rec],
-                                     positions, output_delimiter)
+        return _join_position_groups(
+            [bytes((byte,)) for byte in rec], positions, output_delimiter
+        )
     selected = set(positions)
     parts: list[bytes] = []
     part_positions: list[int] = []
@@ -184,8 +195,9 @@ def _cut_bytes(rec: bytes, ranges: list[tuple[int, int]], complement: bool,
         return b"".join(parts)
     groups: list[bytes] = []
     for index, part in enumerate(parts):
-        if index == 0 or part_positions[index] != (part_positions[index - 1] +
-                                                   len(parts[index - 1])):
+        if index == 0 or part_positions[index] != (
+            part_positions[index - 1] + len(parts[index - 1])
+        ):
             groups.append(part)
         else:
             groups[-1] += part
@@ -203,8 +215,9 @@ def _cut_record(
     no_partial: bool,
     output_delimiter: str | None,
 ) -> bytes | None:
-    output_bytes = (output_delimiter.encode()
-                    if output_delimiter is not None else None)
+    output_bytes = (
+        output_delimiter.encode() if output_delimiter is not None else None
+    )
     if mode == "bytes":
         return _cut_bytes(rec, ranges, complement, no_partial, output_bytes)
     text = rec.decode(errors="replace")
@@ -226,10 +239,12 @@ def _cut_record(
     if whitespace == "trimmed" and source == "" and only_delimited:
         return None
     positions = _select_positions(ranges, len(fields), complement)
-    separator = (output_delimiter
-                 if output_delimiter is not None else default_output)
-    return separator.join(fields[position - 1]
-                          for position in positions).encode()
+    separator = (
+        output_delimiter if output_delimiter is not None else default_output
+    )
+    return separator.join(
+        fields[position - 1] for position in positions
+    ).encode()
 
 
 async def cut_stream(
@@ -250,9 +265,17 @@ async def cut_stream(
     async for chunk in source:
         raw += chunk
     for rec in _split_records(raw, zero_terminated):
-        output = _cut_record(rec, ranges, mode, delimiter, complement,
-                             only_delimited, whitespace, no_partial,
-                             output_delimiter)
+        output = _cut_record(
+            rec,
+            ranges,
+            mode,
+            delimiter,
+            complement,
+            only_delimited,
+            whitespace,
+            no_partial,
+            output_delimiter,
+        )
         if output is not None:
             yield output + separator
 

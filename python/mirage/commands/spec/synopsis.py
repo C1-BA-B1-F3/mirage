@@ -37,8 +37,7 @@ SYNOPSES: dict[str, str] = {
     "du": "du [OPTION]... [FILE]...",
     "expand": "expand [OPTION]... [FILE]...",
     "expr": "expr EXPRESSION",
-    "find":
-    "find [-H] [-L] [-P] [-Olevel] [-D debugopts] [path...] [expression]",
+    "find": "find [-H] [-L] [-P] [-Olevel] [-D debugopts] [path...] [expression]",
     "fmt": "fmt [-WIDTH] [OPTION]... [FILE]...",
     "fold": "fold [OPTION]... [FILE]...",
     "getfattr": "getfattr [-hRLP] [-n name|-d] [-e en] [-m pattern] path...",

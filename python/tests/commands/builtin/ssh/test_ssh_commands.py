@@ -26,27 +26,28 @@ from mirage.workspace import Workspace
 
 
 class MockSFTPAttrs:
-
     def __init__(self, *, is_dir=False, size=0, mtime=None):
-        self.type = (asyncssh.FILEXFER_TYPE_DIRECTORY
-                     if is_dir else asyncssh.FILEXFER_TYPE_REGULAR)
+        self.type = (
+            asyncssh.FILEXFER_TYPE_DIRECTORY
+            if is_dir
+            else asyncssh.FILEXFER_TYPE_REGULAR
+        )
         self.size = size
         self.mtime = mtime or int(
-            datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp())
+            datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        )
         # Real asyncssh SFTPAttrs always carry these (default None).
         self.permissions = None
         self.atime = None
 
 
 class MockSFTPName:
-
     def __init__(self, filename, *, is_dir=False, size=0, mtime=None):
         self.filename = filename
         self.attrs = MockSFTPAttrs(is_dir=is_dir, size=size, mtime=mtime)
 
 
 class MockSFTPFile:
-
     def __init__(self, store, path, mode):
         self._store = store
         self._path = path
@@ -81,7 +82,6 @@ class MockSFTPFile:
 
 
 class MockSFTPClient:
-
     def __init__(self, files: dict[str, bytes], dirs: set[str]):
         self.files = files
         self.dirs = dirs
@@ -111,20 +111,23 @@ class MockSFTPClient:
         for key in sorted(self.files):
             if not key.startswith(prefix):
                 continue
-            rel = key[len(prefix):]
+            rel = key[len(prefix) :]
             name = rel.split("/")[0]
             if name not in seen:
                 seen.add(name)
                 child_path = prefix + name
                 is_dir = child_path in self.dirs
                 entries.append(
-                    MockSFTPName(name,
-                                 is_dir=is_dir,
-                                 size=0 if is_dir else len(self.files[key])))
+                    MockSFTPName(
+                        name,
+                        is_dir=is_dir,
+                        size=0 if is_dir else len(self.files[key]),
+                    )
+                )
         for d in sorted(self.dirs):
             if not d.startswith(prefix):
                 continue
-            rel = d[len(prefix):]
+            rel = d[len(prefix) :]
             name = rel.split("/")[0]
             if name and name not in seen:
                 seen.add(name)
@@ -165,10 +168,13 @@ class MockSFTPClient:
         elif src in self.dirs:
             self.dirs.discard(src)
             self.dirs.add(dst)
-            to_move = [(k, v) for k, v in self.files.items()
-                       if k.startswith(src + "/")]
+            to_move = [
+                (k, v)
+                for k, v in self.files.items()
+                if k.startswith(src + "/")
+            ]
             for k, v in to_move:
-                new_key = dst + k[len(src):]
+                new_key = dst + k[len(src) :]
                 self.files[new_key] = v
                 del self.files[k]
         else:
@@ -186,7 +192,6 @@ class MockSFTPClient:
 
 
 class SSHTestEnv:
-
     def __init__(self):
         self.config = SSHConfig(host="mock", root="/data", known_hosts=None)
         self.vfs = SSHVFS(self.config)
@@ -270,7 +275,8 @@ def test_cat_populates_cache(env):
     env.run("cat /ssh/f.txt")
     cache_keys = list(env.ws._cache._entries)
     assert "/ssh/f.txt" in cache_keys, (
-        f"cache should have /ssh/f.txt after cat; got {cache_keys}")
+        f"cache should have /ssh/f.txt after cat; got {cache_keys}"
+    )
 
 
 def test_head(env):

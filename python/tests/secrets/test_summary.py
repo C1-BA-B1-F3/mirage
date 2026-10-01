@@ -15,13 +15,18 @@
 import pytest
 from pydantic import BaseModel, ValidationError, field_validator
 
-from mirage.secrets.summary import (MAX_LISTED_FIELDS, error_summary,
-                                    field_summary)
+from mirage.secrets.summary import (
+    MAX_LISTED_FIELDS,
+    error_summary,
+    field_summary,
+)
 
 
 def test_field_summary_lists_a_secret_sized_secret():
-    assert field_summary({"credential": "x", "username": "u"}, "op") == \
-        "{credential, username}"
+    assert (
+        field_summary({"credential": "x", "username": "u"}, "op")
+        == "{credential, username}"
+    )
 
 
 def test_field_summary_lists_nothing_for_an_empty_secret():
@@ -82,5 +87,6 @@ def test_error_summary_never_carries_the_input():
 
 
 def test_error_summary_joins_every_issue():
-    assert error_summary(refusal(
-        port="x", token="sk-1")) == ("port: int_parsing; token: value_error")
+    assert error_summary(refusal(port="x", token="sk-1")) == (
+        "port: int_parsing; token: value_error"
+    )

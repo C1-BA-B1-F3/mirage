@@ -28,5 +28,7 @@ def test_three_octal_digits_past_a_byte_keep_the_low_byte():
 
 def test_a_non_bmp_character_is_not_a_byte():
     assert encode_text("\U00010080") == "\U00010080".encode()
-    assert encode_text("a\U00010080" +
-                       byte_char(0xFF)) == "a\U00010080".encode() + b"\xff"
+    assert (
+        encode_text("a\U00010080" + byte_char(0xFF))
+        == "a\U00010080".encode() + b"\xff"
+    )

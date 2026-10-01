@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 
 class WorkspaceEntry:
-
     def __init__(self, workspace_id: str, runner: WorkspaceRunner) -> None:
         self.id = workspace_id
         self.runner = runner
@@ -43,9 +42,11 @@ class WorkspaceRegistry:
     external lock is required.
     """
 
-    def __init__(self,
-                 idle_grace_seconds: float = 30.0,
-                 exit_event: asyncio.Event | None = None) -> None:
+    def __init__(
+        self,
+        idle_grace_seconds: float = 30.0,
+        exit_event: asyncio.Event | None = None,
+    ) -> None:
         """Construct an empty registry.
 
         Args:
@@ -57,8 +58,9 @@ class WorkspaceRegistry:
         """
         self._entries: dict[str, WorkspaceEntry] = {}
         self.idle_grace_seconds = idle_grace_seconds
-        self.exit_event = (exit_event
-                           if exit_event is not None else asyncio.Event())
+        self.exit_event = (
+            exit_event if exit_event is not None else asyncio.Event()
+        )
         self._idle_task: asyncio.Task[Any] | None = None
 
     def __contains__(self, workspace_id: str) -> bool:
@@ -78,9 +80,9 @@ class WorkspaceRegistry:
     def items(self) -> Iterable[tuple[str, WorkspaceEntry]]:
         return self._entries.items()
 
-    def add(self,
-            workspace: Workspace,
-            workspace_id: str | None = None) -> WorkspaceEntry:
+    def add(
+        self, workspace: Workspace, workspace_id: str | None = None
+    ) -> WorkspaceEntry:
         """Wrap ``workspace`` in a runner and register it.
 
         Args:

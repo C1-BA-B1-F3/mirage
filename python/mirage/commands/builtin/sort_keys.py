@@ -24,6 +24,7 @@ from mirage.commands.quote import quote_text
 @dataclass(frozen=True, slots=True)
 class NumericKey:
     """A decimal with no leading or trailing zeroes; zero is never negative."""
+
     negative: bool
     integer: str
     fraction: str
@@ -36,8 +37,15 @@ _VersionPart: TypeAlias = tuple[int, int] | tuple[int, str]
 # parsed number, the (unit, number) pair -h orders by, the (rank, value)
 # pair -g uses to order junk before NaN before real numbers, the version
 # run list, or the text itself.
-_SortKey: TypeAlias = (NumericKey | str | int | float | tuple[int, NumericKey]
-                       | tuple[int, float] | list[_VersionPart])
+_SortKey: TypeAlias = (
+    NumericKey
+    | str
+    | int
+    | float
+    | tuple[int, NumericKey]
+    | tuple[int, float]
+    | list[_VersionPart]
+)
 # sort.c's `unit_order`: the suffixes -h ranks, lowercase only for k.
 _UNIT_ORDERS = {
     "K": 1,
@@ -144,14 +152,16 @@ def _field_count(spec: str, pos: int, what: str) -> tuple[int, int]:
     while end < len(spec) and "0" <= spec[end] <= "9":
         end += 1
     if end == digits:
-        raise SortKeyError(f"{what}: invalid count at start of "
-                           f"'{quote_text(spec[pos:])}'")
+        raise SortKeyError(
+            f"{what}: invalid count at start of '{quote_text(spec[pos:])}'"
+        )
     return int(spec[digits:end]), end
 
 
 def _bad_field_spec(spec: str, why: str) -> SortKeyError:
-    return SortKeyError(f"{why}: invalid field specification "
-                        f"'{quote_text(spec)}'")
+    return SortKeyError(
+        f"{why}: invalid field specification '{quote_text(spec)}'"
+    )
 
 
 def _ordering(spec: str, pos: int) -> tuple[str, int]:
@@ -200,8 +210,9 @@ def parse_keydef(spec: str, global_mods: KeyMods, global_skip: bool) -> Key:
         raise _bad_field_spec(spec, "field number is zero")
     start_char = 1
     if pos < len(spec) and spec[pos] == ".":
-        start_char, pos = _field_count(spec, pos + 1,
-                                       "invalid number after '.'")
+        start_char, pos = _field_count(
+            spec, pos + 1, "invalid number after '.'"
+        )
         if start_char == 0:
             raise _bad_field_spec(spec, "character offset is zero")
     start_letters, pos = _ordering(spec, pos)
@@ -209,13 +220,15 @@ def parse_keydef(spec: str, global_mods: KeyMods, global_skip: bool) -> Key:
     end_char: int | None = None
     end_letters = ""
     if pos < len(spec) and spec[pos] == ",":
-        end_field, pos = _field_count(spec, pos + 1,
-                                      "invalid number after ','")
+        end_field, pos = _field_count(
+            spec, pos + 1, "invalid number after ','"
+        )
         if end_field == 0:
             raise _bad_field_spec(spec, "field number is zero")
         if pos < len(spec) and spec[pos] == ".":
-            end_char, pos = _field_count(spec, pos + 1,
-                                         "invalid number after '.'")
+            end_char, pos = _field_count(
+                spec, pos + 1, "invalid number after '.'"
+            )
         end_letters, pos = _ordering(spec, pos)
     if pos < len(spec):
         raise _bad_field_spec(spec, "stray character in field spec")
@@ -253,10 +266,19 @@ def _incompatible_letters(mods: KeyMods) -> str:
     Returns:
         str: the letters to name, or ``""`` for a compatible key.
     """
-    text_orders = (mods.version or mods.random or mods.dictionary
-                   or mods.ignore_nonprinting)
-    orderings = (mods.numeric + mods.general_numeric + mods.human +
-                 mods.month + text_orders)
+    text_orders = (
+        mods.version
+        or mods.random
+        or mods.dictionary
+        or mods.ignore_nonprinting
+    )
+    orderings = (
+        mods.numeric
+        + mods.general_numeric
+        + mods.human
+        + mods.month
+        + text_orders
+    )
     if orderings <= 1:
         return ""
     spelled = (
@@ -331,11 +353,12 @@ def build_config(
     )
     if key_defs:
         keys = tuple(
-            parse_keydef(spec, global_mods, ignore_blanks)
-            for spec in key_defs)
+            parse_keydef(spec, global_mods, ignore_blanks) for spec in key_defs
+        )
     else:
-        keys = (Key(1, 1, ignore_blanks, None, None, ignore_blanks,
-                    global_mods), )
+        keys = (
+            Key(1, 1, ignore_blanks, None, None, ignore_blanks, global_mods),
+        )
     for key in keys:
         letters = _incompatible_letters(key.mods)
         if letters:
@@ -349,8 +372,9 @@ def build_config(
     )
 
 
-def _compute_fields(line: str,
-                    field_sep: str | None) -> list[tuple[int, int, int]]:
+def _compute_fields(
+    line: str, field_sep: str | None
+) -> list[tuple[int, int, int]]:
     fields: list[tuple[int, int, int]] = []
     n = len(line)
     if field_sep:
@@ -420,8 +444,9 @@ def _leading_number(field: str) -> NumericKey:
     assert match is not None
     integer = match[2].lstrip("0")
     fraction = (match[3] or "").rstrip("0")
-    return NumericKey(bool(match[1] and (integer or fraction)), integer,
-                      fraction)
+    return NumericKey(
+        bool(match[1] and (integer or fraction)), integer, fraction
+    )
 
 
 def _human_number(field: str) -> tuple[int, NumericKey]:
@@ -445,8 +470,9 @@ def _human_number(field: str) -> tuple[int, NumericKey]:
 
 def _transform(field: str, mods: KeyMods) -> _SortKey:
     if mods.dictionary:
-        field = "".join(char for char in field
-                        if char.isalnum() or char in _FIELD_BLANKS)
+        field = "".join(
+            char for char in field if char.isalnum() or char in _FIELD_BLANKS
+        )
     elif mods.ignore_nonprinting:
         field = "".join(char for char in field if char.isprintable())
     if mods.month:
@@ -534,8 +560,9 @@ def sort_lines(lines: list[str], cfg: SortConfig) -> list[str]:
     return deduped
 
 
-def _merge_before(runs: list[list[str]], heads: list[int], a: int, b: int,
-                  cfg: SortConfig) -> bool:
+def _merge_before(
+    runs: list[list[str]], heads: list[int], a: int, b: int, cfg: SortConfig
+) -> bool:
     c = compare_lines(runs[a][heads[a]], runs[b][heads[b]], cfg)
     return c < 0 or (c == 0 and a < b)
 
@@ -562,8 +589,9 @@ def merge_lines(runs: list[list[str]], cfg: SortConfig) -> list[str]:
     order: list[int] = []
     for run in (i for i, lines in enumerate(runs) if lines):
         slot = len(order)
-        while slot > 0 and _merge_before(runs, heads, run, order[slot - 1],
-                                         cfg):
+        while slot > 0 and _merge_before(
+            runs, heads, run, order[slot - 1], cfg
+        ):
             slot -= 1
         order.insert(slot, run)
     merged: list[str] = []
@@ -571,8 +599,11 @@ def merge_lines(runs: list[list[str]], cfg: SortConfig) -> list[str]:
     while order:
         run = order[0]
         line = runs[run][heads[run]]
-        if not cfg.unique or saved is None or compare_lines(saved, line,
-                                                            cfg) != 0:
+        if (
+            not cfg.unique
+            or saved is None
+            or compare_lines(saved, line, cfg) != 0
+        ):
             merged.append(line)
             saved = line
         heads[run] += 1

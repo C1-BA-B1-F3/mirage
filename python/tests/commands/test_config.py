@@ -40,7 +40,6 @@ async def _collect(source):
 
 
 class TestRegisteredCommand:
-
     def test_basic_fields(self):
         rc = RegisteredCommand(
             name="cat",
@@ -65,7 +64,6 @@ class TestRegisteredCommand:
 
 
 class TestCommandDecorator:
-
     def test_decorator_attaches_registered_commands(self):
         spec = CommandSpec(rest=Operand(type="path"))
 
@@ -86,8 +84,9 @@ class TestCommandDecorator:
         wrapped = command("cat", vfs="s3", spec=CommandSpec())(original)
 
         assert original._registered_commands == original_registrations
-        assert (wrapped._registered_commands
-                is not original._registered_commands)
+        assert (
+            wrapped._registered_commands is not original._registered_commands
+        )
         assert len(wrapped._registered_commands) == 2
 
     def test_write_defaults_false(self):
@@ -113,7 +112,6 @@ class TestCommandDecorator:
 
 
 class TestCommandDecoratorWrite:
-
     def test_write_flag_passed_through(self):
         spec = CommandSpec()
 
@@ -136,10 +134,10 @@ class TestCommandDecoratorWrite:
 
 
 class TestVersionSupport:
-
     def test_auto_injects_version_option(self):
-        registered = command("foo", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("foo", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         longs = [
             o.long for o in registered._registered_commands[0].spec.options
         ]
@@ -148,49 +146,68 @@ class TestVersionSupport:
 
     def test_version_short_circuits_handler(self):
         _HANDLER_CALLS.clear()
-        registered = command("tsort", vfs="disk",
-                             spec=CommandSpec())(_recording_handler)
-        stdout, result = asyncio.run(registered._registered_commands[0].fn(
-            None, [], [], CommandOpts(flags={"version": True})))
+        registered = command("tsort", vfs="disk", spec=CommandSpec())(
+            _recording_handler
+        )
+        stdout, result = asyncio.run(
+            registered._registered_commands[0].fn(
+                None, [], [], CommandOpts(flags={"version": True})
+            )
+        )
         assert _HANDLER_CALLS == []
-        assert asyncio.run(
-            _collect(stdout)) == f"tsort (Mirage) {__version__}\n".encode()
+        assert (
+            asyncio.run(_collect(stdout))
+            == f"tsort (Mirage) {__version__}\n".encode()
+        )
         assert result.exit_code == 0
 
     def test_help_keeps_the_spec_epilog(self):
         registered = command(
-            "foo", vfs="disk",
-            spec=CommandSpec(epilog="Services:\n  drive"))(_noop_handler)
+            "foo", vfs="disk", spec=CommandSpec(epilog="Services:\n  drive")
+        )(_noop_handler)
         rc = registered._registered_commands[0]
         assert rc.spec.epilog == "Services:\n  drive"
         stdout, result = asyncio.run(
-            rc.fn(None, [], [], CommandOpts(flags={"help": True})))
+            rc.fn(None, [], [], CommandOpts(flags={"help": True}))
+        )
         assert b"Services:\n  drive\n" in asyncio.run(_collect(stdout))
         assert result.exit_code == 0
 
     def test_declared_version_reaches_the_handler(self):
         _HANDLER_CALLS.clear()
-        registered = command("custom",
-                             vfs=None,
-                             spec=CommandSpec(options=(Option(
-                                 long="--version"), )))(_recording_handler)
-        asyncio.run(registered._registered_commands[0].fn(
-            None, [], [], CommandOpts(flags={"version": True})))
+        registered = command(
+            "custom",
+            vfs=None,
+            spec=CommandSpec(options=(Option(long="--version"),)),
+        )(_recording_handler)
+        asyncio.run(
+            registered._registered_commands[0].fn(
+                None, [], [], CommandOpts(flags={"version": True})
+            )
+        )
         assert _HANDLER_CALLS == ["called"]
 
     def test_help_reaches_a_program_that_runs_its_own_option_loop(self):
         # jq answers --help where its loop reaches it (OWN_OPTION_LOOP).
         _HANDLER_CALLS.clear()
-        registered = command("jq", vfs=None,
-                             spec=SPECS["jq"])(_recording_handler)
-        asyncio.run(registered._registered_commands[0].fn(
-            None, [], [], CommandOpts(flags={"help": True})))
+        registered = command("jq", vfs=None, spec=SPECS["jq"])(
+            _recording_handler
+        )
+        asyncio.run(
+            registered._registered_commands[0].fn(
+                None, [], [], CommandOpts(flags={"help": True})
+            )
+        )
         assert _HANDLER_CALLS == ["called"]
 
     def test_help_short_circuits_a_borrowed_name(self):
         _HANDLER_CALLS.clear()
-        registered = command("jq", vfs=None,
-                             spec=CommandSpec())(_recording_handler)
-        asyncio.run(registered._registered_commands[0].fn(
-            None, [], [], CommandOpts(flags={"help": True})))
+        registered = command("jq", vfs=None, spec=CommandSpec())(
+            _recording_handler
+        )
+        asyncio.run(
+            registered._registered_commands[0].fn(
+                None, [], [], CommandOpts(flags={"help": True})
+            )
+        )
         assert _HANDLER_CALLS == []

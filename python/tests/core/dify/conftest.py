@@ -46,8 +46,11 @@ async def list_basic_documents(config):
 
 @pytest.fixture
 def dify_accessor() -> SimpleNamespace:
-    return SimpleNamespace(config=SimpleNamespace(dataset_id="dataset-1",
-                                                  slug_metadata_name="slug"))
+    return SimpleNamespace(
+        config=SimpleNamespace(
+            dataset_id="dataset-1", slug_metadata_name="slug"
+        )
+    )
 
 
 @pytest.fixture
@@ -59,4 +62,5 @@ def dify_index() -> RAMIndexCacheStore:
 def guide_path() -> PathSpec:
     return PathSpec.from_str_path(
         "/knowledge/guides/quickstart",
-        mount_key("/knowledge/guides/quickstart", "/knowledge"))
+        mount_key("/knowledge/guides/quickstart", "/knowledge"),
+    )

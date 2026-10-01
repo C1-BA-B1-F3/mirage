@@ -35,10 +35,12 @@ class ExecuteNodeFn(Protocol):
     """
 
     def __call__(
-        self, node: TSNodeLike, session: SessionState,
-        stdin: ByteSource | None, call_stack: CallStack
-    ) -> Awaitable[tuple[ByteSource | None, IOResult, ExecutionNode]]:
-        ...
+        self,
+        node: TSNodeLike,
+        session: SessionState,
+        stdin: ByteSource | None,
+        call_stack: CallStack,
+    ) -> Awaitable[tuple[ByteSource | None, IOResult, ExecutionNode]]: ...
 
 
 class ParsedCommand(NamedTuple):

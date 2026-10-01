@@ -28,7 +28,7 @@ def _ram_write(p: RAMVFS, path: str, data: bytes) -> None:
     key = "/" + path.strip("/")
     parts = key.strip("/").split("/")
     for i in range(len(parts) - 1):
-        p._store.dirs.add("/" + "/".join(parts[:i + 1]))
+        p._store.dirs.add("/" + "/".join(parts[: i + 1]))
     p._store.files[key] = data
 
 
@@ -66,12 +66,14 @@ def s3_vfs():
     with mock_aws():
         conn = boto3.client("s3", region_name="us-east-1")
         conn.create_bucket(Bucket="test-bucket")
-        conn.put_object(Bucket="test-bucket",
-                        Key="data/report.csv",
-                        Body=b"col1,col2\n1,2\n")
-        conn.put_object(Bucket="test-bucket",
-                        Key="data/summary.txt",
-                        Body=b"summary\n")
+        conn.put_object(
+            Bucket="test-bucket",
+            Key="data/report.csv",
+            Body=b"col1,col2\n1,2\n",
+        )
+        conn.put_object(
+            Bucket="test-bucket", Key="data/summary.txt", Body=b"summary\n"
+        )
 
         config = S3Config(
             bucket="test-bucket",

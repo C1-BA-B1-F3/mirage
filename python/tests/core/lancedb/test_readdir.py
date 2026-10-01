@@ -72,10 +72,9 @@ async def test_leaf_seeds_the_card_size_its_read_renders(accessor):
 
 
 def _globbed(path: str, pattern: str) -> PathSpec:
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=path.strip("/"),
-                    pattern=pattern)
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=path.strip("/"), pattern=pattern
+    )
 
 
 CAP = 5
@@ -91,20 +90,28 @@ def capped(tmp_path) -> LanceDBAccessor:
     """
     uri = str(tmp_path / "wide")
     db = lancedb.connect(uri)
-    db.create_table("wide",
-                    data=[{
-                        "id": f"doc-{i:03d}",
-                        "label": "all",
-                        "name": f"n{i}",
-                        "vector": [0.1, 0.2],
-                    } for i in range(WIDE)])
+    db.create_table(
+        "wide",
+        data=[
+            {
+                "id": f"doc-{i:03d}",
+                "label": "all",
+                "name": f"n{i}",
+                "vector": [0.1, 0.2],
+            }
+            for i in range(WIDE)
+        ],
+    )
     return LanceDBAccessor(
-        LanceDBConfig(uri=uri,
-                      table="wide",
-                      group_by=["label"],
-                      id_column="id",
-                      title_column="name",
-                      max_rows=CAP))
+        LanceDBConfig(
+            uri=uri,
+            table="wide",
+            group_by=["label"],
+            id_column="id",
+            title_column="name",
+            max_rows=CAP,
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -142,20 +149,28 @@ def underscored(tmp_path) -> LanceDBAccessor:
     """
     uri = str(tmp_path / "meta")
     db = lancedb.connect(uri)
-    db.create_table("meta",
-                    data=[{
-                        "id": rid,
-                        "label": "all",
-                        "name": rid,
-                        "vector": [0.1, 0.2],
-                    } for rid in ("doc_1", "doc_2", "docX1", "a%b", "axb")])
+    db.create_table(
+        "meta",
+        data=[
+            {
+                "id": rid,
+                "label": "all",
+                "name": rid,
+                "vector": [0.1, 0.2],
+            }
+            for rid in ("doc_1", "doc_2", "docX1", "a%b", "axb")
+        ],
+    )
     return LanceDBAccessor(
-        LanceDBConfig(uri=uri,
-                      table="meta",
-                      group_by=["label"],
-                      id_column="id",
-                      title_column="name",
-                      max_rows=2))
+        LanceDBConfig(
+            uri=uri,
+            table="meta",
+            group_by=["label"],
+            id_column="id",
+            title_column="name",
+            max_rows=2,
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -178,34 +193,44 @@ def slashed(tmp_path) -> LanceDBAccessor:
     """
     uri = str(tmp_path / "slashed")
     db = lancedb.connect(uri)
-    db.create_table("docs",
-                    data=[{
-                        "id": 1,
-                        "label": "a/b",
-                        "name": "one",
-                        "vector": [0.1, 0.2],
-                    }, {
-                        "id": 2,
-                        "label": "a∕b",
-                        "name": "two",
-                        "vector": [0.1, 0.2],
-                    }, {
-                        "id": 3,
-                        "label": "",
-                        "name": "three",
-                        "vector": [0.1, 0.2],
-                    }, {
-                        "id": 4,
-                        "label": ".env",
-                        "name": "four",
-                        "vector": [0.1, 0.2],
-                    }])
+    db.create_table(
+        "docs",
+        data=[
+            {
+                "id": 1,
+                "label": "a/b",
+                "name": "one",
+                "vector": [0.1, 0.2],
+            },
+            {
+                "id": 2,
+                "label": "a∕b",
+                "name": "two",
+                "vector": [0.1, 0.2],
+            },
+            {
+                "id": 3,
+                "label": "",
+                "name": "three",
+                "vector": [0.1, 0.2],
+            },
+            {
+                "id": 4,
+                "label": ".env",
+                "name": "four",
+                "vector": [0.1, 0.2],
+            },
+        ],
+    )
     return LanceDBAccessor(
-        LanceDBConfig(uri=uri,
-                      table="docs",
-                      group_by=["label"],
-                      id_column="id",
-                      title_column="name"))
+        LanceDBConfig(
+            uri=uri,
+            table="docs",
+            group_by=["label"],
+            id_column="id",
+            title_column="name",
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -232,8 +257,10 @@ async def test_a_group_glob_narrows_on_the_decoded_value(slashed):
     # takes the value prefix it stands for and the listing keeps only
     # the rendered names that really start with the head.
     assert _names(await readdir(slashed, _globbed("/", "a∕*"))) == {"a∕b"}
-    assert _names(await readdir(slashed, _globbed("/",
-                                                  "a*"))) == {"a∕b", "a⁄∕b"}
+    assert _names(await readdir(slashed, _globbed("/", "a*"))) == {
+        "a∕b",
+        "a⁄∕b",
+    }
 
 
 @pytest.fixture
@@ -246,38 +273,50 @@ def crowded(tmp_path) -> LanceDBAccessor:
     """
     uri = str(tmp_path / "crowded")
     db = lancedb.connect(uri)
-    rows = [{
-        "id": i,
-        "label": "all",
-        "name": f"n{i}",
-        "vector": [0.1, 0.2],
-    } for i in range(WIDE)]
-    rows += [{
-        "id": WIDE + i,
-        "label": label,
-        "name": label,
-        "vector": [0.1, 0.2],
-    } for i, label in enumerate(("", ".env", "a∕x"))]
+    rows = [
+        {
+            "id": i,
+            "label": "all",
+            "name": f"n{i}",
+            "vector": [0.1, 0.2],
+        }
+        for i in range(WIDE)
+    ]
+    rows += [
+        {
+            "id": WIDE + i,
+            "label": label,
+            "name": label,
+            "vector": [0.1, 0.2],
+        }
+        for i, label in enumerate(("", ".env", "a∕x"))
+    ]
     db.create_table("crowded", data=rows)
     return LanceDBAccessor(
-        LanceDBConfig(uri=uri,
-                      table="crowded",
-                      group_by=["label"],
-                      id_column="id",
-                      title_column="name",
-                      max_rows=CAP))
+        LanceDBConfig(
+            uri=uri,
+            table="crowded",
+            group_by=["label"],
+            id_column="id",
+            title_column="name",
+            max_rows=CAP,
+        )
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_glob_head_no_value_prefix_spells_reaches_past_the_cap(
-        crowded):
+    crowded,
+):
     # ``⁄`` alone stands for no value prefix (a blank value, a dot-led one,
     # one opening with ``∕`` or ``⁄`` all render behind it), so nothing
     # narrows the query; the cap counts the renderings that match rather
     # than the rows at the head of the table. The plain listing stays capped.
     assert _names(await readdir(crowded, _ps("/"))) == {"all"}
-    assert _names(await readdir(crowded, _globbed("/",
-                                                  "⁄*"))) == {"⁄", "⁄.env"}
+    assert _names(await readdir(crowded, _globbed("/", "⁄*"))) == {
+        "⁄",
+        "⁄.env",
+    }
 
 
 @pytest.mark.asyncio

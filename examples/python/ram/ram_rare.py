@@ -59,10 +59,26 @@ async def main() -> None:
     seed("/deps.txt", b"a b\nb c\nc d\n")
     seed(
         "/binary.bin",
-        bytes([
-            0x00, 0x01, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x02, 0x77, 0x6f,
-            0x72, 0x6c, 0x64, 0x00, 0xff
-        ]),
+        bytes(
+            [
+                0x00,
+                0x01,
+                0x68,
+                0x65,
+                0x6C,
+                0x6C,
+                0x6F,
+                0x00,
+                0x02,
+                0x77,
+                0x6F,
+                0x72,
+                0x6C,
+                0x64,
+                0x00,
+                0xFF,
+            ]
+        ),
     )
 
     print("━━━ column ━━━")

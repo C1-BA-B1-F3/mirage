@@ -27,19 +27,23 @@ from mirage.vfs.slack import SlackConfig, SlackVFS
 
 load_dotenv(".env.development")
 
-slack = SlackVFS(config=SlackConfig(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    search_token=os.environ.get("SLACK_USER_TOKEN"),
-))
+slack = SlackVFS(
+    config=SlackConfig(
+        token=os.environ["SLACK_BOT_TOKEN"],
+        search_token=os.environ.get("SLACK_USER_TOKEN"),
+    )
+)
 ws = Workspace({"/slack": (slack, MountMode.READ)}, mode=MountMode.READ)
 client = MirageSandboxClient(ws)
 
 navigator = SandboxAgent(
     name="path-resolver",
     model="gpt-5.4-mini",
-    instructions=(f"{ws.file_prompt}\n\n"
-                  "Use shell tools (ls, find) to locate files. "
-                  "Reply with absolute paths only, one per line."),
+    instructions=(
+        f"{ws.file_prompt}\n\n"
+        "Use shell tools (ls, find) to locate files. "
+        "Reply with absolute paths only, one per line."
+    ),
 )
 
 analyst = SandboxAgent(
@@ -50,7 +54,8 @@ analyst = SandboxAgent(
         "You have shell tools (ls, find, cat, grep, ...) and view_image. "
         "Some files may already be attached to this message — read them "
         "directly. For images you discover later, call view_image. "
-        "Answer using only attachments and confirmed file contents."),
+        "Answer using only attachments and confirmed file contents."
+    ),
 )
 
 
@@ -94,10 +99,7 @@ async def mirage_run(task: str) -> str:
     blocks = await runner.build_blocks(task, paths)
     out = await Runner.run(
         analyst,
-        [{
-            "role": "user",
-            "content": blocks
-        }],
+        [{"role": "user", "content": blocks}],
         run_config=RunConfig(sandbox=SandboxRunConfig(client=client)),
         max_turns=20,
     )

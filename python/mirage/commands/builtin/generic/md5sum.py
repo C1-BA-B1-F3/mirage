@@ -13,14 +13,16 @@ async def md5sum_generic(
     stat: StatFn,
     stream: PolymorphicReadFn,
 ) -> tuple[ByteSource | None, IOResult]:
-    return await checksum_generic(paths,
-                                  texts,
-                                  opts,
-                                  stat,
-                                  stream,
-                                  factory=hashlib.md5,
-                                  algorithm="md5",
-                                  name="md5sum")
+    return await checksum_generic(
+        paths,
+        texts,
+        opts,
+        stat,
+        stream,
+        factory=hashlib.md5,
+        algorithm="md5",
+        name="md5sum",
+    )
 
 
 __all__ = ["md5sum_generic"]

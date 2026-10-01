@@ -3,9 +3,9 @@ from mirage.cache.context import invalidate_after_write, invalidate_ancestors
 from mirage.types import PathSpec
 
 
-async def mkdir(accessor: NextcloudAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: NextcloudAccessor, path: PathSpec, parents: bool = False
+) -> None:
     """Create a collection; opendal creates missing parents either way.
 
     ``parents`` is accepted for the op signature and ignored, because

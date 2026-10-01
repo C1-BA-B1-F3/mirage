@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def thread_create(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     result = await create_thread(
@@ -32,6 +32,7 @@ async def thread_create(
         fl.as_str("name") or "",
         message_id=fl.as_str("message"),
     )
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

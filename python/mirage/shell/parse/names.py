@@ -15,9 +15,12 @@
 import re
 from collections.abc import Iterator
 
-from mirage.shell.parse.constants import (ARITH_OPEN_TOKEN,
-                                          ARITH_TEST_OPERATORS,
-                                          DECLARING_NODES, TARGET_NAME_FIELDS)
+from mirage.shell.parse.constants import (
+    ARITH_OPEN_TOKEN,
+    ARITH_TEST_OPERATORS,
+    DECLARING_NODES,
+    TARGET_NAME_FIELDS,
+)
 from mirage.shell.types import TSNodeLike
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -149,14 +152,16 @@ def command_args(node: TSNodeLike) -> list[TSNodeLike]:
     """
     name_node = node.child_by_field_name("name")
     return [
-        child for child in node.named_children
-        if (name_node is None or child.id != name_node.id) and child.type !=
-        "variable_assignment" and not child.type.endswith("_redirect")
+        child
+        for child in node.named_children
+        if (name_node is None or child.id != name_node.id)
+        and child.type != "variable_assignment"
+        and not child.type.endswith("_redirect")
     ]
 
 
 def command_invocations(
-        node: TSNodeLike
+    node: TSNodeLike,
 ) -> tuple[tuple[str | None, tuple[str | None, ...]], ...]:
     """Every plain command's head word with its argument words.
 
@@ -251,9 +256,13 @@ def _test_arith_names(test: TSNodeLike, out: set[str]) -> None:
         if n.type != "binary_expression":
             continue
         operator = next(
-            (child
-             for child in n.named_children if child.type == "test_operator"),
-            None)
+            (
+                child
+                for child in n.named_children
+                if child.type == "test_operator"
+            ),
+            None,
+        )
         if operator is None:
             continue
         text = operator.text
@@ -284,8 +293,11 @@ def arith_reads(node: TSNodeLike) -> frozenset[str]:
     for n in walk_named_outside_defs(node):
         if n.type in ("arithmetic_expansion", "subscript"):
             _arith_region_names(n, out)
-        elif (n.type == "compound_statement" and n.children
-              and n.children[0].type == ARITH_OPEN_TOKEN):
+        elif (
+            n.type == "compound_statement"
+            and n.children
+            and n.children[0].type == ARITH_OPEN_TOKEN
+        ):
             _arith_region_names(n, out)
         elif n.type == "c_style_for_statement":
             for child in n.named_children:
@@ -308,7 +320,7 @@ def arith_reads(node: TSNodeLike) -> frozenset[str]:
 
 
 def assignment_values(
-        node: TSNodeLike
+    node: TSNodeLike,
 ) -> tuple[tuple[str, str | None, frozenset[str]], ...]:
     """Every plain assignment's target with what its value may hold.
 

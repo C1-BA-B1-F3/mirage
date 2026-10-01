@@ -50,10 +50,12 @@ def patched(monkeypatch):
     async def fake_headers(accessor, folder, uids):
         return [envelope(uid, index + 1) for index, uid in enumerate(uids)]
 
-    monkeypatch.setitem(list_envelopes.__globals__, "list_message_uids",
-                        fake_uids)
-    monkeypatch.setitem(list_envelopes.__globals__, "fetch_headers",
-                        fake_headers)
+    monkeypatch.setitem(
+        list_envelopes.__globals__, "list_message_uids", fake_uids
+    )
+    monkeypatch.setitem(
+        list_envelopes.__globals__, "fetch_headers", fake_headers
+    )
     return seen
 
 
@@ -80,10 +82,8 @@ async def test_mailbox_flag_selects_the_folder(patched):
 @pytest.mark.asyncio
 async def test_pages_count_from_one(patched):
     out, _ = await list_envelopes(
-        CLIInvocation(CONFIG, flags={
-            "page": 2,
-            "page_size": 2
-        }))
+        CLIInvocation(CONFIG, flags={"page": 2, "page_size": 2})
+    )
     data = json.loads(await materialize(out))
     assert [d["uid"] for d in data] == ["1"]
 
@@ -104,10 +104,8 @@ async def test_empty_result_skips_the_header_fetch(patched, monkeypatch):
 @pytest.mark.asyncio
 async def test_only_the_pages_asked_for_are_fetched(patched):
     await list_envelopes(
-        CLIInvocation(CONFIG, flags={
-            "page": 2,
-            "page_size": 2
-        }))
+        CLIInvocation(CONFIG, flags={"page": 2, "page_size": 2})
+    )
     # Not the whole mailbox: one page-worth of headers per page asked for.
     assert patched["budget"] == 4
 
@@ -115,10 +113,8 @@ async def test_only_the_pages_asked_for_are_fetched(patched):
 @pytest.mark.asyncio
 async def test_the_account_window_caps_the_fetch(patched):
     await list_envelopes(
-        CLIInvocation(CONFIG, flags={
-            "page": 100,
-            "page_size": 25
-        }))
+        CLIInvocation(CONFIG, flags={"page": 100, "page_size": 25})
+    )
     assert patched["budget"] == CONFIG.max_messages
 
 

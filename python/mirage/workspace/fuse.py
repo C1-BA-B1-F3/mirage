@@ -19,15 +19,18 @@ import tempfile
 from threading import Thread
 from uuid import uuid4
 
-from mirage.fuse.backend import (FSKIT_MOUNT_ROOT, MountBackend,
-                                 check_mountpoint, prepare_backend)
+from mirage.fuse.backend import (
+    FSKIT_MOUNT_ROOT,
+    MountBackend,
+    check_mountpoint,
+    prepare_backend,
+)
 from mirage.fuse.mount import mount_background
 from mirage.ops import Ops
 from mirage.workspace.session.session import SessionState
 
 
 class FuseManager:
-
     def __init__(self) -> None:
         self._mountpoint: str | None = None
         self._thread: Thread | None = None
@@ -38,12 +41,14 @@ class FuseManager:
     def mountpoint(self) -> str | None:
         return self._mountpoint
 
-    def setup(self,
-              ops: Ops,
-              prefix: str = "/",
-              mountpoint: str | None = None,
-              session: SessionState | None = None,
-              backend: str | MountBackend = MountBackend.FUSE) -> str:
+    def setup(
+        self,
+        ops: Ops,
+        prefix: str = "/",
+        mountpoint: str | None = None,
+        session: SessionState | None = None,
+        backend: str | MountBackend = MountBackend.FUSE,
+    ) -> str:
         """Mount the ops tree and return the live mountpoint.
 
         Args:
@@ -79,35 +84,42 @@ class FuseManager:
             # non-root user, and the volume directory is the system's to
             # create. Same shape as the WinFsp branch in _prepare_mountpoint.
             if is_fskit:
-                self._mountpoint = (f"{FSKIT_MOUNT_ROOT}/mirage-"
-                                    f"{uuid4().hex[:8]}")
+                self._mountpoint = (
+                    f"{FSKIT_MOUNT_ROOT}/mirage-{uuid4().hex[:8]}"
+                )
             else:
                 self._mountpoint = tempfile.mkdtemp(prefix="mirage-")
             self._owns_mountpoint = True
-        self._thread = mount_background(ops,
-                                        self._mountpoint,
-                                        root_prefix=prefix,
-                                        session=session,
-                                        backend=resolved)
+        self._thread = mount_background(
+            ops,
+            self._mountpoint,
+            root_prefix=prefix,
+            session=session,
+            backend=resolved,
+        )
         return self._mountpoint
 
     def unmount(self) -> None:
         if not self._mountpoint:
             return
         if sys.platform == "darwin":
-            subprocess.run(["diskutil", "unmount", "force", self._mountpoint],
-                           capture_output=True)
+            subprocess.run(
+                ["diskutil", "unmount", "force", self._mountpoint],
+                capture_output=True,
+            )
         elif sys.platform == "win32":
             # No fusermount equivalent: WinFsp tears the mount down when the
             # serving process exits.
             pass
         else:
-            subprocess.run(["fusermount", "-u", self._mountpoint],
-                           capture_output=True)
+            subprocess.run(
+                ["fusermount", "-u", self._mountpoint], capture_output=True
+            )
         # An FSKit /Volumes entry is created and removed by the system, and
         # is not ours to rmdir (nor could we: /Volumes is root-owned).
         if self._owns_mountpoint and not self._mountpoint.startswith(
-                FSKIT_MOUNT_ROOT + "/"):
+            FSKIT_MOUNT_ROOT + "/"
+        ):
             try:
                 # Empty-directory cleanup only. If the mount is still live or
                 # the directory has contents, leave it for the caller/admin.

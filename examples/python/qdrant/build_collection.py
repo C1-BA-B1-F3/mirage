@@ -26,15 +26,17 @@ MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # The rows both language examples seed, so the two mounts read alike.
 DATA = json.loads(
-    (Path(__file__).resolve().parents[2] / "data" / "qdrant.json").read_text())
+    (Path(__file__).resolve().parents[2] / "data" / "qdrant.json").read_text()
+)
 _PRODUCTS: list[dict[str, str]] = DATA["products"]
 # LangChain-style chunks whose lineage lives in a nested ``metadata``
 # payload: source document, page, text.
 _CHUNKS: list[dict[str, str]] = DATA["chunks"]
 
 
-def build_collection(client: QdrantClient,
-                     collection: str = "fashion") -> None:
+def build_collection(
+    client: QdrantClient, collection: str = "fashion"
+) -> None:
     """(Re)create a product collection with flat, low-cardinality payloads.
 
     Args:
@@ -48,8 +50,9 @@ def build_collection(client: QdrantClient,
         client.delete_collection(collection)
     client.create_collection(
         collection,
-        vectors_config=models.VectorParams(size=len(vectors[0]),
-                                           distance=models.Distance.COSINE),
+        vectors_config=models.VectorParams(
+            size=len(vectors[0]), distance=models.Distance.COSINE
+        ),
     )
     points = []
     for idx, (product, vector) in enumerate(zip(_PRODUCTS, vectors), start=1):
@@ -65,7 +68,8 @@ def build_collection(client: QdrantClient,
                     "productDisplayName": product["name"],
                     "image_b64": base64.b64encode(image).decode(),
                 },
-            ))
+            )
+        )
     client.upsert(collection, points=points)
     for field in ("gender", "articleType", "baseColour"):
         client.create_payload_index(
@@ -75,8 +79,9 @@ def build_collection(client: QdrantClient,
         )
 
 
-def build_lineage_collection(client: QdrantClient,
-                             collection: str = "company_docs") -> None:
+def build_lineage_collection(
+    client: QdrantClient, collection: str = "company_docs"
+) -> None:
     """(Re)create a chunk collection whose payload nests the source document.
 
     Args:
@@ -90,8 +95,9 @@ def build_lineage_collection(client: QdrantClient,
         client.delete_collection(collection)
     client.create_collection(
         collection,
-        vectors_config=models.VectorParams(size=len(vectors[0]),
-                                           distance=models.Distance.COSINE),
+        vectors_config=models.VectorParams(
+            size=len(vectors[0]), distance=models.Distance.COSINE
+        ),
     )
     client.upsert(
         collection,
@@ -103,12 +109,15 @@ def build_lineage_collection(client: QdrantClient,
                     "page_content": chunk["text"],
                     "metadata": {
                         "source": chunk["source"],
-                        "page": chunk["page"]
+                        "page": chunk["page"],
                     },
                 },
-            ) for idx, (chunk,
-                        vector) in enumerate(zip(_CHUNKS, vectors), start=1)
-        ])
+            )
+            for idx, (chunk, vector) in enumerate(
+                zip(_CHUNKS, vectors), start=1
+            )
+        ],
+    )
     # Qdrant spells a nested payload path with a dot, in filters and in
     # index names alike; the mount config spells it the same way.
     client.create_payload_index(

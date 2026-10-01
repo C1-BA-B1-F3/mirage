@@ -23,14 +23,17 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat
 from mirage.workspace.mount.namespace.namespace import Namespace
 from mirage.workspace.mount.namespace.overlay import merge_overlay_stat
-from mirage.workspace.mount.namespace.probe import (link_target_stat,
-                                                    path_exists, resolve_link)
+from mirage.workspace.mount.namespace.probe import (
+    link_target_stat,
+    path_exists,
+    resolve_link,
+)
 from mirage.workspace.mount.registry import MountRegistry
 
 
-def registry_child_mounts(registry: MountRegistry,
-                          links: NamespaceLinks | None,
-                          parent: str) -> list[str]:
+def registry_child_mounts(
+    registry: MountRegistry, links: NamespaceLinks | None, parent: str
+) -> list[str]:
     """Child names the namespace owes ``parent``: mounts and links.
 
     The ``child_mounts`` fact offered to listing commands: the same
@@ -43,12 +46,14 @@ def registry_child_mounts(registry: MountRegistry,
         links (NamespaceLinks | None): the namespace symlink table.
         parent (str): directory whose child segments to enumerate.
     """
-    return namespace_names([m.prefix for m in registry.mounts()], links,
-                           parent)
+    return namespace_names(
+        [m.prefix for m in registry.mounts()], links, parent
+    )
 
 
-def link_view(namespace: Namespace | None,
-              dispatch: DispatchFn | None) -> LinkView | None:
+def link_view(
+    namespace: Namespace | None, dispatch: DispatchFn | None
+) -> LinkView | None:
     """Live symlink facts, or None without a namespace and dispatcher.
 
     Offered to every command as ``opts.ns.links``, whether or not it
@@ -63,13 +68,14 @@ def link_view(namespace: Namespace | None,
     """
     if namespace is None or dispatch is None:
         return None
-    return LinkView(stat_at=namespace.link_stat_at,
-                    children=namespace.link_stats_under,
-                    subtree=namespace.link_stats_below,
-                    resolve=functools.partial(resolve_link, namespace),
-                    exists=functools.partial(path_exists, dispatch),
-                    target_stat=functools.partial(link_target_stat, namespace,
-                                                  dispatch))
+    return LinkView(
+        stat_at=namespace.link_stat_at,
+        children=namespace.link_stats_under,
+        subtree=namespace.link_stats_below,
+        resolve=functools.partial(resolve_link, namespace),
+        exists=functools.partial(path_exists, dispatch),
+        target_stat=functools.partial(link_target_stat, namespace, dispatch),
+    )
 
 
 def mount_roots_below(registry: MountRegistry, virtual: str) -> list[str]:
@@ -89,8 +95,9 @@ def mount_roots_below(registry: MountRegistry, virtual: str) -> list[str]:
     ]
 
 
-def visible_mount_roots_below(registry: MountRegistry,
-                              virtual: str) -> list[str]:
+def visible_mount_roots_below(
+    registry: MountRegistry, virtual: str
+) -> list[str]:
     """The mount roots under a path this session may be told about.
 
     The list a caller *names* a boundary from. The mount table is not
@@ -104,7 +111,8 @@ def visible_mount_roots_below(registry: MountRegistry,
         virtual (str): absolute virtual path to scan beneath.
     """
     return [
-        root for root in mount_roots_below(registry, virtual)
+        root
+        for root in mount_roots_below(registry, virtual)
         if path_allowed(root)
     ]
 
@@ -136,16 +144,21 @@ def mount_view(registry: MountRegistry) -> MountView:
     Args:
         registry (MountRegistry): registry holding the mount table.
     """
-    return MountView(descendants=functools.partial(mount_roots_below,
-                                                   registry),
-                     visible_descendants=functools.partial(
-                         visible_mount_roots_below, registry),
-                     is_root=registry.is_mount_root,
-                     root_of=functools.partial(mount_root_of, registry))
+    return MountView(
+        descendants=functools.partial(mount_roots_below, registry),
+        visible_descendants=functools.partial(
+            visible_mount_roots_below, registry
+        ),
+        is_root=registry.is_mount_root,
+        root_of=functools.partial(mount_root_of, registry),
+    )
 
 
-def namespace_view_of(registry: MountRegistry, namespace: Namespace | None,
-                      dispatch: DispatchFn | None) -> NamespaceView:
+def namespace_view_of(
+    registry: MountRegistry,
+    namespace: Namespace | None,
+    dispatch: DispatchFn | None,
+) -> NamespaceView:
     """The name plane's facts on offer, bundled as one view.
 
     Stamped on every invocation's ``CommandOpts`` as ``ns``, whether or
@@ -163,19 +176,29 @@ def namespace_view_of(registry: MountRegistry, namespace: Namespace | None,
     return NamespaceView(
         links=link_view(namespace, dispatch),
         mounts=mount_view(registry),
-        stat_overlay=(functools.partial(namespace_stat_overlay, namespace)
-                      if namespace is not None else None),
-        child_mounts=functools.partial(registry_child_mounts, registry,
-                                       namespace),
-        settle_write=(functools.partial(settle_overlay_write, namespace)
-                      if namespace is not None else None),
-        times_under=(namespace.holds_times_under
-                     if namespace is not None else None),
-        user=namespace.user if namespace is not None else None)
+        stat_overlay=(
+            functools.partial(namespace_stat_overlay, namespace)
+            if namespace is not None
+            else None
+        ),
+        child_mounts=functools.partial(
+            registry_child_mounts, registry, namespace
+        ),
+        settle_write=(
+            functools.partial(settle_overlay_write, namespace)
+            if namespace is not None
+            else None
+        ),
+        times_under=(
+            namespace.holds_times_under if namespace is not None else None
+        ),
+        user=namespace.user if namespace is not None else None,
+    )
 
 
-def namespace_stat_overlay(namespace: Namespace, virtual: str,
-                           stat: FileStat) -> FileStat:
+def namespace_stat_overlay(
+    namespace: Namespace, virtual: str, stat: FileStat
+) -> FileStat:
     """Merge namespace attr overlays into one stat row (ls/stat rendering).
 
     Only what ``chmod``/``chown``/``chgrp``/``touch`` recorded: a path
@@ -192,10 +215,9 @@ def namespace_stat_overlay(namespace: Namespace, virtual: str,
     return merge_overlay_stat(namespace.meta_for(virtual), stat)
 
 
-async def settle_overlay_write(namespace: Namespace,
-                               op: str,
-                               path: str,
-                               parents: bool = False) -> None:
+async def settle_overlay_write(
+    namespace: Namespace, op: str, path: str, parents: bool = False
+) -> None:
     """Settle a command slot's write in the attr overlay.
 
     Stamped the way the dispatcher stamps its own ops: a content write

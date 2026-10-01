@@ -15,21 +15,28 @@
 import pytest
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.trello.trello_card_assign import \
-    trello_card_assign
-from mirage.commands.builtin.trello.trello_card_comment_add import \
-    trello_card_comment_add
-from mirage.commands.builtin.trello.trello_card_comment_update import \
-    trello_card_comment_update
-from mirage.commands.builtin.trello.trello_card_create import \
-    trello_card_create
-from mirage.commands.builtin.trello.trello_card_label_add import \
-    trello_card_label_add
-from mirage.commands.builtin.trello.trello_card_label_remove import \
-    trello_card_label_remove
+from mirage.commands.builtin.trello.trello_card_assign import (
+    trello_card_assign,
+)
+from mirage.commands.builtin.trello.trello_card_comment_add import (
+    trello_card_comment_add,
+)
+from mirage.commands.builtin.trello.trello_card_comment_update import (
+    trello_card_comment_update,
+)
+from mirage.commands.builtin.trello.trello_card_create import (
+    trello_card_create,
+)
+from mirage.commands.builtin.trello.trello_card_label_add import (
+    trello_card_label_add,
+)
+from mirage.commands.builtin.trello.trello_card_label_remove import (
+    trello_card_label_remove,
+)
 from mirage.commands.builtin.trello.trello_card_move import trello_card_move
-from mirage.commands.builtin.trello.trello_card_update import \
-    trello_card_update
+from mirage.commands.builtin.trello.trello_card_update import (
+    trello_card_update,
+)
 from mirage.commands.config import CommandFn, CommandOpts, RegisteredCommand
 from mirage.context import reset_mount_gate, set_mount_gate
 from mirage.types import MountMode
@@ -42,47 +49,46 @@ _ACCESSOR = TrelloAccessor(TrelloConfig(api_key="k", api_token="t"))
 # refusal below is the guard's and not a missing-flag ValueError. The
 # guard fires before the client, so no case reaches the network.
 CASES = [
-    pytest.param(trello_card_create, {
-        "list_id": "l1",
-        "name": "card"
-    },
-                 id="trello card create"),
-    pytest.param(trello_card_comment_add, {
-        "card_id": "c1",
-        "text": "hi"
-    },
-                 id="trello card comment"),
-    pytest.param(trello_card_comment_update, {
-        "card_id": "c1",
-        "comment_id": "m1",
-        "text": "hi"
-    },
-                 id="trello card comment-update"),
-    pytest.param(trello_card_assign, {
-        "card_id": "c1",
-        "member_id": "u1"
-    },
-                 id="trello card assign"),
-    pytest.param(trello_card_label_add, {
-        "card_id": "c1",
-        "label_id": "g1"
-    },
-                 id="trello card label"),
-    pytest.param(trello_card_label_remove, {
-        "card_id": "c1",
-        "label_id": "g1"
-    },
-                 id="trello card unlabel"),
-    pytest.param(trello_card_move, {
-        "card_id": "c1",
-        "list_id": "l2"
-    },
-                 id="trello card move"),
-    pytest.param(trello_card_update, {
-        "card_id": "c1",
-        "name": "renamed"
-    },
-                 id="trello card update"),
+    pytest.param(
+        trello_card_create,
+        {"list_id": "l1", "name": "card"},
+        id="trello card create",
+    ),
+    pytest.param(
+        trello_card_comment_add,
+        {"card_id": "c1", "text": "hi"},
+        id="trello card comment",
+    ),
+    pytest.param(
+        trello_card_comment_update,
+        {"card_id": "c1", "comment_id": "m1", "text": "hi"},
+        id="trello card comment-update",
+    ),
+    pytest.param(
+        trello_card_assign,
+        {"card_id": "c1", "member_id": "u1"},
+        id="trello card assign",
+    ),
+    pytest.param(
+        trello_card_label_add,
+        {"card_id": "c1", "label_id": "g1"},
+        id="trello card label",
+    ),
+    pytest.param(
+        trello_card_label_remove,
+        {"card_id": "c1", "label_id": "g1"},
+        id="trello card unlabel",
+    ),
+    pytest.param(
+        trello_card_move,
+        {"card_id": "c1", "list_id": "l2"},
+        id="trello card move",
+    ),
+    pytest.param(
+        trello_card_update,
+        {"card_id": "c1", "name": "renamed"},
+        id="trello card update",
+    ),
 ]
 
 
@@ -91,8 +97,9 @@ def _record(cmd: CommandFn) -> RegisteredCommand:
 
 
 @pytest.mark.parametrize("cmd,flags", CASES)
-def test_every_card_write_declares_write(cmd: CommandFn,
-                                         flags: dict[str, str]) -> None:
+def test_every_card_write_declares_write(
+    cmd: CommandFn, flags: dict[str, str]
+) -> None:
     """A card write must register ``write=True``.
 
     ``Mount.execute_cmd``'s write-command gate keys on the registration
@@ -106,7 +113,8 @@ def test_every_card_write_declares_write(cmd: CommandFn,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cmd,flags", CASES)
 async def test_a_read_mount_refuses_an_id_addressed_write(
-        cmd: CommandFn, flags: dict[str, str]) -> None:
+    cmd: CommandFn, flags: dict[str, str]
+) -> None:
     """Every card write refuses under a READ mount gate.
 
     An id-addressed write names no path the per-path mode guard could
@@ -124,10 +132,13 @@ async def test_a_read_mount_refuses_an_id_addressed_write(
 
 
 _SCOPED = TrelloAccessor(
-    TrelloConfig(api_key="k",
-                 api_token="t",
-                 board_ids=["b_in"],
-                 base_url="http://127.0.0.1:9"))
+    TrelloConfig(
+        api_key="k",
+        api_token="t",
+        board_ids=["b_in"],
+        base_url="http://127.0.0.1:9",
+    )
+)
 
 
 async def _on_board_out(config, ident, session=None):
@@ -137,8 +148,8 @@ async def _on_board_out(config, ident, session=None):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cmd,flags", CASES)
 async def test_a_card_write_refuses_an_id_outside_the_scope(
-        cmd: CommandFn, flags: dict[str, str],
-        monkeypatch: pytest.MonkeyPatch) -> None:
+    cmd: CommandFn, flags: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Every card write refuses a card or list on a board the mount's
     ``board_ids`` / ``workspace_id`` leave out, before the write.
 
@@ -147,14 +158,17 @@ async def test_a_card_write_refuses_an_id_outside_the_scope(
     is unroutable: a write that got past the check would fail with a
     connection error, not the refusal.
     """
-    monkeypatch.setattr("mirage.commands.builtin.trello._scope.get_card",
-                        _on_board_out)
-    monkeypatch.setattr("mirage.commands.builtin.trello._scope.get_list",
-                        _on_board_out)
+    monkeypatch.setattr(
+        "mirage.commands.builtin.trello._scope.get_card", _on_board_out
+    )
+    monkeypatch.setattr(
+        "mirage.commands.builtin.trello._scope.get_list", _on_board_out
+    )
     token = set_mount_gate("/trello", MountMode.WRITE)
     try:
-        with pytest.raises(ValueError,
-                           match=" is outside this mount's scope$"):
+        with pytest.raises(
+            ValueError, match=" is outside this mount's scope$"
+        ):
             await cmd(_SCOPED, [], [], CommandOpts(flags=flags))
     finally:
         reset_mount_gate(token)

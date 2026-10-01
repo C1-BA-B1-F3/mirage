@@ -19,10 +19,24 @@ import pytest
 
 from mirage import MountBackend, MountMode, Workspace
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
-from mirage.config import (DiskStoreBlock, RamCacheBlock, RedisCacheBlock,
-                           RedisStoreBlock, S3StoreBlock, WorkspaceConfig,
-                           _build_runtime_entries, load_config)
+from mirage.config import (
+    DiskStoreBlock,
+    RamCacheBlock,
+    RedisCacheBlock,
+    RedisStoreBlock,
+    S3StoreBlock,
+    WorkspaceConfig,
+    _build_runtime_entries,
+    load_config,
+)
 from mirage.policy import DEFAULT_DENY_REASON, CommandRule
+from mirage.policy.profile import (
+    CommandsBlock,
+    PathsBlock,
+    ProfileMount,
+    SessionProfile,
+    VarsBlock,
+)
 from mirage.runtime.types import ScriptSource
 from mirage.secrets.config import EnvVar, SecretRef
 from mirage.shell.console import JobConsole
@@ -34,12 +48,11 @@ from mirage.workspace.mount.namespace import RAMNamespaceStore
 from mirage.workspace.mount.namespace.disk import DiskNamespaceStore
 from mirage.workspace.mount.namespace.redis import RedisNamespaceStore
 from mirage.workspace.session.disk import DiskSessionStore
-from mirage.workspace.store import (DiskWorkspaceStateStore,
-                                    RAMWorkspaceStateStore,
-                                    RedisWorkspaceStateStore)
-
-from mirage.policy.profile import (  # isort: skip
-    CommandsBlock, PathsBlock, ProfileMount, SessionProfile, VarsBlock)
+from mirage.workspace.store import (
+    DiskWorkspaceStateStore,
+    RAMWorkspaceStateStore,
+    RedisWorkspaceStateStore,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -109,17 +122,12 @@ async def test_to_workspace_kwargs_emits_redis_cache_config():
 
 @pytest.mark.asyncio
 async def test_to_workspace_kwargs_emits_ram_cache_config():
-    cfg = load_config({
-        "cache": {
-            "type": "ram",
-            "limit": "128MB"
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "cache": {"type": "ram", "limit": "128MB"},
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     assert isinstance(kwargs["cache"], CacheConfig)
     assert not isinstance(kwargs["cache"], RedisCacheConfig)
@@ -128,18 +136,16 @@ async def test_to_workspace_kwargs_emits_ram_cache_config():
 
 @pytest.mark.asyncio
 async def test_store_redis_block_builds_redis_provider():
-    cfg = load_config({
-        "store": {
-            "type": "redis",
-            "url": "redis://localhost:6379/4",
-            "key_prefix": "test_store:",
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "store": {
+                "type": "redis",
+                "url": "redis://localhost:6379/4",
+                "key_prefix": "test_store:",
+            },
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert cfg.store is not None
     assert cfg.store.key_prefix == "test_store:"
     kwargs = cfg.to_workspace_kwargs()
@@ -149,16 +155,12 @@ async def test_store_redis_block_builds_redis_provider():
 
 @pytest.mark.asyncio
 async def test_store_ram_block_builds_ram_provider():
-    cfg = load_config({
-        "store": {
-            "type": "ram"
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "store": {"type": "ram"},
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     assert isinstance(kwargs["store"], RAMWorkspaceStateStore)
     assert kwargs["owns_store"] is True
@@ -167,17 +169,15 @@ async def test_store_ram_block_builds_ram_provider():
 
 @pytest.mark.asyncio
 async def test_store_disk_block_builds_disk_provider(tmp_path):
-    cfg = load_config({
-        "store": {
-            "type": "disk",
-            "root": str(tmp_path),
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "store": {
+                "type": "disk",
+                "root": str(tmp_path),
+            },
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert cfg.store is not None
     assert cfg.store.root == str(tmp_path)
     kwargs = cfg.to_workspace_kwargs()
@@ -188,20 +188,18 @@ async def test_store_disk_block_builds_disk_provider(tmp_path):
 
 @pytest.mark.asyncio
 async def test_store_disk_group_override(tmp_path):
-    cfg = load_config({
-        "store": {
-            "type": "ram",
-            "workspace": {
-                "type": "disk",
-                "root": str(tmp_path),
+    cfg = load_config(
+        {
+            "store": {
+                "type": "ram",
+                "workspace": {
+                    "type": "disk",
+                    "root": str(tmp_path),
+                },
             },
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert isinstance(cfg.store.workspace, DiskStoreBlock)
     store = cfg.to_workspace_kwargs()["store"]
     assert isinstance(store, RAMWorkspaceStateStore)
@@ -210,21 +208,19 @@ async def test_store_disk_group_override(tmp_path):
 
 @pytest.mark.asyncio
 async def test_store_group_override_redirects_one_plane():
-    cfg = load_config({
-        "store": {
-            "type": "ram",
-            "observer": {
-                "type": "redis",
-                "url": "redis://localhost:6379/4",
-                "key_prefix": "obs:",
+    cfg = load_config(
+        {
+            "store": {
+                "type": "ram",
+                "observer": {
+                    "type": "redis",
+                    "url": "redis://localhost:6379/4",
+                    "key_prefix": "obs:",
+                },
             },
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert isinstance(cfg.store.observer, RedisStoreBlock)
     store = cfg.to_workspace_kwargs()["store"]
     assert isinstance(store, RAMWorkspaceStateStore)
@@ -234,22 +230,20 @@ async def test_store_group_override_redirects_one_plane():
 
 @pytest.mark.asyncio
 async def test_store_s3_workspace_group_builds_s3_provider():
-    cfg = load_config({
-        "store": {
-            "type": "ram",
-            "workspace": {
-                "type": "s3",
-                "bucket": "state-bucket",
-                "region": "us-east-1",
-                "key_prefix": "mirage/",
+    cfg = load_config(
+        {
+            "store": {
+                "type": "ram",
+                "workspace": {
+                    "type": "s3",
+                    "bucket": "state-bucket",
+                    "region": "us-east-1",
+                    "key_prefix": "mirage/",
+                },
             },
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert isinstance(cfg.store.workspace, S3StoreBlock)
     store = cfg.to_workspace_kwargs()["store"]
     assert isinstance(store, RAMWorkspaceStateStore)
@@ -259,30 +253,23 @@ async def test_store_s3_workspace_group_builds_s3_provider():
 
 @pytest.mark.asyncio
 async def test_workspace_id_passes_through():
-    cfg = load_config({
-        "workspace_id": "agent-ws-7",
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "workspace_id": "agent-ws-7",
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert cfg.to_workspace_kwargs()["workspace_id"] == "agent-ws-7"
 
 
 def test_store_block_rejects_unknown_field():
     with pytest.raises(Exception):
-        load_config({
-            "store": {
-                "type": "ram",
-                "ttl": 600
-            },
-            "mounts": {
-                "/": {
-                    "vfs": "ram"
-                }
-            },
-        })
+        load_config(
+            {
+                "store": {"type": "ram", "ttl": 600},
+                "mounts": {"/": {"vfs": "ram"}},
+            }
+        )
 
 
 def test_dict_source_works_too():
@@ -292,14 +279,11 @@ def test_dict_source_works_too():
 
 def test_unknown_mount_field_rejected():
     with pytest.raises(Exception):
-        load_config({
-            "mounts": {
-                "/": {
-                    "vfs": "ram",
-                    "bogus_field": 1
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": {"/": {"vfs": "ram", "bogus_field": 1}},
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -323,20 +307,22 @@ def test_round_trip_dict_source_matches_yaml(tmp_path):
 
 @pytest.mark.asyncio
 async def test_vfs_built_via_registry_has_correct_type():
-    cfg = load_config({
-        "mounts": {
-            "/s3": {
-                "vfs": "s3",
-                "mode": "READ",
-                "config": {
-                    "bucket": "b",
-                    "region": "us-east-1",
-                    "aws_access_key_id": "k",
-                    "aws_secret_access_key": "s",
+    cfg = load_config(
+        {
+            "mounts": {
+                "/s3": {
+                    "vfs": "s3",
+                    "mode": "READ",
+                    "config": {
+                        "bucket": "b",
+                        "region": "us-east-1",
+                        "aws_access_key_id": "k",
+                        "aws_secret_access_key": "s",
+                    },
                 },
             },
-        },
-    })
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     mount = kwargs["mounts"]["/s3"]
     assert isinstance(mount.vfs, S3VFS)
@@ -432,30 +418,38 @@ profiles:
             "/repo": ProfileMount(mode=MountMode.READ),
             "/scratch": ProfileMount(mode=MountMode.EXEC),
         },
-        commands=CommandsBlock(deny=(
-            CommandRule(reason="production data is protected",
-                        commands=("rm", ),
-                        paths=("/repo/prod/*", )),
-            CommandRule(reason="production data is protected",
-                        commands=("mv", ),
-                        paths=("/repo/prod/*", )),
-            CommandRule(reason=DEFAULT_DENY_REASON, commands=("python3", )),
-        )),
-        paths=PathsBlock(hide=("/scratch/finance", )),
+        commands=CommandsBlock(
+            deny=(
+                CommandRule(
+                    reason="production data is protected",
+                    commands=("rm",),
+                    paths=("/repo/prod/*",),
+                ),
+                CommandRule(
+                    reason="production data is protected",
+                    commands=("mv",),
+                    paths=("/repo/prod/*",),
+                ),
+                CommandRule(reason=DEFAULT_DENY_REASON, commands=("python3",)),
+            )
+        ),
+        paths=PathsBlock(hide=("/scratch/finance",)),
     )
     assert kwargs["profiles"]["reviewer"] == SessionProfile(
         mounts={
-            "/repo":
-            ProfileMount(mode=MountMode.READ,
-                         paths=PathsBlock(hide=("/repo/*.pem", "/repo/.env")))
+            "/repo": ProfileMount(
+                mode=MountMode.READ,
+                paths=PathsBlock(hide=("/repo/*.pem", "/repo/.env")),
+            )
         },
-        paths=PathsBlock(hide=("/repo/docs/internal", )),
+        paths=PathsBlock(hide=("/repo/docs/internal",)),
         vars=VarsBlock(hide=("AWS_*", "SLACK_TOKEN")),
     )
 
 
 def test_permissions_document_end_to_end_from_yaml(tmp_path):
     import asyncio
+
     cfg_file = tmp_path / "ws.yaml"
     cfg_file.write_text("""\
 mounts:
@@ -498,94 +492,58 @@ profiles:
 
 def test_unknown_profile_fields_fail_loud(tmp_path):
     with pytest.raises(ValueError):
-        load_config({
-            "mounts": {
-                "/data": {
-                    "vfs": "ram"
-                }
-            },
-            "profiles": {
-                "a": {
-                    "hidden_paths": {
-                        "paths": ["/x"]
-                    }
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": {"/data": {"vfs": "ram"}},
+                "profiles": {"a": {"hidden_paths": {"paths": ["/x"]}}},
+            }
+        )
     # A mount states infrastructure only, and there is no workspace
     # permissions block: both used to be a second place to write a rule.
-    for bad in ({
-            "permissions": {
-                "commands": {
-                    "allow": ["ls"]
-                }
-            }
-    }, {
-            "profiles": {
-                "a": {
-                    "extends": "default"
-                }
-            }
-    }):
+    for bad in (
+        {"permissions": {"commands": {"allow": ["ls"]}}},
+        {"profiles": {"a": {"extends": "default"}}},
+    ):
         with pytest.raises(ValueError):
             load_config({"mounts": {"/data": {"vfs": "ram"}}, **bad})
     with pytest.raises(ValueError):
-        load_config({
-            "mounts": {
-                "/data": {
-                    "vfs": "ram",
-                    "permissions": {
-                        "paths": {
-                            "hide": ["/data/x"]
-                        }
+        load_config(
+            {
+                "mounts": {
+                    "/data": {
+                        "vfs": "ram",
+                        "permissions": {"paths": {"hide": ["/data/x"]}},
                     }
-                }
-            },
-        })
+                },
+            }
+        )
 
 
 def test_a_named_default_profile_must_exist(tmp_path):
     with pytest.raises(ValueError, match="unknown profile 'gone'"):
-        load_config({
-            "mounts": {
-                "/data": {
-                    "vfs": "ram"
-                }
-            },
-            "profile": "gone",
-            "profiles": {
-                "a": {
-                    "cwd": "/data"
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": {"/data": {"vfs": "ram"}},
+                "profile": "gone",
+                "profiles": {"a": {"cwd": "/data"}},
+            }
+        )
 
 
 @pytest.mark.asyncio
 async def test_clis_section_parses_and_maps_to_kwargs():
-    cfg = load_config({
-        "mounts": {
-            "/data": {
-                "vfs": "ram"
-            }
-        },
-        "clis": {
-            "sl": {
-                "cli": "slack",
-                "config": {
-                    "token": "x"
-                }
+    cfg = load_config(
+        {
+            "mounts": {"/data": {"vfs": "ram"}},
+            "clis": {
+                "sl": {"cli": "slack", "config": {"token": "x"}},
+                "bare": {"cli": "gws"},
             },
-            "bare": {
-                "cli": "gws"
-            },
-        },
-    })
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     assert kwargs["clis"] == {
-        "sl": ("slack", {
-            "token": "x"
-        }),
+        "sl": ("slack", {"token": "x"}),
         "bare": ("gws", {}),
     }
 
@@ -596,32 +554,28 @@ def test_clis_script_entry_refuses_a_secrets_pointer():
     resolved into it would be written out as the value it fetched. A
     script reads a credential from a managed env var instead."""
     with pytest.raises(ValueError, match="opaque"):
-        load_config({
+        load_config(
+            {
+                "mounts": {},
+                "clis": {
+                    "pager": {
+                        "script": "pager.py",
+                        "config": {
+                            "token": {"from": "env", "key": "PAGER_TOKEN"}
+                        },
+                    }
+                },
+            }
+        )
+    # A literal in a script's config is the script's own business.
+    cfg = load_config(
+        {
             "mounts": {},
             "clis": {
-                "pager": {
-                    "script": "pager.py",
-                    "config": {
-                        "token": {
-                            "from": "env",
-                            "key": "PAGER_TOKEN"
-                        }
-                    },
-                }
+                "pager": {"script": "pager.py", "config": {"verbose": True}}
             },
-        })
-    # A literal in a script's config is the script's own business.
-    cfg = load_config({
-        "mounts": {},
-        "clis": {
-            "pager": {
-                "script": "pager.py",
-                "config": {
-                    "verbose": True
-                }
-            }
-        },
-    })
+        }
+    )
     assert cfg.clis is not None and cfg.clis["pager"].config == {
         "verbose": True
     }
@@ -669,9 +623,9 @@ clis:
     # .mjs also stamps module: the path is gone once the source is
     # embedded, so the engine could not otherwise know to run it as an
     # ES module and `import` would fail.
-    assert spec.script == ScriptSource("console.log('page')",
-                                       language="js",
-                                       module=True)
+    assert spec.script == ScriptSource(
+        "console.log('page')", language="js", module=True
+    )
 
 
 @pytest.mark.asyncio
@@ -693,14 +647,16 @@ clis:
 
 @pytest.mark.asyncio
 async def test_clis_path_form_reference_rebases_on_the_config_dir(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     # `cli: ./tool.py:TREE` means "next to the config file", the same
     # build-context rule script: follows; without rebasing it resolves
     # against the process cwd and only works by luck.
     (tmp_path / "tool.py").write_text(
         "from mirage import CLISpec\n"
         "TREE = CLISpec(name='tool', subcommands=(CLISpec(name='run',\n"
-        "               fn=lambda inv: None), ))\n")
+        "               fn=lambda inv: None), ))\n"
+    )
     cfg_file = tmp_path / "ws.yaml"
     cfg_file.write_text("""\
 mounts:
@@ -718,7 +674,8 @@ clis:
 
 @pytest.mark.asyncio
 async def test_mounts_path_form_vfs_rebases_on_the_config_dir(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     # `vfs: ./wiki.py:WikiVFS` reads the same way `cli:` does,
     # so it follows the same build-context rule.
     (tmp_path / "wiki.py").write_text("""\
@@ -771,7 +728,8 @@ NOT_A_RUNTIME = {"name": "nope"}
 
 
 def test_runtimes_path_form_reference_rebases_and_builds(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     # A runtime entry's `name: ./box.py:EchoBox` reads the way `vfs:`
     # and `cli:` do: rebased onto the config dir, then constructed with
     # the entry's uniform options, so a deployment ships a runtime as a
@@ -800,7 +758,7 @@ runtimes:
     assert box.name == "echobox"
     assert box.captures == ("nvidia-smi", "rocm-smi")
     assert type(bare).__name__ == "EchoBox"
-    assert bare.captures == ("nvidia-smi", )
+    assert bare.captures == ("nvidia-smi",)
     assert fallback == "workspace"
 
 
@@ -820,8 +778,9 @@ def test_runtimes_reference_refuses_an_unknown_entry_key(tmp_path):
     # the same check by hand (checkRuntimeOptions).
     (tmp_path / "box.py").write_text(BOX_RUNTIME)
     ref = f"{tmp_path / 'box.py'}:EchoBox"
-    with pytest.raises(TypeError,
-                       match="unexpected keyword argument 'captuers'"):
+    with pytest.raises(
+        TypeError, match="unexpected keyword argument 'captuers'"
+    ):
         _build_runtime_entries([{"name": ref, "captuers": ["nvidia-smi"]}])
 
 
@@ -890,60 +849,39 @@ clis:
 def test_clis_entry_takes_exactly_one_of_cli_or_script():
     mounts = {"/data": {"vfs": "ram"}}
     with pytest.raises(ValueError, match="exactly one of cli or script"):
-        load_config({
-            "mounts": mounts,
-            "clis": {
-                "sl": {
-                    "cli": "slack",
-                    "script": "pager.py"
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": mounts,
+                "clis": {"sl": {"cli": "slack", "script": "pager.py"}},
+            }
+        )
     with pytest.raises(ValueError, match="exactly one of cli or script"):
-        load_config({
-            "mounts": mounts,
-            "clis": {
-                "sl": {
-                    "config": {
-                        "token": "x"
-                    }
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": mounts,
+                "clis": {"sl": {"config": {"token": "x"}}},
+            }
+        )
 
 
 def test_clis_runtime_takes_script():
     with pytest.raises(ValueError, match="it takes script"):
-        load_config({
-            "mounts": {
-                "/data": {
-                    "vfs": "ram"
-                }
-            },
-            "clis": {
-                "sl": {
-                    "cli": "slack",
-                    "runtime": "monty"
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": {"/data": {"vfs": "ram"}},
+                "clis": {"sl": {"cli": "slack", "runtime": "monty"}},
+            }
+        )
 
 
 def test_clis_block_refuses_unknown_keys():
     with pytest.raises(ValueError, match="mode"):
-        load_config({
-            "mounts": {
-                "/data": {
-                    "vfs": "ram"
-                }
-            },
-            "clis": {
-                "sl": {
-                    "cli": "slack",
-                    "mode": "write"
-                }
-            },
-        })
+        load_config(
+            {
+                "mounts": {"/data": {"vfs": "ram"}},
+                "clis": {"sl": {"cli": "slack", "mode": "write"}},
+            }
+        )
 
 
 # The accepted half of the shared contract, one file per subject:
@@ -956,8 +894,13 @@ def _shared_fixture_cases(name: str) -> list[dict]:
     # (packages/node/src/config.test.ts) reads the same files, so a
     # config that loads in one language and not the other fails a test
     # until both loaders agree.
-    fixture = (Path(__file__).parents[3] / "integ" / "fixtures" / "config" /
-               f"{name}.json")
+    fixture = (
+        Path(__file__).parents[3]
+        / "integ"
+        / "fixtures"
+        / "config"
+        / f"{name}.json"
+    )
     cases = json.loads(fixture.read_text())["cases"]
     assert cases, f"the {name} fixture must not be empty"
     return cases
@@ -965,18 +908,16 @@ def _shared_fixture_cases(name: str) -> list[dict]:
 
 @pytest.mark.asyncio
 async def test_console_redis_block_builds_factory():
-    cfg = load_config({
-        "console": {
-            "type": "redis",
-            "url": "redis://localhost:6379/5",
-            "key_prefix": "test_console:",
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "console": {
+                "type": "redis",
+                "url": "redis://localhost:6379/5",
+                "key_prefix": "test_console:",
+            },
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     factory = kwargs["console_factory"]
     first = factory(1)
@@ -995,16 +936,12 @@ async def test_console_redis_block_builds_factory():
 
 @pytest.mark.asyncio
 async def test_console_ram_block_emits_no_factory():
-    cfg = load_config({
-        "console": {
-            "type": "ram"
-        },
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "console": {"type": "ram"},
+            "mounts": {"/": {"vfs": "ram"}},
+        }
+    )
     assert "console_factory" not in cfg.to_workspace_kwargs()
 
 
@@ -1027,8 +964,9 @@ def test_profile_policy_path_rebases_on_the_config_dir(tmp_path, monkeypatch):
     # build-context rule the cli path form follows; without rebasing it
     # resolves against the process cwd and only works by luck.
     (tmp_path / "roles").mkdir()
-    (tmp_path / "roles" /
-     "x.py").write_text("def pre_command(ctx):\n    return None\n")
+    (tmp_path / "roles" / "x.py").write_text(
+        "def pre_command(ctx):\n    return None\n"
+    )
     cfg_file = tmp_path / "ws.yaml"
     cfg_file.write_text("""\
 mounts:
@@ -1042,8 +980,10 @@ profiles:
     release = cfg.to_workspace_kwargs()["profiles"]["release"]
     assert release.policy is not None
     assert isinstance(release.policy.script, ScriptSource)
-    assert release.policy.script.source == \
-        "def pre_command(ctx):\n    return None\n"
+    assert (
+        release.policy.script.source
+        == "def pre_command(ctx):\n    return None\n"
+    )
     assert release.policy.runtime == "monty"
 
 
@@ -1137,25 +1077,20 @@ def test_env_entry_refusals_surface_as_config_errors():
 
 
 def test_secrets_block_declares_instances():
-    cfg = load_config({
-        "mounts": {
-            "/": {
-                "vfs": "ram"
-            }
-        },
-        "secrets": {
-            "sm": {
-                "source": "aws-sm",
-                "config": {
-                    "region": "us-east-2",
-                    "aws_access_key_id": {
-                        "from": "env",
-                        "key": "KEY_ID"
+    cfg = load_config(
+        {
+            "mounts": {"/": {"vfs": "ram"}},
+            "secrets": {
+                "sm": {
+                    "source": "aws-sm",
+                    "config": {
+                        "region": "us-east-2",
+                        "aws_access_key_id": {"from": "env", "key": "KEY_ID"},
                     },
-                },
-            }
-        },
-    })
+                }
+            },
+        }
+    )
     block = cfg.secrets["sm"]
     assert block.source == "aws-sm"
     assert block.config["region"] == "us-east-2"
@@ -1173,19 +1108,17 @@ def test_secrets_block_absent_by_default():
 def test_secrets_block_refusals_surface_as_config_errors():
     base = {"mounts": {"/": {"vfs": "ram"}}}
     with pytest.raises(ValueError, match="needs no config of its own"):
-        load_config({
-            **base, "secrets": {
-                "sm": {
-                    "source": "aws-sm",
-                    "config": {
-                        "region": {
-                            "from": "aws-sm",
-                            "key": "r"
-                        }
-                    },
-                }
+        load_config(
+            {
+                **base,
+                "secrets": {
+                    "sm": {
+                        "source": "aws-sm",
+                        "config": {"region": {"from": "aws-sm", "key": "r"}},
+                    }
+                },
             }
-        })
+        )
     with pytest.raises(ValueError):
         load_config({**base, "secrets": {"sm": {"kind": "aws-sm"}}})
 
@@ -1198,18 +1131,14 @@ def test_a_mount_block_read_and_ttl_reach_the_mount():
     while the `Mount` the Workspace is handed still carried the
     default.
     """
-    cfg = load_config({
-        "mounts": {
-            "/a": {
-                "vfs": "ram",
-                "read": "bounded",
-                "ttl": 45
-            },
-            "/b": {
-                "vfs": "ram"
-            },
+    cfg = load_config(
+        {
+            "mounts": {
+                "/a": {"vfs": "ram", "read": "bounded", "ttl": 45},
+                "/b": {"vfs": "ram"},
+            }
         }
-    })
+    )
     mounts = cfg.to_workspace_kwargs()["mounts"]
     assert mounts["/a"].read == ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45)
     assert mounts["/b"].read == ReadSpec()
@@ -1224,21 +1153,18 @@ def test_the_workspace_read_default_is_what_an_undeclared_mount_takes():
     None)` leaves such a test green.
     """
     s3 = {"vfs": "s3", "config": {"bucket": "b"}}
-    cfg = load_config({
-        "read": "fresh",
-        "mounts": {
-            "/a": s3,
-            "/b": {
-                **s3, "read": "bounded",
-                "ttl": 30
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "read": "fresh",
+            "mounts": {"/a": s3, "/b": {**s3, "read": "bounded", "ttl": 30}},
+        }
+    )
     kwargs = cfg.to_workspace_kwargs()
     assert kwargs["read"].policy is ReadPolicy.FRESH
     assert kwargs["mounts"]["/a"].read.policy is ReadPolicy.FRESH
-    assert kwargs["mounts"]["/b"].read == ReadSpec(policy=ReadPolicy.BOUNDED,
-                                                   ttl=30)
+    assert kwargs["mounts"]["/b"].read == ReadSpec(
+        policy=ReadPolicy.BOUNDED, ttl=30
+    )
 
 
 def test_a_workspace_level_read_is_judged_at_every_mount_it_lands_on():
@@ -1276,15 +1202,13 @@ def test_a_bound_that_is_not_whole_seconds_is_refused_at_the_door():
     """
     for junk in ("30", True, 1.5, 60.5):
         with pytest.raises(ValueError, match="whole seconds"):
-            load_config({
-                "mounts": {
-                    "/a": {
-                        "vfs": "ram",
-                        "read": "bounded",
-                        "ttl": junk
+            load_config(
+                {
+                    "mounts": {
+                        "/a": {"vfs": "ram", "read": "bounded", "ttl": junk}
                     }
                 }
-            })
+            )
 
 
 def test_an_integral_float_bound_is_a_bound():
@@ -1296,13 +1220,8 @@ def test_an_integral_float_bound_is_a_bound():
     other. A fractional one is still a typo on both.
     """
     cfg = load_config(
-        {"mounts": {
-            "/a": {
-                "vfs": "ram",
-                "read": "bounded",
-                "ttl": 60.0
-            }
-        }})
+        {"mounts": {"/a": {"vfs": "ram", "read": "bounded", "ttl": 60.0}}}
+    )
     assert cfg.mounts["/a"].ttl == 60
     assert isinstance(cfg.mounts["/a"].ttl, int)
 
@@ -1317,15 +1236,13 @@ def test_an_unusable_bound_is_refused_at_the_config_door_not_later():
     """
     for bad in (0, -1):
         with pytest.raises(ValueError, match="at least 1 second"):
-            load_config({
-                "mounts": {
-                    "/a": {
-                        "vfs": "ram",
-                        "read": "bounded",
-                        "ttl": bad
+            load_config(
+                {
+                    "mounts": {
+                        "/a": {"vfs": "ram", "read": "bounded", "ttl": bad}
                     }
                 }
-            })
+            )
 
 
 def test_a_missing_policy_is_named_before_an_unusable_bound():
@@ -1362,74 +1279,43 @@ def test_a_mount_declaring_fresh_on_ram_is_refused_when_the_workspace_builds():
 
 @pytest.mark.asyncio
 async def test_global_and_profile_command_limits_from_config():
-    cfg = load_config({
-        "mounts": {
-            "/data": {
-                "vfs": "ram",
-                "mode": "WRITE"
-            }
-        },
-        "command_limits": {
-            "head": {
-                "max_lines": 2
-            }
-        },
-        "profiles": {
-            "research": {
-                "command_limits": {
-                    "head": {
-                        "max_lines": 4
-                    }
-                }
-            }
-        },
-    })
+    cfg = load_config(
+        {
+            "mounts": {"/data": {"vfs": "ram", "mode": "WRITE"}},
+            "command_limits": {"head": {"max_lines": 2}},
+            "profiles": {
+                "research": {"command_limits": {"head": {"max_lines": 4}}}
+            },
+        }
+    )
     ws = Workspace(**cfg.to_workspace_kwargs())
     try:
         ws.create_session("research", profile="research")
-        for session_id, expected in [(None, "1\n2\n"),
-                                     ("research", "1\n2\n3\n")]:
-            result = await ws.shell("seq 1 5 | head -n 3",
-                                    session_id=session_id)
+        for session_id, expected in [
+            (None, "1\n2\n"),
+            ("research", "1\n2\n3\n"),
+        ]:
+            result = await ws.shell(
+                "seq 1 5 | head -n 3", session_id=session_id
+            )
             assert await result.stdout_str() == expected
     finally:
         await ws.close()
 
 
-@pytest.mark.parametrize("block", [
-    {
-        "command_limits": {
-            "head": {
-                "max_line": 2
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"command_limits": {"head": {"max_line": 2}}},
+        {"command_limits": {"sleep": {"timeout_seconds": -1}}},
+        {"command_limits": {"sleep": {"timeout_seconds": float("inf")}}},
+        {
+            "profiles": {
+                "research": {"command_limits": {"head": {"max_line": 2}}}
             }
-        }
-    },
-    {
-        "command_limits": {
-            "sleep": {
-                "timeout_seconds": -1
-            }
-        }
-    },
-    {
-        "command_limits": {
-            "sleep": {
-                "timeout_seconds": float("inf")
-            }
-        }
-    },
-    {
-        "profiles": {
-            "research": {
-                "command_limits": {
-                    "head": {
-                        "max_line": 2
-                    }
-                }
-            }
-        }
-    },
-])
+        },
+    ],
+)
 def test_bad_command_limit_fields_fail_at_config_door(block):
     with pytest.raises(ValueError):
         load_config({"mounts": {"/data": {"vfs": "ram"}}, **block})

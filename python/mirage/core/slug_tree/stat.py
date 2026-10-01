@@ -24,8 +24,11 @@ def directory_stat(resolved: ResolvedDirectory) -> FileStat:
         resolved (ResolvedDirectory): the resolved folder.
     """
     key = resolved.virtual_key
-    name = ("/" if key == mount_root(resolved.mount_prefix) else
-            key.rstrip("/").rsplit("/", 1)[-1])
-    return FileStat(name=name,
-                    type=FileType.DIRECTORY,
-                    extra={"children_count": 0})
+    name = (
+        "/"
+        if key == mount_root(resolved.mount_prefix)
+        else key.rstrip("/").rsplit("/", 1)[-1]
+    )
+    return FileStat(
+        name=name, type=FileType.DIRECTORY, extra={"children_count": 0}
+    )

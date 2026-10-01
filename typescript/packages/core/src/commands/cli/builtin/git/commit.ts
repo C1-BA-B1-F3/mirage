@@ -139,7 +139,7 @@ async function buildCommit(
   for (const [path, entry] of [...state.entries].sort(([a], [b]) => compareCodePoints(a, b))) {
     const cut = path.lastIndexOf('/')
     const dir = cut === -1 ? '' : path.slice(0, cut)
-    for (let at = dir; at !== ''; ) {
+    for (let at = dir; at !== '';) {
       ensure(at)
       const up = at.lastIndexOf('/')
       at = up === -1 ? '' : at.slice(0, up)

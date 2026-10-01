@@ -36,8 +36,9 @@ _EPOCH_RE = re.compile(r"@\s*[+-]?\d+(?:\.\d+)?")
 # refuses.
 _POSIX_TIME_RE = re.compile(r"([0-9]{8}|[0-9]{10}|[0-9]{12})(\.[0-9]{2})?")
 _FIRST_SECOND = datetime.min.replace(tzinfo=timezone.utc).timestamp()
-_LAST_SECOND = datetime.max.replace(tzinfo=timezone.utc,
-                                    microsecond=0).timestamp()
+_LAST_SECOND = datetime.max.replace(
+    tzinfo=timezone.utc, microsecond=0
+).timestamp()
 
 
 def _date_unit(word: str) -> str | None:
@@ -85,9 +86,10 @@ def _place(wall: datetime, tz: tzinfo, offset: timedelta | None) -> datetime:
     first = wall.replace(tzinfo=tz, fold=0)
     second = wall.replace(tzinfo=tz, fold=1)
     shown = [
-        reading for reading in (first, second)
-        if reading.astimezone(timezone.utc).astimezone(tz).replace(
-            tzinfo=None) == wall
+        reading
+        for reading in (first, second)
+        if reading.astimezone(timezone.utc).astimezone(tz).replace(tzinfo=None)
+        == wall
     ]
     if not shown:
         return first.astimezone(timezone.utc).astimezone(tz)
@@ -236,10 +238,9 @@ def _apply_relative(base: datetime, words: list[str]) -> datetime | None:
     return result
 
 
-def parse_date_expr(text: str,
-                    *,
-                    tz: tzinfo | None = None,
-                    now: datetime | None = None) -> datetime | None:
+def parse_date_expr(
+    text: str, *, tz: tzinfo | None = None, now: datetime | None = None
+) -> datetime | None:
     """Parse a GNU `date -d` expression, or None when it is invalid.
 
     Covers the forms agents actually type: ISO 8601 dates and datetimes
@@ -280,8 +281,9 @@ def parse_date_expr(text: str,
         if len(words) < take:
             continue
         try:
-            prefix = _localize(datetime.fromisoformat(" ".join(words[:take])),
-                               tz)
+            prefix = _localize(
+                datetime.fromisoformat(" ".join(words[:take])), tz
+            )
         except ValueError:
             continue
         if prefix is None:
@@ -292,10 +294,9 @@ def parse_date_expr(text: str,
     return _apply_relative(base, words[index:])
 
 
-def parse_posix_time(text: str,
-                     *,
-                     tz: tzinfo | None = None,
-                     now: datetime | None = None) -> datetime | None:
+def parse_posix_time(
+    text: str, *, tz: tzinfo | None = None, now: datetime | None = None
+) -> datetime | None:
     """Parse the ``MMDDhhmm[[CC]YY][.ss]`` a bare ``date`` operand is.
 
     gnulib's posixtime with date's syntax bits, measured on coreutils
@@ -318,7 +319,7 @@ def parse_posix_time(text: str,
     if match is None:
         return None
     digits, dot = match.group(1), match.group(2)
-    month, day, hour, minute = (int(digits[i:i + 2]) for i in range(0, 8, 2))
+    month, day, hour, minute = (int(digits[i : i + 2]) for i in range(0, 8, 2))
     tail = digits[8:]
     if not tail:
         year = (now if now is not None else datetime.now(tz)).year
@@ -345,8 +346,11 @@ def parse_posix_time(text: str,
 
 
 def utc_date_folder(ts: float | None = None) -> str:
-    t = (datetime.now(timezone.utc) if ts is None else datetime.fromtimestamp(
-        ts, timezone.utc))
+    t = (
+        datetime.now(timezone.utc)
+        if ts is None
+        else datetime.fromtimestamp(ts, timezone.utc)
+    )
     return t.strftime("%Y-%m-%d")
 
 
@@ -380,8 +384,9 @@ def timestamp_iso(epoch: float | None) -> str | None:
     return datetime.fromtimestamp(epoch, timezone.utc).isoformat()
 
 
-def in_mtime_window(timestamp: float | None, mtime_min: float | None,
-                    mtime_max: float | None) -> bool:
+def in_mtime_window(
+    timestamp: float | None, mtime_min: float | None, mtime_max: float | None
+) -> bool:
     if mtime_min is None and mtime_max is None:
         return True
     if timestamp is None:
@@ -393,8 +398,9 @@ def in_mtime_window(timestamp: float | None, mtime_min: float | None,
     return True
 
 
-def matches_mtime(value: str | None, mtime_min: float | None,
-                  mtime_max: float | None) -> bool:
+def matches_mtime(
+    value: str | None, mtime_min: float | None, mtime_max: float | None
+) -> bool:
     return in_mtime_window(iso_timestamp(value), mtime_min, mtime_max)
 
 
@@ -433,7 +439,8 @@ def epoch_to_iso(seconds: float) -> str:
         seconds (float): unix epoch seconds (sub-second part is dropped).
     """
     return to_iso_z(
-        datetime.fromtimestamp(math.floor(seconds), tz=timezone.utc))
+        datetime.fromtimestamp(math.floor(seconds), tz=timezone.utc)
+    )
 
 
 def epoch_to_iso_z(seconds: float) -> str:

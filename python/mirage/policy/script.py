@@ -20,12 +20,23 @@ from typing import Any
 
 from mirage.io import IOResult, OpReport
 from mirage.policy.base import Policy
-from mirage.policy.constants import (DEFAULT_ASK_REASON, DEFAULT_DENY_REASON,
-                                     SCRIPT_EVAL_TIMEOUT_SECONDS)
+from mirage.policy.constants import (
+    DEFAULT_ASK_REASON,
+    DEFAULT_DENY_REASON,
+    SCRIPT_EVAL_TIMEOUT_SECONDS,
+)
 from mirage.policy.mixin import SessionScopedMixin
-from mirage.policy.types import (VALIDITY, Action, Ask, CommandContext, Deny,
-                                 OpsContext, ProfileScript, SessionContext,
-                                 SessionScriptsQuery)
+from mirage.policy.types import (
+    VALIDITY,
+    Action,
+    Ask,
+    CommandContext,
+    Deny,
+    OpsContext,
+    ProfileScript,
+    SessionContext,
+    SessionScriptsQuery,
+)
 from mirage.runtime.base import Runtime
 from mirage.runtime.binding import WorkspaceBinding
 from mirage.runtime.errors import EvalError
@@ -50,12 +61,14 @@ HOOKS: Mapping[str, str] = {
 # the policy's ``pre_ops`` lets the read through: the policy is the one
 # asking, and judging its own read would re-enter the evaluation that
 # is waiting on it.
-_POLICY_READ: ContextVar[bool] = ContextVar("mirage_policy_read",
-                                            default=False)
+_POLICY_READ: ContextVar[bool] = ContextVar(
+    "mirage_policy_read", default=False
+)
 
 
-def script_context(profile: str, ctx: CommandContext,
-                   mounts: Sequence[str]) -> dict[str, EvalValue]:
+def script_context(
+    profile: str, ctx: CommandContext, mounts: Sequence[str]
+) -> dict[str, EvalValue]:
     """What a profile's policy is told about one command: the
     ``CommandContext`` the coded hooks read, as plain data.
 
@@ -92,8 +105,9 @@ def script_context(profile: str, ctx: CommandContext,
     }
 
 
-def ops_script_context(profile: str, ctx: OpsContext,
-                       mounts: Sequence[str]) -> dict[str, EvalValue]:
+def ops_script_context(
+    profile: str, ctx: OpsContext, mounts: Sequence[str]
+) -> dict[str, EvalValue]:
     """What a profile's policy is told about one VFS op: the
     ``OpsContext`` the coded hooks read, as plain data.
 
@@ -110,15 +124,14 @@ def ops_script_context(profile: str, ctx: OpsContext,
             "write": ctx.write,
             "prefix": ctx.prefix,
         },
-        "session": {
-            "id": ctx.session_id
-        },
+        "session": {"id": ctx.session_id},
         "mounts": list(mounts),
     }
 
 
-def session_script_context(profile: str, ctx: SessionContext,
-                           mounts: Sequence[str]) -> dict[str, EvalValue]:
+def session_script_context(
+    profile: str, ctx: SessionContext, mounts: Sequence[str]
+) -> dict[str, EvalValue]:
     """What a profile's policy is told about one session-state write:
     the ``SessionContext`` the coded hooks read, as plain data.
 
@@ -136,9 +149,7 @@ def session_script_context(profile: str, ctx: SessionContext,
             "key": ctx.key,
             "value": ctx.value,
         },
-        "session": {
-            "id": ctx.session_id
-        },
+        "session": {"id": ctx.session_id},
         "mounts": list(mounts),
     }
 
@@ -195,10 +206,14 @@ def hook_probe(script: ScriptSource) -> str:
     names = [hook_name(script, hook) for hook in HOOKS]
     if script.language == "js":
         pairs = ", ".join(f"['{name}', typeof {name}]" for name in names)
-        return (f";[{pairs}].filter((h) => h[1] !== 'undefined')"
-                f".map((h) => h[0])")
-    arms = "".join(f"try:\n    {name}\n    _mirage_hooks.append('{name}')\n"
-                   f"except NameError:\n    pass\n" for name in names)
+        return (
+            f";[{pairs}].filter((h) => h[1] !== 'undefined').map((h) => h[0])"
+        )
+    arms = "".join(
+        f"try:\n    {name}\n    _mirage_hooks.append('{name}')\n"
+        f"except NameError:\n    pass\n"
+        for name in names
+    )
     return f"_mirage_hooks = []\n{arms}_mirage_hooks"
 
 
@@ -225,8 +240,9 @@ def defined_hooks(script: ScriptSource, value: EvalValue) -> frozenset[str]:
     raise ValueError(f"script hook probe answered {value!r}")
 
 
-def script_action(value: EvalValue,
-                  hook: str = "pre_command") -> Deny | Ask | None:
+def script_action(
+    value: EvalValue, hook: str = "pre_command"
+) -> Deny | Ask | None:
     """The policy answer a policy's hook returns.
 
     The vocabulary is the coded hook's own, spelled as data: ``None``
@@ -265,9 +281,12 @@ def script_action(value: EvalValue,
         raise ValueError(
             f"script must answer allow, deny or ask: None or 'allow', "
             f"'deny', 'ask', {{'deny': reason}} or {{'ask': reason}}; "
-            f"got {value!r}")
-    raise ValueError(f"script must answer allow or deny: None or 'allow', "
-                     f"'deny' or {{'deny': reason}}; got {value!r}")
+            f"got {value!r}"
+        )
+    raise ValueError(
+        f"script must answer allow or deny: None or 'allow', "
+        f"'deny' or {{'deny': reason}}; got {value!r}"
+    )
 
 
 class ScriptPolicy(Policy, SessionScopedMixin):
@@ -327,14 +346,17 @@ class ScriptPolicy(Policy, SessionScopedMixin):
             together.
     """
 
-    def __init__(self,
-                 sessions: SessionScriptsQuery,
-                 mounts: Callable[[], Sequence[str]],
-                 dispatch: DispatchFn | None = None,
-                 resolver: MountResolver | None = None) -> None:
+    def __init__(
+        self,
+        sessions: SessionScriptsQuery,
+        mounts: Callable[[], Sequence[str]],
+        dispatch: DispatchFn | None = None,
+        resolver: MountResolver | None = None,
+    ) -> None:
         if (dispatch is None) != (resolver is None):
             raise ValueError(
-                "a script policy's dispatch and resolver travel together")
+                "a script policy's dispatch and resolver travel together"
+            )
         self._sessions = sessions
         self._mounts = mounts
         self._dispatch = dispatch
@@ -345,21 +367,30 @@ class ScriptPolicy(Policy, SessionScopedMixin):
 
     async def pre_command(self, ctx: CommandContext) -> Action | None:
         return await self._judge(
-            "pre_command", ctx.session_id,
-            lambda entry: script_context(entry.profile, ctx, self._mounts()))
+            "pre_command",
+            ctx.session_id,
+            lambda entry: script_context(entry.profile, ctx, self._mounts()),
+        )
 
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if _POLICY_READ.get():
             return None
         return await self._judge(
-            "pre_ops", ctx.session_id, lambda entry: ops_script_context(
-                entry.profile, ctx, self._mounts()))
+            "pre_ops",
+            ctx.session_id,
+            lambda entry: ops_script_context(
+                entry.profile, ctx, self._mounts()
+            ),
+        )
 
     async def pre_session(self, ctx: SessionContext) -> Action | None:
         return await self._judge(
-            "pre_session", ctx.session_id,
-            lambda entry: session_script_context(entry.profile, ctx,
-                                                 self._mounts()))
+            "pre_session",
+            ctx.session_id,
+            lambda entry: session_script_context(
+                entry.profile, ctx, self._mounts()
+            ),
+        )
 
     async def wants_for(self, hook: str, session_id: str) -> bool:
         """Whether this session's policy speaks at ``hook``: it has a
@@ -388,9 +419,11 @@ class ScriptPolicy(Policy, SessionScopedMixin):
             await engine.close()
 
     async def _judge(
-        self, hook: str, session_id: str,
-        facts: Callable[[ProfileScript], dict[str,
-                                              EvalValue]]) -> Action | None:
+        self,
+        hook: str,
+        session_id: str,
+        facts: Callable[[ProfileScript], dict[str, EvalValue]],
+    ) -> Action | None:
         """One hook of the session's policy, with the door's facts.
 
         Args:
@@ -408,15 +441,18 @@ class ScriptPolicy(Policy, SessionScopedMixin):
             if not defined:
                 names = [hook_name(entry.script, name) for name in HOOKS]
                 return self._failed(
-                    entry, f"defines no hook: {', '.join(names[:-1])} or "
-                    f"{names[-1]}")
+                    entry,
+                    f"defines no hook: {', '.join(names[:-1])} or {names[-1]}",
+                )
             if hook not in defined:
                 return None
-            value = await self._evaluate(entry, hook_call(entry.script, hook),
-                                         facts(entry))
+            value = await self._evaluate(
+                entry, hook_call(entry.script, hook), facts(entry)
+            )
         except asyncio.TimeoutError:
             return self._failed(
-                entry, f"timed out after {SCRIPT_EVAL_TIMEOUT_SECONDS:g}s")
+                entry, f"timed out after {SCRIPT_EVAL_TIMEOUT_SECONDS:g}s"
+            )
         except EvalError as exc:
             arm = "syntax error" if exc.syntax else "failed"
             return self._failed(entry, f"{arm}: {exc}")
@@ -446,8 +482,9 @@ class ScriptPolicy(Policy, SessionScopedMixin):
             self._defined[key] = defined
         return defined
 
-    async def _evaluate(self, entry: ProfileScript, tail: str,
-                        ctx: dict[str, EvalValue]) -> EvalValue:
+    async def _evaluate(
+        self, entry: ProfileScript, tail: str, ctx: dict[str, EvalValue]
+    ) -> EvalValue:
         """The program whole, then ``tail`` as its last expression,
         on the profile's engine, serialized.
 
@@ -462,22 +499,28 @@ class ScriptPolicy(Policy, SessionScopedMixin):
             if engine is None:
                 engine = script_engine(entry.script, entry.runtime)
                 if self._dispatch is not None and self._resolver is not None:
-                    engine.bind(WorkspaceBinding(self._reading,
-                                                 self._resolver))
+                    engine.bind(
+                        WorkspaceBinding(self._reading, self._resolver)
+                    )
                 self._engines[entry.runtime] = engine
             # script_engine refuses anything that cannot evaluate, so
             # this narrows a fact already established.
             assert isinstance(engine, EvaluatorMixin)
-            return await eval_with_ctx(f"{entry.script.source}\n\n{tail}\n",
-                                       ctx, engine,
-                                       SCRIPT_EVAL_TIMEOUT_SECONDS)
+            return await eval_with_ctx(
+                f"{entry.script.source}\n\n{tail}\n",
+                ctx,
+                engine,
+                SCRIPT_EVAL_TIMEOUT_SECONDS,
+            )
 
-    async def _reading(self,
-                       op: str,
-                       path: PathSpec,
-                       *,
-                       report: OpReport | None = None,
-                       **kwargs: Any) -> tuple[Any, IOResult]:
+    async def _reading(
+        self,
+        op: str,
+        path: PathSpec,
+        *,
+        report: OpReport | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, IOResult]:
         """The door the policy's engine reads through: the workspace's
         dispatch, with the op marked as the policy's own for as long as
         it runs, so ``pre_ops`` above lets it through.
@@ -519,5 +562,6 @@ def _clause(exc: Exception) -> str:
         exc (Exception): the refusal.
     """
     message = str(exc)
-    return message[len("script "):] if message.startswith(
-        "script ") else message
+    return (
+        message[len("script ") :] if message.startswith("script ") else message
+    )

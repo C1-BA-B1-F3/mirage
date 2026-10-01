@@ -27,12 +27,14 @@ CONFIG = GitHubConfig(token="t")
 
 
 def _accessor(tree: dict[str, TreeEntry]) -> GitHubAccessor:
-    return GitHubAccessor(config=CONFIG,
-                          owner="acme",
-                          repo="proj",
-                          ref="main",
-                          default_branch="main",
-                          tree=tree)
+    return GitHubAccessor(
+        config=CONFIG,
+        owner="acme",
+        repo="proj",
+        ref="main",
+        default_branch="main",
+        tree=tree,
+    )
 
 
 def _root() -> PathSpec:
@@ -58,8 +60,9 @@ async def test_pull_refreshes_the_accessor_tree() -> None:
         "b.txt": _entry("b.txt", "sha-b"),
     }
     accessor = _accessor(stale)
-    with patch("mirage.core.github.watch.fetch_tree",
-               return_value=(fresh, False)):
+    with patch(
+        "mirage.core.github.watch.fetch_tree", return_value=(fresh, False)
+    ):
         await _collect(GitHubWalk(accessor), _root())
     assert accessor.tree == fresh
 
@@ -79,8 +82,10 @@ async def test_truncated_tree_is_not_adopted() -> None:
 async def test_walk_reports_blobs_with_their_sha() -> None:
     tree = {"a.txt": _entry("a.txt", "sha-a")}
     accessor = _accessor(tree)
-    with patch("mirage.core.github.watch.fetch_tree",
-               return_value=(tree, False)):
+    with patch(
+        "mirage.core.github.watch.fetch_tree", return_value=(tree, False)
+    ):
         entries = await _collect(GitHubWalk(accessor), _root())
-    assert [(e.virtual, e.fingerprint)
-            for e in entries] == [("/gh/a.txt", "sha-a")]
+    assert [(e.virtual, e.fingerprint) for e in entries] == [
+        ("/gh/a.txt", "sha-a")
+    ]

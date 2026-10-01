@@ -21,11 +21,16 @@ import pytest
 from mirage.vfs import registry
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.hf_buckets import HfBucketsVFS
-from mirage.vfs.registry import (REGISTRY, build_vfs, known_vfs_names,
-                                 register_vfs)
+from mirage.vfs.registry import (
+    REGISTRY,
+    build_vfs,
+    known_vfs_names,
+    register_vfs,
+)
 
-SPEC_VFS_NAMES = (Path(__file__).resolve().parents[3] / "spec" / "python" /
-                  "vfs.json")
+SPEC_VFS_NAMES = (
+    Path(__file__).resolve().parents[3] / "spec" / "python" / "vfs.json"
+)
 
 
 def test_registry_matches_the_committed_spec_manifest():
@@ -39,9 +44,10 @@ def test_registry_matches_the_committed_spec_manifest():
     other now fails a gate instead of a hand edit.
     """
     manifest = json.loads(SPEC_VFS_NAMES.read_text())
-    assert set(REGISTRY) == set(
-        manifest["registry"]), ("REGISTRY drifted from spec/python/vfs.json; "
-                                "rerun scripts/gen_specs.py")
+    assert set(REGISTRY) == set(manifest["registry"]), (
+        "REGISTRY drifted from spec/python/vfs.json; "
+        "rerun scripts/gen_specs.py"
+    )
 
 
 def test_capabilities_match_the_committed_spec_manifest():
@@ -61,42 +67,48 @@ def test_capabilities_match_the_committed_spec_manifest():
             "supports_snapshot": cls.supports_snapshot,
             "sizes_always_known": cls.sizes_always_known,
         }
-        for name, cls in ((n, registry.resolve_class(e.vfs_path))
-                          for n, e in REGISTRY.items())
+        for name, cls in (
+            (n, registry.resolve_class(e.vfs_path))
+            for n, e in REGISTRY.items()
+        )
     }
     dumped = {
-        name: {
-            k: v
-            for k, v in entry.items() if k in live[name]
-        }
+        name: {k: v for k, v in entry.items() if k in live[name]}
         for name, entry in manifest.items()
     }
-    assert live == dumped, ("VFS capabilities drifted from "
-                            "spec/python/vfs.json; rerun "
-                            "scripts/gen_specs.py")
+    assert live == dumped, (
+        "VFS capabilities drifted from "
+        "spec/python/vfs.json; rerun "
+        "scripts/gen_specs.py"
+    )
 
 
 def test_build_ram_returns_ram_vfs():
     from mirage.vfs.ram import RAMVFS
+
     p = build_vfs("ram")
     assert isinstance(p, RAMVFS)
 
 
 def test_build_disk_takes_raw_kwargs(tmp_path):
     from mirage.vfs.disk import DiskVFS
+
     p = build_vfs("disk", {"root": str(tmp_path)})
     assert isinstance(p, DiskVFS)
 
 
 def test_build_s3_uses_config_class():
     from mirage.vfs.s3 import S3VFS
+
     p = build_vfs(
-        "s3", {
+        "s3",
+        {
             "bucket": "b",
             "region": "us-east-1",
             "aws_access_key_id": "k",
             "aws_secret_access_key": "s",
-        })
+        },
+    )
     assert isinstance(p, S3VFS)
     assert p.config.bucket == "b"
     assert p.config.region == "us-east-1"
@@ -104,24 +116,32 @@ def test_build_s3_uses_config_class():
 
 def test_build_r2_uses_r2_config():
     from mirage.vfs.r2 import R2VFS
+
     p = build_vfs(
-        "r2", {
+        "r2",
+        {
             "bucket": "b",
             "account_id": "acct",
             "access_key_id": "k",
             "secret_access_key": "s",
-        })
+        },
+    )
     assert isinstance(p, R2VFS)
 
 
-@pytest.mark.skipif(not os.environ.get("REDIS_URL"),
-                    reason="REDIS_URL not set")
+@pytest.mark.skipif(
+    not os.environ.get("REDIS_URL"), reason="REDIS_URL not set"
+)
 def test_build_redis_takes_raw_kwargs():
     from mirage.vfs.redis import RedisVFS
-    p = build_vfs("redis", {
-        "url": os.environ["REDIS_URL"],
-        "key_prefix": "test:",
-    })
+
+    p = build_vfs(
+        "redis",
+        {
+            "url": os.environ["REDIS_URL"],
+            "key_prefix": "test:",
+        },
+    )
     assert isinstance(p, RedisVFS)
 
 
@@ -133,6 +153,7 @@ def test_unknown_vfs_raises_keyerror():
 def test_registry_module_import_is_free_of_vfs_deps():
     import importlib
     import sys
+
     if "mirage.vfs.registry" in sys.modules:
         del sys.modules["mirage.vfs.registry"]
     importlib.import_module("mirage.vfs.registry")
@@ -144,7 +165,6 @@ def test_build_hf_buckets_vfs():
 
 
 class FakeCustomConfig:
-
     def __init__(self, url: str = "") -> None:
         self.url = url
 
@@ -154,7 +174,6 @@ class FakeCustomConfig:
 # the way one does. NotAVFS below is the class that does not, and
 # NamelessVFS is a real subclass that leaves the key empty.
 class FakeCustomVFS(BaseVFS):
-
     name = "fake_custom"
 
     def __init__(self, config: FakeCustomConfig) -> None:
@@ -163,7 +182,6 @@ class FakeCustomVFS(BaseVFS):
 
 
 class FakeKwargsVFS(BaseVFS):
-
     name = "fake_kwargs"
 
     def __init__(self, root: str = "/") -> None:
@@ -172,7 +190,6 @@ class FakeKwargsVFS(BaseVFS):
 
 
 class FakeConfigClsVFS(BaseVFS):
-
     name = "fake_attr"
     CONFIG_CLS = FakeCustomConfig
 
@@ -182,13 +199,11 @@ class FakeConfigClsVFS(BaseVFS):
 
 
 class NotAVFS:
-
     def __init__(self, root: str = "/") -> None:
         self.root = root
 
 
 class NamelessVFS(BaseVFS):
-
     name = ""
 
 
@@ -232,15 +247,17 @@ def test_register_vfs_spec_string(clean_registry):
 def test_colon_reference_builds_without_a_registry(clean_registry):
     # A colon means the value names code, so it resolves with nothing
     # registered and no entry points scanned.
-    built = build_vfs("tests.vfs.test_registry:FakeKwargsVFS",
-                      {"root": "/ref"})
+    built = build_vfs(
+        "tests.vfs.test_registry:FakeKwargsVFS", {"root": "/ref"}
+    )
     assert isinstance(built, FakeKwargsVFS)
     assert built.root == "/ref"
 
 
 def test_colon_reference_uses_the_config_cls_attribute(clean_registry):
-    built = build_vfs("tests.vfs.test_registry:FakeConfigClsVFS",
-                      {"url": "http://ref"})
+    built = build_vfs(
+        "tests.vfs.test_registry:FakeConfigClsVFS", {"url": "http://ref"}
+    )
     assert built.config.url == "http://ref"
 
 
@@ -311,8 +328,9 @@ def test_entry_point_does_not_shadow_registered(clean_registry, monkeypatch):
         value="tests.vfs.test_registry:FakeKwargsVFS",
         group="mirage.vfs",
     )
-    monkeypatch.setattr(importlib.metadata, "entry_points",
-                        lambda *, group: [ep])
+    monkeypatch.setattr(
+        importlib.metadata, "entry_points", lambda *, group: [ep]
+    )
     register_vfs("fake_custom", FakeCustomVFS, FakeCustomConfig)
     built = build_vfs("fake_custom", {"url": "http://z"})
     assert isinstance(built, FakeCustomVFS)
@@ -339,7 +357,6 @@ def test_a_refused_config_value_is_not_in_the_error():
 
 
 class FakeOpenKwargsVFS(BaseVFS):
-
     name = "fake_open"
 
     def __init__(self, **options: str) -> None:
@@ -358,24 +375,26 @@ def test_an_unknown_config_key_is_refused_by_name():
 def test_every_unknown_key_is_named_in_the_order_given():
     with pytest.raises(ValueError) as caught:
         build_vfs("s3", {"bucket": "b", "one": 1, "two": 2})
-    assert str(caught.value) == ("s3: one: extra_forbidden; "
-                                 "two: extra_forbidden")
+    assert str(caught.value) == (
+        "s3: one: extra_forbidden; two: extra_forbidden"
+    )
 
 
-@pytest.mark.parametrize(("name", "config", "message"), [
-    ("ram", {
-        "root": "/tmp"
-    }, "ram: root: extra_forbidden"),
-    ("disk", {
-        "root": "/tmp",
-        "roots": "/x"
-    }, "disk: roots: extra_forbidden"),
-    ("redis", {
-        "keyprefix": "a"
-    }, "redis: keyprefix: extra_forbidden"),
-])
+@pytest.mark.parametrize(
+    ("name", "config", "message"),
+    [
+        ("ram", {"root": "/tmp"}, "ram: root: extra_forbidden"),
+        (
+            "disk",
+            {"root": "/tmp", "roots": "/x"},
+            "disk: roots: extra_forbidden",
+        ),
+        ("redis", {"keyprefix": "a"}, "redis: keyprefix: extra_forbidden"),
+    ],
+)
 def test_a_kwargs_vfs_refuses_an_unknown_key_in_the_same_words(
-        name, config, message):
+    name, config, message
+):
     # These three take constructor keywords rather than a typed config,
     # so an unknown key used to surface as Python's own TypeError.
     with pytest.raises(ValueError) as caught:
@@ -391,13 +410,16 @@ def test_a_constructor_taking_kwargs_judges_its_own_keys(clean_registry):
 
 @pytest.mark.parametrize("key", ["schema", "schema_name"])
 def test_an_aliased_field_is_known_under_either_name(key):
-    built = build_vfs("databricks_volume", {
-        "catalog": "c",
-        key: "s",
-        "volume": "v",
-        "host": "https://h",
-        "token": "t"
-    })
+    built = build_vfs(
+        "databricks_volume",
+        {
+            "catalog": "c",
+            key: "s",
+            "volume": "v",
+            "host": "https://h",
+            "token": "t",
+        },
+    )
     assert built.config.schema_name == "s"
 
 

@@ -16,8 +16,13 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from mirage.commands.cli.builtin.gh.shape import (ListOf, Shape, exported,
-                                                  pointer, struct)
+from mirage.commands.cli.builtin.gh.shape import (
+    ListOf,
+    Shape,
+    exported,
+    pointer,
+    struct,
+)
 
 Node = dict[str, Any]
 
@@ -37,6 +42,7 @@ class Pages:
         at (Callable[[Node], Node]): where the connection sits in an
             answer.
     """
+
     select: Callable[[str], str]
     at: Callable[[Node], Node]
 
@@ -58,6 +64,7 @@ class Field:
         pages (Pages | None): set for a connection the view commands read
             to its end.
     """
+
     select: str
     export: Callable[[Node], Any]
     view: Literal["never", "apart"] | None = None
@@ -76,51 +83,81 @@ def nodes_of(value: Any) -> list[Any]:
 # gh's CommentAuthor: a comment's or a review's author prints its login
 # alone.
 LOGIN = struct(("login", "string"))
-_USER = struct(("id", "string"), ("login", "string"), ("name", "string"),
-               ("databaseId", "int"))
-_LABEL = struct(("id", "string"), ("name", "string"),
-                ("description", "string"), ("color", "string"))
+_USER = struct(
+    ("id", "string"),
+    ("login", "string"),
+    ("name", "string"),
+    ("databaseId", "int"),
+)
+_LABEL = struct(
+    ("id", "string"),
+    ("name", "string"),
+    ("description", "string"),
+    ("color", "string"),
+)
 # Its url is omitempty, and gh always asks for it, so it always prints.
-_COMMENT = struct(("id", "string"), ("author", LOGIN),
-                  ("authorAssociation", "string"), ("body", "string"),
-                  ("createdAt", "time"), ("includesCreatedEdit", "bool"),
-                  ("isMinimized", "bool"), ("minimizedReason", "string"),
-                  ("reactionGroups", "reactions"), ("url", "string"),
-                  ("viewerDidAuthor", "bool"))
+_COMMENT = struct(
+    ("id", "string"),
+    ("author", LOGIN),
+    ("authorAssociation", "string"),
+    ("body", "string"),
+    ("createdAt", "time"),
+    ("includesCreatedEdit", "bool"),
+    ("isMinimized", "bool"),
+    ("minimizedReason", "string"),
+    ("reactionGroups", "reactions"),
+    ("url", "string"),
+    ("viewerDidAuthor", "bool"),
+)
 # The maps gh builds by hand print their keys sorted, as Go's encoder
 # does.
 _REFERENCE = struct(
-    ("id", "string"), ("number", "int"),
-    ("repository",
-     struct(("id", "string"), ("name", "string"),
-            ("owner", struct(("id", "string"),
-                             ("login", "string"))))), ("url", "string"))
+    ("id", "string"),
+    ("number", "int"),
+    (
+        "repository",
+        struct(
+            ("id", "string"),
+            ("name", "string"),
+            ("owner", struct(("id", "string"), ("login", "string"))),
+        ),
+    ),
+    ("url", "string"),
+)
 _STATUS = struct(("optionId", "string"), ("name", "string"))
-_PROJECT_CARD = struct(("project", struct(("name", "string"))),
-                       ("column", struct(("name", "string"))))
+_PROJECT_CARD = struct(
+    ("project", struct(("name", "string"))),
+    ("column", struct(("name", "string"))),
+)
 
 AFTER = ", after: $endCursor"
 
 
 def _comments(after: str) -> str:
-    return (f"comments(first: 100{after}) {{nodes {{id,author{{login,"
-            "...on User{id,name}},authorAssociation,body,createdAt,"
-            "includesCreatedEdit,isMinimized,minimizedReason,"
-            "reactionGroups{content,users{totalCount}},url,viewerDidAuthor},"
-            "pageInfo{hasNextPage,endCursor},totalCount}")
+    return (
+        f"comments(first: 100{after}) {{nodes {{id,author{{login,"
+        "...on User{id,name}},authorAssociation,body,createdAt,"
+        "includesCreatedEdit,isMinimized,minimizedReason,"
+        "reactionGroups{content,users{totalCount}},url,viewerDidAuthor},"
+        "pageInfo{hasNextPage,endCursor},totalCount}"
+    )
 
 
 def _project_items_alone(after: str) -> str:
-    return (f"projectItems(first: 100{after}){{totalCount,nodes{{id,"
-            "project{id,title},status:fieldValueByName(name: \"Status\")"
-            "{... on ProjectV2ItemFieldSingleSelectValue{optionId,name}}},"
-            "pageInfo{hasNextPage,endCursor}}")
+    return (
+        f"projectItems(first: 100{after}){{totalCount,nodes{{id,"
+        'project{id,title},status:fieldValueByName(name: "Status")'
+        "{... on ProjectV2ItemFieldSingleSelectValue{optionId,name}}},"
+        "pageInfo{hasNextPage,endCursor}}"
+    )
 
 
-_PROJECT_ITEMS = ("projectItems(first:100){nodes{id, project{id,title}, "
-                  "status:fieldValueByName(name: \"Status\") { ... on "
-                  "ProjectV2ItemFieldSingleSelectValue{optionId,name}}},"
-                  "totalCount}")
+_PROJECT_ITEMS = (
+    "projectItems(first:100){nodes{id, project{id,title}, "
+    'status:fieldValueByName(name: "Status") { ... on '
+    "ProjectV2ItemFieldSingleSelectValue{optionId,name}}},"
+    "totalCount}"
+)
 
 # The refusals gh reads as "this token or host has no Projects", which
 # leave project items empty rather than failing a view.
@@ -135,29 +172,35 @@ _PROJECTS_V2_IGNORABLE = (
 
 
 def _project_items_of(node: Node) -> list[Any]:
-    return [{
-        "status":
-        exported(record(item).get("status"), _STATUS),
-        "title":
-        exported(record(record(item).get("project")).get("title"), "string"),
-    } for item in nodes_of(node.get("projectItems"))]
+    return [
+        {
+            "status": exported(record(item).get("status"), _STATUS),
+            "title": exported(
+                record(record(item).get("project")).get("title"), "string"
+            ),
+        }
+        for item in nodes_of(node.get("projectItems"))
+    ]
 
 
-def plain(name: str,
-          shape: Shape,
-          select: str | None = None) -> tuple[str, Field]:
-    return name, Field(select or name,
-                       lambda node: exported(node.get(name), shape))
+def plain(
+    name: str, shape: Shape, select: str | None = None
+) -> tuple[str, Field]:
+    return name, Field(
+        select or name, lambda node: exported(node.get(name), shape)
+    )
 
 
-def nodes(name: str,
-          select: str,
-          item: Shape,
-          pages: Pages | None = None) -> tuple[str, Field]:
-    return name, Field(select,
-                       lambda node: exported(
-                           record(node.get(name)).get("nodes"), ListOf(item)),
-                       pages=pages)
+def nodes(
+    name: str, select: str, item: Shape, pages: Pages | None = None
+) -> tuple[str, Field]:
+    return name, Field(
+        select,
+        lambda node: exported(
+            record(node.get(name)).get("nodes"), ListOf(item)
+        ),
+        pages=pages,
+    )
 
 
 def paged(name: str, select: Callable[[str], str]) -> Pages:
@@ -174,15 +217,19 @@ def references(name: str) -> tuple[str, Field]:
     """
 
     def select(after: str) -> str:
-        return (f"{name}(first: 100{after}) {{nodes {{id,number,url,"
-                "repository {id,name,owner {id,login}}}"
-                "pageInfo{hasNextPage,endCursor}}")
+        return (
+            f"{name}(first: 100{after}) {{nodes {{id,number,url,"
+            "repository {id,name,owner {id,login}}}"
+            "pageInfo{hasNextPage,endCursor}}"
+        )
 
     return name, Field(
         select(""),
-        lambda node:
-        [exported(item, _REFERENCE) for item in nodes_of(node.get(name))],
-        pages=paged(name, select))
+        lambda node: [
+            exported(item, _REFERENCE) for item in nodes_of(node.get(name))
+        ],
+        pages=paged(name, select),
+    )
 
 
 # The fields issues and pull requests share, as gh 2.85's
@@ -190,8 +237,11 @@ def references(name: str) -> tuple[str, Field]:
 # views; projectCards is asked for as it stands, and each command says
 # whether its view does.
 SHARED_FIELDS: tuple[tuple[str, Field], ...] = (
-    nodes("assignees", "assignees(first:100){nodes{id,login,name},totalCount}",
-          _USER),
+    nodes(
+        "assignees",
+        "assignees(first:100){nodes{id,login,name},totalCount}",
+        _USER,
+    ),
     plain("author", "author", "author{login,...on User{id,name}}"),
     plain("body", "string"),
     plain("closed", "bool"),
@@ -199,26 +249,41 @@ SHARED_FIELDS: tuple[tuple[str, Field], ...] = (
     nodes("comments", _comments(""), _COMMENT, paged("comments", _comments)),
     plain("createdAt", "time"),
     plain("id", "string"),
-    nodes("labels",
-          "labels(first:100){nodes{id,name,description,color},totalCount}",
-          _LABEL),
+    nodes(
+        "labels",
+        "labels(first:100){nodes{id,name,description,color},totalCount}",
+        _LABEL,
+    ),
     plain(
         "milestone",
-        pointer(("number", "int"), ("title", "string"),
-                ("description", "string"), ("dueOn", "raw")),
-        "milestone{number,title,description,dueOn}"),
+        pointer(
+            ("number", "int"),
+            ("title", "string"),
+            ("description", "string"),
+            ("dueOn", "raw"),
+        ),
+        "milestone{number,title,description,dueOn}",
+    ),
     plain("number", "int"),
     nodes(
         "projectCards",
-        "projectCards(first:100){nodes{project{name}column{name}},"
-        "totalCount}", _PROJECT_CARD),
-    ("projectItems",
-     Field(_PROJECT_ITEMS,
-           _project_items_of,
-           view="apart",
-           pages=paged("projectItems", _project_items_alone))),
-    plain("reactionGroups", "reactions",
-          "reactionGroups{content,users{totalCount}}"),
+        "projectCards(first:100){nodes{project{name}column{name}},totalCount}",
+        _PROJECT_CARD,
+    ),
+    (
+        "projectItems",
+        Field(
+            _PROJECT_ITEMS,
+            _project_items_of,
+            view="apart",
+            pages=paged("projectItems", _project_items_alone),
+        ),
+    ),
+    plain(
+        "reactionGroups",
+        "reactions",
+        "reactionGroups{content,users{totalCount}}",
+    ),
     plain("state", "string"),
     plain("title", "string"),
     plain("updatedAt", "time"),
@@ -226,8 +291,9 @@ SHARED_FIELDS: tuple[tuple[str, Field], ...] = (
 )
 
 
-def selection(table: Mapping[str, Field], names: Iterable[str],
-              for_view: bool) -> str:
+def selection(
+    table: Mapping[str, Field], names: Iterable[str], for_view: bool
+) -> str:
     """The GraphQL selection for the fields named, in their order, each
     once. A view leaves out the fields it reads some other way.
 
@@ -237,12 +303,16 @@ def selection(table: Mapping[str, Field], names: Iterable[str],
         for_view (bool): whether the selection serves a view.
     """
     specs = [table[name] for name in dict.fromkeys(names)]
-    return ",".join(spec.select for spec in specs
-                    if not (for_view and spec.view is not None))
+    return ",".join(
+        spec.select
+        for spec in specs
+        if not (for_view and spec.view is not None)
+    )
 
 
-def exported_node(table: Mapping[str, Field], node: Node,
-                  fields: list[str]) -> Node:
+def exported_node(
+    table: Mapping[str, Field], node: Node, fields: list[str]
+) -> Node:
     """One answer as gh exports the fields asked for.
 
     Args:
@@ -293,8 +363,9 @@ async def _project_items_apart(fetch: Fetch, pages: Pages) -> Node:
     return pages.at(node)
 
 
-async def read_rest(table: Mapping[str, Field], node: Node, fields: list[str],
-                    fetch: Fetch) -> Node:
+async def read_rest(
+    table: Mapping[str, Field], node: Node, fields: list[str], fetch: Fetch
+) -> Node:
     """Finish reading a view's answer: every connection gh follows read to
     its end, and the fields it reads apart read that way, through
     ``fetch``.

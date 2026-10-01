@@ -38,17 +38,28 @@ def test_cp_recursive(backend):
     store.dirs.add("/tmp/src")
     store.dirs.add("/tmp/src/sub")
     asyncio.run(
-        write_bytes(accessor, PathSpec.from_str_path("/tmp/src/a.txt"),
-                    b"aaa"))
+        write_bytes(accessor, PathSpec.from_str_path("/tmp/src/a.txt"), b"aaa")
+    )
     asyncio.run(
-        write_bytes(accessor, PathSpec.from_str_path("/tmp/src/sub/b.txt"),
-                    b"bbb"))
+        write_bytes(
+            accessor, PathSpec.from_str_path("/tmp/src/sub/b.txt"), b"bbb"
+        )
+    )
     asyncio.run(
-        cp_cmd(accessor, [
-            PathSpec.from_str_path("/tmp/src/"),
-            PathSpec.from_str_path("/tmp/dst/"),
-        ], [], CommandOpts(flags={"r": True})))
-    assert _cat_sync(backend,
-                     PathSpec.from_str_path("/tmp/dst/a.txt")) == b"aaa"
-    assert _cat_sync(backend,
-                     PathSpec.from_str_path("/tmp/dst/sub/b.txt")) == b"bbb"
+        cp_cmd(
+            accessor,
+            [
+                PathSpec.from_str_path("/tmp/src/"),
+                PathSpec.from_str_path("/tmp/dst/"),
+            ],
+            [],
+            CommandOpts(flags={"r": True}),
+        )
+    )
+    assert (
+        _cat_sync(backend, PathSpec.from_str_path("/tmp/dst/a.txt")) == b"aaa"
+    )
+    assert (
+        _cat_sync(backend, PathSpec.from_str_path("/tmp/dst/sub/b.txt"))
+        == b"bbb"
+    )

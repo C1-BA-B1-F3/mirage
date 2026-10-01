@@ -14,9 +14,11 @@ def _accessor():
 
 
 def _spec(name: str):
-    return PathSpec(vfs_path=name.strip("/"),
-                    virtual="/dev/" + name.strip("/"),
-                    directory="/dev/" + name.strip("/"))
+    return PathSpec(
+        vfs_path=name.strip("/"),
+        virtual="/dev/" + name.strip("/"),
+        directory="/dev/" + name.strip("/"),
+    )
 
 
 @pytest.mark.asyncio

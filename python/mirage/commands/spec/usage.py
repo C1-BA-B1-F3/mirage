@@ -17,12 +17,18 @@ from collections.abc import Sequence
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.argmatch import ArgmatchChoices, ArgmatchKind
-from mirage.commands.spec.constants import (ARGV_IN_ORDER, OLD_OPTION_EXIT,
-                                            OPERAND_EXIT, PYTHON_NAMES,
-                                            PYTHON_USAGE, READ_FAIL_EXIT,
-                                            READ_FAIL_EXIT_ISDIR,
-                                            RG_FLAG_NAMES, USAGE_EXIT,
-                                            USAGE_HINT_PREFIX)
+from mirage.commands.spec.constants import (
+    ARGV_IN_ORDER,
+    OLD_OPTION_EXIT,
+    OPERAND_EXIT,
+    PYTHON_NAMES,
+    PYTHON_USAGE,
+    READ_FAIL_EXIT,
+    READ_FAIL_EXIT_ISDIR,
+    RG_FLAG_NAMES,
+    USAGE_EXIT,
+    USAGE_HINT_PREFIX,
+)
 from mirage.commands.spec.types import CommandName
 from mirage.utils.errors import DotWalkLoop, FileTooLargeError, fs_strerror
 
@@ -56,8 +62,13 @@ def operand_exit_code(cmd_name: str) -> int:
 # one case this leaves at 1 where GNU would answer the command's code;
 # that is the safe side to err on, and it is what the executor already
 # did before the tables existed.
-_READ_FAIL_ERRORS = (FileNotFoundError, IsADirectoryError, NotADirectoryError,
-                     FileTooLargeError, DotWalkLoop)
+_READ_FAIL_ERRORS = (
+    FileNotFoundError,
+    IsADirectoryError,
+    NotADirectoryError,
+    FileTooLargeError,
+    DotWalkLoop,
+)
 
 
 def _read_fail_code(cmd_name: str, is_dir: bool) -> int:
@@ -149,8 +160,9 @@ def python_option_error(cmd_name: str, line: str) -> tuple[bytes, int]:
             usage line ('python' or 'python3').
         line (str): the message line, newline included.
     """
-    return (line + PYTHON_USAGE.format(name=cmd_name)).encode(), \
-        usage_exit_code(cmd_name)
+    return (
+        line + PYTHON_USAGE.format(name=cmd_name)
+    ).encode(), usage_exit_code(cmd_name)
 
 
 def curl_option_error(line: str) -> tuple[bytes, int]:
@@ -255,7 +267,7 @@ def trigrams(name: str) -> frozenset[str]:
     """
     if len(name) < 3:
         return frozenset({(name + "!!!")[:3]})
-    return frozenset(name[i:i + 3] for i in range(len(name) - 2))
+    return frozenset(name[i : i + 3] for i in range(len(name) - 2))
 
 
 # The programs that do NOT parse with getopt_long, and so answer an
@@ -301,8 +313,9 @@ def unexpected_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
-def ambiguous_option_error(cmd_name: str, token: str,
-                           candidates: tuple[str, ...]) -> tuple[bytes, int]:
+def ambiguous_option_error(
+    cmd_name: str, token: str, candidates: tuple[str, ...]
+) -> tuple[bytes, int]:
     """getopt_long refusal for an abbreviated long matching several options.
 
     Shape pinned against real GNU (``grep --c``): the typed spelling,
@@ -317,14 +330,16 @@ def ambiguous_option_error(cmd_name: str, token: str,
             declaration order.
     """
     listed = " ".join(f"'{c}'" for c in candidates)
-    line = (f"{cmd_name}: option '{token}' is ambiguous; "
-            f"possibilities: {listed}\n")
+    line = (
+        f"{cmd_name}: option '{token}' is ambiguous; possibilities: {listed}\n"
+    )
     hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
-def invalid_int_error(cmd_name: str, option: str,
-                      value: str) -> tuple[bytes, int]:
+def invalid_int_error(
+    cmd_name: str, option: str, value: str
+) -> tuple[bytes, int]:
     """Refusal for a non-integer value on an int-typed option.
 
     No GNU tool declares types through getopt (each words its own
@@ -342,8 +357,9 @@ def invalid_int_error(cmd_name: str, option: str,
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
-def invalid_float_error(cmd_name: str, option: str,
-                        value: str) -> tuple[bytes, int]:
+def invalid_float_error(
+    cmd_name: str, option: str, value: str
+) -> tuple[bytes, int]:
     """Refusal for a non-number value on a float-typed option.
 
     Mirrors argparse's ``invalid float value: '5x'`` the same way
@@ -356,7 +372,8 @@ def invalid_float_error(cmd_name: str, option: str,
     """
     if cmd_name == "curl":
         return curl_option_error(
-            f"curl: option {option}: expected a proper numerical parameter\n")
+            f"curl: option {option}: expected a proper numerical parameter\n"
+        )
     line = f"{cmd_name}: invalid float value: '{value}' for '{option}'\n"
     hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
@@ -372,11 +389,13 @@ def missing_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
     if cmd_name in PYTHON_NAMES:
         dashed = token if token.startswith("-") else f"-{token}"
         return python_option_error(
-            cmd_name, f"Argument expected for the {dashed} option\n")
+            cmd_name, f"Argument expected for the {dashed} option\n"
+        )
     if cmd_name == "curl":
         dashed = token if token.startswith("-") else f"-{token}"
         return curl_option_error(
-            f"curl: option {dashed}: requires parameter\n")
+            f"curl: option {dashed}: requires parameter\n"
+        )
     if token.startswith("--"):
         line = f"{cmd_name}: option '{token}' requires an argument\n"
     else:
@@ -409,10 +428,9 @@ def old_option_error(cmd_name: str, letter: str) -> tuple[bytes, int]:
     return (line + hint).encode(), OLD_OPTION_EXIT
 
 
-def argmatch_line(cmd_name: str,
-                  option: str,
-                  value: str,
-                  kind: ArgmatchKind = "invalid") -> str:
+def argmatch_line(
+    cmd_name: str, option: str, value: str, kind: ArgmatchKind = "invalid"
+) -> str:
     r"""The first line of a gnulib ARGMATCH refusal, without newline.
 
     Two wordings, and the CALLER's match result picks between them: the
@@ -446,8 +464,7 @@ def argmatch_line(cmd_name: str,
             which is every caller that has no candidate table to match
             against.
     """
-    return (f"{cmd_name}: {kind} argument '{quote_text(value)}' "
-            f"for '{option}'")
+    return f"{cmd_name}: {kind} argument '{quote_text(value)}' for '{option}'"
 
 
 def argmatch_valid_block(choices: ArgmatchChoices) -> str:
@@ -459,18 +476,19 @@ def argmatch_valid_block(choices: ArgmatchChoices) -> str:
     """
     rows = []
     for choice in choices:
-        group = (choice, ) if isinstance(choice, str) else choice
+        group = (choice,) if isinstance(choice, str) else choice
         rows.append("  - " + ", ".join(f"'{c}'" for c in group))
     return "Valid arguments are:\n" + "\n".join(rows)
 
 
 def invalid_argument_error(
-        cmd_name: str,
-        option: str,
-        value: str,
-        choices: ArgmatchChoices,
-        exit_code: int | None = None,
-        kind: ArgmatchKind = "invalid") -> tuple[bytes, int]:
+    cmd_name: str,
+    option: str,
+    value: str,
+    choices: ArgmatchChoices,
+    exit_code: int | None = None,
+    kind: ArgmatchKind = "invalid",
+) -> tuple[bytes, int]:
     """GNU ARGMATCH refusal for a value outside a declared choices set.
 
     Shape pinned against real GNU (``tee --output-error=bogus``): the
@@ -497,19 +515,23 @@ def invalid_argument_error(
             ``--color``, ``--format``, ``--total``, ``--sort`` and
             ``time style``, which is why one renderer words both.
     """
-    line = (f"{argmatch_line(cmd_name, option, value, kind)}\n"
-            f"{argmatch_valid_block(choices)}\n")
+    line = (
+        f"{argmatch_line(cmd_name, option, value, kind)}\n"
+        f"{argmatch_valid_block(choices)}\n"
+    )
     hint = usage_hint(cmd_name) + "\n"
     code = usage_exit_code(cmd_name) if exit_code is None else exit_code
     return (line + hint).encode(), code
 
 
-def argmatch_error(cmd_name: str,
-                   option: str,
-                   value: str,
-                   choices: ArgmatchChoices,
-                   exit_code: int | None = None,
-                   kind: ArgmatchKind = "invalid") -> UsageError:
+def argmatch_error(
+    cmd_name: str,
+    option: str,
+    value: str,
+    choices: ArgmatchChoices,
+    exit_code: int | None = None,
+    kind: ArgmatchKind = "invalid",
+) -> UsageError:
     """:func:`invalid_argument_error` as the exception a command raises.
 
     The commands that validate an ARGMATCH value themselves (``sort``,
@@ -525,8 +547,9 @@ def argmatch_error(cmd_name: str,
         exit_code (int | None): as in :func:`invalid_argument_error`.
         kind (ArgmatchKind): as in :func:`invalid_argument_error`.
     """
-    message, code = invalid_argument_error(cmd_name, option, value, choices,
-                                           exit_code, kind)
+    message, code = invalid_argument_error(
+        cmd_name, option, value, choices, exit_code, kind
+    )
     return UsageError(message.decode().rstrip("\n"), code)
 
 
@@ -581,12 +604,14 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
         line = f"patch: {operand}: extra operand"
     else:
         line = f"{cmd_name}: extra operand '{operand}'"
-    return UsageError(f"{line}\n{usage_hint(cmd_name)}",
-                      usage_exit_code(cmd_name))
+    return UsageError(
+        f"{line}\n{usage_hint(cmd_name)}", usage_exit_code(cmd_name)
+    )
 
 
 def missing_operand_error(
-    cmd_name: str, last: str | None, argv: Sequence[str] = ()) -> UsageError:
+    cmd_name: str, last: str | None, argv: Sequence[str] = ()
+) -> UsageError:
     """GNU-shaped usage error for an operand short of a command's arity.
 
     Shapes pinned against real GNU: ``<cmd>: missing operand after
@@ -611,7 +636,11 @@ def missing_operand_error(
         after = argv[-1]
     if after is None and cmd_name in USAGE_HINT_PREFIX:
         after = argv[-1] if argv else cmd_name
-    line = (f"{cmd_name}: missing operand" if after is None else
-            f"{cmd_name}: missing operand after '{after}'")
-    return UsageError(f"{line}\n{usage_hint(cmd_name)}",
-                      usage_exit_code(cmd_name))
+    line = (
+        f"{cmd_name}: missing operand"
+        if after is None
+        else f"{cmd_name}: missing operand after '{after}'"
+    )
+    return UsageError(
+        f"{line}\n{usage_hint(cmd_name)}", usage_exit_code(cmd_name)
+    )

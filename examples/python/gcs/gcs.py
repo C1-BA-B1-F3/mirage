@@ -109,17 +109,21 @@ async def main():
     r = await ws.shell("jq .metadata /gcs/data/example.json")
     print(f"  {(await r.stdout_str()).strip()[:200]}")
 
-    print("\n=== jq '.departments[].teams[].name'"
-          " /gcs/data/example.json ===")
+    print("\n=== jq '.departments[].teams[].name' /gcs/data/example.json ===")
     r = await ws.shell(
-        'jq ".departments[].teams[].name" /gcs/data/example.json')
+        'jq ".departments[].teams[].name" /gcs/data/example.json'
+    )
     print(f"  {(await r.stdout_str()).strip()}")
 
     # ── pipelines ─────────────────────────────────────
-    print("\n=== cat example.jsonl | grep queue-operation"
-          " | sort | uniq | wc -l ===")
-    r = await ws.shell("cat /gcs/data/example.jsonl"
-                       " | grep queue-operation | sort | uniq | wc -l")
+    print(
+        "\n=== cat example.jsonl | grep queue-operation"
+        " | sort | uniq | wc -l ==="
+    )
+    r = await ws.shell(
+        "cat /gcs/data/example.jsonl"
+        " | grep queue-operation | sort | uniq | wc -l"
+    )
     print(f"  unique lines: {(await r.stdout_str()).strip()}")
 
     # ── cd + relative paths ───────────────────────────
@@ -127,7 +131,7 @@ async def main():
     r = await ws.shell("pwd")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print('\n=== cd /gcs/data ===')
+    print("\n=== cd /gcs/data ===")
     r = await ws.shell("cd /gcs/data")
     print(f"  exit={r.exit_code}")
 
@@ -155,19 +159,24 @@ async def main():
     print(f"  exit: {r.exit_code}")
 
     print("\n=== grep -q || echo (barrier OR) ===")
-    r = await ws.shell('grep -q NONEXISTENT_STRING /gcs/data/example.jsonl'
-                       ' || echo "not found"')
+    r = await ws.shell(
+        "grep -q NONEXISTENT_STRING /gcs/data/example.jsonl"
+        ' || echo "not found"'
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
     print(f"  exit: {r.exit_code}")
 
     print("\n=== grep ; grep (semicolon materialization) ===")
-    r = await ws.shell("grep -c queue /gcs/data/example.jsonl"
-                       "; grep -c mirage /gcs/data/example.jsonl")
+    r = await ws.shell(
+        "grep -c queue /gcs/data/example.jsonl"
+        "; grep -c mirage /gcs/data/example.jsonl"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     print("\n=== grep missing ; echo $? (semicolon exit code) ===")
-    r = await ws.shell("grep NONEXISTENT_STRING /gcs/data/example.jsonl"
-                       "; echo $?")
+    r = await ws.shell(
+        "grep NONEXISTENT_STRING /gcs/data/example.jsonl; echo $?"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     print("\n=== cat nonexistent 2>&1 | head (stderr in pipe) ===")
@@ -199,18 +208,20 @@ async def main():
     expected = int((await r.stdout_str()).strip().split()[0])
     r = await ws.shell("cat /gcs/data/example.jsonl 2>&1 | wc -l")
     got = int((await r.stdout_str()).strip())
-    print(f"  expected: {expected}  got: {got}  "
-          f"{'OK' if got == expected else 'MISMATCH'}")
+    print(
+        f"  expected: {expected}  got: {got}  "
+        f"{'OK' if got == expected else 'MISMATCH'}"
+    )
 
     print("\n=== cat | sort | uniq | wc -l (full pipeline) ===")
-    r = await ws.shell("cat /gcs/data/example.jsonl"
-                       " | sort | uniq | wc -l")
+    r = await ws.shell("cat /gcs/data/example.jsonl | sort | uniq | wc -l")
     print(f"  unique lines: {(await r.stdout_str()).strip()}")
 
     # ── background job scenarios ────────────────────
     print("\n=== grep -c & echo kicked off; wait (bg job) ===")
-    r = await ws.shell("grep -c queue /gcs/data/example.jsonl &"
-                       " echo 'kicked off'; wait")
+    r = await ws.shell(
+        "grep -c queue /gcs/data/example.jsonl & echo 'kicked off'; wait"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     print("\n=== sleep 0 & cat (bg doesn't consume stdin) ===")
@@ -219,14 +230,17 @@ async def main():
 
     print("\n=== cat nonexistent & echo ok (bg error handled) ===")
     r = await ws.shell(
-        "cat /gcs/data/nonexistent_file & echo ok; wait; echo done")
+        "cat /gcs/data/nonexistent_file & echo ok; wait; echo done"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
     print(f"  exit: {r.exit_code}")
 
     print("\n=== multiple bg: grep & wc & wait (parallel) ===")
-    r = await ws.shell("grep -c queue /gcs/data/example.jsonl &"
-                       " wc -l /gcs/data/example.jsonl &"
-                       " wait; echo all done")
+    r = await ws.shell(
+        "grep -c queue /gcs/data/example.jsonl &"
+        " wc -l /gcs/data/example.jsonl &"
+        " wait; echo all done"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     # ── lazy stdin in loops (Step 15) ────────────────
@@ -238,16 +252,20 @@ async def main():
     # With lazy stdin, `head -n 5` triggers EOF after 5 lines, the
     # while loop sees readline()==None, exits cleanly.
     print("\n=== head -n 5 | while read; do echo (bounded loop) ===")
-    r = await ws.shell("cat /gcs/data/example.jsonl | head -n 5"
-                       " | while read LINE; do echo got; done | wc -l")
+    r = await ws.shell(
+        "cat /gcs/data/example.jsonl | head -n 5"
+        " | while read LINE; do echo got; done | wc -l"
+    )
     print(f"  iterations: {(await r.stdout_str()).strip()} (expected 5)")
 
     # Early break: only one iter, rest of upstream untouched.
     # Visible via unit test `test_while_read_break_stops_pulling`;
     # here we only check stdout shape.
     print("\n=== while read; break (early exit) ===")
-    r = await ws.shell("cat /gcs/data/example.jsonl | head -n 100"
-                       " | while read LINE; do echo first; break; done")
+    r = await ws.shell(
+        "cat /gcs/data/example.jsonl | head -n 100"
+        " | while read LINE; do echo first; break; done"
+    )
     out = (await r.stdout_str()).strip().splitlines()
     print(f"  stdout lines: {len(out)} (expected 1)  exit={r.exit_code}")
 
@@ -256,7 +274,8 @@ async def main():
     print("\n=== for x in a b c; do read LINE (loop reads buffer) ===")
     r = await ws.shell(
         "cat /gcs/data/example.jsonl | head -n 3"
-        " | for x in a b c; do read LINE; echo \"$x:${LINE:0:30}\"; done")
+        ' | for x in a b c; do read LINE; echo "$x:${LINE:0:30}"; done'
+    )
     for line in (await r.stdout_str()).strip().splitlines():
         print(f"  {line}")
 
@@ -269,35 +288,43 @@ async def main():
     # These exercise the bash double-quote escape rules + variable
     # expansion semantics the agent relies on.
 
-    print("\n=== echo \"\\$X\" (escaped dollar stays literal) ===")
+    print('\n=== echo "\\$X" (escaped dollar stays literal) ===')
     await ws.shell("export X=expanded")
     r = await ws.shell('echo "\\$X"')
-    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
-          " (expect '$X')")
+    print(
+        f"  stdout: {json.dumps((await r.stdout_str()).strip())} (expect '$X')"
+    )
 
-    print("\n=== echo \"$X\" (unescaped dollar expands) ===")
+    print('\n=== echo "$X" (unescaped dollar expands) ===')
     r = await ws.shell('echo "$X"')
-    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
-          " (expect 'expanded')")
+    print(
+        f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
+        " (expect 'expanded')"
+    )
 
     print("\n=== echo '$X' (single quotes keep $X literal) ===")
     r = await ws.shell("echo '$X'")
-    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
-          " (expect '$X')")
+    print(
+        f"  stdout: {json.dumps((await r.stdout_str()).strip())} (expect '$X')"
+    )
 
-    print("\n=== cat \"$DIR/example.json\" (env var in path) ===")
+    print('\n=== cat "$DIR/example.json" (env var in path) ===')
     await ws.shell("export DIR=/gcs/data")
     r = await ws.shell('cat "$DIR/example.json" | head -n 3')
     out = (await r.stdout_str()).strip().splitlines()
     print(f"  first lines: {json.dumps(out, separators=(',', ':'))}")
 
-    print("\n=== cat $(echo /gcs/data/example.json) | head -n 1"
-          " (command sub as path) ===")
+    print(
+        "\n=== cat $(echo /gcs/data/example.json) | head -n 1"
+        " (command sub as path) ==="
+    )
     r = await ws.shell("cat $(echo /gcs/data/example.json) | head -n 1")
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
-    print("\n=== grep \"$(echo queue)\" /gcs/data/example.jsonl"
-          " | wc -l (sub as pattern) ===")
+    print(
+        '\n=== grep "$(echo queue)" /gcs/data/example.jsonl'
+        " | wc -l (sub as pattern) ==="
+    )
     r = await ws.shell('grep "$(echo queue)" /gcs/data/example.jsonl | wc -l')
     print(f"  count: {(await r.stdout_str()).strip()}")
 
@@ -359,8 +386,10 @@ async def main():
         net = sum(rec.bytes for rec in ws.vfs.records) - before
         head = (await r.stdout_str()).strip().splitlines()
         first = head[0][:48] if head else ""
-        print(f"  {label:42s} bytes={net:>10,}  t={dt:4.2f}s  "
-              f"lines={len(head):>4}  out0={json.dumps(first)}")
+        print(
+            f"  {label:42s} bytes={net:>10,}  t={dt:4.2f}s  "
+            f"lines={len(head):>4}  out0={json.dumps(first)}"
+        )
 
     await ws.cache.clear()
     await measure("head -n 1 (line-streamed)", f"head -n 1 {target}")
@@ -373,19 +402,25 @@ async def main():
     await ws.cache.clear()
     await measure("cat | head -n 1", f"cat {target} | head -n 1")
     await ws.cache.clear()
-    await measure("cat | tr A-Z a-z | head -n 1",
-                  f"cat {target} | tr A-Z a-z | head -n 1")
+    await measure(
+        "cat | tr A-Z a-z | head -n 1",
+        f"cat {target} | tr A-Z a-z | head -n 1",
+    )
     await ws.cache.clear()
-    await measure("cat | grep mirage | head -n 1",
-                  f"cat {target} | grep mirage | head -n 1")
+    await measure(
+        "cat | grep mirage | head -n 1",
+        f"cat {target} | grep mirage | head -n 1",
+    )
     await ws.cache.clear()
-    await measure("4-stage: cat|tr|grep|head -n 1",
-                  f"cat {target} | tr A-Z a-z | grep mirage | head -n 1")
+    await measure(
+        "4-stage: cat|tr|grep|head -n 1",
+        f"cat {target} | tr A-Z a-z | grep mirage | head -n 1",
+    )
     await ws.cache.clear()
     await measure(
         "5-stage: cat|tr|grep|head|wc -l",
-        f"cat {target} | tr A-Z a-z | grep mirage | head -n 1 "
-        "| wc -l")
+        f"cat {target} | tr A-Z a-z | grep mirage | head -n 1 | wc -l",
+    )
     await ws.cache.clear()
     await measure("non-cancellable: cat | wc -l", f"cat {target} | wc -l")
 
@@ -398,12 +433,16 @@ async def main():
     meta_res = await ws.shell(
         'chmod 640 "/gcs/data/example.jsonl"'
         ' && chown 500:dev "/gcs/data/example.jsonl"'
-        ' && touch -t 202601021530 "/gcs/data/example.jsonl"')
+        ' && touch -t 202601021530 "/gcs/data/example.jsonl"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/gcs/data/example.jsonl"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/gcs/data/example.jsonl")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
 
 if __name__ == "__main__":

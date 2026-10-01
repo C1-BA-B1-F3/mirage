@@ -60,30 +60,29 @@ describe('Workspace lifecycle', () => {
           super()
         }
         override ops(): readonly RegisteredOp[] {
-          return super.ops().map(
-            (o): RegisteredOp =>
-              o.name === 'glob'
-                ? {
-                    ...o,
-                    fn: async (accessor, path, args, kwargs) => {
-                      const parent = path.directory.replace(/\/$/, '')
-                      const directory = parent === '' ? '/' : parent
-                      const listing = await this.shared.listDir(directory)
-                      if (listing.entries != null) {
-                        const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-                        return listing.entries
-                          .filter((key) =>
-                            globNameMatches(
-                              key.split('/').at(-1) ?? '',
-                              globPattern(path.pattern ?? '*'),
-                            ),
-                          )
-                          .map((key) => PathSpec.fromStrPath(key, mountKey(key, prefix)))
-                      }
-                      return o.fn(accessor, path, args, kwargs)
-                    },
-                  }
-                : o,
+          return super.ops().map((o): RegisteredOp =>
+            o.name === 'glob'
+              ? {
+                  ...o,
+                  fn: async (accessor, path, args, kwargs) => {
+                    const parent = path.directory.replace(/\/$/, '')
+                    const directory = parent === '' ? '/' : parent
+                    const listing = await this.shared.listDir(directory)
+                    if (listing.entries != null) {
+                      const prefix = mountPrefixOf(path.virtual, path.vfsPath)
+                      return listing.entries
+                        .filter((key) =>
+                          globNameMatches(
+                            key.split('/').at(-1) ?? '',
+                            globPattern(path.pattern ?? '*'),
+                          ),
+                        )
+                        .map((key) => PathSpec.fromStrPath(key, mountKey(key, prefix)))
+                    }
+                    return o.fn(accessor, path, args, kwargs)
+                  },
+                }
+              : o,
           )
         }
       }
@@ -1202,23 +1201,22 @@ it('unmount drains metadata globs and their index writes', async () => {
   let closed = false
   class GatedGlobRAM extends RAMVFS {
     override ops(): readonly RegisteredOp[] {
-      return super.ops().map(
-        (o): RegisteredOp =>
-          o.name === 'glob'
-            ? {
-                ...o,
-                fn: async (_accessor, _path, _args, { index }) => {
-                  enter()
-                  await release
-                  expect(closed).toBe(false)
-                  if (index === undefined) throw new Error('missing index')
-                  await index.setDir('/data', [
-                    ['late', new IndexEntry({ id: 'late', name: 'late', resourceType: 'file' })],
-                  ])
-                  return []
-                },
-              }
-            : o,
+      return super.ops().map((o): RegisteredOp =>
+        o.name === 'glob'
+          ? {
+              ...o,
+              fn: async (_accessor, _path, _args, { index }) => {
+                enter()
+                await release
+                expect(closed).toBe(false)
+                if (index === undefined) throw new Error('missing index')
+                await index.setDir('/data', [
+                  ['late', new IndexEntry({ id: 'late', name: 'late', resourceType: 'file' })],
+                ])
+                return []
+              },
+            }
+          : o,
       )
     }
   }

@@ -26,7 +26,6 @@ from mirage.vfs.qdrant.prompt import PROMPT
 
 
 class QdrantVFS(BaseVFS):
-
     accessor: QdrantAccessor
     name: str = VFSName.QDRANT
     # readdir seeds exact rendered sizes from the scroll payloads and stat

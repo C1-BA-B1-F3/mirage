@@ -44,7 +44,8 @@ async def accessor(redis_prefix):
 @pytest.mark.asyncio
 async def test_entries_root(accessor):
     found, total = await entries(
-        accessor, PathSpec(vfs_path="", virtual="/", directory="/"))
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/")
+    )
     assert total == 15
     paths = [e[0] for e in found]
     assert "/a.txt" in paths
@@ -55,6 +56,7 @@ async def test_entries_root(accessor):
 @pytest.mark.asyncio
 async def test_entries_subdir(accessor):
     found, total = await entries(
-        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"))
+        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub")
+    )
     assert total == 10
     assert len(found) == 2

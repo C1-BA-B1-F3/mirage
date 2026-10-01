@@ -29,8 +29,12 @@ def validate_query(query: str, top_k: int) -> None:
         raise ValueError("search: top-k must be positive")
 
 
-async def target_entries(tree: SlugTree[A], accessor: A, paths: list[PathSpec],
-                         index: IndexCacheStore) -> dict[str, IndexEntry]:
+async def target_entries(
+    tree: SlugTree[A],
+    accessor: A,
+    paths: list[PathSpec],
+    index: IndexCacheStore,
+) -> dict[str, IndexEntry]:
     """Every file a search scope covers, keyed by entry id.
 
     Args:
@@ -49,14 +53,21 @@ async def target_entries(tree: SlugTree[A], accessor: A, paths: list[PathSpec],
             child_resolved = await tree.resolve(
                 accessor,
                 PathSpec.from_str_path(
-                    child, rekey(path.virtual, path.vfs_path, child)), index)
+                    child, rekey(path.virtual, path.vfs_path, child)
+                ),
+                index,
+            )
             if not child_resolved.is_dir:
                 targets[child_resolved.entry.id] = child_resolved.entry
     return targets
 
 
-async def search_scope(tree: SlugTree[A], accessor: A, paths: list[PathSpec],
-                       index: IndexCacheStore) -> tuple[list[PathSpec], str]:
+async def search_scope(
+    tree: SlugTree[A],
+    accessor: A,
+    paths: list[PathSpec],
+    index: IndexCacheStore,
+) -> tuple[list[PathSpec], str]:
     """The paths a batch search covers and the prefix its hits print under.
 
     A scope at the mount root covers the whole collection, which the
@@ -73,8 +84,9 @@ async def search_scope(tree: SlugTree[A], accessor: A, paths: list[PathSpec],
     prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     if any(not path.vfs_path.strip("/") for path in paths):
         return [], prefix
-    return await resolve_glob_with(tree.readdir, accessor, paths, index,
-                                   DEFAULT_MAX_GLOB_MATCHES), prefix
+    return await resolve_glob_with(
+        tree.readdir, accessor, paths, index, DEFAULT_MAX_GLOB_MATCHES
+    ), prefix
 
 
 def hit_lines(output: bytes) -> list[str]:

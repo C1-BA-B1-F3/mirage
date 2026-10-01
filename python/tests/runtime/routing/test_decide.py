@@ -22,12 +22,21 @@ from mirage.runtime.js.base import JsRuntime
 from mirage.runtime.mixin import EvaluatorMixin
 from mirage.runtime.python.local import LocalRuntime
 from mirage.runtime.python.monty import MontyRuntime
-from mirage.runtime.routing import (DenyResult, RouteContext, RouteDeny,
-                                    RouteError, RouteResult, ScriptSource,
-                                    decide_line, evaluate_policy,
-                                    evaluate_script, evaluator_of,
-                                    parse_verdict, parsed_commands,
-                                    runtime_for_language)
+from mirage.runtime.routing import (
+    DenyResult,
+    RouteContext,
+    RouteDeny,
+    RouteError,
+    RouteResult,
+    ScriptSource,
+    decide_line,
+    evaluate_policy,
+    evaluate_script,
+    evaluator_of,
+    parse_verdict,
+    parsed_commands,
+    runtime_for_language,
+)
 from mirage.runtime.table import WorkspaceRuntime
 from mirage.runtime.types import RunArgs, RunResult
 from mirage.shell.parse import parse
@@ -51,15 +60,17 @@ class BetaRuntime(Runtime):
 
 def ctx_for(line: str) -> RouteContext:
     commands = parsed_commands(parse(line))
-    return RouteContext(line=line,
-                        commands=commands,
-                        command=commands[0].command if commands else "",
-                        builtin=commands[0].builtin if commands else False,
-                        cwd="/",
-                        env={},
-                        session_id="s",
-                        agent_id="a",
-                        mounts=("/data", ))
+    return RouteContext(
+        line=line,
+        commands=commands,
+        command=commands[0].command if commands else "",
+        builtin=commands[0].builtin if commands else False,
+        cwd="/",
+        env={},
+        session_id="s",
+        agent_id="a",
+        mounts=("/data",),
+    )
 
 
 @pytest.mark.asyncio
@@ -70,8 +81,9 @@ async def test_script_callable_and_awaitable():
         return "yes" in ctx.line
 
     assert await evaluate_script(wants, ctx_for("echo yes"), runtime, [])
-    assert not await evaluate_script(lambda c: False, ctx_for("echo"), runtime,
-                                     [])
+    assert not await evaluate_script(
+        lambda c: False, ctx_for("echo"), runtime, []
+    )
 
 
 @pytest.mark.asyncio
@@ -79,29 +91,41 @@ async def test_script_source_last_expression_is_verdict():
     runtime = AlphaRuntime()
     evaluator = MontyRuntime()
     script = ScriptSource(
-        "ctx['runtime']['name'] == 'alpha' and ctx['command'] == 'cat'")
-    assert await evaluate_script(script, ctx_for("cat /a"), runtime,
-                                 [evaluator])
-    assert not await evaluate_script(script, ctx_for("ls /a"), runtime,
-                                     [evaluator])
+        "ctx['runtime']['name'] == 'alpha' and ctx['command'] == 'cat'"
+    )
+    assert await evaluate_script(
+        script, ctx_for("cat /a"), runtime, [evaluator]
+    )
+    assert not await evaluate_script(
+        script, ctx_for("ls /a"), runtime, [evaluator]
+    )
 
 
 @pytest.mark.asyncio
 async def test_script_source_errors_fail_loud():
     with pytest.raises(ValueError, match="syntax error"):
-        await evaluate_script(ScriptSource("def broken("), ctx_for("x"),
-                              AlphaRuntime(), [MontyRuntime()])
+        await evaluate_script(
+            ScriptSource("def broken("),
+            ctx_for("x"),
+            AlphaRuntime(),
+            [MontyRuntime()],
+        )
     with pytest.raises(ValueError, match="failed"):
-        await evaluate_script(ScriptSource("1 / 0"), ctx_for("x"),
-                              AlphaRuntime(), [MontyRuntime()])
+        await evaluate_script(
+            ScriptSource("1 / 0"),
+            ctx_for("x"),
+            AlphaRuntime(),
+            [MontyRuntime()],
+        )
 
 
 @pytest.mark.asyncio
 async def test_script_source_needs_an_evaluator():
     """A world with no evaluator refuses config scripts loud."""
     with pytest.raises(ValueError, match="evaluator runtime"):
-        await evaluate_script(ScriptSource("True"), ctx_for("x"),
-                              AlphaRuntime(), [])
+        await evaluate_script(
+            ScriptSource("True"), ctx_for("x"), AlphaRuntime(), []
+        )
 
 
 def test_evaluator_of_picks_first_evaluator_entry():
@@ -112,7 +136,7 @@ def test_evaluator_of_picks_first_evaluator_entry():
 
 class JsEvaluator(JsRuntime, EvaluatorMixin):
     name = "js-eval"
-    captures = ("node", )
+    captures = ("node",)
 
     def __init__(self) -> None:
         super().__init__()
@@ -123,17 +147,16 @@ class JsEvaluator(JsRuntime, EvaluatorMixin):
 
     async def eval(self, code, *, inputs=None, session=None):
         from mirage.runtime.types import EvalResult
+
         self.calls.append(code)
-        return EvalResult(value=None,
-                          stdout=b"",
-                          stderr=None,
-                          exit_code=0,
-                          status="complete")
+        return EvalResult(
+            value=None, stdout=b"", stderr=None, exit_code=0, status="complete"
+        )
 
 
 class HangingEvaluator(Runtime, EvaluatorMixin):
     name = "hang-eval"
-    captures = ("python3", )
+    captures = ("python3",)
 
     async def run(self, args: RunArgs) -> RunResult:
         return RunResult(stdout=b"", stderr=None, exit_code=0)
@@ -176,16 +199,21 @@ def test_runtime_for_language_has_no_cross_language_fallback():
     # engine. Captures do not count either (alpha captures python3 but
     # declares no language), and an empty world selects nothing.
     assert runtime_for_language([JsEvaluator()], "python") is None
-    assert runtime_for_language(
-        [AlphaRuntime(), WorkspaceRuntime()], "python") is None
+    assert (
+        runtime_for_language([AlphaRuntime(), WorkspaceRuntime()], "python")
+        is None
+    )
     assert runtime_for_language([], "js") is None
 
 
 @pytest.mark.asyncio
 async def test_js_policy_script_selects_the_js_evaluator():
     js = JsEvaluator()
-    verdict = await evaluate_policy(ScriptSource("null", language="js"),
-                                    ctx_for("node -e 1"), [MontyRuntime(), js])
+    verdict = await evaluate_policy(
+        ScriptSource("null", language="js"),
+        ctx_for("node -e 1"),
+        [MontyRuntime(), js],
+    )
     assert verdict is None
     assert js.calls == ["null"]
 
@@ -194,17 +222,24 @@ async def test_js_policy_script_selects_the_js_evaluator():
 async def test_hung_policy_script_times_out(monkeypatch):
     monkeypatch.setattr(decide_mod, "POLICY_EVAL_TIMEOUT_SECONDS", 0.05)
     with pytest.raises(RouteError, match="timed out after 0.05s"):
-        await evaluate_policy(ScriptSource("1"), ctx_for("x"),
-                              [HangingEvaluator()])
+        await evaluate_policy(
+            ScriptSource("1"), ctx_for("x"), [HangingEvaluator()]
+        )
 
 
 @pytest.mark.asyncio
 async def test_policy_returns_name_none_or_verdict_dict():
     assert await evaluate_policy(lambda c: None, ctx_for("x"), []) is None
-    assert await evaluate_policy(ScriptSource("'beta'"), ctx_for("x"),
-                                 [MontyRuntime()]) == "beta"
-    assert await evaluate_policy(lambda c: {"runtime": "beta"}, ctx_for("x"),
-                                 []) == "beta"
+    assert (
+        await evaluate_policy(
+            ScriptSource("'beta'"), ctx_for("x"), [MontyRuntime()]
+        )
+        == "beta"
+    )
+    assert (
+        await evaluate_policy(lambda c: {"runtime": "beta"}, ctx_for("x"), [])
+        == "beta"
+    )
     with pytest.raises(ValueError, match="verdict dict, or None"):
         await evaluate_policy(lambda c: 42, ctx_for("x"), [])
 
@@ -212,14 +247,19 @@ async def test_policy_returns_name_none_or_verdict_dict():
 @pytest.mark.asyncio
 async def test_policy_deny_verdict_raises_with_reason():
     with pytest.raises(RouteDeny) as caught:
-        await evaluate_policy(lambda c: {"deny": "blocked here"}, ctx_for("x"),
-                              [])
+        await evaluate_policy(
+            lambda c: {"deny": "blocked here"}, ctx_for("x"), []
+        )
     assert caught.value.reason == "blocked here"
     with pytest.raises(RouteDeny, match="no python3"):
         await evaluate_policy(
-            ScriptSource("{'deny': 'no python3'} "
-                         "if ctx['command'] == 'python3' else None"),
-            ctx_for("python3 x"), [MontyRuntime()])
+            ScriptSource(
+                "{'deny': 'no python3'} "
+                "if ctx['command'] == 'python3' else None"
+            ),
+            ctx_for("python3 x"),
+            [MontyRuntime()],
+        )
 
 
 @pytest.mark.asyncio
@@ -227,11 +267,14 @@ async def test_policy_result_arms_parse():
     assert parse_verdict(RouteResult("beta")) == "beta"
     with pytest.raises(RouteDeny, match="not here"):
         parse_verdict(DenyResult("not here"))
-    assert await evaluate_policy(lambda c: RouteResult("beta"), ctx_for("x"),
-                                 []) == "beta"
+    assert (
+        await evaluate_policy(lambda c: RouteResult("beta"), ctx_for("x"), [])
+        == "beta"
+    )
     with pytest.raises(RouteDeny, match="blocked"):
-        await evaluate_policy(lambda c: DenyResult("blocked"), ctx_for("x"),
-                              [])
+        await evaluate_policy(
+            lambda c: DenyResult("blocked"), ctx_for("x"), []
+        )
 
 
 @pytest.mark.asyncio
@@ -239,14 +282,20 @@ async def test_entry_script_verdict_shapes_fail_loud():
     """A deny-dict is truthy; coercing it would mean willing."""
     runtime = AlphaRuntime()
     with pytest.raises(RouteError, match="answer a boolean"):
-        await evaluate_script(lambda c: {"deny": "x"}, ctx_for("python3 x"),
-                              runtime, [])
+        await evaluate_script(
+            lambda c: {"deny": "x"}, ctx_for("python3 x"), runtime, []
+        )
     with pytest.raises(RouteError, match="answer a boolean"):
-        await evaluate_script(lambda c: DenyResult("x"), ctx_for("python3 x"),
-                              runtime, [])
+        await evaluate_script(
+            lambda c: DenyResult("x"), ctx_for("python3 x"), runtime, []
+        )
     with pytest.raises(RouteError, match="answer a boolean"):
-        await evaluate_script(ScriptSource("{'deny': 'x'}"),
-                              ctx_for("python3 x"), runtime, [MontyRuntime()])
+        await evaluate_script(
+            ScriptSource("{'deny': 'x'}"),
+            ctx_for("python3 x"),
+            runtime,
+            [MontyRuntime()],
+        )
 
 
 def test_parse_verdict_raises_policy_error():
@@ -267,9 +316,12 @@ def test_parse_verdict_fails_loud_on_bad_dicts():
 @pytest.mark.asyncio
 async def test_decide_route_overlays_static_bindings():
     alpha, beta = AlphaRuntime(), BetaRuntime()
-    routing = await decide_line([alpha, beta, WorkspaceRuntime()],
-                                lambda c: "beta", ctx_for("python3 x"),
-                                {"python3": alpha})
+    routing = await decide_line(
+        [alpha, beta, WorkspaceRuntime()],
+        lambda c: "beta",
+        ctx_for("python3 x"),
+        {"python3": alpha},
+    )
     assert routing.bindings["python3"] is beta
     assert isinstance(routing.fallback, WorkspaceRuntime)
 
@@ -278,8 +330,9 @@ async def test_decide_route_overlays_static_bindings():
 async def test_decide_scripts_filter_in_list_order():
     alpha, beta = AlphaRuntime(), BetaRuntime()
     alpha.script = lambda c: False
-    routing = await decide_line([alpha, beta, WorkspaceRuntime()], None,
-                                ctx_for("python3 x"), {})
+    routing = await decide_line(
+        [alpha, beta, WorkspaceRuntime()], None, ctx_for("python3 x"), {}
+    )
     assert routing.bindings["python3"] is beta
 
 
@@ -287,8 +340,9 @@ async def test_decide_scripts_filter_in_list_order():
 async def test_decide_all_refuse_resolves_command_to_none():
     alpha = AlphaRuntime()
     alpha.script = lambda c: False
-    routing = await decide_line([alpha, WorkspaceRuntime()], None,
-                                ctx_for("python3 x"), {})
+    routing = await decide_line(
+        [alpha, WorkspaceRuntime()], None, ctx_for("python3 x"), {}
+    )
     assert routing.bindings["python3"] is None
     assert isinstance(routing.fallback, WorkspaceRuntime)
 
@@ -315,8 +369,12 @@ async def test_scripts_see_their_own_stage_on_pipelines():
     alpha = AlphaRuntime()
     seen: list[str] = []
     alpha.script = lambda c: seen.append(c.command) or True
-    await decide_line([alpha, WorkspaceRuntime()], None,
-                      ctx_for("cat /a.txt | python3 x"), {})
+    await decide_line(
+        [alpha, WorkspaceRuntime()],
+        None,
+        ctx_for("cat /a.txt | python3 x"),
+        {},
+    )
     assert seen == ["python3"]
 
 

@@ -12,8 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.openhands.terminal import (MirageTerminalExecutor,
-                                              register_mirage_terminal)
+from mirage.agents.openhands.terminal import (
+    MirageTerminalExecutor,
+    register_mirage_terminal,
+)
 from mirage.agents.openhands.workspace import MirageWorkspace
 
 __all__ = [

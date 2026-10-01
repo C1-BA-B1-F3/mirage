@@ -14,9 +14,12 @@
 
 import pytest
 
-from mirage.commands.builtin.utils.backup import (backup_control,
-                                                  backup_target, parent_path,
-                                                  sibling_path)
+from mirage.commands.builtin.utils.backup import (
+    backup_control,
+    backup_target,
+    parent_path,
+    sibling_path,
+)
 from mirage.commands.errors import UsageError
 from mirage.types import PathSpec
 
@@ -110,8 +113,9 @@ async def test_backup_target_numbered_ignores_unicode_digits():
 
 @pytest.mark.asyncio
 async def test_backup_target_existing_falls_back_to_simple():
-    picked = await backup_target(_listing(["/d/b.txt"]), _spec("/d/b.txt"),
-                                 "existing", ".bak")
+    picked = await backup_target(
+        _listing(["/d/b.txt"]), _spec("/d/b.txt"), "existing", ".bak"
+    )
     assert picked is not None
     assert picked.virtual == "/d/b.txt.bak"
 
@@ -137,25 +141,29 @@ async def test_backup_target_ignores_other_names():
 # interpolated raw. Rows measured against GNU coreutils 9.4 under
 # `LC_ALL=C` with a raw `bytes` argv (`cp --backup=<w>`). Mirrored in
 # backup.test.ts.
-@pytest.mark.parametrize("value,escaped", [
-    ("xé", r"x\303\251"),
-    ("x\r", r"x\r"),
-    ("x\x01", r"x\001"),
-    ("x\x7f", r"x\177"),
-    ("x'", r"x\'"),
-    ("x\\", r"x\\"),
-])
+@pytest.mark.parametrize(
+    "value,escaped",
+    [
+        ("xé", r"x\303\251"),
+        ("x\r", r"x\r"),
+        ("x\x01", r"x\001"),
+        ("x\x7f", r"x\177"),
+        ("x'", r"x\'"),
+        ("x\\", r"x\\"),
+    ],
+)
 def test_backup_type_clause_quotes_the_word(value, escaped):
     with pytest.raises(UsageError) as exc:
         backup_control("cp", value, None)
-    assert str(
-        exc.value) == (f"cp: invalid argument '{escaped}' for 'backup type'\n"
-                       "Valid arguments are:\n"
-                       "  - 'none', 'off'\n"
-                       "  - 'simple', 'never'\n"
-                       "  - 'existing', 'nil'\n"
-                       "  - 'numbered', 't'\n"
-                       "Try 'cp --help' for more information.")
+    assert str(exc.value) == (
+        f"cp: invalid argument '{escaped}' for 'backup type'\n"
+        "Valid arguments are:\n"
+        "  - 'none', 'off'\n"
+        "  - 'simple', 'never'\n"
+        "  - 'existing', 'nil'\n"
+        "  - 'numbered', 't'\n"
+        "Try 'cp --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
@@ -179,9 +187,11 @@ def test_backup_control_refuses_a_prefix_spanning_two_values():
     """
     with pytest.raises(UsageError) as exc:
         backup_control("cp", "n", None)
-    assert str(exc.value) == ("cp: ambiguous argument 'n' for 'backup type'\n"
-                              "Valid arguments are:\n"
-                              "  - 'none', 'off'\n  - 'simple', 'never'\n"
-                              "  - 'existing', 'nil'\n  - 'numbered', 't'\n"
-                              "Try 'cp --help' for more information.")
+    assert str(exc.value) == (
+        "cp: ambiguous argument 'n' for 'backup type'\n"
+        "Valid arguments are:\n"
+        "  - 'none', 'off'\n  - 'simple', 'never'\n"
+        "  - 'existing', 'nil'\n  - 'numbered', 't'\n"
+        "Try 'cp --help' for more information."
+    )
     assert exc.value.exit_code == 1

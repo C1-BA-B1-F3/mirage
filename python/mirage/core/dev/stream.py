@@ -24,9 +24,8 @@ from mirage.utils.path import norm
 
 
 async def read_stream(
-        accessor: RAMAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> AsyncIterator[bytes]:
+    accessor: RAMAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> AsyncIterator[bytes]:
     """Stream a /dev path.
 
     ``/dev/null`` yields nothing. ``/dev/zero`` yields a fixed zero chunk

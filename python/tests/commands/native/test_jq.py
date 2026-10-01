@@ -15,17 +15,20 @@
 
 def test_jq_r(env):
     data = b'{"name": "hello"}\n'
-    assert env.mirage("jq -r .name", stdin=data) == env.native("jq -r .name",
-                                                               stdin=data)
+    assert env.mirage("jq -r .name", stdin=data) == env.native(
+        "jq -r .name", stdin=data
+    )
 
 
 def test_jq_c(env):
     data = b'{"a": 1, "b": 2}\n'
-    assert env.mirage("jq -c .", stdin=data) == env.native("jq -c .",
-                                                           stdin=data)
+    assert env.mirage("jq -c .", stdin=data) == env.native(
+        "jq -c .", stdin=data
+    )
 
 
 def test_jq_s(env):
-    data = b'1\n2\n3\n'
-    assert env.mirage("jq -s .", stdin=data) == env.native("jq -s .",
-                                                           stdin=data)
+    data = b"1\n2\n3\n"
+    assert env.mirage("jq -s .", stdin=data) == env.native(
+        "jq -s .", stdin=data
+    )

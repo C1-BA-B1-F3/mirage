@@ -19,8 +19,9 @@ from mirage.shell.parse.heredoc.line import operator_line_end
 from mirage.shell.parse.heredoc.types import HeredocOperator
 
 
-def terminator_line(data: bytes, body_start: int, delimiter: bytes,
-                    allows_indent: bool) -> int | None:
+def terminator_line(
+    data: bytes, body_start: int, delimiter: bytes, allows_indent: bool
+) -> int | None:
     """Offset where the line closing the body starts.
 
     Bash ends a body at the first line that equals the delimiter, with
@@ -66,8 +67,9 @@ def next_line(data: bytes, line_start: int) -> int | None:
     return None if newline < 0 else newline + 1
 
 
-def heredoc_bodies(data: bytes, operators: Sequence[HeredocOperator], *,
-                   nested: bool) -> list[tuple[int, int] | None]:
+def heredoc_bodies(
+    data: bytes, operators: Sequence[HeredocOperator], *, nested: bool
+) -> list[tuple[int, int] | None]:
     """The body span of every operator, read the way bash reads them.
 
     Bash gathers bodies at the newline that ends an operator's logical
@@ -100,8 +102,10 @@ def heredoc_bodies(data: bytes, operators: Sequence[HeredocOperator], *,
     spans: list[tuple[int, int] | None] = [None] * len(operators)
     bodies: list[tuple[int, int]] = []
     lines: dict[int, list[int]] = {}
-    for index in sorted(range(len(operators)),
-                        key=lambda position: operators[position].word_start):
+    for index in sorted(
+        range(len(operators)),
+        key=lambda position: operators[position].word_start,
+    ):
         line_end = operator_line_end(data, operators[index].word_end)
         if line_end is not None:
             lines.setdefault(line_end, []).append(index)
@@ -109,14 +113,18 @@ def heredoc_bodies(data: bytes, operators: Sequence[HeredocOperator], *,
         cursor: int | None = line_end + 1
         for index in reversed(members) if nested else members:
             operator = operators[index]
-            if any(begin <= operator.word_start < end
-                   for begin, end in bodies):
+            if any(
+                begin <= operator.word_start < end for begin, end in bodies
+            ):
                 continue
             if cursor is None:
                 continue
-            body_end = terminator_line(data, cursor,
-                                       encode_text(operator.delimiter),
-                                       operator.allows_indent)
+            body_end = terminator_line(
+                data,
+                cursor,
+                encode_text(operator.delimiter),
+                operator.allows_indent,
+            )
             if body_end is None:
                 body_end = len(data)
             spans[index] = (cursor, body_end)

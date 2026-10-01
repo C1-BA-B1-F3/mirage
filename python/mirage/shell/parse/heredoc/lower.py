@@ -15,10 +15,17 @@
 from bisect import bisect_left
 from dataclasses import replace
 
-from mirage.shell.parse.heredoc.constants import (BACKSLASH, BACKTICK, DOLLAR,
-                                                  DOUBLE_QUOTE)
-from mirage.shell.parse.heredoc.line import (construct_closer, construct_end,
-                                             quote_end)
+from mirage.shell.parse.heredoc.constants import (
+    BACKSLASH,
+    BACKTICK,
+    DOLLAR,
+    DOUBLE_QUOTE,
+)
+from mirage.shell.parse.heredoc.line import (
+    construct_closer,
+    construct_end,
+    quote_end,
+)
 from mirage.shell.parse.heredoc.types import Heredoc, HeredocSource
 
 
@@ -35,22 +42,31 @@ def quoted_body(doc: Heredoc) -> tuple[bytes, list[int]]:
         byte = doc.body[index]
         end = None
         if not doc.quoted:
-            closer = construct_closer(doc.body, index,
-                                      False) if byte == DOLLAR else None
+            closer = (
+                construct_closer(doc.body, index, False)
+                if byte == DOLLAR
+                else None
+            )
             if closer is not None:
                 end = construct_end(doc.body, index, closer)
             elif byte == BACKTICK:
                 end = quote_end(doc.body, index)
-            elif byte == BACKSLASH and doc.body[index + 1:index +
-                                                2] in (b"$", b"`", b"\\"):
+            elif byte == BACKSLASH and doc.body[index + 1 : index + 2] in (
+                b"$",
+                b"`",
+                b"\\",
+            ):
                 end = index + 2
         if end is not None:
             out.extend(doc.body[index:end])
             offsets.extend(doc.offsets[index:end])
             index = end
             continue
-        if byte in (DOUBLE_QUOTE,
-                    BACKSLASH) or doc.quoted and byte in (DOLLAR, BACKTICK):
+        if (
+            byte in (DOUBLE_QUOTE, BACKSLASH)
+            or doc.quoted
+            and byte in (DOLLAR, BACKTICK)
+        ):
             out.append(BACKSLASH)
             offsets.append(doc.offsets[index])
         out.append(byte)
@@ -71,8 +87,15 @@ def lower_heredocs(data: bytes, documents: list[Heredoc]) -> HeredocSource:
     edits: list[tuple[int, int, bytes, list[int], Heredoc | None]] = []
     for doc in documents:
         word, positions = quoted_body(doc)
-        edits.append((doc.operator_start, doc.word_end, b"<" + word,
-                      [doc.operator_start] + positions, doc))
+        edits.append(
+            (
+                doc.operator_start,
+                doc.word_end,
+                b"<" + word,
+                [doc.operator_start] + positions,
+                doc,
+            )
+        )
         if doc.end > doc.body_start:
             edits.append((doc.body_start, doc.end, b"", [], None))
     out = bytearray()
@@ -80,7 +103,8 @@ def lower_heredocs(data: bytes, documents: list[Heredoc]) -> HeredocSource:
     attached: list[tuple[int, Heredoc]] = []
     cursor = 0
     for start, end, replacement, positions, attached_doc in sorted(
-            edits, key=lambda edit: edit[0]):
+        edits, key=lambda edit: edit[0]
+    ):
         out.extend(data[cursor:start])
         offsets.extend(range(cursor, start))
         if attached_doc is not None:
@@ -114,11 +138,14 @@ def rebase_source(source: HeredocSource, repaired: bytes) -> HeredocSource:
     if cursor != len(source.source):
         raise ValueError("shell repair must preserve the lowered source")
     offsets.append(source.offsets[-1])
-    return replace(source,
-                   source=repaired,
-                   offsets=tuple(offsets),
-                   documents=tuple((starts[start], doc)
-                                   for start, doc in source.documents))
+    return replace(
+        source,
+        source=repaired,
+        offsets=tuple(offsets),
+        documents=tuple(
+            (starts[start], doc) for start, doc in source.documents
+        ),
+    )
 
 
 def drop_bytes(data: bytes, dropped: list[int]) -> bytes:
@@ -139,8 +166,9 @@ def drop_bytes(data: bytes, dropped: list[int]) -> bytes:
     return bytes(out)
 
 
-def drop_source_bytes(source: HeredocSource,
-                      dropped: list[int]) -> HeredocSource:
+def drop_source_bytes(
+    source: HeredocSource, dropped: list[int]
+) -> HeredocSource:
     """Delete lowered bytes and keep every location pointing where it did.
 
     Each surviving byte keeps its original location, and each document
@@ -153,10 +181,15 @@ def drop_source_bytes(source: HeredocSource,
     if not dropped:
         return source
     gone = set(dropped)
-    offsets = tuple(at for index, at in enumerate(source.offsets[:-1])
-                    if index not in gone) + (source.offsets[-1], )
-    return replace(source,
-                   source=drop_bytes(source.source, dropped),
-                   offsets=offsets,
-                   documents=tuple((start - bisect_left(dropped, start), doc)
-                                   for start, doc in source.documents))
+    offsets = tuple(
+        at for index, at in enumerate(source.offsets[:-1]) if index not in gone
+    ) + (source.offsets[-1],)
+    return replace(
+        source,
+        source=drop_bytes(source.source, dropped),
+        offsets=offsets,
+        documents=tuple(
+            (start - bisect_left(dropped, start), doc)
+            for start, doc in source.documents
+        ),
+    )

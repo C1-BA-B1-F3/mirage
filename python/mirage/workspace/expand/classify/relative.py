@@ -21,8 +21,9 @@ from mirage.utils.path import dotted_spelling
 from mirage.workspace.mount import MountRegistry
 
 
-def relative_spec(word: str, registry: MountRegistry,
-                  cwd: str) -> str | PathSpec:
+def relative_spec(
+    word: str, registry: MountRegistry, cwd: str
+) -> str | PathSpec:
     """Build the PathSpec for a word typed relative to cwd.
 
     The typed word and the cwd it was typed under are two halves of one
@@ -47,9 +48,9 @@ def relative_spec(word: str, registry: MountRegistry,
     if has_glob(word):
         return PathSpec(
             virtual=path,
-            directory=path[:last_slash + 1],
+            directory=path[: last_slash + 1],
             vfs_path=vfs_path,
-            pattern=path[last_slash + 1:],
+            pattern=path[last_slash + 1 :],
             resolved=False,
             raw_path=word,
         )
@@ -58,7 +59,7 @@ def relative_spec(word: str, registry: MountRegistry,
     # not resolve), so it rides along refused rather than as the cwd.
     return PathSpec(
         virtual=path,
-        directory=path[:last_slash + 1],
+        directory=path[: last_slash + 1],
         vfs_path=vfs_path,
         resolved=True,
         raw_path=word,

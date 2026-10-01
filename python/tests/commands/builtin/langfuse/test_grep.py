@@ -34,20 +34,22 @@ def accessor():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 def _glob(virtual: str) -> PathSpec:
     # A glob whose scope IS searchable, so only the glob half of the gate can
     # defer it: "/traces/*" routes to `invalid` and would defer regardless,
     # while "/sessions/*" routes to `session` and reaches the push-down.
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0],
-                    vfs_path=virtual.strip("/"),
-                    pattern=virtual.rsplit("/", 1)[-1],
-                    resolved=False)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0],
+        vfs_path=virtual.strip("/"),
+        pattern=virtual.rsplit("/", 1)[-1],
+        resolved=False,
+    )
 
 
 def _opts(**flags) -> CommandOpts:
@@ -63,23 +65,20 @@ def _fake_resolver(resolve):
 
 
 SUMMARIES = [
-    {
-        "id": "t1",
-        "name": "alpha search-me"
-    },
-    {
-        "id": "t2",
-        "name": "beta"
-    },
+    {"id": "t1", "name": "alpha search-me"},
+    {"id": "t2", "name": "beta"},
 ]
 
 
 @pytest.mark.asyncio
 async def test_fast_path_matches_listing_summaries(accessor):
-    with patch("mirage.core.langfuse.search.fetch_traces",
-               new=AsyncMock(return_value=SUMMARIES)) as fetch:
-        stdout, io = await grep(accessor, [_spec("/traces")], ["search-me"],
-                                _opts())
+    with patch(
+        "mirage.core.langfuse.search.fetch_traces",
+        new=AsyncMock(return_value=SUMMARIES),
+    ) as fetch:
+        stdout, io = await grep(
+            accessor, [_spec("/traces")], ["search-me"], _opts()
+        )
     fetch.assert_awaited_once()
     text = (stdout if isinstance(stdout, bytes) else b"").decode()
     assert "traces/t1.json:" in text
@@ -90,9 +89,13 @@ async def test_fast_path_matches_listing_summaries(accessor):
 @pytest.mark.asyncio
 async def test_shaping_flag_defers_to_generic(accessor):
     generic = AsyncMock(return_value=(b"", IOResult()))
-    with patch("mirage.core.langfuse.search.fetch_traces",
-               new=AsyncMock(return_value=SUMMARIES)) as fetch, patch.dict(
-                   GENERICS, {"grep": generic}):
+    with (
+        patch(
+            "mirage.core.langfuse.search.fetch_traces",
+            new=AsyncMock(return_value=SUMMARIES),
+        ) as fetch,
+        patch.dict(GENERICS, {"grep": generic}),
+    ):
         await grep(accessor, [_spec("/traces")], ["search-me"], _opts(c=True))
     fetch.assert_not_awaited()
     generic.assert_awaited_once()
@@ -101,10 +104,14 @@ async def test_shaping_flag_defers_to_generic(accessor):
 @pytest.mark.asyncio
 async def test_unresolved_glob_defers_to_generic(accessor):
     generic = AsyncMock(return_value=(b"", IOResult()))
-    with patch("mirage.core.langfuse.search.fetch_sessions",
-               new=AsyncMock(return_value=[])) as fetch, patch(
-                   RESOLVE, new=_fake_resolver(_resolve_empty)), patch.dict(
-                       GENERICS, {"grep": generic}):
+    with (
+        patch(
+            "mirage.core.langfuse.search.fetch_sessions",
+            new=AsyncMock(return_value=[]),
+        ) as fetch,
+        patch(RESOLVE, new=_fake_resolver(_resolve_empty)),
+        patch.dict(GENERICS, {"grep": generic}),
+    ):
         await grep(accessor, [_glob("/sessions/*")], ["search-me"], _opts())
     fetch.assert_not_awaited()
     generic.assert_awaited_once()
@@ -116,12 +123,19 @@ async def test_second_operand_defers_to_generic(accessor):
     # dropped in silence: this line reported traces and never mentioned
     # sessions at all.
     generic = AsyncMock(return_value=(b"", IOResult()))
-    with patch("mirage.core.langfuse.search.fetch_traces",
-               new=AsyncMock(return_value=SUMMARIES)) as fetch, patch.dict(
-                   GENERICS, {"grep": generic}):
-        await grep(accessor,
-                   [_spec("/traces"), _spec("/sessions")], ["search-me"],
-                   _opts())
+    with (
+        patch(
+            "mirage.core.langfuse.search.fetch_traces",
+            new=AsyncMock(return_value=SUMMARIES),
+        ) as fetch,
+        patch.dict(GENERICS, {"grep": generic}),
+    ):
+        await grep(
+            accessor,
+            [_spec("/traces"), _spec("/sessions")],
+            ["search-me"],
+            _opts(),
+        )
     fetch.assert_not_awaited()
     generic.assert_awaited_once()
 
@@ -132,11 +146,18 @@ async def test_repeated_operand_defers_to_generic(accessor):
     # get wrong: both route to "search every trace", so it would print the
     # whole container twice.
     generic = AsyncMock(return_value=(b"", IOResult()))
-    with patch("mirage.core.langfuse.search.fetch_traces",
-               new=AsyncMock(return_value=SUMMARIES)) as fetch, patch.dict(
-                   GENERICS, {"grep": generic}):
-        await grep(accessor,
-                   [_spec("/traces"), _spec("/traces")], ["search-me"],
-                   _opts())
+    with (
+        patch(
+            "mirage.core.langfuse.search.fetch_traces",
+            new=AsyncMock(return_value=SUMMARIES),
+        ) as fetch,
+        patch.dict(GENERICS, {"grep": generic}),
+    ):
+        await grep(
+            accessor,
+            [_spec("/traces"), _spec("/traces")],
+            ["search-me"],
+            _opts(),
+        )
     fetch.assert_not_awaited()
     generic.assert_awaited_once()

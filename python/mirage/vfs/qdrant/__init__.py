@@ -25,5 +25,6 @@ __all__ = ["QdrantConfig", "QdrantVFS"]
 def __getattr__(name: str) -> "type[QdrantVFS]":
     if name == "QdrantVFS":
         from mirage.vfs.qdrant.qdrant import QdrantVFS
+
         return QdrantVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

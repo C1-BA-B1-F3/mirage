@@ -13,11 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.commands.builtin.generic.rg import (labelled, needs_every_file,
-                                                parse_flags,
-                                                refuse_missing_pattern)
+from mirage.commands.builtin.generic.rg import (
+    labelled,
+    needs_every_file,
+    parse_flags,
+    refuse_missing_pattern,
+    walk_filter,
+)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import walk_filter
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.github.pushdown import narrow_scope, scope_refusal
 from mirage.commands.builtin.grep_pattern import pattern_arg
@@ -34,8 +37,12 @@ from mirage.types import PathSpec
 
 
 @command("rg", vfs="github", spec=SPECS["rg"])
-async def rg(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: GitHubAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["rg"])
     pattern_str = pattern_arg(texts, fl, "regexp")
     f = parse_flags(fl)
@@ -59,8 +66,9 @@ async def rg(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
         if used_search:
             # The walk a narrowing stands in for filters what it walks
             # (-g, -t, hidden entries, -d) and labels every file it finds.
-            narrowed = walk_candidates(narrowed, paths, walk_filter(f),
-                                       opts.cwd.virtual)
+            narrowed = walk_candidates(
+                narrowed, paths, walk_filter(f), opts.cwd.virtual
+            )
             if not narrowed:
                 return b"", IOResult(exit_code=1)
             run_opts = labelled(opts)

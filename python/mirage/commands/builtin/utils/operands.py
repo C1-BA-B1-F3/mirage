@@ -20,8 +20,14 @@ from functools import partial
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.ops.types import LinkView, MountView, StatPath
-from mirage.types import (FileStat, FileType, PathSpec, PolymorphicReadFn,
-                          ReadBytesFn, StatFn)
+from mirage.types import (
+    FileStat,
+    FileType,
+    PathSpec,
+    PolymorphicReadFn,
+    ReadBytesFn,
+    StatFn,
+)
 from mirage.utils.errors import FS_ERRORS, DotWalkError, eisdir, fs_error_line
 from mirage.utils.stream import ensure_stream
 
@@ -85,8 +91,11 @@ async def operand_stat(
         # the path it simplifies to can answer for it.
         raise
     except FS_ERRORS:
-        if (mounts is not None and not mounts.visible_descendants(path.virtual)
-                and (links is None or not links.subtree(path.virtual))):
+        if (
+            mounts is not None
+            and not mounts.visible_descendants(path.virtual)
+            and (links is None or not links.subtree(path.virtual))
+        ):
             raise
         fallback = None if stat_path is None else await stat_path(path.virtual)
         if fallback is None:
@@ -239,9 +248,9 @@ async def read_operands(
     return ok, err
 
 
-def operands_io(err: bytes,
-                cache: list[str] | None = None,
-                exit_code: int = 1) -> IOResult:
+def operands_io(
+    err: bytes, cache: list[str] | None = None, exit_code: int = 1
+) -> IOResult:
     """IOResult carrying operand-split stderr lines.
 
     Exit ``exit_code`` when any operand failed, exit 0 otherwise; mirrors
@@ -254,9 +263,11 @@ def operands_io(err: bytes,
         cache (list[str] | None): Paths worth caching, if any.
         exit_code (int): The code to report when ``err`` is non-empty.
     """
-    return IOResult(exit_code=0 if not err else exit_code,
-                    stderr=err or None,
-                    cache=cache if cache is not None else [])
+    return IOResult(
+        exit_code=0 if not err else exit_code,
+        stderr=err or None,
+        cache=cache if cache is not None else [],
+    )
 
 
 async def merge_split_errors(
@@ -283,14 +294,15 @@ async def merge_split_errors(
 
 
 async def _awaited_stream(
-        source: "Awaitable[bytes | AsyncIterator[bytes]]"
+    source: "Awaitable[bytes | AsyncIterator[bytes]]",
 ) -> AsyncIterator[bytes]:
     async for chunk in ensure_stream(await source):
         yield chunk
 
 
-def _call_normalized(read: PolymorphicReadFn,
-                     path: PathSpec) -> AsyncIterator[bytes]:
+def _call_normalized(
+    read: PolymorphicReadFn, path: PathSpec
+) -> AsyncIterator[bytes]:
     # The reader is invoked NOW, not when the returned stream is first
     # drained: a cache-aware factory reader captures the active cache
     # manager at call time, inside the command's cache-manager scope,
@@ -303,7 +315,8 @@ def _call_normalized(read: PolymorphicReadFn,
 
 
 def normalized_read(
-        read: PolymorphicReadFn) -> Callable[[PathSpec], AsyncIterator[bytes]]:
+    read: PolymorphicReadFn,
+) -> Callable[[PathSpec], AsyncIterator[bytes]]:
     """Normalize a polymorphic bound reader to always yield a stream.
 
     The loose ``read`` contract lets a backend hand back bytes, an

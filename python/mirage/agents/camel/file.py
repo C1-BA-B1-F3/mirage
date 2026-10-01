@@ -24,7 +24,6 @@ from mirage.workspace.workspace import Workspace
 
 
 class MirageFileToolkit(FileToolkit):
-
     def __init__(
         self,
         workspace: Workspace,
@@ -67,10 +66,14 @@ class MirageFileToolkit(FileToolkit):
         parent = str(Path(mirage_path).parent)
         if parent and parent != "/":
             mkdir_io = self._runner.run(
-                self._ws.shell(f"mkdir -p {shlex.quote(parent)}"))
+                self._ws.shell(f"mkdir -p {shlex.quote(parent)}")
+            )
             if mkdir_io.exit_code != 0:
-                stderr = mkdir_io.stderr if isinstance(mkdir_io.stderr,
-                                                       bytes) else b""
+                stderr = (
+                    mkdir_io.stderr
+                    if isinstance(mkdir_io.stderr, bytes)
+                    else b""
+                )
                 raise OSError(stderr.decode("utf-8", errors="replace"))
         quoted = shlex.quote(mirage_path)
         io = self._runner.run(self._ws.shell(f"cat > {quoted}", stdin=data))
@@ -143,8 +146,9 @@ class MirageFileToolkit(FileToolkit):
         except (FileNotFoundError, NotADirectoryError) as exc:
             return f"Failed to read file: {mirage_path} ({exc})"
         suffix = Path(mirage_path).suffix or ".txt"
-        local = Path(
-            self._tmpdir.name) / f"read_{abs(hash(mirage_path))}{suffix}"
+        local = (
+            Path(self._tmpdir.name) / f"read_{abs(hash(mirage_path))}{suffix}"
+        )
         local.write_bytes(data)
         return super().read_file(file_paths=str(local))
 
@@ -168,8 +172,9 @@ class MirageFileToolkit(FileToolkit):
             return mirage_path
         return str(target.with_suffix(produced.suffix))
 
-    def edit_file(self, file_path: str, old_content: str,
-                  new_content: str) -> str:
+    def edit_file(
+        self, file_path: str, old_content: str, new_content: str
+    ) -> str:
         """Replace old_content with new_content in a Mirage file.
 
         Args:
@@ -183,14 +188,16 @@ class MirageFileToolkit(FileToolkit):
         mirage_path = self._to_mirage_path(file_path)
         try:
             data = self._read_mirage_bytes(mirage_path).decode(
-                self.default_encoding)
+                self.default_encoding
+            )
         except (FileNotFoundError, NotADirectoryError):
             return f"Error: File {mirage_path} does not exist"
         if old_content not in data:
             return f"Error: old_content not found in {mirage_path}"
         new_data = data.replace(old_content, new_content)
-        self._write_mirage_bytes(mirage_path,
-                                 new_data.encode(self.default_encoding))
+        self._write_mirage_bytes(
+            mirage_path, new_data.encode(self.default_encoding)
+        )
         return f"Successfully edited file: {mirage_path}"
 
     def search_files(self, file_name: str, path: str | None = None) -> str:

@@ -62,7 +62,8 @@ async def main():
     r = await ws.shell(
         'gws gmail send --to "zechengzhang97@gmail.com"'
         ' --subject "Hello from MIRAGE"'
-        ' --body "This email was sent via the MIRAGE Gmail VFS."')
+        ' --body "This email was sent via the MIRAGE Gmail VFS."'
+    )
     print((await r.stdout_str())[:200])
 
 

@@ -20,8 +20,9 @@ def test_base64_encode(env):
 
 def test_base64_decode(env):
     data = b"aGVsbG8gd29ybGQK\n"
-    assert env.mirage("base64 -d", stdin=data) == env.native("base64 -d",
-                                                             stdin=data)
+    assert env.mirage("base64 -d", stdin=data) == env.native(
+        "base64 -d", stdin=data
+    )
 
 
 def test_base64_file(env):
@@ -44,5 +45,7 @@ def test_base64_D(env):
 
 def test_base64_wrap_and_ignore_garbage(env):
     assert env.mirage("base64 -w 4", stdin=b"abcdef") == "YWJj\nZGVm\n"
-    assert env.mirage("base64 --decode --ignore-garbage",
-                      stdin=b"YWJj$\n") == "abc"
+    assert (
+        env.mirage("base64 --decode --ignore-garbage", stdin=b"YWJj$\n")
+        == "abc"
+    )

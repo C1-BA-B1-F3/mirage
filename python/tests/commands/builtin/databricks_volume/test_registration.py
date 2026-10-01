@@ -30,7 +30,8 @@ TEXT_COMMANDS = {
 
 def test_databricks_volume_text_commands_registered_read_only():
     registered = [
-        registered for command in COMMANDS
+        registered
+        for command in COMMANDS
         for registered in command._registered_commands
     ]
     names = {command.name for command in registered}

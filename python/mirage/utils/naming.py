@@ -12,8 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.utils.sanitize import (NAME_MAX_BYTES, byte_len, path_safe_name,
-                                   sanitize_name, truncate_bytes)
+from mirage.utils.sanitize import (
+    NAME_MAX_BYTES,
+    byte_len,
+    path_safe_name,
+    sanitize_name,
+    truncate_bytes,
+)
 
 SEPARATOR = "__"
 
@@ -47,8 +52,9 @@ def fit_id_name(label: str, resource_id: str, suffix: str = "") -> str:
         str: ``<label>__<resource_id><suffix>``, at most NAME_MAX bytes
         unless the id alone cannot fit.
     """
-    budget = NAME_MAX_BYTES - (len(SEPARATOR) + byte_len(resource_id) +
-                               byte_len(suffix))
+    budget = NAME_MAX_BYTES - (
+        len(SEPARATOR) + byte_len(resource_id) + byte_len(suffix)
+    )
     if byte_len(label) > budget:
         label = truncate_bytes(label, budget).rstrip("_")
     return f"{label}{SEPARATOR}{resource_id}{suffix}"
@@ -118,7 +124,7 @@ def parse_id_name(
     """
     if suffix and not name.endswith(suffix):
         raise FileNotFoundError(name)
-    raw = name[:-len(suffix)] if suffix else name
+    raw = name[: -len(suffix)] if suffix else name
     label, sep, resource_id = raw.rpartition("__")
     if not sep or not resource_id:
         raise FileNotFoundError(name)

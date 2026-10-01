@@ -14,9 +14,18 @@
 
 from datetime import date, datetime
 
-from mirage.core.gcal.day import (DEFAULT_TZ, clamped_hhmm, day_bounds,
-                                  days_covered, event_span, local_midnight,
-                                  slot_instant, valid_day, window_bounds, zone)
+from mirage.core.gcal.day import (
+    DEFAULT_TZ,
+    clamped_hhmm,
+    day_bounds,
+    days_covered,
+    event_span,
+    local_midnight,
+    slot_instant,
+    valid_day,
+    window_bounds,
+    zone,
+)
 
 HK = "Asia/Hong_Kong"
 LA = "America/Los_Angeles"
@@ -63,7 +72,8 @@ def test_window_bounds_bracket_the_day():
 
 def test_event_span_parses_offsets_and_z():
     span = event_span(
-        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T02:30:00Z"), HK)
+        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T02:30:00Z"), HK
+    )
     assert span is not None
     assert span[0] == datetime.fromisoformat("2026-08-11T01:00:00+00:00")
     assert span[1] == datetime.fromisoformat("2026-08-11T02:30:00+00:00")
@@ -97,22 +107,29 @@ def test_multi_day_all_day_event_covers_each_day():
 
 def test_timed_event_covers_every_day_it_spans():
     span = event_span(
-        _timed("2026-08-10T09:00:00+08:00", "2026-08-13T17:00:00+08:00"), HK)
+        _timed("2026-08-10T09:00:00+08:00", "2026-08-13T17:00:00+08:00"), HK
+    )
     assert span is not None
-    assert days_covered(
-        span, HK) == ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13"]
+    assert days_covered(span, HK) == [
+        "2026-08-10",
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+    ]
 
 
 def test_event_ending_exactly_at_midnight_stops_at_the_day_it_started():
     span = event_span(
-        _timed("2026-08-11T23:00:00+08:00", "2026-08-12T00:00:00+08:00"), HK)
+        _timed("2026-08-11T23:00:00+08:00", "2026-08-12T00:00:00+08:00"), HK
+    )
     assert span is not None
     assert days_covered(span, HK) == ["2026-08-11"]
 
 
 def test_zero_length_event_still_occupies_its_day():
     span = event_span(
-        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T09:00:00+08:00"), HK)
+        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T09:00:00+08:00"), HK
+    )
     assert span is not None
     assert days_covered(span, HK) == ["2026-08-11"]
 
@@ -121,7 +138,8 @@ def test_bucketing_zone_decides_the_day():
     # 20:00 in Los Angeles on Aug 11 is 03:00Z on Aug 12: bucketed in the
     # calendar's zone it is Aug 11, bucketed in UTC it would be Aug 12.
     span = event_span(
-        _timed("2026-08-11T20:00:00-07:00", "2026-08-11T21:00:00-07:00"), LA)
+        _timed("2026-08-11T20:00:00-07:00", "2026-08-11T21:00:00-07:00"), LA
+    )
     assert span is not None
     assert days_covered(span, LA) == ["2026-08-11"]
     assert days_covered(span, "UTC") == ["2026-08-12"]
@@ -129,14 +147,16 @@ def test_bucketing_zone_decides_the_day():
 
 def test_clamped_hhmm_reports_local_times():
     span = event_span(
-        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T10:30:00+08:00"), HK)
+        _timed("2026-08-11T09:00:00+08:00", "2026-08-11T10:30:00+08:00"), HK
+    )
     assert span is not None
     assert clamped_hhmm(span, "2026-08-11", HK) == "0900-1030"
 
 
 def test_clamped_hhmm_clamps_a_spanning_event_to_the_whole_day():
     span = event_span(
-        _timed("2026-08-10T09:00:00+08:00", "2026-08-13T17:00:00+08:00"), HK)
+        _timed("2026-08-10T09:00:00+08:00", "2026-08-13T17:00:00+08:00"), HK
+    )
     assert span is not None
     assert clamped_hhmm(span, "2026-08-10", HK) == "0900-2400"
     assert clamped_hhmm(span, "2026-08-11", HK) == "0000-2400"
@@ -177,14 +197,8 @@ def test_a_zone_less_event_buckets_without_raising():
     # against the aware local midnights ("can't compare offset-naive and
     # offset-aware datetimes").
     event = {
-        "start": {
-            "dateTime": "2026-08-11T09:00:00",
-            "timeZone": HK
-        },
-        "end": {
-            "dateTime": "2026-08-11T10:30:00",
-            "timeZone": HK
-        },
+        "start": {"dateTime": "2026-08-11T09:00:00", "timeZone": HK},
+        "end": {"dateTime": "2026-08-11T10:30:00", "timeZone": HK},
     }
     span = event_span(event, "UTC")
     assert span is not None

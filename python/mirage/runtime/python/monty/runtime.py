@@ -25,9 +25,16 @@ from mirage.runtime.python.monty.binding import pydantic_monty
 from mirage.runtime.python.monty.constants import MISSING_EXTRA_HINT
 from mirage.runtime.python.monty.execution import MontyExecution
 from mirage.runtime.python.monty.osaccess import MirageOSAccess
-from mirage.runtime.types import (EvalResult, EvalValue, FilesystemOperation,
-                                  RunArgs, RunResult, RuntimeContext,
-                                  RuntimeReach, ScriptSource)
+from mirage.runtime.types import (
+    EvalResult,
+    EvalValue,
+    FilesystemOperation,
+    RunArgs,
+    RunResult,
+    RuntimeContext,
+    RuntimeReach,
+    ScriptSource,
+)
 from mirage.runtime.vfs import RuntimeVFS
 
 
@@ -56,30 +63,36 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
     # environment, or network door, and its file I/O is serviced only
     # through the workspace dispatch, so nothing goes around the gate.
     reach: RuntimeReach = "workspace"
-    filesystem: ClassVar[tuple[FilesystemOperation,
-                               ...]] = ('read', 'write', 'list', 'stat')
+    filesystem: ClassVar[tuple[FilesystemOperation, ...]] = (
+        "read",
+        "write",
+        "list",
+        "stat",
+    )
     # No import system to resolve a module with, so `-m` has nothing to
     # run; the refusal names this runtime rather than inventing a
     # "No module named" that would imply a search happened.
     runs_modules: ClassVar[bool] = False
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: RuntimeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: RuntimeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         if pydantic_monty is None:
             raise ImportError(MISSING_EXTRA_HINT)
         super().__init__(captures, config, script)
         self._execution = MontyExecution()
 
-    async def _execute_code(self, args: RunArgs,
-                            context: RuntimeContext | None) -> RunResult:
+    async def _execute_code(
+        self, args: RunArgs, context: RuntimeContext | None
+    ) -> RunResult:
         return await self.run(args, context)
 
-    async def run(self,
-                  args: RunArgs,
-                  context: RuntimeContext | None = None) -> RunResult:
+    async def run(
+        self, args: RunArgs, context: RuntimeContext | None = None
+    ) -> RunResult:
         """Run one program, reporting any switch this engine cannot honor.
 
         Monty implements a Python subset with no ``compile``, no
@@ -96,8 +109,11 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
         if args.cwd is None and context is not None:
             args = replace(args, cwd=context.cwd)
         # A nested call must not queue behind a parent holding this pool.
-        nested = (context is not None and context.processes is not None
-                  and context.processes.depth > 0)
+        nested = (
+            context is not None
+            and context.processes is not None
+            and context.processes.depth > 0
+        )
         execution = MontyExecution() if nested else self._execution
         try:
             result = await execution.run(args, self._bridge(args.env, context))
@@ -108,15 +124,20 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
             return result
         return replace(result, stderr=notice + (result.stderr or b""))
 
-    async def eval(self,
-                   code: str,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+    ) -> EvalResult:
         context = self._capture_context()
         bridge = self._bridge({}, context)
-        nested = (context is not None and context.processes is not None
-                  and context.processes.depth > 0)
+        nested = (
+            context is not None
+            and context.processes is not None
+            and context.processes.depth > 0
+        )
         if nested and session is not None:
             raise ValueError("nested persistent evaluation is unsupported")
         execution = MontyExecution() if nested else self._execution
@@ -126,7 +147,8 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
                 bridge,
                 inputs=inputs,
                 session=session,
-                cwd=context.cwd if context is not None else None)
+                cwd=context.cwd if context is not None else None,
+            )
         finally:
             if execution is not self._execution:
                 await execution.close()
@@ -134,7 +156,9 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
     async def close(self) -> None:
         await self._execution.close()
 
-    def _bridge(self, env: dict[str, str],
-                context: RuntimeContext | None) -> MirageOSAccess:
+    def _bridge(
+        self, env: dict[str, str], context: RuntimeContext | None
+    ) -> MirageOSAccess:
         return MirageOSAccess(
-            RuntimeVFS.of(context) if context is not None else None, env)
+            RuntimeVFS.of(context) if context is not None else None, env
+        )

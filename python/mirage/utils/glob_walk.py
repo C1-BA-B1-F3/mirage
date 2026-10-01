@@ -115,7 +115,7 @@ def glob_stem_prefix(pattern: str | None, suffixes: Sequence[str]) -> str:
         for size in range(1, len(suffix) + 1):
             if literal.endswith(suffix[:size]):
                 reached = max(reached, size)
-    return literal[:len(literal) - reached]
+    return literal[: len(literal) - reached]
 
 
 def glob_span(pattern: str | None) -> tuple[date, date] | None:
@@ -148,8 +148,12 @@ def glob_span(pattern: str | None) -> tuple[date, date] | None:
             if month == 12:
                 return start, date(year + 1, 1, 1)
             return start, date(year, month + 1, 1)
-        if (len(parts) == 3 and len(parts[0]) == 4 and len(parts[1]) == 2
-                and len(parts[2]) == 2):
+        if (
+            len(parts) == 3
+            and len(parts[0]) == 4
+            and len(parts[1]) == 2
+            and len(parts[2]) == 2
+        ):
             start = date(int(parts[0]), int(parts[1]), int(parts[2]))
             return start, start + timedelta(days=1)
     except ValueError:
@@ -174,10 +178,9 @@ _GLOB_CHAR_OF = {mark: ch for ch, mark in _GLOB_MARKS.items()}
 # in a loop that grows one word (`while true; do export X=$X.; done`).
 _MARK_TABLE = str.maketrans(_GLOB_MARKS)
 _UNMARK_TABLE = str.maketrans(_GLOB_CHAR_OF)
-_PATTERN_TABLE = str.maketrans({
-    mark: f"[{ch}]"
-    for mark, ch in _GLOB_CHAR_OF.items()
-})
+_PATTERN_TABLE = str.maketrans(
+    {mark: f"[{ch}]" for mark, ch in _GLOB_CHAR_OF.items()}
+)
 
 DEFAULT_MAX_GLOB_MATCHES = 10000
 
@@ -291,8 +294,9 @@ def literal_word(item: "str | PathSpec") -> "str | PathSpec":
     """
     if isinstance(item, str):
         return unmark_globs(item)
-    if not (_has_glob_marks(item.virtual)
-            or _has_glob_marks(item.pattern or "")):
+    if not (
+        _has_glob_marks(item.virtual) or _has_glob_marks(item.pattern or "")
+    ):
         return item
     spec = _unmark_spec(item)
     if spec.pattern is None:
@@ -361,8 +365,11 @@ def glob_name_matches(name: str, pattern: str) -> bool:
         name (str): the entry's own name, no directory part.
         pattern (str): the segment, marks already resolved.
     """
-    if name.startswith(
-            ".") and not pattern.startswith(".") and not dotglob_active():
+    if (
+        name.startswith(".")
+        and not pattern.startswith(".")
+        and not dotglob_active()
+    ):
         return False
     return fnmatch(name, pattern)
 
@@ -396,19 +403,22 @@ async def expand_pattern(
             see either, so a walk that stops at readdir misses both; this
             is the union ``merge_readdir`` applies to a listing.
     """
-    prefix = path.virtual[:len(path.virtual.rstrip("/")) - len(path.vfs_path)]
+    prefix = path.virtual[: len(path.virtual.rstrip("/")) - len(path.vfs_path)]
     segments = path.vfs_path.split("/") if path.vfs_path else []
     # Two spec shapes reach resolvers: a full pattern path (classify), where
     # the pattern is already the last segment, and a directory-shaped spec
     # (PathSpec.dir), where the pattern applies to the directory's entries.
     if path.pattern and (not segments or segments[-1] != path.pattern):
         segments = [*segments, path.pattern]
-    first = next((i for i, seg in enumerate(segments) if has_glob(seg)),
-                 len(segments) - 1)
+    first = next(
+        (i for i, seg in enumerate(segments) if has_glob(seg)),
+        len(segments) - 1,
+    )
     # The head above the first glob segment is a real directory, so a
     # glob character quoted inside it is part of the name to list.
-    base = unmark_globs((prefix + "/".join(segments[:first])).rstrip("/")
-                        or "/")
+    base = unmark_globs(
+        (prefix + "/".join(segments[:first])).rstrip("/") or "/"
+    )
     level = [base]
     for seg in segments[first:]:
         next_level: list[str] = []
@@ -420,11 +430,12 @@ async def expand_pattern(
             # channels). Every other readdir reads the directory off the
             # same spec and ignores the field. A literal segment carries
             # none, so it keeps its warm listing.
-            spec = PathSpec(virtual=parent,
-                            directory=parent,
-                            vfs_path=rekey(path.virtual, path.vfs_path,
-                                           parent),
-                            pattern=seg if has_glob(seg) else None)
+            spec = PathSpec(
+                virtual=parent,
+                directory=parent,
+                vfs_path=rekey(path.virtual, path.vfs_path, parent),
+                pattern=seg if has_glob(seg) else None,
+            )
             try:
                 entries = await readdir(accessor, spec, index)
             except (FileNotFoundError, NotADirectoryError):
@@ -440,9 +451,11 @@ async def expand_pattern(
                 # A nested mount root or a link is a real child of this
                 # parent whether or not the backend could list it.
                 base_dir = parent.rstrip("/")
-                next_level.extend(f"{base_dir}/{name}"
-                                  for name in children(f"{base_dir}/")
-                                  if glob_name_matches(name, pattern))
+                next_level.extend(
+                    f"{base_dir}/{name}"
+                    for name in children(f"{base_dir}/")
+                    if glob_name_matches(name, pattern)
+                )
         # bash sorts a pathname expansion, and the two sources are
         # enumerated separately, so the union is ordered here.
         level = sorted(set(next_level))
@@ -475,12 +488,13 @@ class ResolveGlobFn(Protocol):
     adapter hands this function out, which is the check that was missing.
     """
 
-    def __call__(self,
-                 accessor: Any,
-                 paths: Sequence[PathSpec],
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[PathSpec]]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        paths: Sequence[PathSpec],
+        /,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[PathSpec]]: ...
 
 
 def make_resolve_glob(
@@ -511,17 +525,28 @@ def make_resolve_glob(
         /,
         index: IndexCacheStore = NULL_INDEX,
     ) -> list[PathSpec]:
-        return await resolve_glob_with(readdir, accessor, paths, index,
-                                       max_glob_matches, children, stat,
-                                       target_stat)
+        return await resolve_glob_with(
+            readdir,
+            accessor,
+            paths,
+            index,
+            max_glob_matches,
+            children,
+            stat,
+            target_stat,
+        )
 
     return resolve_glob
 
 
-async def _is_directory(stat: Callable[..., Any] | None, accessor: Accessor,
-                        match: PathSpec, index: IndexCacheStore,
-                        children: ChildMounts | None,
-                        target_stat: LinkTargetStat | None) -> bool:
+async def _is_directory(
+    stat: Callable[..., Any] | None,
+    accessor: Accessor,
+    match: PathSpec,
+    index: IndexCacheStore,
+    children: ChildMounts | None,
+    target_stat: LinkTargetStat | None,
+) -> bool:
     """Whether a match is a directory, the way a trailing slash asks.
 
     A name the namespace owes the directory (a nested mount root or a
@@ -613,8 +638,11 @@ async def resolve_glob_with(
             # and goes back on each match; the literal answer to a
             # zero-match glob is still the word as typed (#1065).
             dirs_only = p.raw_path.endswith("/") and p.raw_path != p.virtual
-            word = (dataclasses.replace(p, raw_path=p.raw_path.rstrip("/"))
-                    if dirs_only else p)
+            word = (
+                dataclasses.replace(p, raw_path=p.raw_path.rstrip("/"))
+                if dirs_only
+                else p
+            )
             # The hidden filter sits here, in the one loop every backend's
             # resolve_glob runs through, because per-backend glob modules
             # bind raw readdirs that never pass the command-door guard. It
@@ -622,17 +650,21 @@ async def resolve_glob_with(
             # reads as no matches and falls back to the literal word,
             # exactly what bash prints when nothing matched.
             matched = [
-                m for m in await expand_pattern(readdir, accessor, word, index,
-                                                children)
+                m
+                for m in await expand_pattern(
+                    readdir, accessor, word, index, children
+                )
                 if path_allowed(m.virtual)
             ]
             if dirs_only:
                 kept: list[PathSpec] = []
                 for m in matched:
-                    if await _is_directory(stat, accessor, m, index, children,
-                                           target_stat):
+                    if await _is_directory(
+                        stat, accessor, m, index, children, target_stat
+                    ):
                         kept.append(
-                            dataclasses.replace(m, raw_path=m.raw_path + "/"))
+                            dataclasses.replace(m, raw_path=m.raw_path + "/")
+                        )
                 matched = kept
             if not matched and is_word_shaped(p):
                 # bash with nullglob off: an unmatched glob word stays
@@ -644,11 +676,17 @@ async def resolve_glob_with(
                 # to merge these matches with another source asks for.
                 result.append(
                     _unmark_spec(
-                        dataclasses.replace(p, pattern=None, resolved=True)))
+                        dataclasses.replace(p, pattern=None, resolved=True)
+                    )
+                )
                 continue
             if cap is not None and len(matched) > cap:
-                logger.warning("%s: %d matches exceeds limit (%d), truncating",
-                               unmark_globs(p.directory), len(matched), cap)
+                logger.warning(
+                    "%s: %d matches exceeds limit (%d), truncating",
+                    unmark_globs(p.directory),
+                    len(matched),
+                    cap,
+                )
                 matched = matched[:cap]
             result.extend(matched)
         else:

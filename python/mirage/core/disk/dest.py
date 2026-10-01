@@ -24,8 +24,9 @@ from mirage.utils.key_prefix import mounted_path
 from mirage.utils.path import ancestors
 
 
-async def mkdir_component_error(root: Path, spec: PathSpec,
-                                key: str) -> OSError | None:
+async def mkdir_component_error(
+    root: Path, spec: PathSpec, key: str
+) -> OSError | None:
     """The ENOTDIR ``mkdir -p`` owes, named after the component to blame.
 
     The disk backend has a kernel, so it needs no equivalent of the
@@ -47,8 +48,9 @@ async def mkdir_component_error(root: Path, spec: PathSpec,
     """
     for component in ancestors(key):
         try:
-            st = await aiofiles.os.stat(await
-                                        resolve_inside(root, spec, component))
+            st = await aiofiles.os.stat(
+                await resolve_inside(root, spec, component)
+            )
         except OSError:
             return None
         # Anything that is not a directory blocks traversal, not just a

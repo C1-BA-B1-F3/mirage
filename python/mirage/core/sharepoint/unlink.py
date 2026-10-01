@@ -23,10 +23,11 @@ from mirage.utils.errors import enoent
 async def unlink(accessor: SharePointAccessor, path: PathSpec) -> None:
     resolved = await resolve_item(accessor, path)
     try:
-        await graph_delete(accessor.config,
-                           drive_loc(accessor.config, resolved,
-                                     path.vfs_path).item(),
-                           session=accessor.pool)
+        await graph_delete(
+            accessor.config,
+            drive_loc(accessor.config, resolved, path.vfs_path).item(),
+            session=accessor.pool,
+        )
     except GraphError as exc:
         if exc.status == 404:
             raise enoent(path)

@@ -27,9 +27,9 @@ CHANNEL = f"{GUILD_DIR}/channels/general__C001"
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_stat_root(api, accessor, index):
@@ -57,7 +57,8 @@ async def test_stat_containers(api, accessor, index):
 
 
 async def test_stat_container_under_bogus_guild_is_enoent(
-        api, accessor, index):
+    api, accessor, index
+):
     # The containers exist per guild, so a guild the listing does not
     # prove takes its children with it.
     with pytest.raises(FileNotFoundError):
@@ -72,8 +73,9 @@ async def test_stat_channel(api, accessor, index):
 
 
 async def test_stat_member(api, accessor, index):
-    row = await stat(accessor, spec(f"/{GUILD_DIR}/members/alice__U001.json"),
-                     index)
+    row = await stat(
+        accessor, spec(f"/{GUILD_DIR}/members/alice__U001.json"), index
+    )
     assert row.content is ContentType.JSON
     assert row.extra["user_id"] == "U001"
     assert row.size is not None and row.size > 0
@@ -86,7 +88,8 @@ async def test_stat_day_dir(api, accessor, index):
 
 
 async def test_stat_day_outside_the_window_is_a_directory(
-        api, accessor, index):
+    api, accessor, index
+):
     # The channel listing synthesizes a bounded window of recent days, but
     # the history API answers a range query for any date.
     row = await stat(accessor, spec(f"/{CHANNEL}/1999-01-01"), index)
@@ -96,8 +99,9 @@ async def test_stat_day_outside_the_window_is_a_directory(
 
 async def test_stat_day_under_bogus_channel_is_enoent(api, accessor, index):
     with pytest.raises(FileNotFoundError):
-        await stat(accessor, spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}"),
-                   index)
+        await stat(
+            accessor, spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}"), index
+        )
 
 
 async def test_stat_chat_jsonl(api, accessor, index):
@@ -107,21 +111,26 @@ async def test_stat_chat_jsonl(api, accessor, index):
 
 
 async def test_stat_chat_jsonl_sealed_day_has_unknown_size(
-        api, accessor, index):
+    api, accessor, index
+):
     # A day whose history could not be listed (403/404/429) seals an empty
     # date dir; the file still stats, with the size left unknown.
-    row = await stat(accessor, spec(f"/{CHANNEL}/{SEALED_DAY}/chat.jsonl"),
-                     index)
+    row = await stat(
+        accessor, spec(f"/{CHANNEL}/{SEALED_DAY}/chat.jsonl"), index
+    )
     assert row.content is ContentType.TEXT
     assert row.size is None
 
 
 async def test_stat_chat_jsonl_under_bogus_channel_is_enoent(
-        api, accessor, index):
+    api, accessor, index
+):
     with pytest.raises(FileNotFoundError):
-        await stat(accessor,
-                   spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}/chat.jsonl"),
-                   index)
+        await stat(
+            accessor,
+            spec(f"/{GUILD_DIR}/channels/nope__C9/{DAY}/chat.jsonl"),
+            index,
+        )
 
 
 async def test_stat_files_dir(api, accessor, index):
@@ -135,8 +144,9 @@ async def test_stat_files_under_a_sealed_day_is_enoent(api, accessor, index):
 
 
 async def test_stat_file_blob(api, accessor, index):
-    row = await stat(accessor, spec(f"/{CHANNEL}/{DAY}/files/kept__A1.txt"),
-                     index)
+    row = await stat(
+        accessor, spec(f"/{CHANNEL}/{DAY}/files/kept__A1.txt"), index
+    )
     assert row.size == 5
     assert row.extra["attachment_id"] == "A1"
     assert row.extra["content_type"] == "text/plain"

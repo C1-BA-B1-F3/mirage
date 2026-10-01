@@ -67,7 +67,8 @@ class HfRepoConfig(BaseModel):
         parts = v.split("/")
         if len(parts) > 2 or any(not part for part in parts):
             raise ValueError(
-                f"repo_id must be 'name' or 'namespace/name'; got {v!r}")
+                f"repo_id must be 'name' or 'namespace/name'; got {v!r}"
+            )
         return v
 
     @field_validator("key_prefix")
@@ -106,14 +107,14 @@ class HfHubAccessor(SessionAccessor):
 
     def __init__(self, config: HfRepoConfig, repo_type: str = "") -> None:
         """Args:
-            config (HfRepoConfig): repo id, credential and revision.
-            repo_type (str): overrides the class's own kind, for a caller
-                that learns it from a command line rather than from
-                which VFS it mounted. The `hf` CLI is the only one:
-                its `--repo-type` picks the kind per invocation, and
-                letting it build an accessor is what lets the CLI reuse
-                the mount's tree and commit code instead of growing a
-                second Hub client.
+        config (HfRepoConfig): repo id, credential and revision.
+        repo_type (str): overrides the class's own kind, for a caller
+            that learns it from a command line rather than from
+            which VFS it mounted. The `hf` CLI is the only one:
+            its `--repo-type` picks the kind per invocation, and
+            letting it build an accessor is what lets the CLI reuse
+            the mount's tree and commit code instead of growing a
+            second Hub client.
         """
         super().__init__(timeout=stall_timeout(config.timeout))
         self.config = config
@@ -135,8 +136,9 @@ class HfHubAccessor(SessionAccessor):
         # index wired. Derivation is O(tree), so a readdir loop over a
         # large repo would be quadratic without a memo; every reseat of
         # `tree` clears it.
-        self.rows_cache: tuple[str, dict[str, IndexEntry],
-                               dict[str, list[str]]] | None = None
+        self.rows_cache: (
+            tuple[str, dict[str, IndexEntry], dict[str, list[str]]] | None
+        ) = None
         self.refills: int = 0
 
     @property
@@ -193,5 +195,8 @@ class HfHubAccessor(SessionAccessor):
         # `key_prefix` is normalized with a TRAILING slash, so joining
         # with one of our own produced `sub/dir//a.txt` and every read of
         # a prefixed mount 404'd.
-        return kp.apply(prefix, rel).rstrip("/") if rel.strip("/") \
+        return (
+            kp.apply(prefix, rel).rstrip("/")
+            if rel.strip("/")
             else prefix.rstrip("/")
+        )

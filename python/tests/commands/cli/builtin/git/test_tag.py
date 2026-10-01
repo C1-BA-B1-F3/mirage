@@ -73,8 +73,10 @@ def test_a_message_implies_an_annotated_tag():
 
 
 def test_several_messages_are_paragraphs():
-    assert parse_flags(FlagView({"message": ["one",
-                                             "two"]})).message == "one\n\ntwo"
+    assert (
+        parse_flags(FlagView({"message": ["one", "two"]})).message
+        == "one\n\ntwo"
+    )
 
 
 @pytest.mark.asyncio
@@ -90,14 +92,14 @@ async def test_tag_names_sort_in_byte_order(git_rw):
 async def test_listing_pads_the_name_and_indents_continuations(git_rw):
     await run(git_rw, "tag -a v1 -m first -m second")
     await run(git_rw, "tag v2 HEAD^{tree}")
-    assert (await run(git_rw, "tag -n3"))[1] == (b"v1              first\n"
-                                                 b"    \n"
-                                                 b"    second\n"
-                                                 b"v2              \n")
-    assert (await run(
-        git_rw,
-        "tag -n-2")) == (128, b"",
-                         b"fatal: positive value expected contents:lines=-2\n")
+    assert (await run(git_rw, "tag -n3"))[1] == (
+        b"v1              first\n    \n    second\nv2              \n"
+    )
+    assert (await run(git_rw, "tag -n-2")) == (
+        128,
+        b"",
+        b"fatal: positive value expected contents:lines=-2\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -122,16 +124,19 @@ async def test_a_message_writes_a_tag_object(git_rw, repo_path: Path):
     assert isinstance(written, Tag)
     assert written.message == b"first release\n"
     assert written.tagger == b"mirage <mirage@localhost>"
-    assert (await run(git_rw,
-                      "tag -n"))[1] == b"v1.1            first release\n"
+    assert (await run(git_rw, "tag -n"))[
+        1
+    ] == b"v1.1            first release\n"
 
 
 @pytest.mark.asyncio
 async def test_annotated_needs_a_message(git_rw):
     code, _out, err = await run(git_rw, "tag -a v1.2")
     assert code == 128
-    assert err == (b"fatal: no tag message supplied (mirage has no editor "
-                   b"to open; pass -m)\n")
+    assert err == (
+        b"fatal: no tag message supplied (mirage has no editor "
+        b"to open; pass -m)\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -189,8 +194,9 @@ async def test_l_and_d_cannot_mix(git_rw):
 
 
 @pytest.mark.asyncio
-async def test_a_tag_on_a_tag_points_at_the_tag_object(git_rw,
-                                                       repo_path: Path):
+async def test_a_tag_on_a_tag_points_at_the_tag_object(
+    git_rw, repo_path: Path
+):
     await run(git_rw, "tag -a v1 -m m")
     await run(git_rw, "tag alias v1")
     assert isinstance(tag_object(repo_path, "alias"), Tag)
@@ -199,8 +205,9 @@ async def test_a_tag_on_a_tag_points_at_the_tag_object(git_rw,
 @pytest.mark.asyncio
 async def test_a_tag_resolves_as_a_revision(git_rw):
     await run(git_rw, "tag old HEAD~1")
-    assert (await run(git_rw,
-                      "log --oneline -n 1 old"))[1].endswith(b" second\n")
+    assert (await run(git_rw, "log --oneline -n 1 old"))[1].endswith(
+        b" second\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -208,10 +215,12 @@ async def test_a_tag_resolves_as_a_revision(git_rw):
 async def test_a_creation_option_needs_a_name(git_rw, line: str):
     code, _out, err = await run(git_rw, line)
     assert code == 129
-    assert err == (b"usage: git tag [-a] [-f] [-m <msg>] <tagname> "
-                   b"[<commit> | <object>]\n"
-                   b"   or: git tag -d <tagname>...\n"
-                   b"   or: git tag [-n[<num>]] -l [<pattern>...]\n")
+    assert err == (
+        b"usage: git tag [-a] [-f] [-m <msg>] <tagname> "
+        b"[<commit> | <object>]\n"
+        b"   or: git tag -d <tagname>...\n"
+        b"   or: git tag [-n[<num>]] -l [<pattern>...]\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -258,15 +267,19 @@ async def test_n0_prints_bare_names(git_rw):
     await run(git_rw, "tag -a v1 -m msg")
     await run(git_rw, "tag lw")
     assert (await run(git_rw, "tag -n0"))[1] == b"lw\nv1\n"
-    assert (await run(git_rw, "tag -n1"))[1] == (b"lw              third\n"
-                                                 b"v1              msg\n")
+    assert (await run(git_rw, "tag -n1"))[1] == (
+        b"lw              third\nv1              msg\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_tag_can_point_at_a_blob(git_rw, repo_path: Path):
     with Repo(str(repo_path)) as repo:
-        blob = repo.get_object(repo[b"HEAD"].tree).lookup_path(
-            repo.get_object, b"a.txt")[1].decode()
+        blob = (
+            repo.get_object(repo[b"HEAD"].tree)
+            .lookup_path(repo.get_object, b"a.txt")[1]
+            .decode()
+        )
     assert await run(git_rw, f"tag blobtag {blob}") == (0, b"", b"")
     assert tag_object(repo_path, "blobtag").id.decode() == blob
     assert (await run(git_rw, "tag -n0"))[1] == b"blobtag\n"
@@ -275,8 +288,11 @@ async def test_a_tag_can_point_at_a_blob(git_rw, repo_path: Path):
 @pytest.mark.asyncio
 async def test_an_annotated_tag_records_the_blob_type(git_rw, repo_path: Path):
     with Repo(str(repo_path)) as repo:
-        blob = repo.get_object(repo[b"HEAD"].tree).lookup_path(
-            repo.get_object, b"a.txt")[1].decode()
+        blob = (
+            repo.get_object(repo[b"HEAD"].tree)
+            .lookup_path(repo.get_object, b"a.txt")[1]
+            .decode()
+        )
     assert await run(git_rw, f"tag -a annblob -m m {blob}") == (0, b"", b"")
     written = tag_object(repo_path, "annblob")
     assert isinstance(written, Tag)
@@ -310,7 +326,8 @@ async def test_a_path_expression_is_a_tag_target(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_an_annotated_tag_records_the_expressions_type(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     assert (await run(git_rw, "tag -a -m msg noted HEAD:a.txt"))[0] == 0
     with Repo(str(repo_path)) as repo:
         tag = repo[repo.refs[b"refs/tags/noted"]]
@@ -321,13 +338,13 @@ async def test_an_annotated_tag_records_the_expressions_type(
 async def test_an_expression_that_resolves_to_nothing_is_refused(git_rw):
     code, _out, err = await run(git_rw, "tag missed HEAD:nosuch")
     assert code == 128
-    assert err == (b"fatal: Failed to resolve 'HEAD:nosuch' as a valid "
-                   b"ref.\n")
+    assert err == (b"fatal: Failed to resolve 'HEAD:nosuch' as a valid ref.\n")
 
 
 @pytest.mark.asyncio
 async def test_a_lightweight_tag_naming_a_blob_keeps_its_type(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # A lightweight tag is a ref like any other and points at whatever
     # it was made from, so the annotated tag records the type read
     # rather than assuming a commit: `type commit` beside a blob id is a
@@ -341,7 +358,8 @@ async def test_a_lightweight_tag_naming_a_blob_keeps_its_type(
 
 @pytest.mark.asyncio
 async def test_a_lightweight_tag_naming_a_tree_keeps_its_type(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     assert (await run(git_rw, "tag treetag HEAD^{tree}"))[0] == 0
     assert await run(git_rw, "tag -a treerel -m x treetag") == (0, b"", b"")
     written = tag_object(repo_path, "treerel")
@@ -389,8 +407,7 @@ async def test_the_incompatible_pair_outranks_the_n_refusal(git_rw):
     # the order they were typed, where this build has one fixed order.)
     code, _out, err = await run(git_rw, "tag -l -d -n1 v")
     assert code == 129
-    assert err == (b"error: options '-l' and '-d' cannot be used "
-                   b"together\n")
+    assert err == (b"error: options '-l' and '-d' cannot be used together\n")
 
 
 @pytest.mark.asyncio
@@ -399,22 +416,27 @@ async def test_a_tag_named_twice_deletes_nothing(git_rw):
     assert await run(git_rw, "tag w") == (0, b"", b"")
     code, out, err = await run(git_rw, "tag -d v w v")
     assert (code, out) == (1, b"")
-    assert err == (b"error: could not delete references: multiple updates "
-                   b"for ref 'refs/tags/v' not allowed\n")
+    assert err == (
+        b"error: could not delete references: multiple updates "
+        b"for ref 'refs/tags/v' not allowed\n"
+    )
     assert (await run(git_rw, "tag -l"))[1] == b"v\nw\n"
 
 
 @pytest.mark.asyncio
 async def test_a_name_that_is_not_there_is_reported_before_the_conflict(
-        git_rw):
+    git_rw,
+):
     # A name no ref answers never reaches the transaction, so it is an
     # ordinary report and the conflict is found among what is left.
     assert await run(git_rw, "tag v") == (0, b"", b"")
     code, out, err = await run(git_rw, "tag -d v v nosuch")
     assert (code, out) == (1, b"")
-    assert err == (b"error: tag 'nosuch' not found.\n"
-                   b"error: could not delete references: multiple updates "
-                   b"for ref 'refs/tags/v' not allowed\n")
+    assert err == (
+        b"error: tag 'nosuch' not found.\n"
+        b"error: could not delete references: multiple updates "
+        b"for ref 'refs/tags/v' not allowed\n"
+    )
     assert (await run(git_rw, "tag -l"))[1] == b"v\n"
 
 
@@ -422,8 +444,9 @@ async def test_a_name_that_is_not_there_is_reported_before_the_conflict(
 async def test_a_missing_name_twice_is_two_reports(git_rw):
     code, out, err = await run(git_rw, "tag -d nosuch nosuch")
     assert (code, out) == (1, b"")
-    assert err == (b"error: tag 'nosuch' not found.\n"
-                   b"error: tag 'nosuch' not found.\n")
+    assert err == (
+        b"error: tag 'nosuch' not found.\nerror: tag 'nosuch' not found.\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -433,8 +456,10 @@ async def test_the_blamed_ref_is_the_first_in_ref_order(git_rw):
     for name in ("v", "w"):
         assert await run(git_rw, f"tag {name}") == (0, b"", b"")
     _code, _out, err = await run(git_rw, "tag -d w w v v")
-    assert err == (b"error: could not delete references: multiple updates "
-                   b"for ref 'refs/tags/v' not allowed\n")
+    assert err == (
+        b"error: could not delete references: multiple updates "
+        b"for ref 'refs/tags/v' not allowed\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -442,9 +467,11 @@ async def test_a_tag_cannot_be_made_below_one_that_exists(git_rw):
     assert (await run(git_rw, "tag foo"))[0] == 0
     code, _out, err = await run(git_rw, "tag foo/bar")
     assert code == 128
-    assert err == (b"fatal: cannot lock ref 'refs/tags/foo/bar': "
-                   b"'refs/tags/foo' exists; cannot create "
-                   b"'refs/tags/foo/bar'\n")
+    assert err == (
+        b"fatal: cannot lock ref 'refs/tags/foo/bar': "
+        b"'refs/tags/foo' exists; cannot create "
+        b"'refs/tags/foo/bar'\n"
+    )
     assert (await run(git_rw, "tag -l"))[1] == b"foo\n"
 
 
@@ -453,9 +480,11 @@ async def test_a_tag_cannot_be_made_above_one_that_exists(git_rw):
     assert (await run(git_rw, "tag baz/qux"))[0] == 0
     code, _out, err = await run(git_rw, "tag baz")
     assert code == 128
-    assert err == (b"fatal: cannot lock ref 'refs/tags/baz': "
-                   b"'refs/tags/baz/qux' exists; cannot create "
-                   b"'refs/tags/baz'\n")
+    assert err == (
+        b"fatal: cannot lock ref 'refs/tags/baz': "
+        b"'refs/tags/baz/qux' exists; cannot create "
+        b"'refs/tags/baz'\n"
+    )
 
 
 @pytest.mark.asyncio

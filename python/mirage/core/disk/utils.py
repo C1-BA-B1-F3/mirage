@@ -26,9 +26,9 @@ from mirage.utils.errors import enoent
 logger = logging.getLogger(__name__)
 
 
-def resolve_inside_sync(root: Path,
-                        spec: PathSpec,
-                        path: str | None = None) -> Path:
+def resolve_inside_sync(
+    root: Path, spec: PathSpec, path: str | None = None
+) -> Path:
     """Resolve an exact host operand without following links below the root.
 
     Missing components are left to the operation, allowing creates. The root
@@ -51,7 +51,7 @@ def resolve_inside_sync(root: Path,
     if full != base and not full.startswith(prefix):
         raise ValueError(f"path escapes root: {spec.virtual}")
     at = base
-    for part in full[len(base):].split(os.sep):
+    for part in full[len(base) :].split(os.sep):
         if not part:
             continue
         at = os.path.join(at, part)
@@ -66,9 +66,9 @@ def resolve_inside_sync(root: Path,
     return Path(full)
 
 
-async def resolve_inside(root: Path,
-                         spec: PathSpec,
-                         path: str | None = None) -> Path:
+async def resolve_inside(
+    root: Path, spec: PathSpec, path: str | None = None
+) -> Path:
     """Run the complete path check off the event loop.
 
     Args:
@@ -106,8 +106,9 @@ def walk_entries(start: Path) -> Iterator[tuple[Path, list[str], list[str]]]:
         try:
             entries = read_entries(directory)
         except FileNotFoundError:
-            logger.debug("Directory vanished during disk traversal",
-                         exc_info=True)
+            logger.debug(
+                "Directory vanished during disk traversal", exc_info=True
+            )
             continue
         for entry in entries:
             if entry.is_dir(follow_symlinks=False):

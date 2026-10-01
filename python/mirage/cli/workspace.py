@@ -20,8 +20,13 @@ import typer
 import yaml
 
 from mirage.cli.client import make_client
-from mirage.cli.output import (emit, fail, format_age, format_table,
-                               handle_response)
+from mirage.cli.output import (
+    emit,
+    fail,
+    format_age,
+    format_table,
+    handle_response,
+)
 
 app = typer.Typer(no_args_is_help=True, help="Manage workspaces.")
 
@@ -78,13 +83,16 @@ def _resolve_config_arg(path: Path) -> dict[str, Any]:
 def _format_workspace_list(items: list[dict[str, Any]]) -> str:
     if not items:
         return "No active workspaces."
-    rows = [[
-        item["id"],
-        item["mode"],
-        str(item["mount_count"]),
-        str(item["session_count"]),
-        format_age(item["created_at"]),
-    ] for item in items]
+    rows = [
+        [
+            item["id"],
+            item["mode"],
+            str(item["mount_count"]),
+            str(item["session_count"]),
+            format_age(item["created_at"]),
+        ]
+        for item in items
+    ]
     return format_table(["ID", "MODE", "MOUNTS", "SESSIONS", "AGE"], rows)
 
 
@@ -112,8 +120,12 @@ def _format_workspace_detail(detail: dict[str, Any]) -> str:
     if internals:
         lines.append("")
         lines.append("Internals:")
-        for key in ("cache_bytes", "cache_entries", "history_length",
-                    "in_flight_jobs"):
+        for key in (
+            "cache_bytes",
+            "cache_entries",
+            "history_length",
+            "in_flight_jobs",
+        ):
             value = internals[key]
             shown = "n/a (not tracked)" if value is None else value
             lines.append(f"  {key:<16} {shown}")
@@ -123,13 +135,16 @@ def _format_workspace_detail(detail: dict[str, Any]) -> str:
 def _format_asks(items: list[dict[str, Any]]) -> str:
     if not items:
         return "No asks."
-    rows = [[
-        item["id"],
-        item["session_id"],
-        " ".join([item["command"], *item["argv"]]),
-        item["outcome"] or "pending",
-        item["reason"],
-    ] for item in items]
+    rows = [
+        [
+            item["id"],
+            item["session_id"],
+            " ".join([item["command"], *item["argv"]]),
+            item["outcome"] or "pending",
+            item["reason"],
+        ]
+        for item in items
+    ]
     return format_table(["ID", "SESSION", "COMMAND", "STATUS", "REASON"], rows)
 
 
@@ -150,12 +165,12 @@ def _format_diff(changes: dict[str, list[str]]) -> str:
 
 @app.command("create")
 def create_cmd(
-    config_path: Path = typer.Argument(...,
-                                       exists=True,
-                                       readable=True,
-                                       help="YAML/JSON workspace config."),
-    workspace_id: str
-    | None = typer.Option(None, "--id", help="Explicit workspace id."),
+    config_path: Path = typer.Argument(
+        ..., exists=True, readable=True, help="YAML/JSON workspace config."
+    ),
+    workspace_id: str | None = typer.Option(
+        None, "--id", help="Explicit workspace id."
+    ),
 ) -> None:
     """Create a workspace; daemon auto-spawns if not running."""
     body: dict[str, Any] = {"config": _resolve_config(config_path)}
@@ -207,12 +222,14 @@ def delete_cmd(workspace_id: str = typer.Argument(...)) -> None:
 @app.command("clone")
 def clone_cmd(
     source_id: str = typer.Argument(..., help="Source workspace id."),
-    new_id: str
-    | None = typer.Option(None, "--id", help="Explicit id for the clone."),
+    new_id: str | None = typer.Option(
+        None, "--id", help="Explicit id for the clone."
+    ),
     at: str | None = typer.Option(
         None,
         "--at",
-        help="Clone from a past version (id or branch) not the live state."),
+        help="Clone from a past version (id or branch) not the live state.",
+    ),
 ) -> None:
     """Clone a workspace, optionally from one of its past versions."""
     body: dict[str, Any] = {"source_id": source_id}
@@ -241,13 +258,14 @@ def snapshot_cmd(
     body = {"path": str(output.expanduser().resolve())}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/snapshot",
-                           json=body)
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/snapshot", json=body
+        )
     emit(
         handle_response(r),
-        human=lambda d:
-        f"Snapshot {d['id']} -> {d['path']} ({d['size']:,} bytes).",
+        human=lambda d: (
+            f"Snapshot {d['id']} -> {d['path']} ({d['size']:,} bytes)."
+        ),
     )
 
 
@@ -261,7 +279,8 @@ def load_cmd(
         help="Optional workspace YAML/JSON config.",
     ),
     new_id: str | None = typer.Option(
-        None, "--id", help="Explicit id for the restored workspace."),
+        None, "--id", help="Explicit id for the restored workspace."
+    ),
 ) -> None:
     """Load a workspace from a tar file.
 
@@ -282,65 +301,73 @@ def load_cmd(
 @app.command("commit")
 def commit_cmd(
     workspace_id: str = typer.Argument(..., help="Workspace id."),
-    message: str = typer.Option("", "-m", "--message",
-                                help="Version message."),
-    branch: str = typer.Option("main",
-                               "-b",
-                               "--branch",
-                               help="Branch to commit on."),
+    message: str = typer.Option(
+        "", "-m", "--message", help="Version message."
+    ),
+    branch: str = typer.Option(
+        "main", "-b", "--branch", help="Branch to commit on."
+    ),
 ) -> None:
     """Commit the workspace's current state as a version."""
     body = {"message": message, "branch": branch}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/commit",
-                           json=body)
-    emit(handle_response(r),
-         human=lambda d: f"Committed {d['version'][:12]} on {d['branch']}.")
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/commit", json=body
+        )
+    emit(
+        handle_response(r),
+        human=lambda d: f"Committed {d['version'][:12]} on {d['branch']}.",
+    )
 
 
 @app.command("branch")
 def branch_cmd(
     workspace_id: str = typer.Argument(..., help="Workspace id."),
     name: str = typer.Argument(..., help="New branch name."),
-    from_branch: str = typer.Option("main",
-                                    "--from",
-                                    help="Branch to fork from."),
+    from_branch: str = typer.Option(
+        "main", "--from", help="Branch to fork from."
+    ),
 ) -> None:
     """Create a branch at another branch's current version."""
     body = {"name": name, "from_branch": from_branch}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/branch",
-                           json=body)
-    emit(handle_response(r),
-         human=lambda d:
-         f"Created branch {d['branch']} at {d['version'][:12]}.")
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/branch", json=body
+        )
+    emit(
+        handle_response(r),
+        human=lambda d: (
+            f"Created branch {d['branch']} at {d['version'][:12]}."
+        ),
+    )
 
 
 @app.command("log")
 def log_cmd(
-        workspace_id: str = typer.Argument(..., help="Workspace id."),
-        branch: str = typer.Option("main", "-b", "--branch"),
+    workspace_id: str = typer.Argument(..., help="Workspace id."),
+    branch: str = typer.Option("main", "-b", "--branch"),
 ) -> None:
     """List a workspace's versions (newest first)."""
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
         r = client.request(
-            "GET", f"/v1/workspaces/{workspace_id}/versions?branch={branch}")
+            "GET", f"/v1/workspaces/{workspace_id}/versions?branch={branch}"
+        )
     emit(handle_response(r), human=_format_version_log)
 
 
 @app.command("diff")
 def diff_cmd(
-        workspace_id: str = typer.Argument(..., help="Workspace id."),
-        a: str | None = typer.Argument(
-            None, help="Base ref; omit to use live state."),
-        b: str | None = typer.Argument(
-            None, help="Compare ref; omit to use live state."),
-        branch: str = typer.Option("main", "-b", "--branch"),
+    workspace_id: str = typer.Argument(..., help="Workspace id."),
+    a: str | None = typer.Argument(
+        None, help="Base ref; omit to use live state."
+    ),
+    b: str | None = typer.Argument(
+        None, help="Compare ref; omit to use live state."
+    ),
+    branch: str = typer.Option("main", "-b", "--branch"),
 ) -> None:
     """Show changed files (git-style).
 
@@ -355,22 +382,23 @@ def diff_cmd(
         params["b"] = b
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("GET",
-                           f"/v1/workspaces/{workspace_id}/diff",
-                           params=params)
+        r = client.request(
+            "GET", f"/v1/workspaces/{workspace_id}/diff", params=params
+        )
     emit(handle_response(r), human=_format_diff)
 
 
 @app.command("list-asks")
 def list_asks_cmd(
     workspace_id: str = typer.Argument(..., help="Workspace id."),
-    session: str = typer.Option("",
-                                "--session",
-                                help="Only this session's asks."),
+    session: str = typer.Option(
+        "", "--session", help="Only this session's asks."
+    ),
     all_records: bool = typer.Option(
         False,
         "--all",
-        help="Include settled decisions, not just pending asks."),
+        help="Include settled decisions, not just pending asks.",
+    ),
 ) -> None:
     """List pending asks (every decision with --all)."""
     params: dict[str, str] = {}
@@ -380,53 +408,58 @@ def list_asks_cmd(
         params["all"] = "true"
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("GET",
-                           f"/v1/workspaces/{workspace_id}/asks",
-                           params=params)
+        r = client.request(
+            "GET", f"/v1/workspaces/{workspace_id}/asks", params=params
+        )
     emit(handle_response(r), human=_format_asks)
 
 
 @app.command("allow")
 def allow_cmd(
     workspace_id: str = typer.Argument(..., help="Workspace id."),
-    ask_id: str = typer.Argument(...,
-                                 help="Ask id, as quoted in the refusal."),
+    ask_id: str = typer.Argument(
+        ..., help="Ask id, as quoted in the refusal."
+    ),
     scope: str = typer.Option(
         "once",
         "--scope",
         help="once answers the exact line; session answers every line "
-        "the rule covers."),
-    note: str = typer.Option("",
-                             "--note",
-                             help="What to record alongside the answer."),
+        "the rule covers.",
+    ),
+    note: str = typer.Option(
+        "", "--note", help="What to record alongside the answer."
+    ),
 ) -> None:
     """Allow a pending ask; the retry of the asked line passes."""
     body = {"answer": "allow", "scope": scope, "note": note}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/asks/{ask_id}",
-                           json=body)
-    emit(handle_response(r),
-         human=lambda d: f"Allowed {d['id']} ({d['scope']}).")
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/asks/{ask_id}", json=body
+        )
+    emit(
+        handle_response(r),
+        human=lambda d: f"Allowed {d['id']} ({d['scope']}).",
+    )
 
 
 @app.command("deny")
 def deny_cmd(
     workspace_id: str = typer.Argument(..., help="Workspace id."),
-    ask_id: str = typer.Argument(...,
-                                 help="Ask id, as quoted in the refusal."),
-    note: str = typer.Option("",
-                             "--note",
-                             help="What to record alongside the answer."),
+    ask_id: str = typer.Argument(
+        ..., help="Ask id, as quoted in the refusal."
+    ),
+    note: str = typer.Option(
+        "", "--note", help="What to record alongside the answer."
+    ),
 ) -> None:
     """Deny a pending ask; the retry is refused in the deny voice, once."""
     body = {"answer": "deny", "note": note}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/asks/{ask_id}",
-                           json=body)
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/asks/{ask_id}", json=body
+        )
     emit(handle_response(r), human=lambda d: f"Denied {d['id']}.")
 
 
@@ -439,7 +472,7 @@ def checkout_cmd(
     body = {"ref": ref}
     with make_client() as client:
         client.ensure_running(allow_spawn=False)
-        r = client.request("POST",
-                           f"/v1/workspaces/{workspace_id}/checkout",
-                           json=body)
+        r = client.request(
+            "POST", f"/v1/workspaces/{workspace_id}/checkout", json=body
+        )
     emit(handle_response(r), human=_format_workspace_detail)

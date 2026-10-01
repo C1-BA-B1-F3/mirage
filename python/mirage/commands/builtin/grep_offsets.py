@@ -142,15 +142,16 @@ class MatchOffsets:
         self._index = 0
 
     def at(self, index: int) -> int:
-        self._position += byte_offset(self._line[self._index:index],
-                                      index - self._index)
+        self._position += byte_offset(
+            self._line[self._index : index], index - self._index
+        )
         self._index = index
         return self._position
 
 
-def prefix_of(number: int | None,
-              offset: int | None,
-              selected: bool = True) -> str:
+def prefix_of(
+    number: int | None, offset: int | None, selected: bool = True
+) -> str:
     """grep's line-number and byte-offset fields, in GNU's fixed order.
 
     GNU prints FILENAME, then LINE NUMBER, then BYTE OFFSET, whatever

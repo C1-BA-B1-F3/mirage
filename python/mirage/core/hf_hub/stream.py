@@ -43,8 +43,13 @@ async def read_stream(
     """
     entry = await resolve_entry(accessor, path, index)
     raw = path.mount_path
-    url = resolve_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                      accessor.revision, accessor.repo_path(raw))
+    url = resolve_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        accessor.revision,
+        accessor.repo_path(raw),
+    )
     rec = record_stream("read", path.virtual, accessor.VFS_NAME)
 
     def stamp(headers: Mapping[str, str]) -> None:
@@ -52,11 +57,13 @@ async def read_stream(
             rec.fingerprint = row_token(entry, headers.get("etag", ""))
 
     with refusals_denied(path, REFUSED_STATUSES):
-        async for chunk in hub_stream(accessor.token,
-                                      url,
-                                      chunk_size,
-                                      session=accessor.pool,
-                                      on_response=stamp):
+        async for chunk in hub_stream(
+            accessor.token,
+            url,
+            chunk_size,
+            session=accessor.pool,
+            on_response=stamp,
+        ):
             if rec is not None:
                 rec.bytes += len(chunk)
             yield chunk

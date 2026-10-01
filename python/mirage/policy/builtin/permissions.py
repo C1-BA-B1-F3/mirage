@@ -12,12 +12,21 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.context.session_context import (get_admission,
-                                            redirect_target_judged)
+from mirage.context.session_context import (
+    get_admission,
+    redirect_target_judged,
+)
 from mirage.policy.base import Policy
 from mirage.policy.match import Outcome, decide, op_refusal
-from mirage.policy.types import (Action, Ask, CommandContext, Deny, DenyScope,
-                                 OpsContext, SessionCommandsQuery)
+from mirage.policy.types import (
+    Action,
+    Ask,
+    CommandContext,
+    Deny,
+    DenyScope,
+    OpsContext,
+    SessionCommandsQuery,
+)
 
 
 class PermissionsPolicy(Policy):
@@ -56,14 +65,15 @@ class PermissionsPolicy(Policy):
             return None
         rule = decision.rule
         if rule is None:
-            program = " ".join(ctx.program or (ctx.command, ))
+            program = " ".join(ctx.program or (ctx.command,))
             return Deny(f"{program} is not allowed")
         if decision.outcome is Outcome.ASK:
             return Ask(rule.reason, rule, decision.asks)
         if decision.matched_path is None:
             return Deny(rule.reason)
-        return Deny(f"{decision.matched_path}: {rule.reason}",
-                    DenyScope.OPERAND)
+        return Deny(
+            f"{decision.matched_path}: {rule.reason}", DenyScope.OPERAND
+        )
 
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if redirect_target_judged(ctx.path.virtual):
@@ -74,6 +84,7 @@ class PermissionsPolicy(Policy):
         # bound gate still remembers the nod.
         gate = get_admission()
         granted = gate.granted if gate is not None else ()
-        reason = op_refusal(self._sessions.commands_of(ctx.session_id), ctx,
-                            granted)
+        reason = op_refusal(
+            self._sessions.commands_of(ctx.session_id), ctx, granted
+        )
         return Deny(reason) if reason is not None else None

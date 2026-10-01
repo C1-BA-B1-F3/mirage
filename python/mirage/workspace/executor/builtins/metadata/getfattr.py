@@ -22,7 +22,11 @@ from mirage.errors import FsCondition, classify
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec, word_text
 from mirage.workspace.executor.builtins.metadata.xattr import (
-    GETFATTR_USAGE, attr_error, attr_operands, attr_usage_refusal)
+    GETFATTR_USAGE,
+    attr_error,
+    attr_operands,
+    attr_usage_refusal,
+)
 from mirage.workspace.executor.builtins.shared import result
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.session import SessionState
@@ -64,8 +68,13 @@ def encode_value(value: bytes, encoding: str | None) -> bytes:
     return bytes(out)
 
 
-async def _walk(dispatch: DispatchFn, path: PathSpec, shown: str,
-                logical: bool, deref: bool) -> list[tuple[PathSpec, str]]:
+async def _walk(
+    dispatch: DispatchFn,
+    path: PathSpec,
+    shown: str,
+    logical: bool,
+    deref: bool,
+) -> list[tuple[PathSpec, str]]:
     """A subtree in pre-order, the way nftw hands it to getfattr -R.
 
     Every entry is reported, links included. A link to a directory is
@@ -91,10 +100,15 @@ async def _walk(dispatch: DispatchFn, path: PathSpec, shown: str,
     children, _ = await dispatch("readdir", path)
     for child in children:
         name = child.rstrip("/").rsplit("/", 1)[-1]
-        entries.extend(await _walk(dispatch,
-                                   PathSpec.from_str_path(child.rstrip("/")),
-                                   f"{shown.rstrip('/')}/{name}", logical,
-                                   logical))
+        entries.extend(
+            await _walk(
+                dispatch,
+                PathSpec.from_str_path(child.rstrip("/")),
+                f"{shown.rstrip('/')}/{name}",
+                logical,
+                logical,
+            )
+        )
     return entries
 
 
@@ -118,8 +132,9 @@ async def handle_getfattr(
         args (list[str | PathSpec]): the words after the command name.
     """
     spec = SPECS["getfattr"]
-    parsed = parse_command(spec, [word_text(a) for a in args], session.cwd,
-                           "getfattr")
+    parsed = parse_command(
+        spec, [word_text(a) for a in args], session.cwd, "getfattr"
+    )
     refused = attr_usage_refusal("getfattr", parsed, GETFATTR_USAGE)
     if refused is not None:
         return refused
@@ -134,10 +149,11 @@ async def handle_getfattr(
     try:
         matcher = None if pattern == "-" else re.compile(pattern)
     except re.error:
-        return result("getfattr",
-                      exit_code=1,
-                      stderr=f'getfattr: invalid regular expression '
-                      f'"{pattern}"\n')
+        return result(
+            "getfattr",
+            exit_code=1,
+            stderr=f'getfattr: invalid regular expression "{pattern}"\n',
+        )
     name = fl.as_str("name")
     dump = fl.as_bool("dump") or name is not None
     only_values = fl.as_bool("only_values")
@@ -151,39 +167,63 @@ async def handle_getfattr(
         typed = target.raw_path or target.virtual
         entries = [(target, typed)]
         if fl.as_bool("recursive"):
-            entries = await _walk(dispatch, target, typed,
-                                  fl.as_bool("logical"),
-                                  not fl.as_bool("physical"))
+            entries = await _walk(
+                dispatch,
+                target,
+                typed,
+                fl.as_bool("logical"),
+                not fl.as_bool("physical"),
+            )
         for path, label in entries:
             header = label
             if not absolute and label.startswith("/"):
                 header = label.lstrip("/") or "."
             try:
-                block, missing = await _file_block(dispatch, path, label,
-                                                   header, name, matcher, dump,
-                                                   only_values, encoding,
-                                                   nofollow, errors)
+                block, missing = await _file_block(
+                    dispatch,
+                    path,
+                    label,
+                    header,
+                    name,
+                    matcher,
+                    dump,
+                    only_values,
+                    encoding,
+                    nofollow,
+                    errors,
+                )
             except OSError as exc:
                 errors.append(f"getfattr: {label}: {attr_error(exc)}\n")
                 failed = True
                 continue
             if block and header != label and not only_values and not warned:
-                errors.append("getfattr: Removing leading '/' from absolute "
-                              "path names\n")
+                errors.append(
+                    "getfattr: Removing leading '/' from absolute path names\n"
+                )
                 warned = True
             out += block
             failed = failed or missing
-    return result("getfattr",
-                  out=bytes(out) or None,
-                  exit_code=1 if failed else 0,
-                  stderr="".join(errors) or None)
+    return result(
+        "getfattr",
+        out=bytes(out) or None,
+        exit_code=1 if failed else 0,
+        stderr="".join(errors) or None,
+    )
 
 
-async def _file_block(dispatch: DispatchFn, path: PathSpec, label: str,
-                      header: str, name: str | None,
-                      matcher: re.Pattern[str] | None, dump: bool,
-                      only_values: bool, encoding: str | None, nofollow: bool,
-                      errors: list[str]) -> tuple[bytes, bool]:
+async def _file_block(
+    dispatch: DispatchFn,
+    path: PathSpec,
+    label: str,
+    header: str,
+    name: str | None,
+    matcher: re.Pattern[str] | None,
+    dump: bool,
+    only_values: bool,
+    encoding: str | None,
+    nofollow: bool,
+    errors: list[str],
+) -> tuple[bytes, bool]:
     """One path's output (its ``# file:`` block, or its bare values), and
     whether an attribute it was asked for is not set.
 
@@ -217,10 +257,9 @@ async def _file_block(dispatch: DispatchFn, path: PathSpec, label: str,
             block += attr.encode() + b"\n"
             continue
         try:
-            value, _ = await dispatch("getxattr",
-                                      path,
-                                      name=attr,
-                                      nofollow=nofollow)
+            value, _ = await dispatch(
+                "getxattr", path, name=attr, nofollow=nofollow
+            )
         except OSError as exc:
             if classify(exc) is not FsCondition.NO_XATTR:
                 raise
@@ -230,8 +269,9 @@ async def _file_block(dispatch: DispatchFn, path: PathSpec, label: str,
         if only_values:
             out += value
         else:
-            block += attr.encode() + b"=" + encode_value(value,
-                                                         encoding) + b"\n"
+            block += (
+                attr.encode() + b"=" + encode_value(value, encoding) + b"\n"
+            )
     if block:
         out += f"# file: {header}\n".encode() + block + b"\n"
     return bytes(out), missing

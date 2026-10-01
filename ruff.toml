@@ -1,24 +1,38 @@
-# Match the yapf and isort defaults. Ruff's default of 88 would disagree with
-# the formatter on wrapped lines.
+# The repository's width since before Ruff formatted it. Ruff's default of 88
+# would rewrap every long line in the tree.
 line-length = 79
 target-version = "py311"
 force-exclude = true
-exclude = [
-    "python/mirage/commands/remote/grpc/proto/command_pb2.py",
-    "python/mirage/commands/remote/grpc/proto/command_pb2_grpc.py",
-]
+# Test data, not code: the fake services serve these bytes, and the goldens
+# hold their sizes, line counts and blob hashes.
+extend-exclude = ["integ/fixtures"]
+
+[format]
+# Generated tables are laid out by their generator, which packs ranges
+# several to a line so 349 of them stay reviewable. Reformatting them here
+# would fight scripts/gen_width_table.py on every run, the same way
+# typescript/.oxfmtrc.json exempts `**/generated/**`.
+exclude = ["python/mirage/utils/generated/*"]
 
 [lint]
-# Match the E/W/F rules enforced by flake8. Import sorting and syntax upgrades
-# remain with isort and pyupgrade because their Ruff equivalents produce
-# broader source changes under this repository's current configuration.
-select = ["E", "W", "F"]
+# flake8's E/W/F, import sorting (the formatter and the sorter agree, so an
+# import is never reflowed back and forth), and RUF100 so a `noqa` that no
+# longer suppresses anything is removed instead of piling up. Syntax upgrades
+# stay with pyupgrade: Ruff's UP rules produce broader source changes under
+# this repository's configuration.
+select = ["E", "W", "F", "I", "RUF100"]
 # Match autoflake's unused-variable cleanup without enabling every unsafe Ruff
 # fix. F601 duplicate keys remain errors but are corrected manually.
 extend-safe-fixes = ["F841"]
-# Ruff does not implement E125; Yapf owns indentation checks in this hook stack.
-# Keep existing suppressions valid instead of warning about an unknown code.
-external = ["E125"]
+
+[lint.isort]
+known-first-party = ["mirage", "tests"]
+
+# The formatter wraps code at 79 but cannot split a string, and its indent
+# (four per level) puts some literals past 79 where yapf's alignment did not.
+# E501 flags only what is long even by Ruff's own default width.
+[lint.pycodestyle]
+max-line-length = 88
 
 [lint.per-file-ignores]
 "python/mirage/vfs/*/prompt.py" = ["E501"]

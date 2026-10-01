@@ -18,11 +18,13 @@ class ProcessHandle:
     stopped native descendants. A cancelled waiter never cancels the runner.
     """
 
-    def __init__(self,
-                 info: ProcessInfo,
-                 run: ProcessRunner,
-                 finished: Callable[[int], None],
-                 cancel_children: Callable[[], None] = lambda: None) -> None:
+    def __init__(
+        self,
+        info: ProcessInfo,
+        run: ProcessRunner,
+        finished: Callable[[int], None],
+        cancel_children: Callable[[], None] = lambda: None,
+    ) -> None:
         self._info = info
         self._lock = RLock()
         self._finished = finished
@@ -39,13 +41,17 @@ class ProcessHandle:
     def terminate(self) -> bool:
         """Request cancellation without waiting for the runner to exit."""
         with self._lock:
-            if (self._info.state == ProcessState.EXITED
-                    or self._info.cancellation_requested):
+            if (
+                self._info.state == ProcessState.EXITED
+                or self._info.cancellation_requested
+            ):
                 return False
             self.task.get_loop().call_soon_threadsafe(self.task.cancel)
-            self._info = replace(self._info,
-                                 state=ProcessState.STOPPING,
-                                 cancellation_requested=True)
+            self._info = replace(
+                self._info,
+                state=ProcessState.STOPPING,
+                cancellation_requested=True,
+            )
         self._cancel_children()
         return True
 
@@ -62,7 +68,8 @@ class ProcessHandle:
                 exit_code=code,
                 cancellation_requested=self._info.cancellation_requested
                 or cancelled,
-                failure=str(error) if error is not None else None)
+                failure=str(error) if error is not None else None,
+            )
             info = self._info
         self._finished(info.pid)
         self._completion.set_result(info)

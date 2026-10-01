@@ -29,8 +29,9 @@ from mirage.utils.filetype import content_type_for_path
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 
-async def stat_from_api(accessor: GDriveAccessor, key: str,
-                        virtual: str) -> FileStat:
+async def stat_from_api(
+    accessor: GDriveAccessor, key: str, virtual: str
+) -> FileStat:
     """Resolve a stat with direct Drive queries when the index can't answer.
 
     Generic write commands (cp/mv/rm) stat without an index, and gdrive is
@@ -47,24 +48,31 @@ async def stat_from_api(accessor: GDriveAccessor, key: str,
     item = await get_file(accessor.token_manager, node.id)
     modified = item.get("modifiedTime", "")
     if node.mime_type == FOLDER_MIME:
-        return FileStat(name=node.name,
-                        type=FileType.DIRECTORY,
-                        modified=modified,
-                        extra={"file_id": node.id})
+        return FileStat(
+            name=node.name,
+            type=FileType.DIRECTORY,
+            modified=modified,
+            extra={"file_id": node.id},
+        )
     resource_type = resource_type_for(node.mime_type)
     ext = MIME_TO_EXT.get(node.mime_type)
     vfs_name = f"{node.name}{ext}" if ext else node.name
     # Native renders are size-unknown (see the CLAUDE.md FileStat.size rule).
-    size = int(
-        item["size"]) if not ext and item.get("size") is not None else None
+    size = (
+        int(item["size"]) if not ext and item.get("size") is not None else None
+    )
     return FileStat(
         name=vfs_name,
         size=size,
         type=FileType.FILE,
         content=content_type_for_path(vfs_name),
         modified=modified,
-        fingerprint=drive_fingerprint(resource_type, item.get("md5Checksum"),
-                                      item.get("headRevisionId"), modified),
+        fingerprint=drive_fingerprint(
+            resource_type,
+            item.get("md5Checksum"),
+            item.get("headRevisionId"),
+            modified,
+        ),
         extra={
             "file_id": node.id,
             "resource_type": resource_type,
@@ -89,9 +97,11 @@ async def stat(
     warm = partial(
         _readdir,
         accessor,
-        PathSpec(virtual=parent_virtual,
-                 directory=parent_virtual,
-                 vfs_path=mount_key(parent_virtual, prefix)),
+        PathSpec(
+            virtual=parent_virtual,
+            directory=parent_virtual,
+            vfs_path=mount_key(parent_virtual, prefix),
+        ),
         index=index,
     )
     entry = await entry_or_warm(index, virtual_key, warm)

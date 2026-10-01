@@ -22,10 +22,18 @@ from mirage.runtime.types import ProcessExecution, RunResult
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.lookup import (SHELL_CONSUMERS, Consumer,
-                                     command_visible, execs, lookup,
-                                     lookup_all, program, program_note,
-                                     programs, verb_visible)
+from mirage.workspace.lookup import (
+    SHELL_CONSUMERS,
+    Consumer,
+    command_visible,
+    execs,
+    lookup,
+    lookup_all,
+    program,
+    program_note,
+    programs,
+    verb_visible,
+)
 from mirage.workspace.session import SessionState
 
 
@@ -47,7 +55,7 @@ async def _noop(config, paths, *texts, **flags):
 
 
 def _cli_tree() -> CLISpec:
-    return CLISpec(name="prog", subcommands=(CLISpec(name="run", fn=_noop), ))
+    return CLISpec(name="prog", subcommands=(CLISpec(name="run", fn=_noop),))
 
 
 def test_builtins_route_session():
@@ -132,8 +140,10 @@ def test_route_all_reports_every_layer_winner_first():
     ws.register_cli("prog", _cli_tree())
     assert lookup_all("prog", session, ws._registry) == [Consumer.CLI]
     session.functions["prog"] = []
-    assert lookup_all("prog", session,
-                      ws._registry) == [Consumer.FUNCTION, Consumer.CLI]
+    assert lookup_all("prog", session, ws._registry) == [
+        Consumer.FUNCTION,
+        Consumer.CLI,
+    ]
 
 
 def test_route_all_is_empty_where_route_says_unknown():
@@ -155,19 +165,19 @@ def test_route_agrees_with_the_first_layer_route_all_reports():
 def test_verb_visible_answers_below_the_head_word_command_visible_answers():
     session, ws = _fixture()
     ws.register_cli("prog", _cli_tree())
-    session.commands = AdmissionRules(allow=("prog run", ))
+    session.commands = AdmissionRules(allow=("prog run",))
     # Dispatch routes by the head word, which stays visible: one line of
     # the tree runs.
     assert command_visible("prog", session)
     assert lookup("prog", session, ws._registry) is Consumer.CLI
     assert verb_visible("prog", (), session)
-    assert verb_visible("prog", ("run", ), session)
+    assert verb_visible("prog", ("run",), session)
     # A verb the list does not reach is not this session's to discover,
     # though the head word it hangs off is.
-    assert not verb_visible("prog", ("stop", ), session)
+    assert not verb_visible("prog", ("stop",), session)
     # No list: every verb of every tree.
     session.commands = None
-    assert verb_visible("prog", ("stop", ), session)
+    assert verb_visible("prog", ("stop",), session)
 
 
 def test_allow_lists_filter_every_layer_and_spare_only_functions():
@@ -210,8 +220,10 @@ def test_allow_lists_filter_every_layer_and_spare_only_functions():
     # No allow list at all: nothing filtered (the function still
     # shadows).
     session.commands = None
-    assert lookup_all("rm", session,
-                      reg) == [Consumer.FUNCTION, Consumer.MOUNT]
+    assert lookup_all("rm", session, reg) == [
+        Consumer.FUNCTION,
+        Consumer.MOUNT,
+    ]
     assert lookup("sleep", session, reg) is Consumer.SESSION
 
 
@@ -259,8 +271,9 @@ def test_programs_lists_every_program_the_session_can_run():
 
 def test_programs_follows_the_allow_list():
     _, ws = _fixture()
-    narrow = SessionState(session_id="n",
-                          commands=AdmissionRules(allow=("cat", )))
+    narrow = SessionState(
+        session_id="n", commands=AdmissionRules(allow=("cat",))
+    )
     assert programs(narrow, ws._registry) == ["cat"]
 
 
@@ -284,8 +297,10 @@ def test_program_keeps_the_file_for_an_interpreter_a_runtime_runs():
 
 def test_program_has_no_file_for_a_shell_word_a_mount_also_registers():
     session, ws = _fixture()
-    assert lookup_all("history", session,
-                      ws._registry) == [Consumer.SESSION, Consumer.MOUNT]
+    assert lookup_all("history", session, ws._registry) == [
+        Consumer.SESSION,
+        Consumer.MOUNT,
+    ]
     assert program("history", session, ws._registry) is None
     assert "history" not in programs(session, ws._registry)
 
@@ -303,25 +318,28 @@ def test_program_note_says_what_runs_the_name():
     session, ws = _fixture()
     registry = ws._registry
     ws.register_cli("prog", _cli_tree())
-    assert program_note(
-        "cat", session,
-        registry) == ("cat is built into mirage. Help: cat --help")
+    assert program_note("cat", session, registry) == (
+        "cat is built into mirage. Help: cat --help"
+    )
     assert program_note("prog", session, registry) == (
-        "prog is a CLI registered with this workspace. Help: prog --help")
-    assert program_note(
-        "python3", session,
-        registry) == ("python3 runs on the workspace's monty runtime.")
+        "prog is a CLI registered with this workspace. Help: prog --help"
+    )
+    assert program_note("python3", session, registry) == (
+        "python3 runs on the workspace's monty runtime."
+    )
     # A builtin's --help varies, so its line names none.
     for name in ("echo", "ln", "xargs"):
-        assert program_note(name, session,
-                            registry) == f"{name} is built into mirage."
+        assert (
+            program_note(name, session, registry)
+            == f"{name} is built into mirage."
+        )
     assert program_note("cd", session, registry) is None
 
 
 def test_program_note_names_the_runtime_a_capture_runs_on():
     session = SessionState(session_id="t")
     ws = Workspace({"/": RAMVFS()}, runtimes=[_Sandbox()])
-    assert program_note(
-        "gcc", session,
-        ws._registry) == ("gcc runs on the workspace's sandbox runtime.")
+    assert program_note("gcc", session, ws._registry) == (
+        "gcc runs on the workspace's sandbox runtime."
+    )
     assert program_note("native-tool", session, ws._registry) is None

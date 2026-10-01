@@ -5,7 +5,6 @@ from mirage.vfs.qdrant.config import QdrantConfig
 
 
 class _Client:
-
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
         self.closed = False

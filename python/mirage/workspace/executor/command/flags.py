@@ -15,14 +15,25 @@
 from collections import defaultdict, deque
 from collections.abc import Mapping, Sequence
 
-from mirage.commands.spec import (CommandSpec, flag_kwarg_name, parse_command,
-                                  parse_to_kwargs)
+from mirage.commands.spec import (
+    CommandSpec,
+    flag_kwarg_name,
+    parse_command,
+    parse_to_kwargs,
+)
 from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.types import FlagValue
-from mirage.commands.spec.usage import (  # yapf: disable
-    ambiguous_option_error, invalid_argument_error, invalid_float_error,
-    invalid_int_error, missing_required_error, missing_value_error,
-    old_option_error, unexpected_value_error, unknown_option_error)
+from mirage.commands.spec.usage import (
+    ambiguous_option_error,
+    invalid_argument_error,
+    invalid_float_error,
+    invalid_int_error,
+    missing_required_error,
+    missing_value_error,
+    old_option_error,
+    unexpected_value_error,
+    unknown_option_error,
+)
 from mirage.types import PathSpec
 from mirage.workspace.executor.command.types import ParsedCommand
 
@@ -45,18 +56,22 @@ def synthesize_path_spec(value: str, raw_path: str | None = None) -> PathSpec:
         value (str): the resolved absolute virtual path.
         raw_path (str | None): the value before parser path resolution.
     """
-    return PathSpec(virtual=value,
-                    raw_path=raw_path,
-                    directory=value[:value.rfind("/") + 1] or "/",
-                    vfs_path="",
-                    resolved=True,
-                    walk_error="ENOENT" if raw_path == "" else None)
+    return PathSpec(
+        virtual=value,
+        raw_path=raw_path,
+        directory=value[: value.rfind("/") + 1] or "/",
+        vfs_path="",
+        resolved=True,
+        walk_error="ENOENT" if raw_path == "" else None,
+    )
 
 
-def take_spelling(spellings: dict[str, deque[PathSpec]],
-                  scope_map: Mapping[str, PathSpec],
-                  value: str,
-                  raw_path: str | None = None) -> PathSpec:
+def take_spelling(
+    spellings: dict[str, deque[PathSpec]],
+    scope_map: Mapping[str, PathSpec],
+    value: str,
+    raw_path: str | None = None,
+) -> PathSpec:
     """The next classified word spelling ``value``, in argv order.
 
     Two words can resolve to one path (`ls -d dir/ link/` with link ->
@@ -132,8 +147,12 @@ def parse_flags(
         list[PathSpec]), and parser warnings (e.g. ignored unknown options).
     """
     # Build string argv and PathSpec lookup
-    argv = [("-" if item.raw_path == "-" else item.virtual) if isinstance(
-        item, PathSpec) else item for item in parts]
+    argv = [
+        ("-" if item.raw_path == "-" else item.virtual)
+        if isinstance(item, PathSpec)
+        else item
+        for item in parts
+    ]
     scope_map: dict[str, PathSpec] = {}
     for item in parts:
         if isinstance(item, PathSpec):
@@ -147,13 +166,15 @@ def parse_flags(
             spellings[item.virtual.rstrip("/") or "/"].append(item)
 
     if spec is not None:
-        parsed = parse_command(spec,
-                               argv,
-                               cwd=cwd,
-                               cmd_name=cmd_name,
-                               env=env,
-                               unknown_is_operand=unknown_is_operand,
-                               abbreviations=abbreviations)
+        parsed = parse_command(
+            spec,
+            argv,
+            cwd=cwd,
+            cmd_name=cmd_name,
+            env=env,
+            unknown_is_operand=unknown_is_operand,
+            abbreviations=abbreviations,
+        )
         # Widens from ParsedFlagValue to FlagValue: PATH values
         # become PathSpec just below.
         flag_kwargs: dict[str, FlagValue] = FlagBag(parse_to_kwargs(parsed))
@@ -166,20 +187,26 @@ def parse_flags(
         # gets the mount prefix stripped.
         repeat_path_keys = {
             flag_kwarg_name(name)
-            for opt in spec.options if opt.type == "path" and opt.multiple
-            for name in (opt.short, opt.long) if name
+            for opt in spec.options
+            if opt.type == "path" and opt.multiple
+            for name in (opt.short, opt.long)
+            if name
         }
         # A pair option's list alternates name, value; only the values
         # are paths (jq --rawfile body /d/f.txt).
         pair_path_keys = {
             flag_kwarg_name(name)
-            for opt in spec.options if opt.type == "path" and opt.pair
-            for name in (opt.short, opt.long) if name
+            for opt in spec.options
+            if opt.type == "path" and opt.pair
+            for name in (opt.short, opt.long)
+            if name
         }
         single_path_keys = {
             flag_kwarg_name(name)
-            for opt in spec.options if opt.type == "path" and not opt.multiple
-            for name in (opt.short, opt.long) if name
+            for opt in spec.options
+            if opt.type == "path" and not opt.multiple
+            for name in (opt.short, opt.long)
+            if name
         }
         # An option's value is read before the operands, which is POSIX
         # order and the order -C requires (its value moves the operands
@@ -193,27 +220,36 @@ def parse_flags(
                 raw_parts = raw if isinstance(raw, list) else []
                 # Only the parser's own list[str] values reach here; a
                 # PathSpec list is already promoted.
-                texts_in: list[str] = ([
-                    item for item in value if isinstance(item, str)
-                ] if isinstance(value, list) else [])
+                texts_in: list[str] = (
+                    [item for item in value if isinstance(item, str)]
+                    if isinstance(value, list)
+                    else []
+                )
                 if key in pair_path_keys and isinstance(value, list):
                     # A pair is (name, value): only the odd slots are paths.
                     pairs: list[str | PathSpec] = list(texts_in)
                     for index in range(1, len(pairs), 2):
-                        pairs[index] = take_spelling(spellings, scope_map,
-                                                     texts_in[index],
-                                                     raw_parts[index])
+                        pairs[index] = take_spelling(
+                            spellings,
+                            scope_map,
+                            texts_in[index],
+                            raw_parts[index],
+                        )
                     flag_kwargs[key] = pairs
                 elif key in repeat_path_keys and isinstance(value, list):
                     flag_kwargs[key] = [
-                        take_spelling(spellings, scope_map, part,
-                                      raw_parts[index])
+                        take_spelling(
+                            spellings, scope_map, part, raw_parts[index]
+                        )
                         for index, part in enumerate(texts_in)
                     ]
                 elif key in single_path_keys and isinstance(value, str):
                     flag_kwargs[key] = take_spelling(
-                        spellings, scope_map, value,
-                        raw if isinstance(raw, str) else None)
+                        spellings,
+                        scope_map,
+                        value,
+                        raw if isinstance(raw, str) else None,
+                    )
                 elif isinstance(value, str) and value in scope_map:
                     flag_kwargs[key] = scope_map[value]
         else:
@@ -235,23 +271,35 @@ def parse_flags(
             else:
                 texts.append(value)
         return ParsedCommand(
-            paths, texts, flag_kwargs, parsed.warnings, parsed.invalid_options,
-            parsed.ambiguous_options, parsed.option_error_kinds,
-            parsed.needs_value_options, parsed.invalid_value_options,
-            parsed.ambiguous_value_options, parsed.invalid_int_options,
-            parsed.invalid_float_options, parsed.missing_required_options,
-            parsed.old_option_needs_value, parsed.missing_required_operands,
-            parsed.typed_dests)
+            paths,
+            texts,
+            flag_kwargs,
+            parsed.warnings,
+            parsed.invalid_options,
+            parsed.ambiguous_options,
+            parsed.option_error_kinds,
+            parsed.needs_value_options,
+            parsed.invalid_value_options,
+            parsed.ambiguous_value_options,
+            parsed.invalid_int_options,
+            parsed.invalid_float_options,
+            parsed.missing_required_options,
+            parsed.old_option_needs_value,
+            parsed.missing_required_operands,
+            parsed.typed_dests,
+        )
 
     # No spec: separate by type
     paths = [item for item in parts if isinstance(item, PathSpec)]
     texts = [item for item in parts if not isinstance(item, PathSpec)]
-    return ParsedCommand(paths, texts, {}, [], [], [], [], [], [], [], [], [],
-                         [])
+    return ParsedCommand(
+        paths, texts, {}, [], [], [], [], [], [], [], [], [], []
+    )
 
 
-def option_error(cmd_name: str,
-                 parsed: ParsedCommand) -> tuple[bytes, int] | None:
+def option_error(
+    cmd_name: str, parsed: ParsedCommand
+) -> tuple[bytes, int] | None:
     """GNU-shaped refusal for option errors the parser reported.
 
     find is exempt: its expression tokens are validated by
@@ -300,12 +348,11 @@ def option_error(cmd_name: str,
         # ARGMATCH table: the value is a prefix of two candidates or more.
         if kind == "ambiguous_value":
             option, value, choices = parsed.ambiguous_value_options[0]
-            return invalid_argument_error(cmd_name,
-                                          option,
-                                          value,
-                                          choices,
-                                          kind="ambiguous")
+            return invalid_argument_error(
+                cmd_name, option, value, choices, kind="ambiguous"
+            )
     if parsed.missing_required_options:
-        return missing_required_error(cmd_name,
-                                      parsed.missing_required_options[0])
+        return missing_required_error(
+            cmd_name, parsed.missing_required_options[0]
+        )
     return None

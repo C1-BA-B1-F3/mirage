@@ -26,7 +26,6 @@ from mirage.vfs.ram.store import RAMStore
 
 
 class RAMVFS(BaseVFS):
-
     accessor: RAMAccessor
     name: str = VFSName.RAM
     # byte store: stat() sizes every file from metadata
@@ -51,10 +50,7 @@ class RAMVFS(BaseVFS):
             "files": dict(self._store.files),
             "dirs": list(self._store.dirs),
             "modified": dict(self._store.modified),
-            "attrs": {
-                k: dict(v)
-                for k, v in self._store.attrs.items()
-            },
+            "attrs": {k: dict(v) for k, v in self._store.attrs.items()},
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -62,6 +58,5 @@ class RAMVFS(BaseVFS):
         self._store.dirs = set(state.get("dirs", ["/"]))
         self._store.modified = dict(state.get("modified", {}))
         self._store.attrs = {
-            k: dict(v)
-            for k, v in state.get("attrs", {}).items()
+            k: dict(v) for k, v in state.get("attrs", {}).items()
         }

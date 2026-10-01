@@ -29,30 +29,34 @@ from collections.abc import Awaitable, Callable  # noqa: E402
 from dataclasses import replace  # noqa: E402
 from typing import Any  # noqa: E402
 
-from mirage import EXTERNAL_COMMANDS  # noqa: E402
-from mirage import MountMode  # noqa: E402
-from mirage import ProcessExecution  # noqa: E402
-from mirage import ProcessExecutorMixin  # noqa: E402
-from mirage import Workspace  # noqa: E402
+from mirage import (  # noqa: E402
+    EXTERNAL_COMMANDS,
+    MountMode,
+    ProcessExecution,
+    ProcessExecutorMixin,
+    Workspace,
+)
 from mirage.accessor.base import Accessor  # noqa: E402
-from mirage.commands.builtin.generic_bind import \
-    make_generic_commands  # noqa: E402,E501
+from mirage.commands.builtin.generic_bind import (  # noqa: E402
+    make_generic_commands,
+)
 from mirage.commands.builtin.ram.io import IO as RAM_IO  # noqa: E402
 from mirage.commands.cli.types import CLISpec  # noqa: E402
 from mirage.commands.config import RegisteredCommand  # noqa: E402
 from mirage.errors import classify  # noqa: E402
 from mirage.ops.registry import RegisteredOp  # noqa: E402
 from mirage.policy import Policy  # noqa: E402
-from mirage.policy.types import CommandContext  # noqa: E402
-from mirage.policy.types import Deny  # noqa: E402
-from mirage.policy.types import ExecuteResultContext  # noqa: E402
-from mirage.policy.types import OpsContext  # noqa: E402
-from mirage.policy.types import OpsResultContext  # noqa: E402
+from mirage.policy.types import (  # noqa: E402
+    CommandContext,
+    Deny,
+    ExecuteResultContext,
+    OpsContext,
+    OpsResultContext,
+)
 from mirage.runtime.base import Runtime  # noqa: E402
 from mirage.runtime.mixin import LineExecutorMixin  # noqa: E402
 from mirage.runtime.routing import ScriptSource  # noqa: E402
-from mirage.runtime.table import build_runtime  # noqa: E402
-from mirage.runtime.table import register_runtime  # noqa: E402
+from mirage.runtime.table import build_runtime, register_runtime  # noqa: E402
 from mirage.runtime.types import RunResult  # noqa: E402
 from mirage.types import Limit, PathSpec  # noqa: E402
 from mirage.vfs.ram import RAMVFS  # noqa: E402
@@ -71,13 +75,14 @@ class EchoBox(Runtime, LineExecutorMixin):
     """A test-only whole-line runtime: echoes the raw line back."""
 
     name = "echobox"
-    captures = ("nvidia-smi", )
+    captures = ("nvidia-smi",)
 
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
-        return RunResult(stdout=f"box:{line}\n".encode(),
-                         stderr=None,
-                         exit_code=0)
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
+        return RunResult(
+            stdout=f"box:{line}\n".encode(), stderr=None, exit_code=0
+        )
 
 
 # Registered the way a host registers its own runtime, so a case names
@@ -90,14 +95,16 @@ class ProcessBox(Runtime, ProcessExecutorMixin):
     """A host-authored argv runtime using the public capability import."""
 
     name = "processbox"
-    captures = (EXTERNAL_COMMANDS, )
+    captures = (EXTERNAL_COMMANDS,)
 
     async def run_process(self, request: ProcessExecution) -> RunResult:
         return RunResult(
-            stdout=(json.dumps(request.argv, separators=(",", ":")) +
-                    "\n").encode(),
+            stdout=(
+                json.dumps(request.argv, separators=(",", ":")) + "\n"
+            ).encode(),
             stderr=None,
-            exit_code=0)
+            exit_code=0,
+        )
 
 
 RUNTIME_KINDS: dict[str, type[Runtime]] = {
@@ -166,8 +173,9 @@ class RedactReads(Policy):
         self._marker = spec["marker"].encode()
 
     def decide(self, ctx: OpsResultContext) -> Deny | None:
-        data = ctx.result if isinstance(ctx.result,
-                                        (bytes, bytearray)) else None
+        data = (
+            ctx.result if isinstance(ctx.result, (bytes, bytearray)) else None
+        )
         if ctx.op == "read" and data is not None and self._marker in data:
             return Deny("redacted")
         return None
@@ -194,10 +202,9 @@ class LineCap(Policy):
     HOOK = "post_execute"
 
     def __init__(self, spec: dict[str, Any]) -> None:
-        self._limit = Limit(**{
-            k: v
-            for k, v in spec.items() if k not in ("name", "sync")
-        })
+        self._limit = Limit(
+            **{k: v for k, v in spec.items() if k not in ("name", "sync")}
+        )
 
     def decide(self, ctx: ExecuteResultContext) -> Limit | None:
         return self._limit
@@ -244,7 +251,7 @@ def _build_policy(spec: dict[str, Any]) -> Policy:
     """
     base = POLICY_KINDS[spec["name"]]
     hook = _sync_hook if spec.get("sync", False) else _async_hook
-    shaped = type(base.__name__, (base, ), {base.HOOK: hook})
+    shaped = type(base.__name__, (base,), {base.HOOK: hook})
     return shaped(spec)
 
 
@@ -269,8 +276,11 @@ def _expand(value: Any) -> Any:
         value (Any): a config scalar, list, or dict from a case file.
     """
     if isinstance(value, str):
-        return re.sub(r"\$\{([A-Z0-9_]+)\}",
-                      lambda m: os.environ.get(m.group(1), ""), value)
+        return re.sub(
+            r"\$\{([A-Z0-9_]+)\}",
+            lambda m: os.environ.get(m.group(1), ""),
+            value,
+        )
     if isinstance(value, dict):
         return {k: _expand(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -295,23 +305,29 @@ def _requirement_met(req: str) -> bool:
 
 def _s3_config() -> Any:
     from mirage.vfs.s3 import S3Config
+
     endpoint = _ensure_s3()
-    return S3Config(bucket=BUCKET,
-                    region="us-east-1",
-                    endpoint_url=endpoint,
-                    aws_access_key_id="testing",
-                    aws_secret_access_key="testing",
-                    path_style=True)
+    return S3Config(
+        bucket=BUCKET,
+        region="us-east-1",
+        endpoint_url=endpoint,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        path_style=True,
+    )
 
 
 def _s3_client() -> Any:
     import boto3
+
     endpoint = _ensure_s3()
-    return boto3.client("s3",
-                        region_name="us-east-1",
-                        endpoint_url=endpoint,
-                        aws_access_key_id="testing",
-                        aws_secret_access_key="testing")
+    return boto3.client(
+        "s3",
+        region_name="us-east-1",
+        endpoint_url=endpoint,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
 
 
 def _ensure_s3() -> str:
@@ -320,23 +336,27 @@ def _ensure_s3() -> str:
     if _s3_endpoint is not None:
         return _s3_endpoint
     from moto.server import ThreadedMotoServer
+
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    _moto_server = ThreadedMotoServer(ip_address="127.0.0.1",
-                                      port=0,
-                                      verbose=False)
+    _moto_server = ThreadedMotoServer(
+        ip_address="127.0.0.1", port=0, verbose=False
+    )
     _moto_server.start()
     host, port = _moto_server.get_host_and_port()
     _s3_endpoint = f"http://{host}:{port}"
     import boto3
-    client = boto3.client("s3",
-                          region_name="us-east-1",
-                          endpoint_url=_s3_endpoint,
-                          aws_access_key_id="testing",
-                          aws_secret_access_key="testing")
+
+    client = boto3.client(
+        "s3",
+        region_name="us-east-1",
+        endpoint_url=_s3_endpoint,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
     client.create_bucket(Bucket=BUCKET)
-    client.put_object(Bucket=BUCKET,
-                      Key="greeting.txt",
-                      Body=b"hello from s3\n")
+    client.put_object(
+        Bucket=BUCKET, Key="greeting.txt", Body=b"hello from s3\n"
+    )
     return _s3_endpoint
 
 
@@ -345,17 +365,14 @@ async def _ensure_mongo() -> None:
     if _mongo_seeded:
         return
     from pymongo import AsyncMongoClient
+
     client = AsyncMongoClient(os.environ["MONGODB_URI"])
     try:
         await client.drop_database(DB)
         db = client[DB]
-        await db["books"].insert_many([{
-            "_id": 1,
-            "title": "alpha"
-        }, {
-            "_id": 2,
-            "title": "beta"
-        }])
+        await db["books"].insert_many(
+            [{"_id": 1, "title": "alpha"}, {"_id": 2, "title": "beta"}]
+        )
         await db["authors"].insert_many([{"_id": 1, "name": "ada"}])
     finally:
         await client.close()
@@ -381,9 +398,11 @@ class FailingRAMVFS(RAMVFS):
         super().__init__()
         self._failing = frozenset(failing)
         self._guarded_commands = [
-            rc for fn in make_generic_commands(
-                "ram", replace(
-                    RAM_IO, stat=self._guard(RAM_IO.stat), find=None))
+            rc
+            for fn in make_generic_commands(
+                "ram",
+                replace(RAM_IO, stat=self._guard(RAM_IO.stat), find=None),
+            )
             for rc in fn._registered_commands
         ]
 
@@ -392,18 +411,19 @@ class FailingRAMVFS(RAMVFS):
 
     def ops(self) -> list[RegisteredOp]:
         return [
-            replace(ro, fn=self._guard(ro.fn)) if ro.name in ("stat",
-                                                              "read") else ro
+            replace(ro, fn=self._guard(ro.fn))
+            if ro.name in ("stat", "read")
+            else ro
             for ro in super().ops()
         ]
 
     def _guard(
-            self,
-            fn: Callable[...,
-                         Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        self, fn: Callable[..., Awaitable[Any]]
+    ) -> Callable[..., Awaitable[Any]]:
 
-        async def guarded(accessor: Accessor, path: PathSpec, *args: Any,
-                          **kwargs: Any) -> Any:
+        async def guarded(
+            accessor: Accessor, path: PathSpec, *args: Any, **kwargs: Any
+        ) -> Any:
             if path.vfs_path.strip("/") in self._failing:
                 raise RuntimeError("upstream 502 Bad Gateway")
             return await fn(accessor, path, *args, **kwargs)
@@ -414,28 +434,35 @@ class FailingRAMVFS(RAMVFS):
 async def _build_vfs(spec: dict[str, Any], run_id: str) -> Any:
     kind = spec["vfs"]
     if kind == "ram":
-        vfs = (FailingRAMVFS(spec["failing"])
-               if "failing" in spec else RAMVFS())
+        vfs = FailingRAMVFS(spec["failing"]) if "failing" in spec else RAMVFS()
         if "generated_files" in spec:
-            vfs.load_state({
-                "files": {
-                    f"/file-{i}.txt": b"unused"
-                    for i in range(spec["generated_files"])
-                },
-            })
+            vfs.load_state(
+                {
+                    "files": {
+                        f"/file-{i}.txt": b"unused"
+                        for i in range(spec["generated_files"])
+                    },
+                }
+            )
         return vfs
     if kind == "redis":
         from mirage.vfs.redis import RedisVFS
-        return RedisVFS(url=os.environ["REDIS_URL"],
-                        key_prefix=f"mirage-integ-runtime-{run_id}/")
+
+        return RedisVFS(
+            url=os.environ["REDIS_URL"],
+            key_prefix=f"mirage-integ-runtime-{run_id}/",
+        )
     if kind == "s3":
         from mirage.vfs.s3 import S3VFS
+
         return S3VFS(_s3_config())
     if kind == "mongodb":
         from mirage.vfs.mongodb import MongoDBConfig, MongoDBVFS
+
         await _ensure_mongo()
-        return MongoDBVFS(config=MongoDBConfig(uri=os.environ["MONGODB_URI"],
-                                               databases=[DB]))
+        return MongoDBVFS(
+            config=MongoDBConfig(uri=os.environ["MONGODB_URI"], databases=[DB])
+        )
     raise ValueError(f"unknown VFS kind: {kind!r}")
 
 
@@ -472,11 +499,13 @@ def _install_clis(ws: Workspace, clis: dict[str, Any]) -> None:
             config}.
     """
     for name, entry in clis.items():
-        spec = CLISpec(name=name,
-                       script=ScriptSource(entry["script"],
-                                           language=entry.get(
-                                               "language", "python")),
-                       runtime=entry.get("runtime"))
+        spec = CLISpec(
+            name=name,
+            script=ScriptSource(
+                entry["script"], language=entry.get("language", "python")
+            ),
+            runtime=entry.get("runtime"),
+        )
         ws.register_cli(name, spec, entry.get("config"))
 
 
@@ -524,9 +553,9 @@ async def _build_workspace(world: dict[str, Any], run_id: str) -> Workspace:
         if "/" in name and parent not in made_dirs:
             await ws.dispatch("mkdir", PathSpec.from_str_path(parent))
             made_dirs.add(parent)
-        await ws.dispatch("write",
-                          PathSpec.from_str_path(f"{prefix}/{name}"),
-                          data=data)
+        await ws.dispatch(
+            "write", PathSpec.from_str_path(f"{prefix}/{name}"), data=data
+        )
     return ws
 
 
@@ -550,8 +579,9 @@ def _check_ops(expect: dict[str, Any], seen: list[str]) -> list[str]:
     return problems
 
 
-async def _run_facade(ws: Workspace, expect: dict[str, Any],
-                      spec: dict[str, Any]) -> list[str]:
+async def _run_facade(
+    ws: Workspace, expect: dict[str, Any], spec: dict[str, Any]
+) -> list[str]:
     """One facade step: call a typed Ops convenience and check its value.
 
     Args:
@@ -576,8 +606,9 @@ async def _run_facade(ws: Workspace, expect: dict[str, Any],
             name = "NONE"
         except Exception as exc:
             condition = classify(exc)
-            name = (condition.name
-                    if condition is not None else type(exc).__name__)
+            name = (
+                condition.name if condition is not None else type(exc).__name__
+            )
         if name != expect["errno"]:
             return [f"facade errno {name}, expected {expect['errno']}"]
         return []
@@ -598,28 +629,39 @@ async def _run_facade(ws: Workspace, expect: dict[str, Any],
     return []
 
 
-def _check(case_id: str, label: str, expect: dict[str, Any], exit_code: int,
-           stdout: str, stderr: str) -> list[str]:
+def _check(
+    case_id: str,
+    label: str,
+    expect: dict[str, Any],
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+) -> list[str]:
     problems = []
     if "exit" in expect and exit_code != expect["exit"]:
         problems.append(f"exit: expected {expect['exit']}, got {exit_code}")
     if "stdout" in expect and stdout != expect["stdout"]:
-        problems.append(f"stdout: expected {expect['stdout']!r}, "
-                        f"got {stdout!r}")
+        problems.append(
+            f"stdout: expected {expect['stdout']!r}, got {stdout!r}"
+        )
     if "stdout_contains" in expect and expect["stdout_contains"] not in stdout:
-        problems.append(f"stdout missing {expect['stdout_contains']!r}: "
-                        f"got {stdout!r}")
+        problems.append(
+            f"stdout missing {expect['stdout_contains']!r}: got {stdout!r}"
+        )
     if "stderr" in expect and stderr != expect["stderr"]:
-        problems.append(f"stderr: expected {expect['stderr']!r}, "
-                        f"got {stderr!r}")
+        problems.append(
+            f"stderr: expected {expect['stderr']!r}, got {stderr!r}"
+        )
     if "stderr_contains" in expect and expect["stderr_contains"] not in stderr:
-        problems.append(f"stderr missing {expect['stderr_contains']!r}: "
-                        f"got {stderr!r}")
+        problems.append(
+            f"stderr missing {expect['stderr_contains']!r}: got {stderr!r}"
+        )
     return [f"{case_id} {label}: {p}" for p in problems]
 
 
-async def _run_step(ws: Workspace, case_id: str, index: int,
-                    step: dict[str, Any]) -> list[str]:
+async def _run_step(
+    ws: Workspace, case_id: str, index: int, step: dict[str, Any]
+) -> list[str]:
     expect = step.get("expect", {})
     label = f"step[{index}]"
     # The ledger slice this step adds: ws.vfs.records is the one
@@ -632,9 +674,9 @@ async def _run_step(ws: Workspace, case_id: str, index: int,
         return [f"{case_id} {label}: {p}" for p in problems]
     if "s3_put" in step:
         put = step["s3_put"]
-        _s3_client().put_object(Bucket=BUCKET,
-                                Key=put["key"],
-                                Body=put["body"].encode())
+        _s3_client().put_object(
+            Bucket=BUCKET, Key=put["key"], Body=put["body"].encode()
+        )
         return []
     if "add_runtime" in step:
         ws.add_runtime(step["add_runtime"])
@@ -642,9 +684,11 @@ async def _run_step(ws: Workspace, case_id: str, index: int,
     if "rename" in step:
         spec = step["rename"]
         try:
-            await ws.dispatch("rename",
-                              PathSpec.from_str_path(spec["src"]),
-                              dst=PathSpec.from_str_path(spec["dst"]))
+            await ws.dispatch(
+                "rename",
+                PathSpec.from_str_path(spec["src"]),
+                dst=PathSpec.from_str_path(spec["dst"]),
+            )
             errno_name = "NONE"
         except FileNotFoundError:
             errno_name = "ENOENT"
@@ -660,23 +704,28 @@ async def _run_step(ws: Workspace, case_id: str, index: int,
         content = ""
         try:
             result, _ = await ws.dispatch(
-                "read", PathSpec.from_str_path(step["read_op"]))
+                "read", PathSpec.from_str_path(step["read_op"])
+            )
             errno_name = "NONE"
             content = bytes(result).decode()
         except PermissionError:
             errno_name = "EACCES"
         problems = []
         if errno_name != expect.get("errno", "NONE"):
-            problems.append(f"read_op errno {errno_name}, "
-                            f"expected {expect.get('errno', 'NONE')}")
+            problems.append(
+                f"read_op errno {errno_name}, "
+                f"expected {expect.get('errno', 'NONE')}"
+            )
         if "content" in expect and content != expect["content"]:
-            problems.append(f"read_op content {content!r}, "
-                            f"expected {expect['content']!r}")
+            problems.append(
+                f"read_op content {content!r}, expected {expect['content']!r}"
+            )
         return [f"{case_id} {label}: {p}" for p in problems]
     command = step["command"]
     if "script" in step:
-        source = (SUITE_DIR.parent / "fixtures" / "runtime" /
-                  step["script"]).read_text()
+        source = (
+            SUITE_DIR.parent / "fixtures" / "runtime" / step["script"]
+        ).read_text()
         command += " " + shlex.quote(source)
     kwargs: dict[str, Any] = {}
     if "runtime" in step:
@@ -699,8 +748,9 @@ async def _run_step(ws: Workspace, case_id: str, index: int,
     stderr = await result.stderr_str()
     problems = _check(case_id, label, expect, result.exit_code, stdout, stderr)
     seen = [f"{r.op} {r.path}" for r in ws.vfs.records[ledger_before:]]
-    problems.extend(f"{case_id} {label}: {p}"
-                    for p in _check_ops(expect, seen))
+    problems.extend(
+        f"{case_id} {label}: {p}" for p in _check_ops(expect, seen)
+    )
     return problems
 
 
@@ -730,7 +780,8 @@ async def _run_case(suite: str, case: dict[str, Any]) -> list[str]:
                 if (operation in supported) != expected:
                     problems.append(
                         f"{case_id}: {name} filesystem {operation}: "
-                        f"expected {expected}, got {operation in supported}")
+                        f"expected {expected}, got {operation in supported}"
+                    )
         for index, step in enumerate(case["steps"]):
             problems.extend(await _run_step(ws, case_id, index, step))
     finally:
@@ -756,8 +807,10 @@ async def main() -> int:
         unmet = [r for r in host_requires if not _requirement_met(r)]
         if unmet:
             if strict and not suite.get("optional", False):
-                failures.append(f"{name}: unmet requirements {unmet} "
-                                "(INTEG_RUNTIME_STRICT=1)")
+                failures.append(
+                    f"{name}: unmet requirements {unmet} "
+                    "(INTEG_RUNTIME_STRICT=1)"
+                )
                 failed += 1
             else:
                 print(f"skip {name} (unmet: {', '.join(unmet)})")

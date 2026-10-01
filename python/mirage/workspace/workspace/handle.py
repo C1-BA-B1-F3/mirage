@@ -53,15 +53,17 @@ class Session:
         """The op facade run as this session."""
         return self._ws.vfs._for_session(self._id)
 
-    async def shell(self,
-                    command: str,
-                    stdin: ByteSource | None = None,
-                    agent_id: str | None = None,
-                    cwd: str | None = None,
-                    env: dict[str, str] | None = None,
-                    cancel: asyncio.Event | None = None,
-                    record: bool = True,
-                    runtime: str | None = None) -> IOResult:
+    async def shell(
+        self,
+        command: str,
+        stdin: ByteSource | None = None,
+        agent_id: str | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        cancel: asyncio.Event | None = None,
+        record: bool = True,
+        runtime: str | None = None,
+    ) -> IOResult:
         """Run a shell line as this session; ``Workspace.shell`` with
         the session fixed.
 
@@ -77,12 +79,14 @@ class Session:
             record (bool): whether the line enters history.
             runtime (str | None): the runtime to route the line to.
         """
-        return await self._ws.shell(command,
-                                    session_id=self._id,
-                                    stdin=stdin,
-                                    agent_id=agent_id,
-                                    cwd=cwd,
-                                    env=env,
-                                    cancel=cancel,
-                                    record=record,
-                                    runtime=runtime)
+        return await self._ws.shell(
+            command,
+            session_id=self._id,
+            stdin=stdin,
+            agent_id=agent_id,
+            cwd=cwd,
+            env=env,
+            cancel=cancel,
+            record=record,
+            runtime=runtime,
+        )

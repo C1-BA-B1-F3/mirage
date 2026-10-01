@@ -37,9 +37,14 @@ class SSHHarness:
         config (SSHConfig): the listener's config.
     """
 
-    def __init__(self, registry: WorkspaceRegistry, entry: WorkspaceEntry,
-                 acceptor: asyncssh.SSHAcceptor, key: asyncssh.SSHKey,
-                 config: SSHConfig) -> None:
+    def __init__(
+        self,
+        registry: WorkspaceRegistry,
+        entry: WorkspaceEntry,
+        acceptor: asyncssh.SSHAcceptor,
+        key: asyncssh.SSHKey,
+        config: SSHConfig,
+    ) -> None:
         self.registry = registry
         self.entry = entry
         self.acceptor = acceptor
@@ -51,32 +56,35 @@ class SSHHarness:
         return self.acceptor.get_port()
 
     def connect(
-        self,
-        username: str = WORKSPACE_ID,
-        key: asyncssh.SSHKey | None = None
+        self, username: str = WORKSPACE_ID, key: asyncssh.SSHKey | None = None
     ) -> AbstractAsyncContextManager[asyncssh.SSHClientConnection]:
-        return asyncssh.connect("127.0.0.1",
-                                self.port,
-                                username=username,
-                                client_keys=[key or self.key],
-                                known_hosts=None)
+        return asyncssh.connect(
+            "127.0.0.1",
+            self.port,
+            username=username,
+            client_keys=[key or self.key],
+            known_hosts=None,
+        )
 
 
 def ram_workspace(mode: MountMode = MountMode.WRITE) -> Workspace:
     return Workspace({"/": (RAMVFS(), mode)})
 
 
-async def start_harness(tmp_path: Path,
-                        workspace: Workspace | None = None) -> SSHHarness:
+async def start_harness(
+    tmp_path: Path, workspace: Workspace | None = None
+) -> SSHHarness:
     key = asyncssh.generate_private_key("ssh-ed25519")
     authorized = tmp_path / "authorized_keys"
     authorized.write_bytes(key.export_public_key())
     registry = WorkspaceRegistry(idle_grace_seconds=0)
     entry = registry.add(workspace or ram_workspace(), WORKSPACE_ID)
-    config = SSHConfig(port=0,
-                       host="127.0.0.1",
-                       host_key_file=tmp_path / "host_key",
-                       authorized_keys_file=authorized)
+    config = SSHConfig(
+        port=0,
+        host="127.0.0.1",
+        host_key_file=tmp_path / "host_key",
+        authorized_keys_file=authorized,
+    )
     acceptor = await start_ssh_server(registry, config)
     return SSHHarness(registry, entry, acceptor, key, config)
 
@@ -119,16 +127,20 @@ def bind_key(harness: SSHHarness, options: str) -> asyncssh.SSHKey:
 
 async def vault_workspace() -> Workspace:
     """A workspace whose ``guarded`` profile seals ``/vault``."""
-    ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)},
-                   profiles={
-                       "guarded": {
-                           "commands": {
-                               "deny": [{
-                                   "reason": "the vault is sealed",
-                                   "paths": ["/vault/*"]
-                               }]
-                           }
-                       }
-                   })
+    ws = Workspace(
+        {"/": (RAMVFS(), MountMode.WRITE)},
+        profiles={
+            "guarded": {
+                "commands": {
+                    "deny": [
+                        {
+                            "reason": "the vault is sealed",
+                            "paths": ["/vault/*"],
+                        }
+                    ]
+                }
+            }
+        },
+    )
     await ws.shell("mkdir -p /vault && echo token > /vault/secret")
     return ws

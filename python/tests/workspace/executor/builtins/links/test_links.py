@@ -4,14 +4,18 @@ from mirage.policy import Action, Deny, OpsContext, Policy
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.builtins.links import (accepts_line,
-                                                      follow_parent,
-                                                      follow_paths, prepare_mv)
+from mirage.workspace.executor.builtins.links import (
+    accepts_line,
+    follow_parent,
+    follow_paths,
+    prepare_mv,
+)
 
 
 def _ws() -> Workspace:
-    return Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
 
 
 @pytest.mark.asyncio
@@ -33,8 +37,9 @@ async def test_follow_paths_follows_the_last_component_only_when_asked():
     assert kept[0].virtual == "/data/dlink"
     followed = follow_paths(ns, [item], follow_last=True)
     assert followed[0].virtual == "/data/real"
-    slashed = follow_paths(ns, [PathSpec.from_str_path("/data/dlink/")],
-                           follow_last=False)
+    slashed = follow_paths(
+        ns, [PathSpec.from_str_path("/data/dlink/")], follow_last=False
+    )
     assert slashed[0].virtual == "/data/real/"
 
 
@@ -43,21 +48,28 @@ async def test_follow_paths_refuses_a_loop_per_operand():
     # A loop no longer fails the whole line: the operand stays as typed
     # with the walk's verdict on it, and its neighbours still resolve.
     ws = _ws()
-    await ws.shell("mkdir -p /data/real; ln -s /data/real /data/dlink; "
-                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    await ws.shell(
+        "mkdir -p /data/real; ln -s /data/real /data/dlink; "
+        "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2"
+    )
     ns = ws.namespace
-    loop, link = follow_paths(ns, [
-        PathSpec.from_str_path("/data/l1"),
-        PathSpec.from_str_path("/data/dlink")
-    ])
+    loop, link = follow_paths(
+        ns,
+        [
+            PathSpec.from_str_path("/data/l1"),
+            PathSpec.from_str_path("/data/dlink"),
+        ],
+    )
     assert (loop.virtual, loop.walk_error) == ("/data/l1", "ELOOP")
     assert (link.virtual, link.walk_error) == ("/data/real", None)
-    under = follow_paths(ns, [PathSpec.from_str_path("/data/l1/x")],
-                         follow_last=False)
+    under = follow_paths(
+        ns, [PathSpec.from_str_path("/data/l1/x")], follow_last=False
+    )
     assert under[0].walk_error == "ELOOP"
     # lstat semantics never reach the looping name itself.
-    kept = follow_paths(ns, [PathSpec.from_str_path("/data/l1")],
-                        follow_last=False)
+    kept = follow_paths(
+        ns, [PathSpec.from_str_path("/data/l1")], follow_last=False
+    )
     assert kept[0].walk_error is None
 
 
@@ -66,8 +78,10 @@ async def test_mv_onto_a_loop_replaces_the_link():
     # stat(2) of the destination fails ELOOP, which GNU mv reads as "not
     # a directory": the rename lands on the link's own name.
     ws = _ws()
-    await ws.shell("echo b > /data/b.txt; "
-                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    await ws.shell(
+        "echo b > /data/b.txt; "
+        "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2"
+    )
     r = await ws.shell("mv /data/b.txt /data/l1")
     assert r.exit_code == 0
     assert not ws.namespace.is_link("/data/l1")
@@ -78,30 +92,32 @@ async def test_mv_onto_a_loop_replaces_the_link():
 @pytest.mark.parametrize("source", ["missing", "a.txt", "l1"])
 async def test_mv_symlink_onto_a_loop_replaces_destination(source):
     ws = _ws()
-    await ws.shell("echo a > /data/a.txt; "
-                   "ln -s l2 /data/l1; ln -s l1 /data/l2; "
-                   f"ln -s {source} /data/src")
+    await ws.shell(
+        "echo a > /data/a.txt; "
+        "ln -s l2 /data/l1; ln -s l1 /data/l2; "
+        f"ln -s {source} /data/src"
+    )
     result = await ws.shell("mv /data/src /data/l1")
     assert result.exit_code == 0
     assert not result.stderr
     assert not ws.namespace.is_link("/data/src")
-    assert (await
-            ws.shell("readlink /data/l1")).stdout == f"{source}\n".encode()
+    assert (
+        await ws.shell("readlink /data/l1")
+    ).stdout == f"{source}\n".encode()
 
 
 def test_accepts_line_refuses_what_the_command_layer_would():
     good = [PathSpec.from_str_path("/data/dlink")]
-    assert accepts_line("rm", ("/data/dlink", ), good, "/data")
+    assert accepts_line("rm", ("/data/dlink",), good, "/data")
     assert not accepts_line("rm", ("--bogus", "/data/dlink"), good, "/data")
     two = [
         PathSpec.from_str_path("/data/a"),
-        PathSpec.from_str_path("/data/b")
+        PathSpec.from_str_path("/data/b"),
     ]
     assert not accepts_line("unlink", ("/data/a", "/data/b"), two, "/data")
 
 
 class PinLinks(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.op == "unlink" and ctx.path.virtual.endswith(".pinned"):
             return Deny("pinned")
@@ -146,10 +162,10 @@ async def test_ln_backup_refuses_a_directory_destination():
     ws = _ws()
     await ws.shell("mkdir -p /data/d; printf hi > /data/a.txt")
     for line in (
-            "ln -sbT /data/a.txt /data/d",
-            "ln -bT /data/a.txt /data/d",
-            "ln -sfbT /data/a.txt /data/d",
-            "ln -s --backup=numbered -T /data/a.txt /data/d",
+        "ln -sbT /data/a.txt /data/d",
+        "ln -bT /data/a.txt /data/d",
+        "ln -sfbT /data/a.txt /data/d",
+        "ln -s --backup=numbered -T /data/a.txt /data/d",
     ):
         r = await ws.shell(line)
         assert r.exit_code == 1
@@ -167,7 +183,6 @@ async def test_ln_backup_refuses_a_directory_destination():
 
 
 class SealReads(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.op == "read" and ctx.path.virtual.endswith(".sealed"):
             return Deny("sealed")
@@ -179,17 +194,22 @@ async def test_ln_keeps_going_after_a_source_it_cannot_read():
     # GNU names the source it cannot reach and links the rest, exit 1.
     # mirage's hard link is a byte copy, so a read the stat did not
     # foresee (a policy deny here) is that refusal, not an abort.
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[SealReads()])
-    await ws.shell("mkdir /data/d; printf a > /data/a.sealed; "
-                   "printf b > /data/b.txt")
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[SealReads()],
+    )
+    await ws.shell(
+        "mkdir /data/d; printf a > /data/a.sealed; printf b > /data/b.txt"
+    )
     r = await ws.shell("ln /data/a.sealed /data/b.txt /data/d")
     assert r.exit_code == 1
-    assert r.stderr == (b"ln: failed to access '/data/a.sealed': "
-                        b"Permission denied\n")
-    assert (await
-            ws.shell("ls /data/d; cat /data/d/b.txt")).stdout == b"b.txt\nb"
+    assert r.stderr == (
+        b"ln: failed to access '/data/a.sealed': Permission denied\n"
+    )
+    assert (
+        await ws.shell("ls /data/d; cat /data/d/b.txt")
+    ).stdout == b"b.txt\nb"
 
 
 @pytest.mark.asyncio
@@ -198,15 +218,18 @@ async def test_rm_of_a_link_goes_through_the_door():
     # policy protecting a link never fired for `rm` while it fired for
     # every other door (the FUSE unlink hole, one tier up). The mount is
     # writable, so only the policy can be what refuses.
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[PinLinks()])
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[PinLinks()],
+    )
     await ws.shell("echo b > /data/f.txt")
     await ws.shell("ln -s f.txt /data/lk.pinned")
     r = await ws.shell("rm /data/lk.pinned")
     assert r.exit_code == 1
-    assert r.stderr == (b"rm: cannot remove '/data/lk.pinned': "
-                        b"Permission denied\n")
+    assert r.stderr == (
+        b"rm: cannot remove '/data/lk.pinned': Permission denied\n"
+    )
     assert ws.namespace.is_link("/data/lk.pinned")
 
 
@@ -220,8 +243,9 @@ async def test_rm_of_a_link_on_read_turf_answers_like_a_backend_file():
     ws.create_session("agent", mounts={"/data/": "read"})
     r = await ws.shell("rm /data/lk", session_id="agent")
     assert r.exit_code == 1
-    assert r.stderr == (b"rm: cannot remove '/data/lk': "
-                        b"Read-only file system\n")
+    assert r.stderr == (
+        b"rm: cannot remove '/data/lk': Read-only file system\n"
+    )
     assert ws.namespace.is_link("/data/lk")
 
 
@@ -236,11 +260,14 @@ async def test_ln_and_mv_answer_a_read_grant_per_operand():
     ln = await ws.shell("ln -s f.txt /data/lk2", session_id="agent")
     mv = await ws.shell("mv /data/lk /data/lk3", session_id="agent")
     assert ln.exit_code == 1
-    assert ln.stderr == (b"ln: failed to create symbolic link '/data/lk2': "
-                         b"Read-only file system\n")
+    assert ln.stderr == (
+        b"ln: failed to create symbolic link '/data/lk2': "
+        b"Read-only file system\n"
+    )
     assert mv.exit_code == 1
-    assert mv.stderr == (b"mv: cannot move '/data/lk' to '/data/lk3': "
-                         b"Read-only file system\n")
+    assert mv.stderr == (
+        b"mv: cannot move '/data/lk' to '/data/lk3': Read-only file system\n"
+    )
     assert ws.namespace.readlink("/data/lk") == "f.txt"
 
 
@@ -249,15 +276,18 @@ async def test_a_refused_link_operand_keeps_the_rest_going():
     # GNU rm reports the operand it could not remove and removes the
     # others; the backend half of the line still runs and the exit code
     # says something failed.
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[PinLinks()])
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[PinLinks()],
+    )
     await ws.shell("echo b > /data/f.txt")
     await ws.shell("ln -s f.txt /data/lk.pinned; ln -s f.txt /data/lk")
     r = await ws.shell("rm /data/lk.pinned /data/lk /data/f.txt")
     assert r.exit_code == 1
-    assert r.stderr == (b"rm: cannot remove '/data/lk.pinned': "
-                        b"Permission denied\n")
+    assert r.stderr == (
+        b"rm: cannot remove '/data/lk.pinned': Permission denied\n"
+    )
     assert ws.namespace.is_link("/data/lk.pinned")
     assert not ws.namespace.is_link("/data/lk")
     assert (await ws.shell("test -e /data/f.txt; echo $?")).stdout == b"1\n"
@@ -271,8 +301,9 @@ async def test_rm_f_still_reports_a_mode_refusal():
     ws.create_session("agent", mounts={"/data/": "read"})
     r = await ws.shell("rm -f /data/lk", session_id="agent")
     assert r.exit_code == 1
-    assert r.stderr == (b"rm: cannot remove '/data/lk': "
-                        b"Read-only file system\n")
+    assert r.stderr == (
+        b"rm: cannot remove '/data/lk': Read-only file system\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -287,8 +318,9 @@ async def test_rm_f_silences_a_hidden_link():
     assert silent.exit_code == 0
     assert silent.stderr in (None, b"")
     assert loud.exit_code == 1
-    assert loud.stderr == (b"rm: cannot remove '/data/lk.sec': "
-                           b"No such file or directory\n")
+    assert loud.stderr == (
+        b"rm: cannot remove '/data/lk.sec': No such file or directory\n"
+    )
     assert ws.namespace.is_link("/data/lk.sec")
 
 
@@ -306,23 +338,31 @@ async def test_every_refused_operand_speaks_in_one_voice():
         r = await ws.shell(line, session_id="agent")
         assert r.exit_code == 1, line
         assert r.stderr == b"".join(
-            f"rm: cannot remove '/data/{name}': Read-only file system\n".
-            encode() for name in operands), line
+            f"rm: cannot remove '/data/{name}': Read-only file system\n".encode()
+            for name in operands
+        ), line
     assert ws.namespace.is_link("/data/l1")
     assert ws.namespace.is_link("/data/l2")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("option",
-                         ["-n", "--update=none", "--update=none-fail"])
-@pytest.mark.parametrize("operands", [
-    "/data/l /data/dst", "/data/l /data/a /data/dst",
-    "-t /data/dst /data/l /data/a"
-])
+@pytest.mark.parametrize(
+    "option", ["-n", "--update=none", "--update=none-fail"]
+)
+@pytest.mark.parametrize(
+    "operands",
+    [
+        "/data/l /data/dst",
+        "/data/l /data/a /data/dst",
+        "-t /data/dst /data/l /data/a",
+    ],
+)
 async def test_mv_link_obeys_overwrite_policy(option, operands):
     ws = _ws()
-    await ws.shell("mkdir /data/dst; echo old > /data/dst/l; "
-                   "ln -s missing /data/l; echo a > /data/a")
+    await ws.shell(
+        "mkdir /data/dst; echo old > /data/dst/l; "
+        "ln -s missing /data/l; echo a > /data/a"
+    )
     result = await ws.shell(f"mv {option} {operands}")
     assert result.exit_code == (1 if option == "--update=none-fail" else 0)
     assert (await ws.shell("cat /data/dst/l")).stdout == b"old\n"
@@ -335,19 +375,23 @@ async def test_prepare_mv_follows_a_linked_destination_for_many_sources():
     # generic mv is handed the directory it names (coreutils 9.7), and
     # each source lands inside it.
     ws = _ws()
-    await ws.shell("mkdir -p /data/dst; printf a > /data/a; printf b > /data/b"
-                   )
+    await ws.shell(
+        "mkdir -p /data/dst; printf a > /data/a; printf b > /data/b"
+    )
     await ws.shell("ln -s /data/dst /data/dlink")
     items: list[str | PathSpec] = [
         PathSpec.from_str_path("/data/a"),
         PathSpec.from_str_path("/data/b"),
-        PathSpec(vfs_path="dlink",
-                 virtual="/data/dlink",
-                 directory="/data/",
-                 raw_path="dlink")
+        PathSpec(
+            vfs_path="dlink",
+            virtual="/data/dlink",
+            directory="/data/",
+            raw_path="dlink",
+        ),
     ]
-    rewritten, early = await prepare_mv(ws.namespace, ws.dispatch, items,
-                                        ("a", "b", "dlink"), "/data")
+    rewritten, early = await prepare_mv(
+        ws.namespace, ws.dispatch, items, ("a", "b", "dlink"), "/data"
+    )
     assert early is None
     dst = rewritten[-1]
     assert isinstance(dst, PathSpec)
@@ -366,11 +410,15 @@ async def test_prepare_mv_leaves_link_sources_for_the_generic():
     items: list[str | PathSpec] = [
         link,
         PathSpec.from_str_path("/data/a"),
-        PathSpec.from_str_path("/data/dst")
+        PathSpec.from_str_path("/data/dst"),
     ]
-    rewritten, early = await prepare_mv(ws.namespace, ws.dispatch, items,
-                                        ("/data/l", "/data/a", "/data/dst"),
-                                        "/")
+    rewritten, early = await prepare_mv(
+        ws.namespace,
+        ws.dispatch,
+        items,
+        ("/data/l", "/data/a", "/data/dst"),
+        "/",
+    )
     assert early is None
     assert link in rewritten
     assert not ws.namespace.is_link("/data/dst/l")
@@ -381,10 +429,13 @@ async def test_prepare_mv_leaves_link_sources_for_the_generic():
 @pytest.mark.parametrize("skip", [False, True])
 async def test_partial_mv_only_reanchors_completed_sources(skip):
     ws = _ws()
-    await ws.shell("mkdir -p /data/src /data/out/src; echo x > /data/src/f; "
-                   "ln -s f /data/src/l")
+    await ws.shell(
+        "mkdir -p /data/src /data/out/src; echo x > /data/src/f; "
+        "ln -s f /data/src/l"
+    )
     result = await ws.shell(
-        f"mv {'-n' if skip else ''} /data/missing /data/src /data/out")
+        f"mv {'-n' if skip else ''} /data/missing /data/src /data/out"
+    )
     assert result.exit_code == 1
     kept = "/data/src/l" if skip else "/data/out/src/l"
     absent = "/data/out/src/l" if skip else "/data/src/l"
@@ -412,23 +463,34 @@ async def test_ln_refuses_a_slashed_link_name_that_is_not_there():
     # source; a directory takes the link inside it as before, and a file
     # behind the slash is still the door's "File exists".
     ws = _ws()
-    await ws.shell("printf hi > /data/a.txt; printf y > /data/reg;"
-                   " mkdir -p /data/d")
+    await ws.shell(
+        "printf hi > /data/a.txt; printf y > /data/reg; mkdir -p /data/d"
+    )
     for line, wording in (
-        ("ln -s /data/a.txt /data/missing/",
-         "ln: failed to create symbolic link '/data/missing/': "
-         "No such file or directory\n"),
-        ("ln -sT /data/a.txt /data/missing/",
-         "ln: failed to create symbolic link '/data/missing/': "
-         "No such file or directory\n"),
-        ("ln /data/a.txt /data/missing/",
-         "ln: failed to create hard link '/data/missing/' => "
-         "'/data/a.txt': No such file or directory\n"),
-        ("ln -s /data/a.txt /data/d/missing/",
-         "ln: failed to create symbolic link '/data/d/missing/': "
-         "No such file or directory\n"),
-        ("ln -s /data/a.txt /data/reg/",
-         "ln: failed to create symbolic link '/data/reg/': File exists\n"),
+        (
+            "ln -s /data/a.txt /data/missing/",
+            "ln: failed to create symbolic link '/data/missing/': "
+            "No such file or directory\n",
+        ),
+        (
+            "ln -sT /data/a.txt /data/missing/",
+            "ln: failed to create symbolic link '/data/missing/': "
+            "No such file or directory\n",
+        ),
+        (
+            "ln /data/a.txt /data/missing/",
+            "ln: failed to create hard link '/data/missing/' => "
+            "'/data/a.txt': No such file or directory\n",
+        ),
+        (
+            "ln -s /data/a.txt /data/d/missing/",
+            "ln: failed to create symbolic link '/data/d/missing/': "
+            "No such file or directory\n",
+        ),
+        (
+            "ln -s /data/a.txt /data/reg/",
+            "ln: failed to create symbolic link '/data/reg/': File exists\n",
+        ),
     ):
         r = await ws.shell(line)
         assert r.exit_code == 1, line
@@ -447,25 +509,32 @@ async def test_ln_settles_a_slashed_name_before_force_or_backup_touch_it():
     # `reg/` over a file (or a link to one) is `failed to access 'reg/':
     # Not a directory`, so the file is neither unlinked nor renamed aside.
     ws = _ws()
-    await ws.shell("printf hi > /data/a.txt; printf y > /data/reg;"
-                   " ln -s /data/reg /data/flink")
-    for line in ("ln -sf /data/a.txt /data/reg/",
-                 "ln -sb /data/a.txt /data/reg/",
-                 "ln -f /data/a.txt /data/reg/",
-                 "ln -b /data/a.txt /data/reg/",
-                 "ln -sf /data/a.txt /data/flink/"):
+    await ws.shell(
+        "printf hi > /data/a.txt; printf y > /data/reg;"
+        " ln -s /data/reg /data/flink"
+    )
+    for line in (
+        "ln -sf /data/a.txt /data/reg/",
+        "ln -sb /data/a.txt /data/reg/",
+        "ln -f /data/a.txt /data/reg/",
+        "ln -b /data/a.txt /data/reg/",
+        "ln -sf /data/a.txt /data/flink/",
+    ):
         r = await ws.shell(line)
         assert r.exit_code == 1, line
         target = line.split()[-1]
-        assert r.stderr == (f"ln: failed to access '{target}': "
-                            "Not a directory\n").encode(), line
+        assert (
+            r.stderr
+            == (f"ln: failed to access '{target}': Not a directory\n").encode()
+        ), line
     assert (await ws.shell("cat /data/reg")).stdout == b"y"
     assert (await ws.shell("test -e /data/reg~")).exit_code == 1
     assert ws.namespace.readlink("/data/flink") == "/data/reg"
     r = await ws.shell("ln -sf /data/a.txt /data/missing/")
     assert r.stderr == (
         b"ln: failed to create symbolic link '/data/missing/': "
-        b"No such file or directory\n")
+        b"No such file or directory\n"
+    )
     assert (await ws.shell("test -e /data/missing")).exit_code == 1
 
 
@@ -476,12 +545,15 @@ async def test_mv_of_a_link_refuses_a_slashed_destination():
     # refuses at the rename and `mv dlnk reg/` at the destination's stat,
     # and the link stays where it was either way.
     ws = _ws()
-    await ws.shell("mkdir -p /data/sd /data/e; printf y > /data/reg;"
-                   " ln -s /data/sd /data/dlnk")
+    await ws.shell(
+        "mkdir -p /data/sd /data/e; printf y > /data/reg;"
+        " ln -s /data/sd /data/dlnk"
+    )
     r = await ws.shell("mv /data/dlnk /data/missing/")
     assert r.exit_code == 1
-    assert r.stderr == (b"mv: cannot move '/data/dlnk' to '/data/missing/': "
-                        b"Not a directory\n")
+    assert r.stderr == (
+        b"mv: cannot move '/data/dlnk' to '/data/missing/': Not a directory\n"
+    )
     r = await ws.shell("mv /data/dlnk /data/reg/")
     assert r.exit_code == 1
     assert r.stderr == b"mv: cannot stat '/data/reg/': Not a directory\n"
@@ -489,7 +561,8 @@ async def test_mv_of_a_link_refuses_a_slashed_destination():
     assert r.exit_code == 1
     assert r.stderr == (
         b"mv: cannot move '/data/dlnk' to '/data/nodir/name/': "
-        b"No such file or directory\n")
+        b"No such file or directory\n"
+    )
     assert ws.namespace.readlink("/data/dlnk") == "/data/sd"
     assert (await ws.shell("test -e /data/missing")).exit_code == 1
     assert (await ws.shell("cat /data/reg")).stdout == b"y"
@@ -503,11 +576,13 @@ async def test_mv_of_a_link_refuses_a_slashed_destination():
 async def test_mv_link_into_loop_reports_destination_and_keeps_source(source):
     ws = _ws()
     await ws.shell(
-        f"cd /data; echo hello > a.txt; ln -s loop loop; ln -s {source} src")
+        f"cd /data; echo hello > a.txt; ln -s loop loop; ln -s {source} src"
+    )
     result = await ws.shell("cd /data; mv src loop/child")
     assert result.exit_code == 1
-    assert result.stderr == (b"mv: cannot stat 'loop/child': "
-                             b"Too many levels of symbolic links\n")
+    assert result.stderr == (
+        b"mv: cannot stat 'loop/child': Too many levels of symbolic links\n"
+    )
     assert ws.namespace.is_link("/data/src")
 
 
@@ -517,19 +592,22 @@ async def test_follow_paths_collapses_a_relative_target_and_keeps_the_name():
     # followed path no longer matched the word that spelled it, and every
     # command named the operand `/data/sub/../a`.
     ws = _ws()
-    await ws.shell("mkdir -p /data/sub && printf 'x\\n' > /data/a && "
-                   "ln -s ../a /data/sub/al && ln -s ../nowhere /data/sub/d")
-    followed = follow_paths(ws.namespace,
-                            [PathSpec.from_str_path("/data/sub/al")])
+    await ws.shell(
+        "mkdir -p /data/sub && printf 'x\\n' > /data/a && "
+        "ln -s ../a /data/sub/al && ln -s ../nowhere /data/sub/d"
+    )
+    followed = follow_paths(
+        ws.namespace, [PathSpec.from_str_path("/data/sub/al")]
+    )
     assert followed[0].virtual == "/data/a"
     r = await ws.shell("cd /data && wc -c sub/al && cat sub/d")
     assert await r.materialize_stdout() == b"2 sub/al\n"
     assert await r.materialize_stderr() == (
-        b"cat: sub/d: No such file or directory\n")
+        b"cat: sub/d: No such file or directory\n"
+    )
 
 
 class RefuseLinkCreation(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.op == "symlink" and ctx.path.virtual == "/other/tree/loop":
             return Deny("sealed")
@@ -539,34 +617,43 @@ class RefuseLinkCreation(Policy):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [None, "read", "unlink", "symlink"])
 async def test_crossmount_mv_preserves_tree_links_and_partial_transfers(
-        failure):
-    policies = ([SealReads()]
-                if failure == "read" else [PinLinks()] if failure == "unlink"
-                else [RefuseLinkCreation()] if failure == "symlink" else [])
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/other": RAMVFS()
-    },
-                   mode=MountMode.WRITE,
-                   policies=policies)
+    failure,
+):
+    policies = (
+        [SealReads()]
+        if failure == "read"
+        else [PinLinks()]
+        if failure == "unlink"
+        else [RefuseLinkCreation()]
+        if failure == "symlink"
+        else []
+    )
+    ws = Workspace(
+        {"/data": RAMVFS(), "/other": RAMVFS()},
+        mode=MountMode.WRITE,
+        policies=policies,
+    )
     setup = await ws.shell(
         "mkdir -p /data/tree/sub; printf kept > /data/tree/sub/file; "
         "printf sealed > /data/tree/file.sealed; "
         "ln -s sub /data/tree/dir; ln -s sub/file /data/tree/file; "
         "ln -s missing /data/tree/dangling; ln -s loop /data/tree/loop; "
-        "ln -s sub /data/tree/link.pinned")
+        "ln -s sub /data/tree/link.pinned"
+    )
     assert setup.exit_code == 0
     result = await ws.shell("mv /data/tree /other/tree")
     assert result.exit_code == (0 if failure is None else 1)
     expected_error = {
-        None:
-        None,
-        "read": (b"mv: cannot open '/data/tree/file.sealed' for reading: "
-                 b"Permission denied\n"),
-        "unlink":
-        b"mv: cannot remove '/data/tree/link.pinned': Permission denied\n",
-        "symlink": (b"mv: cannot create symbolic link '/other/tree/loop': "
-                    b"Permission denied\n"),
+        None: None,
+        "read": (
+            b"mv: cannot open '/data/tree/file.sealed' for reading: "
+            b"Permission denied\n"
+        ),
+        "unlink": b"mv: cannot remove '/data/tree/link.pinned': Permission denied\n",
+        "symlink": (
+            b"mv: cannot create symbolic link '/other/tree/loop': "
+            b"Permission denied\n"
+        ),
     }
     assert result.stderr == expected_error[failure]
     links = {
@@ -574,7 +661,7 @@ async def test_crossmount_mv_preserves_tree_links_and_partial_transfers(
         "file": "sub/file",
         "dangling": "missing",
         "loop": "loop",
-        "link.pinned": "sub"
+        "link.pinned": "sub",
     }
     for name, target in links.items():
         if failure == "symlink" and name == "loop":
@@ -583,28 +670,33 @@ async def test_crossmount_mv_preserves_tree_links_and_partial_transfers(
             assert ws.namespace.readlink(f"/other/tree/{name}") == target
         assert ws.namespace.is_link(f"/data/tree/{name}") == (
             failure in ("read", "symlink")
-            or failure == "unlink" and name == "link.pinned")
-    assert (await ws.shell("cat /other/tree/dir/file /other/tree/file")
-            ).stdout == b"keptkept"
-    assert (await ws.shell("test -e /data/tree")).exit_code == (1 if failure
-                                                                is None else 0)
+            or failure == "unlink"
+            and name == "link.pinned"
+        )
+    assert (
+        await ws.shell("cat /other/tree/dir/file /other/tree/file")
+    ).stdout == b"keptkept"
+    assert (await ws.shell("test -e /data/tree")).exit_code == (
+        1 if failure is None else 0
+    )
     assert (await ws.shell("test -e /data/tree/sub/file")).exit_code == (
-        0 if failure in ("read", "symlink") else 1)
+        0 if failure in ("read", "symlink") else 1
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("destination", ["/data", "/other"])
 async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/other": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
-    setup = await ws.shell(f"mkdir -p /data/src {destination}/dst/sub; "
-                           f"printf old > {destination}/dst/sub/file; "
-                           f"ln -s sub {destination}/dst/link; "
-                           f"ln -s missing {destination}/dst/dangling; "
-                           "printf new > /data/src/new")
+    ws = Workspace(
+        {"/data": RAMVFS(), "/other": RAMVFS()}, mode=MountMode.WRITE
+    )
+    setup = await ws.shell(
+        f"mkdir -p /data/src {destination}/dst/sub; "
+        f"printf old > {destination}/dst/sub/file; "
+        f"ln -s sub {destination}/dst/link; "
+        f"ln -s missing {destination}/dst/dangling; "
+        "printf new > /data/src/new"
+    )
     assert setup.exit_code == 0
     result = await ws.shell(f"mv -bT /data/src {destination}/dst")
     assert result.exit_code == 0
@@ -613,9 +705,11 @@ async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
     assert ws.namespace.readlink(f"{destination}/dst~/dangling") == "missing"
     assert not ws.namespace.is_link(f"{destination}/dst/link")
     assert not ws.namespace.is_link(f"{destination}/dst/dangling")
-    assert (await
-            ws.shell(f"cat {destination}/dst/new "
-                     f"{destination}/dst~/link/file")).stdout == b"newold"
+    assert (
+        await ws.shell(
+            f"cat {destination}/dst/new {destination}/dst~/link/file"
+        )
+    ).stdout == b"newold"
     assert (await ws.shell(f"test -e {destination}/dst/sub")).exit_code == 1
 
 
@@ -624,27 +718,32 @@ async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
 @pytest.mark.parametrize("source_link", [False, True])
 @pytest.mark.parametrize("backup_target", ["safe", "missing", "dst~", "dir"])
 async def test_cp_backup_replaces_link_without_touching_its_referent(
-        destination, source_link, backup_target):
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/other": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    destination, source_link, backup_target
+):
+    ws = Workspace(
+        {"/data": RAMVFS(), "/other": RAMVFS()}, mode=MountMode.WRITE
+    )
     setup = await ws.shell(
         f"mkdir -p {destination}/dir; printf safe > {destination}/safe; "
         f"printf child > {destination}/dir/file; "
         f"printf old > {destination}/dst; "
-        f"ln -s {backup_target} {destination}/dst~; " +
-        ("ln -s absent /data/src" if source_link else "printf new > /data/src")
+        f"ln -s {backup_target} {destination}/dst~; "
+        + (
+            "ln -s absent /data/src"
+            if source_link
+            else "printf new > /data/src"
+        )
     )
     assert setup.exit_code == 0
     result = await ws.shell(f"cp -Pb /data/src {destination}/dst")
     assert result.exit_code == 0
     assert result.stderr is None
     assert not ws.namespace.is_link(f"{destination}/dst~")
-    assert (await
-            ws.shell(f"cat {destination}/dst~ {destination}/safe "
-                     f"{destination}/dir/file")).stdout == b"oldsafechild"
+    assert (
+        await ws.shell(
+            f"cat {destination}/dst~ {destination}/safe {destination}/dir/file"
+        )
+    ).stdout == b"oldsafechild"
     assert (await ws.shell(f"test -e {destination}/missing")).exit_code == 1
     if source_link:
         assert ws.namespace.readlink(f"{destination}/dst") == "absent"
@@ -655,44 +754,50 @@ async def test_cp_backup_replaces_link_without_touching_its_referent(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("source_link", [False, True])
 async def test_cp_refused_backup_unlink_preserves_destination(source_link):
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/other": RAMVFS()
-    },
-                   mode=MountMode.WRITE,
-                   policies=[PinLinks()])
+    ws = Workspace(
+        {"/data": RAMVFS(), "/other": RAMVFS()},
+        mode=MountMode.WRITE,
+        policies=[PinLinks()],
+    )
     setup = await ws.shell(
         "printf safe > /other/safe; printf old > /other/dst; "
-        "ln -s safe /other/dst.pinned; " +
-        ("ln -s absent /data/src" if source_link else "printf new > /data/src")
+        "ln -s safe /other/dst.pinned; "
+        + (
+            "ln -s absent /data/src"
+            if source_link
+            else "printf new > /data/src"
+        )
     )
     assert setup.exit_code == 0
     result = await ws.shell("cp -Pb --suffix=.pinned /data/src /other/dst")
     assert result.exit_code == 1
-    assert result.stderr == (b"cp: cannot backup '/other/dst': "
-                             b"Permission denied\n")
+    assert result.stderr == (
+        b"cp: cannot backup '/other/dst': Permission denied\n"
+    )
     assert ws.namespace.readlink("/other/dst.pinned") == "safe"
     assert (await ws.shell("cat /other/dst /other/safe")).stdout == b"oldsafe"
-    assert (await
-            ws.shell("test -e /data/src || test -L /data/src")).exit_code == 0
+    assert (
+        await ws.shell("test -e /data/src || test -L /data/src")
+    ).exit_code == 0
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["cp -P", "mv"])
 @pytest.mark.parametrize("destination", ["/data", "/other"])
 async def test_numbered_backup_counts_namespace_links(command, destination):
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/other": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": RAMVFS(), "/other": RAMVFS()}, mode=MountMode.WRITE
+    )
     setup = await ws.shell(
         f"printf old > {destination}/dst; "
-        f"ln -s missing {destination}/dst.~1~; printf new > /data/src")
+        f"ln -s missing {destination}/dst.~1~; printf new > /data/src"
+    )
     assert setup.exit_code == 0
     result = await ws.shell(
-        f"{command} --backup=numbered /data/src {destination}/dst")
+        f"{command} --backup=numbered /data/src {destination}/dst"
+    )
     assert result.exit_code == 0
     assert ws.namespace.readlink(f"{destination}/dst.~1~") == "missing"
-    assert (await ws.shell(f"cat {destination}/dst {destination}/dst.~2~")
-            ).stdout == b"newold"
+    assert (
+        await ws.shell(f"cat {destination}/dst {destination}/dst.~2~")
+    ).stdout == b"newold"

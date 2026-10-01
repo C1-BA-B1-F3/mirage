@@ -17,8 +17,10 @@ from dataclasses import replace
 import pytest
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    NoWorkingDirectoryError, NoWorkspaceError)
+from mirage.commands.cli.builtin.git.errors import (
+    NoWorkingDirectoryError,
+    NoWorkspaceError,
+)
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.types import CLIDoors
 from mirage.commands.spec.flag_view import FlagView
@@ -45,8 +47,9 @@ async def test_a_missing_plane_is_enough_to_fail(workspace):
 
 @pytest.mark.asyncio
 async def test_opening_reports_both_the_gitdir_and_its_worktree(workspace):
-    repo, location = await opened(FlagView({"C": "/repo"}),
-                                  repo_doors(workspace))
+    repo, location = await opened(
+        FlagView({"C": "/repo"}), repo_doors(workspace)
+    )
     assert isinstance(repo, BaseRepo)
     assert location.gitdir == "/repo/.git"
     assert location.worktree == "/repo"
@@ -54,8 +57,9 @@ async def test_opening_reports_both_the_gitdir_and_its_worktree(workspace):
 
 @pytest.mark.asyncio
 async def test_every_verb_inherits_the_same_discovery_walk(workspace):
-    _repo, location = await opened(FlagView({"C": "/repo"}),
-                                   repo_doors(workspace))
+    _repo, location = await opened(
+        FlagView({"C": "/repo"}), repo_doors(workspace)
+    )
     assert location.mount_root == "/repo"
 
 
@@ -66,5 +70,6 @@ async def test_a_directory_that_is_not_there_is_gits_chdir_fatal(workspace):
     # fatal. Giving up at the mount root is covered in test_discover.
     with pytest.raises(NoWorkingDirectoryError) as excinfo:
         await opened(FlagView({"C": "/nowhere"}), repo_doors(workspace))
-    assert str(excinfo.value) == ("cannot change to '/nowhere': "
-                                  "No such file or directory")
+    assert str(excinfo.value) == (
+        "cannot change to '/nowhere': No such file or directory"
+    )

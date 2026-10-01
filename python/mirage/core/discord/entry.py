@@ -40,17 +40,17 @@ def channel_dirname(c: dict[str, Any]) -> str:
 
 def member_filename(m: dict[str, Any]) -> str:
     user = m.get("user", {})
-    return make_id_name(user.get("username", ""),
-                        user["id"],
-                        path_safe=True,
-                        suffix=".json")
+    return make_id_name(
+        user.get("username", ""), user["id"], path_safe=True, suffix=".json"
+    )
 
 
 def snowflake_to_date(snowflake: str) -> str:
     """Convert a Discord snowflake to a UTC YYYY-MM-DD date string."""
     ms = (int(snowflake) >> 22) + DISCORD_EPOCH
-    return datetime.fromtimestamp(ms / 1000,
-                                  tz=timezone.utc).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
 
 
 def snowflake_to_iso(snowflake: str) -> str | None:

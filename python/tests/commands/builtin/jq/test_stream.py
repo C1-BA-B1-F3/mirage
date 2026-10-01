@@ -22,8 +22,16 @@ from mirage.vfs.disk.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
-from .conftest import (SAMPLE_JSONL, collect, jq_all, jq_slurp, jq_slurp_all,
-                       mem_ws, run_raw, write_to_backend)
+from .conftest import (
+    SAMPLE_JSONL,
+    collect,
+    jq_all,
+    jq_slurp,
+    jq_slurp_all,
+    mem_ws,
+    run_raw,
+    write_to_backend,
+)
 
 
 class TestJqJsonl:
@@ -45,8 +53,9 @@ class TestJqJsonl:
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
         result = jq_all(backend, "/tmp/data.jsonl", "select(.age > 28)")
         assert [row["name"] for row in result] == ["alice", "carol"]
-        slurped = jq_slurp_all(backend, "/tmp/data.jsonl",
-                               ".[] | select(.age > 28)")
+        slurped = jq_slurp_all(
+            backend, "/tmp/data.jsonl", ".[] | select(.age > 28)"
+        )
         assert slurped == result
 
     def test_jsonl_file_map_over_the_slurped_lines(self, backend):
@@ -56,10 +65,19 @@ class TestJqJsonl:
 
     def test_jsonl_iteration_walks_each_lines_values(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        assert jq_all(backend, "/tmp/data.jsonl",
-                      ".[]") == ["alice", 30, "bob", 25, "carol", 35]
-        assert jq_all(backend, "/tmp/data.jsonl",
-                      ".name") == ["alice", "bob", "carol"]
+        assert jq_all(backend, "/tmp/data.jsonl", ".[]") == [
+            "alice",
+            30,
+            "bob",
+            25,
+            "carol",
+            35,
+        ]
+        assert jq_all(backend, "/tmp/data.jsonl", ".name") == [
+            "alice",
+            "bob",
+            "carol",
+        ]
 
     def test_ndjson_extension(self, backend):
         write_to_backend(backend, "/tmp/data.ndjson", SAMPLE_JSONL)
@@ -98,11 +116,11 @@ class TestJqJsonl:
         assert io.exit_code == 5
         stderr = asyncio.run(io.stderr_str())
         assert stderr.splitlines() == [
-            'jq: error (at /data/data.jsonl:1): Cannot index string with '
+            "jq: error (at /data/data.jsonl:1): Cannot index string with "
             'string ("name")',
-            'jq: error (at /data/data.jsonl:2): Cannot index string with '
+            "jq: error (at /data/data.jsonl:2): Cannot index string with "
             'string ("name")',
-            'jq: error (at /data/data.jsonl:3): Cannot index string with '
+            "jq: error (at /data/data.jsonl:3): Cannot index string with "
             'string ("name")',
         ]
 
@@ -120,7 +138,6 @@ class TestJqJsonl:
 
 
 class TestJqStreamingVerification:
-
     def _make_large_jsonl(self, n: int = 100) -> bytes:
         lines = []
         for i_ln in range(n):
@@ -152,8 +169,9 @@ class TestJqStreamingVerification:
         scope = RecordingScope()
         records = scope.records
         accessor = mem.accessor
-        asyncio.run(read_bytes(accessor,
-                               PathSpec.from_str_path("/data.jsonl")))
+        asyncio.run(
+            read_bytes(accessor, PathSpec.from_str_path("/data.jsonl"))
+        )
         scope.close()
         assert len(records) == 1
         assert records[0].bytes == len(data)

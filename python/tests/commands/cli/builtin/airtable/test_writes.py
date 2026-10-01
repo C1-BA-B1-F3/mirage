@@ -18,8 +18,9 @@ import pytest
 
 from tests.fixtures.airtable_api import FEATURES, OPS, ROADMAP
 
-TABLE_DIR = ("/at/bases/Product_Roadmap__appRoadmapBase001/"
-             "Features__tblFeatures000001")
+TABLE_DIR = (
+    "/at/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001"
+)
 AT = f"--base {ROADMAP} --table {FEATURES}"
 FIRST = "rec00000000000001"
 
@@ -43,12 +44,14 @@ def _usage(message: str) -> tuple[int, str, str]:
 
 
 @pytest.mark.asyncio
-async def test_create_sends_ten_records_to_a_request(airtable_ws,
-                                                     airtable_api):
+async def test_create_sends_ten_records_to_a_request(
+    airtable_ws, airtable_api
+):
     ws = airtable_ws()
     await _lines(ws, "/s/new.jsonl", _named(23))
-    code, out, err = await _run(ws,
-                                f"airtable record create {AT} < /s/new.jsonl")
+    code, out, err = await _run(
+        ws, f"airtable record create {AT} < /s/new.jsonl"
+    )
     assert (code, err) == (0, "")
     created = [json.loads(line) for line in out.splitlines()]
     assert [r["fields"]["Name"] for r in created][-1] == "New 23"
@@ -62,77 +65,87 @@ async def test_create_sends_ten_records_to_a_request(airtable_ws,
 async def test_create_takes_one_record_and_typecast(airtable_ws, airtable_api):
     ws = airtable_ws()
     code, out, _ = await _run(
-        ws, f"airtable record create {AT} --typecast "
-        "--fields '{\"Name\": \"x\", \"Priority\": \"4\"}'")
+        ws,
+        f"airtable record create {AT} --typecast "
+        '--fields \'{"Name": "x", "Priority": "4"}\'',
+    )
     assert code == 0
     assert json.loads(out)["fields"] == {"Name": "x", "Priority": "4"}
     assert airtable_api.write_calls()[0][1]["body"] == {
-        "records": [{
-            "fields": {
-                "Name": "x",
-                "Priority": "4"
-            }
-        }],
+        "records": [{"fields": {"Name": "x", "Priority": "4"}}],
         "typecast": True,
     }
 
 
 @pytest.mark.asyncio
-async def test_a_mount_line_round_trips_through_update(airtable_ws,
-                                                       airtable_api):
+async def test_a_mount_line_round_trips_through_update(
+    airtable_ws, airtable_api
+):
     ws = airtable_ws()
     code, out, _ = await _run(
-        ws, f"jq -c 'select(.fields.Status == \"Done\") | "
+        ws,
+        f'jq -c \'select(.fields.Status == "Done") | '
         f".fields.Priority = 9' {TABLE_DIR}/records.jsonl | "
-        f"airtable record update {AT} | jq -c '[.record_id, .fields.Priority]'"
+        f"airtable record update {AT} | jq -c '[.record_id, .fields.Priority]'",
     )
     assert code == 0
     assert out.splitlines()[0] == '["rec00000000000001",9]'
     assert [kind for kind, _ in airtable_api.write_calls()] == ["update"]
     _, after, _ = await _run(
-        ws, f"jq -r 'select(.fields.Priority == 9) | .record_id' "
-        f"{TABLE_DIR}/records.jsonl")
+        ws,
+        f"jq -r 'select(.fields.Priority == 9) | .record_id' "
+        f"{TABLE_DIR}/records.jsonl",
+    )
     assert after.splitlines() == [
-        "rec00000000000001", "rec00000000000003", "rec00000000000005",
-        "rec00000000000007"
+        "rec00000000000001",
+        "rec00000000000003",
+        "rec00000000000005",
+        "rec00000000000007",
     ]
 
 
 @pytest.mark.asyncio
 async def test_a_stdin_line_drops_computed_fields(airtable_ws, airtable_api):
-    airtable_api.tables[ROADMAP][0]["fields"].append({
-        "id": "fldTicket0000001",
-        "name": "Ticket",
-        "type": "formula",
-    })
+    airtable_api.tables[ROADMAP][0]["fields"].append(
+        {
+            "id": "fldTicket0000001",
+            "name": "Ticket",
+            "type": "formula",
+        }
+    )
     ws = airtable_ws()
-    await _lines(ws, "/s/one.jsonl", [{
-        "record_id": FIRST,
-        "created_time": "2026-01-01T09:00:00.000Z",
-        "fields": {
-            "Name": "Renamed",
-            "Ticket": "FT-1"
-        },
-    }])
+    await _lines(
+        ws,
+        "/s/one.jsonl",
+        [
+            {
+                "record_id": FIRST,
+                "created_time": "2026-01-01T09:00:00.000Z",
+                "fields": {"Name": "Renamed", "Ticket": "FT-1"},
+            }
+        ],
+    )
     code, _, _ = await _run(ws, f"airtable record update {AT} < /s/one.jsonl")
     assert code == 0
     body = airtable_api.write_calls()[0][1]["body"]
     assert body["records"] == [{"id": FIRST, "fields": {"Name": "Renamed"}}]
     await _run(
-        ws, f"airtable record update {AT} {FIRST} "
-        "--fields '{\"Ticket\": \"FT-9\"}'")
-    assert airtable_api.write_calls(
-    )[1][1]["body"]["records"][0]["fields"] == {
-        "Ticket": "FT-9"
-    }
+        ws,
+        f"airtable record update {AT} {FIRST} "
+        '--fields \'{"Ticket": "FT-9"}\'',
+    )
+    assert airtable_api.write_calls()[1][1]["body"]["records"][0][
+        "fields"
+    ] == {"Ticket": "FT-9"}
 
 
 @pytest.mark.asyncio
 async def test_update_patches_one_record(airtable_ws, airtable_api):
     ws = airtable_ws()
     code, out, _ = await _run(
-        ws, f"airtable record update {AT} {FIRST} "
-        "--fields '{\"Priority\": 0}'")
+        ws,
+        f"airtable record update {AT} {FIRST} --fields '{{\"Priority\": 0}}'",
+    )
     assert code == 0
     assert json.loads(out)["fields"]["Name"] == "Feature 1"
     assert json.loads(out)["fields"]["Priority"] == 0
@@ -143,11 +156,14 @@ async def test_update_patches_one_record(airtable_ws, airtable_api):
 async def test_delete_takes_operands_or_stdin_lines(airtable_ws, airtable_api):
     ws = airtable_ws()
     code, out, _ = await _run(ws, f"airtable record delete {AT} {FIRST}")
-    assert (code, out) == (0, '{"record_id":"rec00000000000001",'
-                           '"deleted":true}\n')
+    assert (code, out) == (
+        0,
+        '{"record_id":"rec00000000000001","deleted":true}\n',
+    )
     await _run(ws, f"cat {TABLE_DIR}/records.jsonl > /s/all.jsonl")
-    code, out, _ = await _run(ws,
-                              f"airtable record delete {AT} < /s/all.jsonl")
+    code, out, _ = await _run(
+        ws, f"airtable record delete {AT} < /s/all.jsonl"
+    )
     assert (code, len(out.splitlines())) == (0, 6)
     assert airtable_api.records[FEATURES] == []
 
@@ -165,22 +181,23 @@ async def test_deletes_go_ten_to_a_request(airtable_ws, airtable_api):
 
 
 @pytest.mark.asyncio
-async def test_a_failed_batch_still_prints_what_landed(airtable_ws,
-                                                       airtable_api):
+async def test_a_failed_batch_still_prints_what_landed(
+    airtable_ws, airtable_api
+):
     ws = airtable_ws()
-    await _lines(ws, "/s/new.jsonl",
-                 _named(10) + [{
-                     "fields": {
-                         "Nope": 1
-                     }
-                 }] + _named(2))
-    code, out, err = await _run(ws,
-                                f"airtable record create {AT} < /s/new.jsonl")
+    await _lines(
+        ws, "/s/new.jsonl", _named(10) + [{"fields": {"Nope": 1}}] + _named(2)
+    )
+    code, out, err = await _run(
+        ws, f"airtable record create {AT} < /s/new.jsonl"
+    )
     assert code == 1
     assert len(out.splitlines()) == 10
-    assert err == ("Airtable API error (POST "
-                   f"/{ROADMAP}/{FEATURES}): HTTP 422: UNKNOWN_FIELD_NAME: "
-                   "Unknown field name: \"Nope\"\n")
+    assert err == (
+        "Airtable API error (POST "
+        f"/{ROADMAP}/{FEATURES}): HTTP 422: UNKNOWN_FIELD_NAME: "
+        'Unknown field name: "Nope"\n'
+    )
     assert len(airtable_api.records[FEATURES]) == 17
 
 
@@ -188,7 +205,8 @@ async def test_a_failed_batch_still_prints_what_landed(airtable_ws,
 async def test_a_write_is_never_retried_on_a_502(airtable_ws, airtable_api):
     airtable_api.faults[1] = (502, "BAD_GATEWAY")
     code, out, err = await _run(
-        airtable_ws(), f"airtable record create {AT} --fields '{{}}'")
+        airtable_ws(), f"airtable record create {AT} --fields '{{}}'"
+    )
     assert (code, out) == (1, "")
     assert "HTTP 502" in err
     assert len(airtable_api.write_calls()) == 1
@@ -198,7 +216,8 @@ async def test_a_write_is_never_retried_on_a_502(airtable_ws, airtable_api):
 async def test_comment_add_takes_text_or_stdin(airtable_ws, airtable_api):
     ws = airtable_ws()
     code, out, _ = await _run(
-        ws, f"airtable comment add {AT} {FIRST} --text 'from a flag'")
+        ws, f"airtable comment add {AT} {FIRST} --text 'from a flag'"
+    )
     assert (code, json.loads(out)["text"]) == (0, "from a flag")
     await _run(ws, f"printf 'piped\\n\\n' | airtable comment add {AT} {FIRST}")
     await _run(ws, f"printf 'bare' | airtable comment add {AT} {FIRST}")
@@ -209,78 +228,148 @@ async def test_comment_add_takes_text_or_stdin(airtable_ws, airtable_api):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, message", [
-    (f"airtable record create {AT}",
-     "--fields or records on stdin are required"),
-    (f"airtable record create {AT} --fields '[1]'",
-     "--fields must be a JSON object"),
-    (f"airtable record create {AT} --fields '{{bad'",
-     "--fields must be valid JSON"),
-    (f"airtable record create {AT} --fields NaN",
-     "--fields must be valid JSON"),
-    (f"airtable record create {AT} x --fields '{{}}'",
-     "unrecognized arguments: x"),
-    (f"airtable record update {AT} {FIRST}",
-     "--fields is required with RECORD"),
-    (f"airtable record update {AT} --fields '{{}}'",
-     "RECORD is required with --fields"),
-    (f"airtable record update {AT}",
-     "RECORD --fields or records on stdin are required"),
-    (f"airtable record delete {AT}",
-     "RECORD or records on stdin are required"),
-    (f"airtable comment add {AT} {FIRST}",
-     "--text or text on stdin is required"),
-    (f"airtable comment add {AT} {FIRST} --text ''",
-     "the comment text is empty"),
-    (f"airtable comment add {AT} --text hi",
-     "the following arguments are required: RECORD"),
-])
+@pytest.mark.parametrize(
+    "line, message",
+    [
+        (
+            f"airtable record create {AT}",
+            "--fields or records on stdin are required",
+        ),
+        (
+            f"airtable record create {AT} --fields '[1]'",
+            "--fields must be a JSON object",
+        ),
+        (
+            f"airtable record create {AT} --fields '{{bad'",
+            "--fields must be valid JSON",
+        ),
+        (
+            f"airtable record create {AT} --fields NaN",
+            "--fields must be valid JSON",
+        ),
+        (
+            f"airtable record create {AT} x --fields '{{}}'",
+            "unrecognized arguments: x",
+        ),
+        (
+            f"airtable record update {AT} {FIRST}",
+            "--fields is required with RECORD",
+        ),
+        (
+            f"airtable record update {AT} --fields '{{}}'",
+            "RECORD is required with --fields",
+        ),
+        (
+            f"airtable record update {AT}",
+            "RECORD --fields or records on stdin are required",
+        ),
+        (
+            f"airtable record delete {AT}",
+            "RECORD or records on stdin are required",
+        ),
+        (
+            f"airtable comment add {AT} {FIRST}",
+            "--text or text on stdin is required",
+        ),
+        (
+            f"airtable comment add {AT} {FIRST} --text ''",
+            "the comment text is empty",
+        ),
+        (
+            f"airtable comment add {AT} --text hi",
+            "the following arguments are required: RECORD",
+        ),
+    ],
+)
 async def test_missing_or_malformed_input_is_a_usage_error(
-        airtable_ws, airtable_api, line, message):
+    airtable_ws, airtable_api, line, message
+):
     " ".join(line.split()[1:3])
     assert await _run(airtable_ws(), line) == _usage(message)
     assert airtable_api.calls == []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("verb, text, message", [
-    ("create", '{"fields": {}}\n\nnot json\n', "stdin line 3: not valid JSON"),
-    ("create", "[]\n", "stdin line 1: not a JSON object"),
-    ("create", '{"id": "rec1", "fields": {}}\n',
-     'stdin line 1: unknown key "id"'),
-    ("create", '{"fields": [1]}\n',
-     'stdin line 1: "fields" must be an object'),
-    ("create", '{"record_id": "rec1"}\n',
-     'stdin line 1: "fields" is required'),
-    ("update", '{"fields": {}}\n', 'stdin line 1: "record_id" is required'),
-    ("update", '{"record_id": 7, "fields": {}}\n',
-     'stdin line 1: "record_id" must be a string'),
-    ("update", '{"record_id": "rec1"}\n',
-     'stdin line 1: "fields" is required'),
-    ("delete", '{"fields": {}}\n', 'stdin line 1: "record_id" is required'),
-    ("delete", '{"record_id": "rec1", "fields": 3}\n',
-     'stdin line 1: "fields" must be an object'),
-])
+@pytest.mark.parametrize(
+    "verb, text, message",
+    [
+        (
+            "create",
+            '{"fields": {}}\n\nnot json\n',
+            "stdin line 3: not valid JSON",
+        ),
+        ("create", "[]\n", "stdin line 1: not a JSON object"),
+        (
+            "create",
+            '{"id": "rec1", "fields": {}}\n',
+            'stdin line 1: unknown key "id"',
+        ),
+        (
+            "create",
+            '{"fields": [1]}\n',
+            'stdin line 1: "fields" must be an object',
+        ),
+        (
+            "create",
+            '{"record_id": "rec1"}\n',
+            'stdin line 1: "fields" is required',
+        ),
+        (
+            "update",
+            '{"fields": {}}\n',
+            'stdin line 1: "record_id" is required',
+        ),
+        (
+            "update",
+            '{"record_id": 7, "fields": {}}\n',
+            'stdin line 1: "record_id" must be a string',
+        ),
+        (
+            "update",
+            '{"record_id": "rec1"}\n',
+            'stdin line 1: "fields" is required',
+        ),
+        (
+            "delete",
+            '{"fields": {}}\n',
+            'stdin line 1: "record_id" is required',
+        ),
+        (
+            "delete",
+            '{"record_id": "rec1", "fields": 3}\n',
+            'stdin line 1: "fields" must be an object',
+        ),
+    ],
+)
 async def test_every_stdin_line_is_checked_before_anything_is_sent(
-        airtable_ws, airtable_api, verb, text, message):
+    airtable_ws, airtable_api, verb, text, message
+):
     ws = airtable_ws()
     await ws.shell(f"printf '%s' '{text}' > /s/in.jsonl")
     assert await _run(
-        ws, f"airtable record {verb} {AT} < /s/in.jsonl") == _usage(message)
+        ws, f"airtable record {verb} {AT} < /s/in.jsonl"
+    ) == _usage(message)
     assert airtable_api.calls == []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    f"airtable record create --base {OPS} --table t --fields '{{}}'",
-    f"airtable record update --base {OPS} --table t {FIRST} --fields '{{}}'",
-    f"airtable record delete --base {OPS} --table t {FIRST}",
-    f"airtable comment add --base {OPS} --table t {FIRST} --text hi",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"airtable record create --base {OPS} --table t --fields '{{}}'",
+        f"airtable record update --base {OPS} --table t {FIRST} --fields '{{}}'",
+        f"airtable record delete --base {OPS} --table t {FIRST}",
+        f"airtable comment add --base {OPS} --table t {FIRST} --text hi",
+    ],
+)
 async def test_a_write_outside_the_scope_is_refused_unsent(
-        airtable_ws, airtable_api, line):
+    airtable_ws, airtable_api, line
+):
     ws = airtable_ws(base_ids=[ROADMAP])
     verb = " ".join(line.split()[:3])
-    assert await _run(ws,
-                      line) == (1, "", f"{verb}: {OPS}: Permission denied\n")
+    assert await _run(ws, line) == (
+        1,
+        "",
+        f"{verb}: {OPS}: Permission denied\n",
+    )
     assert airtable_api.calls == []

@@ -23,6 +23,7 @@ redacted snapshot state for a config both must accept, or the refusal's
 in python's wire spelling; the TypeScript runner folds its camelCase state
 back through the rename map the spec dump records.
 """
+
 import asyncio
 import inspect
 import json
@@ -36,8 +37,9 @@ HOST = "python"
 SUITE = Path(__file__).parent / "cases.json"
 
 
-def _problems(case: dict[str, Any], state: dict[str, Any] | None,
-              error: str | None) -> list[str]:
+def _problems(
+    case: dict[str, Any], state: dict[str, Any] | None, error: str | None
+) -> list[str]:
     """Judge one case's outcome against its expectation.
 
     Args:
@@ -74,12 +76,15 @@ def _problems(case: dict[str, Any], state: dict[str, Any] | None,
         if key not in state:
             out.append(f"{label}: state lacks {key!r}")
         elif state[key] != want:
-            out.append(f"{label}: state[{key!r}] = {state[key]!r}, "
-                       f"expected {want!r}")
+            out.append(
+                f"{label}: state[{key!r}] = {state[key]!r}, expected {want!r}"
+            )
     for key in expect.get("absent", []):
         if key in state:
-            out.append(f"{label}: state carries {key!r} = {state[key]!r}, "
-                       "expected it dropped")
+            out.append(
+                f"{label}: state carries {key!r} = {state[key]!r}, "
+                "expected it dropped"
+            )
     return out
 
 

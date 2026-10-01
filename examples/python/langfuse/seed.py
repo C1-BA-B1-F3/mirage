@@ -31,27 +31,30 @@ print("Auth check:", langfuse.auth_check())
 print("\n=== Creating prompts ===")
 
 for name, prompt_text, cfg, label in [
-    ("summarize",
-     "Summarize the following text in {{style}} style:\n\n{{text}}", {
-         "model": "gpt-4o",
-         "temperature": 0.3
-     }, "production"),
-    ("summarize",
-     "You are an expert summarizer. Summarize in {{style}} style:\n\n{{text}}",
-     {
-         "model": "gpt-4o",
-         "temperature": 0.2
-     }, "staging"),
-    ("classify",
-     "Classify the sentiment as positive, negative, or neutral:\n\n{{text}}", {
-         "model": "gpt-4o-mini",
-         "temperature": 0
-     }, "production"),
-    ("extract-entities",
-     "Extract all named entities. Return as JSON.\n\n{{text}}", {
-         "model": "gpt-4o",
-         "temperature": 0
-     }, "production"),
+    (
+        "summarize",
+        "Summarize the following text in {{style}} style:\n\n{{text}}",
+        {"model": "gpt-4o", "temperature": 0.3},
+        "production",
+    ),
+    (
+        "summarize",
+        "You are an expert summarizer. Summarize in {{style}} style:\n\n{{text}}",
+        {"model": "gpt-4o", "temperature": 0.2},
+        "staging",
+    ),
+    (
+        "classify",
+        "Classify the sentiment as positive, negative, or neutral:\n\n{{text}}",
+        {"model": "gpt-4o-mini", "temperature": 0},
+        "production",
+    ),
+    (
+        "extract-entities",
+        "Extract all named entities. Return as JSON.\n\n{{text}}",
+        {"model": "gpt-4o", "temperature": 0},
+        "production",
+    ),
 ]:
     langfuse.create_prompt(
         name=name,
@@ -71,14 +74,11 @@ traces_data = [
         "user_id": "user-alice",
         "tags": ["chat", "geography"],
         "input": {
-            "messages": [{
-                "role": "user",
-                "content": "What is the capital of France?"
-            }]
+            "messages": [
+                {"role": "user", "content": "What is the capital of France?"}
+            ]
         },
-        "output": {
-            "response": "The capital of France is Paris."
-        },
+        "output": {"response": "The capital of France is Paris."},
         "model": "gpt-4o",
     },
     {
@@ -87,14 +87,12 @@ traces_data = [
         "user_id": "user-alice",
         "tags": ["chat", "geography"],
         "input": {
-            "messages": [{
-                "role": "user",
-                "content": "Tell me more about Paris"
-            }]
+            "messages": [
+                {"role": "user", "content": "Tell me more about Paris"}
+            ]
         },
         "output": {
-            "response":
-            "Paris is known for the Eiffel Tower and Louvre Museum."
+            "response": "Paris is known for the Eiffel Tower and Louvre Museum."
         },
         "model": "gpt-4o",
     },
@@ -104,14 +102,12 @@ traces_data = [
         "user_id": "user-bob",
         "tags": ["chat", "science"],
         "input": {
-            "messages": [{
-                "role": "user",
-                "content": "Explain quantum computing"
-            }]
+            "messages": [
+                {"role": "user", "content": "Explain quantum computing"}
+            ]
         },
         "output": {
-            "response":
-            "Quantum computing uses qubits that can be in superposition..."
+            "response": "Quantum computing uses qubits that can be in superposition..."
         },
         "model": "gpt-4o",
     },
@@ -120,12 +116,9 @@ traces_data = [
         "session_id": "chat-session-002",
         "user_id": "user-bob",
         "tags": ["summarization", "science"],
-        "input": {
-            "text": "A long research paper about quantum computing..."
-        },
+        "input": {"text": "A long research paper about quantum computing..."},
         "output": {
-            "summary":
-            "This paper introduces a novel approach to error correction..."
+            "summary": "This paper introduces a novel approach to error correction..."
         },
         "model": "gpt-4o",
     },
@@ -134,13 +127,8 @@ traces_data = [
         "session_id": "support-ticket-101",
         "user_id": "user-charlie",
         "tags": ["support", "classification"],
-        "input": {
-            "text": "I can't log in, keeps showing error 403"
-        },
-        "output": {
-            "category": "authentication",
-            "priority": "high"
-        },
+        "input": {"text": "I can't log in, keeps showing error 403"},
+        "output": {"category": "authentication", "priority": "high"},
         "model": "gpt-4o-mini",
     },
     {
@@ -148,12 +136,8 @@ traces_data = [
         "session_id": "support-ticket-101",
         "user_id": "user-charlie",
         "tags": ["support", "response"],
-        "input": {
-            "ticket": "Can't log in, error 403"
-        },
-        "output": {
-            "response": "Please try clearing your browser cookies..."
-        },
+        "input": {"ticket": "Can't log in, error 403"},
+        "output": {"response": "Please try clearing your browser cookies..."},
         "model": "gpt-4o",
     },
     {
@@ -164,13 +148,10 @@ traces_data = [
             "text": "Apple CEO Tim Cook announced new products in Cupertino."
         },
         "output": {
-            "entities": [{
-                "name": "Apple",
-                "type": "ORG"
-            }, {
-                "name": "Tim Cook",
-                "type": "PERSON"
-            }]
+            "entities": [
+                {"name": "Apple", "type": "ORG"},
+                {"name": "Tim Cook", "type": "PERSON"},
+            ]
         },
         "model": "gpt-4o",
     },
@@ -179,14 +160,12 @@ traces_data = [
         "user_id": "user-dave",
         "tags": ["chat", "creative"],
         "input": {
-            "messages": [{
-                "role": "user",
-                "content": "Write a haiku about programming"
-            }]
+            "messages": [
+                {"role": "user", "content": "Write a haiku about programming"}
+            ]
         },
         "output": {
-            "response":
-            "Code flows like water\n"
+            "response": "Code flows like water\n"
             "Bugs swim in the logic stream\n"
             "Debug, compile, run",
         },
@@ -196,32 +175,33 @@ traces_data = [
 
 for td in traces_data:
     with propagate_attributes(
-            trace_name=td["trace_name"],
-            session_id=td.get("session_id"),
-            user_id=td.get("user_id"),
-            tags=td.get("tags"),
-            metadata={"env": "production"},
+        trace_name=td["trace_name"],
+        session_id=td.get("session_id"),
+        user_id=td.get("user_id"),
+        tags=td.get("tags"),
+        metadata={"env": "production"},
     ):
         with langfuse.start_as_current_observation(
-                name=td["trace_name"],
-                as_type="span",
-                input=td["input"],
-                output=td["output"],
+            name=td["trace_name"],
+            as_type="span",
+            input=td["input"],
+            output=td["output"],
         ):
             with langfuse.start_as_current_observation(
-                    name=f"{td['trace_name']}-llm",
-                    as_type="generation",
-                    model=td["model"],
-                    input=td["input"],
-                    output=td["output"],
-                    usage_details={
-                        "input_tokens": 50 + len(str(td["input"])),
-                        "output_tokens": 30 + len(str(td["output"])),
-                    },
+                name=f"{td['trace_name']}-llm",
+                as_type="generation",
+                model=td["model"],
+                input=td["input"],
+                output=td["output"],
+                usage_details={
+                    "input_tokens": 50 + len(str(td["input"])),
+                    "output_tokens": 30 + len(str(td["output"])),
+                },
             ):
                 pass
-    print(f"  created: {td['trace_name']} "
-          f"(session={td.get('session_id', '-')})")
+    print(
+        f"  created: {td['trace_name']} (session={td.get('session_id', '-')})"
+    )
 
 print(f"\n  total: {len(traces_data)} traces")
 
@@ -230,31 +210,14 @@ print("\n=== Creating datasets ===")
 langfuse.create_dataset(name="qa-eval", description="QA evaluation")
 
 qa_items = [
-    ({
-        "question": "What is the capital of France?"
-    }, {
-        "answer": "Paris"
-    }),
-    ({
-        "question": "Who wrote Romeo and Juliet?"
-    }, {
-        "answer": "Shakespeare"
-    }),
-    ({
-        "question": "What is the speed of light?"
-    }, {
-        "answer": "299,792,458 m/s"
-    }),
-    ({
-        "question": "What is the largest planet?"
-    }, {
-        "answer": "Jupiter"
-    }),
-    ({
-        "question": "Who painted the Mona Lisa?"
-    }, {
-        "answer": "da Vinci"
-    }),
+    ({"question": "What is the capital of France?"}, {"answer": "Paris"}),
+    ({"question": "Who wrote Romeo and Juliet?"}, {"answer": "Shakespeare"}),
+    (
+        {"question": "What is the speed of light?"},
+        {"answer": "299,792,458 m/s"},
+    ),
+    ({"question": "What is the largest planet?"}, {"answer": "Jupiter"}),
+    ({"question": "Who painted the Mona Lisa?"}, {"answer": "da Vinci"}),
 ]
 for inp, exp in qa_items:
     langfuse.create_dataset_item(
@@ -264,35 +227,16 @@ for inp, exp in qa_items:
     )
 print(f"  qa-eval: {len(qa_items)} items")
 
-langfuse.create_dataset(name="sentiment-eval",
-                        description="Sentiment classification")
+langfuse.create_dataset(
+    name="sentiment-eval", description="Sentiment classification"
+)
 
 sent_items = [
-    ({
-        "text": "I love this product!"
-    }, {
-        "sentiment": "positive"
-    }),
-    ({
-        "text": "Terrible experience"
-    }, {
-        "sentiment": "negative"
-    }),
-    ({
-        "text": "It was okay"
-    }, {
-        "sentiment": "neutral"
-    }),
-    ({
-        "text": "Best purchase ever"
-    }, {
-        "sentiment": "positive"
-    }),
-    ({
-        "text": "Completely broken"
-    }, {
-        "sentiment": "negative"
-    }),
+    ({"text": "I love this product!"}, {"sentiment": "positive"}),
+    ({"text": "Terrible experience"}, {"sentiment": "negative"}),
+    ({"text": "It was okay"}, {"sentiment": "neutral"}),
+    ({"text": "Best purchase ever"}, {"sentiment": "positive"}),
+    ({"text": "Completely broken"}, {"sentiment": "negative"}),
 ]
 for inp, exp in sent_items:
     langfuse.create_dataset_item(

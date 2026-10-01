@@ -92,7 +92,7 @@ def read_quoted(text: str) -> tuple[str, str]:
             index += 2
             continue
         if char == '"':
-            return "".join(chars), text[index + 1:].lstrip()
+            return "".join(chars), text[index + 1 :].lstrip()
         chars.append(char)
         index += 1
     return "".join(chars), ""
@@ -126,7 +126,7 @@ def parse_folder_line(line: str | bytes) -> tuple[str, tuple[str, ...]] | None:
     if end == -1:
         return None
     attributes = tuple(text[1:end].split())
-    rest = text[end + 1:].lstrip()
+    rest = text[end + 1 :].lstrip()
     if rest.startswith('"'):
         _, rest = read_quoted(rest)
     elif rest[:3].upper() == "NIL":
@@ -138,7 +138,8 @@ def parse_folder_line(line: str | bytes) -> tuple[str, tuple[str, ...]] | None:
 
 
 async def list_folder_entries(
-        accessor: EmailAccessor) -> list[tuple[str, tuple[str, ...]]]:
+    accessor: EmailAccessor,
+) -> list[tuple[str, tuple[str, ...]]]:
     imap = await accessor.get_imap()
     response = await imap.list('""', "*")
     entries: list[tuple[str, tuple[str, ...]]] = []
@@ -199,7 +200,7 @@ async def list_message_uids(
     uids: list[str] = []
     batch_size = 50
     for i in range(0, len(seq_nums), batch_size):
-        batch = seq_nums[i:i + batch_size]
+        batch = seq_nums[i : i + batch_size]
         seq_set = ",".join(batch)
         uid_response = await imap.fetch(seq_set, "(UID)")
         for item in uid_response.lines:
@@ -261,7 +262,7 @@ async def fetch_headers(
     results: list[dict[str, Any]] = []
     batch_size = 25
     for i in range(0, len(uids), batch_size):
-        batch = uids[i:i + batch_size]
+        batch = uids[i : i + batch_size]
         uid_set = ",".join(batch)
         # Full BODY.PEEK[] rather than BODY[HEADER]: attachment names live
         # in the MIME structure, and listings must surface attachment dirs
@@ -297,16 +298,18 @@ def _parse_with_payloads(raw: bytes) -> list[dict[str, Any]]:
             disposition = str(part.get("Content-Disposition", ""))
             if "attachment" in disposition:
                 payload = part.get_payload(decode=True) or b""
-                attachments.append({
-                    "filename": part.get_filename() or "unnamed",
-                    "payload": payload,
-                })
+                attachments.append(
+                    {
+                        "filename": part.get_filename() or "unnamed",
+                        "payload": payload,
+                    }
+                )
     return attachments
 
 
 def _extract_body(response) -> bytes:
     for item in response.lines:
-        if isinstance(item, (bytearray, )) and len(item) > 20:
+        if isinstance(item, (bytearray,)) and len(item) > 20:
             return bytes(item)
         if isinstance(item, bytes) and len(item) > 100:
             return item
@@ -345,8 +348,11 @@ def _parse_multi_fetch(response, uids: list[str]) -> list[dict[str, Any]]:
         if "FETCH" in line and "UID" in line:
             try:
                 uid_idx = line.index("UID") + 4
-                uid_end = line.index(
-                    " ", uid_idx) if " " in line[uid_idx:] else len(line)
+                uid_end = (
+                    line.index(" ", uid_idx)
+                    if " " in line[uid_idx:]
+                    else len(line)
+                )
                 current_uid = line[uid_idx:uid_end].strip(")")
             except (ValueError, IndexError):
                 # tolerant IMAP parse: skip lines that do not match the shape
@@ -356,13 +362,14 @@ def _parse_multi_fetch(response, uids: list[str]) -> list[dict[str, Any]]:
             current_internal = _internal_date_from_line(line)
             continue
 
-        if isinstance(item, (bytearray, )) and len(item) > 20:
+        if isinstance(item, (bytearray,)) and len(item) > 20:
             raw = bytes(item)
             # Full parse (not headers_only): listings need the MIME
             # structure to surface attachment dirs.
             msg_dict = parse_rfc822(raw)
-            msg_dict["uid"] = current_uid or (uids[len(results)] if
-                                              len(results) < len(uids) else "")
+            msg_dict["uid"] = current_uid or (
+                uids[len(results)] if len(results) < len(uids) else ""
+            )
             msg_dict["flags"] = current_flags
             msg_dict[INTERNAL_DATE_KEY] = current_internal
             results.append(msg_dict)

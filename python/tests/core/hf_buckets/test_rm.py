@@ -20,12 +20,14 @@ from mirage.types import PathSpec
 
 @pytest.mark.asyncio
 async def test_rm_r_deletes_all_keys_under_prefix(make_acc):
-    acc = make_acc({
-        "data/a.txt": b"a",
-        "data/sub/b.txt": b"b",
-        "data/sub/deep/c.txt": b"c",
-        "other/keep.txt": b"k",
-    })
+    acc = make_acc(
+        {
+            "data/a.txt": b"a",
+            "data/sub/b.txt": b"b",
+            "data/sub/deep/c.txt": b"c",
+            "other/keep.txt": b"k",
+        }
+    )
     await rm_r(acc, PathSpec.from_str_path("/data"))
     assert sorted(acc._fake.files) == ["other/keep.txt"]
 

@@ -135,7 +135,8 @@ def resolve_within_root(root: str | Path, user_path: str) -> Path:
     resolved = os.path.realpath(joined) + os.sep
     if not resolved.startswith(resolved_root + os.sep):
         raise PathOutsideRootError(
-            f"path escapes the configured root: {user_path}")
+            f"path escapes the configured root: {user_path}"
+        )
     return Path(resolved.rstrip(os.sep) or os.sep)
 
 

@@ -131,8 +131,9 @@ async def test_ls(ops):
 
 @pytest.mark.asyncio
 async def test_grep(ops, workspace):
-    await workspace.vfs.write("/search.txt",
-                              b"hello world\ngoodbye world\nhello again\n")
+    await workspace.vfs.write(
+        "/search.txt", b"hello world\ngoodbye world\nhello again\n"
+    )
     result = await ops.grep("hello", "/")
     assert "hello" in result.text
     assert result.is_error is False

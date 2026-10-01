@@ -18,10 +18,7 @@ _NUMBER_RE = re.compile(r"(-?(?:[0-9]*\.[0-9]+|[0-9]+))(.*)", re.DOTALL)
 _UNIT_EXPONENTS = {
     "K": 1,
     "k": 1,
-    **{
-        u: i
-        for i, u in enumerate(_SUFFIX_ORDER) if i >= 2
-    },
+    **{u: i for i, u in enumerate(_SUFFIX_ORDER) if i >= 2},
 }
 
 
@@ -54,10 +51,13 @@ def _suffix_error(value: str, junk: str) -> UsageError:
     """
     if not junk:
         return UsageError(
-            f"numfmt: invalid suffix in input: '{quote_text(value)}'", 2)
+            f"numfmt: invalid suffix in input: '{quote_text(value)}'", 2
+        )
     return UsageError(
         f"numfmt: invalid suffix in input '{quote_text(value)}': "
-        f"'{quote_text(junk)}'", 2)
+        f"'{quote_text(junk)}'",
+        2,
+    )
 
 
 def _missing_i_error(value: str) -> UsageError:
@@ -77,7 +77,9 @@ def _missing_i_error(value: str) -> UsageError:
     """
     return UsageError(
         f"numfmt: missing 'i' suffix in input: '{quote_text(value)}' "
-        "(e.g Ki/Mi/Gi)", 2)
+        "(e.g Ki/Mi/Gi)",
+        2,
+    )
 
 
 def _scale_of(value: str, suffix: str, from_mode: str) -> tuple[int, int]:
@@ -136,8 +138,9 @@ def _parse_number(value: str, from_mode: str) -> tuple[Decimal, int]:
             ``auto``.
     """
     match = _NUMBER_RE.fullmatch(value)
-    if match is None or (match.group(2).startswith(".")
-                         and "." not in match.group(1)):
+    if match is None or (
+        match.group(2).startswith(".") and "." not in match.group(1)
+    ):
         raise UsageError(f"numfmt: invalid number: '{quote_text(value)}'", 2)
     digits, suffix = match.group(1), match.group(2)
     number = Decimal(digits)
@@ -151,14 +154,17 @@ def _parse_number(value: str, from_mode: str) -> tuple[Decimal, int]:
     if from_mode == "none":
         raise UsageError(
             f"numfmt: rejecting suffix in input: '{quote_text(value)}' "
-            "(consider using --from)", 2)
+            "(consider using --from)",
+            2,
+        )
     base, exponent = _scale_of(value, suffix, from_mode)
     ctx = _context_for(value)
     return ctx.multiply(number, ctx.power(Decimal(base), exponent)), 0
 
 
-def _format_number(number: Decimal, to_mode: str, grouping: bool,
-                   decimals: int) -> str:
+def _format_number(
+    number: Decimal, to_mode: str, grouping: bool, decimals: int
+) -> str:
     """Render a value the way GNU numfmt does for the given --to mode.
 
     GNU rounds away from zero, keeping one decimal only while the scaled
@@ -180,11 +186,14 @@ def _format_number(number: Decimal, to_mode: str, grouping: bool,
         decimals (int): Decimal places for ``--to=none``.
     """
     if to_mode == "none":
-        number = number.quantize(Decimal(1).scaleb(-decimals),
-                                 rounding=ROUND_UP,
-                                 context=_context_for(str(number)))
-        return format(number,
-                      f",.{decimals}f" if grouping else f".{decimals}f")
+        number = number.quantize(
+            Decimal(1).scaleb(-decimals),
+            rounding=ROUND_UP,
+            context=_context_for(str(number)),
+        )
+        return format(
+            number, f",.{decimals}f" if grouping else f".{decimals}f"
+        )
     base = Decimal(1000 if to_mode == "si" else 1024)
     display = _SI_DISPLAY if to_mode == "si" else _SUFFIX_ORDER
     power = 0
@@ -197,8 +206,9 @@ def _format_number(number: Decimal, to_mode: str, grouping: bool,
         number /= base
         power += 1
     places = 1 if power and abs(number) < 10 else 0
-    number = number.quantize(Decimal(1).scaleb(-places),
-                             rounding=ROUND_HALF_EVEN)
+    number = number.quantize(
+        Decimal(1).scaleb(-places), rounding=ROUND_HALF_EVEN
+    )
     suffix = display[power]
     if to_mode == "iec-i" and power:
         suffix += "i"
@@ -206,14 +216,16 @@ def _format_number(number: Decimal, to_mode: str, grouping: bool,
     return format(number, spec) + suffix
 
 
-def _convert_field(value: str, to_mode: str, from_mode: str, suffix: str,
-                   grouping: bool) -> str:
+def _convert_field(
+    value: str, to_mode: str, from_mode: str, suffix: str, grouping: bool
+) -> str:
     number, decimals = _parse_number(value.removesuffix(suffix), from_mode)
     return _format_number(number, to_mode, grouping, decimals) + suffix
 
 
-def _convert_line(line: str, to_mode: str, from_mode: str, suffix: str,
-                  grouping: bool) -> str:
+def _convert_line(
+    line: str, to_mode: str, from_mode: str, suffix: str, grouping: bool
+) -> str:
     """Reformat the first field of a record, preserving the rest verbatim.
 
     GNU ``numfmt`` converts only ``--field`` (1 by default) and copies the
@@ -230,8 +242,11 @@ def _convert_line(line: str, to_mode: str, from_mode: str, suffix: str,
     if match is None:
         return line
     lead, field, rest = match.groups()
-    return lead + _convert_field(field, to_mode, from_mode, suffix,
-                                 grouping) + rest
+    return (
+        lead
+        + _convert_field(field, to_mode, from_mode, suffix, grouping)
+        + rest
+    )
 
 
 async def numfmt(

@@ -14,8 +14,14 @@
 
 from mirage.policy.base import Policy
 from mirage.policy.match import match_op, match_rule
-from mirage.policy.types import (Action, CommandContext, CommandRule, Deny,
-                                 DenyScope, OpsContext)
+from mirage.policy.types import (
+    Action,
+    CommandContext,
+    CommandRule,
+    Deny,
+    DenyScope,
+    OpsContext,
+)
 from mirage.utils.hidden import classify_paths
 
 

@@ -18,7 +18,6 @@ from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class QingStorVFS(S3AliasVFS):
-
     prompt: str = PROMPT
 
     def __init__(self, config: QingStorConfig) -> None:

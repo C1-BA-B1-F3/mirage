@@ -37,9 +37,13 @@ def index():
 async def test_readdir_root(accessor, index):
     result = await readdir(
         accessor,
-        PathSpec(vfs_path=mount_key("/gsheets", "/gsheets"),
-                 virtual="/gsheets",
-                 directory="/gsheets"), index)
+        PathSpec(
+            vfs_path=mount_key("/gsheets", "/gsheets"),
+            virtual="/gsheets",
+            directory="/gsheets",
+        ),
+        index,
+    )
     assert result == ["/gsheets/owned", "/gsheets/shared"]
 
 
@@ -50,21 +54,23 @@ async def test_readdir_owned(accessor, index):
             "id": "sheet1",
             "name": "Budget",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }],
+            "owners": [{"me": True}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+                virtual="/gsheets/owned",
+                directory="/gsheets/owned",
+            ),
+            index,
+        )
         assert len(result) == 1
         assert "sheet1" in result[0]
 
@@ -74,10 +80,15 @@ async def test_readdir_file_path_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned/file.gsheet.json",
-                                        "/gsheets"),
-                     virtual="/gsheets/owned/file.gsheet.json",
-                     directory="/gsheets/owned/file.gsheet.json"), index)
+            PathSpec(
+                vfs_path=mount_key(
+                    "/gsheets/owned/file.gsheet.json", "/gsheets"
+                ),
+                virtual="/gsheets/owned/file.gsheet.json",
+                directory="/gsheets/owned/file.gsheet.json",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -85,9 +96,13 @@ async def test_readdir_invalid_path_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/bogus", "/gsheets"),
-                     virtual="/gsheets/bogus",
-                     directory="/gsheets/bogus"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/bogus", "/gsheets"),
+                virtual="/gsheets/bogus",
+                directory="/gsheets/bogus",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -102,11 +117,14 @@ async def test_readdir_owned_pushes_modified_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned/2026-05-*",
-                                        "/gsheets"),
-                     virtual="/gsheets/owned/2026-05-*",
-                     directory="/gsheets/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned/2026-05-*", "/gsheets"),
+                virtual="/gsheets/owned/2026-05-*",
+                directory="/gsheets/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
 
     assert captured["modified_after"] == "2026-05-01T00:00:00Z"
     assert captured["modified_before"] == "2026-06-01T00:00:00Z"
@@ -114,30 +132,32 @@ async def test_readdir_owned_pushes_modified_range(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_owned_filtered_does_not_cache(accessor, index):
-    files = [{
-        "id": "may",
-        "name": "MaySheet",
-        "modifiedTime": "2026-05-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
-    full_files = files + [{
-        "id": "jan",
-        "name": "JanSheet",
-        "modifiedTime": "2026-01-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
+    files = [
+        {
+            "id": "may",
+            "name": "MaySheet",
+            "modifiedTime": "2026-05-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
+    full_files = files + [
+        {
+            "id": "jan",
+            "name": "JanSheet",
+            "modifiedTime": "2026-01-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
 
     call_count = {"n": 0}
 
-    async def fake_list(token_manager,
-                        mime_type=None,
-                        modified_after=None,
-                        modified_before=None,
-                        **kwargs):
+    async def fake_list(
+        token_manager,
+        mime_type=None,
+        modified_after=None,
+        modified_before=None,
+        **kwargs,
+    ):
         call_count["n"] += 1
         if modified_after:
             return files, True
@@ -146,16 +166,23 @@ async def test_readdir_owned_filtered_does_not_cache(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned/2026-05-*",
-                                        "/gsheets"),
-                     virtual="/gsheets/owned/2026-05-*",
-                     directory="/gsheets/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned/2026-05-*", "/gsheets"),
+                virtual="/gsheets/owned/2026-05-*",
+                directory="/gsheets/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+                virtual="/gsheets/owned",
+                directory="/gsheets/owned",
+            ),
+            index,
+        )
 
     assert call_count["n"] == 2
     assert len(result) == 2
@@ -168,28 +195,26 @@ async def test_readdir_owned_filtered_bypasses_warm_cache(accessor, index):
             "id": "may",
             "name": "MaySheet",
             "modifiedTime": "2026-05-15T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
         {
             "id": "jan",
             "name": "JanSheet",
             "modifiedTime": "2026-01-15T00:00:00.000Z",
-            "owners": [{
-                "me": True
-            }]
+            "owners": [{"me": True}],
         },
     ]
     may_only = [full_files[0]]
 
     call_count = {"n": 0}
 
-    async def fake_list(token_manager,
-                        mime_type=None,
-                        modified_after=None,
-                        modified_before=None,
-                        **kwargs):
+    async def fake_list(
+        token_manager,
+        mime_type=None,
+        modified_after=None,
+        modified_before=None,
+        **kwargs,
+    ):
         call_count["n"] += 1
         if modified_after:
             return may_only, True
@@ -198,16 +223,23 @@ async def test_readdir_owned_filtered_bypasses_warm_cache(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+                virtual="/gsheets/owned",
+                directory="/gsheets/owned",
+            ),
+            index,
+        )
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned/2026-05-*",
-                                        "/gsheets"),
-                     virtual="/gsheets/owned/2026-05-*",
-                     directory="/gsheets/owned",
-                     pattern="2026-05-*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned/2026-05-*", "/gsheets"),
+                virtual="/gsheets/owned/2026-05-*",
+                directory="/gsheets/owned",
+                pattern="2026-05-*",
+            ),
+            index,
+        )
 
     assert call_count["n"] == 2
 
@@ -223,9 +255,13 @@ async def test_readdir_owned_no_pattern_omits_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+                virtual="/gsheets/owned",
+                directory="/gsheets/owned",
+            ),
+            index,
+        )
 
     assert captured.get("modified_after") is None
     assert captured.get("modified_before") is None
@@ -242,10 +278,14 @@ async def test_readdir_owned_non_date_pattern_omits_range(accessor, index):
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned/*foo*", "/gsheets"),
-                     virtual="/gsheets/owned/*foo*",
-                     directory="/gsheets/owned",
-                     pattern="*foo*"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned/*foo*", "/gsheets"),
+                virtual="/gsheets/owned/*foo*",
+                directory="/gsheets/owned",
+                pattern="*foo*",
+            ),
+            index,
+        )
 
     assert captured.get("modified_after") is None
     assert captured.get("modified_before") is None
@@ -259,21 +299,23 @@ async def test_readdir_entry_size_none_source_size_in_extra(accessor, index):
             "name": "My File",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
             "size": "1234",
-            "owners": [{
-                "me": True
-            }],
+            "owners": [{"me": True}],
         },
     ]
     with patch(
-            "mirage.core.google.readdir.list_all_files",
-            new_callable=AsyncMock,
-            return_value=(files, True),
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+                virtual="/gsheets/owned",
+                directory="/gsheets/owned",
+            ),
+            index,
+        )
 
     # Drive's source size never becomes the entry size: the rendered
     # JSON length is unknown until read.
@@ -284,29 +326,32 @@ async def test_readdir_entry_size_none_source_size_in_extra(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_incomplete_search_is_not_cached_as_the_directory(
-        accessor, index):
+    accessor, index
+):
     """Drive reporting a corpus it skipped means the listing is short.
 
     Caching it would pin the short listing until it expires, so a Shared
     Drive document stays invisible long after the cause clears. The entries
     are real, so they stay cached; only the directory is withheld.
     """
-    files = [{
-        "id": "d1",
-        "name": "Doc",
-        "modifiedTime": "2026-05-15T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }]
-    }]
+    files = [
+        {
+            "id": "d1",
+            "name": "Doc",
+            "modifiedTime": "2026-05-15T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     complete = {"v": False}
 
     async def fake_list(token_manager, mime_type=None, **kwargs):
         return files, complete["v"]
 
-    owned = PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                     virtual="/gsheets/owned",
-                     directory="/gsheets/owned")
+    owned = PathSpec(
+        vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+        virtual="/gsheets/owned",
+        directory="/gsheets/owned",
+    )
     with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         listed = await readdir(accessor, owned, index)
         assert len(listed) == 1

@@ -43,7 +43,7 @@ def test_dry_run_implies_verbose():
 
 
 def test_a_file_lands_at_its_destination():
-    move = Move("a.txt", "b/c.txt", ("a.txt", ), False)
+    move = Move("a.txt", "b/c.txt", ("a.txt",), False)
     assert moved_path(move, "a.txt") == "b/c.txt"
 
 
@@ -57,14 +57,18 @@ async def test_mv_renames_and_stages_the_rename(git_rw, repo_path: Path):
     assert await run(git_rw, "mv a.txt c.txt") == (0, b"", b"")
     assert (repo_path / "c.txt").exists()
     assert not (repo_path / "a.txt").exists()
-    assert (await run(git_rw,
-                      "status --porcelain"))[1] == b"R  a.txt -> c.txt\n"
+    assert (await run(git_rw, "status --porcelain"))[
+        1
+    ] == b"R  a.txt -> c.txt\n"
 
 
 @pytest.mark.asyncio
 async def test_verbose_names_the_move(git_rw):
-    assert await run(git_rw, "mv -v a.txt c.txt") == (0, b"Renaming a.txt to "
-                                                      b"c.txt\n", b"")
+    assert await run(git_rw, "mv -v a.txt c.txt") == (
+        0,
+        b"Renaming a.txt to c.txt\n",
+        b"",
+    )
 
 
 @pytest.mark.asyncio
@@ -78,28 +82,33 @@ async def test_a_missing_source_is_fatal(git_rw):
 async def test_an_untracked_source_is_fatal(git_rw):
     await git_rw.shell("echo u > /repo/u.txt")
     _code, _out, err = await run(git_rw, "mv u.txt c.txt")
-    assert err == (b"fatal: not under version control, source=u.txt, "
-                   b"destination=c.txt\n")
+    assert err == (
+        b"fatal: not under version control, source=u.txt, destination=c.txt\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_an_existing_destination_is_refused_unless_forced(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     _code, _out, err = await run(git_rw, "mv a.txt b.txt")
-    assert err == (b"fatal: destination exists, source=a.txt, "
-                   b"destination=b.txt\n")
+    assert err == (
+        b"fatal: destination exists, source=a.txt, destination=b.txt\n"
+    )
     assert await run(git_rw, "mv -f a.txt b.txt") == (0, b"", b"")
     assert (repo_path / "b.txt").read_text() == "one changed\n"
-    assert (await run(git_rw, "status --porcelain"))[1] == (b"D  a.txt\n"
-                                                            b"M  b.txt\n")
+    assert (await run(git_rw, "status --porcelain"))[1] == (
+        b"D  a.txt\nM  b.txt\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_directory_destination_takes_the_basename(git_rw):
     await git_rw.shell("mkdir /repo/into")
     await run(git_rw, "mv a.txt into")
-    assert (await run(git_rw,
-                      "status --porcelain"))[1] == b"R  a.txt -> into/a.txt\n"
+    assert (await run(git_rw, "status --porcelain"))[
+        1
+    ] == b"R  a.txt -> into/a.txt\n"
 
 
 @pytest.mark.asyncio
@@ -110,7 +119,8 @@ async def test_several_sources_need_a_directory(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_directory_moves_with_everything_under_it(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir /repo/docs && echo x > /repo/docs/one.md")
     await run(git_rw, "add docs")
     await run(git_rw, "commit -m docs")
@@ -118,23 +128,26 @@ async def test_a_directory_moves_with_everything_under_it(
     assert await run(git_rw, "mv docs notes") == (0, b"", b"")
     assert (repo_path / "notes" / "untracked.md").exists()
     assert (await run(git_rw, "status --porcelain"))[1] == (
-        b"R  docs/one.md -> notes/one.md\n?? notes/untracked.md\n")
+        b"R  docs/one.md -> notes/one.md\n?? notes/untracked.md\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_one_operand_prints_the_usage(git_rw):
     code, _out, err = await run(git_rw, "mv a.txt")
     assert code == 129
-    assert err.startswith(b"usage: git mv [-v] [-f] [-n] [-k] <source> "
-                          b"<destination>\n")
+    assert err.startswith(
+        b"usage: git mv [-v] [-f] [-n] [-k] <source> <destination>\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_dry_run_moves_nothing(git_rw, repo_path: Path):
     code, out, _err = await run(git_rw, "mv -n a.txt c.txt")
     assert code == 0
-    assert out == (b"Checking rename of 'a.txt' to 'c.txt'\n"
-                   b"Renaming a.txt to c.txt\n")
+    assert out == (
+        b"Checking rename of 'a.txt' to 'c.txt'\nRenaming a.txt to c.txt\n"
+    )
     assert (repo_path / "a.txt").exists()
 
 
@@ -147,8 +160,9 @@ async def test_k_skips_a_source_that_cannot_move(git_rw):
 async def test_a_missing_destination_directory_is_the_renames_failure(git_rw):
     code, _out, err = await run(git_rw, "mv a.txt nodir/c.txt")
     assert code == 128
-    assert err == (b"fatal: renaming 'a.txt' failed: No such file or "
-                   b"directory\n")
+    assert err == (
+        b"fatal: renaming 'a.txt' failed: No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -159,8 +173,10 @@ async def test_two_sources_cannot_land_on_one_name(git_rw, repo_path: Path):
     await run(git_rw, "commit -m two")
     code, _out, err = await run(git_rw, "mv a/x b/x dest")
     assert code == 128
-    assert err == (b"fatal: multiple sources for the same target, "
-                   b"source=b/x, destination=dest/x\n")
+    assert err == (
+        b"fatal: multiple sources for the same target, "
+        b"source=b/x, destination=dest/x\n"
+    )
     assert (repo_path / "a" / "x").exists()
     assert not (repo_path / "dest" / "x").exists()
 
@@ -172,8 +188,10 @@ async def test_two_directories_collide_at_the_path_that_collides(git_rw):
     await run(git_rw, "add a b")
     await run(git_rw, "commit -m dirs")
     _code, _out, err = await run(git_rw, "mv a/sub b/sub dest")
-    assert err == (b"fatal: multiple sources for the same target, "
-                   b"source=b/sub/f, destination=dest/sub/f\n")
+    assert err == (
+        b"fatal: multiple sources for the same target, "
+        b"source=b/sub/f, destination=dest/sub/f\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -183,8 +201,9 @@ async def test_a_sources_own_fault_outranks_the_collision(git_rw):
     await run(git_rw, "add a")
     await run(git_rw, "commit -m one")
     _code, _out, err = await run(git_rw, "mv a/x b/x dest")
-    assert err == (b"fatal: not under version control, source=b/x, "
-                   b"destination=dest/x\n")
+    assert err == (
+        b"fatal: not under version control, source=b/x, destination=dest/x\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -209,7 +228,8 @@ async def test_a_conflicted_source_is_refused(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_a_conflicted_source_outranks_an_occupied_destination(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     conflict_index(repo_path, "a.txt")
     _code, _out, err = await run(git_rw, "mv a.txt b.txt")
     assert err == b"fatal: conflicted, source=a.txt, destination=b.txt\n"
@@ -217,15 +237,17 @@ async def test_a_conflicted_source_outranks_an_occupied_destination(
 
 @pytest.mark.asyncio
 async def test_a_directory_holding_a_conflict_is_refused_by_that_path(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir /repo/docs && echo x > /repo/docs/one.md")
     await run(git_rw, "add docs")
     await run(git_rw, "commit -m docs")
     conflict_index(repo_path, "docs/one.md")
     code, _out, err = await run(git_rw, "mv docs notes")
     assert code == 128
-    assert err == (b"fatal: conflicted, source=docs/one.md, "
-                   b"destination=notes/one.md\n")
+    assert err == (
+        b"fatal: conflicted, source=docs/one.md, destination=notes/one.md\n"
+    )
     assert (repo_path / "docs" / "one.md").exists()
     assert not (repo_path / "notes").exists()
 
@@ -251,7 +273,8 @@ async def test_a_directory_carries_its_symlinks(git_rw):
     assert moved.stdout == b"one.md\n"
     assert left.exit_code != 0
     assert (await run(git_rw, "status --porcelain"))[1] == (
-        b"R  docs/link -> notes/link\nR  docs/one.md -> notes/one.md\n")
+        b"R  docs/link -> notes/link\nR  docs/one.md -> notes/one.md\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -261,14 +284,16 @@ async def test_a_directory_holding_a_mount_will_not_move(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/docs/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /repo/docs && echo x > /repo/docs/one.md")
         await run(ws, "add docs")
         code, _out, err = await run(ws, "mv docs notes")
         assert code == 128
-        assert err == (b"fatal: renaming 'docs' failed: Device or resource "
-                       b"busy\n")
+        assert err == (
+            b"fatal: renaming 'docs' failed: Device or resource busy\n"
+        )
         assert (repo_path / "docs" / "one.md").exists()
         assert not (repo_path / "notes").exists()
 
@@ -280,14 +305,16 @@ async def test_a_mount_root_itself_will_not_move(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("echo x > /repo/inner/one.md")
         await run(ws, "add inner")
         code, _out, err = await run(ws, "mv inner elsewhere")
         assert code == 128
-        assert err == (b"fatal: renaming 'inner' failed: Device or resource "
-                       b"busy\n")
+        assert err == (
+            b"fatal: renaming 'inner' failed: Device or resource busy\n"
+        )
 
 
 @pytest.mark.asyncio
@@ -303,14 +330,16 @@ async def test_a_file_will_not_move_into_another_mount(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("echo x > /repo/one.md")
         await run(ws, "add one.md")
         code, _out, err = await run(ws, "mv one.md inner/one.md")
         assert code == 128
-        assert err == (b"fatal: renaming 'one.md' failed: Device or resource "
-                       b"busy\n")
+        assert err == (
+            b"fatal: renaming 'one.md' failed: Device or resource busy\n"
+        )
         assert (repo_path / "one.md").exists()
 
 
@@ -321,14 +350,16 @@ async def test_a_file_will_not_move_out_of_a_nested_mount(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("echo x > /repo/inner/one.md")
         await run(ws, "add inner/one.md")
         code, _out, err = await run(ws, "mv inner/one.md one.md")
         assert code == 128
-        assert err == (b"fatal: renaming 'inner/one.md' failed: Device or "
-                       b"resource busy\n")
+        assert err == (
+            b"fatal: renaming 'inner/one.md' failed: Device or resource busy\n"
+        )
 
 
 @pytest.mark.asyncio
@@ -340,7 +371,8 @@ async def test_a_move_inside_one_mount_still_goes(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /repo/docs && echo x > /repo/one.md")
         await run(ws, "add one.md")
@@ -355,7 +387,8 @@ async def test_k_skips_a_source_that_holds_a_mount(repo_path: Path):
             MOUNT: DiskVFS(root=str(repo_path)),
             "/repo/docs/inner/": RAMVFS(),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /repo/docs && echo x > /repo/docs/one.md")
         await run(ws, "add docs")
@@ -365,7 +398,8 @@ async def test_k_skips_a_source_that_holds_a_mount(repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_a_dashed_pathspec_moves_when_the_line_escapes_it(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "-draft").write_text("x\n", encoding="utf-8")
     await run(git_rw, "add -- -draft")
     assert await run(git_rw, "mv -- -draft kept.txt") == (0, b"", b"")
@@ -415,15 +449,17 @@ async def test_a_link_below_a_moved_directory_travels_too(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_directory_and_something_inside_it_cannot_both_move(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir -p /repo/dir /repo/dest")
     await git_rw.shell("echo z > /repo/dir/file")
     await run(git_rw, "add dir")
     await run(git_rw, "commit -m dir")
     code, _out, err = await run(git_rw, "mv dir dir/file dest")
     assert code == 128
-    assert err == (b"fatal: cannot move both 'dir/file' and its parent "
-                   b"directory 'dir'\n")
+    assert err == (
+        b"fatal: cannot move both 'dir/file' and its parent directory 'dir'\n"
+    )
     # Refused before anything moves, which is the whole point: moving
     # the directory first is what makes the other source disappear.
     assert (repo_path / "dir" / "file").exists()
@@ -437,8 +473,9 @@ async def test_the_child_is_named_first_whatever_the_order(git_rw):
     await run(git_rw, "add dir")
     await run(git_rw, "commit -m dir")
     _code, _out, err = await run(git_rw, "mv dir/file dir dest")
-    assert err == (b"fatal: cannot move both 'dir/file' and its parent "
-                   b"directory 'dir'\n")
+    assert err == (
+        b"fatal: cannot move both 'dir/file' and its parent directory 'dir'\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -449,8 +486,9 @@ async def test_k_does_not_skip_an_overlapping_source(git_rw, repo_path: Path):
     await run(git_rw, "commit -m dir")
     code, _out, err = await run(git_rw, "mv -k dir dir/file dest")
     assert code == 128
-    assert err == (b"fatal: cannot move both 'dir/file' and its parent "
-                   b"directory 'dir'\n")
+    assert err == (
+        b"fatal: cannot move both 'dir/file' and its parent directory 'dir'\n"
+    )
     assert (repo_path / "dir" / "file").exists()
 
 
@@ -463,13 +501,15 @@ async def test_a_sources_own_fault_outranks_the_overlap(git_rw):
     # The overlap is read off the whole line once every source has
     # passed its own checks, so a later bad source is reported first.
     _code, _out, err = await run(git_rw, "mv dir dir/file nosuch dest")
-    assert err == (b"fatal: bad source, source=nosuch, "
-                   b"destination=dest/nosuch\n")
+    assert err == (
+        b"fatal: bad source, source=nosuch, destination=dest/nosuch\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_k_taking_a_source_out_takes_it_out_of_the_overlap(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir -p /repo/dir /repo/dest")
     await git_rw.shell("echo z > /repo/dir/file")
     await run(git_rw, "add dir")
@@ -483,19 +523,22 @@ async def test_k_taking_a_source_out_takes_it_out_of_the_overlap(
 
 @pytest.mark.asyncio
 async def test_f_takes_the_destinations_conflict_stages_with_it(
-        repo_path: Path):
+    repo_path: Path,
+):
     # -f is the only way to reach an occupied destination, and git's
     # answer there is one stage-0 entry holding the source: ls-files -u
     # is empty afterwards. Leaving the stages is the worse divergence,
     # since write_index lays them back over the entry and the moved
     # blob is the copy that disappears.
     conflict_index(repo_path, "b.txt")
-    with Workspace({MOUNT: DiskVFS(root=str(repo_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {MOUNT: DiskVFS(root=str(repo_path))}, mode=MountMode.WRITE
+    ) as ws:
         ws.register_cli("git", GIT)
         assert (await run(ws, "status --short"))[1].startswith(b"UU b.txt\n")
         assert await run(ws, "mv -f a.txt b.txt") == (0, b"", b"")
-        assert (await run(ws, "status --short"))[1] == (b"D  a.txt\n"
-                                                        b"M  b.txt\n")
+        assert (await run(ws, "status --short"))[1] == (
+            b"D  a.txt\nM  b.txt\n"
+        )
     assert (repo_path / "b.txt").read_text(encoding="utf-8") == "one changed\n"
     assert not (repo_path / "a.txt").exists()

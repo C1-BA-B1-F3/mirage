@@ -88,24 +88,30 @@ class WasmRuntime:
             if self._serialized is not None:
                 return self._serialized
             engine = epoch_engine()
-            if (self._cache.is_file() and self._cache.stat().st_mtime
-                    >= self._wasm.stat().st_mtime):
+            if (
+                self._cache.is_file()
+                and self._cache.stat().st_mtime >= self._wasm.stat().st_mtime
+            ):
                 try:
                     wasmtime.Module.deserialize_file(engine, str(self._cache))
                     cached = self._cache.read_bytes()
                     self._serialized = cached
                     return cached
                 except wasmtime.WasmtimeError as exc:
-                    logger.debug("stale %s cache, recompiling: %s",
-                                 self._cache.name, exc)
+                    logger.debug(
+                        "stale %s cache, recompiling: %s",
+                        self._cache.name,
+                        exc,
+                    )
             module = wasmtime.Module.from_file(engine, str(self._wasm))
             serialized = bytes(module.serialize())
             self._serialized = serialized
             try:
                 self._cache.write_bytes(serialized)
             except OSError as exc:
-                logger.debug("cannot write %s cache: %s", self._cache.name,
-                             exc)
+                logger.debug(
+                    "cannot write %s cache: %s", self._cache.name, exc
+                )
             return serialized
 
     async def run(
@@ -126,8 +132,9 @@ class WasmRuntime:
         serialized = await asyncio.to_thread(self._ensure_serialized)
         engine = epoch_engine()
         try:
-            return await asyncio.to_thread(self._run_sync, engine, serialized,
-                                           argv, stdin, env, fs)
+            return await asyncio.to_thread(
+                self._run_sync, engine, serialized, argv, stdin, env, fs
+            )
         except asyncio.CancelledError:
             # The worker thread is still inside the run; bumping the
             # epoch trips the store's deadline, traps it, and lets the

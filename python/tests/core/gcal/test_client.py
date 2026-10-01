@@ -41,16 +41,21 @@ async def test_list_events_encodes_the_calendar_id(monkeypatch, token_manager):
         return {}
 
     monkeypatch.setattr(client_mod, "google_get", fake_get)
-    await list_events(token_manager, HOLIDAY, "2026-08-11T00:00:00+08:00",
-                      "2026-08-12T00:00:00+08:00")
+    await list_events(
+        token_manager,
+        HOLIDAY,
+        "2026-08-11T00:00:00+08:00",
+        "2026-08-12T00:00:00+08:00",
+    )
     assert "%23holiday%40group" in seen[0]
     parsed = yarl.URL(seen[0])
     assert parsed.fragment == ""
     assert parsed.path.endswith(f"/calendars/{HOLIDAY}/events")
 
 
-async def test_delete_event_encodes_both_path_segments(monkeypatch,
-                                                       token_manager):
+async def test_delete_event_encodes_both_path_segments(
+    monkeypatch, token_manager
+):
     seen: list[str] = []
 
     async def fake_delete(tm, url):
@@ -63,8 +68,9 @@ async def test_delete_event_encodes_both_path_segments(monkeypatch,
     assert parsed.path.endswith(f"/calendars/{HOLIDAY}/events/evt#1")
 
 
-async def test_page_cap_refuses_an_incomplete_listing(monkeypatch,
-                                                      token_manager):
+async def test_page_cap_refuses_an_incomplete_listing(
+    monkeypatch, token_manager
+):
     calls = []
 
     async def fake_get(tm, url, params):
@@ -73,7 +79,8 @@ async def test_page_cap_refuses_an_incomplete_listing(monkeypatch,
 
     monkeypatch.setattr(client_mod, "google_get", fake_get)
     with pytest.raises(RuntimeError, match="exceeded 50 pages"):
-        await list_events(token_manager, "primary", None,
-                          "2026-08-12T00:00:00Z")
+        await list_events(
+            token_manager, "primary", None, "2026-08-12T00:00:00Z"
+        )
     assert len(calls) == 50
     assert "timeMin" not in calls[0]

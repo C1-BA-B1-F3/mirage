@@ -41,8 +41,9 @@ class AuthMiddleware:
         self.app = app
         self.config = config
 
-    async def __call__(self, scope: Scope, receive: Receive,
-                       send: Send) -> None:
+    async def __call__(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> None:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
@@ -56,18 +57,21 @@ class AuthMiddleware:
 
         token = self._extract_bearer(scope)
         if token is None:
-            await self._unauthorized(scope, receive, send,
-                                     "missing bearer token")
+            await self._unauthorized(
+                scope, receive, send, "missing bearer token"
+            )
             return
 
         if self.config.mode == AuthMode.JWT:
             if self.config.jwt is None:
-                await self._unauthorized(scope, receive, send,
-                                         "JWT auth is not configured")
+                await self._unauthorized(
+                    scope, receive, send, "JWT auth is not configured"
+                )
                 return
             if not _JWT_SHAPE.match(token):
-                await self._unauthorized(scope, receive, send,
-                                         "token shape is not a JWT")
+                await self._unauthorized(
+                    scope, receive, send, "token shape is not a JWT"
+                )
                 return
             try:
                 verify_jwt(token, self.config.jwt)
@@ -78,8 +82,11 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        expected = (self.config.local_token if self.config.mode
-                    == AuthMode.LOCAL else self.config.bearer_token)
+        expected = (
+            self.config.local_token
+            if self.config.mode == AuthMode.LOCAL
+            else self.config.bearer_token
+        )
         if expected is None or not hmac.compare_digest(token, expected):
             await self._unauthorized(scope, receive, send, "bearer mismatch")
             return
@@ -91,15 +98,19 @@ class AuthMiddleware:
         raw = headers.get(b"authorization", b"").decode("latin-1")
         if not raw.startswith(BEARER_PREFIX):
             return None
-        value = raw[len(BEARER_PREFIX):].strip()
+        value = raw[len(BEARER_PREFIX) :].strip()
         return value or None
 
-    async def _unauthorized(self, scope: Scope, receive: Receive, send: Send,
-                            reason: str) -> None:
+    async def _unauthorized(
+        self, scope: Scope, receive: Receive, send: Send, reason: str
+    ) -> None:
         client = scope.get("client") or ("?", 0)
-        logger.warning("rejecting request from %s:%s: %s", client[0],
-                       client[1], reason)
-        response = PlainTextResponse("Unauthorized",
-                                     status_code=401,
-                                     headers={"WWW-Authenticate": "Bearer"})
+        logger.warning(
+            "rejecting request from %s:%s: %s", client[0], client[1], reason
+        )
+        response = PlainTextResponse(
+            "Unauthorized",
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
         await response(scope, receive, send)

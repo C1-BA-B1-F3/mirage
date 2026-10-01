@@ -22,15 +22,17 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
-from mirage.workspace.node.run_tree import \
-    run_command_tree as _run_command_tree
+from mirage.workspace.node.run_tree import (
+    run_command_tree as _run_command_tree,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.workspace import Workspace
 
 
 def run_command_tree(dispatch, registry, *args, **kwargs):
-    return _run_command_tree(dispatch, registry, Namespace(registry), *args,
-                             **kwargs)
+    return _run_command_tree(
+        dispatch, registry, Namespace(registry), *args, **kwargs
+    )
 
 
 @pytest.fixture
@@ -97,8 +99,16 @@ async def _cross_node(cmd: str):
     await ws.shell("mkdir -p /a/dir")
     await ws.shell("printf 'x\\n' > /a/f.txt")
     io, exec_node = await run_command_tree(
-        ws.dispatch, ws._registry, ws.job_table, _noop_execute, "agent",
-        parse(cmd), SessionState(session_id="t", cwd="/"), None, None)
+        ws.dispatch,
+        ws._registry,
+        ws.job_table,
+        _noop_execute,
+        "agent",
+        parse(cmd),
+        SessionState(session_id="t", cwd="/"),
+        None,
+        None,
+    )
     return io, exec_node
 
 

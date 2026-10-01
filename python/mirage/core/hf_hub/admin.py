@@ -14,8 +14,14 @@
 
 from typing import Any
 
-from mirage.core.hf_hub.client import (HfHubError, hub_get, hub_post,
-                                       hub_request, repo_url, rev_segment)
+from mirage.core.hf_hub.client import (
+    HfHubError,
+    hub_get,
+    hub_post,
+    hub_request,
+    repo_url,
+    rev_segment,
+)
 from mirage.core.hf_hub.config import HfConfig
 from mirage.core.hf_hub.constants import API_SEGMENTS, HTTP_CONFLICT
 from mirage.types import JsonValue
@@ -40,13 +46,15 @@ def split_repo_id(repo_id: str) -> tuple[str | None, str]:
     return None, repo_id
 
 
-async def create_repo(config: HfConfig,
-                      repo_id: str,
-                      repo_type: str = "model",
-                      private: bool = False,
-                      space_sdk: str | None = None,
-                      exist_ok: bool = False,
-                      resource_group_id: str | None = None) -> dict[str, Any]:
+async def create_repo(
+    config: HfConfig,
+    repo_id: str,
+    repo_type: str = "model",
+    private: bool = False,
+    space_sdk: str | None = None,
+    exist_ok: bool = False,
+    resource_group_id: str | None = None,
+) -> dict[str, Any]:
     """Create a repository on the Hub.
 
     Args:
@@ -88,19 +96,22 @@ async def create_repo(config: HfConfig,
     return data if isinstance(data, dict) else {}
 
 
-def repo_api_url(config: HfConfig, repo_type: str, repo_id: str,
-                 suffix: str) -> str:
+def repo_api_url(
+    config: HfConfig, repo_type: str, repo_id: str, suffix: str
+) -> str:
     """The /api URL for a repository the CLI named on the line."""
     segment = API_SEGMENTS[repo_type]
     return f"{config.endpoint.rstrip('/')}/api/{segment}/{repo_id}{suffix}"
 
 
-async def create_tag(config: HfConfig,
-                     repo_id: str,
-                     tag: str,
-                     repo_type: str = "model",
-                     revision: str = "main",
-                     message: str | None = None) -> None:
+async def create_tag(
+    config: HfConfig,
+    repo_id: str,
+    tag: str,
+    repo_type: str = "model",
+    revision: str = "main",
+    message: str | None = None,
+) -> None:
     """Tag a revision of a repository.
 
     Args:
@@ -114,15 +125,15 @@ async def create_tag(config: HfConfig,
     body: dict[str, JsonValue] = {"tag": tag}
     if message is not None:
         body["message"] = message
-    url = repo_api_url(config, repo_type, repo_id,
-                       f"/tag/{rev_segment(revision)}")
+    url = repo_api_url(
+        config, repo_type, repo_id, f"/tag/{rev_segment(revision)}"
+    )
     await hub_post(config.token, url, body)
 
 
-async def delete_tag(config: HfConfig,
-                     repo_id: str,
-                     tag: str,
-                     repo_type: str = "model") -> None:
+async def delete_tag(
+    config: HfConfig, repo_id: str, tag: str, repo_type: str = "model"
+) -> None:
     """Remove a tag from a repository.
 
     Args:
@@ -135,9 +146,9 @@ async def delete_tag(config: HfConfig,
     await hub_request(config.token, "DELETE", url, None)
 
 
-async def list_tags(config: HfConfig,
-                    repo_id: str,
-                    repo_type: str = "model") -> list[str]:
+async def list_tags(
+    config: HfConfig, repo_id: str, repo_type: str = "model"
+) -> list[str]:
     """Every tag on a repository.
 
     Read from /refs, which is the only endpoint that enumerates them;
@@ -155,6 +166,7 @@ async def list_tags(config: HfConfig,
     data: JsonValue = await hub_get(config.token, url)
     rows = data.get("tags") if isinstance(data, dict) else None
     return [
-        str(row["name"]) for row in (rows if isinstance(rows, list) else [])
+        str(row["name"])
+        for row in (rows if isinstance(rows, list) else [])
         if isinstance(row, dict) and "name" in row
     ]

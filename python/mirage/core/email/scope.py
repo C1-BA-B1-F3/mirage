@@ -18,8 +18,8 @@ from mirage.types import ContentType
 
 EMAIL_JSON = Codec(suffix=".email.json")
 
-_FOLDER = (Slot("folder"), )
-_DAY = _FOLDER + (Slot("day", DATE), )
+_FOLDER = (Slot("folder"),)
+_DAY = _FOLDER + (Slot("day", DATE),)
 
 # One description of the tree: readdir, stat, read and the search
 # push-down all classify through it, so the file surface and the command
@@ -29,16 +29,22 @@ _DAY = _FOLDER + (Slot("day", DATE), )
 SCOPES = (
     Scope(kind="folder", segments=_FOLDER),
     Scope(kind="day", segments=_DAY),
-    Scope(kind="message",
-          segments=_DAY + (Slot("message", EMAIL_JSON, id_key="uid"), ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="attachment_dir",
-          segments=_DAY + (Slot("attachment_dir", id_key="uid"), )),
-    Scope(kind="attachment",
-          segments=_DAY +
-          (Slot("attachment_dir", id_key="uid"), Slot("filename")),
-          leaf=True),
+    Scope(
+        kind="message",
+        segments=_DAY + (Slot("message", EMAIL_JSON, id_key="uid"),),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="attachment_dir",
+        segments=_DAY + (Slot("attachment_dir", id_key="uid"),),
+    ),
+    Scope(
+        kind="attachment",
+        segments=_DAY
+        + (Slot("attachment_dir", id_key="uid"), Slot("filename")),
+        leaf=True,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

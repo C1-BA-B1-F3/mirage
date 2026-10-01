@@ -78,21 +78,39 @@ SEED = [
 # "host" runs the line with no session, which is the workspace's own
 # unrestricted view: no profile, so no program, but every coded policy.
 LINES = [
-    ("reviewer", "cat /repo/notes.txt",
-     "pre_command read the file and found no marker"),
-    ("reviewer", "cat /repo/flagged.txt",
-     "and refuses one that holds it; the reason is for the operator"),
+    (
+        "reviewer",
+        "cat /repo/notes.txt",
+        "pre_command read the file and found no marker",
+    ),
+    (
+        "reviewer",
+        "cat /repo/flagged.txt",
+        "and refuses one that holds it; the reason is for the operator",
+    ),
     ("reviewer", "cat /scratch/cold/k", "pre_ops lets a read through"),
-    ("reviewer", "echo x > /scratch/cold/f",
-     "and refuses a write at the op door"),
+    (
+        "reviewer",
+        "echo x > /scratch/cold/f",
+        "and refuses a write at the op door",
+    ),
     ("reviewer", "rm /scratch/cold/k", "whichever command asked for it"),
-    ("reviewer", "export AWS_SECRET=x",
-     "the coded policy, at the session door"),
-    ("reviewer", "export SAFE=1 && echo $SAFE",
-     "silence where no hook objects"),
+    (
+        "reviewer",
+        "export AWS_SECRET=x",
+        "the coded policy, at the session door",
+    ),
+    (
+        "reviewer",
+        "export SAFE=1 && echo $SAFE",
+        "silence where no hook objects",
+    ),
     ("host", "cat /repo/flagged.txt", "no profile, so no program"),
-    ("host", "export AWS_SECRET=x",
-     "the coded policy speaks for every session"),
+    (
+        "host",
+        "export AWS_SECRET=x",
+        "the coded policy speaks for every session",
+    ),
 ]
 
 
@@ -132,10 +150,12 @@ async def main() -> None:
         ws.create_session("reviewer", profile="reviewer")
 
         for who, line, note in LINES:
-            res = await ws.shell(line,
-                                 session_id=None if who == "host" else who)
-            outcome = answer(res.stdout or b"", res.stderr or b"",
-                             res.exit_code)
+            res = await ws.shell(
+                line, session_id=None if who == "host" else who
+            )
+            outcome = answer(
+                res.stdout or b"", res.stderr or b"", res.exit_code
+            )
             print(f"{who:9} {line:30} {outcome}")
             print(f"{'':9} {'':30} {note}")
     finally:

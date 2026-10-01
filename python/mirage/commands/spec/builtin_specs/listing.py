@@ -15,8 +15,7 @@
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SPECS: dict[str, CommandSpec] = {
-    'ls':
-    CommandSpec(
+    "ls": CommandSpec(
         options=(
             Option(short="-l"),
             Option(short="-b", long="--escape"),
@@ -38,11 +37,13 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-R", long="--recursive"),
             Option(short="-d", long="--directory"),
             # -F classifies outright; only the long form takes GNU's WHEN.
-            Option(short="-F",
-                   long="--classify",
-                   type="str",
-                   value_optional=True,
-                   short_value=False),
+            Option(
+                short="-F",
+                long="--classify",
+                type="str",
+                value_optional=True,
+                short_value=False,
+            ),
             Option(short="-p"),
             Option(long="--file-type"),
             Option(long="--indicator-style", type="str"),
@@ -62,8 +63,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'stat':
-    CommandSpec(
+    "stat": CommandSpec(
         options=(
             Option(short="-c", type="str"),
             Option(short="-f", type="str"),
@@ -71,16 +71,14 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'pwd':
-    CommandSpec(
+    "pwd": CommandSpec(
         options=(
             Option(short="-P"),
             Option(short="-L"),
         ),
         rest=Operand(type="str"),
     ),
-    'find':
-    CommandSpec(
+    "find": CommandSpec(
         options=(
             Option(short="-name", type="str", multiple=True),
             Option(short="-type", type="str", multiple=True),
@@ -123,8 +121,7 @@ SPECS: dict[str, CommandSpec] = {
         # these three are grammar the expression parser consumes.
         ignore_tokens=frozenset({"(", ")", "!"}),
     ),
-    'tree':
-    CommandSpec(
+    "tree": CommandSpec(
         options=(
             Option(short="-a"),
             Option(short="-L", type="str"),
@@ -134,8 +131,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'du':
-    CommandSpec(
+    "du": CommandSpec(
         options=(
             Option(short="-h"),
             Option(short="-s"),
@@ -148,8 +144,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'df':
-    CommandSpec(
+    "df": CommandSpec(
         options=(
             Option(short="-h"),
             Option(short="-H"),
@@ -162,8 +157,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'file':
-    CommandSpec(
+    "file": CommandSpec(
         options=(
             Option(short="-b"),
             Option(short="-i"),

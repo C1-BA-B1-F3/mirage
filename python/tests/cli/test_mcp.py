@@ -52,11 +52,13 @@ def test_missing_config_exits_two(tmp_path, monkeypatch):
 
 
 def test_resolve_prefers_the_mcp_env_name(tree):
-    found = resolve_mcp_config(cwd=tree,
-                               env={
-                                   "MIRAGE_MCP_CONFIG": "other.yaml",
-                                   "MIRAGE_CONFIG": "workspace.yaml"
-                               })
+    found = resolve_mcp_config(
+        cwd=tree,
+        env={
+            "MIRAGE_MCP_CONFIG": "other.yaml",
+            "MIRAGE_CONFIG": "workspace.yaml",
+        },
+    )
     assert found.name == "other.yaml"
 
 

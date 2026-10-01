@@ -16,7 +16,6 @@ from mirage.accessor.google_api import GoogleApiAccessor
 
 
 class GDriveAccessor(GoogleApiAccessor):
-
     # Memoized by core.gdrive.resolve.root_context: the scoped root's
     # shared drive id (None when the root is in My Drive). Unset until
     # the first resolution.

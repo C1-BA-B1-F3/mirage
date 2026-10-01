@@ -36,7 +36,8 @@ BOARD_READS = [
 
 def _accessor(**knobs) -> TrelloAccessor:
     return TrelloAccessor(
-        TrelloConfig(api_key="k", api_token="t", base_url=_BASE, **knobs))
+        TrelloConfig(api_key="k", api_token="t", base_url=_BASE, **knobs)
+    )
 
 
 def _read(name: str) -> TrelloRead:
@@ -55,13 +56,21 @@ async def _on_board_out(config, ident, session=None):
 @pytest.mark.asyncio
 async def test_board_list_shows_only_the_boards_the_mount_lists():
     accessor = _accessor(workspace_id="ws1", board_ids=["b1"])
-    with patch("mirage.core.trello.readdir.list_workspaces",
-               new_callable=AsyncMock,
-               return_value=[{"id": "ws1"}, {"id": "ws2"}]), \
-            patch("mirage.core.trello.readdir.list_workspace_boards",
-                  new_callable=AsyncMock,
-                  return_value=[{"id": "b1", "name": "In"},
-                                {"id": "b2", "name": "Out"}]) as boards:
+    with (
+        patch(
+            "mirage.core.trello.readdir.list_workspaces",
+            new_callable=AsyncMock,
+            return_value=[{"id": "ws1"}, {"id": "ws2"}],
+        ),
+        patch(
+            "mirage.core.trello.readdir.list_workspace_boards",
+            new_callable=AsyncMock,
+            return_value=[
+                {"id": "b1", "name": "In"},
+                {"id": "b2", "name": "Out"},
+            ],
+        ) as boards,
+    ):
         out = await _run("trello board list", accessor, [])
     assert [b["board_name"] for b in json.loads(out)] == ["In"]
     assert [call.args[1] for call in boards.await_args_list] == ["ws1"]
@@ -70,43 +79,60 @@ async def test_board_list_shows_only_the_boards_the_mount_lists():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", BOARD_READS)
 async def test_a_board_read_refuses_a_board_outside_the_scope(name):
-    with pytest.raises(ValueError,
-                       match="^board b_out is outside this mount's scope$"):
+    with pytest.raises(
+        ValueError, match="^board b_out is outside this mount's scope$"
+    ):
         await _run(name, _accessor(board_ids=["b_in"]), ["b_out"])
 
 
 @pytest.mark.asyncio
 async def test_card_list_refuses_a_list_on_a_board_outside_the_scope():
-    with patch("mirage.commands.builtin.trello._scope.get_list",
-               new=_on_board_out):
-        with pytest.raises(ValueError,
-                           match="^list l1 is outside this mount's scope$"):
-            await _run("trello card list", _accessor(board_ids=["b_in"]),
-                       ["l1"])
+    with patch(
+        "mirage.commands.builtin.trello._scope.get_list", new=_on_board_out
+    ):
+        with pytest.raises(
+            ValueError, match="^list l1 is outside this mount's scope$"
+        ):
+            await _run(
+                "trello card list", _accessor(board_ids=["b_in"]), ["l1"]
+            )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["trello card show", "trello card comments"])
 async def test_a_card_read_refuses_a_card_on_a_board_outside_the_scope(name):
-    with patch("mirage.commands.builtin.trello._scope.get_card",
-               new=_on_board_out), \
-            patch("mirage.core.trello.readdir.get_board",
-                  new_callable=AsyncMock,
-                  return_value={"id": "b_out", "idOrganization": "ws2"}):
-        with pytest.raises(ValueError,
-                           match="^card c1 is outside this mount's scope$"):
+    with (
+        patch(
+            "mirage.commands.builtin.trello._scope.get_card", new=_on_board_out
+        ),
+        patch(
+            "mirage.core.trello.readdir.get_board",
+            new_callable=AsyncMock,
+            return_value={"id": "b_out", "idOrganization": "ws2"},
+        ),
+    ):
+        with pytest.raises(
+            ValueError, match="^card c1 is outside this mount's scope$"
+        ):
             await _run(name, _accessor(workspace_id="ws1"), ["c1"])
 
 
 @pytest.mark.asyncio
 async def test_a_card_read_inside_the_scope_is_answered():
     card = {"id": "c1", "name": "Ship", "idBoard": "b_in"}
-    with patch("mirage.commands.builtin.trello._scope.get_card",
-               new_callable=AsyncMock,
-               return_value=card), \
-            patch("mirage.commands.builtin.trello.reads.get_card",
-                  new_callable=AsyncMock,
-                  return_value=card):
-        out = await _run("trello card show", _accessor(board_ids=["b_in"]),
-                         ["c1"])
+    with (
+        patch(
+            "mirage.commands.builtin.trello._scope.get_card",
+            new_callable=AsyncMock,
+            return_value=card,
+        ),
+        patch(
+            "mirage.commands.builtin.trello.reads.get_card",
+            new_callable=AsyncMock,
+            return_value=card,
+        ),
+    ):
+        out = await _run(
+            "trello card show", _accessor(board_ids=["b_in"]), ["c1"]
+        )
     assert json.loads(out)["card_name"] == "Ship"

@@ -38,7 +38,8 @@ def _home_dir() -> str | None:
 
 live = pytest.mark.skipif(
     _home_dir() is None,
-    reason=f"{QUICKJS_HOME_ENV} does not point at a qjs-wasi.wasm build")
+    reason=f"{QUICKJS_HOME_ENV} does not point at a qjs-wasi.wasm build",
+)
 
 
 def test_missing_home_raises_hint(monkeypatch):
@@ -53,7 +54,6 @@ def test_dir_without_wasm_raises_hint(tmp_path):
 
 
 class _ArgvSpy:
-
     def __init__(self) -> None:
         self.argv: list[str] = []
 
@@ -82,7 +82,14 @@ async def test_program_args_ride_behind_the_end_of_options_marker():
     rt = _spied_runtime()
     await rt.run(RunArgs(code="CODE", args=["-e", "PROG", "-m"]))
     assert rt._runtime.argv == [
-        "qjs", "--std", "-e", "CODE", "--", "-e", "PROG", "-m"
+        "qjs",
+        "--std",
+        "-e",
+        "CODE",
+        "--",
+        "-e",
+        "PROG",
+        "-m",
     ]
 
 
@@ -91,7 +98,13 @@ async def test_named_program_still_takes_the_first_arg_slot():
     rt = _spied_runtime()
     await rt.run(RunArgs(code="CODE", prog="tool", args=["-m"]))
     assert rt._runtime.argv == [
-        "qjs", "--std", "-e", "CODE", "--", "tool", "-m"
+        "qjs",
+        "--std",
+        "-e",
+        "CODE",
+        "--",
+        "tool",
+        "-m",
     ]
 
 
@@ -106,19 +119,18 @@ async def test_module_mode_is_still_the_interpreters_own_switch():
 @pytest.mark.asyncio
 async def test_version_commands_report_the_quickjs_engine():
     runtime = QuickJsRuntime()
-    raw, _, code = await runtime._runtime.run(argv=["qjs", "--version"],
-                                              stdin=None,
-                                              env=[],
-                                              fs=WasmVFS())
+    raw, _, code = await runtime._runtime.run(
+        argv=["qjs", "--version"], stdin=None, env=[], fs=WasmVFS()
+    )
     assert code == 0
     ws = Workspace({"/": RAMVFS()}, runtimes=[runtime, "workspace"])
     try:
         for line in ["js --version", "node --version", "js -v", "node -v"]:
             io = await ws.shell(line)
             assert io.exit_code == 0
-            assert await materialize(io.stdout
-                                     ) == (b"JavaScript (quickjs-ng " +
-                                           raw.strip() + b")\n")
+            assert await materialize(io.stdout) == (
+                b"JavaScript (quickjs-ng " + raw.strip() + b")\n"
+            )
             assert await materialize(io.stderr) == b""
     finally:
         await ws.close()
@@ -129,7 +141,8 @@ def test_quickjs_runs_modern_js():
     rt = QuickJsRuntime()
     code = (
         "const f = (n) => n * 6 + 1; "
-        "console.log(JSON.stringify([...'ab'].map((s, i) => s + i)), f(6))")
+        "console.log(JSON.stringify([...'ab'].map((s, i) => s + i)), f(6))"
+    )
     result = asyncio.run(rt.run(RunArgs(code=code)))
     assert result.exit_code == 0
     assert result.stdout == b'["a0","b1"] 37\n'
@@ -141,22 +154,31 @@ def test_quickjs_argv_stdin_module():
     rt = QuickJsRuntime()
     result = asyncio.run(
         rt.run(
-            RunArgs(code="console.log(scriptArgs.join('/'))",
-                    args=["a1", "a2"])))
+            RunArgs(
+                code="console.log(scriptArgs.join('/'))", args=["a1", "a2"]
+            )
+        )
+    )
     assert result.stdout == b"a1/a2\n"
     # std.in reads piped stdin (the std/os globals are exposed).
     result = asyncio.run(
         rt.run(
             RunArgs(
                 code="console.log(std.in.readAsString().trim().toUpperCase())",
-                stdin=b"piped\n")))
+                stdin=b"piped\n",
+            )
+        )
+    )
     assert result.stdout == b"PIPED\n"
     # module mode enables top-level await.
     result = asyncio.run(
         rt.run(
             RunArgs(
                 code="const x = await Promise.resolve(41); console.log(x + 1)",
-                flags={"module": True})))
+                flags={"module": True},
+            )
+        )
+    )
     assert result.stdout == b"42\n"
 
 
@@ -177,8 +199,9 @@ def test_quickjs_host_fs_invisible():
     # be opened (std.open returns null rather than a handle).
     result = asyncio.run(
         rt.run(
-            RunArgs(
-                code="console.log(std.open('/etc/passwd', 'r') === null)")))
+            RunArgs(code="console.log(std.open('/etc/passwd', 'r') === null)")
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"true\n"
 
@@ -188,8 +211,8 @@ def test_quickjs_host_fs_invisible():
 async def test_quickjs_node_command_end_to_end():
     ram = RAMVFS()
     ram._store.files["/calc.mjs"] = (
-        b"export const k = 6;\n"
-        b"console.log(Number(scriptArgs[0]) * k)\n")
+        b"export const k = 6;\nconsole.log(Number(scriptArgs[0]) * k)\n"
+    )
     ws = Workspace({"/ram": ram}, mode=MountMode.EXEC, runtimes=["quickjs"])
     r = await ws.shell("node -e \"console.log('js says', 6 * 7)\"")
     assert r.exit_code == 0
@@ -231,19 +254,21 @@ def test_quickjs_reuses_compiled_module():
 async def test_quickjs_mounts_read_write_readdir():
     # Guest file I/O bridges through the workspace dispatch: reads see
     # shell writes, guest writes land in the mount, readdir lists it.
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=["quickjs"])
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=["quickjs"]
+    )
     await ws.shell("echo hello-mount > /data/in.txt")
-    r = await ws.shell("js -e \"const f = std.open('/data/in.txt', 'r');"
-                       "console.log(f.readAsString().trim());"
-                       "f.close();"
-                       "const w = std.open('/data/out.txt', 'w');"
-                       "w.puts('from-qjs\\n');"
-                       "w.close();"
-                       "const [names] = os.readdir('/data');"
-                       "console.log(names.filter((n) => !n.startsWith('.'))"
-                       ".sort().join(','))\"")
+    r = await ws.shell(
+        "js -e \"const f = std.open('/data/in.txt', 'r');"
+        "console.log(f.readAsString().trim());"
+        "f.close();"
+        "const w = std.open('/data/out.txt', 'w');"
+        "w.puts('from-qjs\\n');"
+        "w.close();"
+        "const [names] = os.readdir('/data');"
+        "console.log(names.filter((n) => !n.startsWith('.'))"
+        ".sort().join(','))\""
+    )
     assert r.exit_code == 0
     assert (await r.stdout_str()) == "hello-mount\nin.txt,out.txt\n"
     r = await ws.shell("cat /data/out.txt")
@@ -256,8 +281,9 @@ def test_quickjs_without_dispatch_sees_no_mounts():
     rt = QuickJsRuntime()
     result = asyncio.run(
         rt.run(
-            RunArgs(
-                code="console.log(std.open('/data/in.txt', 'r') === null)")))
+            RunArgs(code="console.log(std.open('/data/in.txt', 'r') === null)")
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"true\n"
 
@@ -267,14 +293,15 @@ def test_quickjs_without_dispatch_sees_no_mounts():
 async def test_quickjs_session_narrowing_reaches_the_guest():
     # A session narrowed to read denies guest writes at open() and no
     # file materializes in the mount.
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=["quickjs"])
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=["quickjs"]
+    )
     ws.create_session("narrow", {"/data": "read"})
     r = await ws.shell(
         "js -e \"try { std.open('/data/g.txt', 'w').puts('x');"
         " console.log('WROTE') } catch (e) { console.log('denied') }\"",
-        session_id="narrow")
+        session_id="narrow",
+    )
     assert r.exit_code == 0
     assert (await r.stdout_str()) == "denied\n"
     r = await ws.shell("cat /data/g.txt", session_id="narrow")
@@ -286,10 +313,10 @@ async def test_quickjs_session_narrowing_reaches_the_guest():
 @pytest.mark.asyncio
 async def test_eval_returns_the_completion_value():
     rt = QuickJsRuntime()
-    result = await rt.eval("ctx.command === 'node' ? {deny: 'no'} : null",
-                           inputs={"ctx": {
-                               "command": "node"
-                           }})
+    result = await rt.eval(
+        "ctx.command === 'node' ? {deny: 'no'} : null",
+        inputs={"ctx": {"command": "node"}},
+    )
     assert result.value == {"deny": "no"}
     result = await rt.eval("console.log('side'); 1 + 41")
     assert result.value == 42
@@ -317,27 +344,36 @@ def test_reach_is_vfs():
 @pytest.mark.asyncio
 async def test_cwd_inherits_context_and_eval_is_isolated():
     runtime = QuickJsRuntime()
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[runtime, "workspace"])
+    ws = Workspace(
+        {"/data": RAMVFS()},
+        mode=MountMode.EXEC,
+        runtimes=[runtime, "workspace"],
+    )
     try:
         assert (
-            await
-            ws.shell("mkdir /data/sub; echo child > /data/sub/item; cd /data")
+            await ws.shell(
+                "mkdir /data/sub; echo child > /data/sub/item; cd /data"
+            )
         ).exit_code == 0
         args = RunArgs(code="console.log(os.getcwd()[0])")
         assert (await runtime.run(args)).stdout == b"/data\n"
         explicit = await runtime.run(
-            RunArgs(code=args.code, cwd=PathSpec.from_str_path("/data/sub")))
+            RunArgs(code=args.code, cwd=PathSpec.from_str_path("/data/sub"))
+        )
         assert explicit.stdout == b"/data/sub\n"
-        assert (await runtime.eval(
-            "os.chdir('sub'); std.open('item', 'r').readAsString()")
-                ).value == "child\n"
+        assert (
+            await runtime.eval(
+                "os.chdir('sub'); std.open('item', 'r').readAsString()"
+            )
+        ).value == "child\n"
         assert (await runtime.eval("os.getcwd()[0]")).value == "/data"
         assert (await runtime.eval("os", inputs={"os": 42})).value == 42
         bad = await runtime.run(
-            RunArgs(code="console.log('must not run')",
-                    cwd=PathSpec.from_str_path("/missing")))
+            RunArgs(
+                code="console.log('must not run')",
+                cwd=PathSpec.from_str_path("/missing"),
+            )
+        )
         assert bad.exit_code == 1
         assert bad.stdout == b""
         assert b"cannot change directory" in bad.stderr

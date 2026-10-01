@@ -28,19 +28,21 @@ async def gunzip(
     suffix: str = GZIP_SUFFIX,
     door: LinkDoor | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    return await decompress_inputs(paths,
-                                   read=read_bytes,
-                                   write=write_bytes,
-                                   unlink=unlink,
-                                   stat=stat,
-                                   stdin=stdin,
-                                   keep=keep,
-                                   force=force,
-                                   quiet=quiet,
-                                   suffix=suffix,
-                                   to_stdout=to_stdout,
-                                   test_only=test_only,
-                                   door=door)
+    return await decompress_inputs(
+        paths,
+        read=read_bytes,
+        write=write_bytes,
+        unlink=unlink,
+        stat=stat,
+        stdin=stdin,
+        keep=keep,
+        force=force,
+        quiet=quiet,
+        suffix=suffix,
+        to_stdout=to_stdout,
+        test_only=test_only,
+        door=door,
+    )
 
 
 __all__ = ["gunzip"]
@@ -79,16 +81,18 @@ async def gunzip_generic(
     stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await gunzip(paths,
-                        read_bytes=read_bytes,
-                        write_bytes=write_bytes,
-                        unlink=unlink,
-                        stat=stat,
-                        stdin=opts.stdin,
-                        keep=parsed.keep,
-                        force=parsed.force,
-                        to_stdout=parsed.to_stdout,
-                        test_only=parsed.test_only,
-                        quiet=parsed.quiet,
-                        suffix=parsed.suffix,
-                        door=link_door(opts))
+    return await gunzip(
+        paths,
+        read_bytes=read_bytes,
+        write_bytes=write_bytes,
+        unlink=unlink,
+        stat=stat,
+        stdin=opts.stdin,
+        keep=parsed.keep,
+        force=parsed.force,
+        to_stdout=parsed.to_stdout,
+        test_only=parsed.test_only,
+        quiet=parsed.quiet,
+        suffix=parsed.suffix,
+        door=link_door(opts),
+    )

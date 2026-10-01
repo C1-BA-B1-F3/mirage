@@ -51,8 +51,8 @@ def test_dispatch_write_invalidates_parent_dir_index():
     before, after = asyncio.run(run())
     assert "/r/data/a.txt" in before
     assert "/r/data/b.txt" in after, (
-        "after dispatch write, readdir should reflect b.txt; "
-        f"got {after!r}")
+        f"after dispatch write, readdir should reflect b.txt; got {after!r}"
+    )
 
 
 def test_dispatch_unlink_invalidates_parent_dir_index():
@@ -75,5 +75,5 @@ def test_dispatch_unlink_invalidates_parent_dir_index():
     before, after = asyncio.run(run())
     assert "/r/data/c.txt" in before
     assert "/r/data/c.txt" not in after, (
-        "after dispatch unlink, readdir should drop c.txt; "
-        f"got {after!r}")
+        f"after dispatch unlink, readdir should drop c.txt; got {after!r}"
+    )

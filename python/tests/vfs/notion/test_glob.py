@@ -25,10 +25,9 @@ resolve_glob = make_resolve_glob(readdir)
 
 
 def page_entry(name: str) -> IndexEntry:
-    return IndexEntry(id=name,
-                      name=name,
-                      resource_type="notion/page",
-                      vfs_name=name)
+    return IndexEntry(
+        id=name, name=name, resource_type="notion/page", vfs_name=name
+    )
 
 
 def file_entry(name: str) -> IndexEntry:
@@ -39,9 +38,9 @@ def glob_spec(virtual: str) -> PathSpec:
     last_slash = virtual.rfind("/")
     return PathSpec(
         virtual=virtual,
-        directory=virtual[:last_slash + 1],
-        vfs_path=virtual[len("/notion"):].strip("/"),
-        pattern=virtual[last_slash + 1:],
+        directory=virtual[: last_slash + 1],
+        vfs_path=virtual[len("/notion") :].strip("/"),
+        pattern=virtual[last_slash + 1 :],
         resolved=False,
     )
 
@@ -52,14 +51,20 @@ async def index():
     # what invalidation walks), not the mount-relative key the old
     # bespoke readdir used.
     store = RAMIndexCacheStore()
-    await store.set_dir("/notion/pages", [
-        ("Demo_page__uuid1", page_entry("Demo_page__uuid1")),
-        ("Roadmap__uuid2", page_entry("Roadmap__uuid2")),
-    ])
-    await store.set_dir("/notion/pages/Demo_page__uuid1", [
-        ("page.json", file_entry("page.json")),
-        ("page.md", file_entry("page.md")),
-    ])
+    await store.set_dir(
+        "/notion/pages",
+        [
+            ("Demo_page__uuid1", page_entry("Demo_page__uuid1")),
+            ("Roadmap__uuid2", page_entry("Roadmap__uuid2")),
+        ],
+    )
+    await store.set_dir(
+        "/notion/pages/Demo_page__uuid1",
+        [
+            ("page.json", file_entry("page.json")),
+            ("page.md", file_entry("page.md")),
+        ],
+    )
     return store
 
 
@@ -67,8 +72,9 @@ async def index():
 async def test_mid_path_glob_expands_from_index(index):
     spec = glob_spec("/notion/pages/Demo_page__*/page.md")
     result = await resolve_glob(NotionAccessor(config=None), [spec], index)
-    assert [p.virtual
-            for p in result] == ["/notion/pages/Demo_page__uuid1/page.md"]
+    assert [p.virtual for p in result] == [
+        "/notion/pages/Demo_page__uuid1/page.md"
+    ]
 
 
 @pytest.mark.asyncio

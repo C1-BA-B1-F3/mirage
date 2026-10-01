@@ -67,8 +67,7 @@ class DiskNamespaceStore(NamespaceStore):
         try:
             state = await self._state()
             state["nodes"] = {
-                path: dict(fields)
-                for path, fields in entries.items()
+                path: dict(fields) for path, fields in entries.items()
             }
             await self._records.put(NAMESPACE_RECORD, state)
         finally:
@@ -90,10 +89,9 @@ class DiskNamespaceStore(NamespaceStore):
     async def clear(self) -> None:
         fd = await self._records.lock(NAMESPACE_RECORD)
         try:
-            await self._records.put(NAMESPACE_RECORD, {
-                "nodes": {},
-                "user": None
-            })
+            await self._records.put(
+                NAMESPACE_RECORD, {"nodes": {}, "user": None}
+            )
         finally:
             await self._records.unlock(NAMESPACE_RECORD, fd)
 

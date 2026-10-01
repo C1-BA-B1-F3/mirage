@@ -13,13 +13,21 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.shell.types import ShellBuiltin as SB
-from mirage.workspace.executor.builtins.alias.alias import (alias_builtin,
-                                                            unalias_builtin)
+from mirage.workspace.executor.builtins.alias.alias import (
+    alias_builtin,
+    unalias_builtin,
+)
 from mirage.workspace.executor.builtins.command.command import command_builtin
 from mirage.workspace.executor.builtins.condition.condition import test_builtin
 from mirage.workspace.executor.builtins.control.control import (
-    break_builtin, colon_builtin, continue_builtin, exit_builtin,
-    false_builtin, return_builtin, true_builtin)
+    break_builtin,
+    colon_builtin,
+    continue_builtin,
+    exit_builtin,
+    false_builtin,
+    return_builtin,
+    true_builtin,
+)
 from mirage.workspace.executor.builtins.declare.export import export_builtin
 from mirage.workspace.executor.builtins.declare.local import local_builtin
 from mirage.workspace.executor.builtins.dirs.cd import cd_builtin
@@ -31,12 +39,15 @@ from mirage.workspace.executor.builtins.exec.exec import exec_builtin
 from mirage.workspace.executor.builtins.getopts.getopts import getopts_builtin
 from mirage.workspace.executor.builtins.history.history import history_builtin
 from mirage.workspace.executor.builtins.let.let import let_builtin
-from mirage.workspace.executor.builtins.lookup.lookup import (type_builtin,
-                                                              which_builtin)
+from mirage.workspace.executor.builtins.lookup.lookup import (
+    type_builtin,
+    which_builtin,
+)
 from mirage.workspace.executor.builtins.man.man import man_builtin
 from mirage.workspace.executor.builtins.mapfile.mapfile import mapfile_builtin
-from mirage.workspace.executor.builtins.printenv.printenv import \
-    printenv_builtin
+from mirage.workspace.executor.builtins.printenv.printenv import (
+    printenv_builtin,
+)
 from mirage.workspace.executor.builtins.printf.printf import printf_builtin
 from mirage.workspace.executor.builtins.read.read import read_builtin
 from mirage.workspace.executor.builtins.script.bash import bash_builtin

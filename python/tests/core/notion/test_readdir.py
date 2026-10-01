@@ -30,17 +30,12 @@ TOP_ID = "aaaa1111-2222-3333-4444-555566667777"
 
 _TOP_PAGE = {
     "id": TOP_ID,
-    "parent": {
-        "type": "workspace"
-    },
+    "parent": {"type": "workspace"},
     "last_edited_time": "2026-01-02T00:00:00.000Z",
     "properties": {
         "title": {
             "type": "title",
-            "title": [{
-                "type": "text",
-                "plain_text": "Top1"
-            }],
+            "title": [{"type": "text", "plain_text": "Top1"}],
         }
     },
 }
@@ -56,9 +51,11 @@ def _patch(monkeypatch):
 
 
 def _spec(original: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(original, prefix),
-                    virtual=original,
-                    directory=original)
+    return PathSpec(
+        vfs_path=mount_key(original, prefix),
+        virtual=original,
+        directory=original,
+    )
 
 
 @pytest.mark.asyncio
@@ -104,13 +101,15 @@ async def test_a_long_child_page_title_fits_name_max(monkeypatch):
     monkeypatch.setattr(
         readdir_mod,
         "list_block_children",
-        AsyncMock(return_value=[{
-            "type": "child_page",
-            "id": child_id,
-            "child_page": {
-                "title": title
-            },
-        }]),
+        AsyncMock(
+            return_value=[
+                {
+                    "type": "child_page",
+                    "id": child_id,
+                    "child_page": {"title": title},
+                }
+            ]
+        ),
     )
 
     out = await readdir_mod.readdir(_ACCESSOR, _spec(f"/pages/Top1__{TOP_ID}"))

@@ -24,15 +24,17 @@ from mirage.vfs.ram import RAMVFS
 
 
 class _FakeThread:
-
     def __init__(self):
         self.alive = True
 
 
 def _fake_mount(monkeypatch):
-    monkeypatch.setattr("mirage.workspace.fuse.mount_background",
-                        lambda ops, mountpoint, root_prefix="", session=None,
-                        backend=None: _FakeThread())
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.mount_background",
+        lambda ops, mountpoint, root_prefix="", session=None, backend=None: (
+            _FakeThread()
+        ),
+    )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
 
 
@@ -70,8 +72,10 @@ def test_collision_rejected_before_mount(monkeypatch):
     calls = []
     monkeypatch.setattr(
         "mirage.workspace.fuse.mount_background",
-        lambda ops, mountpoint, root_prefix="", session=None, backend=None:
-        (calls.append(mountpoint) or _FakeThread()))
+        lambda ops, mountpoint, root_prefix="", session=None, backend=None: (
+            calls.append(mountpoint) or _FakeThread()
+        ),
+    )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
     ws = Workspace({"/a/": RAMVFS(), "/b/": RAMVFS()}, mode=MountMode.WRITE)
     ws.add_fuse_mount("/a/", "/tmp/dup-mp")
@@ -93,8 +97,10 @@ def test_double_unmount_is_idempotent(monkeypatch):
 
 def test_mount_spec_fuse_true_single(monkeypatch):
     _fake_mount(monkeypatch)
-    ws = Workspace({"/gdocs/": Mount(RAMVFS(), backend=MountBackend.FUSE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/gdocs/": Mount(RAMVFS(), backend=MountBackend.FUSE)},
+        mode=MountMode.WRITE,
+    )
     mps = ws.fuse_mountpoints
     assert set(mps) == {"/gdocs/"}
     assert mps["/gdocs/"]
@@ -105,12 +111,12 @@ def test_mount_spec_fuse_pinned_path(monkeypatch):
     _fake_mount(monkeypatch)
     ws = Workspace(
         {
-            "/whatever/":
-            Mount(RAMVFS(),
-                  backend=MountBackend.FUSE,
-                  mountpoint="/tmp/pinned-x")
+            "/whatever/": Mount(
+                RAMVFS(), backend=MountBackend.FUSE, mountpoint="/tmp/pinned-x"
+            )
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     assert ws.fuse_mountpoints["/whatever/"] == "/tmp/pinned-x"
 
 
@@ -119,9 +125,10 @@ def test_mount_spec_fuse_each_of_multiple(monkeypatch):
     ws = Workspace(
         {
             "/a/": Mount(RAMVFS(), backend=MountBackend.FUSE),
-            "/b/": Mount(RAMVFS(), backend=MountBackend.FUSE)
+            "/b/": Mount(RAMVFS(), backend=MountBackend.FUSE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     assert set(ws.fuse_mountpoints) == {"/a/", "/b/"}
     with pytest.raises(RuntimeError):
         ws.fuse_mountpoint
@@ -134,25 +141,30 @@ def test_mount_spec_mode_inherits_and_override(monkeypatch):
             "/inherit/": Mount(RAMVFS()),
             "/override/": Mount(RAMVFS(), mode=MountMode.READ),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     assert ws.mount("/inherit/").mode == MountMode.WRITE
     assert ws.mount("/override/").mode == MountMode.READ
 
 
 def test_no_fuse_when_bare_or_tuple(monkeypatch):
     _fake_mount(monkeypatch)
-    ws = Workspace({
-        "/bare/": RAMVFS(),
-        "/tup/": (RAMVFS(), MountMode.WRITE),
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {
+            "/bare/": RAMVFS(),
+            "/tup/": (RAMVFS(), MountMode.WRITE),
+        },
+        mode=MountMode.WRITE,
+    )
     assert ws.fuse_mountpoints == {}
 
 
 def test_mount_spec_fuse_unmounts_on_close(monkeypatch):
     _fake_mount(monkeypatch)
-    with Workspace({"/gdocs/": Mount(RAMVFS(), backend=MountBackend.FUSE)},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {"/gdocs/": Mount(RAMVFS(), backend=MountBackend.FUSE)},
+        mode=MountMode.WRITE,
+    ) as ws:
         assert set(ws.fuse_mountpoints) == {"/gdocs/"}
     assert ws.fuse_mountpoints == {}
 
@@ -184,14 +196,17 @@ def test_fskit_auto_mountpoint_is_named_not_created(monkeypatch):
     _as_macos(monkeypatch)
     _capture_mount(monkeypatch)
     made = []
-    monkeypatch.setattr(tempfile, "mkdtemp",
-                        lambda *a, **k: made.append(k) or "/tmp/should-not")
+    monkeypatch.setattr(
+        tempfile,
+        "mkdtemp",
+        lambda *a, **k: made.append(k) or "/tmp/should-not",
+    )
     fm = FuseManager()
-    mp = fm.setup(Workspace({
-        "/": RAMVFS()
-    }, mode=MountMode.WRITE)._ops,
-                  "/",
-                  backend=MountBackend.FSKIT)
+    mp = fm.setup(
+        Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)._ops,
+        "/",
+        backend=MountBackend.FSKIT,
+    )
     assert mp.startswith("/Volumes/mirage-")
     assert not os.path.exists(mp)
     assert made == []
@@ -203,12 +218,12 @@ def test_fskit_pinned_mountpoint_is_not_created(monkeypatch):
     calls = []
     monkeypatch.setattr(os, "makedirs", lambda *a, **k: calls.append(a))
     fm = FuseManager()
-    fm.setup(Workspace({
-        "/": RAMVFS()
-    }, mode=MountMode.WRITE)._ops,
-             "/",
-             mountpoint="/Volumes/pinned-vol",
-             backend=MountBackend.FSKIT)
+    fm.setup(
+        Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)._ops,
+        "/",
+        mountpoint="/Volumes/pinned-vol",
+        backend=MountBackend.FSKIT,
+    )
     assert calls == []
     assert seen["mountpoint"] == "/Volumes/pinned-vol"
 
@@ -229,10 +244,10 @@ def test_unmount_never_rmdirs_a_volumes_entry(monkeypatch):
     removed = []
     monkeypatch.setattr(os, "rmdir", lambda p: removed.append(p))
     fm = FuseManager()
-    fm.setup(Workspace({
-        "/": RAMVFS()
-    }, mode=MountMode.WRITE)._ops,
-             "/",
-             backend=MountBackend.FSKIT)
+    fm.setup(
+        Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)._ops,
+        "/",
+        backend=MountBackend.FSKIT,
+    )
     fm.unmount()
     assert removed == []

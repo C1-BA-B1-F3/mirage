@@ -23,12 +23,16 @@ from mirage.types import PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.scope import _scope_path
 from mirage.workspace.executor.builtins.script.constants import SOURCE_USAGE
-from mirage.workspace.executor.builtins.script.script import (read_script_text,
-                                                              script_error)
+from mirage.workspace.executor.builtins.script.script import (
+    read_script_text,
+    script_error,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (positional_params,
-                                            set_positional_params)
+from mirage.workspace.session.state import (
+    positional_params,
+    set_positional_params,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -68,34 +72,35 @@ async def handle_source(
     if word_text(path) == "":
         # The empty name is a filename bash tries to open, not a missing
         # argument, so it fails like any file that is not there.
-        return script_error("source",
-                            ": No such file or directory",
-                            1,
-                            command="source ")
+        return script_error(
+            "source", ": No such file or directory", 1, command="source "
+        )
     try:
         script = await read_script_text(dispatch, raw, session.cwd)
     except FS_ERRORS as exc:
-        return script_error("source",
-                            f"{raw}: {fs_strerror(exc)}",
-                            1,
-                            command=f"source {raw}")
+        return script_error(
+            "source", f"{raw}: {fs_strerror(exc)}", 1, command=f"source {raw}"
+        )
     # The file runs as a line of its own, which reads the shell's
     # parameters, so the ones in scope stand in for them while it runs.
     shell_params = session.positional_args
     session.positional_args = args or positional_params(session, call_stack)
     session.source_depth += 1
     try:
-        io = await execute_fn(script,
-                              session_id=session.session_id,
-                              stdin=stdin)
+        io = await execute_fn(
+            script, session_id=session.session_id, stdin=stdin
+        )
     finally:
         session.source_depth -= 1
         scoped = session.positional_args
         session.positional_args = shell_params
         if not args:
             set_positional_params(session, call_stack, scoped)
-    return io.stdout, io, ExecutionNode(command=f"source {raw}",
-                                        exit_code=io.exit_code)
+    return (
+        io.stdout,
+        io,
+        ExecutionNode(command=f"source {raw}", exit_code=io.exit_code),
+    )
 
 
 async def source_builtin(call: BuiltinCall) -> Result:
@@ -110,7 +115,12 @@ async def source_builtin(call: BuiltinCall) -> Result:
     operands = list(call.argv.operands)
     if not operands:
         return script_error("source", SOURCE_USAGE, 2)
-    return await handle_source(call.dispatch, call.execute_fn, operands[0],
-                               call.session,
-                               [word_text(o) for o in operands[1:]],
-                               call.stdin, call.call_stack)
+    return await handle_source(
+        call.dispatch,
+        call.execute_fn,
+        operands[0],
+        call.session,
+        [word_text(o) for o in operands[1:]],
+        call.stdin,
+        call.call_stack,
+    )

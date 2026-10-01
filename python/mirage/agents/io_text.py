@@ -79,8 +79,9 @@ def io_to_str(io: IOResult) -> str:
     return with_refusal(text, io.refusal)
 
 
-def replace_text(content: str, old: str, new: str,
-                 replace_all: bool) -> tuple[str, int]:
+def replace_text(
+    content: str, old: str, new: str, replace_all: bool
+) -> tuple[str, int]:
     """The edit tools' one substitution: ``content`` with ``old``
     replaced once, or everywhere under ``replace_all``, beside how many
     times it occurs. A count other than one without ``replace_all`` is
@@ -92,5 +93,6 @@ def replace_text(content: str, old: str, new: str,
         new (str): the text to put in its place.
         replace_all (bool): True replaces every occurrence.
     """
-    return content.replace(old, new,
-                           -1 if replace_all else 1), content.count(old)
+    return content.replace(old, new, -1 if replace_all else 1), content.count(
+        old
+    )

@@ -29,10 +29,13 @@ def ws():
 
 @pytest.fixture
 def ws_two_mounts():
-    return Workspace({
-        "/a": RAMVFS(),
-        "/b": RAMVFS(),
-    }, mode=MountMode.WRITE)
+    return Workspace(
+        {
+            "/a": RAMVFS(),
+            "/b": RAMVFS(),
+        },
+        mode=MountMode.WRITE,
+    )
 
 
 def test_ws_mounts_returns_all(ws):
@@ -113,11 +116,10 @@ def test_unregister_removes_all_filetypes(ws):
         return b"demo", IOResult()
 
     m.register(
-        RegisteredCommand("cat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".demo",
-                          fn=demo_cat))
+        RegisteredCommand(
+            "cat", spec=SPECS["cat"], vfs="ram", filetype=".demo", fn=demo_cat
+        )
+    )
     assert len(m.commands().get("cat", [])) > 1
     m.unregister(["cat"])
     assert "cat" not in m.commands()
@@ -135,7 +137,7 @@ async def test_unregister_then_register_works(ws):
 
     m.register_fns([custom_cat])
     assert "cat" in m.commands()
-    await ws.shell('echo hello | tee /data/hello.txt')
+    await ws.shell("echo hello | tee /data/hello.txt")
     result = await ws.shell("cat /data/hello.txt")
     assert result.exit_code == 0
     assert b"custom cat output" in result.stdout

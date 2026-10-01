@@ -46,14 +46,16 @@ def attr(key: str, value: str) -> dict:
     return {"key": key, "value": {"stringValue": value}}
 
 
-def span(trace: str,
-         span_id: str,
-         name: str,
-         start: int,
-         duration: int,
-         parent: str | None = None,
-         attrs: list[dict] | None = None,
-         status_code: int = 0) -> dict:
+def span(
+    trace: str,
+    span_id: str,
+    name: str,
+    start: int,
+    duration: int,
+    parent: str | None = None,
+    attrs: list[dict] | None = None,
+    status_code: int = 0,
+) -> dict:
     """Build one OTLP span.
 
     Args:
@@ -76,9 +78,7 @@ def span(trace: str,
         "startTimeUnixNano": str(start),
         "endTimeUnixNano": str(start + duration),
         "attributes": attrs or [],
-        "status": {
-            "code": status_code
-        },
+        "status": {"code": status_code},
     }
     if parent is not None:
         out["parentSpanId"] = parent
@@ -88,82 +88,92 @@ def span(trace: str,
 PAYLOAD = {
     "resourceSpans": [
         {
-            "resource": {
-                "attributes": [attr("service.name", "checkout-api")]
-            },
-            "scopeSpans": [{
-                "scope": {
-                    "name": "mirage-integ"
-                },
-                "spans": [
-                    span(TRACE_CHECKOUT,
-                         "1" * 16,
-                         "POST /checkout",
-                         T0,
-                         5_000_000,
-                         attrs=[attr("http.method", "POST")]),
-                    span(TRACE_CHECKOUT,
-                         "2" * 16,
-                         "charge-card",
-                         T0 + 1_000_000,
-                         2_000_000,
-                         parent="1" * 16),
-                ],
-            }],
+            "resource": {"attributes": [attr("service.name", "checkout-api")]},
+            "scopeSpans": [
+                {
+                    "scope": {"name": "mirage-integ"},
+                    "spans": [
+                        span(
+                            TRACE_CHECKOUT,
+                            "1" * 16,
+                            "POST /checkout",
+                            T0,
+                            5_000_000,
+                            attrs=[attr("http.method", "POST")],
+                        ),
+                        span(
+                            TRACE_CHECKOUT,
+                            "2" * 16,
+                            "charge-card",
+                            T0 + 1_000_000,
+                            2_000_000,
+                            parent="1" * 16,
+                        ),
+                    ],
+                }
+            ],
         },
         {
-            "resource": {
-                "attributes": [attr("service.name", "web-frontend")]
-            },
-            "scopeSpans": [{
-                "scope": {
-                    "name": "mirage-integ"
-                },
-                "spans": [
-                    span(TRACE_ORDER, "4" * 16, "GET /cart",
-                         T0 + 120_000_000_000, 9_000_000),
-                ],
-            }],
+            "resource": {"attributes": [attr("service.name", "web-frontend")]},
+            "scopeSpans": [
+                {
+                    "scope": {"name": "mirage-integ"},
+                    "spans": [
+                        span(
+                            TRACE_ORDER,
+                            "4" * 16,
+                            "GET /cart",
+                            T0 + 120_000_000_000,
+                            9_000_000,
+                        ),
+                    ],
+                }
+            ],
         },
         {
-            "resource": {
-                "attributes": [attr("service.name", "orders-api")]
-            },
-            "scopeSpans": [{
-                "scope": {
-                    "name": "mirage-integ"
-                },
-                "spans": [
-                    span(TRACE_ORDER,
-                         "5" * 16,
-                         "POST /orders",
-                         T0 + 120_001_000_000,
-                         6_000_000,
-                         parent="4" * 16),
-                    span(TRACE_ORDER,
-                         "6" * 16,
-                         "db.query",
-                         T0 + 120_002_000_000,
-                         2_000_000,
-                         parent="5" * 16,
-                         attrs=[attr("db.system", "postgresql")],
-                         status_code=2),
-                ],
-            }],
+            "resource": {"attributes": [attr("service.name", "orders-api")]},
+            "scopeSpans": [
+                {
+                    "scope": {"name": "mirage-integ"},
+                    "spans": [
+                        span(
+                            TRACE_ORDER,
+                            "5" * 16,
+                            "POST /orders",
+                            T0 + 120_001_000_000,
+                            6_000_000,
+                            parent="4" * 16,
+                        ),
+                        span(
+                            TRACE_ORDER,
+                            "6" * 16,
+                            "db.query",
+                            T0 + 120_002_000_000,
+                            2_000_000,
+                            parent="5" * 16,
+                            attrs=[attr("db.system", "postgresql")],
+                            status_code=2,
+                        ),
+                    ],
+                }
+            ],
         },
         {
-            "resource": {
-                "attributes": [attr("service.name", "search-api")]
-            },
-            "scopeSpans": [{
-                "scope": {
-                    "name": "mirage-integ"
-                },
-                "spans": [
-                    span(TRACE_SEARCH, "3" * 16, "GET /search",
-                         T0 + 60_000_000_000, 3_000_000),
-                ],
-            }],
+            "resource": {"attributes": [attr("service.name", "search-api")]},
+            "scopeSpans": [
+                {
+                    "scope": {"name": "mirage-integ"},
+                    "spans": [
+                        span(
+                            TRACE_SEARCH,
+                            "3" * 16,
+                            "GET /search",
+                            T0 + 60_000_000_000,
+                            3_000_000,
+                        ),
+                    ],
+                }
+            ],
         },
     ]
 }
@@ -210,7 +220,8 @@ async def push_when_ready(otlp_host: str) -> None:
             print(f"otlp not ready: {exc}", file=sys.stderr)
             await asyncio.sleep(POLL_DELAY)
     raise RuntimeError(
-        f"OTLP receiver at {otlp_host} never accepted the batch: {last}")
+        f"OTLP receiver at {otlp_host} never accepted the batch: {last}"
+    )
 
 
 def query(query_host: str, path: str) -> dict:

@@ -14,9 +14,9 @@ from mirage.types import PathSpec
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.lstrip("/"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=virtual.lstrip("/"), virtual=virtual, directory=virtual
+    )
 
 
 async def _seed(accessor: RedisAccessor) -> None:
@@ -28,13 +28,16 @@ async def _seed(accessor: RedisAccessor) -> None:
 # is not a directory; measured against coreutils 9.7 (`cat a.txt/x` is
 # "Not a directory", `cat nope/x` is "No such file or directory").
 @pytest.mark.asyncio
-@pytest.mark.parametrize("key,kind", [
-    ("/a.txt/x", NotADirectoryError),
-    ("/a.txt/x/y", NotADirectoryError),
-    ("/d/x", FileNotFoundError),
-    ("/nope/x", FileNotFoundError),
-    ("/nope", FileNotFoundError),
-])
+@pytest.mark.parametrize(
+    "key,kind",
+    [
+        ("/a.txt/x", NotADirectoryError),
+        ("/a.txt/x/y", NotADirectoryError),
+        ("/d/x", FileNotFoundError),
+        ("/nope/x", FileNotFoundError),
+        ("/nope", FileNotFoundError),
+    ],
+)
 async def test_lookup_error_stops_at_the_first_non_directory(store, key, kind):
     await _seed(store)
     error = await lookup_error(store.store, _spec(key), key)

@@ -22,15 +22,16 @@ from mirage.vfs.ram import RAMVFS
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.strip("/"),
-                    virtual=virtual,
-                    directory="/",
-                    pattern=None,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=virtual.strip("/"),
+        virtual=virtual,
+        directory="/",
+        pattern=None,
+        resolved=True,
+    )
 
 
 class TestOpDecorator:
-
     def test_attaches_metadata(self):
 
         @op("read", vfs="s3")
@@ -84,7 +85,6 @@ class TestOpDecorator:
 
 
 class TestOpsRegistry:
-
     @pytest.mark.asyncio
     async def test_vfs_lookup(self):
         registry = OpsRegistry()
@@ -137,10 +137,9 @@ class TestOpsRegistry:
         registry.register(read_custom)
         registry.register(read_default)
 
-        result = await registry.call("read",
-                                     "s3", (None, ),
-                                     _spec("/test.custom"),
-                                     filetype=".custom")
+        result = await registry.call(
+            "read", "s3", (None,), _spec("/test.custom"), filetype=".custom"
+        )
         assert result == b"fallback"
 
     @pytest.mark.asyncio
@@ -166,14 +165,15 @@ class TestOpsRegistry:
 
 
 class TestUserOpOverride:
-
     @pytest.mark.asyncio
     async def test_user_op_overrides_builtin(self):
         registry = OpsRegistry()
-        builtin = RegisteredOp(name="read",
-                               vfs="disk",
-                               filetype=None,
-                               fn=lambda acc, p, **kw: b"builtin")
+        builtin = RegisteredOp(
+            name="read",
+            vfs="disk",
+            filetype=None,
+            fn=lambda acc, p, **kw: b"builtin",
+        )
         registry.register(builtin)
 
         @op("read", vfs="disk")
@@ -188,10 +188,12 @@ class TestUserOpOverride:
     @pytest.mark.asyncio
     async def test_user_filetype_op_overrides_builtin(self):
         registry = OpsRegistry()
-        builtin = RegisteredOp(name="read",
-                               vfs="s3",
-                               filetype=".parquet",
-                               fn=lambda acc, p, **kw: b"builtin-parquet")
+        builtin = RegisteredOp(
+            name="read",
+            vfs="s3",
+            filetype=".parquet",
+            fn=lambda acc, p, **kw: b"builtin-parquet",
+        )
         registry.register(builtin)
 
         @op("read", vfs="s3", filetype=".parquet")
@@ -205,7 +207,6 @@ class TestUserOpOverride:
 
 
 class TestFiletypeOps:
-
     @pytest.mark.asyncio
     async def test_registered_for_s3(self):
         registry = OpsRegistry()

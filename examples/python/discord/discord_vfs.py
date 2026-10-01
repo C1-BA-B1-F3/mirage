@@ -72,7 +72,8 @@ async def main():
                 except FileNotFoundError:
                     continue
                 lines = [
-                    line_text for line_text in content.strip().split("\n")
+                    line_text
+                    for line_text in content.strip().split("\n")
                     if line_text.strip()
                 ]
                 if lines:
@@ -95,24 +96,28 @@ async def main():
                             print(f"  {a}")
 
                     print("\n--- os.path.isfile / isdir / exists ---")
-                    print(f"  isfile(chat.jsonl): "
-                          f"{os.path.isfile(chat_path)}")
-                    print(f"  isdir(files/): "
-                          f"{os.path.isdir(files_dir)}")
-                    print(f"  exists(bogus): "
-                          f"{os.path.exists(f'{ch_dir}/{d}/nope.txt')}")
+                    print(f"  isfile(chat.jsonl): {os.path.isfile(chat_path)}")
+                    print(f"  isdir(files/): {os.path.isdir(files_dir)}")
+                    print(
+                        f"  exists(bogus): "
+                        f"{os.path.exists(f'{ch_dir}/{d}/nope.txt')}"
+                    )
 
                     print(f"\n--- os.stat {d}/chat.jsonl ---")
                     st = os.stat(chat_path)
-                    print(f"  regular={stat_mod.S_ISREG(st.st_mode)} "
-                          f"size={st.st_size}")
+                    print(
+                        f"  regular={stat_mod.S_ISREG(st.st_mode)} "
+                        f"size={st.st_size}"
+                    )
 
                     if atts:
                         att_path = f"{files_dir}/{atts[0]}"
                         print(f"\n--- os.stat {atts[0]} ---")
                         ast = os.stat(att_path)
-                        print(f"  regular={stat_mod.S_ISREG(ast.st_mode)} "
-                              f"size={ast.st_size}")
+                        print(
+                            f"  regular={stat_mod.S_ISREG(ast.st_mode)} "
+                            f"size={ast.st_size}"
+                        )
 
                         print(f"\n--- open({atts[0]}, 'rb') ---")
                         with open(att_path, "rb") as f:
@@ -120,12 +125,15 @@ async def main():
                         # st_size is 0 when the backend cannot report a
                         # size before the file is read.
                         known = ast.st_size or None
-                        print(f"  bytes={len(blob)} expected={known} "
-                              f"match={known is None or len(blob) == known}")
+                        print(
+                            f"  bytes={len(blob)} expected={known} "
+                            f"match={known is None or len(blob) == known}"
+                        )
                         if known is not None and len(blob) != known:
                             raise AssertionError(
                                 f"regression: open('rb') got {len(blob)} "
-                                f"bytes, expected {known}")
+                                f"bytes, expected {known}"
+                            )
 
                     print("\n--- json.loads + regex search on chat.jsonl ---")
                     pattern = re.compile(r"\S+")
@@ -135,8 +143,10 @@ async def main():
                         text = rec.get("content", "") or ""
                         if pattern.search(text):
                             matches += 1
-                    print(f"  messages with non-whitespace content: "
-                          f"{matches}/{len(lines)}")
+                    print(
+                        f"  messages with non-whitespace content: "
+                        f"{matches}/{len(lines)}"
+                    )
                     break
             else:
                 print("\n  (no messages found in recent dates)")

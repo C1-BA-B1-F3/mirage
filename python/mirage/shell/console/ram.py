@@ -59,9 +59,11 @@ class RAMConsoleStore:
             rebuild a finished job's console from a snapshot.
     """
 
-    def __init__(self,
-                 max_bytes: int | None = None,
-                 chunks: list[ConsoleChunk] | None = None) -> None:
+    def __init__(
+        self,
+        max_bytes: int | None = None,
+        chunks: list[ConsoleChunk] | None = None,
+    ) -> None:
         self._chunks: list[ConsoleChunk] = list(chunks) if chunks else []
         self._base_seq = self._chunks[0].seq if self._chunks else 0
         self._next_seq = self._chunks[-1].seq + 1 if self._chunks else 0
@@ -76,10 +78,9 @@ class RAMConsoleStore:
         return self._closed
 
     async def append(self, channel: Channel, data: bytes) -> ConsoleChunk:
-        chunk = ConsoleChunk(seq=self._next_seq,
-                             ts=time.time(),
-                             channel=channel,
-                             data=data)
+        chunk = ConsoleChunk(
+            seq=self._next_seq, ts=time.time(), channel=channel, data=data
+        )
         self._chunks.append(chunk)
         self._next_seq += 1
         self._bytes += len(data)
@@ -87,14 +88,18 @@ class RAMConsoleStore:
         self._wake()
         return chunk
 
-    async def read_from(self,
-                        seq: int,
-                        limit: int | None = None) -> ReadResult:
+    async def read_from(
+        self, seq: int, limit: int | None = None
+    ) -> ReadResult:
         truncated = seq < self._base_seq
-        start = 0 if truncated else min(seq -
-                                        self._base_seq, len(self._chunks))
-        window = (self._chunks[start:]
-                  if limit is None else self._chunks[start:start + limit])
+        start = (
+            0 if truncated else min(seq - self._base_seq, len(self._chunks))
+        )
+        window = (
+            self._chunks[start:]
+            if limit is None
+            else self._chunks[start : start + limit]
+        )
         return window, self._base_seq + start + len(window), truncated
 
     async def wait(self, seq: int) -> None:
@@ -144,8 +149,9 @@ class RAMConsoleStore:
         for _, loop, future in matured:
             self._schedule(loop, future)
 
-    def _schedule(self, loop: asyncio.AbstractEventLoop,
-                  future: "asyncio.Future[None]") -> None:
+    def _schedule(
+        self, loop: asyncio.AbstractEventLoop, future: "asyncio.Future[None]"
+    ) -> None:
         """Wake one waiter on the loop it is parked on.
 
         Args:

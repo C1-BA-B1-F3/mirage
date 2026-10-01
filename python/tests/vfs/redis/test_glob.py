@@ -55,10 +55,12 @@ def index():
 @pytest.mark.asyncio
 async def test_resolve_glob_file_scope(accessor, index):
     scopes = [
-        PathSpec(vfs_path="readme.md",
-                 virtual="/readme.md",
-                 directory="/",
-                 resolved=True)
+        PathSpec(
+            vfs_path="readme.md",
+            virtual="/readme.md",
+            directory="/",
+            resolved=True,
+        )
     ]
     result = await resolve_glob(accessor, scopes, index)
     assert result[0].virtual == "/readme.md"
@@ -100,10 +102,12 @@ async def test_resolve_glob_directory_scope(accessor, index):
 @pytest.mark.asyncio
 async def test_resolve_glob_multiple_scopes(accessor, index):
     scopes = [
-        PathSpec(vfs_path="readme.md",
-                 virtual="/readme.md",
-                 directory="/",
-                 resolved=True),
+        PathSpec(
+            vfs_path="readme.md",
+            virtual="/readme.md",
+            directory="/",
+            resolved=True,
+        ),
         PathSpec(
             vfs_path="src/*.py",
             virtual="/src/*.py",

@@ -27,5 +27,6 @@ print(result.stdout)
 
 print("\n=== curl a documentation page ===")
 result = asyncio.run(
-    ws.shell("curl https://docs.python.org/3/library/json.html"))
+    ws.shell("curl https://docs.python.org/3/library/json.html")
+)
 print(result.stdout)

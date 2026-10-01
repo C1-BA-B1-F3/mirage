@@ -27,8 +27,9 @@ def test_s3config_defaults():
 
 
 def test_s3_client_kwargs_route_through_proxy():
-    config = S3Config(bucket="b",
-                      proxy="http://proxy-user:proxy-secret@localhost:8080")
+    config = S3Config(
+        bucket="b", proxy="http://proxy-user:proxy-secret@localhost:8080"
+    )
     proxies = _client_kwargs(config)["config"].proxies
     assert proxies == {
         "http": "http://proxy-user:proxy-secret@localhost:8080",
@@ -43,7 +44,8 @@ def test_s3_client_kwargs_treat_empty_proxy_as_disabled():
 
 def test_s3_state_redacts_proxy_credentials():
     vfs = S3VFS(
-        S3Config(bucket="b", proxy="http://proxy-user:proxy-secret@host:8080"))
+        S3Config(bucket="b", proxy="http://proxy-user:proxy-secret@host:8080")
+    )
     blob = repr(vfs.get_state())
     assert "proxy-user" not in blob
     assert "proxy-secret" not in blob
@@ -58,6 +60,7 @@ def test_s3config_immutable():
 
 def test_s3_write_commands_tagged():
     from mirage.commands.builtin.s3 import COMMANDS
+
     write_names = {
         "rm",
         "rmdir",
@@ -83,14 +86,17 @@ def test_s3_write_commands_tagged():
     for registered in COMMANDS:
         if registered.name in write_names:
             assert registered.write is True, (
-                f"{registered.name} should be write=True")
+                f"{registered.name} should be write=True"
+            )
         else:
             assert registered.write is False, (
-                f"{registered.name} should be write=False")
+                f"{registered.name} should be write=False"
+            )
 
 
 def test_s3_write_ops_tagged():
     from mirage.ops.s3 import OPS
+
     write_op_names = {
         "write",
         "append",
@@ -103,6 +109,6 @@ def test_s3_write_ops_tagged():
     }
     for ro in OPS:
         if ro.name in write_op_names:
-            assert ro.write is True, (f"op {ro.name} should be write=True")
+            assert ro.write is True, f"op {ro.name} should be write=True"
         else:
-            assert ro.write is False, (f"op {ro.name} should be write=False")
+            assert ro.write is False, f"op {ro.name} should be write=False"

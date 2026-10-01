@@ -4,8 +4,9 @@ DEFAULT_FORMAT = "\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS"
 TOKEN = re.compile(r"%(?:([0-9])?(l)?([RUS])|([%P]))")
 
 
-def timing_report(elapsed: float, portable: bool,
-                  template: str | None) -> bytes:
+def timing_report(
+    elapsed: float, portable: bool, template: str | None
+) -> bytes:
     """Format Bash elapsed time; CPU counters are unavailable per virtual job.
 
     User/system time is zero in both hosts, since browser runtimes cannot
@@ -24,7 +25,7 @@ def timing_report(elapsed: float, portable: bool,
     pieces: list[str] = []
     cursor = 0
     for match in TOKEN.finditer(template):
-        gap = template[cursor:match.start()]
+        gap = template[cursor : match.start()]
         if "%" in gap:
             return b"mirage: TIMEFORMAT: invalid format character\n"
         pieces.append(gap)

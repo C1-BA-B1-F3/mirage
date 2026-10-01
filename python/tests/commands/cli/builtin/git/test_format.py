@@ -16,19 +16,26 @@ import pytest
 from dulwich.objects import Commit
 
 from mirage.commands.cli.builtin.git import format as git_format
-from mirage.commands.cli.builtin.git.errors import (BadPrettyError,
-                                                    UnsupportedPrettyError)
-from mirage.commands.cli.builtin.git.format import (abbrev_length, entry,
-                                                    message_block, oneline,
-                                                    short, subject)
+from mirage.commands.cli.builtin.git.errors import (
+    BadPrettyError,
+    UnsupportedPrettyError,
+)
+from mirage.commands.cli.builtin.git.format import (
+    abbrev_length,
+    entry,
+    message_block,
+    oneline,
+    short,
+    subject,
+)
 from mirage.shell.bytes import encode_text
 
 AUTHOR = b"Dev Person <dev@example.com>"
 
 
-def _commit(message: bytes,
-            timestamp: int = 1768561800,
-            offset: int = 0) -> Commit:
+def _commit(
+    message: bytes, timestamp: int = 1768561800, offset: int = 0
+) -> Commit:
     """Build a commit object for rendering tests.
 
     Args:
@@ -100,18 +107,21 @@ def test_a_single_parent_commit_has_no_merge_line():
 # Measured against git 2.50.1 by building repositories of each size and
 # reading the width off `git log --oneline`. The boundary is sharp, so
 # both sides of it are pinned.
-@pytest.mark.parametrize("packed,width", [
-    (0, 7),
-    (3, 7),
-    (10102, 7),
-    (16383, 7),
-    (16384, 8),
-    (20102, 8),
-    (65535, 8),
-    (65536, 9),
-    (70102, 9),
-    (184401, 9),
-])
+@pytest.mark.parametrize(
+    "packed,width",
+    [
+        (0, 7),
+        (3, 7),
+        (10102, 7),
+        (16383, 7),
+        (16384, 8),
+        (20102, 8),
+        (65535, 8),
+        (65536, 9),
+        (70102, 9),
+        (184401, 9),
+    ],
+)
 def test_abbreviation_widens_with_the_object_count(packed, width):
     assert abbrev_length(packed) == width
 
@@ -127,15 +137,18 @@ def test_short_honours_the_width_it_is_given():
     assert short(sha, 9) == "cdd623434"
 
 
-@pytest.mark.parametrize("value,kind,template", [
-    ("oneline", "oneline", None),
-    ("medium", "medium", None),
-    ("fuller", "fuller", None),
-    ("format:%H", "format", "%H"),
-    ("tformat:%H", "tformat", "%H"),
-    ("%h %s", "tformat", "%h %s"),
-    ("", "tformat", ""),
-])
+@pytest.mark.parametrize(
+    "value,kind,template",
+    [
+        ("oneline", "oneline", None),
+        ("medium", "medium", None),
+        ("fuller", "fuller", None),
+        ("format:%H", "format", "%H"),
+        ("tformat:%H", "tformat", "%H"),
+        ("%h %s", "tformat", "%h %s"),
+        ("", "tformat", ""),
+    ],
+)
 def test_parse_pretty_reads_gits_grammar(value, kind, template):
     fmt = git_format.parse_pretty(value)
     assert (fmt.kind, fmt.template) == (kind, template)
@@ -169,32 +182,43 @@ def test_ident_helpers_split_the_stored_line():
 
 def test_render_template_expands_the_placeholder_table():
     commit = _commit(b"subject line\n\nbody text\n")
-    rendered = git_format.render_template("%H|%h|%an|%ae|%at|%s|%b|%%|%x41|%n",
-                                          commit, 7, None)
+    rendered = git_format.render_template(
+        "%H|%h|%an|%ae|%at|%s|%b|%%|%x41|%n", commit, 7, None
+    )
     full = commit.id.decode()
-    assert rendered == (f"{full}|{full[:7]}|Dev Person|dev@example.com|"
-                        f"1768561800|subject line|body text\n|%|A|\n")
+    assert rendered == (
+        f"{full}|{full[:7]}|Dev Person|dev@example.com|"
+        f"1768561800|subject line|body text\n|%|A|\n"
+    )
 
 
 def test_render_template_keeps_unknown_placeholders_verbatim():
     commit = _commit(b"one\n")
-    assert git_format.render_template("%q %zz %x4", commit, 7,
-                                      None) == "%q %zz %x4"
+    assert (
+        git_format.render_template("%q %zz %x4", commit, 7, None)
+        == "%q %zz %x4"
+    )
 
 
 def test_render_template_folds_a_multiline_subject_paragraph():
     commit = _commit(b"line one\nline two\n\nbody\n")
-    assert git_format.render_template("%s", commit, 7,
-                                      None) == "line one line two"
+    assert (
+        git_format.render_template("%s", commit, 7, None)
+        == "line one line two"
+    )
 
 
 def test_render_template_reads_decorations_from_the_table():
     commit = _commit(b"one\n")
     decor = {commit.id: ["HEAD -> main", "tag: v1"]}
-    assert git_format.render_template("%d", commit, 7,
-                                      decor) == " (HEAD -> main, tag: v1)"
-    assert git_format.render_template("%D", commit, 7,
-                                      decor) == "HEAD -> main, tag: v1"
+    assert (
+        git_format.render_template("%d", commit, 7, decor)
+        == " (HEAD -> main, tag: v1)"
+    )
+    assert (
+        git_format.render_template("%D", commit, 7, decor)
+        == "HEAD -> main, tag: v1"
+    )
     assert git_format.render_template("%d", commit, 7, {}) == ""
 
 

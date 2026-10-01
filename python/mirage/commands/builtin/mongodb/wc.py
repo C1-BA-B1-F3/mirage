@@ -13,10 +13,16 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.mongodb import MongoDBAccessor
-from mirage.commands.builtin.generic.wc import (WCCounts, format_count_rows,
-                                                parse_flags, wc_generic)
-from mirage.commands.builtin.generic_bind.adapter import (bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic.wc import (
+    WCCounts,
+    format_count_rows,
+    parse_flags,
+    wc_generic,
+)
+from mirage.commands.builtin.generic_bind.adapter import (
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.builtin.mongodb.io import IO
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -29,8 +35,9 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def _all_exist(accessor: MongoDBAccessor, paths: list[PathSpec],
-                     scopes: list[ScopeMatch]) -> bool:
+async def _all_exist(
+    accessor: MongoDBAccessor, paths: list[PathSpec], scopes: list[ScopeMatch]
+) -> bool:
     for p, scope in zip(paths, scopes):
         if not await documents_exist(accessor, scope, p.virtual):
             return False
@@ -38,9 +45,12 @@ async def _all_exist(accessor: MongoDBAccessor, paths: list[PathSpec],
 
 
 @command("wc", vfs="mongodb", spec=SPECS["wc"])
-async def wc(accessor: MongoDBAccessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def wc(
+    accessor: MongoDBAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:
@@ -49,21 +59,28 @@ async def wc(accessor: MongoDBAccessor, paths: list[PathSpec],
     # Line counts on collections come from a server-side count_documents
     # instead of reading every document. -l only (default prints words and
     # bytes too, which needs the content).
-    count_only = parsed.lines and not (parsed.words or parsed.bytes_ or
-                                       parsed.chars or parsed.max_line_length)
+    count_only = parsed.lines and not (
+        parsed.words or parsed.bytes_ or parsed.chars or parsed.max_line_length
+    )
     scopes = [detect_scope(p) for p in resolved]
     document_scopes = [scope for scope in scopes if scope.kind == "documents"]
-    if (resolved and count_only and len(document_scopes) == len(scopes)
-            and await _all_exist(accessor, resolved, document_scopes)):
+    if (
+        resolved
+        and count_only
+        and len(document_scopes) == len(scopes)
+        and await _all_exist(accessor, resolved, document_scopes)
+    ):
         rows: list[tuple[WCCounts, str | None]] = []
         total = 0
         for p, scope in zip(resolved, document_scopes):
-            count = await count_documents(accessor.client,
-                                          scope.slots["database"],
-                                          scope.slots["name"])
+            count = await count_documents(
+                accessor.client, scope.slots["database"], scope.slots["name"]
+            )
             rows.append((WCCounts(lines=count), p.raw_path))
             total += count
-        return format_count_rows(rows, WCCounts(lines=total), len(resolved),
-                                 parsed), IOResult()
-    return await wc_generic(resolved, list(texts), opts,
-                            bound_op(stream_any, accessor, opts.index))
+        return format_count_rows(
+            rows, WCCounts(lines=total), len(resolved), parsed
+        ), IOResult()
+    return await wc_generic(
+        resolved, list(texts), opts, bound_op(stream_any, accessor, opts.index)
+    )

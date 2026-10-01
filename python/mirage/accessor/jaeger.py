@@ -5,8 +5,8 @@ from mirage.vfs.jaeger.config import JaegerConfig
 
 
 class JaegerAccessor(SessionAccessor):
-
     def __init__(self, config: JaegerConfig) -> None:
-        super().__init__(timeout=aiohttp.ClientTimeout(
-            total=config.request_timeout))
+        super().__init__(
+            timeout=aiohttp.ClientTimeout(total=config.request_timeout)
+        )
         self.config = config

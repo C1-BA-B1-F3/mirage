@@ -26,25 +26,39 @@ from mirage.types import PathSpec
 from mirage.vfs.gslides.slide_entry import make_filename
 
 
-async def read_presentation(token_manager: TokenManager,
-                            presentation_id: str) -> bytes:
+async def read_presentation(
+    token_manager: TokenManager, presentation_id: str
+) -> bytes:
     url = f"{slides_base(token_manager)}/presentations/{presentation_id}"
     data = await google_get(token_manager, url)
     return compact_json_bytes(data)
 
 
-async def _read_file(accessor: GSlidesAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
-    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
-                                    MIME, "gslides/file", make_filename)
+async def _read_file(
+    accessor: GSlidesAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    entry = await resolve_app_entry(
+        accessor.token_manager,
+        match,
+        path,
+        index,
+        MIME,
+        "gslides/file",
+        make_filename,
+    )
     timer = start_op()
     data = await read_presentation(accessor.token_manager, entry.id)
-    record("read",
-           path.virtual,
-           "gslides",
-           len(data),
-           timer,
-           fingerprint=entry.remote_time or None)
+    record(
+        "read",
+        path.virtual,
+        "gslides",
+        len(data),
+        timer,
+        fingerprint=entry.remote_time or None,
+    )
     return data
 
 

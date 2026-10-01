@@ -20,18 +20,20 @@ def test_has_rules_is_a_role_stating_anything():
     assert not has_rules(None)
     assert not has_rules(AdmissionRules())
     assert has_rules(AdmissionRules(allow=()))
-    assert has_rules(AdmissionRules(ask=(CommandRule("r"), )))
-    assert has_rules(AdmissionRules(deny=(CommandRule("r"), )))
+    assert has_rules(AdmissionRules(ask=(CommandRule("r"),)))
+    assert has_rules(AdmissionRules(deny=(CommandRule("r"),)))
 
 
 def test_reads_args_only_for_a_rule_that_reads_past_the_name():
     rules = AdmissionRules(
         allow=("cat", "git status", "*"),
-        deny=(CommandRule("no rm", commands=("rm", )),
-              CommandRule("sealed", commands=("cat", ), paths=("/secret*", )),
-              CommandRule("no force", commands=("git push -f", )),
-              CommandRule("repo", commands=("ls", ), mount="/repo")),
-        ask=(CommandRule("frozen", paths=("/locked/*", )), ),
+        deny=(
+            CommandRule("no rm", commands=("rm",)),
+            CommandRule("sealed", commands=("cat",), paths=("/secret*",)),
+            CommandRule("no force", commands=("git push -f",)),
+            CommandRule("repo", commands=("ls",), mount="/repo"),
+        ),
+        ask=(CommandRule("frozen", paths=("/locked/*",)),),
     )
     # A token after the name, a path or a mount reads the arguments.
     assert reads_args(rules, "git")
@@ -42,28 +44,35 @@ def test_reads_args_only_for_a_rule_that_reads_past_the_name():
     # With no such rule for it, a command's arguments are unread: the
     # wildcard allow and the bare `rm` deny decide on the name alone.
     assert not reads_args(
-        AdmissionRules(allow=("*", "rm"),
-                       deny=(CommandRule("no rm", commands=("rm", )), )), "rm")
+        AdmissionRules(
+            allow=("*", "rm"), deny=(CommandRule("no rm", commands=("rm",)),)
+        ),
+        "rm",
+    )
     assert not reads_args(None, "rm")
 
 
 def test_scopes_paths_is_a_path_rule_that_applies_to_this_command():
     named = AdmissionRules(
-        deny=(CommandRule("no rm", commands=("rm", )),
-              CommandRule("sealed", commands=("cat", ), paths=("/secret*", )),
-              CommandRule("repo", commands=("ls", ), mount="/repo")))
+        deny=(
+            CommandRule("no rm", commands=("rm",)),
+            CommandRule("sealed", commands=("cat",), paths=("/secret*",)),
+            CommandRule("repo", commands=("ls",), mount="/repo"),
+        )
+    )
     # A glob operand of cat or ls must be expanded before the gate reads
     # it: a rule names the command and reads its paths (or its mount).
     assert scopes_paths(named, "cat")
     assert scopes_paths(named, "ls")
     # The bare rm deny and an allow list read the name alone.
-    assert not scopes_paths(AdmissionRules(allow=("rm", "*"), deny=named.deny),
-                            "rm")
+    assert not scopes_paths(
+        AdmissionRules(allow=("rm", "*"), deny=named.deny), "rm"
+    )
     assert not scopes_paths(named, "echo")
     assert not scopes_paths(None, "cat")
     # A pure path rule applies to every command, so every command's globs
     # expand: a pattern that only later matches under the scope would
     # otherwise reach the command unjudged.
-    frozen = CommandRule("frozen", paths=("/locked/*", ))
-    assert scopes_paths(AdmissionRules(deny=named.deny, ask=(frozen, )), "rm")
-    assert scopes_paths(AdmissionRules(ask=(frozen, )), "echo")
+    frozen = CommandRule("frozen", paths=("/locked/*",))
+    assert scopes_paths(AdmissionRules(deny=named.deny, ask=(frozen,)), "rm")
+    assert scopes_paths(AdmissionRules(ask=(frozen,)), "echo")

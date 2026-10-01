@@ -26,9 +26,12 @@ from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_prefix_of
 
 
-def make_app_readdir(mime: str, detect_scope: DetectFn,
-                     make_filename: Callable[[str, str, str], str],
-                     resource_type: str) -> ReaddirFn[GoogleApiAccessor]:
+def make_app_readdir(
+    mime: str,
+    detect_scope: DetectFn,
+    make_filename: Callable[[str, str, str], str],
+    resource_type: str,
+) -> ReaddirFn[GoogleApiAccessor]:
     """The readdir of a Google app mount: its corpora and their files.
 
     Sheets, Docs and Slides list the same tree, one Drive query per
@@ -55,7 +58,7 @@ def make_app_readdir(mime: str, detect_scope: DetectFn,
             modified_range = glob_to_modified_range(path_spec.pattern)
         path = path_spec.directory if path_spec.pattern else path_spec.virtual
         if prefix and path.startswith(prefix):
-            rest = path[len(prefix):]
+            rest = path[len(prefix) :]
             if prefix.endswith("/") or rest == "" or rest.startswith("/"):
                 path = rest or "/"
         key = path.strip("/")
@@ -81,7 +84,8 @@ def make_app_readdir(mime: str, detect_scope: DetectFn,
             accessor.token_manager,
             mime_type=mime,
             modified_after=modified_range[0] if modified_range else None,
-            modified_before=modified_range[1] if modified_range else None)
+            modified_before=modified_range[1] if modified_range else None,
+        )
         is_owned = key == "owned"
         entries = []
         for f in files:
@@ -90,8 +94,9 @@ def make_app_readdir(mime: str, detect_scope: DetectFn,
             file_owned = first_owner.get("me", False)
             if file_owned != is_owned:
                 continue
-            filename = make_filename(f["name"], f["id"],
-                                     f.get("modifiedTime", ""))
+            filename = make_filename(
+                f["name"], f["id"], f.get("modifiedTime", "")
+            )
             source_size = int(f.get("size") or f.get("quotaBytesUsed") or 0)
             # size stays None: Drive reports the source document's storage
             # size, not the rendered JSON length (FileStat.size must be

@@ -36,6 +36,8 @@ async def fetch_env(config: EnvConfig, ref: str) -> ResolvedSecret:
             sub-address.
     """
     if ref:
-        raise SecretsError("the 'env' source takes no ref (the process "
-                           f"env has no sub-address), got {ref!r}")
+        raise SecretsError(
+            "the 'env' source takes no ref (the process "
+            f"env has no sub-address), got {ref!r}"
+        )
     return ResolvedSecret(fields=dict(os.environ))

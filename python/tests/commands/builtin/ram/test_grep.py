@@ -45,8 +45,9 @@ async def test_grep_dash_e_matches_like_positional_pattern(workspace):
 @pytest.mark.asyncio
 async def test_grep_repeated_dash_e_matches_any_pattern(workspace):
     await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt",
-                              b"orange line\nplain line\nlast line\n")
+    await workspace.vfs.write(
+        "/data/a.txt", b"orange line\nplain line\nlast line\n"
+    )
 
     io = await workspace.shell("grep -e orange -e plain /data/a.txt")
     assert io.exit_code == 0
@@ -56,8 +57,9 @@ async def test_grep_repeated_dash_e_matches_any_pattern(workspace):
 @pytest.mark.asyncio
 async def test_grep_dash_f_reads_patterns_from_file(workspace):
     await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt",
-                              b"orange line\nplain line\nlast line\n")
+    await workspace.vfs.write(
+        "/data/a.txt", b"orange line\nplain line\nlast line\n"
+    )
     await workspace.vfs.write("/data/pats.txt", b"orange\nlast\n")
 
     io = await workspace.shell("grep -f /data/pats.txt /data/a.txt")
@@ -68,8 +70,9 @@ async def test_grep_dash_f_reads_patterns_from_file(workspace):
 @pytest.mark.asyncio
 async def test_grep_dash_e_and_dash_f_union(workspace):
     await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt",
-                              b"orange line\nplain line\nlast line\n")
+    await workspace.vfs.write(
+        "/data/a.txt", b"orange line\nplain line\nlast line\n"
+    )
     await workspace.vfs.write("/data/pats.txt", b"last\n")
 
     io = await workspace.shell("grep -e plain -f /data/pats.txt /data/a.txt")
@@ -80,13 +83,15 @@ async def test_grep_dash_e_and_dash_f_union(workspace):
 @pytest.mark.asyncio
 async def test_grep_repeated_dash_f_unions_pattern_files(workspace):
     await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt",
-                              b"orange line\nplain line\nlast line\n")
+    await workspace.vfs.write(
+        "/data/a.txt", b"orange line\nplain line\nlast line\n"
+    )
     await workspace.vfs.write("/data/p1.txt", b"orange\n")
     await workspace.vfs.write("/data/p2.txt", b"last\n")
 
     io = await workspace.shell(
-        "grep -f /data/p1.txt -f /data/p2.txt /data/a.txt")
+        "grep -f /data/p1.txt -f /data/p2.txt /data/a.txt"
+    )
     assert io.exit_code == 0
     assert (io.stdout or b"").decode() == "orange line\nlast line\n"
 
@@ -94,16 +99,19 @@ async def test_grep_repeated_dash_f_unions_pattern_files(workspace):
 @pytest.mark.asyncio
 async def test_grep_dash_e_and_repeated_dash_f_union(workspace):
     await workspace.vfs.mkdir("/data")
-    await workspace.vfs.write("/data/a.txt",
-                              b"orange line\nplain line\nlast line\n")
+    await workspace.vfs.write(
+        "/data/a.txt", b"orange line\nplain line\nlast line\n"
+    )
     await workspace.vfs.write("/data/p1.txt", b"orange\n")
     await workspace.vfs.write("/data/p2.txt", b"last\n")
 
     io = await workspace.shell(
-        "grep -e plain -f /data/p1.txt -f /data/p2.txt /data/a.txt")
+        "grep -e plain -f /data/p1.txt -f /data/p2.txt /data/a.txt"
+    )
     assert io.exit_code == 0
-    assert (io.stdout
-            or b"").decode() == "orange line\nplain line\nlast line\n"
+    assert (
+        io.stdout or b""
+    ).decode() == "orange line\nplain line\nlast line\n"
 
 
 @pytest.mark.asyncio
@@ -160,12 +168,12 @@ async def test_usage_error_is_exit_2_with_newline(workspace):
     # sentence (14.1.1), and zgrep keeps mirage's own line since the real
     # one is a shell script printing its $0 path.
     expected = {
-        "grep": ("Usage: grep [OPTION]... PATTERNS [FILE]...\n"
-                 "Try 'grep --help' for more information.\n"),
-        "rg":
-        "rg: ripgrep requires at least one pattern to execute a search\n",
-        "zgrep":
-        "zgrep: usage: zgrep [flags] pattern [path]\n",
+        "grep": (
+            "Usage: grep [OPTION]... PATTERNS [FILE]...\n"
+            "Try 'grep --help' for more information.\n"
+        ),
+        "rg": "rg: ripgrep requires at least one pattern to execute a search\n",
+        "zgrep": "zgrep: usage: zgrep [flags] pattern [path]\n",
     }
     for cmd in ("grep", "rg", "zgrep"):
         io = await workspace.shell(cmd)

@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-COMPOUND_EXTENSIONS = frozenset({
-    ".gdoc.json",
-    ".gslide.json",
-    ".gsheet.json",
-    ".gmail.json",
-})
+COMPOUND_EXTENSIONS = frozenset(
+    {
+        ".gdoc.json",
+        ".gslide.json",
+        ".gsheet.json",
+        ".gmail.json",
+    }
+)
 
 
 def get_extension(path: str | None) -> str | None:

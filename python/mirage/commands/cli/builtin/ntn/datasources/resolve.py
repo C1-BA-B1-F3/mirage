@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.ntn.util import (first_text, notion_config,
-                                                  pretty_json)
+from mirage.commands.cli.builtin.ntn.util import (
+    first_text,
+    notion_config,
+    pretty_json,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.notion.config import NotionConfig
@@ -24,7 +27,7 @@ from mirage.types import JsonValue
 
 
 async def resolve(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     database_id = first_text(inv.texts, "database id")
@@ -37,7 +40,8 @@ async def resolve(
         }
         return yield_bytes(pretty_json(payload)), IOResult()
     lines = [
-        f"{one.get('id', '')}\t{one.get('name', '')}\n" for one in stubs
+        f"{one.get('id', '')}\t{one.get('name', '')}\n"
+        for one in stubs
         if isinstance(one, dict)
     ]
     return yield_bytes("".join(lines).encode()), IOResult()

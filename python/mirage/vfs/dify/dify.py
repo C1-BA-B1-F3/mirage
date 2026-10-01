@@ -12,7 +12,6 @@ from mirage.vfs.dify.prompt import PROMPT
 
 
 class DifyVFS(BaseVFS):
-
     accessor: DifyAccessor
     name: str = VFSName.DIFY
     caches_reads: bool = True

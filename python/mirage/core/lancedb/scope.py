@@ -38,8 +38,9 @@ def scopes_for(config: LanceDBConfig) -> tuple[Scope, ...]:
     leaves: list[Leaf] = [("row_card", CARD, ContentType.TEXT)]
     if config.blob_column:
         leaves.append(blob_leaf(config.blob_ext))
-    return row_scopes(bool(config.table), [PATH_SAFE] * len(config.group_by),
-                      leaves)
+    return row_scopes(
+        bool(config.table), [PATH_SAFE] * len(config.group_by), leaves
+    )
 
 
 def _detect(accessor: LanceDBAccessor) -> DetectFn:

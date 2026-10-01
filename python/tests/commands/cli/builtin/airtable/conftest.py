@@ -30,7 +30,8 @@ __all__ = ["airtable_api", "airtable_ws"]
 
 @pytest_asyncio.fixture
 async def airtable_ws(
-        airtable_api: FakeAirtable) -> AsyncIterator[Callable[..., Workspace]]:
+    airtable_api: FakeAirtable,
+) -> AsyncIterator[Callable[..., Workspace]]:
     """Open workspaces with the CLI installed beside a mount of the fake.
 
     Both read the same account, ``/at`` the mount and ``/s`` a scratch
@@ -42,11 +43,14 @@ async def airtable_ws(
         config = {"token": TOKEN, "requests_per_second": 10_000.0, **overrides}
         ws = Workspace(
             {
-                "/at/":
-                (AirtableVFS(AirtableConfig(**config)), MountMode.READ),
+                "/at/": (
+                    AirtableVFS(AirtableConfig(**config)),
+                    MountMode.READ,
+                ),
                 "/s/": RAMVFS(),
             },
-            mode=MountMode.WRITE)
+            mode=MountMode.WRITE,
+        )
         ws.register_cli("airtable", AIRTABLE, config)
         opened.append(ws)
         return ws

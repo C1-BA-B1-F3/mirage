@@ -12,8 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic.crossmount.fanout.exit import \
-    combined_exit
+from mirage.commands.builtin.generic.crossmount.fanout.exit import (
+    combined_exit,
+)
 
 
 def testcombined_exit_grep_match_wins_over_no_match():

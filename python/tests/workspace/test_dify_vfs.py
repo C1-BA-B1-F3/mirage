@@ -6,25 +6,20 @@ from mirage.vfs.dify import DifyConfig, DifyVFS
 
 
 async def list_documents(config):
-    return [{
-        "id": "doc-1",
-        "name": "Quickstart",
-        "doc_metadata": [{
-            "name": "slug",
-            "value": "guides/quickstart"
-        }],
-        "enabled": True,
-        "indexing_status": "completed",
-        "archived": False,
-        "tokens": 5,
-        "data_source_type": "upload_file",
-        "data_source_detail_dict": {
-            "upload_file": {
-                "size": 321
-            }
-        },
-        "created_at": 1716282000,
-    }]
+    return [
+        {
+            "id": "doc-1",
+            "name": "Quickstart",
+            "doc_metadata": [{"name": "slug", "value": "guides/quickstart"}],
+            "enabled": True,
+            "indexing_status": "completed",
+            "archived": False,
+            "tokens": 5,
+            "data_source_type": "upload_file",
+            "data_source_detail_dict": {"upload_file": {"size": 321}},
+            "created_at": 1716282000,
+        }
+    ]
 
 
 def vfs() -> DifyVFS:
@@ -33,7 +28,8 @@ def vfs() -> DifyVFS:
             api_key="secret",
             base_url="https://dify.example/v1",
             dataset_id="dataset-1",
-        ))
+        )
+    )
 
 
 def test_workspace_mount_registers_dify_commands_and_ops():

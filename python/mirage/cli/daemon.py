@@ -24,8 +24,9 @@ from mirage.cli.client import make_client
 from mirage.cli.output import emit, fail, format_age
 from mirage.server.paths import pid_file_path
 
-app = typer.Typer(no_args_is_help=True,
-                  help="Manage the daemon process lifecycle.")
+app = typer.Typer(
+    no_args_is_help=True, help="Manage the daemon process lifecycle."
+)
 
 
 def _format_status(d: dict[str, Any]) -> str:
@@ -96,13 +97,10 @@ def status_cmd() -> None:
     if health is None:
         emit({"running": False, "pid": pid, "url": url}, human=_format_status)
         raise typer.Exit(code=1)
-    emit({
-        "running": True,
-        "pid": pid,
-        "url": url,
-        **health
-    },
-         human=_format_status)
+    emit(
+        {"running": True, "pid": pid, "url": url, **health},
+        human=_format_status,
+    )
 
 
 @app.command("stop")
@@ -110,7 +108,8 @@ def stop_cmd(
     timeout: float = typer.Option(
         5.0,
         "--timeout",
-        help="Seconds to wait for graceful exit before SIGTERM."),
+        help="Seconds to wait for graceful exit before SIGTERM.",
+    ),
 ) -> None:
     """Gracefully stop the daemon.
 
@@ -139,18 +138,18 @@ def stop_cmd(
     if pid and _process_alive(pid):
         try:
             os.kill(pid, signal.SIGTERM)
-            emit({
-                "stopped": True,
-                "via": "sigterm",
-                "pid": pid
-            },
-                 human=_format_stop)
+            emit(
+                {"stopped": True, "via": "sigterm", "pid": pid},
+                human=_format_stop,
+            )
             return
         except ProcessLookupError:
             # the daemon exited between checks: that is the success condition
             pass
-    fail(f"daemon did not exit within {timeout}s and no live PID found",
-         exit_code=2)
+    fail(
+        f"daemon did not exit within {timeout}s and no live PID found",
+        exit_code=2,
+    )
 
 
 @app.command("restart")
@@ -160,7 +159,8 @@ def restart_cmd(
         False,
         "--eager",
         help="Spawn a fresh daemon immediately rather than waiting for "
-        "the next CLI command to auto-spawn."),
+        "the next CLI command to auto-spawn.",
+    ),
 ) -> None:
     """Stop the daemon. Next CLI command auto-spawns a fresh one.
 
@@ -208,29 +208,23 @@ def kill_cmd() -> None:
     """SIGKILL the daemon. Last resort -- skips graceful shutdown."""
     pid = _read_pid()
     if pid is None:
-        emit({
-            "killed": False,
-            "reason": "no daemon running",
-            "pid": None
-        },
-             human=_format_kill)
+        emit(
+            {"killed": False, "reason": "no daemon running", "pid": None},
+            human=_format_kill,
+        )
         return
     if not _process_alive(pid):
-        emit({
-            "killed": False,
-            "reason": "process already gone",
-            "pid": pid
-        },
-             human=_format_kill)
+        emit(
+            {"killed": False, "reason": "process already gone", "pid": pid},
+            human=_format_kill,
+        )
         return
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
-        emit({
-            "killed": False,
-            "reason": "process gone",
-            "pid": pid
-        },
-             human=_format_kill)
+        emit(
+            {"killed": False, "reason": "process gone", "pid": pid},
+            human=_format_kill,
+        )
         return
     emit({"killed": True, "pid": pid}, human=_format_kill)

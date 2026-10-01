@@ -24,15 +24,17 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def read(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     uid = first_text(inv.texts, "message id")
     mailbox = fl.as_str("mailbox") or "INBOX"
     accessor = EmailAccessor(inv.config)
     try:
         if fl.as_bool("raw"):
-            return yield_bytes(await fetch_raw_message(accessor, mailbox,
-                                                       uid)), IOResult()
+            return yield_bytes(
+                await fetch_raw_message(accessor, mailbox, uid)
+            ), IOResult()
         processed = await fetch_message(accessor, mailbox, uid)
     finally:
         await accessor.close()

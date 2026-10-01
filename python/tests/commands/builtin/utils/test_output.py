@@ -1,5 +1,7 @@
-from mirage.commands.builtin.utils.output import (format_optional_records,
-                                                  format_records)
+from mirage.commands.builtin.utils.output import (
+    format_optional_records,
+    format_records,
+)
 
 
 def test_format_records_empty_returns_empty_bytes():

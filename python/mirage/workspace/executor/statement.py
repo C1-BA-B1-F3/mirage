@@ -28,10 +28,9 @@ from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
 
-def record_status(session: SessionState,
-                  code: int,
-                  *,
-                  transparent: bool = False) -> None:
+def record_status(
+    session: SessionState, code: int, *, transparent: bool = False
+) -> None:
     """Record a finished statement's exit status: ``$?`` and
     ``${PIPESTATUS[@]}`` together.
 
@@ -61,7 +60,7 @@ def record_status(session: SessionState,
     if pending is not None:
         session.pipe_status = pending
     elif not transparent:
-        session.pipe_status = (code, )
+        session.pipe_status = (code,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +85,7 @@ class StatusSnapshot:
         pipe_status_pending (tuple[int, ...] | None): statuses a
             pipeline parked for the enclosing boundary.
     """
+
     last_exit_code: int
     pipe_status: tuple[int, ...]
     pipe_status_pending: tuple[int, ...] | None
@@ -97,12 +97,18 @@ def snapshot_status(session: SessionState) -> StatusSnapshot:
     Args:
         session (SessionState): shell session whose status is captured.
     """
-    return StatusSnapshot(session.last_exit_code, session.pipe_status,
-                          session._pipe_status_pending)
+    return StatusSnapshot(
+        session.last_exit_code,
+        session.pipe_status,
+        session._pipe_status_pending,
+    )
 
 
-def restore_status(session: SessionState, snapshot: StatusSnapshot,
-                   writer: StatusWriter | None) -> None:
+def restore_status(
+    session: SessionState,
+    snapshot: StatusSnapshot,
+    writer: StatusWriter | None,
+) -> None:
     """Put back the status a line found, for a line the caller aborted.
 
     Statements inside the line may already have stamped their own
@@ -190,9 +196,11 @@ async def finish_statement(
         io.stderr = existing + format_fs_error(cmd_name, exc, paths)
         io.exit_code = read_fail_exit(cmd_name, exc)
         result = None
-    record_status(session,
-                  io.exit_code,
-                  transparent=node is not None and pipeline_transparent(node))
+    record_status(
+        session,
+        io.exit_code,
+        transparent=node is not None and pipeline_transparent(node),
+    )
     return result
 
 

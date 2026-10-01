@@ -472,17 +472,20 @@ async def test_fuse_write_buffered_flush(rw_ws):
     assert result.stdout == b"HELLO world"
 
 
-@pytest.mark.skipif(not _fuse_available,
-                    reason="FUSE not available on this platform")
+@pytest.mark.skipif(
+    not _fuse_available, reason="FUSE not available on this platform"
+)
 @pytest.mark.asyncio
 async def test_mount_background_readable():
     from mirage.fuse.mount import mount_background
+
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     await ws.shell("tee /hello.txt", stdin=b"hi from memory")
     with tempfile.TemporaryDirectory() as mountpoint:
         t = mount_background(ws.vfs, mountpoint)
         try:
             import time
+
             time.sleep(1)
             path = os.path.join(mountpoint, "hello.txt")
             assert os.path.exists(path)
@@ -490,11 +493,14 @@ async def test_mount_background_readable():
                 assert f.read() == b"hi from memory"
         finally:
             if sys.platform == "darwin":
-                subprocess.run(["diskutil", "unmount", "force", mountpoint],
-                               capture_output=True)
+                subprocess.run(
+                    ["diskutil", "unmount", "force", mountpoint],
+                    capture_output=True,
+                )
             else:
-                subprocess.run(["fusermount", "-u", mountpoint],
-                               capture_output=True)
+                subprocess.run(
+                    ["fusermount", "-u", mountpoint], capture_output=True
+                )
             t.join(timeout=3)
 
 
@@ -510,8 +516,10 @@ async def test_xattr_get_missing_raises(seed_ws):
     fs = MirageFS(seed_ws.vfs)
     with pytest.raises(OSError) as exc:
         fs.getxattr("/a.txt", "user.absent")
-    assert exc.value.errno in (errno.ENODATA,
-                               getattr(errno, "ENOATTR", errno.ENODATA))
+    assert exc.value.errno in (
+        errno.ENODATA,
+        getattr(errno, "ENOATTR", errno.ENODATA),
+    )
 
 
 @pytest.mark.asyncio
@@ -570,12 +578,13 @@ async def test_xattr_create_and_replace_flags_reach_the_door(seed_ws):
     assert exists.value.errno == errno.EEXIST
     with pytest.raises(OSError) as absent:
         fs.setxattr("/a.txt", "user.none", b"2", XATTR_REPLACE)
-    assert absent.value.errno in (errno.ENODATA,
-                                  getattr(errno, "ENOATTR", errno.ENODATA))
+    assert absent.value.errno in (
+        errno.ENODATA,
+        getattr(errno, "ENOATTR", errno.ENODATA),
+    )
 
 
 class _SizelessOps:
-
     def __init__(self, ops):
         self._inner = ops
         self.read_calls = 0
@@ -616,7 +625,8 @@ async def test_unknown_size_preopen_stats_zero(sizeless_fs):
 
 @pytest.mark.asyncio
 async def test_unknown_size_o_trunc_open_hydrates_the_truncated_file(
-        sizeless_fs):
+    sizeless_fs,
+):
     # A size-unknown file is hydrated at open so fstat can answer; under
     # O_TRUNC that hydration reads the file after the truncation, through
     # the same rendered path as any other open, so fstat says 0 at once.
@@ -644,7 +654,8 @@ async def test_unknown_size_truncate_cuts_the_hydrated_handle(sizeless_fs):
 
 @pytest.mark.asyncio
 async def test_unknown_size_truncate_rehydrates_with_settled_writes(
-        sizeless_fs):
+    sizeless_fs,
+):
     # A nonzero truncate lands after another handle's buffered write, and
     # the hydrated reader must see both: the settled write and the cut.
     fs, _ = sizeless_fs
@@ -690,7 +701,8 @@ async def test_unknown_size_write_refreshes_the_writing_handle(sizeless_fs):
 
 @pytest.mark.asyncio
 async def test_unknown_size_failed_refresh_does_not_fail_the_truncate(
-        sizeless_fs):
+    sizeless_fs,
+):
     # The truncation has landed by the time the hydrated reader is
     # refreshed; a backend hiccup there must not turn a committed
     # truncate into a failure. The reader just fetches again next time.
@@ -705,7 +717,8 @@ async def test_unknown_size_failed_refresh_does_not_fail_the_truncate(
 
 @pytest.mark.asyncio
 async def test_unknown_size_o_trunc_open_survives_a_failed_hydration(
-        sizeless_fs):
+    sizeless_fs,
+):
     # The truncation has committed by the time the handle is hydrated; a
     # backend error there must not fail the open, or the old body is gone
     # and the replacement is never written. The next read fetches again.
@@ -720,7 +733,8 @@ async def test_unknown_size_o_trunc_open_survives_a_failed_hydration(
 
 @pytest.mark.asyncio
 async def test_unknown_size_open_defers_a_failed_hydration_to_read(
-        sizeless_fs):
+    sizeless_fs,
+):
     # A plain open stays permissive on any read failure; the error reaches
     # the caller from the read that follows, as open(2) would have it.
     fs, ops = sizeless_fs
@@ -884,18 +898,14 @@ async def test_session_bound_fs_enforces_grants():
     the granted mount answers, the ungranted one raises, exactly as a
     shell command in that session would."""
     ws = Workspace(
-        {
-            "/open": RAMVFS(),
-            "/secret": RAMVFS()
-        },
+        {"/open": RAMVFS(), "/secret": RAMVFS()},
         mode=MountMode.WRITE,
     )
     await ws.shell("tee /open/ok.txt", stdin=b"visible")
     await ws.shell("tee /secret/no.txt", stdin=b"hidden")
-    session = ws.create_session("narrow",
-                                profile={"paths": {
-                                    "hide": ["/secret"]
-                                }})
+    session = ws.create_session(
+        "narrow", profile={"paths": {"hide": ["/secret"]}}
+    )
 
     bound = MirageFS(ws.vfs, session=session)
     attrs = bound.getattr("/open/ok.txt")

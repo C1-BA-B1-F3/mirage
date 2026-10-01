@@ -17,10 +17,17 @@ from collections.abc import Mapping, Sequence
 from typing import Literal, cast
 
 from mirage.commands.builtin.constants import BINARY_EXTENSIONS, PatternType
-from mirage.commands.builtin.grep_pattern import (bre_source, ere_source,
-                                                  perl_regex, rust_source)
-from mirage.commands.builtin.types import (GrepSearchMeta, GrepSearchOptions,
-                                           RegexSyntax)
+from mirage.commands.builtin.grep_pattern import (
+    bre_source,
+    ere_source,
+    perl_regex,
+    rust_source,
+)
+from mirage.commands.builtin.types import (
+    GrepSearchMeta,
+    GrepSearchOptions,
+    RegexSyntax,
+)
 from mirage.commands.builtin.utils.paths import has_unresolved_glob
 from mirage.commands.builtin.utils.stream import is_stdin
 from mirage.commands.resolve import get_extension
@@ -47,7 +54,7 @@ def classify_pattern(
         return PatternType.REGEX
     if fixed_string:
         return PatternType.EXACT
-    if re.fullmatch(r'[\w\s\-_.]+', pattern):
+    if re.fullmatch(r"[\w\s\-_.]+", pattern):
         return PatternType.SIMPLE
     return PatternType.REGEX
 
@@ -77,7 +84,7 @@ def _quantifier_min(pattern: str, i: int) -> int | None:
         return 1
     if ch == "{":
         end = pattern.find("}", i)
-        low = (pattern[i + 1:end] if end != -1 else "").split(",", 1)[0]
+        low = (pattern[i + 1 : end] if end != -1 else "").split(",", 1)[0]
         return int(low) if low.isdigit() else 0
     return None
 
@@ -177,12 +184,14 @@ def is_literal_pattern(pattern: str, fixed_string: bool) -> bool:
     if fixed_string:
         return True
     pt = classify_pattern(pattern, fixed_string)
-    return pt == PatternType.EXACT or (pt == PatternType.SIMPLE
-                                       and "." not in pattern)
+    return pt == PatternType.EXACT or (
+        pt == PatternType.SIMPLE and "." not in pattern
+    )
 
 
-def whole_word_literal(pattern: str | None, fixed_string: bool,
-                       whole_word: bool) -> str | None:
+def whole_word_literal(
+    pattern: str | None, fixed_string: bool, whole_word: bool
+) -> str | None:
     """The term a whole-word search index may narrow a scan on, or None.
 
     A word-based index (GitHub code search, Dropbox and Box file search)
@@ -220,9 +229,14 @@ def grep_needs_every_file(fl: FlagView) -> bool:
     Args:
         fl (FlagView): the invocation's grep flags.
     """
-    return (fl.as_bool("v") or fl.as_bool("c")
-            or fl.as_bool("files_without_match") or bool(fl.raw("file"))
-            or fl.as_bool("text") or fl.as_str("binary_files") == "text")
+    return (
+        fl.as_bool("v")
+        or fl.as_bool("c")
+        or fl.as_bool("files_without_match")
+        or bool(fl.raw("file"))
+        or fl.as_bool("text")
+        or fl.as_str("binary_files") == "text"
+    )
 
 
 def text_candidates(paths: list[PathSpec]) -> list[PathSpec]:
@@ -244,9 +258,11 @@ def text_candidates(paths: list[PathSpec]) -> list[PathSpec]:
     ]
 
 
-def search_query(pattern: str,
-                 fixed_string: bool,
-                 syntax: RegexSyntax = RegexSyntax.EXTENDED) -> str | None:
+def search_query(
+    pattern: str,
+    fixed_string: bool,
+    syntax: RegexSyntax = RegexSyntax.EXTENDED,
+) -> str | None:
     """Literal to push down to a substring or code-search API for a pattern.
 
     A SIMPLE pattern holding a dot is a regex here, not a literal:
@@ -302,31 +318,78 @@ def host_source(pattern: str, syntax: RegexSyntax) -> str:
 
 # grep's dests, then rg's, which spells each flag by its long name; a
 # spec-less view reads both, and neither command sets the other's.
-_PUSHDOWN_SHAPING_BOOL = ("v", "n", "byte_offset", "c", "args_l",
-                          "files_without_match", "w", "o", "q", "H", "h",
-                          "args_I", "text", "invert_match", "line_number",
-                          "count", "files_with_matches", "word_regexp",
-                          "only_matching", "quiet", "with_filename",
-                          "no_filename", "line_regexp", "column", "vimgrep",
-                          "trim", "null", "count_matches", "include_zero",
-                          "files", "type_list", "heading", "passthru",
-                          "passthrough", "binary", "sort_files", "follow")
+_PUSHDOWN_SHAPING_BOOL = (
+    "v",
+    "n",
+    "byte_offset",
+    "c",
+    "args_l",
+    "files_without_match",
+    "w",
+    "o",
+    "q",
+    "H",
+    "h",
+    "args_I",
+    "text",
+    "invert_match",
+    "line_number",
+    "count",
+    "files_with_matches",
+    "word_regexp",
+    "only_matching",
+    "quiet",
+    "with_filename",
+    "no_filename",
+    "line_regexp",
+    "column",
+    "vimgrep",
+    "trim",
+    "null",
+    "count_matches",
+    "include_zero",
+    "files",
+    "type_list",
+    "heading",
+    "passthru",
+    "passthrough",
+    "binary",
+    "sort_files",
+    "follow",
+)
 _PUSHDOWN_SHAPING_INT = ("m", "A", "B", "C")
 # rg's valued options defer on presence alone: a value the generic would
 # refuse in ripgrep's words is not the push-down's to parse.
-_PUSHDOWN_SHAPING_VALUE = ("max_count", "after_context", "before_context",
-                           "context", "max_columns", "replace",
-                           "field_match_separator", "max_depth",
-                           "max_filesize", "sort", "sortr")
-_PUSHDOWN_FILTER_STR = ("binary_files", )
+_PUSHDOWN_SHAPING_VALUE = (
+    "max_count",
+    "after_context",
+    "before_context",
+    "context",
+    "max_columns",
+    "replace",
+    "field_match_separator",
+    "max_depth",
+    "max_filesize",
+    "sort",
+    "sortr",
+)
+_PUSHDOWN_FILTER_STR = ("binary_files",)
 # -f adds patterns the pushed-down one never carried.
-_PUSHDOWN_FILTER_LIST = ("include", "exclude", "exclude_dir", "file", "glob",
-                         "iglob", "type", "type_not")
+_PUSHDOWN_FILTER_LIST = (
+    "include",
+    "exclude",
+    "exclude_dir",
+    "file",
+    "glob",
+    "iglob",
+    "type",
+    "type_not",
+)
 
 
 def has_search_shaping_flags(
-        flags: Mapping[str, FlagValue] | None,
-        honored: Sequence[str] = (),
+    flags: Mapping[str, FlagValue] | None,
+    honored: Sequence[str] = (),
 ) -> bool:
     """True when a flag alters the match set or output shape of grep/rg.
 
@@ -357,22 +420,29 @@ def has_search_shaping_flags(
     if any(fl.as_bool(k) for k in _PUSHDOWN_SHAPING_BOOL if k not in honored):
         return True
     if any(
-            fl.as_int(k) is not None for k in _PUSHDOWN_SHAPING_INT
-            if k not in honored):
+        fl.as_int(k) is not None
+        for k in _PUSHDOWN_SHAPING_INT
+        if k not in honored
+    ):
         return True
     if any(
-            fl.raw(k) is not None for k in _PUSHDOWN_SHAPING_VALUE
-            if k not in honored):
+        fl.raw(k) is not None
+        for k in _PUSHDOWN_SHAPING_VALUE
+        if k not in honored
+    ):
         return True
     if any(fl.as_list(k) for k in _PUSHDOWN_FILTER_LIST if k not in honored):
         return True
     return any(
-        fl.as_str(k) is not None for k in _PUSHDOWN_FILTER_STR
-        if k not in honored)
+        fl.as_str(k) is not None
+        for k in _PUSHDOWN_FILTER_STR
+        if k not in honored
+    )
 
 
-def search_pushdown_ok(flags: Mapping[str, FlagValue] | None,
-                       pattern: str) -> bool:
+def search_pushdown_ok(
+    flags: Mapping[str, FlagValue] | None, pattern: str
+) -> bool:
     """True when a literal-substring push-down faithfully reproduces grep/rg.
 
     For the LIKE/ILIKE substring push-down (postgres/mysql), faithful means a
@@ -390,8 +460,9 @@ def search_pushdown_ok(flags: Mapping[str, FlagValue] | None,
         return False
     fl = FlagView(flags)
     fixed = fl.as_bool("F") or fl.as_bool("fixed_strings")
-    return (is_literal_pattern(pattern, fixed)
-            and not has_search_shaping_flags(flags))
+    return is_literal_pattern(pattern, fixed) and not has_search_shaping_flags(
+        flags
+    )
 
 
 def lone_operand(paths: list[PathSpec]) -> PathSpec | None:
@@ -420,17 +491,20 @@ def lone_operand(paths: list[PathSpec]) -> PathSpec | None:
             named none, named several, named stdin, or still carries a
             glob.
     """
-    if (len(paths) != 1 or has_unresolved_glob(paths)
-            or any(is_stdin(p) for p in paths)):
+    if (
+        len(paths) != 1
+        or has_unresolved_glob(paths)
+        or any(is_stdin(p) for p in paths)
+    ):
         return None
     return paths[0]
 
 
 def pushdown_operand(
-        paths: list[PathSpec],
-        flags: Mapping[str, FlagValue] | None,
-        pattern: str | None,
-        honored: Sequence[str] = (),
+    paths: list[PathSpec],
+    flags: Mapping[str, FlagValue] | None,
+    pattern: str | None,
+    honored: Sequence[str] = (),
 ) -> PathSpec | None:
     """The operand a regex push-down may answer for, or None.
 
@@ -488,8 +562,10 @@ def text_search_results(lines: Sequence[str]) -> bool:
     Args:
         lines (Sequence[str]): Rendered provider search results.
     """
-    return all("\0" not in line and not any(0xd800 <= ord(c) <= 0xdfff
-                                            for c in line) for line in lines)
+    return all(
+        "\0" not in line and not any(0xD800 <= ord(c) <= 0xDFFF for c in line)
+        for line in lines
+    )
 
 
 def grep_search_meta(search: SearchOps | None) -> GrepSearchMeta | None:
@@ -503,14 +579,17 @@ def grep_search_meta(search: SearchOps | None) -> GrepSearchMeta | None:
     meta = search.meta["grep"]
     if not isinstance(meta, dict) or set(meta) - {"mode", "stream"}:
         raise ValueError(
-            "search.meta.grep must contain mode and optional stream")
+            "search.meta.grep must contain mode and optional stream"
+        )
     mode = meta.get("mode")
     stream = meta.get("stream", False)
     if mode not in ("literal", "regex") or not isinstance(stream, bool):
         raise ValueError(
-            "search.meta.grep requires mode=literal|regex and boolean stream")
-    return GrepSearchMeta(mode=cast(Literal["literal", "regex"], mode),
-                          stream=stream)
+            "search.meta.grep requires mode=literal|regex and boolean stream"
+        )
+    return GrepSearchMeta(
+        mode=cast(Literal["literal", "regex"], mode), stream=stream
+    )
 
 
 def grep_search_options(query: SearchQuery) -> GrepSearchOptions:
@@ -523,13 +602,15 @@ def grep_search_options(query: SearchQuery) -> GrepSearchOptions:
     allowed = {"ignore_case", "fixed_string", "whole_word", "syntax"}
     if not isinstance(options, dict) or set(options) - allowed:
         raise ValueError("search.options.grep contains unknown options")
-    if any(not isinstance(value, bool) for key, value in options.items()
-           if key != "syntax"):
+    if any(
+        not isinstance(value, bool)
+        for key, value in options.items()
+        if key != "syntax"
+    ):
         raise ValueError("search.options.grep values must be boolean")
     syntax = options.get("syntax", RegexSyntax.EXTENDED.value)
     if not isinstance(syntax, str) or syntax not in {
-            s.value
-            for s in RegexSyntax
+        s.value for s in RegexSyntax
     }:
         raise ValueError("search.options.grep.syntax names no dialect")
     return GrepSearchOptions(

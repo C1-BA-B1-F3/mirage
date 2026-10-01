@@ -86,7 +86,7 @@ def _require_job(request: Request, job_id: str) -> JobEntry:
 @router.get("", response_model=list[JobBrief])
 async def list_jobs(
     request: Request, workspace_id: str | None = Query(None)
-) -> list[JobBrief]:  # noqa: E125
+) -> list[JobBrief]:
     return [
         _to_brief(j)
         for j in request.app.state.jobs.list(workspace_id=workspace_id)
@@ -99,8 +99,9 @@ async def get_job(job_id: str, request: Request) -> JobDetail:
 
 
 @router.post("/{job_id}/wait", response_model=JobDetail)
-async def wait_job(job_id: str, req: WaitRequest,
-                   request: Request) -> JobDetail:
+async def wait_job(
+    job_id: str, req: WaitRequest, request: Request
+) -> JobDetail:
     table = request.app.state.jobs
     if job_id not in table:
         raise HTTPException(status_code=404, detail="job not found")

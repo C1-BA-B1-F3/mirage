@@ -17,8 +17,10 @@ from functools import partial
 from mirage.accessor.airtable import AirtableAccessor
 from mirage.commands.builtin.airtable.io import IO
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
-from mirage.commands.builtin.generic_bind.adapter import (bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.airtable.read import read as airtable_read
@@ -27,9 +29,12 @@ from mirage.types import PathSpec
 
 
 @command("head", vfs="airtable", spec=SPECS["head"])
-async def head(accessor: AirtableAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def head(
+    accessor: AirtableAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:
@@ -43,6 +48,10 @@ async def head(accessor: AirtableAccessor, paths: list[PathSpec],
     if parsed.bytes_ is None and n_eff > 0 and not parsed.zero_terminated:
         read_fn = partial(airtable_read, limit=n_eff)
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
-    return await head_generic(resolved, list(texts), opts,
-                              bound_op(IO.stat, accessor, opts.index),
-                              bound_op(read_fn, accessor, opts.index))
+    return await head_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(IO.stat, accessor, opts.index),
+        bound_op(read_fn, accessor, opts.index),
+    )

@@ -23,11 +23,13 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def read_messages(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     channel = fl.as_str("channel") or ""
     limit = fl.as_int("limit") or 20
     messages = await fetch_recent_messages(inv.config, channel, limit)
-    out = json.dumps(messages, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        messages, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

@@ -37,8 +37,8 @@ DAY = Codec(validate=valid_day)
 # as listed.
 EVENT_NAME = Codec(validate=is_event_name)
 
-_CAL = (Slot("calendar"), )
-_DAY = _CAL + (Slot("day", DAY), )
+_CAL = (Slot("calendar"),)
+_DAY = _CAL + (Slot("day", DAY),)
 
 # One description of the tree: readdir, stat, read and unlink all
 # classify through it, so the file surface and the write surface cannot
@@ -47,15 +47,19 @@ _DAY = _CAL + (Slot("day", DAY), )
 # than decoded.
 SCOPES = (
     Scope(kind="calendar", segments=_CAL),
-    Scope(kind="calendar_json",
-          segments=_CAL + ("calendar.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="calendar_json",
+        segments=_CAL + ("calendar.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="day", segments=_DAY),
-    Scope(kind="event",
-          segments=_DAY + (Slot("event", EVENT_NAME), ),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="event",
+        segments=_DAY + (Slot("event", EVENT_NAME),),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

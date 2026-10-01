@@ -39,7 +39,6 @@ class GridFSConfig(BaseModel):
 
 
 class GridFSAccessor(Accessor):
-
     def __init__(self, config: GridFSConfig) -> None:
         self.config = config
         self._clients: dict[int, AsyncMongoClient[dict[str, Any]]] = {}

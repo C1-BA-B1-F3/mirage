@@ -18,10 +18,25 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandSpec, ContentType,
-                    FileStat, FileType, IndexCacheStore, IOResult, MountMode,
-                    PathSpec, ReadOps, VFSAdapter, Workspace, WriteOps,
-                    command, register_vfs)
+from mirage import (
+    NULL_INDEX,
+    Accessor,
+    BaseVFS,
+    CommandSpec,
+    ContentType,
+    FileStat,
+    FileType,
+    IndexCacheStore,
+    IOResult,
+    MountMode,
+    PathSpec,
+    ReadOps,
+    VFSAdapter,
+    Workspace,
+    WriteOps,
+    command,
+    register_vfs,
+)
 
 # A whole custom backend in one script: four async core functions over
 # your data source, a read adapter with optional writes, one BaseVFS. Every
@@ -42,7 +57,6 @@ PAGES = {
 
 
 class WikiAccessor(Accessor):
-
     def __init__(self, pages: dict, known_sizes: bool = True) -> None:
         self.pages = pages
         self.known_sizes = known_sizes
@@ -95,11 +109,13 @@ async def stat(
     data = node.encode()
     # The fingerprint is the content's own hash: the stable identity a
     # snapshot records for every read and a load checks for drift.
-    return FileStat(name=name,
-                    size=len(data) if accessor.known_sizes else None,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    fingerprint=hashlib.sha256(data).hexdigest()[:16])
+    return FileStat(
+        name=name,
+        size=len(data) if accessor.known_sizes else None,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        fingerprint=hashlib.sha256(data).hexdigest()[:16],
+    )
 
 
 async def write(accessor: WikiAccessor, path: PathSpec, data: bytes) -> None:
@@ -112,9 +128,9 @@ async def write(accessor: WikiAccessor, path: PathSpec, data: bytes) -> None:
     node[name] = data.decode()
 
 
-async def mkdir(accessor: WikiAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: WikiAccessor, path: PathSpec, parents: bool = False
+) -> None:
     parts = [p for p in path.vfs_path.split("/") if p]
     node = accessor.pages
     for i, part in enumerate(parts):
@@ -136,7 +152,8 @@ async def mkdir(accessor: WikiAccessor,
 @command("wiki_titles", vfs="wiki", spec=CommandSpec())
 async def wiki_titles(accessor, paths, texts, opts):
     titles = [
-        line[2:] for page in ("guides/quickstart.md", "guides/deploy.md")
+        line[2:]
+        for page in ("guides/quickstart.md", "guides/deploy.md")
         for line in _node(accessor.pages, page).splitlines()
         if line.startswith("# ")
     ]
@@ -189,13 +206,14 @@ FEED = {"status.md": "All systems go.\n"}
 
 
 class FeedVFS(BaseVFS):
-
     def __init__(self) -> None:
-        super().__init__(name="feed",
-                         accessor=WikiAccessor(FEED, known_sizes=False),
-                         io=make_io(writable=False),
-                         prompt="A status feed rendered as markdown.",
-                         supports_snapshot=True)
+        super().__init__(
+            name="feed",
+            accessor=WikiAccessor(FEED, known_sizes=False),
+            io=make_io(writable=False),
+            prompt="A status feed rendered as markdown.",
+            supports_snapshot=True,
+        )
 
 
 async def show(ws: Workspace, line: str, prompt: str = "$") -> None:
@@ -214,39 +232,40 @@ async def main():
         {
             "/wiki/": WikiVFS(),
             "/nested/wiki/": (WikiVFS(), MountMode.READ),
-            "/feed/": FeedVFS()
+            "/feed/": FeedVFS(),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
 
     for line in (
-            "ls /wiki/guides",
-            "cat /wiki/notes.md",
-            "grep -r Quickstart /wiki/",
-            "find /wiki -name '*.md'",
-            "wc -l /wiki/guides/quickstart.md",
-            "wiki_titles",
-            "cat /wiki/missing.md",
-            "cat /feed/status.md",
-            "cat /wiki/guides/*.md",
-            "cat /nested/wiki/notes.md",
-            "echo changed > /nested/wiki/notes.md",
-            "cat /nested/wiki/notes.md",
-            "wc -c /feed/status.md",
-            "rm /feed/status.md",
-            "gzip -c /feed/status.md | gunzip",
-            "mkdir /wiki/new/child",
-            "test ! -e /wiki/new && echo no-partial-parent",
-            "mkdir -p /wiki/new/child",
-            "mkdir /wiki/new/child",
-            "mkdir -p /wiki/new/child",
-            "mkdir -p /wiki/notes.md/child",
-            "mkdir /wiki/guides/empty",
-            "cp -r /wiki/guides /wiki/copied",
-            "ls /wiki/copied",
-            "cat /wiki/copied/quickstart.md",
-            "rm -r /wiki/copied /wiki/notes.md",
-            "rm -d /wiki/copied/empty /wiki/notes.md",
-            "cp -r /nested/wiki/guides /nested/wiki/copied",
+        "ls /wiki/guides",
+        "cat /wiki/notes.md",
+        "grep -r Quickstart /wiki/",
+        "find /wiki -name '*.md'",
+        "wc -l /wiki/guides/quickstart.md",
+        "wiki_titles",
+        "cat /wiki/missing.md",
+        "cat /feed/status.md",
+        "cat /wiki/guides/*.md",
+        "cat /nested/wiki/notes.md",
+        "echo changed > /nested/wiki/notes.md",
+        "cat /nested/wiki/notes.md",
+        "wc -c /feed/status.md",
+        "rm /feed/status.md",
+        "gzip -c /feed/status.md | gunzip",
+        "mkdir /wiki/new/child",
+        "test ! -e /wiki/new && echo no-partial-parent",
+        "mkdir -p /wiki/new/child",
+        "mkdir /wiki/new/child",
+        "mkdir -p /wiki/new/child",
+        "mkdir -p /wiki/notes.md/child",
+        "mkdir /wiki/guides/empty",
+        "cp -r /wiki/guides /wiki/copied",
+        "ls /wiki/copied",
+        "cat /wiki/copied/quickstart.md",
+        "rm -r /wiki/copied /wiki/notes.md",
+        "rm -d /wiki/copied/empty /wiki/notes.md",
+        "cp -r /nested/wiki/guides /nested/wiki/copied",
     ):
         await show(ws, line)
 

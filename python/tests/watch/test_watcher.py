@@ -15,7 +15,6 @@ _TS = datetime.fromtimestamp(0, tz=timezone.utc)
 
 
 class FakeCacheManager:
-
     def __init__(self, log):
         self._log = log
 
@@ -52,16 +51,16 @@ class FakeRegistry:
 
 
 def _change(kind, virtual):
-    return FileEvent(kind=kind,
-                     path=PathSpec.from_str_path(virtual),
-                     timestamp=_TS)
+    return FileEvent(
+        kind=kind, path=PathSpec.from_str_path(virtual), timestamp=_TS
+    )
 
 
 def _watcher(log=None):
     manager = FakeCacheManager(log) if log is not None else None
-    entry = FakeMountEntry(prefix="/nc/",
-                           vfs=PlainVFS(),
-                           cache_manager=manager)
+    entry = FakeMountEntry(
+        prefix="/nc/", vfs=PlainVFS(), cache_manager=manager
+    )
     return Watcher(FakeRegistry(entry))
 
 
@@ -98,7 +97,9 @@ async def test_notify_invalidate_before_deliver():
     await asyncio.wait_for(task, timeout=2)
     log.append("deliver")
     assert log == [
-        "inv:/nc/data/x.txt", "inv-ancestors:/nc/data/x.txt", "deliver"
+        "inv:/nc/data/x.txt",
+        "inv-ancestors:/nc/data/x.txt",
+        "deliver",
     ]
     await agen.aclose()
     await w.close()
@@ -114,13 +115,20 @@ async def test_a_nested_create_drops_every_listing_to_the_mount_root():
     index = RAMIndexCacheStore()
     levels = ("/nc", "/nc/data", "/nc/data/sub")
     for level in levels:
-        await index.set_dir(level, [
-            ("child", IndexEntry(id="1", name="child", resource_type="file"))
-        ])
-    entry = FakeMountEntry(prefix="/nc/",
-                           vfs=PlainVFS(),
-                           cache_manager=CacheManager(None, index, "/nc/",
-                                                      False))
+        await index.set_dir(
+            level,
+            [
+                (
+                    "child",
+                    IndexEntry(id="1", name="child", resource_type="file"),
+                )
+            ],
+        )
+    entry = FakeMountEntry(
+        prefix="/nc/",
+        vfs=PlainVFS(),
+        cache_manager=CacheManager(None, index, "/nc/", False),
+    )
     w = Watcher(FakeRegistry(entry))
     await w.notify(_change(FileChangeKind.CREATE, "/nc/data/sub/deep.txt"))
     for level in levels:
@@ -169,7 +177,6 @@ async def test_notify_reframes_vfs_path():
     seen: list[str] = []
 
     class RecordingManager:
-
         async def invalidate_after_write(self, path):
             seen.append(path.vfs_path)
 
@@ -179,9 +186,9 @@ async def test_notify_reframes_vfs_path():
         async def invalidate_ancestors(self, path):
             return None
 
-    entry = FakeMountEntry(prefix="/nc/",
-                           vfs=PlainVFS(),
-                           cache_manager=RecordingManager())
+    entry = FakeMountEntry(
+        prefix="/nc/", vfs=PlainVFS(), cache_manager=RecordingManager()
+    )
     w = Watcher(FakeRegistry(entry))
     agen, task = await _start_blocked_watch(w)
     await w.notify(_change(FileChangeKind.CREATE, "/nc/data/x.txt"))
@@ -199,10 +206,12 @@ async def test_notify_move_evicts_both_sides():
     log: list[str] = []
     w = _watcher(log=log)
     agen, task = await _start_blocked_watch(w)
-    move = FileEvent(kind=FileChangeKind.MOVE,
-                     path=PathSpec.from_str_path("/nc/data/new.txt"),
-                     previous_path=PathSpec.from_str_path("/nc/old/orig.txt"),
-                     timestamp=_TS)
+    move = FileEvent(
+        kind=FileChangeKind.MOVE,
+        path=PathSpec.from_str_path("/nc/data/new.txt"),
+        previous_path=PathSpec.from_str_path("/nc/old/orig.txt"),
+        timestamp=_TS,
+    )
     await w.notify(move)
     await asyncio.wait_for(task, timeout=2)
     assert log == [
@@ -275,7 +284,7 @@ async def test_notify_after_close_is_noop():
 
 def test_matches_literal_root_is_whole_subtree():
     w = _watcher()
-    sub = Subscriber(queue=None, roots=("/nc", ))
+    sub = Subscriber(queue=None, roots=("/nc",))
     assert w._matches(sub, _change(FileChangeKind.CREATE, "/nc/top.txt"))
     assert w._matches(sub, _change(FileChangeKind.CREATE, "/nc/sub/deep.txt"))
     assert not w._matches(sub, _change(FileChangeKind.CREATE, "/other/x.txt"))
@@ -283,71 +292,84 @@ def test_matches_literal_root_is_whole_subtree():
 
 def test_matches_glob_scope_one_level():
     w = _watcher()
-    sub = Subscriber(queue=None, roots=("/nc/data/*.txt", ))
+    sub = Subscriber(queue=None, roots=("/nc/data/*.txt",))
     assert w._matches(sub, _change(FileChangeKind.CREATE, "/nc/data/a.txt"))
     assert not w._matches(sub, _change(FileChangeKind.CREATE, "/nc/data/a.md"))
-    assert not w._matches(sub,
-                          _change(FileChangeKind.CREATE, "/nc/data/sub/a.txt"))
+    assert not w._matches(
+        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/a.txt")
+    )
 
 
 def test_matches_slashless_glob_is_shallow():
     # GNU depth semantics: /nc/data/* is the entries themselves —
     # the glob spelling of a shallow watch, no descent.
     w = _watcher()
-    sub = Subscriber(queue=None, roots=("/nc/data/*", ))
+    sub = Subscriber(queue=None, roots=("/nc/data/*",))
     assert w._matches(sub, _change(FileChangeKind.CREATE, "/nc/data/a.txt"))
     assert w._matches(sub, _change(FileChangeKind.CREATE, "/nc/data/sub"))
     assert not w._matches(
-        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/deep.txt"))
+        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/deep.txt")
+    )
 
 
 def test_matches_trailing_slash_glob_scopes_dir_subtrees():
     # GNU */ matches directories only; the watch scope is everything
     # strictly inside them.
     w = _watcher()
-    sub = Subscriber(queue=None, roots=("/nc/data/*/", ))
-    assert w._matches(sub,
-                      _change(FileChangeKind.CREATE, "/nc/data/sub/deep.txt"))
+    sub = Subscriber(queue=None, roots=("/nc/data/*/",))
     assert w._matches(
-        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/nested/x.txt"))
-    assert not w._matches(sub,
-                          _change(FileChangeKind.CREATE, "/nc/data/top.txt"))
+        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/deep.txt")
+    )
+    assert w._matches(
+        sub, _change(FileChangeKind.CREATE, "/nc/data/sub/nested/x.txt")
+    )
+    assert not w._matches(
+        sub, _change(FileChangeKind.CREATE, "/nc/data/top.txt")
+    )
 
 
 def test_matches_glob_scope_covers_matched_dirs():
     w = _watcher()
-    sub = Subscriber(queue=None, roots=("/nc/data/sub*/", ))
+    sub = Subscriber(queue=None, roots=("/nc/data/sub*/",))
     assert w._matches(
-        sub, _change(FileChangeKind.CREATE, "/nc/data/subdir/deep.txt"))
-    assert not w._matches(sub, _change(FileChangeKind.CREATE,
-                                       "/nc/data/x.txt"))
-    shallow = Subscriber(queue=None, roots=("/nc/data/sub*", ))
-    assert w._matches(shallow, _change(FileChangeKind.CREATE,
-                                       "/nc/data/subdir"))
+        sub, _change(FileChangeKind.CREATE, "/nc/data/subdir/deep.txt")
+    )
     assert not w._matches(
-        shallow, _change(FileChangeKind.CREATE, "/nc/data/subdir/deep.txt"))
+        sub, _change(FileChangeKind.CREATE, "/nc/data/x.txt")
+    )
+    shallow = Subscriber(queue=None, roots=("/nc/data/sub*",))
+    assert w._matches(
+        shallow, _change(FileChangeKind.CREATE, "/nc/data/subdir")
+    )
+    assert not w._matches(
+        shallow, _change(FileChangeKind.CREATE, "/nc/data/subdir/deep.txt")
+    )
 
 
 def test_matches_glob_middle_wildcard_fine_grained():
     # /nc/data/*/abc/: everything inside any project dir's abc;
     # /nc/data/*/abc (no slash): the abc entries themselves.
     w = _watcher()
-    inside = Subscriber(queue=None, roots=("/nc/data/*/abc/", ))
+    inside = Subscriber(queue=None, roots=("/nc/data/*/abc/",))
     assert w._matches(
-        inside, _change(FileChangeKind.CREATE,
-                        "/nc/data/proj1/abc/report.txt"))
+        inside, _change(FileChangeKind.CREATE, "/nc/data/proj1/abc/report.txt")
+    )
     assert w._matches(
-        inside, _change(FileChangeKind.CREATE,
-                        "/nc/data/proj1/abc/deep/x.txt"))
+        inside, _change(FileChangeKind.CREATE, "/nc/data/proj1/abc/deep/x.txt")
+    )
     assert not w._matches(
-        inside, _change(FileChangeKind.CREATE, "/nc/data/proj1/other.txt"))
-    assert not w._matches(inside, _change(FileChangeKind.CREATE,
-                                          "/nc/data/abc"))
-    entry = Subscriber(queue=None, roots=("/nc/data/*/abc", ))
-    assert w._matches(entry,
-                      _change(FileChangeKind.CREATE, "/nc/data/proj1/abc"))
+        inside, _change(FileChangeKind.CREATE, "/nc/data/proj1/other.txt")
+    )
     assert not w._matches(
-        entry, _change(FileChangeKind.CREATE, "/nc/data/proj1/abc/report.txt"))
+        inside, _change(FileChangeKind.CREATE, "/nc/data/abc")
+    )
+    entry = Subscriber(queue=None, roots=("/nc/data/*/abc",))
+    assert w._matches(
+        entry, _change(FileChangeKind.CREATE, "/nc/data/proj1/abc")
+    )
+    assert not w._matches(
+        entry, _change(FileChangeKind.CREATE, "/nc/data/proj1/abc/report.txt")
+    )
 
 
 def test_matches_any_of_multiple_roots():
@@ -355,8 +377,9 @@ def test_matches_any_of_multiple_roots():
     sub = Subscriber(queue=None, roots=("/nc/a", "/nc/b/keep.txt"))
     assert w._matches(sub, _change(FileChangeKind.UPDATE, "/nc/a/x.txt"))
     assert w._matches(sub, _change(FileChangeKind.UPDATE, "/nc/b/keep.txt"))
-    assert not w._matches(sub, _change(FileChangeKind.UPDATE,
-                                       "/nc/b/other.txt"))
+    assert not w._matches(
+        sub, _change(FileChangeKind.UPDATE, "/nc/b/other.txt")
+    )
 
 
 @pytest.mark.asyncio

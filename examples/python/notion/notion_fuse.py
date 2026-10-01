@@ -26,8 +26,8 @@ config = NotionConfig(api_key=os.environ["NOTION_API_KEY"])
 vfs = NotionVFS(config=config)
 
 with Workspace(
-    {"/notion/": Mount(vfs, mode=MountMode.READ,
-                       backend=MountBackend.FUSE)}) as ws:
+    {"/notion/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

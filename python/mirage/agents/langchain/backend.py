@@ -18,50 +18,62 @@ from collections.abc import Awaitable
 from pathlib import PurePosixPath
 from typing import TypeVar
 
-from deepagents.backends.protocol import (EditResult, ExecuteResponse,
-                                          FileData, FileDownloadResponse,
-                                          FileInfo, FileUploadResponse,
-                                          GlobResult, GrepResult, LsResult,
-                                          ReadResult, SandboxBackendProtocol,
-                                          WriteResult)
+from deepagents.backends.protocol import (
+    EditResult,
+    ExecuteResponse,
+    FileData,
+    FileDownloadResponse,
+    FileInfo,
+    FileUploadResponse,
+    GlobResult,
+    GrepResult,
+    LsResult,
+    ReadResult,
+    SandboxBackendProtocol,
+    WriteResult,
+)
 
 from mirage.agents.io_text import replace_text, with_refusal
-from mirage.agents.langchain.convert import (io_to_execute_response,
-                                             io_to_file_infos,
-                                             io_to_grep_matches)
+from mirage.agents.langchain.convert import (
+    io_to_execute_response,
+    io_to_file_infos,
+    io_to_grep_matches,
+)
 from mirage.bridge.sync import run_async_from_sync
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace
 
 T = TypeVar("T")
 
-BINARY_EXTENSIONS = frozenset({
-    ".3gpp",
-    ".aac",
-    ".aiff",
-    ".avi",
-    ".flac",
-    ".flv",
-    ".gif",
-    ".heic",
-    ".heif",
-    ".jpeg",
-    ".jpg",
-    ".mov",
-    ".mp3",
-    ".mp4",
-    ".mpeg",
-    ".mpg",
-    ".ogg",
-    ".pdf",
-    ".png",
-    ".ppt",
-    ".pptx",
-    ".wav",
-    ".webm",
-    ".webp",
-    ".wmv",
-})
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".3gpp",
+        ".aac",
+        ".aiff",
+        ".avi",
+        ".flac",
+        ".flv",
+        ".gif",
+        ".heic",
+        ".heif",
+        ".jpeg",
+        ".jpg",
+        ".mov",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpg",
+        ".ogg",
+        ".pdf",
+        ".png",
+        ".ppt",
+        ".pptx",
+        ".wav",
+        ".webm",
+        ".webp",
+        ".wmv",
+    }
+)
 COMMAND_SUCCESS_EXIT_CODES = frozenset({0})
 GREP_SUCCESS_EXIT_CODES = frozenset({0, 1})
 
@@ -77,20 +89,23 @@ def _is_binary(file_path: str, data: bytes) -> bool:
     return False
 
 
-def _to_read_result(file_path: str, data: bytes, offset: int,
-                    limit: int) -> ReadResult:
+def _to_read_result(
+    file_path: str, data: bytes, offset: int, limit: int
+) -> ReadResult:
     if _is_binary(file_path, data):
         content = base64.standard_b64encode(data).decode("ascii")
         return ReadResult(
-            file_data=FileData(content=content, encoding="base64"))
+            file_data=FileData(content=content, encoding="base64")
+        )
 
     text = data.decode("utf-8")
     lines = text.splitlines(keepends=True)
     if lines and offset >= len(lines):
-        error = (f"Line offset {offset} exceeds file length "
-                 f"({len(lines)} lines)")
+        error = (
+            f"Line offset {offset} exceeds file length ({len(lines)} lines)"
+        )
         return ReadResult(error=error)
-    content = "".join(lines[offset:offset + limit])
+    content = "".join(lines[offset : offset + limit])
     return ReadResult(file_data=FileData(content=content, encoding="utf-8"))
 
 
@@ -136,16 +151,14 @@ class LangchainWorkspace(SandboxBackendProtocol):
 
     # ── execute ──────────────────────────────────────────────
 
-    def execute(self,
-                command: str,
-                *,
-                timeout: int | None = None) -> ExecuteResponse:
+    def execute(
+        self, command: str, *, timeout: int | None = None
+    ) -> ExecuteResponse:
         return self._run(self.aexecute(command, timeout=timeout))
 
-    async def aexecute(self,
-                       command: str,
-                       *,
-                       timeout: int | None = None) -> ExecuteResponse:
+    async def aexecute(
+        self, command: str, *, timeout: int | None = None
+    ) -> ExecuteResponse:
         io = await self._exec(command)
         return io_to_execute_response(io)
 
@@ -175,16 +188,14 @@ class LangchainWorkspace(SandboxBackendProtocol):
 
     # ── read ─────────────────────────────────────────────────
 
-    def read(self,
-             file_path: str,
-             offset: int = 0,
-             limit: int = 2000) -> ReadResult:
+    def read(
+        self, file_path: str, offset: int = 0, limit: int = 2000
+    ) -> ReadResult:
         return self._run(self.aread(file_path, offset, limit))
 
-    async def aread(self,
-                    file_path: str,
-                    offset: int = 0,
-                    limit: int = 2000) -> ReadResult:
+    async def aread(
+        self, file_path: str, offset: int = 0, limit: int = 2000
+    ) -> ReadResult:
         ops = self._ws.vfs
         try:
             data = await ops.read(file_path)
@@ -202,7 +213,8 @@ class LangchainWorkspace(SandboxBackendProtocol):
         try:
             await ops.stat(file_path)
             return WriteResult(
-                error=f"Error: file '{file_path}' already exists")
+                error=f"Error: file '{file_path}' already exists"
+            )
         except (FileNotFoundError, NotADirectoryError, ValueError):
             # missing file is the good path: the write may proceed
             pass
@@ -225,7 +237,8 @@ class LangchainWorkspace(SandboxBackendProtocol):
         replace_all: bool = False,
     ) -> EditResult:
         return self._run(
-            self.aedit(file_path, old_string, new_string, replace_all))
+            self.aedit(file_path, old_string, new_string, replace_all)
+        )
 
     async def aedit(
         self,
@@ -240,18 +253,22 @@ class LangchainWorkspace(SandboxBackendProtocol):
         except (FileNotFoundError, NotADirectoryError, ValueError):
             return EditResult(error=f"Error: file '{file_path}' not found")
         content = data.decode("utf-8", errors="replace")
-        new_content, count = replace_text(content, old_string, new_string,
-                                          replace_all)
+        new_content, count = replace_text(
+            content, old_string, new_string, replace_all
+        )
         if count == 0:
             return EditResult(
-                error=f"Error: string not found in file: '{old_string}'")
+                error=f"Error: string not found in file: '{old_string}'"
+            )
         if count > 1 and not replace_all:
             return EditResult(
                 error=f"Error: string '{old_string}' appears {count} times. "
-                f"Use replace_all=True")
+                f"Use replace_all=True"
+            )
         await ops.write(file_path, new_content.encode("utf-8"))
-        return EditResult(path=file_path,
-                          occurrences=count if replace_all else 1)
+        return EditResult(
+            path=file_path, occurrences=count if replace_all else 1
+        )
 
     # ── grep ─────────────────────────────────────────────────
 
@@ -310,7 +327,8 @@ class LangchainWorkspace(SandboxBackendProtocol):
     async def aglob(self, pattern: str, path: str | None = None) -> GlobResult:
         name = pattern.split("/")[-1] if "/" in pattern else pattern
         io = await self._exec(
-            f"find {shlex.quote(path or '/')} -name {shlex.quote(name)}")
+            f"find {shlex.quote(path or '/')} -name {shlex.quote(name)}"
+        )
         await io.materialize_stdout()
         error = await _command_error(io)
         if error:
@@ -320,11 +338,13 @@ class LangchainWorkspace(SandboxBackendProtocol):
     # ── upload / download ────────────────────────────────────
 
     def upload_files(
-            self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
         return self._run(self.aupload_files(files))
 
     async def aupload_files(
-            self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
         ops = self._ws.vfs
         results: list[FileUploadResponse] = []
         for path, data in files:
@@ -341,8 +361,9 @@ class LangchainWorkspace(SandboxBackendProtocol):
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         return self._run(self.adownload_files(paths))
 
-    async def adownload_files(self,
-                              paths: list[str]) -> list[FileDownloadResponse]:
+    async def adownload_files(
+        self, paths: list[str]
+    ) -> list[FileDownloadResponse]:
         ops = self._ws.vfs
         results: list[FileDownloadResponse] = []
         for path in paths:
@@ -351,7 +372,8 @@ class LangchainWorkspace(SandboxBackendProtocol):
                 results.append(FileDownloadResponse(path=path, content=data))
             except (FileNotFoundError, NotADirectoryError, ValueError):
                 results.append(
-                    FileDownloadResponse(path=path,
-                                         content=None,
-                                         error="file_not_found"))
+                    FileDownloadResponse(
+                        path=path, content=None, error="file_not_found"
+                    )
+                )
         return results

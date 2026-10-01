@@ -72,21 +72,26 @@ def test_mktemp_explicit_path_template():
 
 def test_mktemp_d_explicit_path_template():
     ws, _ = _ws()
-    stdout, io = _run_raw(ws,
-                          "mkdir -p /data/mtd && mktemp -d /data/mtd/t.XXXX")
+    stdout, io = _run_raw(
+        ws, "mkdir -p /data/mtd && mktemp -d /data/mtd/t.XXXX"
+    )
     path = _bytes(stdout).strip().decode()
     assert path.startswith("/data/mtd/t.")
     assert io.exit_code == 0
 
 
-@pytest.mark.parametrize("line,created", [
-    ("mktemp -u -p /ro", False),
-    ("mktemp --dry-run -d -p /ro", False),
-    ("mktemp -p /ro", True),
-    ("mktemp -d -p /ro", True),
-])
+@pytest.mark.parametrize(
+    "line,created",
+    [
+        ("mktemp -u -p /ro", False),
+        ("mktemp --dry-run -d -p /ro", False),
+        ("mktemp -p /ro", True),
+        ("mktemp -d -p /ro", True),
+    ],
+)
 def test_a_read_only_mount_refuses_mktemp_only_where_it_creates(
-        line: str, created: bool):
+    line: str, created: bool
+):
     # -u only prints the name it would have created, so it runs on a
     # read-only mount; a real create is refused at its write.
     vfs = RAMVFS()
@@ -113,23 +118,37 @@ def test_a_pathless_mktemp_creates_under_tmp_whatever_the_cwd():
     assert ro._store.files == {}
 
 
-@pytest.mark.parametrize("line,stderr", [
-    ("mktemp -p /data/nodir", b"mktemp: failed to create file via template "
-     b"'/data/nodir/tmp.XXXXXXXXXX': No such file or directory\n"),
-    ("mktemp -d --suffix=.s -p /data/nodir x.XXX",
-     b"mktemp: failed to create directory via template "
-     b"'/data/nodir/x.XXX.s': No such file or directory\n"),
-    ("cd /data && mktemp sub/x.XXX",
-     b"mktemp: failed to create file via template 'sub/x.XXX': "
-     b"No such file or directory\n"),
-    ("mktemp x.XX", b"mktemp: too few X's in template 'x.XX'\n"),
-    ("mktemp -p /data /abs/x.XXX",
-     b"mktemp: invalid template, '/abs/x.XXX'; with --tmpdir, "
-     b"it may not be absolute\n"),
-    ("mktemp -t sub/x.XXX",
-     b"mktemp: invalid template, 'sub/x.XXX', contains directory "
-     b"separator\n"),
-])
+@pytest.mark.parametrize(
+    "line,stderr",
+    [
+        (
+            "mktemp -p /data/nodir",
+            b"mktemp: failed to create file via template "
+            b"'/data/nodir/tmp.XXXXXXXXXX': No such file or directory\n",
+        ),
+        (
+            "mktemp -d --suffix=.s -p /data/nodir x.XXX",
+            b"mktemp: failed to create directory via template "
+            b"'/data/nodir/x.XXX.s': No such file or directory\n",
+        ),
+        (
+            "cd /data && mktemp sub/x.XXX",
+            b"mktemp: failed to create file via template 'sub/x.XXX': "
+            b"No such file or directory\n",
+        ),
+        ("mktemp x.XX", b"mktemp: too few X's in template 'x.XX'\n"),
+        (
+            "mktemp -p /data /abs/x.XXX",
+            b"mktemp: invalid template, '/abs/x.XXX'; with --tmpdir, "
+            b"it may not be absolute\n",
+        ),
+        (
+            "mktemp -t sub/x.XXX",
+            b"mktemp: invalid template, 'sub/x.XXX', contains directory "
+            b"separator\n",
+        ),
+    ],
+)
 def test_mktemp_refuses_in_gnu_words(line: str, stderr: bytes):
     # Pinned against GNU coreutils 9.7 (debian:stable-slim); a missing
     # directory is never created.
@@ -151,10 +170,12 @@ def test_a_bare_template_is_relative_to_the_cwd():
 def test_mktemp_honors_tmpdir():
     ws, mem = _ws()
     stdout, io = _run_raw(
-        ws, "TMPDIR=/data mktemp; TMPDIR=/data mktemp -t "
-        "-p /elsewhere f.XXX")
+        ws, "TMPDIR=/data mktemp; TMPDIR=/data mktemp -t -p /elsewhere f.XXX"
+    )
     names = _bytes(stdout).decode().split()
     assert io.exit_code == 0
-    assert [name.startswith(("/data/tmp.", "/data/f."))
-            for name in names] == [True, True]
+    assert [name.startswith(("/data/tmp.", "/data/f.")) for name in names] == [
+        True,
+        True,
+    ]
     assert len(mem._store.files) == 2

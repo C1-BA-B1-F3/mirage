@@ -13,8 +13,9 @@ def _atoms(node: TSNodeLike) -> Iterator[TSNodeLike]:
         yield node
 
 
-def _separator(data: bytes, start: int, end: int, atoms: list[TSNodeLike],
-               base: int) -> int:
+def _separator(
+    data: bytes, start: int, end: int, atoms: list[TSNodeLike], base: int
+) -> int:
     opaque = {atom.start_byte - base: atom.end_byte - base for atom in atoms}
     depth = 0
     ternary = 0
@@ -60,7 +61,8 @@ async def substring_operands(
     """
     operator = next(c for c in node.children if get_text(c) == ":")
     children = [
-        c for c in node.children
+        c
+        for c in node.children
         if c.start_byte >= operator.end_byte and c.type != "}"
     ]
     atoms = [atom for child in children for atom in _atoms(child)]

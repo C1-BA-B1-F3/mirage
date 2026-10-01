@@ -65,5 +65,7 @@ def sdk_install_hint(name: str) -> str:
         name (str): the runtime name, which is also its pip extra
             (daytona, e2b).
     """
-    return (f"the {name} runtime needs the {name} SDK; install with: "
-            f"pip install mirage-ai[{name}]")
+    return (
+        f"the {name} runtime needs the {name} SDK; install with: "
+        f"pip install mirage-ai[{name}]"
+    )

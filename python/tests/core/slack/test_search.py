@@ -28,8 +28,8 @@ from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
 async def test_search_messages_defaults_include_page_1():
     cfg = SlackConfig(token="xoxp-test")
     with patch(
-            "mirage.core.slack.search.slack_get",
-            new=AsyncMock(return_value={"ok": True}),
+        "mirage.core.slack.search.slack_get",
+        new=AsyncMock(return_value={"ok": True}),
     ) as fake_get:
         await search_messages(cfg, "hello")
     params = fake_get.call_args.kwargs["params"]
@@ -43,8 +43,8 @@ async def test_search_messages_defaults_include_page_1():
 async def test_search_messages_forwards_explicit_count_and_page():
     cfg = SlackConfig(token="xoxp-test")
     with patch(
-            "mirage.core.slack.search.slack_get",
-            new=AsyncMock(return_value={"ok": True}),
+        "mirage.core.slack.search.slack_get",
+        new=AsyncMock(return_value={"ok": True}),
     ) as fake_get:
         await search_messages(cfg, "hello", count=50, page=3)
     params = fake_get.call_args.kwargs["params"]
@@ -57,10 +57,7 @@ def test_format_grep_results_path_uses_chat_jsonl():
         "messages": {
             "matches": [
                 {
-                    "channel": {
-                        "id": "C001",
-                        "name": "general"
-                    },
+                    "channel": {"id": "C001", "name": "general"},
                     "user": "U1",
                     "ts": "1712707200.0",
                     "text": "hello",
@@ -78,7 +75,8 @@ def test_format_grep_results_path_uses_chat_jsonl():
     assert len(lines) == 1
     line = lines[0]
     assert line.startswith(
-        "/slack/channels/general__C001/2024-04-10/chat.jsonl:"), line
+        "/slack/channels/general__C001/2024-04-10/chat.jsonl:"
+    ), line
 
 
 def test_a_long_channel_name_reports_the_path_readdir_emits():
@@ -89,21 +87,22 @@ def test_a_long_channel_name_reports_the_path_readdir_emits():
     reported path could not be opened.
     """
     name = "会議" * 100
-    raw = json.dumps({
-        "messages": {
-            "matches": [{
-                "channel": {
-                    "id": "C001",
-                    "name": name
-                },
-                "ts": "1712707200.0",
-                "text": "hello",
-            }],
-        },
-    }).encode()
-    scope = SearchTarget(container="channels",
-                         channel_name=name,
-                         channel_id="C001")
+    raw = json.dumps(
+        {
+            "messages": {
+                "matches": [
+                    {
+                        "channel": {"id": "C001", "name": name},
+                        "ts": "1712707200.0",
+                        "text": "hello",
+                    }
+                ],
+            },
+        }
+    ).encode()
+    scope = SearchTarget(
+        container="channels", channel_name=name, channel_id="C001"
+    )
     line = format_grep_results(raw, scope, "/slack")[0]
     dirname = line.split("/slack/channels/")[1].split("/")[0]
 

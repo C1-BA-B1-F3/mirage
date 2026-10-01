@@ -27,16 +27,18 @@ async def build_database_json(accessor: PostgresAccessor) -> dict[str, Any]:
         views: list[dict[str, Any]] = []
         for s in schemas:
             for t in await client.list_tables(conn, s):
-                tables.append({
-                    "schema":
-                    s,
-                    "name":
-                    t,
-                    "row_count_estimate":
-                    await client.estimated_row_count(conn, s, t),
-                    "size_bytes_estimate":
-                    await client.table_size_bytes(conn, s, t),
-                })
+                tables.append(
+                    {
+                        "schema": s,
+                        "name": t,
+                        "row_count_estimate": await client.estimated_row_count(
+                            conn, s, t
+                        ),
+                        "size_bytes_estimate": await client.table_size_bytes(
+                            conn, s, t
+                        ),
+                    }
+                )
             for v in await client.list_views(conn, s):
                 views.append({"schema": s, "name": v, "kind": "view"})
             for v in await client.list_matviews(conn, s):
@@ -51,8 +53,9 @@ async def build_database_json(accessor: PostgresAccessor) -> dict[str, Any]:
     }
 
 
-async def build_entity_schema_json(accessor: PostgresAccessor, schema: str,
-                                   name: str, kind: str) -> dict[str, Any]:
+async def build_entity_schema_json(
+    accessor: PostgresAccessor, schema: str, name: str, kind: str
+) -> dict[str, Any]:
     pool = await accessor.pool()
     async with pool.acquire() as conn:
         cols = await client.fetch_columns(conn, schema, name)

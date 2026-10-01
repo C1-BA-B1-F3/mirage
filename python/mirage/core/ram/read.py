@@ -22,11 +22,13 @@ from mirage.utils.path import norm
 from mirage.utils.ranges import slice_window
 
 
-async def read_bytes(accessor: RAMAccessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: RAMAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a file, optionally only a byte range of it.
 
     The bytes are already in memory, so the window is a slice rather
@@ -54,11 +56,13 @@ async def read_bytes(accessor: RAMAccessor,
     return data
 
 
-async def read(accessor: RAMAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX,
-               offset: int = 0,
-               size: int | None = None) -> bytes:
+async def read(
+    accessor: RAMAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     try:
         return await read_bytes(accessor, path, index, offset, size)
     except FileNotFoundError as exc:

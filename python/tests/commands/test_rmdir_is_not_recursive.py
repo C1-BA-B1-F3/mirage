@@ -36,7 +36,8 @@ def _command_ios() -> dict[str, CommandIO]:
             continue
         try:
             module = importlib.import_module(
-                f"{builtin_pkg.__name__}.{info.name}.io")
+                f"{builtin_pkg.__name__}.{info.name}.io"
+            )
         except ModuleNotFoundError:
             continue
         io = getattr(module, "IO", None)
@@ -75,7 +76,10 @@ def test_rmdir_is_never_the_recursive_removal():
     reads as two implementations where there is one.
     """
     shared = sorted(
-        name for name, io in _command_ios().items()
-        if io.rmdir is not None and _origin(io.rmdir) == _origin(io.rm_r))
-    assert not shared, ("these backends wire rmdir to their recursive "
-                        f"removal: {shared}")
+        name
+        for name, io in _command_ios().items()
+        if io.rmdir is not None and _origin(io.rmdir) == _origin(io.rm_r)
+    )
+    assert not shared, (
+        f"these backends wire rmdir to their recursive removal: {shared}"
+    )

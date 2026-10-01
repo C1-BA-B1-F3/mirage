@@ -17,7 +17,6 @@ from mirage.core.notion.config import NotionConfig
 
 
 class NotionAccessor(SessionAccessor):
-
     def __init__(self, config: NotionConfig) -> None:
         super().__init__()
         self.config = config

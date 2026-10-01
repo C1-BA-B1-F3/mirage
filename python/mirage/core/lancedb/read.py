@@ -26,24 +26,37 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _row_of(accessor: LanceDBAccessor, match: ScopeMatch,
-                  virtual: str) -> dict[str, Any]:
+async def _row_of(
+    accessor: LanceDBAccessor, match: ScopeMatch, virtual: str
+) -> dict[str, Any]:
     config = accessor.config
-    row = await row_record(accessor, table_of(config.table, match),
-                           config.id_column, match.slots["row_id"])
+    row = await row_record(
+        accessor,
+        table_of(config.table, match),
+        config.id_column,
+        match.slots["row_id"],
+    )
     if row is None:
         raise enoent(virtual)
     return row
 
 
-async def _read_card(accessor: LanceDBAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_card(
+    accessor: LanceDBAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     row = await _row_of(accessor, match, path.virtual)
     return render_card(row, accessor.config)
 
 
-async def _read_blob(accessor: LanceDBAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_blob(
+    accessor: LanceDBAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     config = accessor.config
     if not config.blob_column:
         raise enoent(path)

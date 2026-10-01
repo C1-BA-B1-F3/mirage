@@ -20,10 +20,21 @@ from urllib.parse import quote
 import aiohttp
 from pydantic import SecretStr
 
-from mirage.core.api.client import (ApiResponse, RetryPolicy, SessionArg,
-                                    api_request, resolve_session, status_error)
-from mirage.core.hf_hub.constants import (API_BASE, API_SEGMENTS, MAX_RETRIES,
-                                          RESOLVE_SEGMENTS, RETRY_STATUSES)
+from mirage.core.api.client import (
+    ApiResponse,
+    RetryPolicy,
+    SessionArg,
+    api_request,
+    resolve_session,
+    status_error,
+)
+from mirage.core.hf_hub.constants import (
+    API_BASE,
+    API_SEGMENTS,
+    MAX_RETRIES,
+    RESOLVE_SEGMENTS,
+    RETRY_STATUSES,
+)
 from mirage.types import JsonValue
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.secrets import reveal_secret
@@ -51,10 +62,9 @@ class HfHubError(Exception):
             (``RepoNotFound`` / ``RevisionNotFound`` / ``EntryNotFound``).
     """
 
-    def __init__(self,
-                 message: str,
-                 status: int,
-                 error_code: str = "") -> None:
+    def __init__(
+        self, message: str, status: int, error_code: str = ""
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.error_code = error_code
@@ -79,9 +89,9 @@ def stall_timeout(seconds: float) -> aiohttp.ClientTimeout:
     """
     if seconds <= 0:
         return aiohttp.ClientTimeout(total=None)
-    return aiohttp.ClientTimeout(total=None,
-                                 sock_connect=seconds,
-                                 sock_read=seconds)
+    return aiohttp.ClientTimeout(
+        total=None, sock_connect=seconds, sock_read=seconds
+    )
 
 
 def hub_headers(token: SecretStr | None) -> dict[str, str]:
@@ -160,8 +170,9 @@ def repo_url(endpoint: str, repo_type: str, repo_id: str) -> str:
     return f"{base}{repo_id}"
 
 
-def resolve_url(endpoint: str, repo_type: str, repo_id: str, revision: str,
-                path: str) -> str:
+def resolve_url(
+    endpoint: str, repo_type: str, repo_id: str, revision: str, path: str
+) -> str:
     """The content URL for one file at one revision.
 
     The path is percent-encoded per segment: a Hub repo may hold a file
@@ -182,8 +193,9 @@ def resolve_url(endpoint: str, repo_type: str, repo_id: str, revision: str,
     base = f"{endpoint.rstrip('/')}/"
     if segment:
         base += f"{segment}/"
-    return (f"{base}{repo_id}/resolve/{rev_segment(revision)}/"
-            f"{quote_path(path)}")
+    return (
+        f"{base}{repo_id}/resolve/{rev_segment(revision)}/{quote_path(path)}"
+    )
 
 
 def quote_path(path: str) -> str:
@@ -217,9 +229,11 @@ def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
         Exception: an HfHubError carrying the status and error code.
     """
     message = resp.headers.get("X-Error-Message") or text.strip()
-    return HfHubError(message or (resp.reason or "request failed"),
-                      resp.status,
-                      resp.headers.get("X-Error-Code") or "")
+    return HfHubError(
+        message or (resp.reason or "request failed"),
+        resp.status,
+        resp.headers.get("X-Error-Code") or "",
+    )
 
 
 async def hub_get(
@@ -486,10 +500,12 @@ async def hub_stream(
             if resp.status >= 400:
                 raise _error_of(resp, await resp.text())
             if on_response is not None:
-                on_response({
-                    key.lower(): ", ".join(resp.headers.getall(key))
-                    for key in resp.headers.keys()
-                })
+                on_response(
+                    {
+                        key.lower(): ", ".join(resp.headers.getall(key))
+                        for key in resp.headers.keys()
+                    }
+                )
             async for chunk in resp.content.iter_chunked(chunk_size):
                 yield chunk
     finally:

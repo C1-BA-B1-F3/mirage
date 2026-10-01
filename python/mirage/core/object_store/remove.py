@@ -12,11 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.cache.context import (invalidate_after_unlink,
-                                  invalidate_ancestors, invalidate_subtree)
+from mirage.cache.context import (
+    invalidate_after_unlink,
+    invalidate_ancestors,
+    invalidate_subtree,
+)
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.object_store.driver import (A, C, ObjectStoreDriver, PathFn,
-                                             RmdirFn)
+from mirage.core.object_store.driver import (
+    A,
+    C,
+    ObjectStoreDriver,
+    PathFn,
+    RmdirFn,
+)
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
@@ -121,9 +129,9 @@ def make_rmdir(driver: ObjectStoreDriver[A, C]) -> RmdirFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def rmdir(accessor: A,
-                    path_spec: PathSpec,
-                    index: IndexCacheStore = NULL_INDEX) -> None:
+    async def rmdir(
+        accessor: A, path_spec: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> None:
         path = path_spec.mount_path
         pfx = kp.apply_dir(driver.key_prefix_of(accessor), path)
         is_root = not path.strip("/")

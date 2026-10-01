@@ -63,17 +63,20 @@ _sys.stdout.write({sentinel_json} + _json.dumps(_value))
 class EvalDockerRuntime(DockerRuntime, EvaluatorMixin):
     """A docker container that is also an evaluator."""
 
-    async def eval(self,
-                   code: str,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+    ) -> EvalResult:
         if session is not None:
             raise EvalError("one exec per run; sessions are not supported")
-        harness = HARNESS.format(code_json=json.dumps(json.dumps(code)),
-                                 inputs_json=json.dumps(
-                                     json.dumps(inputs or {})),
-                                 sentinel_json=json.dumps(SENTINEL))
+        harness = HARNESS.format(
+            code_json=json.dumps(json.dumps(code)),
+            inputs_json=json.dumps(json.dumps(inputs or {})),
+            sentinel_json=json.dumps(SENTINEL),
+        )
         result = await self.run_line("python3 -", harness.encode(), {}, "/")
         if result.exit_code != 0:
             detail = (result.stderr or b"").decode(errors="replace").strip()
@@ -90,10 +93,8 @@ async def main() -> None:
     result = await runtime.eval(
         "print('computing inside the container')\n"
         "sum(ctx['xs']) * ctx['factor']",
-        inputs={"ctx": {
-            "xs": [1, 2, 3],
-            "factor": 7
-        }})
+        inputs={"ctx": {"xs": [1, 2, 3], "factor": 7}},
+    )
     print(f"value: {result.value}")
     print(f"container stdout: {result.stdout.decode()!r}")
 

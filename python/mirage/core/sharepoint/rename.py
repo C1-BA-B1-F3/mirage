@@ -19,14 +19,17 @@ from mirage.core.sharepoint.resolve import drive_loc, resolve_item
 from mirage.types import PathSpec
 
 
-async def rename(accessor: SharePointAccessor, src: PathSpec,
-                 dst: PathSpec) -> None:
+async def rename(
+    accessor: SharePointAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     config = accessor.config
     src_resolved = await resolve_item(accessor, src)
     dst_resolved = await resolve_item(accessor, dst)
-    await rename_replace(config,
-                         drive_loc(config, src_resolved, src.vfs_path),
-                         drive_loc(config, dst_resolved, dst.vfs_path),
-                         session=accessor.pool)
+    await rename_replace(
+        config,
+        drive_loc(config, src_resolved, src.vfs_path),
+        drive_loc(config, dst_resolved, dst.vfs_path),
+        session=accessor.pool,
+    )
     await invalidate_subtree(dst)
     await invalidate_subtree(src)

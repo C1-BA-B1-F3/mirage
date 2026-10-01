@@ -26,22 +26,35 @@ from mirage.runtime.types import RunArgs
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('operation, expected', [
-    ('list', 'seed.txt\nsub\n'),
-    ('stat', 'file 5 32768\ndir 16384\nmissing\n'),
-    ('glob', 'seed.txt\nsub/inner.txt\n'),
-])
+@pytest.mark.parametrize(
+    "operation, expected",
+    [
+        ("list", "seed.txt\nsub\n"),
+        ("stat", "file 5 32768\ndir 16384\nmissing\n"),
+        ("glob", "seed.txt\nsub/inner.txt\n"),
+    ],
+)
 async def test_filesystem_operations(tmp_path, operation, expected):
-    (tmp_path / 'seed.txt').write_text('seed\n')
-    (tmp_path / 'sub').mkdir()
-    (tmp_path / 'sub' / 'inner.txt').write_text('inner\n')
-    fixture = (Path(__file__).resolve().parents[4] / 'integ' / 'fixtures' /
-               'runtime' / 'fs' / 'py' / f'{operation}.py')
+    (tmp_path / "seed.txt").write_text("seed\n")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "inner.txt").write_text("inner\n")
+    fixture = (
+        Path(__file__).resolve().parents[4]
+        / "integ"
+        / "fixtures"
+        / "runtime"
+        / "fs"
+        / "py"
+        / f"{operation}.py"
+    )
     runtime = LocalRuntime()
     try:
         result = await runtime.run(
-            RunArgs(code=fixture.read_text(),
-                    env={'MIRAGE_TEST_ROOT': str(tmp_path)}))
+            RunArgs(
+                code=fixture.read_text(),
+                env={"MIRAGE_TEST_ROOT": str(tmp_path)},
+            )
+        )
         assert result.exit_code == 0, result.stderr
         assert result.stdout.decode() == expected
         assert result.stderr is None
@@ -61,7 +74,9 @@ def test_local_passes_argv():
     runtime = LocalRuntime()
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="import sys; print(sys.argv[1:])", args=["a", "b"])))
+            RunArgs(code="import sys; print(sys.argv[1:])", args=["a", "b"])
+        )
+    )
     assert result.stdout == b"['a', 'b']\n"
 
 
@@ -69,8 +84,12 @@ def test_local_env_overlays_host():
     runtime = LocalRuntime()
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="import os; print(os.environ['MY_VAR'])",
-                    env={"MY_VAR": "v1"})))
+            RunArgs(
+                code="import os; print(os.environ['MY_VAR'])",
+                env={"MY_VAR": "v1"},
+            )
+        )
+    )
     assert result.stdout == b"v1\n"
 
 
@@ -78,29 +97,43 @@ def test_local_stdin():
     runtime = LocalRuntime()
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="import sys; print(sys.stdin.read().upper())",
-                    stdin=b"hello")))
+            RunArgs(
+                code="import sys; print(sys.stdin.read().upper())",
+                stdin=b"hello",
+            )
+        )
+    )
     assert result.stdout == b"HELLO\n"
 
 
-@pytest.mark.parametrize("stdin", [None, b"", b"x" * 300_000],
-                         ids=["absent", "empty", "large"])
+@pytest.mark.parametrize(
+    "stdin", [None, b"", b"x" * 300_000], ids=["absent", "empty", "large"]
+)
 def test_script_cli_stdin_is_not_embedded_in_process_argv(stdin):
     runtime = LocalRuntime()
     result = asyncio.run(
         runtime.run(
-            RunArgs(code=("from __future__ import annotations\n"
-                          "import sys\nprint(argv)\n"
-                          "print(stdin is None, len(stdin or b''), "
-                          "sys.stdin.buffer.read() == (stdin or b''))"),
-                    prog="pager",
-                    args=["one"],
-                    script_cli=True,
-                    stdin=stdin)))
+            RunArgs(
+                code=(
+                    "from __future__ import annotations\n"
+                    "import sys\nprint(argv)\n"
+                    "print(stdin is None, len(stdin or b''), "
+                    "sys.stdin.buffer.read() == (stdin or b''))"
+                ),
+                prog="pager",
+                args=["one"],
+                script_cli=True,
+                stdin=stdin,
+            )
+        )
+    )
     assert result.exit_code == 0
-    assert result.stdout == (
-        f"['pager', 'one']\n{stdin is None} {len(stdin or b'')} True\n"
-    ).encode()
+    assert (
+        result.stdout
+        == (
+            f"['pager', 'one']\n{stdin is None} {len(stdin or b'')} True\n"
+        ).encode()
+    )
 
 
 def test_local_exit_code_and_stderr():
@@ -115,10 +148,12 @@ def test_local_name():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode",
-                         [MountMode.READ, MountMode.WRITE, MountMode.EXEC])
+@pytest.mark.parametrize(
+    "mode", [MountMode.READ, MountMode.WRITE, MountMode.EXEC]
+)
 async def test_version_process_uses_only_host_environment(
-        tmp_path, monkeypatch, mode):
+    tmp_path, monkeypatch, mode
+):
     monkeypatch.setenv("MIRAGE_TEST_VERSION_ENV", "host")
     session = {
         "LD_PRELOAD": str(tmp_path / "session.so"),
@@ -132,7 +167,8 @@ async def test_version_process_uses_only_host_environment(
     probe.write_text(
         f"#!{sys.executable}\nimport json, os\n"
         f"keys = {list(session)!r}\n"
-        "print(json.dumps({k: os.environ.get(k) for k in keys}))\n")
+        "print(json.dumps({k: os.environ.get(k) for k in keys}))\n"
+    )
     probe.chmod(0o755)
     runtime = LocalRuntime(config={"home": str(probe)})
     baseline = await runtime.version({})
@@ -152,19 +188,21 @@ async def test_version_process_uses_only_host_environment(
 @pytest.mark.asyncio
 async def test_read_only_version_does_not_run_startup_code(tmp_path):
     marker = tmp_path / "startup-ran"
-    (tmp_path / "sitecustomize.py"
-     ).write_text(f"open({str(marker)!r}, 'w').write('ran')\n")
+    (tmp_path / "sitecustomize.py").write_text(
+        f"open({str(marker)!r}, 'w').write('ran')\n"
+    )
     env = {"PYTHONPATH": str(tmp_path)}
     runtime = LocalRuntime(config={"home": sys.executable})
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.READ,
-                   runtimes=[runtime, "workspace"])
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.READ, runtimes=[runtime, "workspace"]
+    )
     try:
         for line in ["python --version", "python3 -V", "python -VV"]:
             io = await ws.shell(line, env=env)
             assert io.exit_code == 0
-            assert await io.stdout_str(
-            ) == f"Python {sys.version.split()[0]}\n"
+            assert (
+                await io.stdout_str() == f"Python {sys.version.split()[0]}\n"
+            )
             assert await io.stderr_str() == ""
             assert not marker.exists()
         refused = await ws.shell("python -c 'pass'", env=env)
@@ -181,7 +219,8 @@ async def test_read_only_version_does_not_run_startup_code(tmp_path):
 async def test_local_cancellation_kills_subprocess():
     runtime = LocalRuntime()
     task = asyncio.ensure_future(
-        runtime.run(RunArgs(code="import time; time.sleep(30)")))
+        runtime.run(RunArgs(code="import time; time.sleep(30)"))
+    )
     await asyncio.sleep(0.3)
     start = time.monotonic()
     task.cancel()
@@ -198,8 +237,11 @@ def test_reach_is_process():
 
 
 TRACEBACK_CASES = json.loads(
-    (Path(__file__).resolve().parents[4] /
-     "integ/fixtures/runtime/python_errors.json").read_text())
+    (
+        Path(__file__).resolve().parents[4]
+        / "integ/fixtures/runtime/python_errors.json"
+    ).read_text()
+)
 
 
 @pytest.mark.asyncio
@@ -214,7 +256,8 @@ async def test_user_tracebacks_match_cpython(case):
             "-c",
             case["code"],
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
+            stderr=asyncio.subprocess.PIPE,
+        )
         _, stderr = await native.communicate()
         assert result.stderr == stderr
     finally:

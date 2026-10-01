@@ -22,9 +22,11 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enotempty
 
 
-async def rmdir(accessor: SharePointAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: SharePointAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Remove an empty folder.
 
     A Graph ``DELETE /drives/{id}/items/{item}`` removes a folder and

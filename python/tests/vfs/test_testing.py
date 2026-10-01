@@ -3,8 +3,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mirage import (BaseVFS, DriverOps, ReadFixture, check_driver_contract,
-                    check_read_contract)
+from mirage import (
+    BaseVFS,
+    DriverOps,
+    ReadFixture,
+    check_driver_contract,
+    check_read_contract,
+)
 from mirage.accessor.ram import RAMAccessor
 from mirage.commands.builtin.ram.io import IO
 from mirage.ops.registry import op
@@ -16,9 +21,9 @@ from mirage.vfs.types import ReadOps
 
 FILE = PathSpec(virtual="/data/a.txt", directory="/data", vfs_path="a.txt")
 DIRECTORY = PathSpec(virtual="/data", directory="/", vfs_path="")
-MISSING = PathSpec(virtual="/data/missing",
-                   directory="/data",
-                   vfs_path="missing")
+MISSING = PathSpec(
+    virtual="/data/missing", directory="/data", vfs_path="missing"
+)
 CONTENT = "é: hello\n".encode()
 FIXTURE = ReadFixture(FILE, DIRECTORY, MISSING, CONTENT)
 
@@ -28,8 +33,15 @@ FIXTURE = ReadFixture(FILE, DIRECTORY, MISSING, CONTENT)
 async def test_builtin_and_minimal_adapter_share_the_contract(native):
     accessor = RAMAccessor(RAMStore())
     await IO.write(accessor, FILE, CONTENT)
-    adapter = IO if native else VFSAdapter(read=ReadOps(
-        readdir=IO.readdir, read_bytes=IO.read_bytes, stat=IO.stat))
+    adapter = (
+        IO
+        if native
+        else VFSAdapter(
+            read=ReadOps(
+                readdir=IO.readdir, read_bytes=IO.read_bytes, stat=IO.stat
+            )
+        )
+    )
     await check_read_contract(adapter, accessor, FIXTURE)
 
 
@@ -44,10 +56,13 @@ async def test_contract_only_probes_valid_native_ranges(content):
         if size == 0 or offset >= len(content):
             raise ValueError("unsatisfiable native range")
         calls.append((offset, size))
-        return content[offset:None if size is None else offset + size]
+        return content[offset : None if size is None else offset + size]
 
-    await check_read_contract(replace(IO, read_range=strict_range), accessor,
-                              replace(FIXTURE, content=content))
+    await check_read_contract(
+        replace(IO, read_range=strict_range),
+        accessor,
+        replace(FIXTURE, content=content),
+    )
     assert len(calls) == (2 if content else 0)
     if content:
         assert calls[0][1] is not None
@@ -63,8 +78,9 @@ async def test_contract_catches_ranges_using_end_instead_of_size():
         return CONTENT[offset:size]
 
     with pytest.raises(AssertionError, match="offset and byte count"):
-        await check_read_contract(replace(IO, read_range=broken_range),
-                                  accessor, FIXTURE)
+        await check_read_contract(
+            replace(IO, read_range=broken_range), accessor, FIXTURE
+        )
 
 
 @pytest.mark.asyncio
@@ -72,17 +88,22 @@ async def test_contract_propagates_permission_failure():
     accessor = RAMAccessor(RAMStore())
     read = AsyncMock(side_effect=PermissionError("denied"))
     with pytest.raises(PermissionError, match="denied"):
-        await check_read_contract(replace(IO, read_bytes=read), accessor,
-                                  FIXTURE)
+        await check_read_contract(
+            replace(IO, read_bytes=read), accessor, FIXTURE
+        )
 
 
 def _custom(store: RAMStore, ops: list | None = None) -> BaseVFS:
     return BaseVFS(
         name="custom",
         accessor=RAMAccessor(store),
-        io=VFSAdapter(read=ReadOps(
-            readdir=IO.readdir, read_bytes=IO.read_bytes, stat=IO.stat)),
-        ops=ops)
+        io=VFSAdapter(
+            read=ReadOps(
+                readdir=IO.readdir, read_bytes=IO.read_bytes, stat=IO.stat
+            )
+        ),
+        ops=ops,
+    )
 
 
 @pytest.mark.asyncio
@@ -97,8 +118,9 @@ async def test_a_builtin_driver_meets_the_driver_contract():
 async def test_a_table_built_driver_meets_the_driver_contract(content):
     store = RAMStore()
     await IO.write(RAMAccessor(store), FILE, content)
-    await check_driver_contract(_custom(store),
-                                replace(FIXTURE, content=content))
+    await check_driver_contract(
+        _custom(store), replace(FIXTURE, content=content)
+    )
 
 
 @pytest.mark.asyncio
@@ -115,8 +137,7 @@ async def test_driver_contract_catches_a_read_that_ignores_the_window():
 
 
 @pytest.mark.asyncio
-async def test_driver_contract_catches_a_stat_that_answers_for_a_missing_path(
-):
+async def test_driver_contract_catches_a_stat_that_answers_for_a_missing_path():
 
     @op("stat", vfs="custom")
     async def lenient_stat(accessor, path, *, index=None, **kwargs):

@@ -13,10 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.shell.parse import parse
-from mirage.shell.parse.constants import (ARITH_TEST_OPERATORS,
-                                          DECLARING_NODES, TARGET_NAME_FIELDS)
-from mirage.workspace.executor.builtins.condition.constants import \
-    INT_COMPARATORS
+from mirage.shell.parse.constants import (
+    ARITH_TEST_OPERATORS,
+    DECLARING_NODES,
+    TARGET_NAME_FIELDS,
+)
+from mirage.workspace.executor.builtins.condition.constants import (
+    INT_COMPARATORS,
+)
 
 
 def test_arith_test_operators_match_the_executor():
@@ -40,5 +44,6 @@ def test_target_name_fields_match_the_grammar():
 
 def test_declaring_nodes_match_the_grammar():
     shapes = {"export X": "declaration_command", "unset X": "unset_command"}
-    assert {parse(src).named_children[0].type
-            for src in shapes} == DECLARING_NODES
+    assert {
+        parse(src).named_children[0].type for src in shapes
+    } == DECLARING_NODES

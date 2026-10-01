@@ -17,29 +17,84 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import partial
 
-from mirage.core.awk.builtins import (match_position, next_random, safe_exp,
-                                      safe_fmod, safe_log, safe_pow, safe_sqrt,
-                                      safe_trig, split_assignment,
-                                      split_record, sprintf, substitute,
-                                      substr)
+from mirage.core.awk.builtins import (
+    match_position,
+    next_random,
+    safe_exp,
+    safe_fmod,
+    safe_log,
+    safe_pow,
+    safe_sqrt,
+    safe_trig,
+    split_assignment,
+    split_record,
+    sprintf,
+    substitute,
+    substr,
+)
 from mirage.core.awk.errors import AwkIOError, AwkRuntimeError, AwkSyntaxError
-# yapf: disable
-from mirage.core.awk.nodes import Binary  # yapf: disable
-from mirage.core.awk.nodes import (ArrayRef, Assign, Block, Break, BuiltinCall,
-                                   Call, Compare, Concat, Continue, Delete,
-                                   DoWhile, Exit, Expr, ExprStmt, Field, For,
-                                   ForIn, Getline, GetlineKind, If, InArray,
-                                   IncDec, Logical, MatchOp, Next, NextFile,
-                                   Not, Num, Print, Printf, Program, RedirKind,
-                                   Regex, Return, Rule, RuleKind, Stmt, Str,
-                                   Ternary, Unary, Var, While)
-# yapf: enable
+from mirage.core.awk.nodes import (
+    ArrayRef,
+    Assign,
+    Binary,
+    Block,
+    Break,
+    BuiltinCall,
+    Call,
+    Compare,
+    Concat,
+    Continue,
+    Delete,
+    DoWhile,
+    Exit,
+    Expr,
+    ExprStmt,
+    Field,
+    For,
+    ForIn,
+    Getline,
+    GetlineKind,
+    If,
+    InArray,
+    IncDec,
+    Logical,
+    MatchOp,
+    Next,
+    NextFile,
+    Not,
+    Num,
+    Print,
+    Printf,
+    Program,
+    RedirKind,
+    Regex,
+    Return,
+    Rule,
+    RuleKind,
+    Stmt,
+    Str,
+    Ternary,
+    Unary,
+    Var,
+    While,
+)
 from mirage.core.awk.reader import RecordReader
 from mirage.core.awk.regex import compile_ere
 from mirage.core.awk.types import AwkHost
-from mirage.core.awk.value import (UNINIT, Value, ValueKind, compare,
-                                   format_num, is_true, num, strnum, text,
-                                   to_int, to_num, to_str)
+from mirage.core.awk.value import (
+    UNINIT,
+    Value,
+    ValueKind,
+    compare,
+    format_num,
+    is_true,
+    num,
+    strnum,
+    text,
+    to_int,
+    to_num,
+    to_str,
+)
 
 SCALAR_DEFAULTS = {
     "FS": " ",
@@ -101,14 +156,12 @@ class ContinueLoop(Exception):
 
 
 class ReturnValue(Exception):
-
     def __init__(self, value: Value) -> None:
         super().__init__()
         self.value = value
 
 
 class ExitProgram(Exception):
-
     def __init__(self, code: int) -> None:
         super().__init__()
         self.code = code
@@ -152,11 +205,13 @@ class Interpreter:
         assignments (dict[str, str] | None): the ``-v`` assignments.
     """
 
-    def __init__(self,
-                 program: Program,
-                 host: AwkHost,
-                 argv: Sequence[str] = (),
-                 assignments: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        program: Program,
+        host: AwkHost,
+        argv: Sequence[str] = (),
+        assignments: dict[str, str] | None = None,
+    ) -> None:
         self.program = program
         self.host = host
         self.globals: dict[str, Value] = {}
@@ -211,8 +266,9 @@ class Interpreter:
 
     def ensure_fields(self) -> list[str]:
         if self.fields is None:
-            self.fields = split_record(self.record, self.record_fs,
-                                       self.record_paragraph)
+            self.fields = split_record(
+                self.record, self.record_fs, self.record_paragraph
+            )
         return self.fields
 
     def ensure_record(self) -> str:
@@ -304,8 +360,9 @@ class Interpreter:
             source (str): the stream's name.
             index (int | None): its ARGV slot, None for getline.
         """
-        return RecordReader(self.host.open_input(source, index),
-                            partial(self.special, "RS"))
+        return RecordReader(
+            self.host.open_input(source, index), partial(self.special, "RS")
+        )
 
     async def open_operand(self) -> bool:
         """Advance the main input to the next operand that names a file.
@@ -355,8 +412,8 @@ class Interpreter:
                     record = await self.main.next()
                 except AwkIOError as exc:
                     raise AwkRuntimeError(
-                        f'awk: cannot open "{self.main_name}"'
-                        f' ({exc.detail})') from exc
+                        f'awk: cannot open "{self.main_name}" ({exc.detail})'
+                    ) from exc
                 if record is not None:
                     self.nr += 1
                     self.fnr += 1
@@ -478,8 +535,11 @@ class Interpreter:
         if isinstance(node, Str):
             return text(node.value)
         if isinstance(node, Regex):
-            return num(1.0 if compile_ere(node.pattern).
-                       search(self.ensure_record()) else 0.0)
+            return num(
+                1.0
+                if compile_ere(node.pattern).search(self.ensure_record())
+                else 0.0
+            )
         if isinstance(node, Var):
             return self.get_var(node.name)
         if isinstance(node, Field):
@@ -502,7 +562,8 @@ class Interpreter:
             left = self.leaf(node.left) or await self.eval(node.left)
             right = self.leaf(node.right) or await self.eval(node.right)
             return text(
-                to_str(left, self.convfmt()) + to_str(right, self.convfmt()))
+                to_str(left, self.convfmt()) + to_str(right, self.convfmt())
+            )
         if isinstance(node, Compare):
             return await self.eval_compare(node)
         if isinstance(node, MatchOp):
@@ -578,7 +639,8 @@ class Interpreter:
             self.err.append(run.stderr)
             pipe = InputPipe(
                 RecordReader(run.stdout, partial(self.special, "RS")),
-                run.status)
+                run.status,
+            )
             self.in_pipes[command] = pipe
         return pipe
 
@@ -655,7 +717,8 @@ class Interpreter:
             value = self.leaf(node.value) or await self.eval(node.value)
             return await self.assign_to(node.target, value)
         current = to_num(
-            self.leaf(node.target) or await self.eval(node.target))
+            self.leaf(node.target) or await self.eval(node.target)
+        )
         operand = to_num(self.leaf(node.value) or await self.eval(node.value))
         if node.op == "+=":
             result = current + operand
@@ -677,7 +740,8 @@ class Interpreter:
 
     async def eval_incdec(self, node: IncDec) -> Value:
         current = to_num(
-            self.leaf(node.target) or await self.eval(node.target))
+            self.leaf(node.target) or await self.eval(node.target)
+        )
         updated = current + (1.0 if node.op == "++" else -1.0)
         await self.assign_to(node.target, num(updated))
         return num(updated if node.pre else current)
@@ -761,8 +825,9 @@ class Interpreter:
         if isinstance(target, Var):
             frame = self.frame()
             local = frame is not None and target.name in frame.params
-            known = (frame.tables
-                     if local and frame is not None else self.tables)
+            known = (
+                frame.tables if local and frame is not None else self.tables
+            )
             if target.name in known:
                 return num(len(known[target.name]))
         return num(len(await self.str_arg(target)))
@@ -799,11 +864,13 @@ class Interpreter:
         definition = self.program.functions.get(node.name)
         if definition is None:
             raise AwkRuntimeError(
-                f"awk: calling undefined function {node.name}")
+                f"awk: calling undefined function {node.name}"
+            )
         if len(self.frames) >= MAX_CALL_DEPTH:
             raise AwkRuntimeError(
                 f"awk: function {node.name} nested deeper than "
-                f"{MAX_CALL_DEPTH} calls")
+                f"{MAX_CALL_DEPTH} calls"
+            )
         frame = Frame(frozenset(definition.params))
         for position, param in enumerate(definition.params):
             if position >= len(node.args):
@@ -871,8 +938,9 @@ class Interpreter:
         try:
             await self.host.write_file(name, body, append)
         except AwkIOError as exc:
-            raise AwkRuntimeError(f'awk: cannot open "{name}" for output '
-                                  f'({exc.detail})') from exc
+            raise AwkRuntimeError(
+                f'awk: cannot open "{name}" for output ({exc.detail})'
+            ) from exc
 
     async def flush_file(self, name: str) -> None:
         """Write out what one output file has buffered.
@@ -1061,8 +1129,11 @@ class Interpreter:
         if isinstance(node, Continue):
             raise ContinueLoop()
         if isinstance(node, Return):
-            value = (await self.eval(node.value)
-                     if node.value is not None else UNINIT)
+            value = (
+                await self.eval(node.value)
+                if node.value is not None
+                else UNINIT
+            )
             raise ReturnValue(value)
         if isinstance(node, Exit):
             if node.value is not None:
@@ -1150,8 +1221,9 @@ class Interpreter:
                 self.range_active[index] = False
             return True
         if is_true(await self.eval(rule.pattern)):
-            self.range_active[index] = not is_true(await self.eval(
-                rule.pattern_end))
+            self.range_active[index] = not is_true(
+                await self.eval(rule.pattern_end)
+            )
             return True
         return False
 
@@ -1171,7 +1243,8 @@ class Interpreter:
                     await self.exec_stmt(rule.action)
         except (NextRecord, NextFileSignal) as exc:
             raise AwkRuntimeError(
-                f"awk: next used in a {kind.value} action") from exc
+                f"awk: next used in a {kind.value} action"
+            ) from exc
 
     async def run_record(self, line: str) -> None:
         """Run the main rules against one input record.
@@ -1190,7 +1263,8 @@ class Interpreter:
                 if rule.action is None:
                     await self.write(
                         self.ensure_record() + self.special("ORS"),
-                        Print((), None))
+                        Print((), None),
+                    )
                 else:
                     await self.exec_stmt(rule.action)
         except NextRecord:
@@ -1204,8 +1278,7 @@ class Interpreter:
 
     def has_main_rules(self) -> bool:
         """Report whether any rule needs input records."""
-        return any(r.kind not in (RuleKind.BEGIN, )
-                   for r in self.program.rules)
+        return any(r.kind not in (RuleKind.BEGIN,) for r in self.program.rules)
 
     async def finish(self) -> None:
         """Close everything at exit, as awk does before it returns.
@@ -1244,8 +1317,8 @@ class Interpreter:
         return self.take()
 
     async def salvage(
-            self,
-            failure: AwkRuntimeError | AwkSyntaxError) -> tuple[bytes, bytes]:
+        self, failure: AwkRuntimeError | AwkSyntaxError
+    ) -> tuple[bytes, bytes]:
         """Take what a run a fatal error ended leaves behind.
 
         What awk had already printed stays, held text included, and so

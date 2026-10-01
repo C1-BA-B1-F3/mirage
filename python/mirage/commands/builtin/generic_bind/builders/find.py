@@ -17,18 +17,27 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
-from mirage.commands.builtin.generic.find import (find_generic,
-                                                  find_walk_generic)
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          overlaid_stat)
+from mirage.commands.builtin.generic.find import (
+    find_generic,
+    find_walk_generic,
+)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    overlaid_stat,
+)
 from mirage.commands.config import CommandOpts
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, PathSpec
 
 
-async def _dir_is_empty(ops: CommandIO, accessor: Accessor,
-                        index: IndexCacheStore, search: PathSpec) -> bool:
+async def _dir_is_empty(
+    ops: CommandIO,
+    accessor: Accessor,
+    index: IndexCacheStore,
+    search: PathSpec,
+) -> bool:
     """Whether a directory start point holds nothing, for ``-empty``.
 
     Only the native-op path needs this: the walk answers the same
@@ -45,9 +54,13 @@ async def _dir_is_empty(ops: CommandIO, accessor: Accessor,
     return not await ops.readdir(accessor, search, index=index)
 
 
-async def find(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def find(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("find: no VFS")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
@@ -62,19 +75,25 @@ async def find(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # same trade du makes for its summarize fast path. Per operand, not
     # per session: a hidden .env under /repo must not force find on
     # /s3 off its native op.
-    if (ops.find is None or path_rules_active()
-            or any(hidden_paths_intersect(p.virtual) for p in resolved)):
+    if (
+        ops.find is None
+        or path_rules_active()
+        or any(hidden_paths_intersect(p.virtual) for p in resolved)
+    ):
         # -mtime must see namespace times (touch results, observed
         # writes on mtime-less backends), same as ls.
-        walk_stat: Callable[...,
-                            Awaitable[FileStat]] = partial(ops.stat, accessor)
+        walk_stat: Callable[..., Awaitable[FileStat]] = partial(
+            ops.stat, accessor
+        )
         if overlay is not None:
             walk_stat = partial(overlaid_stat, walk_stat, overlay)
-        return await find_walk_generic(resolved,
-                                       list(texts),
-                                       opts,
-                                       readdir=partial(ops.readdir, accessor),
-                                       stat=walk_stat)
+        return await find_walk_generic(
+            resolved,
+            list(texts),
+            opts,
+            readdir=partial(ops.readdir, accessor),
+            stat=walk_stat,
+        )
     # Time tests must see namespace times (touch results, observed
     # writes), so a local backend, or a remote one whose operand holds
     # overlay times, post-filters through the overlay-aware stat instead
@@ -83,24 +102,26 @@ async def find(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # push-down and its one-request listing.
     times_under = opts.ns.times_under if opts.ns is not None else None
     overlaid = times_under is not None and any(
-        times_under(p.virtual) for p in resolved)
+        times_under(p.virtual) for p in resolved
+    )
     stat: Callable[..., Awaitable[FileStat]] | None = None
     if ops.local or overlaid:
         stat = partial(ops.stat, accessor, index=opts.index)
     if stat is not None and overlay is not None:
-        stat = partial(overlaid_stat,
-                       partial(ops.stat, accessor),
-                       overlay,
-                       index=opts.index)
-    return await find_generic(resolved,
-                              list(texts),
-                              opts,
-                              find_core=partial(ops.find,
-                                                accessor,
-                                                index=opts.index),
-                              stat=stat,
-                              dir_empty=partial(_dir_is_empty, ops, accessor,
-                                                opts.index))
+        stat = partial(
+            overlaid_stat,
+            partial(ops.stat, accessor),
+            overlay,
+            index=opts.index,
+        )
+    return await find_generic(
+        resolved,
+        list(texts),
+        opts,
+        find_core=partial(ops.find, accessor, index=opts.index),
+        stat=stat,
+        dir_empty=partial(_dir_is_empty, ops, accessor, opts.index),
+    )
 
 
-BUILDER = Builder('find', find)
+BUILDER = Builder("find", find)

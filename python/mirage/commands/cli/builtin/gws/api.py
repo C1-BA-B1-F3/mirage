@@ -20,26 +20,38 @@ from typing import Any
 from urllib.parse import quote
 
 from mirage.cache.context import invalidate_after_write
-from mirage.commands.cli.builtin.gws.methods import (GWS_METHODS,
-                                                     SERVICE_BASES, GwsMethod,
-                                                     gws_method_description)
+from mirage.commands.cli.builtin.gws.methods import (
+    GWS_METHODS,
+    SERVICE_BASES,
+    GwsMethod,
+    gws_method_description,
+)
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue, Option
-from mirage.core.google.client import (TokenManager, drive_base, google_delete,
-                                       google_get, google_get_bytes,
-                                       google_patch, google_post)
+from mirage.core.google.client import (
+    TokenManager,
+    drive_base,
+    google_delete,
+    google_get,
+    google_get_bytes,
+    google_patch,
+    google_post,
+)
 from mirage.core.google.config import GoogleConfig
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
 
-_PARAMS_HELP = ("JSON object of path and query parameters, e.g. "
-                "'{\"fileId\":\"abc\"}'")
+_PARAMS_HELP = (
+    'JSON object of path and query parameters, e.g. \'{"fileId":"abc"}\''
+)
 _JSON_HELP = "JSON request body, the API resource for this method"
-_PAGE_ALL_HELP = ("Follow nextPageToken to the end (the default); pages "
-                  "print as one JSON response per line")
+_PAGE_ALL_HELP = (
+    "Follow nextPageToken to the end (the default); pages "
+    "print as one JSON response per line"
+)
 _PAGE_LIMIT_HELP = "Stop after this many pages instead of reading them all"
 
 API_OPTIONS: tuple[Option, ...] = (
@@ -77,8 +89,9 @@ def _parse_json_flag(value: FlagValue | None, flag: str) -> dict[str, Any]:
     return parsed
 
 
-def fill_path(template: str, params: dict[str,
-                                          Any]) -> tuple[str, dict[str, Any]]:
+def fill_path(
+    template: str, params: dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
     """Substitute ``{placeholder}`` segments from params.
 
     Args:
@@ -93,7 +106,7 @@ def fill_path(template: str, params: dict[str,
     while "{" in path:
         start = path.index("{")
         end = path.index("}", start)
-        name = path[start + 1:end]
+        name = path[start + 1 : end]
         if name not in query:
             raise UsageError(f"--params must contain {name}")
         # Percent-encode the value: a Discovery path parameter is one
@@ -102,8 +115,11 @@ def fill_path(template: str, params: dict[str,
         # ("en.usa#holiday@group.v.calendar.google.com") is the sharp case,
         # since "#" opens a fragment and the request would reach
         # /calendars/en.usa instead.
-        path = path[:start] + quote(str(query.pop(name)),
-                                    safe="") + path[end + 1:]
+        path = (
+            path[:start]
+            + quote(str(query.pop(name)), safe="")
+            + path[end + 1 :]
+        )
     return path, query
 
 
@@ -119,29 +135,34 @@ def _query_str(query: dict[str, Any]) -> dict[str, str]:
 
 class _NoContent(Enum):
     """A 204 body: distinct from a JSON null, which is a value."""
+
     TOKEN = auto()
 
 
 _NO_CONTENT = _NoContent.TOKEN
 
 
-async def _call_get(tm: TokenManager, url: str, body: dict[str, Any],
-                    query: dict[str, str]) -> JsonValue:
+async def _call_get(
+    tm: TokenManager, url: str, body: dict[str, Any], query: dict[str, str]
+) -> JsonValue:
     return await google_get(tm, url, params=query)
 
 
-async def _call_post(tm: TokenManager, url: str, body: dict[str, Any],
-                     query: dict[str, str]) -> JsonValue:
+async def _call_post(
+    tm: TokenManager, url: str, body: dict[str, Any], query: dict[str, str]
+) -> JsonValue:
     return await google_post(tm, _with_query(url, query), body)
 
 
-async def _call_patch(tm: TokenManager, url: str, body: dict[str, Any],
-                      query: dict[str, str]) -> JsonValue:
+async def _call_patch(
+    tm: TokenManager, url: str, body: dict[str, Any], query: dict[str, str]
+) -> JsonValue:
     return await google_patch(tm, url, body, params=query)
 
 
-async def _call_delete(tm: TokenManager, url: str, body: dict[str, Any],
-                       query: dict[str, str]) -> _NoContent:
+async def _call_delete(
+    tm: TokenManager, url: str, body: dict[str, Any], query: dict[str, str]
+) -> _NoContent:
     await google_delete(tm, _with_query(url, query))
     return _NO_CONTENT
 
@@ -196,8 +217,9 @@ def scope_request(
     return scoped, {"supportsAllDrives": True, **params}
 
 
-async def place_in_scope(method: GwsMethod, token_manager: TokenManager,
-                         result: dict[str, Any]) -> None:
+async def place_in_scope(
+    method: GwsMethod, token_manager: TokenManager, result: dict[str, Any]
+) -> None:
     """Move a newly created editor file into the folder scope.
 
     The Docs, Sheets and Slides create methods have no parents field at
@@ -220,17 +242,20 @@ async def place_in_scope(method: GwsMethod, token_manager: TokenManager,
     file_id = result.get(method.id_field)
     if not folder_id or not isinstance(file_id, str):
         return
-    await google_patch(token_manager,
-                       f"{drive_base(token_manager)}/files/{file_id}", {},
-                       params={
-                           "addParents": folder_id,
-                           "removeParents": "root",
-                           "supportsAllDrives": "true",
-                       })
+    await google_patch(
+        token_manager,
+        f"{drive_base(token_manager)}/files/{file_id}",
+        {},
+        params={
+            "addParents": folder_id,
+            "removeParents": "root",
+            "supportsAllDrives": "true",
+        },
+    )
 
 
 async def run_gws_method(
-        method: GwsMethod, inv: CLIInvocation[GoogleConfig]
+    method: GwsMethod, inv: CLIInvocation[GoogleConfig]
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     params = _parse_json_flag(fl.as_str("params") or "", "--params")
@@ -243,27 +268,35 @@ async def run_gws_method(
         url = SERVICE_BASES[method.service](token_manager) + path
         query_params = _query_str(query)
         if method.raw_bytes:
-            data = await google_get_bytes(token_manager,
-                                          _with_query(url, query_params))
+            data = await google_get_bytes(
+                token_manager, _with_query(url, query_params)
+            )
             return yield_bytes(data), IOResult()
         if method.http == "GET":
             # Deliberate divergence from the official gws CLI, which stops
             # at one page unless --page-all is passed: a truncated listing
             # is indistinguishable from a complete one, so mirage follows
             # the token by default and --page-limit is how you opt out.
-            out = await _paginate(method, token_manager, url, body,
-                                  query_params,
-                                  _parse_page_limit(fl.as_str("page_limit")))
+            out = await _paginate(
+                method,
+                token_manager,
+                url,
+                body,
+                query_params,
+                _parse_page_limit(fl.as_str("page_limit")),
+            )
             return yield_bytes(out), IOResult()
-        result = await _CALLERS[method.http](token_manager, url, body,
-                                             query_params)
+        result = await _CALLERS[method.http](
+            token_manager, url, body, query_params
+        )
         if method.placement == "relocate" and isinstance(result, dict):
             await place_in_scope(method, token_manager, result)
         await invalidate_mount_listing()
         if result is _NO_CONTENT:
             return None, IOResult()
-        out = json_lib.dumps(result, ensure_ascii=False,
-                             separators=(",", ":")).encode()
+        out = json_lib.dumps(
+            result, ensure_ascii=False, separators=(",", ":")
+        ).encode()
         return yield_bytes(out), IOResult()
 
 
@@ -321,8 +354,10 @@ async def _paginate(
         if result is _NO_CONTENT:
             break
         pages.append(
-            json_lib.dumps(result, ensure_ascii=False,
-                           separators=(",", ":")).encode())
+            json_lib.dumps(
+                result, ensure_ascii=False, separators=(",", ":")
+            ).encode()
+        )
         fetched += 1
         if page_limit is not None and fetched >= page_limit:
             break
@@ -364,11 +399,15 @@ def method_leaf(method: GwsMethod) -> CLISpec:
 def _build_group(name: str, node: dict[str, Any]) -> CLISpec:
     leaves = tuple(method_leaf(m) for m in node.get("__methods__", ()))
     groups = tuple(
-        _build_group(child, sub) for child, sub in node.items()
-        if child != "__methods__")
-    return CLISpec(name=name,
-                   description=f"Google API {name} methods",
-                   subcommands=leaves + groups)
+        _build_group(child, sub)
+        for child, sub in node.items()
+        if child != "__methods__"
+    )
+    return CLISpec(
+        name=name,
+        description=f"Google API {name} methods",
+        subcommands=leaves + groups,
+    )
 
 
 def api_groups(service: str) -> tuple[CLISpec, ...]:

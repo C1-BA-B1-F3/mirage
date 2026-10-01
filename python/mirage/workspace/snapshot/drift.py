@@ -17,9 +17,12 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable
 
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.observe.record import (CONTENT_CHANGING_OPS,
-                                   RETRACT_FINGERPRINT_OPS,
-                                   STAMP_FINGERPRINT_OPS, SUBTREE_RETRACT_OPS)
+from mirage.observe.record import (
+    CONTENT_CHANGING_OPS,
+    RETRACT_FINGERPRINT_OPS,
+    STAMP_FINGERPRINT_OPS,
+    SUBTREE_RETRACT_OPS,
+)
 from mirage.types import DriftPolicy
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.snapshot.keys import FingerprintKey
@@ -46,17 +49,25 @@ class ContentDriftError(Exception):
         live_fingerprint (str | None): Marker observed at load time.
     """
 
-    def __init__(self, path: str, snapshot_fingerprint: str,
-                 live_fingerprint: str | None) -> None:
+    def __init__(
+        self,
+        path: str,
+        snapshot_fingerprint: str,
+        live_fingerprint: str | None,
+    ) -> None:
         self.path = path
         self.snapshot_fingerprint = snapshot_fingerprint
         self.live_fingerprint = live_fingerprint
-        live_repr = repr(
-            live_fingerprint) if live_fingerprint is not None else "<missing>"
+        live_repr = (
+            repr(live_fingerprint)
+            if live_fingerprint is not None
+            else "<missing>"
+        )
         super().__init__(
             f"{path}: snapshot fingerprint {snapshot_fingerprint!r}, "
             f"live {live_repr}; data on the underlying source has changed "
-            "since the snapshot was taken")
+            "since the snapshot was taken"
+        )
 
 
 class DriftQueue:
@@ -82,10 +93,9 @@ class DriftQueue:
         """Paths still queued for a check (audit surface)."""
         return [path for path, _, _ in self._entries]
 
-    def queue(self,
-              path: str,
-              fingerprint: str,
-              mount_id: str | None = None) -> None:
+    def queue(
+        self, path: str, fingerprint: str, mount_id: str | None = None
+    ) -> None:
         """Record one path to check against its live source.
 
         Args:
@@ -125,8 +135,9 @@ class DriftQueue:
                 raise result
 
 
-def _drop_pin(out: dict[str, dict[str, Any]], path: str, subtree: bool,
-              owner: str | None) -> None:
+def _drop_pin(
+    out: dict[str, dict[str, Any]], path: str, subtree: bool, owner: str | None
+) -> None:
     """Drop the pin at ``path``, and every pin beneath it for a prefix op.
 
     Normalizes the probe, never the stored key: a mount-root op is
@@ -161,13 +172,17 @@ def _drop_pin(out: dict[str, dict[str, Any]], path: str, subtree: bool,
     for key, entry in list(out.items()):
         if not key.startswith(prefix):
             continue
-        if owner is not None and entry.get(
-                FingerprintKey.MOUNT_PREFIX) != owner:
+        if (
+            owner is not None
+            and entry.get(FingerprintKey.MOUNT_PREFIX) != owner
+        ):
             continue
         out.pop(key)
 
 
-def capture_fingerprints(ws: "Workspace", ) -> list[dict[str, Any]]:
+def capture_fingerprints(
+    ws: "Workspace",
+) -> list[dict[str, Any]]:
     """Walk session ops and emit one pin per path still worth checking.
 
     A single forward pass over the time-ordered records, so the last word
@@ -213,12 +228,17 @@ def capture_fingerprints(ws: "Workspace", ) -> list[dict[str, Any]]:
             # Resolved to bound the sweep, never to gate the drop: a
             # retraction whose mount has since gone still applies.
             retracted = ws._registry.try_mount_for(rec.path)
-            _drop_pin(out, rec.path, rec.op in SUBTREE_RETRACT_OPS,
-                      retracted.prefix if retracted is not None else None)
+            _drop_pin(
+                out,
+                rec.path,
+                rec.op in SUBTREE_RETRACT_OPS,
+                retracted.prefix if retracted is not None else None,
+            )
             continue
-        if (rec.op in CONTENT_CHANGING_OPS
-                and (rec.op not in STAMP_FINGERPRINT_OPS
-                     or not (rec.fingerprint or rec.revision))):
+        if rec.op in CONTENT_CHANGING_OPS and (
+            rec.op not in STAMP_FINGERPRINT_OPS
+            or not (rec.fingerprint or rec.revision)
+        ):
             # Dropped unless the token can actually be used below: an op
             # outside STAMP never reaches the stamping arm, so keeping
             # its pin would leave the pre-change token describing bytes
@@ -230,8 +250,9 @@ def capture_fingerprints(ws: "Workspace", ) -> list[dict[str, Any]]:
         if rec.fingerprint is None and rec.revision is None:
             continue
         mount = ws._registry.try_mount_for(rec.path)
-        if mount is None or (rec.mount_id is not None
-                             and rec.mount_id != mount.mount_id):
+        if mount is None or (
+            rec.mount_id is not None and rec.mount_id != mount.mount_id
+        ):
             continue
         if not mount.vfs.supports_snapshot:
             continue
@@ -269,8 +290,9 @@ def install_fingerprints(
     """
     if drift_policy == DriftPolicy.OFF:
         if fingerprint_entries:
-            ws._cache.evict_paths(f[FingerprintKey.PATH]
-                                  for f in fingerprint_entries)
+            ws._cache.evict_paths(
+                f[FingerprintKey.PATH] for f in fingerprint_entries
+            )
         return
     for f in fingerprint_entries:
         path = f[FingerprintKey.PATH]
@@ -286,7 +308,9 @@ def install_fingerprints(
             ws._drift.queue(path, fingerprint, mount.mount_id)
 
 
-def live_only_mount_prefixes(ws: "Workspace", ) -> list[str]:
+def live_only_mount_prefixes(
+    ws: "Workspace",
+) -> list[str]:
     """Return mount prefixes whose VFS opts out of snapshot replay.
 
     These mounts will serve current state at load time with no drift
@@ -308,10 +332,12 @@ def live_only_mount_prefixes(ws: "Workspace", ) -> list[str]:
     return out
 
 
-async def check_drift(mount_for: TryMountFor,
-                      path: str,
-                      recorded: str,
-                      mount_id: str | None = None) -> None:
+async def check_drift(
+    mount_for: TryMountFor,
+    path: str,
+    recorded: str,
+    mount_id: str | None = None,
+) -> None:
     """Stat `path` against its mount and raise ContentDriftError if the
     live fingerprint does not match `recorded`.
 

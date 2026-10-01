@@ -24,8 +24,10 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
 from mirage.workspace import Workspace
-from tests.commands.cli.builtin.git.conftest import (commit_gitlink,
-                                                     conflict_index)
+from tests.commands.cli.builtin.git.conftest import (
+    commit_gitlink,
+    conflict_index,
+)
 
 
 async def run(ws, line: str) -> tuple[int, bytes, bytes]:
@@ -55,15 +57,17 @@ def test_both_targets_can_be_named():
 
 
 def test_the_index_reads_as_a_tree():
-    entry = IndexEntry(ctime=0,
-                       mtime=0,
-                       dev=0,
-                       ino=0,
-                       mode=0o100644,
-                       uid=0,
-                       gid=0,
-                       size=3,
-                       sha=b"a" * 40)
+    entry = IndexEntry(
+        ctime=0,
+        mtime=0,
+        dev=0,
+        ino=0,
+        mode=0o100644,
+        uid=0,
+        gid=0,
+        size=3,
+        sha=b"a" * 40,
+    )
     assert index_tree({b"a.txt": entry}) == {b"a.txt": (0o100644, b"a" * 40)}
 
 
@@ -98,8 +102,9 @@ async def test_both_targets_go_back_to_head(git_rw, repo_path: Path):
 async def test_an_unknown_path_is_an_error_not_a_fatal(git_rw):
     code, _out, err = await run(git_rw, "restore nosuch")
     assert code == 1
-    assert err == (b"error: pathspec 'nosuch' did not match any file(s) "
-                   b"known to git\n")
+    assert err == (
+        b"error: pathspec 'nosuch' did not match any file(s) known to git\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -133,7 +138,8 @@ async def test_staged_turns_a_new_file_back_into_untracked(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_path_the_source_lacks_is_removed_from_the_target(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # b.txt arrived in the second commit, so the first tree lacks it, and
     # restoring both targets from that tree removes it from both.
     assert await run(git_rw, "restore -s HEAD~2 -SW b.txt") == (0, b"", b"")
@@ -151,7 +157,8 @@ async def test_a_deleted_file_comes_back(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_restoring_the_index_clears_the_conflict_stages(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     conflict_index(repo_path, "a.txt")
     assert await run(git_rw, "restore --staged a.txt") == (0, b"", b"")
     index = Index(str(repo_path / ".git" / "index"))
@@ -190,8 +197,11 @@ async def test_a_directory_source_replaces_a_file(git_rw, repo_path: Path):
     (repo_path / "a.txt").rmdir()
     (repo_path / "a.txt").write_text("flat\n", encoding="utf-8")
     await run(git_rw, "add a.txt")
-    assert await run(git_rw,
-                     f"restore --source={tree} -SW a.txt") == (0, b"", b"")
+    assert await run(git_rw, f"restore --source={tree} -SW a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt" / "child").read_text() == "inner\n"
     # The source is HEAD's tree, so a restore that reached both the index
     # and the working tree leaves nothing for status to report.
@@ -207,15 +217,19 @@ async def test_a_file_source_replaces_a_directory(git_rw, repo_path: Path):
     (repo_path / "a.txt").mkdir()
     (repo_path / "a.txt" / "child").write_text("inner\n", encoding="utf-8")
     await run(git_rw, "add a.txt")
-    assert await run(git_rw,
-                     f"restore --source={tree} -SW a.txt") == (0, b"", b"")
+    assert await run(git_rw, f"restore --source={tree} -SW a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt").read_text() == "one changed\n"
     assert not (repo_path / "a.txt" / "child").exists()
 
 
 @pytest.mark.asyncio
 async def test_a_conflict_the_source_cannot_put_back_is_refused(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # Added on this side only, so HEAD holds nothing to restore from
     # and the index holds no stage 0 either. git names the path rather
     # than reporting a pathspec it does not recognise.
@@ -230,7 +244,8 @@ async def test_a_conflict_the_source_cannot_put_back_is_refused(
 
 @pytest.mark.asyncio
 async def test_restoring_a_conflict_from_the_index_is_refused(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # The working tree restores from the index, and an unmerged path
     # has no stage 0 there whatever HEAD holds.
     conflict_index(repo_path, "a.txt")
@@ -245,13 +260,15 @@ async def test_every_unrestorable_conflict_is_named(git_rw, repo_path: Path):
     conflict_index(repo_path, "b.txt")
     code, _out, err = await run(git_rw, "restore a.txt b.txt")
     assert code == 1
-    assert err == (b"error: path 'a.txt' is unmerged\n"
-                   b"error: path 'b.txt' is unmerged\n")
+    assert err == (
+        b"error: path 'a.txt' is unmerged\nerror: path 'b.txt' is unmerged\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_source_holding_the_conflict_restores_it(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "c.txt").write_text("mine\n", encoding="utf-8")
     assert (await run(git_rw, "add c.txt"))[0] == 0
     assert (await run(git_rw, "commit -m added"))[0] == 0
@@ -268,8 +285,11 @@ async def test_a_tree_peel_is_a_source(git_rw, repo_path: Path):
     # git's own help says --source <tree-ish>, and a peel is the
     # ordinary way to spell one. Probed on git 2.50.1: exit 0.
     await git_rw.shell("echo edited > /repo/a.txt")
-    assert await run(git_rw,
-                     "restore --source=HEAD^{tree} a.txt") == (0, b"", b"")
+    assert await run(git_rw, "restore --source=HEAD^{tree} a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt").read_text() == "one changed\n"
 
 
@@ -277,8 +297,11 @@ async def test_a_tree_peel_is_a_source(git_rw, repo_path: Path):
 async def test_a_tag_peel_is_a_source(git_rw, repo_path: Path):
     assert (await run(git_rw, "tag v1"))[0] == 0
     await git_rw.shell("echo edited > /repo/a.txt")
-    assert await run(git_rw,
-                     "restore --source=v1^{tree} a.txt") == (0, b"", b"")
+    assert await run(git_rw, "restore --source=v1^{tree} a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt").read_text() == "one changed\n"
 
 
@@ -288,8 +311,11 @@ async def test_a_subtree_at_a_path_is_a_source(git_rw, repo_path: Path):
     (repo_path / "sub" / "a.txt").write_text("nested\n", encoding="utf-8")
     assert (await run(git_rw, "add sub"))[0] == 0
     assert (await run(git_rw, "commit -m nested"))[0] == 0
-    assert await run(git_rw,
-                     "restore --source=HEAD:sub a.txt") == (0, b"", b"")
+    assert await run(git_rw, "restore --source=HEAD:sub a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt").read_text() == "nested\n"
 
 
@@ -312,7 +338,8 @@ async def test_a_peel_that_resolves_to_nothing_is_named_as_typed(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_file_replaces_a_directory_an_untracked_file_holds(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # The source keeps a.txt as a file, the index keeps a.txt/child, and
     # an untracked a.txt/keep holds the directory open. git replaces the
     # whole directory here, untracked child and all, and exits 0
@@ -326,8 +353,11 @@ async def test_a_file_replaces_a_directory_an_untracked_file_holds(
     (repo_path / "a.txt" / "child").write_text("inner\n", encoding="utf-8")
     await run(git_rw, "add a.txt/child")
     (repo_path / "a.txt" / "keep").write_text("untracked\n", encoding="utf-8")
-    assert await run(git_rw,
-                     f"restore --source={tree} -SW a.txt") == (0, b"", b"")
+    assert await run(git_rw, f"restore --source={tree} -SW a.txt") == (
+        0,
+        b"",
+        b"",
+    )
     assert (repo_path / "a.txt").is_file()
     assert (repo_path / "a.txt").read_text() == "one changed\n"
 
@@ -336,10 +366,11 @@ async def test_a_file_replaces_a_directory_an_untracked_file_holds(
 async def test_a_staged_restore_before_the_first_commit_is_refused(unborn_rw):
     await unborn_rw.shell("echo hi > /repo/f.txt")
     await run(unborn_rw, "add f.txt")
-    assert await run(
-        unborn_rw,
-        "restore --staged f.txt") == (128, b"",
-                                      b"fatal: could not resolve HEAD\n")
+    assert await run(unborn_rw, "restore --staged f.txt") == (
+        128,
+        b"",
+        b"fatal: could not resolve HEAD\n",
+    )
     # The refusal comes before the index is touched: reading the
     # unborn HEAD as an empty tree unstaged the path and said nothing.
     assert await run(unborn_rw, "status --short") == (0, b"A  f.txt\n", b"")
@@ -349,14 +380,17 @@ async def test_a_staged_restore_before_the_first_commit_is_refused(unborn_rw):
 async def test_staged_and_worktree_together_refuse_the_same_way(unborn_rw):
     await unborn_rw.shell("echo hi > /repo/f.txt")
     await run(unborn_rw, "add f.txt")
-    assert await run(
-        unborn_rw,
-        "restore -SW f.txt") == (128, b"", b"fatal: could not resolve HEAD\n")
+    assert await run(unborn_rw, "restore -SW f.txt") == (
+        128,
+        b"",
+        b"fatal: could not resolve HEAD\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_worktree_restore_before_the_first_commit_still_goes(
-        unborn_rw):
+    unborn_rw,
+):
     await unborn_rw.shell("echo hi > /repo/f.txt")
     await run(unborn_rw, "add f.txt")
     await unborn_rw.shell("echo edited > /repo/f.txt")
@@ -368,7 +402,8 @@ async def test_a_worktree_restore_before_the_first_commit_still_goes(
 
 @pytest.mark.asyncio
 async def test_a_link_standing_where_a_directory_belongs_is_replaced(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir /repo/slot && echo c > /repo/slot/child")
     await run(git_rw, "add -A")
     await run(git_rw, "commit -m nested")
@@ -388,7 +423,8 @@ async def test_a_link_standing_where_a_directory_belongs_is_replaced(
 
 @pytest.mark.asyncio
 async def test_a_removal_is_not_attempted_through_a_link(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir /repo/slot && echo c > /repo/slot/child")
     await run(git_rw, "add -A")
     await run(git_rw, "commit -m nested")
@@ -396,8 +432,11 @@ async def test_a_removal_is_not_attempted_through_a_link(
     await git_rw.shell("echo old > /repo/elsewhere/child")
     await git_rw.shell("ln -s elsewhere /repo/slot")
     # HEAD~1 predates the entry, so restoring from it removes the path.
-    assert await run(git_rw,
-                     "restore --source=HEAD~1 slot/child") == (0, b"", b"")
+    assert await run(git_rw, "restore --source=HEAD~1 slot/child") == (
+        0,
+        b"",
+        b"",
+    )
     # The source does not hold the path, so the entry would be removed;
     # the unlink would resolve past the link and delete a file inside
     # whatever it points at. git checks the leading path and removes
@@ -408,8 +447,9 @@ async def test_a_removal_is_not_attempted_through_a_link(
 
 
 @pytest.mark.asyncio
-async def test_a_bare_tag_id_still_names_a_source_tree(git_rw,
-                                                       repo_path: Path):
+async def test_a_bare_tag_id_still_names_a_source_tree(
+    git_rw, repo_path: Path
+):
     await git_rw.shell("git -C /repo tag -a v1 -m annotated")
     with Repo(str(repo_path)) as repo:
         held = repo.refs[b"refs/tags/v1"].decode()
@@ -444,8 +484,11 @@ async def test_a_removal_is_not_attempted_through_a_file_either(git_rw):
     assert (await run(git_rw, "add slot/child"))[0] == 0
     assert (await run(git_rw, "commit -m child"))[0] == 0
     await git_rw.shell("rm -rf /repo/slot && echo untracked > /repo/slot")
-    assert await run(git_rw,
-                     "restore --source=HEAD~1 slot/child") == (0, b"", b"")
+    assert await run(git_rw, "restore --source=HEAD~1 slot/child") == (
+        0,
+        b"",
+        b"",
+    )
     assert (await git_rw.shell("cat /repo/slot")).stdout == b"untracked\n"
 
 
@@ -482,7 +525,8 @@ async def test_the_bit_is_cleared_the_other_way_too(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_directory_holding_a_nested_mount_is_refused(
-        repo_path: Path, tmp_path: Path):
+    repo_path: Path, tmp_path: Path
+):
     # The tree records a file where the working tree has a directory,
     # so restoring it means removing the directory whole. A nested
     # mount inside it is a different backend entirely: readdir merges
@@ -496,7 +540,8 @@ async def test_a_directory_holding_a_nested_mount_is_refused(
             "/repo/": DiskVFS(root=str(repo_path)),
             "/repo/slot/data/": DiskVFS(root=str(inner)),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("printf 'i am a file\n' > /repo/slot")
         assert (await run(ws, "add slot"))[0] == 0
@@ -505,14 +550,17 @@ async def test_a_directory_holding_a_nested_mount_is_refused(
         await ws.shell("mkdir /repo/slot")
         code, _out, err = await run(ws, "restore slot")
         assert code == 128
-        assert err == (b"fatal: cannot remove '/repo/slot': "
-                       b"'/repo/slot/data' is a mount root\n")
+        assert err == (
+            b"fatal: cannot remove '/repo/slot': "
+            b"'/repo/slot/data' is a mount root\n"
+        )
     assert (inner / "precious.txt").exists()
 
 
 @pytest.mark.asyncio
 async def test_pruning_a_parent_leaves_a_mount_root_alone(
-        repo_path: Path, tmp_path: Path):
+    repo_path: Path, tmp_path: Path
+):
     # The other removal path: git drops a directory the moment its last
     # tracked file leaves it, and the mount root is the one directory
     # that is not git's to drop.
@@ -523,7 +571,8 @@ async def test_pruning_a_parent_leaves_a_mount_root_alone(
             "/repo/": DiskVFS(root=str(repo_path)),
             "/repo/slot/data/": DiskVFS(root=str(inner)),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("printf 'x\n' > /repo/slot/data/x.txt")
         assert (await run(ws, "add slot/data/x.txt"))[0] == 0
@@ -534,7 +583,8 @@ async def test_pruning_a_parent_leaves_a_mount_root_alone(
 
 @pytest.mark.asyncio
 async def test_the_index_waits_for_the_worktree_pass_to_be_possible(
-        repo_path: Path, tmp_path: Path):
+    repo_path: Path, tmp_path: Path
+):
     # -SW stages first and restores after, so a refusal in the second
     # pass used to leave the index moved and the working tree exactly
     # as it was: a fatal that changed something, which this verb has no
@@ -547,7 +597,8 @@ async def test_the_index_waits_for_the_worktree_pass_to_be_possible(
             "/repo/": DiskVFS(root=str(repo_path)),
             "/repo/slot/data/": DiskVFS(root=str(inner)),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("printf 'i am a file\n' > /repo/slot")
         assert (await run(ws, "add slot"))[0] == 0
@@ -559,15 +610,18 @@ async def test_the_index_waits_for_the_worktree_pass_to_be_possible(
         assert before.startswith(b"D  slot\n")
         code, _out, err = await run(ws, "restore -SW slot")
         assert code == 128
-        assert err == (b"fatal: cannot remove '/repo/slot': "
-                       b"'/repo/slot/data' is a mount root\n")
+        assert err == (
+            b"fatal: cannot remove '/repo/slot': "
+            b"'/repo/slot/data' is a mount root\n"
+        )
         assert (await run(ws, "status --short"))[1] == before
     assert (inner / "precious.txt").exists()
 
 
 @pytest.mark.asyncio
 async def test_the_staged_half_alone_is_untouched_by_the_preflight(
-        repo_path: Path, tmp_path: Path):
+    repo_path: Path, tmp_path: Path
+):
     # --staged never touches the working tree, so the mount is not in
     # its way and the line must still go through.
     inner = tmp_path / "spare"
@@ -577,7 +631,8 @@ async def test_the_staged_half_alone_is_untouched_by_the_preflight(
             "/repo/": DiskVFS(root=str(repo_path)),
             "/repo/slot/data/": DiskVFS(root=str(inner)),
         },
-            mode=MountMode.WRITE) as ws:
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("printf 'i am a file\n' > /repo/slot")
         assert (await run(ws, "add slot"))[0] == 0
@@ -591,7 +646,8 @@ async def test_the_staged_half_alone_is_untouched_by_the_preflight(
 
 @pytest.mark.asyncio
 async def test_a_gitlink_keeps_the_working_tree_it_already_has(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # A 160000 entry names a commit in another repository. git checks
     # out no submodule content without --recurse-submodules, so all the
     # entry asks of the working tree is that a directory stand at the
@@ -601,13 +657,15 @@ async def test_a_gitlink_keeps_the_working_tree_it_already_has(
     commit_gitlink(repo_path, "sub")
     assert await run(git_rw, "restore sub") == (0, b"", b"")
     assert (repo_path / "sub").is_dir()
-    assert (repo_path / "sub" /
-            "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    assert (repo_path / "sub" / "keep.txt").read_text(
+        encoding="utf-8"
+    ) == "keep\n"
 
 
 @pytest.mark.asyncio
 async def test_a_gitlink_with_nothing_there_gets_a_directory(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await git_rw.shell("mkdir /repo/sub && echo keep > /repo/sub/keep.txt")
     commit_gitlink(repo_path, "sub")
     await git_rw.shell("rm -rf /repo/sub")
@@ -618,7 +676,8 @@ async def test_a_gitlink_with_nothing_there_gets_a_directory(
 
 @pytest.mark.asyncio
 async def test_a_file_standing_where_a_gitlink_belongs_is_replaced(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # git's own answer: the file goes and an empty directory takes its
     # place, which is what it does to any non-directory at the name.
     await git_rw.shell("mkdir /repo/sub && echo keep > /repo/sub/keep.txt")
@@ -631,7 +690,8 @@ async def test_a_file_standing_where_a_gitlink_belongs_is_replaced(
 
 @pytest.mark.asyncio
 async def test_a_child_under_a_restored_gitlink_keeps_its_working_copy(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # Restoring the gitlink drops the child's index entry and leaves
     # the file alone: git writes the directory and touches nothing
     # under it. Removing it here loses content nothing has a copy of,
@@ -640,39 +700,46 @@ async def test_a_child_under_a_restored_gitlink_keeps_its_working_copy(
     commit_gitlink(repo_path, "sub")
     await git_rw.shell("echo child > /repo/sub/child.txt")
     assert (await run(git_rw, "add sub/child.txt"))[0] == 0
-    assert await run(git_rw,
-                     "restore --staged --worktree sub") == (0, b"", b"")
-    assert (repo_path / "sub" /
-            "child.txt").read_text(encoding="utf-8") == "child\n"
+    assert await run(git_rw, "restore --staged --worktree sub") == (
+        0,
+        b"",
+        b"",
+    )
+    assert (repo_path / "sub" / "child.txt").read_text(
+        encoding="utf-8"
+    ) == "child\n"
     with Repo(str(repo_path)) as repo:
         assert b"sub/child.txt" not in repo.open_index()
 
 
 @pytest.mark.asyncio
 async def test_a_removed_gitlink_takes_an_empty_directory(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # What stands at a 160000 entry is a directory, so removing the
     # entry is an rmdir: unlink died on it with the index already
     # written.
     await git_rw.shell("mkdir /repo/sub")
     commit_gitlink(repo_path, "sub")
     assert await run(
-        git_rw,
-        "restore --source=HEAD~1 --staged --worktree sub") == (0, b"", b"")
+        git_rw, "restore --source=HEAD~1 --staged --worktree sub"
+    ) == (0, b"", b"")
     assert not (repo_path / "sub").exists()
 
 
 @pytest.mark.asyncio
 async def test_a_removed_gitlink_keeps_a_directory_that_is_not_empty(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # git warns and goes on rather than failing: the checkout succeeded,
     # and what is left is a directory it will not empty for anyone.
     await git_rw.shell("mkdir /repo/sub && echo keep > /repo/sub/keep.txt")
     commit_gitlink(repo_path, "sub")
     code, out, err = await run(
-        git_rw, "restore --source=HEAD~1 --staged "
-        "--worktree sub")
+        git_rw, "restore --source=HEAD~1 --staged --worktree sub"
+    )
     assert (code, out) == (0, b"")
     assert err == b"warning: unable to rmdir 'sub': Directory not empty\n"
-    assert (repo_path / "sub" /
-            "keep.txt").read_text(encoding="utf-8") == "keep\n"
+    assert (repo_path / "sub" / "keep.txt").read_text(
+        encoding="utf-8"
+    ) == "keep\n"

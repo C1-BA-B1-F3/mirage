@@ -26,7 +26,8 @@ async def test_cat_single_file(databricks_text_workspace):
 @pytest.mark.asyncio
 async def test_cat_multiple_files_concatenated(databricks_text_workspace):
     io = await databricks_text_workspace.shell(
-        "cat /dbx/words.txt /dbx/more.txt")
+        "cat /dbx/words.txt /dbx/more.txt"
+    )
 
     assert io.exit_code == 0
     assert io.stdout == b"beta\nalpha\nalpha\ndelta\n"

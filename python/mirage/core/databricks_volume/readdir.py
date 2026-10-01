@@ -39,8 +39,9 @@ def _list_directory_sync(
     return list(accessor.files.list_directory_contents(remote_path))
 
 
-async def _exists(config: DatabricksVolumeConfig, probe: Callable[[str], Any],
-                  key: str) -> bool:
+async def _exists(
+    config: DatabricksVolumeConfig, probe: Callable[[str], Any], key: str
+) -> bool:
     try:
         await asyncio.to_thread(probe, backend_path(config, key))
     except Exception as exc:
@@ -55,8 +56,9 @@ async def _is_file(accessor: DatabricksVolumeAccessor, key: str) -> bool:
 
 
 async def _is_dir(accessor: DatabricksVolumeAccessor, key: str) -> bool:
-    return await _exists(accessor.config,
-                         accessor.files.get_directory_metadata, key)
+    return await _exists(
+        accessor.config, accessor.files.get_directory_metadata, key
+    )
 
 
 async def readdir(
@@ -81,14 +83,24 @@ async def readdir(
         # a file alike, so the errno comes from walking the ancestors: one
         # metadata request per component, on this failure path only.
         if is_not_found(exc):
-            raise await listing_error(list_path, list_path.mount_path,
-                                      partial(_is_file, accessor),
-                                      partial(_is_dir, accessor)) from exc
+            raise await listing_error(
+                list_path,
+                list_path.mount_path,
+                partial(_is_file, accessor),
+                partial(_is_dir, accessor),
+            ) from exc
         raise
     pairs = sorted(
-        (virtual_path(accessor.config, entry.path,
-                      mount_prefix_of(path.virtual, path.vfs_path)), entry)
-        for entry in entries)
+        (
+            virtual_path(
+                accessor.config,
+                entry.path,
+                mount_prefix_of(path.virtual, path.vfs_path),
+            ),
+            entry,
+        )
+        for entry in entries
+    )
     names = [name for name, _ in pairs]
     if len(names) > SCOPE_ERROR:
         logger.warning(
@@ -108,16 +120,21 @@ async def readdir(
             # DirectoryEntry normally carries file_size; when the lister
             # omits it, one HEAD per affected file fills the gap so the
             # index never caches an unknown size.
-            metadata = await asyncio.to_thread(accessor.files.get_metadata,
-                                               entry.path)
+            metadata = await asyncio.to_thread(
+                accessor.files.get_metadata, entry.path
+            )
             size = getattr(metadata, "content_length", None)
-        index_entries.append((name,
-                              IndexEntry(
-                                  id=full_path,
-                                  name=name,
-                                  resource_type=resource_type,
-                                  size=size,
-                                  remote_time=remote_time or "",
-                              )))
+        index_entries.append(
+            (
+                name,
+                IndexEntry(
+                    id=full_path,
+                    name=name,
+                    resource_type=resource_type,
+                    size=size,
+                    remote_time=remote_time or "",
+                ),
+            )
+        )
     await index.set_dir(virtual_key, index_entries)
     return names

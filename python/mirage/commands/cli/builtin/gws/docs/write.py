@@ -24,14 +24,17 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def write(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
-        result = await append_text(tm,
-                                   fl.as_str("document") or "",
-                                   fl.as_str("text") or "",
-                                   fl.as_str("tab") or None)
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+        result = await append_text(
+            tm,
+            fl.as_str("document") or "",
+            fl.as_str("text") or "",
+            fl.as_str("tab") or None,
+        )
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

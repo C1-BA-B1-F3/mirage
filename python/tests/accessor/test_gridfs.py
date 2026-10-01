@@ -21,8 +21,11 @@ from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
 
 @pytest.fixture
 def accessor():
-    return GridFSAccessor(config=GridFSConfig(
-        uri="mongodb://localhost:27017", database="db", bucket="data"))
+    return GridFSAccessor(
+        config=GridFSConfig(
+            uri="mongodb://localhost:27017", database="db", bucket="data"
+        )
+    )
 
 
 def test_config_defaults():
@@ -33,24 +36,27 @@ def test_config_defaults():
 
 
 def test_config_normalizes_key_prefix():
-    config = GridFSConfig(uri="mongodb://localhost:27017",
-                          database="db",
-                          key_prefix="/team/reports/")
+    config = GridFSConfig(
+        uri="mongodb://localhost:27017",
+        database="db",
+        key_prefix="/team/reports/",
+    )
     assert config.key_prefix == "team/reports/"
 
 
 def test_config_empty_key_prefix_becomes_none():
-    config = GridFSConfig(uri="mongodb://localhost:27017",
-                          database="db",
-                          key_prefix="")
+    config = GridFSConfig(
+        uri="mongodb://localhost:27017", database="db", key_prefix=""
+    )
     assert config.key_prefix is None
 
 
 @pytest.mark.asyncio
 async def test_client_constructs_async_mongo_client(accessor):
     sentinel = MagicMock()
-    with patch("mirage.accessor.gridfs.AsyncMongoClient",
-               return_value=sentinel) as ctor:
+    with patch(
+        "mirage.accessor.gridfs.AsyncMongoClient", return_value=sentinel
+    ) as ctor:
         client = accessor.client
     assert client is sentinel
     ctor.assert_called_once_with("mongodb://localhost:27017")
@@ -58,8 +64,10 @@ async def test_client_constructs_async_mongo_client(accessor):
 
 @pytest.mark.asyncio
 async def test_client_is_cached_per_event_loop(accessor):
-    with patch("mirage.accessor.gridfs.AsyncMongoClient",
-               side_effect=lambda *a, **k: MagicMock()) as ctor:
+    with patch(
+        "mirage.accessor.gridfs.AsyncMongoClient",
+        side_effect=lambda *a, **k: MagicMock(),
+    ) as ctor:
         first = accessor.client
         second = accessor.client
     assert first is second
@@ -67,8 +75,10 @@ async def test_client_is_cached_per_event_loop(accessor):
 
 
 def test_client_built_outside_event_loop_uses_loopless_key(accessor):
-    with patch("mirage.accessor.gridfs.AsyncMongoClient",
-               side_effect=lambda *a, **k: MagicMock()) as ctor:
+    with patch(
+        "mirage.accessor.gridfs.AsyncMongoClient",
+        side_effect=lambda *a, **k: MagicMock(),
+    ) as ctor:
         first = accessor.client
         second = accessor.client
     assert first is second

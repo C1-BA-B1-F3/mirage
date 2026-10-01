@@ -53,15 +53,21 @@ async def test_a_key_added_later_works_without_a_restart(ssh):
 @pytest.mark.asyncio
 async def test_passwords_are_never_offered(ssh):
     with pytest.raises(asyncssh.PermissionDenied):
-        async with asyncssh.connect("127.0.0.1",
-                                    ssh.port,
-                                    username="demo",
-                                    password="anything",
-                                    client_keys=None,
-                                    known_hosts=None):
+        async with asyncssh.connect(
+            "127.0.0.1",
+            ssh.port,
+            username="demo",
+            password="anything",
+            client_keys=None,
+            known_hosts=None,
+        ):
             pass
-    assert MirageSSHServer(
-        ssh.config.authorized_keys_file).password_auth_supported() is False
+    assert (
+        MirageSSHServer(
+            ssh.config.authorized_keys_file
+        ).password_auth_supported()
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -73,15 +79,18 @@ async def test_agent_forwarding_is_refused(ssh, tmp_path, monkeypatch):
         granted.append(await listen(conn))
         return granted[-1]
 
-    monkeypatch.setattr(asyncssh.SSHServerConnection, "create_agent_listener",
-                        recorded)
-    async with asyncssh.connect("127.0.0.1",
-                                ssh.port,
-                                username="demo",
-                                client_keys=[ssh.key],
-                                known_hosts=None,
-                                agent_path=str(tmp_path / "agent"),
-                                agent_forwarding=True) as conn:
+    monkeypatch.setattr(
+        asyncssh.SSHServerConnection, "create_agent_listener", recorded
+    )
+    async with asyncssh.connect(
+        "127.0.0.1",
+        ssh.port,
+        username="demo",
+        client_keys=[ssh.key],
+        known_hosts=None,
+        agent_path=str(tmp_path / "agent"),
+        agent_forwarding=True,
+    ) as conn:
         assert (await conn.run("echo in")).stdout == "in\n"
     assert granted == [False]
 
@@ -102,10 +111,12 @@ async def test_gssapi_is_never_offered(ssh, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_host_key_persists_across_restarts(tmp_path):
-    config = SSHConfig(port=0,
-                       host="127.0.0.1",
-                       host_key_file=tmp_path / "host_key",
-                       authorized_keys_file=tmp_path / "authorized_keys")
+    config = SSHConfig(
+        port=0,
+        host="127.0.0.1",
+        host_key_file=tmp_path / "host_key",
+        authorized_keys_file=tmp_path / "authorized_keys",
+    )
     registry = WorkspaceRegistry(idle_grace_seconds=0)
     first = await start_ssh_server(registry, config)
     first.close()
@@ -119,10 +130,12 @@ async def test_host_key_persists_across_restarts(tmp_path):
 
 @pytest.mark.asyncio
 async def test_missing_authorized_keys_warns_and_refuses(tmp_path, caplog):
-    config = SSHConfig(port=0,
-                       host="127.0.0.1",
-                       host_key_file=tmp_path / "host_key",
-                       authorized_keys_file=tmp_path / "absent")
+    config = SSHConfig(
+        port=0,
+        host="127.0.0.1",
+        host_key_file=tmp_path / "host_key",
+        authorized_keys_file=tmp_path / "absent",
+    )
     registry = WorkspaceRegistry(idle_grace_seconds=0)
     with caplog.at_level(logging.WARNING, logger="mirage.server.ssh.server"):
         acceptor = await start_ssh_server(registry, config)
@@ -130,11 +143,13 @@ async def test_missing_authorized_keys_warns_and_refuses(tmp_path, caplog):
         assert "every login will be refused" in caplog.text
         key = asyncssh.generate_private_key("ssh-ed25519")
         with pytest.raises(asyncssh.PermissionDenied):
-            async with asyncssh.connect("127.0.0.1",
-                                        acceptor.get_port(),
-                                        username="demo",
-                                        client_keys=[key],
-                                        known_hosts=None):
+            async with asyncssh.connect(
+                "127.0.0.1",
+                acceptor.get_port(),
+                username="demo",
+                client_keys=[key],
+                known_hosts=None,
+            ):
                 pass
     finally:
         acceptor.close()

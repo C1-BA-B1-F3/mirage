@@ -13,8 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
-from mirage.vfs.gslides.slide_entry import (SlideEntry, make_filename,
-                                            sanitize_title)
+from mirage.vfs.gslides.slide_entry import (
+    SlideEntry,
+    make_filename,
+    sanitize_title,
+)
 
 # A real Google file id is 44 characters, so this is the fixed overhead a
 # title actually has to fit inside.
@@ -44,11 +47,14 @@ def test_sanitize_title_basic():
 
 
 def test_make_filename_with_and_without_a_date():
-    assert make_filename("My Presentation", "abc123",
-                         "2026-03-15T10:00:00Z") == \
-        "2026-03-15_My_Presentation__abc123.gslide.json"
-    assert make_filename("My Presentation",
-                         "abc123") == "My_Presentation__abc123.gslide.json"
+    assert (
+        make_filename("My Presentation", "abc123", "2026-03-15T10:00:00Z")
+        == "2026-03-15_My_Presentation__abc123.gslide.json"
+    )
+    assert (
+        make_filename("My Presentation", "abc123")
+        == "My_Presentation__abc123.gslide.json"
+    )
 
 
 def test_make_filename_fits_name_max_for_a_cjk_title():

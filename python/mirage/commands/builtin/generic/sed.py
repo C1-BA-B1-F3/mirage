@@ -3,20 +3,35 @@ import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-from mirage.commands.builtin.constants import (SED_MISSING_SCRIPT,
-                                               SED_NO_INPUT_EXIT,
-                                               SED_NO_INPUT_FILES)
-from mirage.commands.builtin.sed_exec import (SED_LINE_LENGTH, SedFileContent,
-                                              SedFileError, SedFileText,
-                                              SedInput, SedMachine,
-                                              SedRunOptions)
-from mirage.commands.builtin.sed_script import (SED_STDERR, SED_STDOUT,
-                                                SedError, SedProgram,
-                                                SedScriptPiece, compile_script,
-                                                looks_ahead)
+from mirage.commands.builtin.constants import (
+    SED_MISSING_SCRIPT,
+    SED_NO_INPUT_EXIT,
+    SED_NO_INPUT_FILES,
+)
+from mirage.commands.builtin.sed_exec import (
+    SED_LINE_LENGTH,
+    SedFileContent,
+    SedFileError,
+    SedFileText,
+    SedInput,
+    SedMachine,
+    SedRunOptions,
+)
+from mirage.commands.builtin.sed_script import (
+    SED_STDERR,
+    SED_STDOUT,
+    SedError,
+    SedProgram,
+    SedScriptPiece,
+    compile_script,
+    looks_ahead,
+)
 from mirage.commands.builtin.utils.paths import dispatch_stat, typed_spec
-from mirage.commands.builtin.utils.stream import (is_stdin, read_stdin_async,
-                                                  stdin_bytes)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    read_stdin_async,
+    stdin_bytes,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -55,10 +70,12 @@ class _Doors:
         if self.dispatch is not None:
             return typed_spec(name, self.cwd)
         slash = resolved.rfind("/")
-        return PathSpec(virtual=resolved,
-                        directory=resolved[:slash + 1] if slash >= 0 else "/",
-                        resolved=True,
-                        vfs_path=mount_key(resolved, self.prefix))
+        return PathSpec(
+            virtual=resolved,
+            directory=resolved[: slash + 1] if slash >= 0 else "/",
+            resolved=True,
+            vfs_path=mount_key(resolved, self.prefix),
+        )
 
     async def read(self, name: str) -> bytes:
         path = self.spec(name)
@@ -66,8 +83,9 @@ class _Doors:
             return await self.read_bytes(path)
         # A keyed store reads a directory as nothing at all, so the stat
         # goes first to fail it the way a POSIX read does.
-        if (await dispatch_stat(self.dispatch,
-                                path)).type == FileType.DIRECTORY:
+        if (
+            await dispatch_stat(self.dispatch, path)
+        ).type == FileType.DIRECTORY:
             raise eisdir(path)
         data, _ = await self.dispatch("read", path)
         return await materialize(data)
@@ -123,8 +141,9 @@ async def _open_write_files(names: Sequence[str], doors: _Doors) -> str | None:
     return None
 
 
-async def _read_script_files(names: Sequence[str],
-                             doors: _Doors) -> dict[str, SedFileContent]:
+async def _read_script_files(
+    names: Sequence[str], doors: _Doors
+) -> dict[str, SedFileContent]:
     """Read the files ``r`` or ``R`` names.
 
     A file that cannot be opened reads as empty, as POSIX asks, and a
@@ -139,18 +158,20 @@ async def _read_script_files(names: Sequence[str],
     for name in names:
         try:
             files[name] = SedFileText(
-                (await doors.read(name)).decode(errors="replace"))
+                (await doors.read(name)).decode(errors="replace")
+            )
         except IsADirectoryError:
             files[name] = SedFileError(
-                f"sed: read error on {name}: Is a directory\n")
+                f"sed: read error on {name}: Is a directory\n"
+            )
         except FS_ERRORS:
             files[name] = None
     return files
 
 
 async def _flush_write_files(
-    machine: SedMachine, doors: _Doors,
-    edited: frozenset[str] = frozenset()) -> str:
+    machine: SedMachine, doors: _Doors, edited: frozenset[str] = frozenset()
+) -> str:
     """Write out what the ``w`` files collected.
 
     A ``w`` file that -i then edited keeps the edit: GNU's stream still
@@ -215,8 +236,9 @@ async def sed(
     """
     if not in_place:
         read_bytes = stdin_bytes(read_bytes, stdin)
-    pieces = [SedScriptPiece("expr", script)] if isinstance(script,
-                                                            str) else script
+    pieces = (
+        [SedScriptPiece("expr", script)] if isinstance(script, str) else script
+    )
     doors = _Doors(read_bytes, write_bytes, dispatch, cwd, prefix)
     try:
         program = compile_script(pieces, extended)
@@ -230,15 +252,18 @@ async def sed(
         return _failed(refused, 4)
     machine = SedMachine(
         program,
-        SedRunOptions(suppress=suppress,
-                      separate=in_place or separate,
-                      line_length=line_length,
-                      files=await _read_script_files(program.rfiles, doors),
-                      reader_files=await
-                      _read_script_files(program.reader_files, doors)))
+        SedRunOptions(
+            suppress=suppress,
+            separate=in_place or separate,
+            line_length=line_length,
+            files=await _read_script_files(program.rfiles, doors),
+            reader_files=await _read_script_files(program.reader_files, doors),
+        ),
+    )
     if in_place:
-        return await _run_in_place(paths, program, machine, doors, read_bytes,
-                                   write_bytes)
+        return await _run_in_place(
+            paths, program, machine, doors, read_bytes, write_bytes
+        )
 
     inputs: list[SedInput] = []
     read_ok: list[PathSpec] = []
@@ -270,10 +295,13 @@ async def sed(
         except FS_ERRORS as exc:
             fatal = isinstance(exc, IsADirectoryError)
             inputs.append(
-                SedInput(p.raw_path,
-                         error=fs_error_line("sed", p, exc),
-                         code=read_fail_exit("sed", exc),
-                         fatal=fatal))
+                SedInput(
+                    p.raw_path,
+                    error=fs_error_line("sed", p, exc),
+                    code=read_fail_exit("sed", exc),
+                    fatal=fatal,
+                )
+            )
             continue
         inputs.append(SedInput(p.raw_path, data.decode(errors="replace")))
         read_ok.append(p)
@@ -283,13 +311,18 @@ async def sed(
     return encode_text("".join(machine.stdout.chunks)), IOResult(
         cache=[p.mount_path for p in read_ok if not is_stdin(p)],
         exit_code=machine.exit_code() if not write_err else 4,
-        stderr=encode_text(stderr) if stderr else None)
+        stderr=encode_text(stderr) if stderr else None,
+    )
 
 
 async def _run_in_place(
-        paths: list[PathSpec], program: SedProgram, machine: SedMachine,
-        doors: _Doors, read_bytes: ReadBytes,
-        write_bytes: WriteBytes | None) -> tuple[ByteSource | None, IOResult]:
+    paths: list[PathSpec],
+    program: SedProgram,
+    machine: SedMachine,
+    doors: _Doors,
+    read_bytes: ReadBytes,
+    write_bytes: WriteBytes | None,
+) -> tuple[ByteSource | None, IOResult]:
     """GNU -i: each file is its own run.
 
     Line numbers, ``$``, the hold space and ranges restart, and the whole
@@ -310,7 +343,8 @@ async def _run_in_place(
         return _failed(f"{SED_NO_INPUT_FILES}\n", SED_NO_INPUT_EXIT)
     if write_bytes is None:
         raise NotImplementedError(
-            "sed: in-place edit (-i) is not supported on this backend")
+            "sed: in-place edit (-i) is not supported on this backend"
+        )
     writes: dict[str, ByteSource] = {}
     edited: list[PathSpec] = []
     err = ""
@@ -331,15 +365,17 @@ async def _run_in_place(
             # with its new content.
             machine.set_files(await _read_script_files(program.rfiles, doors))
         out = machine.process(
-            [SedInput(p.raw_path, data.decode(errors="replace"))], False)
+            [SedInput(p.raw_path, data.decode(errors="replace"))], False
+        )
         if machine.panic_code is not None:
             break
         new_data = encode_text(out)
         await write_bytes(p, new_data)
         writes[p.mount_path] = new_data
         edited.append(p)
-    write_err = await _flush_write_files(machine, doors,
-                                         frozenset(p.virtual for p in edited))
+    write_err = await _flush_write_files(
+        machine, doors, frozenset(p.virtual for p in edited)
+    )
     stderr = err + machine.stderr() + write_err
     if machine.panic_code is not None:
         exit_code = machine.panic_code
@@ -352,7 +388,8 @@ async def _run_in_place(
         writes=writes,
         cache=[p.mount_path for p in edited],
         exit_code=exit_code,
-        stderr=encode_text(stderr) if stderr else None)
+        stderr=encode_text(stderr) if stderr else None,
+    )
 
 
 __all__ = ["sed"]
@@ -380,12 +417,14 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> SedFlags:
         line_length=_line_length(fl.as_str("line_length")),
         scripts=tuple(
             next(expressions) if name == "e" else next(files)
-            for name, _ in fl.occurrences("e", "f")),
+            for name, _ in fl.occurrences("e", "f")
+        ),
     )
 
 
-def _script_origins(argv: Sequence[str],
-                    count: int) -> list[str | None] | None:
+def _script_origins(
+    argv: Sequence[str], count: int
+) -> list[str | None] | None:
     """Which -e/-f occurrences of the line were script files.
 
     With their names as spelled, for GNU's ``file NAME line N:``
@@ -419,7 +458,7 @@ def _script_origins(argv: Sequence[str],
             c = word[j]
             if c not in "efl":
                 continue
-            value = word[j + 1:]
+            value = word[j + 1 :]
             if not value:
                 value = argv[i] if i < len(argv) else ""
                 i += 1
@@ -429,8 +468,9 @@ def _script_origins(argv: Sequence[str],
     return out if len(out) == count else None
 
 
-def _positional_as_paths(texts: list[str],
-                         cwd: PathSpec | str) -> list[PathSpec]:
+def _positional_as_paths(
+    texts: list[str], cwd: PathSpec | str
+) -> list[PathSpec]:
     """Treat positional operands as files (GNU rule when -e/-f give script).
 
     The arg parser routes the first bare arg into the positional ``text``
@@ -449,16 +489,20 @@ def _positional_as_paths(texts: list[str],
         prefix = ""
     out: list[PathSpec] = []
     for t in texts:
-        resolved = (posixpath.normpath(t) if t.startswith("/") else
-                    posixpath.normpath(posixpath.join(base, t)))
+        resolved = (
+            posixpath.normpath(t)
+            if t.startswith("/")
+            else posixpath.normpath(posixpath.join(base, t))
+        )
         slash = resolved.rfind("/")
         out.append(
             PathSpec(
                 virtual=resolved,
-                directory=resolved[:slash + 1] if slash >= 0 else "/",
+                directory=resolved[: slash + 1] if slash >= 0 else "/",
                 resolved=True,
                 vfs_path=mount_key(resolved, prefix),
-            ))
+            )
+        )
     return out
 
 
@@ -494,8 +538,10 @@ async def sed_generic(
         shown = origins[index] if origins is not None else None
         if isinstance(part, str):
             pieces.append(
-                SedScriptPiece("expr", part) if shown is
-                None else SedScriptPiece("file", part, shown))
+                SedScriptPiece("expr", part)
+                if shown is None
+                else SedScriptPiece("file", part, shown)
+            )
             continue
         name = shown if shown is not None else part.raw_path
         try:
@@ -503,7 +549,8 @@ async def sed_generic(
         except FS_ERRORS as exc:
             return _failed(_open_failure(name, exc), 4)
         pieces.append(
-            SedScriptPiece("file", data.decode(errors="replace"), name))
+            SedScriptPiece("file", data.decode(errors="replace"), name)
+        )
     flag_script = bool(parsed.scripts)
     if not flag_script and texts:
         pieces.append(SedScriptPiece("expr", texts[0]))
@@ -512,17 +559,22 @@ async def sed_generic(
     if parsed.in_place and write_bytes is None:
         # A backend with no write op refuses the edit itself, not a file:
         # the line names no operand, so sed's step wording is not it.
-        return None, IOResult(exit_code=1,
-                              stderr=b"sed: -i not supported on this backend: "
-                              b"Permission denied\n")
+        return None, IOResult(
+            exit_code=1,
+            stderr=b"sed: -i not supported on this backend: "
+            b"Permission denied\n",
+        )
     operands = list(paths)
     if flag_script:
         # With -e/-f the positional operand is a file, not the script.
         operands = _positional_as_paths(list(texts), opts.cwd) + operands
     if operands:
         operands = await resolve_glob(operands)
-    cwd = opts.cwd.virtual if isinstance(opts.cwd, PathSpec) else (opts.cwd
-                                                                   or "/")
+    cwd = (
+        opts.cwd.virtual
+        if isinstance(opts.cwd, PathSpec)
+        else (opts.cwd or "/")
+    )
     return await sed(
         operands,
         pieces,

@@ -25,8 +25,9 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-def make_tee(vfs: str, io_for: Callable[[CommandOpts],
-                                        CommandIO]) -> Callable[..., Any]:
+def make_tee(
+    vfs: str, io_for: Callable[[CommandOpts], CommandIO]
+) -> Callable[..., Any]:
     """Build the write-tracking tee override for one keyed store.
 
     Args:
@@ -35,28 +36,31 @@ def make_tee(vfs: str, io_for: Callable[[CommandOpts],
             invocation; must wire write.
     """
 
-    async def tee(accessor: Accessor, paths: list[PathSpec], texts: list[str],
-                  opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    async def tee(
+        accessor: Accessor,
+        paths: list[PathSpec],
+        texts: list[str],
+        opts: CommandOpts,
+    ) -> tuple[ByteSource | None, IOResult]:
         io = io_for(opts)
         read_stream = io.read_stream
         write_bytes = io.require(Operation.WRITE)
         resolve_glob = io.resolve_glob
-        paths = await resolve_glob(accessor, paths,
-                                   opts.index) if paths else []
+        paths = (
+            await resolve_glob(accessor, paths, opts.index) if paths else []
+        )
         # The wrapper is wiring only: every flag semantic, the write to
         # each operand and the append fallback live in the generic.
-        return await generic_tee(paths,
-                                 texts,
-                                 read_stream=partial(read_stream,
-                                                     accessor,
-                                                     index=opts.index),
-                                 write_bytes=partial(write_bytes, accessor),
-                                 stdin=opts.stdin,
-                                 flags=opts.flags)
+        return await generic_tee(
+            paths,
+            texts,
+            read_stream=partial(read_stream, accessor, index=opts.index),
+            write_bytes=partial(write_bytes, accessor),
+            stdin=opts.stdin,
+            flags=opts.flags,
+        )
 
-    wrapped: Callable[..., Any] = command("tee",
-                                          vfs=vfs,
-                                          spec=SPECS["tee"],
-                                          write=True,
-                                          path_guarded=True)(tee)
+    wrapped: Callable[..., Any] = command(
+        "tee", vfs=vfs, spec=SPECS["tee"], write=True, path_guarded=True
+    )(tee)
     return wrapped

@@ -68,9 +68,9 @@ async def test_write_to_native_raises(fake_drive, gdrive_accessor):
 async def test_write_records_the_virtual_path(fake_drive, gdrive_accessor):
     # A folder named like its mount: neither m/k.txt nor /m/k.txt is virtual.
     fake_drive.folder("m")
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         await write_bytes(gdrive_accessor, spec, b"hello")

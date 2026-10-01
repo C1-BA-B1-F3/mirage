@@ -30,19 +30,24 @@ def test_every_context_field_is_spelled_as_command_opts_spells_it():
     # workspace/mount/mount.test.ts.
     ctx = {
         f.name: f.type
-        for f in fields(ExecContext) if f.name != "limit_override"
+        for f in fields(ExecContext)
+        if f.name != "limit_override"
     }
     opts = {f.name: f.type for f in fields(CommandOpts)}
     missing = sorted(set(ctx) - set(opts))
     assert not missing, (
         f"ExecContext fields absent from CommandOpts: {missing}. "
         "Add the field there under the same name, or name this one "
-        "whatever the handler tier already calls it.")
-    mismatched = sorted(name for name, hint in ctx.items()
-                        if name not in _RESHAPED and opts[name] != hint)
+        "whatever the handler tier already calls it."
+    )
+    mismatched = sorted(
+        name
+        for name, hint in ctx.items()
+        if name not in _RESHAPED and opts[name] != hint
+    )
     assert not mismatched, (
-        f"ExecContext and CommandOpts disagree on the type "
-        f"of: {mismatched}")
+        f"ExecContext and CommandOpts disagree on the type of: {mismatched}"
+    )
 
 
 def test_session_view_stays_on_both_sides_of_the_seam():

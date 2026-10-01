@@ -14,10 +14,12 @@
 
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.cli.builtin.himalaya.list import DEFAULT_PAGE_SIZE
-from mirage.commands.cli.builtin.himalaya.query import (page_slice,
-                                                        parse_query,
-                                                        sort_headers,
-                                                        uid_budget)
+from mirage.commands.cli.builtin.himalaya.query import (
+    page_slice,
+    parse_query,
+    sort_headers,
+    uid_budget,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.email.client import fetch_headers, list_message_uids
@@ -28,7 +30,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def search_envelopes(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     mailbox = fl.as_str("mailbox") or "INBOX"
     page = fl.as_int("page") or 1
@@ -36,12 +39,14 @@ async def search_envelopes(
     # The shell already split the query; upstream joins argv the same
     # way before parsing, so a pattern with spaces needs literal quotes.
     query = parse_query(" ".join(inv.texts))
-    budget = uid_budget(page, page_size, query.sorters,
-                        inv.config.max_messages)
+    budget = uid_budget(
+        page, page_size, query.sorters, inv.config.max_messages
+    )
     accessor = EmailAccessor(inv.config)
     try:
-        uids = await list_message_uids(accessor, mailbox, query.criteria,
-                                       budget)
+        uids = await list_message_uids(
+            accessor, mailbox, query.criteria, budget
+        )
         headers = await fetch_headers(accessor, mailbox, uids) if uids else []
     finally:
         await accessor.close()

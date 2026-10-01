@@ -7,7 +7,9 @@ PATH_TREE_ID = "__path_tree__"
 PAGE_CHUNK_BATCH_SIZE = 100
 
 
-async def fetch_path_tree(accessor: ChromaAccessor, ) -> str:
+async def fetch_path_tree(
+    accessor: ChromaAccessor,
+) -> str:
     collection = await accessor.get_collection()
     result = await collection.get(ids=[PATH_TREE_ID])
     documents = result.get("documents") or []
@@ -47,16 +49,21 @@ async def page_chunks(
         documents = result.get("documents") or []
         metadatas = result.get("metadatas") or [{} for _ in documents]
         for document, metadata in zip(documents, metadatas, strict=True):
-            chunks.append({
-                "document": "" if document is None else str(document),
-                "metadata": metadata if isinstance(metadata, dict) else {},
-            })
+            chunks.append(
+                {
+                    "document": "" if document is None else str(document),
+                    "metadata": metadata if isinstance(metadata, dict) else {},
+                }
+            )
         if len(documents) < PAGE_CHUNK_BATCH_SIZE:
             break
         offset += PAGE_CHUNK_BATCH_SIZE
-    return sorted(chunks,
-                  key=lambda item: chunk_index(
-                      item["metadata"], accessor.config.chunk_index_field))
+    return sorted(
+        chunks,
+        key=lambda item: chunk_index(
+            item["metadata"], accessor.config.chunk_index_field
+        ),
+    )
 
 
 async def pages_chunks(
@@ -80,9 +87,7 @@ async def pages_chunks(
     offset = 0
     while True:
         result = await collection.get(
-            where={field: {
-                "$in": slugs
-            }},
+            where={field: {"$in": slugs}},
             include=["documents", "metadatas"],
             limit=PAGE_CHUNK_BATCH_SIZE,
             offset=offset,
@@ -94,18 +99,22 @@ async def pages_chunks(
             bucket = grouped.get(str(meta.get(field, "")))
             if bucket is None:
                 continue
-            bucket.append({
-                "document": "" if document is None else str(document),
-                "metadata": meta,
-            })
+            bucket.append(
+                {
+                    "document": "" if document is None else str(document),
+                    "metadata": meta,
+                }
+            )
         if len(documents) < PAGE_CHUNK_BATCH_SIZE:
             break
         offset += PAGE_CHUNK_BATCH_SIZE
     return {
-        slug:
-        sorted(chunks,
-               key=lambda item: chunk_index(item["metadata"], accessor.config.
-                                            chunk_index_field))
+        slug: sorted(
+            chunks,
+            key=lambda item: chunk_index(
+                item["metadata"], accessor.config.chunk_index_field
+            ),
+        )
         for slug, chunks in grouped.items()
     }
 

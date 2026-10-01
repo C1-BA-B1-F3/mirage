@@ -18,9 +18,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mirage.accessor.postgres import PostgresAccessor
-from mirage.core.postgres._schema_json import (_db_name_from_dsn,
-                                               build_database_json,
-                                               build_entity_schema_json)
+from mirage.core.postgres._schema_json import (
+    _db_name_from_dsn,
+    build_database_json,
+    build_entity_schema_json,
+)
 from mirage.vfs.postgres.config import PostgresConfig
 
 
@@ -29,8 +31,9 @@ async def _fake_acquire():
     yield MagicMock()
 
 
-def _accessor(dsn: str = "postgres://localhost/acme_prod",
-              schemas=None) -> PostgresAccessor:
+def _accessor(
+    dsn: str = "postgres://localhost/acme_prod", schemas=None
+) -> PostgresAccessor:
     a = PostgresAccessor(PostgresConfig(dsn=dsn, schemas=schemas))
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
@@ -48,21 +51,23 @@ async def test_build_database_json_basic():
         mc.list_matviews = AsyncMock(return_value=["daily_revenue"])
         mc.estimated_row_count = AsyncMock(side_effect=[100, 200])
         mc.table_size_bytes = AsyncMock(side_effect=[1024, 2048])
-        mc.fetch_all_relationships = AsyncMock(return_value=[
-            {
-                "from": {
-                    "schema": "public",
-                    "table": "orders",
-                    "columns": ["user_id"]
+        mc.fetch_all_relationships = AsyncMock(
+            return_value=[
+                {
+                    "from": {
+                        "schema": "public",
+                        "table": "orders",
+                        "columns": ["user_id"],
+                    },
+                    "to": {
+                        "schema": "public",
+                        "table": "users",
+                        "columns": ["id"],
+                    },
+                    "kind": "many_to_one",
                 },
-                "to": {
-                    "schema": "public",
-                    "table": "users",
-                    "columns": ["id"]
-                },
-                "kind": "many_to_one",
-            },
-        ])
+            ]
+        )
         result = await build_database_json(accessor)
 
     assert result["database"] == "acme_prod"
@@ -82,16 +87,8 @@ async def test_build_database_json_basic():
         },
     ]
     assert result["views"] == [
-        {
-            "schema": "public",
-            "name": "customer_360",
-            "kind": "view"
-        },
-        {
-            "schema": "public",
-            "name": "daily_revenue",
-            "kind": "materialized"
-        },
+        {"schema": "public", "name": "customer_360", "kind": "view"},
+        {"schema": "public", "name": "daily_revenue", "kind": "materialized"},
     ]
     assert len(result["relationships"]) == 1
 
@@ -113,45 +110,40 @@ async def test_build_database_json_empty():
 async def test_build_entity_schema_json_table_with_pk_and_fk():
     accessor = _accessor()
     with patch("mirage.core.postgres._schema_json.client") as mc:
-        mc.fetch_columns = AsyncMock(return_value=[
-            {
-                "name": "id",
-                "type": "uuid",
-                "nullable": False
-            },
-            {
-                "name": "team_id",
-                "type": "uuid",
-                "nullable": True
-            },
-            {
-                "name": "email",
-                "type": "text",
-                "nullable": False
-            },
-        ])
+        mc.fetch_columns = AsyncMock(
+            return_value=[
+                {"name": "id", "type": "uuid", "nullable": False},
+                {"name": "team_id", "type": "uuid", "nullable": True},
+                {"name": "email", "type": "text", "nullable": False},
+            ]
+        )
         mc.fetch_primary_key = AsyncMock(return_value=["id"])
-        mc.fetch_foreign_keys = AsyncMock(return_value=[
-            {
-                "columns": ["team_id"],
-                "references": {
-                    "schema": "public",
-                    "table": "teams",
-                    "columns": ["id"],
+        mc.fetch_foreign_keys = AsyncMock(
+            return_value=[
+                {
+                    "columns": ["team_id"],
+                    "references": {
+                        "schema": "public",
+                        "table": "teams",
+                        "columns": ["id"],
+                    },
                 },
-            },
-        ])
-        mc.fetch_indexes = AsyncMock(return_value=[
-            {
-                "name": "users_email_idx",
-                "columns": ["email"],
-                "unique": True
-            },
-        ])
+            ]
+        )
+        mc.fetch_indexes = AsyncMock(
+            return_value=[
+                {
+                    "name": "users_email_idx",
+                    "columns": ["email"],
+                    "unique": True,
+                },
+            ]
+        )
         mc.estimated_row_count = AsyncMock(return_value=42)
         mc.table_size_bytes = AsyncMock(return_value=4096)
-        result = await build_entity_schema_json(accessor, "public", "users",
-                                                "table")
+        result = await build_entity_schema_json(
+            accessor, "public", "users", "table"
+        )
 
     assert result["schema"] == "public"
     assert result["name"] == "users"
@@ -175,20 +167,19 @@ async def test_build_entity_schema_json_table_with_pk_and_fk():
 async def test_build_entity_schema_json_view_kind():
     accessor = _accessor()
     with patch("mirage.core.postgres._schema_json.client") as mc:
-        mc.fetch_columns = AsyncMock(return_value=[
-            {
-                "name": "team",
-                "type": "text",
-                "nullable": True
-            },
-        ])
+        mc.fetch_columns = AsyncMock(
+            return_value=[
+                {"name": "team", "type": "text", "nullable": True},
+            ]
+        )
         mc.fetch_primary_key = AsyncMock(return_value=[])
         mc.fetch_foreign_keys = AsyncMock(return_value=[])
         mc.fetch_indexes = AsyncMock(return_value=[])
         mc.estimated_row_count = AsyncMock(return_value=0)
         mc.table_size_bytes = AsyncMock(return_value=0)
-        result = await build_entity_schema_json(accessor, "public",
-                                                "user_summary", "view")
+        result = await build_entity_schema_json(
+            accessor, "public", "user_summary", "view"
+        )
     assert result["kind"] == "view"
     assert result["primary_key"] == []
     assert result["columns"][0] == {
@@ -202,34 +193,31 @@ async def test_build_entity_schema_json_view_kind():
 async def test_build_entity_schema_json_multi_column_fk():
     accessor = _accessor()
     with patch("mirage.core.postgres._schema_json.client") as mc:
-        mc.fetch_columns = AsyncMock(return_value=[
-            {
-                "name": "tenant_id",
-                "type": "uuid",
-                "nullable": False
-            },
-            {
-                "name": "user_id",
-                "type": "uuid",
-                "nullable": False
-            },
-        ])
+        mc.fetch_columns = AsyncMock(
+            return_value=[
+                {"name": "tenant_id", "type": "uuid", "nullable": False},
+                {"name": "user_id", "type": "uuid", "nullable": False},
+            ]
+        )
         mc.fetch_primary_key = AsyncMock(return_value=["tenant_id", "user_id"])
-        mc.fetch_foreign_keys = AsyncMock(return_value=[
-            {
-                "columns": ["tenant_id", "user_id"],
-                "references": {
-                    "schema": "public",
-                    "table": "accounts",
-                    "columns": ["tenant_id", "id"],
+        mc.fetch_foreign_keys = AsyncMock(
+            return_value=[
+                {
+                    "columns": ["tenant_id", "user_id"],
+                    "references": {
+                        "schema": "public",
+                        "table": "accounts",
+                        "columns": ["tenant_id", "id"],
+                    },
                 },
-            },
-        ])
+            ]
+        )
         mc.fetch_indexes = AsyncMock(return_value=[])
         mc.estimated_row_count = AsyncMock(return_value=0)
         mc.table_size_bytes = AsyncMock(return_value=0)
-        result = await build_entity_schema_json(accessor, "public",
-                                                "memberships", "table")
+        result = await build_entity_schema_json(
+            accessor, "public", "memberships", "table"
+        )
     cols = {c["name"]: c for c in result["columns"]}
     assert cols["tenant_id"]["references"] == {
         "schema": "public",
@@ -248,13 +236,17 @@ def test_db_name_from_dsn_simple():
 
 
 def test_db_name_from_dsn_with_query():
-    assert _db_name_from_dsn(
-        "postgres://localhost/acme?sslmode=require") == "acme"
+    assert (
+        _db_name_from_dsn("postgres://localhost/acme?sslmode=require")
+        == "acme"
+    )
 
 
 def test_db_name_from_dsn_with_user_pass():
-    assert _db_name_from_dsn(
-        "postgres://u:p@db.example.com:5432/myapp") == "myapp"
+    assert (
+        _db_name_from_dsn("postgres://u:p@db.example.com:5432/myapp")
+        == "myapp"
+    )
 
 
 def test_db_name_from_dsn_no_db_returns_default():

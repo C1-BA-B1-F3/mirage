@@ -30,8 +30,8 @@ config = PostgresConfig(
 vfs = PostgresVFS(config=config)
 
 with Workspace(
-    {"/pg/": Mount(vfs, mode=MountMode.READ,
-                   backend=MountBackend.FUSE)}) as ws:
+    {"/pg/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
@@ -45,9 +45,11 @@ with Workspace(
         db_json = json.loads(f.read())
     print(f"  database: {db_json['database']}")
     print(f"  schemas: {db_json['schemas']}")
-    print(f"  tables: {len(db_json['tables'])} | "
-          f"views: {len(db_json['views'])} | "
-          f"relationships: {len(db_json['relationships'])}")
+    print(
+        f"  tables: {len(db_json['tables'])} | "
+        f"views: {len(db_json['views'])} | "
+        f"relationships: {len(db_json['relationships'])}"
+    )
 
     if "public" in db_json["schemas"]:
         tables = os.listdir(f"{mp}/public/tables")

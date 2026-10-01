@@ -17,7 +17,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_jq(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("jq -r .name /dbx/data.json")
 
     assert io.exit_code == 0
@@ -26,7 +27,8 @@ async def test_workspace_execute_databricks_volume_jq(
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_jq_resolves_glob(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("jq -r .name /dbx/*.json")
 
     assert io.exit_code == 0

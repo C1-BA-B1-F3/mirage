@@ -10,9 +10,9 @@ from mirage.types import PathSpec
 @pytest.mark.asyncio
 async def test_unlink_under_a_plain_file_is_not_a_directory(tmp_path):
     (tmp_path / "a.txt").write_text("a")
-    spec = PathSpec(vfs_path="a.txt/x",
-                    virtual="/a.txt/x",
-                    directory="/a.txt/")
+    spec = PathSpec(
+        vfs_path="a.txt/x", virtual="/a.txt/x", directory="/a.txt/"
+    )
     with pytest.raises(NotADirectoryError) as exc:
         await unlink(DiskAccessor(tmp_path), spec)
     assert exc.value.filename == "/a.txt/x"

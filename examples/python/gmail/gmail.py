@@ -39,13 +39,16 @@ async def main() -> None:
     ws.register_cli("gws", GWS, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /gmail/__nf_missing__.txt",
-                "head /gmail/__nf_missing__.txt",
-                "stat /gmail/__nf_missing__.txt"):
+    for cmd in (
+        "cat /gmail/__nf_missing__.txt",
+        "head /gmail/__nf_missing__.txt",
+        "stat /gmail/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ls root labels
     print("=== ls /gmail/ ===")
@@ -78,7 +81,8 @@ async def main() -> None:
     print(await result.stdout_str())
 
     messages = [
-        m for m in (await result.stdout_str()).strip().splitlines()
+        m
+        for m in (await result.stdout_str()).strip().splitlines()
         if m.endswith(".gmail.json")
     ]
     if not messages:
@@ -116,13 +120,17 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {msg_path} ===")
-    result = await ws.shell(f'chmod 640 "{msg_path}" && chown 500:dev'
-                            f' "{msg_path}"'
-                            f' && touch -t 202601021530 "{msg_path}"')
+    result = await ws.shell(
+        f'chmod 640 "{msg_path}" && chown 500:dev'
+        f' "{msg_path}"'
+        f' && touch -t 202601021530 "{msg_path}"'
+    )
     print(f"  chmod/chown/touch exit={result.exit_code}")
     st, _ = await ws.dispatch("stat", PathSpec.from_str_path(msg_path))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     # jq
     print("=== jq .subject ===")
@@ -150,7 +158,8 @@ async def main() -> None:
     # find
     print("=== find -name '*.gmail.json' ===")
     result = await ws.shell(
-        f'find /gmail/{label}/{first_date}/ -name "*.gmail.json" | head -n 5')
+        f'find /gmail/{label}/{first_date}/ -name "*.gmail.json" | head -n 5'
+    )
     print(await result.stdout_str())
 
     # grep
@@ -164,10 +173,13 @@ async def main() -> None:
     print(await result.stdout_str())
 
     # ── native search dispatch (Gmail q= API) ────────
-    print(f"\n=== grep harbor /gmail/{label}/{first_date}/*.gmail.json"
-          " (date scope) ===")
+    print(
+        f"\n=== grep harbor /gmail/{label}/{first_date}/*.gmail.json"
+        " (date scope) ==="
+    )
     result = await ws.shell(
-        f'grep harbor /gmail/{label}/{first_date}/*.gmail.json')
+        f"grep harbor /gmail/{label}/{first_date}/*.gmail.json"
+    )
     out = (await result.stdout_str()).strip()
     lines = out.splitlines() if out else []
     print(f"  exit={result.exit_code} matches: {len(lines)}")
@@ -175,7 +187,7 @@ async def main() -> None:
         print(f"  {line[:150]}")
 
     print(f"\n=== grep harbor /gmail/{label}/ (label scope) ===")
-    result = await ws.shell(f'grep harbor /gmail/{label}/')
+    result = await ws.shell(f"grep harbor /gmail/{label}/")
     out = (await result.stdout_str()).strip()
     lines = out.splitlines() if out else []
     print(f"  exit={result.exit_code} matches: {len(lines)}")
@@ -183,7 +195,7 @@ async def main() -> None:
         print(f"  {line[:150]}")
 
     print("\n=== grep harbor /gmail/ (mailbox scope) ===")
-    result = await ws.shell('grep harbor /gmail/')
+    result = await ws.shell("grep harbor /gmail/")
     out = (await result.stdout_str()).strip()
     lines = out.splitlines() if out else []
     print(f"  exit={result.exit_code} matches: {len(lines)}")
@@ -191,7 +203,7 @@ async def main() -> None:
         print(f"  {line[:150]}")
 
     print("\n=== rg harbor /gmail/ ===")
-    result = await ws.shell('rg harbor /gmail/')
+    result = await ws.shell("rg harbor /gmail/")
     out = (await result.stdout_str()).strip()
     lines = out.splitlines() if out else []
     print(f"  exit={result.exit_code} matches: {len(lines)}")
@@ -222,15 +234,16 @@ async def main() -> None:
 
     # ── glob expansion (exercises resolve_glob → readdir)
     print("=== echo glob: *.gmail.json ===")
-    result = await ws.shell(f'echo /gmail/{label}/{first_date}/*.gmail.json')
+    result = await ws.shell(f"echo /gmail/{label}/{first_date}/*.gmail.json")
     out = (await result.stdout_str()).strip()
     print(f"  {out[:200]}")
     assert out, "glob should match at least one file"
 
     print("=== for f in *.gmail.json (glob loop) ===")
     result = await ws.shell(
-        f'for f in /gmail/{label}/{first_date}/*.gmail.json;'
-        ' do echo found:$f; done | head -n 3')
+        f"for f in /gmail/{label}/{first_date}/*.gmail.json;"
+        " do echo found:$f; done | head -n 3"
+    )
     out = (await result.stdout_str()).strip()
     for line in out.splitlines():
         print(f"  {line[:120]}")
@@ -243,9 +256,11 @@ async def main() -> None:
 
     # gws gmail send
     print("=== gws gmail send ===")
-    result = await ws.shell('gws gmail send --to "zechengzhang97@gmail.com"'
-                            ' --subject "Test from MIRAGE"'
-                            ' --body "Sent by gmail.py example"')
+    result = await ws.shell(
+        'gws gmail send --to "zechengzhang97@gmail.com"'
+        ' --subject "Test from MIRAGE"'
+        ' --body "Sent by gmail.py example"'
+    )
     out = await result.stdout_str()
     print(out[:200])
 
@@ -257,22 +272,28 @@ async def main() -> None:
     # gws gmail reply
     if sent_id:
         print("=== gws gmail reply ===")
-        result = await ws.shell(f'gws gmail reply --message-id {sent_id}'
-                                ' --body "Reply from MIRAGE"')
+        result = await ws.shell(
+            f"gws gmail reply --message-id {sent_id}"
+            ' --body "Reply from MIRAGE"'
+        )
         print((await result.stdout_str())[:200])
 
     # gws gmail reply-all
     if sent_id:
         print("=== gws gmail reply-all ===")
-        result = await ws.shell(f'gws gmail reply-all --message-id {sent_id}'
-                                ' --body "Reply-all from MIRAGE"')
+        result = await ws.shell(
+            f"gws gmail reply-all --message-id {sent_id}"
+            ' --body "Reply-all from MIRAGE"'
+        )
         print((await result.stdout_str())[:200])
 
     # gws gmail forward
     if sent_id:
         print("=== gws gmail forward ===")
-        result = await ws.shell(f'gws gmail forward --message-id {sent_id}'
-                                ' --to "zechengzhang97@gmail.com"')
+        result = await ws.shell(
+            f"gws gmail forward --message-id {sent_id}"
+            ' --to "zechengzhang97@gmail.com"'
+        )
         print((await result.stdout_str())[:200])
 
 

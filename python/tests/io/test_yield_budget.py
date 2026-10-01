@@ -10,8 +10,9 @@ from mirage.io.yield_budget import YieldBudget
 @pytest.mark.asyncio
 async def test_run_yields_only_after_budget(monkeypatch):
     clock = [100.0]
-    monkeypatch.setattr(budget_mod, "time",
-                        SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(
+        budget_mod, "time", SimpleNamespace(monotonic=lambda: clock[0])
+    )
     point = YieldBudget()
     ran: list[int] = []
     asyncio.get_running_loop().call_soon(ran.append, 1)

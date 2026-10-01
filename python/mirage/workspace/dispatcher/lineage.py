@@ -68,5 +68,7 @@ def require_turf_writable(mount: MountEntry | None, path: PathSpec) -> None:
         ReadOnlyError: the mount or session's mode is read-only.
     """
     require_paths_writable(
-        [path], turf_of(mount),
-        mount.mode if mount is not None else MountMode.WRITE)
+        [path],
+        turf_of(mount),
+        mount.mode if mount is not None else MountMode.WRITE,
+    )

@@ -16,10 +16,9 @@ from mirage.core.msgraph.client import encoded_path, id_segment
 from mirage.core.msgraph.config import MsGraphConfig, graph_api
 
 
-def item_url(config: MsGraphConfig,
-             drive_id: str,
-             path: str,
-             action: str = "") -> str:
+def item_url(
+    config: MsGraphConfig, drive_id: str, path: str, action: str = ""
+) -> str:
     """A drive item's Graph URL.
 
     Takes the config, not just the drive id, because the service root is

@@ -15,10 +15,12 @@ def _make_backend(files: dict[str, tuple[bytes, ContentType]], dirs: set[str]):
             return FileStat(name=p.virtual, type=FileType.DIRECTORY, size=0)
         if p.virtual in files:
             data, ftype = files[p.virtual]
-            return FileStat(name=p.virtual,
-                            type=FileType.FILE,
-                            content=ftype,
-                            size=len(data))
+            return FileStat(
+                name=p.virtual,
+                type=FileType.FILE,
+                content=ftype,
+                size=len(data),
+            )
         raise FileNotFoundError(p.virtual)
 
     async def read_bytes(p: PathSpec) -> bytes:
@@ -30,10 +32,11 @@ def _make_backend(files: dict[str, tuple[bytes, ContentType]], dirs: set[str]):
 @pytest.mark.asyncio
 async def test_file_single_text():
     stat_fn, read_bytes = _make_backend(
-        {"/a.txt": (b"hello world\n", ContentType.TEXT)}, set())
-    out, io = await file_cmd([_spec("/a.txt")],
-                             read_bytes=read_bytes,
-                             stat_fn=stat_fn)
+        {"/a.txt": (b"hello world\n", ContentType.TEXT)}, set()
+    )
+    out, io = await file_cmd(
+        [_spec("/a.txt")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert out == b"/a.txt: text\n"
     assert io.exit_code == 0
 
@@ -44,11 +47,14 @@ async def test_file_multiple_paths_one_line_each():
         {
             "/a.txt": (b"hello\n", ContentType.TEXT),
             "/b.json": (b'{"k": 1}\n', ContentType.JSON),
-        }, set())
+        },
+        set(),
+    )
     out, _io = await file_cmd(
         [_spec("/a.txt"), _spec("/b.json")],
         read_bytes=read_bytes,
-        stat_fn=stat_fn)
+        stat_fn=stat_fn,
+    )
     lines = out.decode().splitlines()
     assert lines == ["/a.txt: text", "/b.json: json"]
 
@@ -56,20 +62,20 @@ async def test_file_multiple_paths_one_line_each():
 @pytest.mark.asyncio
 async def test_file_directory_reported_without_read():
     stat_fn, read_bytes = _make_backend({}, {"/d"})
-    out, _io = await file_cmd([_spec("/d")],
-                              read_bytes=read_bytes,
-                              stat_fn=stat_fn)
+    out, _io = await file_cmd(
+        [_spec("/d")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert out == b"/d: directory\n"
 
 
 @pytest.mark.asyncio
 async def test_file_brief_drops_path_prefix():
     stat_fn, read_bytes = _make_backend(
-        {"/a.txt": (b"hello\n", ContentType.TEXT)}, set())
-    out, _io = await file_cmd([_spec("/a.txt")],
-                              read_bytes=read_bytes,
-                              stat_fn=stat_fn,
-                              b=True)
+        {"/a.txt": (b"hello\n", ContentType.TEXT)}, set()
+    )
+    out, _io = await file_cmd(
+        [_spec("/a.txt")], read_bytes=read_bytes, stat_fn=stat_fn, b=True
+    )
     assert out == b"text\n"
 
 

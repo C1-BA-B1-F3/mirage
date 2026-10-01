@@ -63,8 +63,9 @@ def _tables() -> tuple[dict[str, CommandIO], list[str]]:
     """
     found: dict[str, CommandIO] = {}
     failed: list[str] = []
-    for info in pkgutil.walk_packages(builtin.__path__,
-                                      builtin.__name__ + "."):
+    for info in pkgutil.walk_packages(
+        builtin.__path__, builtin.__name__ + "."
+    ):
         if not info.name.endswith(".io"):
             continue
         try:
@@ -92,10 +93,14 @@ def test_a_reader_that_takes_a_window_is_wired_as_the_native_range():
     tables, failed = _tables()
     assert not failed, f"backend io modules would not import: {failed}"
     assert tables, "no backend tables found: the derivation broke"
-    missing = sorted(name for name, io in tables.items()
-                     if io.read_range is None and _takes_window(io.read_bytes))
+    missing = sorted(
+        name
+        for name, io in tables.items()
+        if io.read_range is None and _takes_window(io.read_bytes)
+    )
     assert not missing, (
-        f"reader takes offset/size but read_range is unwired: {missing}")
+        f"reader takes offset/size but read_range is unwired: {missing}"
+    )
 
 
 def test_a_wired_range_reader_actually_takes_a_window():
@@ -108,6 +113,8 @@ def test_a_wired_range_reader_actually_takes_a_window():
     tables, failed = _tables()
     assert not failed, f"backend io modules would not import: {failed}"
     wrong = sorted(
-        name for name, io in tables.items()
-        if io.read_range is not None and not _takes_window(io.read_range))
+        name
+        for name, io in tables.items()
+        if io.read_range is not None and not _takes_window(io.read_range)
+    )
     assert not wrong, f"read_range does not take offset/size: {wrong}"

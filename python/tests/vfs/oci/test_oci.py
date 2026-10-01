@@ -32,7 +32,8 @@ def test_oci_config_defaults():
     assert config.timeout == 30
     assert config.resolved_endpoint_url() == (
         "https://my-namespace.compat.objectstorage."
-        "us-ashburn-1.oci.customer-oci.com")
+        "us-ashburn-1.oci.customer-oci.com"
+    )
 
 
 def test_oci_config_immutable():
@@ -62,7 +63,8 @@ def test_oci_config_to_s3_config():
     assert s3_config.region == "us-ashburn-1"
     assert s3_config.endpoint_url == (
         "https://my-namespace.compat.objectstorage."
-        "us-ashburn-1.oci.customer-oci.com")
+        "us-ashburn-1.oci.customer-oci.com"
+    )
     assert reveal_secret(s3_config.aws_access_key_id) == "access-key"
     assert reveal_secret(s3_config.aws_secret_access_key) == "secret-key"
     assert s3_config.path_style is True
@@ -90,7 +92,8 @@ def test_oci_resource_uses_s3_resource_type():
             region="us-ashburn-1",
             access_key_id="access-key",
             secret_access_key="secret-key",
-        ))
+        )
+    )
     assert vfs.name == VFSName.S3
     assert vfs.caches_reads is True
     assert isinstance(vfs.config, S3Config)

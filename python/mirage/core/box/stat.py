@@ -18,9 +18,8 @@ from typing import Any
 from mirage.accessor.box import BoxAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.box.api import absent_on_404, get_folder_info
-from mirage.core.box.readdir import ROOT_FOLDER_ID
+from mirage.core.box.readdir import ROOT_FOLDER_ID, resource_type_for
 from mirage.core.box.readdir import readdir as _readdir
-from mirage.core.box.readdir import resource_type_for
 from mirage.core.box.resolve import path_parts, resolve_item
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
@@ -56,9 +55,7 @@ def _stat_from_item(item: dict[str, Any]) -> FileStat:
         extra={
             "box_id": item["id"],
             "resource_type": rt,
-            **({
-                "sha1": sha1
-            } if sha1 else {}),
+            **({"sha1": sha1} if sha1 else {}),
         },
     )
 
@@ -77,7 +74,8 @@ async def stat(
         # real timestamp (mirrors the onedrive Graph-root stat).
         root_id = accessor.config.root_folder_id or ROOT_FOLDER_ID
         info = await absent_on_404(
-            virtual, lambda: get_folder_info(accessor.token_manager, root_id))
+            virtual, lambda: get_folder_info(accessor.token_manager, root_id)
+        )
         return FileStat(
             name="/",
             type=FileType.DIRECTORY,
@@ -91,9 +89,11 @@ async def stat(
         try:
             await _readdir(
                 accessor,
-                PathSpec(virtual=parent_virtual,
-                         directory=parent_virtual,
-                         vfs_path=mount_key(parent_virtual, prefix)),
+                PathSpec(
+                    virtual=parent_virtual,
+                    directory=parent_virtual,
+                    vfs_path=mount_key(parent_virtual, prefix),
+                ),
                 index=index,
             )
         except FileNotFoundError as exc:
@@ -104,7 +104,8 @@ async def stat(
             # threaded index, so the readdir above populates a NULL store
             # that can't be read back. Resolve the id directly instead.
             item = await absent_on_404(
-                virtual, lambda: resolve_item(accessor, path_parts(path)))
+                virtual, lambda: resolve_item(accessor, path_parts(path))
+            )
             if item is None or resource_type_for(item) == "box/weblink":
                 # Weblinks are hidden from listings; a direct lookup must
                 # not resurface a sizeless, unreadable entry.
@@ -128,8 +129,6 @@ async def stat(
         extra={
             "box_id": result.entry.id,
             "resource_type": result.entry.resource_type,
-            **({
-                "sha1": sha1
-            } if sha1 else {}),
+            **({"sha1": sha1} if sha1 else {}),
         },
     )

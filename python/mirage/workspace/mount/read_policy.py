@@ -52,8 +52,9 @@ def coerce_read_policy(value: "str | ReadPolicy | None") -> ReadPolicy:
         # does not and would otherwise be the first thing a user with a
         # YAML typo reads, under a "During handling of the above
         # exception" banner.
-        raise ValueError(f"unknown read policy {value!r}; expected one of: "
-                         f"{known}") from None
+        raise ValueError(
+            f"unknown read policy {value!r}; expected one of: {known}"
+        ) from None
 
 
 def coerce_read_ttl(value: JsonValue) -> int:
@@ -91,8 +92,9 @@ def coerce_read_ttl(value: JsonValue) -> int:
     raise ValueError(f"ttl must be whole seconds, got {value!r}")
 
 
-def resolve_read_spec(policy: "str | ReadPolicy | None",
-                      ttl: JsonValue) -> ReadSpec:
+def resolve_read_spec(
+    policy: "str | ReadPolicy | None", ttl: JsonValue
+) -> ReadSpec:
     """Coerce a declared read policy and bound into a ReadSpec.
 
     Coercion only: an unknown name is refused here, but whether the
@@ -134,10 +136,9 @@ def resolve_read_spec(policy: "str | ReadPolicy | None",
     return ReadSpec(policy=resolved_policy, ttl=resolved)
 
 
-def check_read_capability(prefix: str,
-                          vfs: BaseVFS,
-                          spec: ReadSpec,
-                          index: IndexConfig | None = None) -> None:
+def check_read_capability(
+    prefix: str, vfs: BaseVFS, spec: ReadSpec, index: IndexConfig | None = None
+) -> None:
     """Refuse a read policy this mount's backend cannot honour.
 
     The rules are ordered, and the order is the answer to two questions
@@ -183,15 +184,20 @@ def check_read_capability(prefix: str,
     # entry expired as it is written and redis deletes the key outright,
     # so the mount silently caches nothing at all.
     if not isinstance(spec.ttl, int) or isinstance(spec.ttl, bool):
-        raise ValueError(f"mount {prefix!r}: read: ttl must be whole "
-                         f"seconds, got {spec.ttl!r}")
+        raise ValueError(
+            f"mount {prefix!r}: read: ttl must be whole "
+            f"seconds, got {spec.ttl!r}"
+        )
     if spec.ttl < 1:
-        raise ValueError(f"mount {prefix!r}: read: ttl must be at least "
-                         f"1 second, got {spec.ttl}")
+        raise ValueError(
+            f"mount {prefix!r}: read: ttl must be at least "
+            f"1 second, got {spec.ttl}"
+        )
     if policy is ReadPolicy.PINNED:
         raise ValueError(
             f"mount {prefix!r}: read: pinned needs a version layer to pin "
-            "to, and mirage has none; use fresh or bounded")
+            "to, and mirage has none; use fresh or bounded"
+        )
     if policy is not ReadPolicy.FRESH:
         return
     # VFSName is a (str, Enum), whose str() is "VFSName.RAM"; a VFS
@@ -208,11 +214,13 @@ def check_read_capability(prefix: str,
         raise ValueError(
             f"mount {prefix!r}: read: fresh needs a resource that caches "
             f"reads or listings; {name} caches neither, so the freshness "
-            "check could never run")
+            "check could never run"
+        )
     if not vfs.read_revalidatable:
         raise ValueError(
             f"mount {prefix!r}: read: fresh needs a resource that stamps a "
-            f"comparable content token on reads; {name} does not")
+            f"comparable content token on reads; {name} does not"
+        )
 
 
 def _caches_listings(vfs: BaseVFS, index: IndexConfig | None) -> bool:

@@ -22,8 +22,10 @@ import pytest
 from dotenv import load_dotenv
 
 from mirage.accessor.mongodb import MongoDBAccessor
-from mirage.core.mongodb._schema_json import (build_collection_schema_json,
-                                              build_database_json)
+from mirage.core.mongodb._schema_json import (
+    build_collection_schema_json,
+    build_database_json,
+)
 from mirage.core.mongodb.read import read
 from mirage.core.mongodb.readdir import readdir
 from mirage.core.mongodb.stat import stat
@@ -52,8 +54,9 @@ def accessor():
 
 @pytest.mark.asyncio
 async def test_schema_captures_jsonschema_validator(accessor):
-    s = await build_collection_schema_json(accessor, "mirage_test",
-                                           "with_validator")
+    s = await build_collection_schema_json(
+        accessor, "mirage_test", "with_validator"
+    )
     assert s["kind"] == "collection"
     assert s["validator"]["bsonType"] == "object"
     assert "title" in s["validator"]["required"]
@@ -62,16 +65,18 @@ async def test_schema_captures_jsonschema_validator(accessor):
 
 @pytest.mark.asyncio
 async def test_schema_recognizes_fixed_length_embedding_array(accessor):
-    s = await build_collection_schema_json(accessor, "mirage_test",
-                                           "embeddings")
+    s = await build_collection_schema_json(
+        accessor, "mirage_test", "embeddings"
+    )
     vec = next(f for f in s["fields"] if f["path"] == "vector")
     assert vec["types"] == {"array<double>(1024)": 1.0}
 
 
 @pytest.mark.asyncio
 async def test_schema_tags_text_index_without_volatile_stats(accessor):
-    s = await build_collection_schema_json(accessor, "mirage_test",
-                                           "text_indexed")
+    s = await build_collection_schema_json(
+        accessor, "mirage_test", "text_indexed"
+    )
     by_name = {idx["name"]: idx for idx in s["indexes"]}
     assert by_name["title_body_text"]["type"] == "text"
     assert all(set(idx) == {"name", "keys", "type"} for idx in s["indexes"])
@@ -81,8 +86,9 @@ async def test_schema_tags_text_index_without_volatile_stats(accessor):
 
 @pytest.mark.asyncio
 async def test_schema_view_marks_kind_and_skips_indexes(accessor):
-    s = await build_collection_schema_json(accessor, "mirage_test",
-                                           "high_rated_films")
+    s = await build_collection_schema_json(
+        accessor, "mirage_test", "high_rated_films"
+    )
     assert s["kind"] == "view"
     assert s["indexes"] == []
     assert "document_count" not in s
@@ -90,10 +96,9 @@ async def test_schema_view_marks_kind_and_skips_indexes(accessor):
 
 @pytest.mark.asyncio
 async def test_schema_heterogeneous_collection_surfaces_mixed_types(accessor):
-    s = await build_collection_schema_json(accessor,
-                                           "mirage_test",
-                                           "heterogeneous",
-                                           sample_size=200)
+    s = await build_collection_schema_json(
+        accessor, "mirage_test", "heterogeneous", sample_size=200
+    )
     by_path = {f["path"]: f for f in s["fields"]}
     assert "metadata.tag" in by_path
     score = by_path["score"]
@@ -107,27 +112,28 @@ async def test_database_catalog_keeps_timeseries_and_separates_views(accessor):
     db = accessor.client[database]
     try:
         await db.create_collection("ordinary")
-        await db.create_collection("measurements",
-                                   timeseries={"timeField": "time"})
-        await db.create_collection("ordinary_view",
-                                   viewOn="ordinary",
-                                   pipeline=[])
-        await db["measurements"].insert_one({
-            "_id":
-            1,
-            "time":
-            datetime(2026, 1, 1, tzinfo=timezone.utc),
-            "temperature":
-            21
-        })
+        await db.create_collection(
+            "measurements", timeseries={"timeField": "time"}
+        )
+        await db.create_collection(
+            "ordinary_view", viewOn="ordinary", pipeline=[]
+        )
+        await db["measurements"].insert_one(
+            {
+                "_id": 1,
+                "time": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "temperature": 21,
+            }
+        )
         result = await build_database_json(accessor, database)
         collections = {entry["name"] for entry in result["collections"]}
         assert {"ordinary", "measurements"} <= collections
         assert "ordinary_view" not in collections
         assert result["views"] == [{"name": "ordinary_view"}]
         key = f"{database}/collections"
-        listing = await readdir(accessor,
-                                PathSpec.from_str_path(f"/mongo/{key}", key))
+        listing = await readdir(
+            accessor, PathSpec.from_str_path(f"/mongo/{key}", key)
+        )
         assert f"/mongo/{key}/measurements" in listing
         assert f"/mongo/{key}/ordinary_view" not in listing
         for filename in ("documents.jsonl", "schema.json"):

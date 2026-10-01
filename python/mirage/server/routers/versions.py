@@ -19,20 +19,33 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from mirage import Workspace
 from mirage.secrets.errors import SecretsError
 from mirage.server.clone import clone_workspace_with_override
+from mirage.server.schemas import (
+    BranchRequest,
+    BranchResponse,
+    CheckoutRequest,
+    CloneRequest,
+    CommitRequest,
+    CommitResponse,
+    DiffResponse,
+    VersionLogItem,
+    WorkspaceDetail,
+)
 from mirage.server.summary import make_detail
-from mirage.server.version.api import (branch, checkout, commit_state,
-                                       diff_live_vs_ref, read_version,
-                                       resolve_ref, status_state, version_diff,
-                                       version_log)
+from mirage.server.version.api import (
+    branch,
+    checkout,
+    commit_state,
+    diff_live_vs_ref,
+    read_version,
+    resolve_ref,
+    status_state,
+    version_diff,
+    version_log,
+)
 from mirage.server.version.errors import HeadMovedError, NoSuchBranchError
 from mirage.server.version.state_tree import to_state
 from mirage.server.version.store import VersionStore
 from mirage.workspace.snapshot import to_state_dict
-
-from mirage.server.schemas import (  # isort: skip
-    BranchRequest, BranchResponse, CheckoutRequest, CloneRequest,
-    CommitRequest, CommitResponse, DiffResponse, VersionLogItem,
-    WorkspaceDetail)
 
 router = APIRouter(prefix="/v1")
 
@@ -41,17 +54,20 @@ async def _state_of(ws: Workspace) -> dict[str, Any]:
     return await to_state_dict(ws)
 
 
-@router.post("/workspaces/{workspace_id}/commit",
-             response_model=CommitResponse)
-async def commit_version(workspace_id: str, req: CommitRequest,
-                         request: Request) -> CommitResponse:
+@router.post(
+    "/workspaces/{workspace_id}/commit", response_model=CommitResponse
+)
+async def commit_version(
+    workspace_id: str, req: CommitRequest, request: Request
+) -> CommitResponse:
     registry = request.app.state.registry
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
     entry = registry.get(workspace_id)
     state = await entry.runner.call(_state_of(entry.runner.ws))
-    store = await VersionStore.open(request.app.state.version_backend,
-                                    workspace_id)
+    store = await VersionStore.open(
+        request.app.state.version_backend, workspace_id
+    )
     try:
         version = await commit_state(store, state, req.branch, req.message)
     except HeadMovedError as e:
@@ -61,52 +77,62 @@ async def commit_version(workspace_id: str, req: CommitRequest,
     return CommitResponse(version=version.decode(), branch=req.branch)
 
 
-@router.get("/workspaces/{workspace_id}/versions",
-            response_model=list[VersionLogItem])
+@router.get(
+    "/workspaces/{workspace_id}/versions", response_model=list[VersionLogItem]
+)
 async def list_versions(
     workspace_id: str, request: Request, branch: str = Query("main")
-) -> list[VersionLogItem]:  # noqa: E125
-    store = await VersionStore.open(request.app.state.version_backend,
-                                    workspace_id)
+) -> list[VersionLogItem]:
+    store = await VersionStore.open(
+        request.app.state.version_backend, workspace_id
+    )
     if branch not in await store.branches():
         return []
     entries = await version_log(store, branch)
     return [VersionLogItem(id=e["id"], message=e["message"]) for e in entries]
 
 
-@router.post("/workspaces/{workspace_id}/branch",
-             response_model=BranchResponse,
-             status_code=201)
-async def create_branch(workspace_id: str, req: BranchRequest,
-                        request: Request) -> BranchResponse:
-    store = await VersionStore.open(request.app.state.version_backend,
-                                    workspace_id)
+@router.post(
+    "/workspaces/{workspace_id}/branch",
+    response_model=BranchResponse,
+    status_code=201,
+)
+async def create_branch(
+    workspace_id: str, req: BranchRequest, request: Request
+) -> BranchResponse:
+    store = await VersionStore.open(
+        request.app.state.version_backend, workspace_id
+    )
     if req.name in await store.branches():
-        raise HTTPException(status_code=409,
-                            detail=f"branch already exists: {req.name!r}")
+        raise HTTPException(
+            status_code=409, detail=f"branch already exists: {req.name!r}"
+        )
     try:
         await branch(store, req.name, req.from_branch)
     except KeyError:
-        raise HTTPException(status_code=404,
-                            detail=f"no such branch: {req.from_branch!r}")
+        raise HTTPException(
+            status_code=404, detail=f"no such branch: {req.from_branch!r}"
+        )
     head = await store.head(req.name)
     return BranchResponse(branch=req.name, version=head.decode())
 
 
 @router.get("/workspaces/{workspace_id}/diff", response_model=DiffResponse)
 async def diff_versions(
-        workspace_id: str,
-        request: Request,
-        a: str | None = Query(None),
-        b: str | None = Query(None),
-        branch: str = Query("main"),
-) -> DiffResponse:  # noqa: E125
-    store = await VersionStore.open(request.app.state.version_backend,
-                                    workspace_id)
+    workspace_id: str,
+    request: Request,
+    a: str | None = Query(None),
+    b: str | None = Query(None),
+    branch: str = Query("main"),
+) -> DiffResponse:
+    store = await VersionStore.open(
+        request.app.state.version_backend, workspace_id
+    )
     if a is not None and b is not None:
         try:
-            changes = await version_diff(store, await resolve_ref(store, a),
-                                         await resolve_ref(store, b))
+            changes = await version_diff(
+                store, await resolve_ref(store, a), await resolve_ref(store, b)
+            )
         except KeyError:
             raise HTTPException(status_code=404, detail="version not found")
         return DiffResponse(**changes)
@@ -126,53 +152,66 @@ async def diff_versions(
     return DiffResponse(**changes)
 
 
-@router.post("/workspaces/{workspace_id}/checkout",
-             response_model=WorkspaceDetail)
-async def checkout_version(workspace_id: str, req: CheckoutRequest,
-                           request: Request) -> WorkspaceDetail:
+@router.post(
+    "/workspaces/{workspace_id}/checkout", response_model=WorkspaceDetail
+)
+async def checkout_version(
+    workspace_id: str, req: CheckoutRequest, request: Request
+) -> WorkspaceDetail:
     registry = request.app.state.registry
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
     entry = registry.get(workspace_id)
-    store = await VersionStore.open(request.app.state.version_backend,
-                                    workspace_id)
+    store = await VersionStore.open(
+        request.app.state.version_backend, workspace_id
+    )
     try:
         await entry.runner.call(checkout(store, entry.runner.ws, req.ref))
     except KeyError:
-        raise HTTPException(status_code=404,
-                            detail=f"version not found: {req.ref}")
+        raise HTTPException(
+            status_code=404, detail=f"version not found: {req.ref}"
+        )
     return await make_detail(entry)
 
 
-@router.post("/workspaces/clone",
-             response_model=WorkspaceDetail,
-             status_code=201)
-async def clone_workspace_version(req: CloneRequest,
-                                  request: Request) -> WorkspaceDetail:
+@router.post(
+    "/workspaces/clone", response_model=WorkspaceDetail, status_code=201
+)
+async def clone_workspace_version(
+    req: CloneRequest, request: Request
+) -> WorkspaceDetail:
     registry = request.app.state.registry
     if req.id is not None and req.id in registry:
-        raise HTTPException(status_code=409,
-                            detail=f"workspace id already exists: {req.id!r}")
+        raise HTTPException(
+            status_code=409, detail=f"workspace id already exists: {req.id!r}"
+        )
     if req.at is not None:
-        store = await VersionStore.open(request.app.state.version_backend,
-                                        req.source_id)
+        store = await VersionStore.open(
+            request.app.state.version_backend, req.source_id
+        )
         version = await resolve_ref(store, req.at)
         try:
             entries, meta = await read_version(store, version)
         except KeyError:
-            raise HTTPException(status_code=404,
-                                detail=f"version not found: {req.at}")
+            raise HTTPException(
+                status_code=404, detail=f"version not found: {req.at}"
+            )
         # A version store holds no `secrets:` block either. The
         # request names the declarations when it has them, which is the
         # only route open once the live source is gone (a restart);
         # otherwise the live workspace supplies them.
-        live = registry.get(
-            req.source_id) if req.source_id in registry else None
-        secrets = (req.secrets if req.secrets is not None else
-                   (live.runner.ws.declared_sources if live else None))
+        live = (
+            registry.get(req.source_id) if req.source_id in registry else None
+        )
+        secrets = (
+            req.secrets
+            if req.secrets is not None
+            else (live.runner.ws.declared_sources if live else None)
+        )
         try:
-            ws = await Workspace.from_state(to_state(entries, meta),
-                                            secrets=secrets)
+            ws = await Workspace.from_state(
+                to_state(entries, meta), secrets=secrets
+            )
         except (SecretsError, ValueError) as e:
             # A secrets override naming an unknown source, one whose
             # optional dependency is absent, or a block the schema
@@ -184,7 +223,8 @@ async def clone_workspace_version(req: CloneRequest,
             raise HTTPException(status_code=404, detail="workspace not found")
         src = registry.get(req.source_id)
         ws = await src.runner.call(
-            clone_workspace_with_override(src.runner.ws, None))
+            clone_workspace_with_override(src.runner.ws, None)
+        )
     try:
         entry = registry.add(ws, workspace_id=req.id)
     except ValueError as e:

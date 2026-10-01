@@ -28,7 +28,6 @@ def shell(tmp_path):
 
 
 class ShellTestEnv:
-
     def __init__(self, tmp_path):
         self.tmp_path = tmp_path
         self.mem = RAMVFS()
@@ -70,9 +69,9 @@ class ShellTestEnv:
         io = asyncio.run(self.ws.shell(cmd, stdin=stdin))
         return io.exit_code
 
-    def mirage_result(self,
-                      cmd: str,
-                      stdin: bytes | None = None) -> tuple[int, str, str]:
+    def mirage_result(
+        self, cmd: str, stdin: bytes | None = None
+    ) -> tuple[int, str, str]:
 
         async def _run():
             io = await self.ws.shell(cmd, stdin=stdin)

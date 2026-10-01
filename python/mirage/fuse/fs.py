@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 # setxattr(2)'s flags as the kernel hands them over: linux numbers
 # XATTR_CREATE 1 and XATTR_REPLACE 2, macOS 2 and 4 (its 1 is
 # XATTR_NOFOLLOW, which the kernel has already applied).
-XATTR_CREATE, XATTR_REPLACE = ((0x2, 0x4) if sys.platform == "darwin" else
-                               (0x1, 0x2))
+XATTR_CREATE, XATTR_REPLACE = (
+    (0x2, 0x4) if sys.platform == "darwin" else (0x1, 0x2)
+)
 
 
 class MirageFS:
@@ -51,10 +52,12 @@ class MirageFS:
 
     use_ns = True
 
-    def __init__(self,
-                 ops: Ops,
-                 root_prefix: str = "",
-                 session: SessionState | None = None) -> None:
+    def __init__(
+        self,
+        ops: Ops,
+        root_prefix: str = "",
+        session: SessionState | None = None,
+    ) -> None:
         self.core = MountCore(ops, root_prefix=root_prefix, session=session)
 
     def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
@@ -77,10 +80,12 @@ class MirageFS:
             return fn(*args)
         except Exception as err:
             code = classify_error(err)
-            if code == errno.EIO and not isinstance(err,
-                                                    (OSError, ValueError)):
-                logger.warning("unclassified mount error in %s: %r",
-                               fn.__name__, err)
+            if code == errno.EIO and not isinstance(
+                err, (OSError, ValueError)
+            ):
+                logger.warning(
+                    "unclassified mount error in %s: %r", fn.__name__, err
+                )
             raise OSError(code, os.strerror(code)) from err
 
     def drain_ops(self) -> list[dict[str, Any]]:
@@ -148,10 +153,9 @@ class MirageFS:
             self._call(self.core.getattr, path)
         return 0
 
-    def fsetattr_x(self,
-                   path: str,
-                   changes: dict[str, JsonValue],
-                   fh: int | None = None) -> int:
+    def fsetattr_x(
+        self, path: str, changes: dict[str, JsonValue], fh: int | None = None
+    ) -> int:
         return self.setattr_x(path, changes)
 
     def rmdir(self, path: str) -> None:
@@ -172,14 +176,22 @@ class MirageFS:
     def access(self, path: str, amode: int) -> None:
         self._call(self.core.getattr, path)
 
-    def setxattr(self,
-                 path: str,
-                 name: str,
-                 value: bytes,
-                 options: int,
-                 position: int = 0) -> int:
-        self._call(self.core.setxattr, path, name, value,
-                   bool(options & XATTR_CREATE), bool(options & XATTR_REPLACE))
+    def setxattr(
+        self,
+        path: str,
+        name: str,
+        value: bytes,
+        options: int,
+        position: int = 0,
+    ) -> int:
+        self._call(
+            self.core.setxattr,
+            path,
+            name,
+            value,
+            bool(options & XATTR_CREATE),
+            bool(options & XATTR_REPLACE),
+        )
         return 0
 
     def getxattr(self, path: str, name: str, position: int = 0) -> bytes:

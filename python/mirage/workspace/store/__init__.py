@@ -15,8 +15,10 @@
 from typing import Any
 
 from mirage.workspace.store.base import WorkspaceFields, WorkspaceStateStore
-from mirage.workspace.store.disk import (DEFAULT_STATE_ROOT,
-                                         DiskWorkspaceStateStore)
+from mirage.workspace.store.disk import (
+    DEFAULT_STATE_ROOT,
+    DiskWorkspaceStateStore,
+)
 from mirage.workspace.store.ram import RAMWorkspaceStateStore
 
 __all__ = [
@@ -33,8 +35,10 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     if name == "RedisWorkspaceStateStore":
         from mirage.workspace.store.redis import RedisWorkspaceStateStore
+
         return RedisWorkspaceStateStore
     if name == "S3WorkspaceStateStore":
         from mirage.workspace.store.s3 import S3WorkspaceStateStore
+
         return S3WorkspaceStateStore
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

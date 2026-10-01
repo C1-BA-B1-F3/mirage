@@ -42,7 +42,6 @@ def char_width(data: bytes) -> int:
 
 
 class AsyncLineIterator:
-
     def __init__(self, source: ByteSource) -> None:
         self._input = source
         self._source = chunks(source)
@@ -81,10 +80,12 @@ class AsyncLineIterator:
         self._buf = self._buf[count:]
         return count
 
-    def skip_nonmatching_lines(self,
-                               needles: tuple[bytes, ...],
-                               ignore_case: bool = False,
-                               delimiter: bytes = b"\n") -> tuple[int, int]:
+    def skip_nonmatching_lines(
+        self,
+        needles: tuple[bytes, ...],
+        ignore_case: bool = False,
+        delimiter: bytes = b"\n",
+    ) -> tuple[int, int]:
         """Skip complete buffered records before a possible literal match.
 
         Leave the candidate and any unfinished record for ``read_until`` to
@@ -142,7 +143,7 @@ class AsyncLineIterator:
                 index = self._buf.find(delim)
                 if index >= 0:
                     parts.append(self._buf[:index])
-                    self._buf = self._buf[index + len(delim):]
+                    self._buf = self._buf[index + len(delim) :]
                     return b"".join(parts), True
                 if self._exhausted:
                     parts.append(self._buf)
@@ -197,8 +198,9 @@ class AsyncLineIterator:
         if isinstance(self._input, CachableAsyncIterator):
             await self._input.discard()
 
-    async def read_chars(self, count: int,
-                         delim: bytes | None) -> tuple[bytes, bool]:
+    async def read_chars(
+        self, count: int, delim: bytes | None
+    ) -> tuple[bytes, bool]:
         """Read at most ``count`` characters, stopping early at ``delim``.
 
         ``read -n`` is "up to N characters or the delimiter, whichever
@@ -243,7 +245,7 @@ class AsyncLineIterator:
                 if not self._buf:
                     return bytes(out), False
                 if delim is not None and self._buf.startswith(delim):
-                    self._buf = self._buf[len(delim):]
+                    self._buf = self._buf[len(delim) :]
                     return bytes(out), True
                 width = char_width(self._buf)
                 out += self._buf[:width]
@@ -276,8 +278,11 @@ class SharedInput:
     """
 
     def __init__(self, source: ByteSource | AsyncLineIterator) -> None:
-        self.lines = (source if isinstance(source, AsyncLineIterator) else
-                      AsyncLineIterator(source))
+        self.lines = (
+            source
+            if isinstance(source, AsyncLineIterator)
+            else AsyncLineIterator(source)
+        )
 
     def __aiter__(self) -> "SharedInput":
         return self

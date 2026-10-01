@@ -16,8 +16,11 @@ import json
 from typing import Any
 
 from mirage.core.api.client import api_request, status_error
-from mirage.core.gsheets.client import (TokenManager, google_headers,
-                                        sheets_base)
+from mirage.core.gsheets.client import (
+    TokenManager,
+    google_headers,
+    sheets_base,
+)
 
 
 async def append_values(
@@ -43,13 +46,14 @@ async def append_values(
         raise ValueError(f"Invalid JSON: {exc}") from exc
     base = f"{sheets_base(token_manager)}/spreadsheets/{spreadsheet_id}"
     url = f"{base}/values/{range_}:append?valueInputOption=USER_ENTERED"
-    data: dict[str, Any] = await api_request("POST",
-                                             url,
-                                             error_of=status_error,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             json_body={"values": values},
-                                             session=token_manager.pool)
+    data: dict[str, Any] = await api_request(
+        "POST",
+        url,
+        error_of=status_error,
+        headers=await google_headers(token_manager),
+        json_body={"values": values},
+        session=token_manager.pool,
+    )
     return data
 
 
@@ -76,11 +80,12 @@ async def update_values(
         raise ValueError(f"Invalid JSON: {exc}") from exc
     base = f"{sheets_base(token_manager)}/spreadsheets/{spreadsheet_id}"
     url = f"{base}/values/{range_}?valueInputOption=USER_ENTERED"
-    data: dict[str, Any] = await api_request("PUT",
-                                             url,
-                                             error_of=status_error,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             json_body={"values": values},
-                                             session=token_manager.pool)
+    data: dict[str, Any] = await api_request(
+        "PUT",
+        url,
+        error_of=status_error,
+        headers=await google_headers(token_manager),
+        json_body={"values": values},
+        session=token_manager.pool,
+    )
     return data

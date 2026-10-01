@@ -19,8 +19,15 @@ import pytest
 
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import FsCondition, posix_errno
-from mirage.policy import (Action, CommandRule, Deny, OpsContext, Policies,
-                           Policy, PolicyDenied)
+from mirage.policy import (
+    Action,
+    CommandRule,
+    Deny,
+    OpsContext,
+    Policies,
+    Policy,
+    PolicyDenied,
+)
 from mirage.policy.rule import RulePolicy
 from mirage.types import FileStat, FileType, HiddenPaths, MountMode, PathSpec
 from mirage.utils.errors import ReadOnlyError
@@ -35,7 +42,6 @@ from mirage.workspace.session import SessionState
 
 
 class DenyLocked(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.path.virtual.startswith("/data/locked/"):
             return Deny("locked\n")
@@ -43,7 +49,6 @@ class DenyLocked(Policy):
 
 
 class DenyWrites(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.write:
             return Deny("no writes\n")
@@ -51,7 +56,6 @@ class DenyWrites(Policy):
 
 
 class DenyRemnantUnlink(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.op == "unlink" and ctx.path.virtual == "/a/d/sec/k":
             return Deny("protected\n")
@@ -59,11 +63,13 @@ class DenyRemnantUnlink(Policy):
 
 
 def _path(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] or "/",
-                    vfs_path="",
-                    raw_path=virtual,
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path="",
+        raw_path=virtual,
+        resolved=True,
+    )
 
 
 def _dispatcher(policies: Policies) -> tuple[Dispatcher, MagicMock]:
@@ -134,7 +140,8 @@ async def test_symlink_classifies_as_a_write():
     dispatcher, _ = _dispatcher(policies)
     ns = dispatcher._namespace
     ns.registry.mounts = MagicMock(
-        return_value=[ns.try_mount_for.return_value])
+        return_value=[ns.try_mount_for.return_value]
+    )
     ns.symlink = AsyncMock()
     with pytest.raises(PolicyDenied):
         await dispatcher.dispatch("symlink", _path("/data/lk"), target="x")
@@ -148,7 +155,8 @@ async def test_readlink_answers_from_the_namespace():
     dispatcher, _ = _dispatcher(Policies())
     ns = dispatcher._namespace
     ns.registry.mounts = MagicMock(
-        return_value=[ns.try_mount_for.return_value])
+        return_value=[ns.try_mount_for.return_value]
+    )
     ns.readlink = MagicMock(return_value="x.txt")
     result, _ = await dispatcher.dispatch("readlink", _path("/data/lk"))
     assert result == "x.txt"
@@ -159,7 +167,8 @@ async def test_readlink_answers_from_the_namespace():
 async def test_spec_op_twin_holds_on_the_dispatch_door():
     policies = Policies()
     policies.add(
-        RulePolicy(CommandRule(reason="frozen", paths=("/data/locked/*", ))))
+        RulePolicy(CommandRule(reason="frozen", paths=("/data/locked/*",)))
+    )
     dispatcher, _ = _dispatcher(policies)
     with pytest.raises(PolicyDenied) as excinfo:
         await dispatcher.dispatch("read", _path("/data/locked/a.txt"))
@@ -197,8 +206,9 @@ async def test_structure_fallback_still_clears_admission():
 async def test_structure_fallback_serves_when_no_policy_objects():
     dispatcher, _ = _dispatcher(Policies())
     _structure_only(dispatcher)
-    result, _ = await dispatcher.dispatch("readdir",
-                                          _path("/data/locked/inner"))
+    result, _ = await dispatcher.dispatch(
+        "readdir", _path("/data/locked/inner")
+    )
     assert result == ["/data/locked/inner/deep"]
 
 
@@ -208,8 +218,10 @@ def scoped_session():
     leaving the mount nested below it reachable."""
     session = SessionState(
         session_id="agent",
-        hidden_paths=HiddenPaths(paths=("/data/locked/other",
-                                        "/data/locked/f.txt")))
+        hidden_paths=HiddenPaths(
+            paths=("/data/locked/other", "/data/locked/f.txt")
+        ),
+    )
     token = set_current_session(session)
     yield session
     reset_current_session(token)
@@ -217,15 +229,17 @@ def scoped_session():
 
 @pytest.mark.asyncio
 async def test_a_structure_answer_still_clears_the_sessions_hides(
-        scoped_session):
+    scoped_session,
+):
     # The synthetic answer passes the session's view as well as the
     # policy chain: it is produced above every backend, so a path the
     # profile hides would otherwise be served by the one code path that
     # asks no mount anything.
     dispatcher, _ = _dispatcher(Policies())
     _structure_only(dispatcher)
-    result, _ = await dispatcher.dispatch("readdir",
-                                          _path("/data/locked/inner"))
+    result, _ = await dispatcher.dispatch(
+        "readdir", _path("/data/locked/inner")
+    )
     assert result == ["/data/locked/inner/deep"]
     with pytest.raises(FileNotFoundError):
         await dispatcher.dispatch("readdir", _path("/data/locked/other"))
@@ -233,7 +247,8 @@ async def test_a_structure_answer_still_clears_the_sessions_hides(
 
 @pytest.mark.asyncio
 async def test_a_hidden_path_denies_a_read_and_refuses_a_create(
-        scoped_session):
+    scoped_session,
+):
     # The hide's two verdicts, at the door every surface comes through:
     # absent on a read, EACCES on a create, and a write is never served
     # from structure.
@@ -242,14 +257,15 @@ async def test_a_hidden_path_denies_a_read_and_refuses_a_create(
     with pytest.raises(FileNotFoundError):
         await dispatcher.dispatch("stat", _path("/data/locked/other"))
     with pytest.raises(PermissionError):
-        await dispatcher.dispatch("write",
-                                  _path("/data/locked/f.txt"),
-                                  data=b"x")
+        await dispatcher.dispatch(
+            "write", _path("/data/locked/f.txt"), data=b"x"
+        )
 
 
 @pytest.mark.asyncio
 async def test_a_create_under_a_hidden_directory_is_absent_like_its_reads(
-        scoped_session):
+    scoped_session,
+):
     # Every read on a hidden directory answers ENOENT, and a create
     # beneath it used to answer EACCES, so a session could map a
     # profile's hidden prefixes by probing writes. The parent decides:
@@ -259,28 +275,34 @@ async def test_a_create_under_a_hidden_directory_is_absent_like_its_reads(
     # create and answers the same way, and so is truncate, which
     # creates a missing file at the requested length.
     dispatcher, _ = _dispatcher(Policies())
-    for op, kwargs in (("write", {
-            "data": b"x"
-    }), ("mkdir", {}), ("create", {}), ("truncate", {
-            "length": 0
-    })):
+    for op, kwargs in (
+        ("write", {"data": b"x"}),
+        ("mkdir", {}),
+        ("create", {}),
+        ("truncate", {"length": 0}),
+    ):
         with pytest.raises(FileNotFoundError):
-            await dispatcher.dispatch(op, _path("/data/locked/other/new.txt"),
-                                      **kwargs)
+            await dispatcher.dispatch(
+                op, _path("/data/locked/other/new.txt"), **kwargs
+            )
     with pytest.raises(PermissionError):
-        await dispatcher.dispatch("truncate",
-                                  _path("/data/locked/f.txt"),
-                                  length=0)
+        await dispatcher.dispatch(
+            "truncate", _path("/data/locked/f.txt"), length=0
+        )
     with pytest.raises(FileNotFoundError):
-        await dispatcher.dispatch("rename",
-                                  _path("/data/locked/a.txt"),
-                                  dst=_path("/data/locked/other/moved"))
+        await dispatcher.dispatch(
+            "rename",
+            _path("/data/locked/a.txt"),
+            dst=_path("/data/locked/other/moved"),
+        )
     with pytest.raises(PermissionError):
         await dispatcher.dispatch("mkdir", _path("/data/locked/other"))
     with pytest.raises(PermissionError):
-        await dispatcher.dispatch("rename",
-                                  _path("/data/locked/a.txt"),
-                                  dst=_path("/data/locked/f.txt"))
+        await dispatcher.dispatch(
+            "rename",
+            _path("/data/locked/a.txt"),
+            dst=_path("/data/locked/f.txt"),
+        )
 
 
 @pytest.mark.asyncio
@@ -317,9 +339,11 @@ async def test_rename_moves_a_namespace_link():
     with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("echo hi > /ram/a.txt")
         await ws.shell("ln -s a.txt /ram/link")
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/ram/link"),
-                          dst=PathSpec.from_str_path("/ram/moved"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/ram/link"),
+            dst=PathSpec.from_str_path("/ram/moved"),
+        )
         assert not ws._namespace.is_link("/ram/link")
         assert ws._namespace.readlink("/ram/moved") == "a.txt"
 
@@ -333,9 +357,11 @@ async def test_rename_carries_the_nodes_below_a_directory():
     with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("mkdir -p /ram/d && echo hi > /ram/d/a.txt")
         await ws.shell("ln -s a.txt /ram/d/link")
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/ram/d"),
-                          dst=PathSpec.from_str_path("/ram/e"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/ram/d"),
+            dst=PathSpec.from_str_path("/ram/e"),
+        )
         assert not ws._namespace.is_link("/ram/d/link")
         assert ws._namespace.readlink("/ram/e/link") == "a.txt"
 
@@ -353,9 +379,11 @@ async def test_rename_refuses_a_destination_holding_a_link():
         await ws.shell("ln -s a.txt /ram/d/link")
         await ws.shell("ln -s gone /ram/e/stale")
         with pytest.raises(OSError) as caught:
-            await ws.dispatch("rename",
-                              PathSpec.from_str_path("/ram/d"),
-                              dst=PathSpec.from_str_path("/ram/e"))
+            await ws.dispatch(
+                "rename",
+                PathSpec.from_str_path("/ram/d"),
+                dst=PathSpec.from_str_path("/ram/e"),
+            )
         assert caught.value.errno == errno.ENOTEMPTY
         # Nothing moved: both ends are as they were.
         assert ws._namespace.readlink("/ram/e/stale") == "gone"
@@ -369,9 +397,11 @@ async def test_rename_replaces_an_empty_destination():
     with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("mkdir -p /ram/d /ram/e && echo hi > /ram/d/a.txt")
         await ws.shell("ln -s a.txt /ram/d/link")
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/ram/d"),
-                          dst=PathSpec.from_str_path("/ram/e"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/ram/d"),
+            dst=PathSpec.from_str_path("/ram/e"),
+        )
         assert ws._namespace.readlink("/ram/e/link") == "a.txt"
         assert not ws._namespace.is_link("/ram/d/link")
 
@@ -388,14 +418,16 @@ async def test_a_no_follow_stat_answers_a_links_own_row():
         row, _ = await ws.dispatch("stat", link, nofollow=True)
         assert row.type == FileType.SYMLINK
         assert row.size == len("a.txt")
-        await ws.dispatch("setattr",
-                          link,
-                          mode=None,
-                          uid=None,
-                          gid=None,
-                          atime=None,
-                          mtime="2020-01-02T03:04:05Z",
-                          nofollow=True)
+        await ws.dispatch(
+            "setattr",
+            link,
+            mode=None,
+            uid=None,
+            gid=None,
+            atime=None,
+            mtime="2020-01-02T03:04:05Z",
+            nofollow=True,
+        )
         row, _ = await ws.dispatch("stat", link, nofollow=True)
         assert row.modified == "2020-01-02T03:04:05Z"
         # Following is the other answer: the target's row, not the link's.
@@ -415,9 +447,11 @@ async def test_a_rename_replaces_a_link_at_the_destination():
         await ws.shell("echo hi > /ram/a.txt")
         await ws.shell("echo tgt > /ram/t.txt")
         await ws.shell("ln -s t.txt /ram/link")
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/ram/a.txt"),
-                          dst=PathSpec.from_str_path("/ram/link"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/ram/a.txt"),
+            dst=PathSpec.from_str_path("/ram/link"),
+        )
         assert not ws._namespace.is_link("/ram/link")
         assert (await ws.shell("cat /ram/link")).stdout == b"hi\n"
 
@@ -436,13 +470,17 @@ async def test_a_read_grant_refuses_link_writes_like_file_writes():
         token = set_current_session(sess)
         try:
             for coro in (
-                    ws.dispatch("unlink", PathSpec.from_str_path("/extra/lk")),
-                    ws.dispatch("symlink",
-                                PathSpec.from_str_path("/extra/lk2"),
-                                target="plain.txt"),
-                    ws.dispatch("rename",
-                                PathSpec.from_str_path("/extra/lk"),
-                                dst=PathSpec.from_str_path("/extra/mv")),
+                ws.dispatch("unlink", PathSpec.from_str_path("/extra/lk")),
+                ws.dispatch(
+                    "symlink",
+                    PathSpec.from_str_path("/extra/lk2"),
+                    target="plain.txt",
+                ),
+                ws.dispatch(
+                    "rename",
+                    PathSpec.from_str_path("/extra/lk"),
+                    dst=PathSpec.from_str_path("/extra/mv"),
+                ),
             ):
                 with pytest.raises(ReadOnlyError) as exc:
                     await coro
@@ -459,7 +497,8 @@ async def test_read_only_admission_precedes_backend_support_and_io(op):
     with Workspace({"/ro": (RAMVFS(), MountMode.READ)}) as ws:
         mount = ws.namespace.mount_for("/ro/file")
         mount.ensure_ready = AsyncMock(
-            side_effect=AssertionError("backend reached"))
+            side_effect=AssertionError("backend reached")
+        )
         with pytest.raises(ReadOnlyError) as exc:
             await ws.dispatch(op, PathSpec.from_str_path("/ro/file"))
         assert exc.value.errno == errno.EROFS
@@ -474,22 +513,21 @@ async def test_a_rename_destination_is_judged_on_its_own_turf():
     # blaming the destination, the way the backend gate checks both ends
     # of a rename. The grant is what binds, so both mounts are writable
     # and the session is the only thing narrowing either.
-    with Workspace({
-            "/rw/": RAMVFS(),
-            "/ro/": RAMVFS()
-    }, mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {"/rw/": RAMVFS(), "/ro/": RAMVFS()}, mode=MountMode.WRITE
+    ) as ws:
         await ws.shell("ln -s t /rw/lk")
-        sess = ws.create_session("agent",
-                                 mounts={
-                                     "/rw/": "write",
-                                     "/ro/": "read"
-                                 })
+        sess = ws.create_session(
+            "agent", mounts={"/rw/": "write", "/ro/": "read"}
+        )
         token = set_current_session(sess)
         try:
             with pytest.raises(ReadOnlyError) as exc:
-                await ws.dispatch("rename",
-                                  PathSpec.from_str_path("/rw/lk"),
-                                  dst=PathSpec.from_str_path("/ro/lk"))
+                await ws.dispatch(
+                    "rename",
+                    PathSpec.from_str_path("/rw/lk"),
+                    dst=PathSpec.from_str_path("/ro/lk"),
+                )
             assert exc.value.filename == "/ro/lk"
         finally:
             reset_current_session(token)
@@ -497,8 +535,9 @@ async def test_a_rename_destination_is_judged_on_its_own_turf():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("occupied",
-                         ["/ram/a.txt", "/ram/d", "/ram/link", "/ram"])
+@pytest.mark.parametrize(
+    "occupied", ["/ram/a.txt", "/ram/d", "/ram/link", "/ram"]
+)
 async def test_symlink_refuses_an_occupied_name(occupied):
     # symlink(2) is EEXIST on a name that is taken, and only the door can
     # tell: a file and a directory are the backend's, a link is the node
@@ -508,21 +547,24 @@ async def test_symlink_refuses_an_occupied_name(occupied):
         await ws.shell("echo hi > /ram/a.txt; mkdir /ram/d")
         await ws.shell("ln -s a.txt /ram/link")
         with pytest.raises(FileExistsError):
-            await ws.dispatch("symlink",
-                              PathSpec.from_str_path(occupied),
-                              target="elsewhere")
+            await ws.dispatch(
+                "symlink", PathSpec.from_str_path(occupied), target="elsewhere"
+            )
         assert (await ws.shell("cat /ram/a.txt")).stdout == b"hi\n"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name,refusal", [
-    ("/ram/nope/y", FileNotFoundError),
-    ("/ram/nope/deeper/y", FileNotFoundError),
-    ("/ram/dangling/y", FileNotFoundError),
-    ("/ram/a.txt/y", NotADirectoryError),
-    ("/ram/a.txt/sub/y", NotADirectoryError),
-    ("/ram/flink/y", NotADirectoryError),
-])
+@pytest.mark.parametrize(
+    "name,refusal",
+    [
+        ("/ram/nope/y", FileNotFoundError),
+        ("/ram/nope/deeper/y", FileNotFoundError),
+        ("/ram/dangling/y", FileNotFoundError),
+        ("/ram/a.txt/y", NotADirectoryError),
+        ("/ram/a.txt/sub/y", NotADirectoryError),
+        ("/ram/flink/y", NotADirectoryError),
+    ],
+)
 async def test_symlink_refuses_a_name_its_parent_cannot_hold(name, refusal):
     # symlink(2) resolves the directory a name goes in before the name:
     # ENOENT when it is absent, ENOTDIR when a plain file stands in the
@@ -533,11 +575,13 @@ async def test_symlink_refuses_a_name_its_parent_cannot_hold(name, refusal):
         await ws.shell("echo hi > /ram/a.txt; mkdir /ram/d")
         await ws.shell("ln -s missing /ram/dangling; ln -s a.txt /ram/flink")
         with pytest.raises(refusal):
-            await ws.dispatch("symlink",
-                              PathSpec.from_str_path(name),
-                              target="x")
-        assert sorted(
-            ws.namespace.symlink_targets()) == ["/ram/dangling", "/ram/flink"]
+            await ws.dispatch(
+                "symlink", PathSpec.from_str_path(name), target="x"
+            )
+        assert sorted(ws.namespace.symlink_targets()) == [
+            "/ram/dangling",
+            "/ram/flink",
+        ]
         listing = (await ws.shell("ls /ram")).stdout
         assert listing == b"a.txt\nd\ndangling\nflink\n"
 
@@ -550,16 +594,17 @@ async def test_a_link_made_under_a_linked_directory_lands_in_its_target():
     # the directory and no read through it ever looked.
     with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("mkdir /ram/d /ram/e; ln -s d /ram/alias")
-        await ws.dispatch("symlink",
-                          PathSpec.from_str_path("/ram/alias/x"),
-                          target="t")
-        await ws.dispatch("symlink",
-                          PathSpec.from_str_path("/ram/e/empty"),
-                          target="t")
+        await ws.dispatch(
+            "symlink", PathSpec.from_str_path("/ram/alias/x"), target="t"
+        )
+        await ws.dispatch(
+            "symlink", PathSpec.from_str_path("/ram/e/empty"), target="t"
+        )
         assert ws.namespace.readlink("/ram/d/x") == "t"
         assert not ws.namespace.is_link("/ram/alias/x")
-        found, _ = await ws.dispatch("readlink",
-                                     PathSpec.from_str_path("/ram/alias/x"))
+        found, _ = await ws.dispatch(
+            "readlink", PathSpec.from_str_path("/ram/alias/x")
+        )
         assert found == "t"
         assert ws.namespace.readlink("/ram/e/empty") == "t"
 
@@ -581,27 +626,33 @@ async def test_a_link_in_a_listed_directory_costs_only_the_occupancy_probes():
             return await execute(op, path, *args, **kwargs)
 
         mount.execute_op = spy
-        await ws.dispatch("symlink",
-                          PathSpec.from_str_path("/ram/d/x"),
-                          target="t")
+        await ws.dispatch(
+            "symlink", PathSpec.from_str_path("/ram/d/x"), target="t"
+        )
         assert seen == [("stat", "/ram/d/x"), ("readdir", "/ram/d")]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("landing,refusal", [
-    ("/ram/nope/x", FileNotFoundError),
-    ("/ram/a.txt/x", NotADirectoryError),
-])
+@pytest.mark.parametrize(
+    "landing,refusal",
+    [
+        ("/ram/nope/x", FileNotFoundError),
+        ("/ram/a.txt/x", NotADirectoryError),
+    ],
+)
 async def test_a_link_rename_refuses_a_landing_its_parent_cannot_hold(
-        landing, refusal):
+    landing, refusal
+):
     # rename(2) resolves the destination's directory as symlink(2) does,
     # and the node table moved a link anywhere at all.
     with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("echo hi > /ram/a.txt; ln -s a.txt /ram/link")
         with pytest.raises(refusal):
-            await ws.dispatch("rename",
-                              PathSpec.from_str_path("/ram/link"),
-                              dst=PathSpec.from_str_path(landing))
+            await ws.dispatch(
+                "rename",
+                PathSpec.from_str_path("/ram/link"),
+                dst=PathSpec.from_str_path(landing),
+            )
         assert ws.namespace.readlink("/ram/link") == "a.txt"
         assert not ws.namespace.is_link(landing)
 
@@ -682,9 +733,9 @@ async def test_a_policy_denied_remnant_keeps_the_refusal():
     # policy that protects the hidden file refuses its unlink, the
     # cascade folds the denial into the original not-empty refusal,
     # and the protected content survives.
-    ws = Workspace({"/a": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   policies=[DenyRemnantUnlink()])
+    ws = Workspace(
+        {"/a": RAMVFS()}, mode=MountMode.WRITE, policies=[DenyRemnantUnlink()]
+    )
     io = await ws.shell("mkdir -p /a/d/sec && printf 'k\\n' > /a/d/sec/k")
     assert io.exit_code == 0, io.stderr
     sess = ws.create_session("rev", profile={"paths": {"hide": ["/a/d/sec"]}})
@@ -705,13 +756,14 @@ async def test_ops_rmdir_takes_hidden_namespace_links_with_it():
     # cannot take it; left in the node table it synthesizes /a/d right
     # back once the hide lifts, resurfacing the removed tree.
     ws = Workspace({"/a": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("mkdir -p /a/d/sec && printf 'k\\n' > /a/d/sec/k"
-                        " && ln -s /a/t /a/d/lnk")
+    io = await ws.shell(
+        "mkdir -p /a/d/sec && printf 'k\\n' > /a/d/sec/k"
+        " && ln -s /a/t /a/d/lnk"
+    )
     assert io.exit_code == 0, io.stderr
     sess = ws.create_session(
-        "rev", profile={"paths": {
-            "hide": ["/a/d/sec", "/a/d/lnk"]
-        }})
+        "rev", profile={"paths": {"hide": ["/a/d/sec", "/a/d/lnk"]}}
+    )
     token = set_current_session(sess)
     try:
         await ws.vfs.rmdir("/a/d")
@@ -730,8 +782,10 @@ async def test_a_visible_link_below_keeps_the_rmdir_refusal():
     # refusal stands and nothing (backend remnant or node table) is
     # destroyed.
     ws = Workspace({"/a": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("mkdir -p /a/d/sec && printf 'k\\n' > /a/d/sec/k"
-                        " && ln -s /a/t /a/d/lnk")
+    io = await ws.shell(
+        "mkdir -p /a/d/sec && printf 'k\\n' > /a/d/sec/k"
+        " && ln -s /a/t /a/d/lnk"
+    )
     assert io.exit_code == 0, io.stderr
     sess = ws.create_session("rev", profile={"paths": {"hide": ["/a/d/sec"]}})
     token = set_current_session(sess)
@@ -782,13 +836,16 @@ async def test_a_directory_rename_drops_the_listing_cached_below_it(tmp_path):
     # longer there and landed the source inside it.
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "readme.md").write_text("notes\n", encoding="utf-8")
-    with Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {"/disk/": DiskVFS(root=str(tmp_path))}, mode=MountMode.WRITE
+    ) as ws:
         listed = await ws.shell("ls /disk/docs")
         assert listed.stdout == b"readme.md\n"
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/disk/docs"),
-                          dst=PathSpec.from_str_path("/disk/moved"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/disk/docs"),
+            dst=PathSpec.from_str_path("/disk/moved"),
+        )
         gone = await ws.shell("test -d /disk/docs && echo stale || echo gone")
         assert gone.stdout == b"gone\n"
         assert (await ws.shell("ls /disk/docs")).exit_code != 0
@@ -802,13 +859,16 @@ async def test_a_rename_carries_the_node_at_the_source(tmp_path):
     # name: the landing read as the unclamped file and whatever was
     # created at the old name next inherited the overlay.
     (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
-    with Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {"/disk/": DiskVFS(root=str(tmp_path))}, mode=MountMode.WRITE
+    ) as ws:
         assert (await ws.shell("chmod 400 /disk/a.txt")).exit_code == 0
         assert ws.namespace.meta_for("/disk/a.txt").mode == 0o400
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/disk/a.txt"),
-                          dst=PathSpec.from_str_path("/disk/b.txt"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/disk/a.txt"),
+            dst=PathSpec.from_str_path("/disk/b.txt"),
+        )
         assert ws.namespace.meta_for("/disk/a.txt") is None
         assert ws.namespace.meta_for("/disk/b.txt").mode == 0o400
 
@@ -819,12 +879,15 @@ async def test_a_rename_replaces_the_node_at_the_landing(tmp_path):
     # with it rather than staying to shadow what just landed.
     (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
-    with Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {"/disk/": DiskVFS(root=str(tmp_path))}, mode=MountMode.WRITE
+    ) as ws:
         assert (await ws.shell("chmod 400 /disk/b.txt")).exit_code == 0
-        await ws.dispatch("rename",
-                          PathSpec.from_str_path("/disk/a.txt"),
-                          dst=PathSpec.from_str_path("/disk/b.txt"))
+        await ws.dispatch(
+            "rename",
+            PathSpec.from_str_path("/disk/a.txt"),
+            dst=PathSpec.from_str_path("/disk/b.txt"),
+        )
         assert ws.namespace.meta_for("/disk/b.txt") is None
 
 
@@ -864,7 +927,9 @@ async def test_a_backend_stat_extra_is_not_an_attribute():
     dispatcher._namespace.xattrs = MagicMock(return_value={"user.tag": b"t"})
     dispatcher._namespace.try_mount_for.return_value.execute_op = AsyncMock(
         return_value=FileStat(
-            name="d", type=FileType.DIRECTORY, extra={"file_id": "1AbC"}))
+            name="d", type=FileType.DIRECTORY, extra={"file_id": "1AbC"}
+        )
+    )
     listed, _ = await dispatcher.dispatch("listxattr", _path("/data/d"))
     assert listed == ["user.tag"]
 
@@ -924,35 +989,54 @@ async def test_nofollow_reads_the_links_own_xattrs():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command, diagnostic", [
-    ("echo x >> /ro/file", "/ro/file: Read-only file system\n"),
-    ("exec >> /ro/file", "/ro/file: Read-only file system\n"),
-    ("ln -s file /ro/link",
-     "ln: failed to create symbolic link '/ro/link': Read-only file system\n"),
-    ("chmod 600 /ro/file",
-     "chmod: changing permissions of '/ro/file': Read-only file system\n"),
-    ("find /ro/file -delete",
-     "find: cannot delete '/ro/file': Read-only file system\n"),
-    ("rm /ro/file", "rm: cannot remove '/ro/file': Read-only file system\n"),
-    ("mv /ro/file /ro/moved",
-     "mv: cannot move '/ro/file' to '/ro/moved': Read-only file system\n"),
-    ("touch /ro/file",
-     "touch: cannot touch '/ro/file': Read-only file system\n"),
-    ("truncate -s 0 /ro/file",
-     "truncate: cannot open '/ro/file' for writing: Read-only file system\n"),
-])
+@pytest.mark.parametrize(
+    "command, diagnostic",
+    [
+        ("echo x >> /ro/file", "/ro/file: Read-only file system\n"),
+        ("exec >> /ro/file", "/ro/file: Read-only file system\n"),
+        (
+            "ln -s file /ro/link",
+            "ln: failed to create symbolic link '/ro/link': Read-only file system\n",
+        ),
+        (
+            "chmod 600 /ro/file",
+            "chmod: changing permissions of '/ro/file': Read-only file system\n",
+        ),
+        (
+            "find /ro/file -delete",
+            "find: cannot delete '/ro/file': Read-only file system\n",
+        ),
+        (
+            "rm /ro/file",
+            "rm: cannot remove '/ro/file': Read-only file system\n",
+        ),
+        (
+            "mv /ro/file /ro/moved",
+            "mv: cannot move '/ro/file' to '/ro/moved': Read-only file system\n",
+        ),
+        (
+            "touch /ro/file",
+            "touch: cannot touch '/ro/file': Read-only file system\n",
+        ),
+        (
+            "truncate -s 0 /ro/file",
+            "truncate: cannot open '/ro/file' for writing: Read-only file system\n",
+        ),
+    ],
+)
 async def test_shell_mutations_share_read_only_admission(command, diagnostic):
     with Workspace({"/ro": RAMVFS()}, mode=MountMode.WRITE) as ws:
-        await ws.dispatch("write",
-                          PathSpec.from_str_path("/ro/file"),
-                          data=b"original")
+        await ws.dispatch(
+            "write", PathSpec.from_str_path("/ro/file"), data=b"original"
+        )
         mount = ws.namespace.mount_for("/ro/file")
         mount.mode = MountMode.READ
         execute = mount.execute_op
 
         async def no_content_read(op, *args, **kwargs):
-            assert op not in {"read",
-                              "read_bytes"}, "refused write fetched content"
+            assert op not in {"read", "read_bytes"}, (
+                "refused write fetched content"
+            )
             return await execute(op, *args, **kwargs)
 
         mount.execute_op = no_content_read
@@ -970,13 +1054,12 @@ async def test_shell_mutations_share_read_only_admission(command, diagnostic):
 async def test_rmdir_accounts_for_a_directory_containing_only_a_link(hidden):
     with Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE) as ws:
         await ws.shell("mkdir /data/d; ln -s nowhere /data/d/link")
-        session = ws.create_session("remover",
-                                    profile={
-                                        "paths": {
-                                            "hide":
-                                            ["/data/d/link"] if hidden else []
-                                        },
-                                    })
+        session = ws.create_session(
+            "remover",
+            profile={
+                "paths": {"hide": ["/data/d/link"] if hidden else []},
+            },
+        )
         token = set_current_session(session)
         try:
             if hidden:
@@ -999,16 +1082,17 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
 
         async def link_arrives(op, *args, **kwargs):
             if op == "rmdir":
-                await ws.dispatch("symlink",
-                                  PathSpec.from_str_path("/data/d/late"),
-                                  target="nowhere")
+                await ws.dispatch(
+                    "symlink",
+                    PathSpec.from_str_path("/data/d/late"),
+                    target="nowhere",
+                )
             return await execute(op, *args, **kwargs)
 
         mount.execute_op = link_arrives
         session = ws.create_session(
-            "remover", profile={"paths": {
-                "hide": ["/data/d/old"]
-            }})
+            "remover", profile={"paths": {"hide": ["/data/d/old"]}}
+        )
         token = set_current_session(session)
         try:
             await ws.vfs.rmdir("/data/d")

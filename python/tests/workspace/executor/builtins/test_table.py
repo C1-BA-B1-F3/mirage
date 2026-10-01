@@ -15,9 +15,12 @@ PARSER_OWNED = frozenset({"declare", "typeset", "readonly"})
 
 
 def test_table_covers_every_executor_builtin():
-    expected = ({str(b)
-                 for b in ShellBuiltin} - JOB_BUILTINS - INTERPRETERS -
-                PARSER_OWNED)
+    expected = (
+        {str(b) for b in ShellBuiltin}
+        - JOB_BUILTINS
+        - INTERPRETERS
+        - PARSER_OWNED
+    )
     assert set(BUILTINS) == expected
 
 

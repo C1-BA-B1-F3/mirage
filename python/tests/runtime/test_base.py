@@ -24,7 +24,7 @@ from mirage.runtime.mixin import EvaluatorMixin, LineExecutorMixin
 
 class MarkerRuntime(Runtime):
     name = "marker"
-    captures = ("echo-run", )
+    captures = ("echo-run",)
 
 
 def test_base_carries_no_capability_doors():
@@ -45,14 +45,14 @@ def test_close_defaults_to_noop():
 
 def test_uniform_constructor_defaults():
     rt = MarkerRuntime()
-    assert rt.captures == ("echo-run", )
+    assert rt.captures == ("echo-run",)
     assert rt.config == RuntimeConfig()
     assert rt.script is None
 
 
 def test_captures_override():
     rt = MarkerRuntime(captures=["only-this"])
-    assert rt.captures == ("only-this", )
+    assert rt.captures == ("only-this",)
 
 
 def test_script_stored():

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 """read flags: -a -d -n -N -t plus the non-tty no-ops, vs bash 5.2.37."""
+
 import pytest
 
 from mirage.types import MountMode
@@ -41,8 +42,9 @@ async def test_delimiter():
     ws = _ws()
     out, _ = await _run(ws, "printf 'ab:cd' | { read -d : X; echo \"[$X]\"; }")
     assert out == "[ab]\n"
-    out, _ = await _run(ws,
-                        "printf 'a\\0b' | { read -d '' X; echo \"[$X]\"; }")
+    out, _ = await _run(
+        ws, "printf 'a\\0b' | { read -d '' X; echo \"[$X]\"; }"
+    )
     assert out == "[a]\n"
     await ws.close()
 
@@ -53,12 +55,12 @@ async def test_char_count():
     out, _ = await _run(ws, "printf 'wxyz' | { read -n 2 Y; echo \"[$Y]\"; }")
     assert out == "[wx]\n"
     out, _ = await _run(
-        ws, "printf 'a b c' | { read -n 3 A B; echo "
-        "\"[$A][$B]\"; }")
+        ws, "printf 'a b c' | { read -n 3 A B; echo \"[$A][$B]\"; }"
+    )
     assert out == "[a][b]\n"
     out, _ = await _run(
-        ws, "printf 'a b\\ncd' | { read -N 4 A; echo "
-        "\"[$A]\"; }")
+        ws, "printf 'a b\\ncd' | { read -N 4 A; echo \"[$A]\"; }"
+    )
     assert out == "[a b\n]\n"
     await ws.close()
 
@@ -85,7 +87,7 @@ async def test_timeout_and_no_ops():
 async def test_status_is_one_at_eof_without_delimiter():
     ws = _ws()
     out, code = await _run(
-        ws, "printf 'ab' | { read -n 5 A; echo "
-        "\"[$A]$?\"; }")
+        ws, "printf 'ab' | { read -n 5 A; echo \"[$A]$?\"; }"
+    )
     assert out == "[ab]1\n"
     await ws.close()

@@ -16,8 +16,12 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.commands.cli.builtin.hf.upload import (collect, in_repo_base, keep,
-                                                   upload_cmd)
+from mirage.commands.cli.builtin.hf.upload import (
+    collect,
+    in_repo_base,
+    keep,
+    upload_cmd,
+)
 from mirage.commands.errors import UsageError
 from tests.commands.cli.builtin.hf.conftest import ANON, inv
 
@@ -25,15 +29,19 @@ from tests.commands.cli.builtin.hf.conftest import ANON, inv
 @pytest.mark.asyncio
 async def test_collect_reads_one_file_under_its_basename(doors):
     record, _, _, _ = doors
-    assert await collect(record,
-                         "/work/a.txt") == ([("a.txt", b"alpha")], False)
+    assert await collect(record, "/work/a.txt") == (
+        [("a.txt", b"alpha")],
+        False,
+    )
 
 
 @pytest.mark.asyncio
 async def test_collect_walks_a_directory_relative_to_it(doors):
     record, _, _, _ = doors
-    assert await collect(record, "/work") == ([("a.txt", b"alpha"),
-                                               ("sub/b.txt", b"beta")], True)
+    assert await collect(record, "/work") == (
+        [("a.txt", b"alpha"), ("sub/b.txt", b"beta")],
+        True,
+    )
 
 
 @pytest.mark.asyncio
@@ -53,7 +61,8 @@ def test_keep_applies_include_then_exclude():
 @patch("mirage.commands.cli.builtin.hf.upload.create_repo")
 @patch("mirage.commands.cli.builtin.hf.upload.commit")
 async def test_upload_commits_every_walked_file_at_once(
-        mock_commit, mock_create, doors):
+    mock_commit, mock_create, doors
+):
     record, _, _, _ = doors
     await upload_cmd(inv(texts=("acme/widget", "/work"), doors=record))
     additions = mock_commit.await_args.kwargs["additions"]
@@ -64,15 +73,17 @@ async def test_upload_commits_every_walked_file_at_once(
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.upload.create_repo")
 @patch("mirage.commands.cli.builtin.hf.upload.commit")
-async def test_upload_of_a_file_lands_at_path_in_repo(mock_commit, mock_create,
-                                                      doors):
+async def test_upload_of_a_file_lands_at_path_in_repo(
+    mock_commit, mock_create, doors
+):
     """Upstream reads `path_in_repo` as the destination FILE for a file
     source: `_resolve_upload_paths` only falls back to the basename when
     the operand is absent. Probed against hf 0.35.3, which stores
     `hf upload r ./a.txt docs` as a file named `docs`."""
     record, _, _, _ = doors
     await upload_cmd(
-        inv(texts=("acme/widget", "/work/a.txt", "docs"), doors=record))
+        inv(texts=("acme/widget", "/work/a.txt", "docs"), doors=record)
+    )
     assert mock_commit.await_args.kwargs["additions"][0].path == "docs"
 
 
@@ -80,7 +91,8 @@ async def test_upload_of_a_file_lands_at_path_in_repo(mock_commit, mock_create,
 @patch("mirage.commands.cli.builtin.hf.upload.create_repo")
 @patch("mirage.commands.cli.builtin.hf.upload.commit")
 async def test_upload_of_a_directory_spreads_under_path_in_repo(
-        mock_commit, mock_create, doors):
+    mock_commit, mock_create, doors
+):
     """A directory source is the other half of the same rule: there
     `path_in_repo` names the destination FOLDER."""
     record, _, _, _ = doors
@@ -93,7 +105,8 @@ async def test_upload_of_a_directory_spreads_under_path_in_repo(
 @patch("mirage.commands.cli.builtin.hf.upload.create_repo")
 @patch("mirage.commands.cli.builtin.hf.upload.commit")
 async def test_upload_of_a_file_without_path_in_repo_uses_its_basename(
-        mock_commit, mock_create, doors):
+    mock_commit, mock_create, doors
+):
     record, _, _, _ = doors
     await upload_cmd(inv(texts=("acme/widget", "/work/a.txt"), doors=record))
     assert mock_commit.await_args.kwargs["additions"][0].path == "a.txt"
@@ -102,16 +115,17 @@ async def test_upload_of_a_file_without_path_in_repo_uses_its_basename(
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.upload.create_repo")
 @patch("mirage.commands.cli.builtin.hf.upload.commit")
-async def test_upload_passes_the_delete_globs_through(mock_commit, mock_create,
-                                                      doors):
+async def test_upload_passes_the_delete_globs_through(
+    mock_commit, mock_create, doors
+):
     record, _, _, _ = doors
     await upload_cmd(
-        inv(texts=("acme/widget", "/work/a.txt"),
-            flags={
-                "delete": ["old.txt"],
-                "create_pr": True
-            },
-            doors=record))
+        inv(
+            texts=("acme/widget", "/work/a.txt"),
+            flags={"delete": ["old.txt"], "create_pr": True},
+            doors=record,
+        )
+    )
     assert mock_commit.await_args.kwargs["deletions"] == ["old.txt"]
     assert mock_commit.await_args.kwargs["create_pr"] is True
 
@@ -121,7 +135,8 @@ async def test_upload_refuses_without_a_token(doors):
     record, _, _, _ = doors
     with pytest.raises(UsageError, match="token"):
         await upload_cmd(
-            inv(texts=("acme/widget", "/work"), config=ANON, doors=record))
+            inv(texts=("acme/widget", "/work"), config=ANON, doors=record)
+        )
 
 
 @pytest.mark.asyncio
@@ -130,17 +145,20 @@ async def test_upload_needs_a_workspace():
         await upload_cmd(inv(texts=("acme/widget", "/work")))
 
 
-@pytest.mark.parametrize("value,expected", [
-    ("", ""),
-    (".", ""),
-    ("./", ""),
-    ("/", ""),
-    ("docs", "docs"),
-    ("/docs/", "docs"),
-    ("./docs", "docs"),
-    ("docs/../notes", "notes"),
-    ("a/b/c", "a/b/c"),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", ""),
+        (".", ""),
+        ("./", ""),
+        ("/", ""),
+        ("docs", "docs"),
+        ("/docs/", "docs"),
+        ("./docs", "docs"),
+        ("docs/../notes", "notes"),
+        ("a/b/c", "a/b/c"),
+    ],
+)
 def test_in_repo_base_normalizes(value, expected):
     """A Hub path is repo-relative with no leading slash and no `.`
     component. Taking `hf upload repo /local .` literally stored every

@@ -25,5 +25,6 @@ __all__ = ["LanceDBConfig", "LanceDBVFS"]
 def __getattr__(name: str) -> "type[LanceDBVFS]":
     if name == "LanceDBVFS":
         from mirage.vfs.lancedb.lancedb import LanceDBVFS
+
         return LanceDBVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

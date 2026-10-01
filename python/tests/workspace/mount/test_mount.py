@@ -83,14 +83,17 @@ def test_read_only_blocks_write_cmd():
     reg = MountRegistry()
     reg.mount("/ro/", RAMVFS(), MountMode.READ)
     mount = reg.mount_for("/ro/file.txt")
-    scope = PathSpec(vfs_path="ro/newdir",
-                     virtual="/ro/newdir",
-                     directory="/ro/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="ro/newdir",
+        virtual="/ro/newdir",
+        directory="/ro/",
+        resolved=True,
+    )
     stdout, io = _run(mount.execute_cmd("mkdir", [scope], [], {}))
     assert io.exit_code != 0
-    assert io.stderr == (b"mkdir: cannot create directory '/ro/newdir': "
-                         b"Read-only file system\n")
+    assert io.stderr == (
+        b"mkdir: cannot create directory '/ro/newdir': Read-only file system\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -98,16 +101,16 @@ def test_read_only_blocks_write_cmd():
 @pytest.mark.parametrize("declared", [False, True])
 @pytest.mark.parametrize("flag", ["help", "version"])
 async def test_only_wrapper_responses_bypass_the_write_guard(
-        mode, declared, flag):
+    mode, declared, flag
+):
     vfs = RAMVFS()
     mount = MountEntry("/ram/", vfs, mode)
     calls: list[str] = []
-    options = (Option(long="--version", type="bool"), ) if declared else ()
+    options = (Option(long="--version", type="bool"),) if declared else ()
 
-    @command("mutate",
-             vfs="ram",
-             spec=CommandSpec(options=options),
-             write=True)
+    @command(
+        "mutate", vfs="ram", spec=CommandSpec(options=options), write=True
+    )
     async def mutate(accessor: RAMAccessor, paths, texts, opts):
         calls.append("handler")
         accessor.store.files["/changed"] = b"changed"
@@ -154,7 +157,8 @@ async def test_the_read_only_refusal_is_newline_terminated():
 @pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
 @pytest.mark.parametrize("path_guarded", [False, True])
 async def test_only_a_write_command_the_door_cannot_see_is_refused_up_front(
-        mode, path_guarded):
+    mode, path_guarded
+):
     # A path-guarded command's writes go through the guarded op slots,
     # which refuse each one where it happens, so a read-only mount runs
     # it like a reader (`gzip -c`, `split -n 1/2`). A write command that
@@ -164,11 +168,13 @@ async def test_only_a_write_command_the_door_cannot_see_is_refused_up_front(
     mount = MountEntry("/ram/", vfs, mode)
     calls: list[int] = []
 
-    @command("filter",
-             vfs="ram",
-             spec=CommandSpec(),
-             write=True,
-             path_guarded=path_guarded)
+    @command(
+        "filter",
+        vfs="ram",
+        spec=CommandSpec(),
+        write=True,
+        path_guarded=path_guarded,
+    )
     async def filter_cmd(accessor: RAMAccessor, paths, texts, opts):
         calls.append(len(paths))
         return b"ran\n", IOResult()
@@ -190,10 +196,12 @@ def test_write_mode_allows_write_cmd():
     reg = MountRegistry()
     reg.mount("/rw/", RAMVFS(), MountMode.WRITE)
     mount = reg.mount_for("/rw/file.txt")
-    scope = PathSpec(vfs_path="rw/newdir",
-                     virtual="/rw/newdir",
-                     directory="/rw/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="rw/newdir",
+        virtual="/rw/newdir",
+        directory="/rw/",
+        resolved=True,
+    )
     stdout, io = _run(mount.execute_cmd("mkdir", [scope], [], {}))
     assert io.exit_code == 0
 
@@ -202,10 +210,9 @@ def test_read_only_allows_read_cmd():
     reg = MountRegistry()
     reg.mount("/ro/", RAMVFS(), MountMode.READ)
     mount = reg.mount_for("/ro/")
-    scope = PathSpec(vfs_path="ro",
-                     virtual="/ro/",
-                     directory="/ro/",
-                     resolved=False)
+    scope = PathSpec(
+        vfs_path="ro", virtual="/ro/", directory="/ro/", resolved=False
+    )
     stdout, io = _run(mount.execute_cmd("ls", [scope], [], {}))
     assert io.exit_code == 0
 
@@ -215,10 +222,12 @@ def test_read_only_allows_read_cmd():
 
 def test_execute_cmd_cat(registry):
     mount = registry.mount_for("/data/hello.txt")
-    scope = PathSpec(vfs_path="data/hello.txt",
-                     virtual="/data/hello.txt",
-                     directory="/data/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="data/hello.txt",
+        virtual="/data/hello.txt",
+        directory="/data/",
+        resolved=True,
+    )
     stdout, io = _run(mount.execute_cmd("cat", [scope], [], {}))
     assert io.exit_code == 0
     assert stdout is not None
@@ -233,30 +242,33 @@ def test_execute_cmd_not_found(registry):
 
 def test_execute_cmd_ls(registry):
     mount = registry.mount_for("/data/hello.txt")
-    scope = PathSpec(vfs_path="data",
-                     virtual="/data/",
-                     directory="/data/",
-                     resolved=False)
+    scope = PathSpec(
+        vfs_path="data", virtual="/data/", directory="/data/", resolved=False
+    )
     stdout, io = _run(mount.execute_cmd("ls", [scope], [], {}))
     assert io.exit_code == 0
 
 
 def test_execute_cmd_with_flag_kwargs(registry):
     mount = registry.mount_for("/data/hello.txt")
-    scope = PathSpec(vfs_path="data/hello.txt",
-                     virtual="/data/hello.txt",
-                     directory="/data/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="data/hello.txt",
+        virtual="/data/hello.txt",
+        directory="/data/",
+        resolved=True,
+    )
     stdout, io = _run(mount.execute_cmd("cat", [scope], [], {"n": True}))
     assert io.exit_code == 0
 
 
 def test_execute_cmd_with_texts(registry):
     mount = registry.mount_for("/data/hello.txt")
-    scope = PathSpec(vfs_path="data/hello.txt",
-                     virtual="/data/hello.txt",
-                     directory="/data/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="data/hello.txt",
+        virtual="/data/hello.txt",
+        directory="/data/",
+        resolved=True,
+    )
     stdout, io = _run(mount.execute_cmd("grep", [scope], ["hello"], {}))
     assert io.exit_code == 0
 
@@ -312,8 +324,11 @@ async def test_a_path_guarded_command_is_still_held_at_its_write():
     mount.register(cmd)
     # The write is refused where it happens and gzip says so in its own
     # words (the fatal write_error form), leaving the store untouched.
-    _, io = await mount.execute_cmd("gzip", [PathSpec.from_str_path("/ram/a")],
-                                    [], {})
-    assert (io.exit_code,
-            io.stderr) == (1, b"\ngzip: /ram/a.gz: Read-only file system\n")
+    _, io = await mount.execute_cmd(
+        "gzip", [PathSpec.from_str_path("/ram/a")], [], {}
+    )
+    assert (io.exit_code, io.stderr) == (
+        1,
+        b"\ngzip: /ram/a.gz: Read-only file system\n",
+    )
     assert vfs._store.files == {"/a": b"original"}

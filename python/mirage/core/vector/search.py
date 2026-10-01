@@ -17,8 +17,12 @@ from mirage.core.hierarchy.probe import A
 from mirage.core.vector.types import VectorTree
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.vfs.search import (float_option, int_option, text_option,
-                               validate_options)
+from mirage.vfs.search import (
+    float_option,
+    int_option,
+    text_option,
+    validate_options,
+)
 from mirage.vfs.types import SearchOps, SearchQuery
 
 
@@ -32,9 +36,16 @@ def _target_table(pinned: str | None, paths: list[PathSpec]) -> str | None:
     return None
 
 
-async def search_rows_output(tree: VectorTree[A], accessor: A, query: str,
-                             paths: list[PathSpec], *, top_k: int,
-                             threshold: float, mount_prefix: str) -> bytes:
+async def search_rows_output(
+    tree: VectorTree[A],
+    accessor: A,
+    query: str,
+    paths: list[PathSpec],
+    *,
+    top_k: int,
+    threshold: float,
+    mount_prefix: str,
+) -> bytes:
     """Rank a table's rows and render each hit under its canonical path.
 
     Args:
@@ -57,12 +68,16 @@ async def search_rows_output(tree: VectorTree[A], accessor: A, query: str,
     blocks: list[str] = []
     for row in await tree.search_rows(accessor, table, query, top_k):
         rank = row.get(tree.rank_key)
-        if threshold > 0 and rank is not None and tree.drops(
-                float(rank), threshold):
+        if (
+            threshold > 0
+            and rank is not None
+            and tree.drops(float(rank), threshold)
+        ):
             continue
         segments, body = tree.hit(accessor, row)
-        path = "/".join([mount_prefix.rstrip("/")] +
-                        ([] if pinned else [table]) + segments)
+        path = "/".join(
+            [mount_prefix.rstrip("/")] + ([] if pinned else [table]) + segments
+        )
         header = path if rank is None else f"{path}:{float(rank):.4f}"
         content = body.decode().rstrip("\n")
         blocks.append(f"{header}\n{content}")
@@ -76,10 +91,12 @@ def make_search(tree: VectorTree[A]) -> SearchOps:
         tree (VectorTree[A]): the store's hooks.
     """
 
-    async def search_many(accessor: A,
-                          paths: list[PathSpec],
-                          query: SearchQuery,
-                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    async def search_many(
+        accessor: A,
+        paths: list[PathSpec],
+        query: SearchQuery,
+        index: IndexCacheStore = NULL_INDEX,
+    ) -> list[str]:
         validate_options(query, {"top_k", "method", "threshold"})
         top_k = int_option(query, "top_k", tree.search_limit(accessor))
         if not paths:
@@ -88,21 +105,23 @@ def make_search(tree: VectorTree[A]) -> SearchOps:
         threshold = float_option(query, "threshold", 0.0)
         if method != "semantic":
             raise ValueError("search: only the 'semantic' method is supported")
-        output = await search_rows_output(tree,
-                                          accessor,
-                                          query.query,
-                                          paths,
-                                          top_k=top_k,
-                                          threshold=threshold,
-                                          mount_prefix=mount_prefix_of(
-                                              paths[0].virtual,
-                                              paths[0].vfs_path))
+        output = await search_rows_output(
+            tree,
+            accessor,
+            query.query,
+            paths,
+            top_k=top_k,
+            threshold=threshold,
+            mount_prefix=mount_prefix_of(paths[0].virtual, paths[0].vfs_path),
+        )
         return output.decode().removesuffix("\n").split("\n") if output else []
 
-    async def search(accessor: A,
-                     path: PathSpec,
-                     query: SearchQuery,
-                     index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    async def search(
+        accessor: A,
+        path: PathSpec,
+        query: SearchQuery,
+        index: IndexCacheStore = NULL_INDEX,
+    ) -> list[str]:
         return await search_many(accessor, [path], query, index)
 
     return SearchOps(search=search, search_many=search_many)

@@ -14,8 +14,13 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import (Evicted, IndexEntry, IndexSnapshot,
-                                       ListResult, LookupResult)
+from mirage.cache.index.config import (
+    Evicted,
+    IndexEntry,
+    IndexSnapshot,
+    ListResult,
+    LookupResult,
+)
 
 
 class IndexCacheStore:
@@ -45,8 +50,12 @@ class IndexCacheStore:
     async def get(self, vfs_path: str) -> LookupResult:
         raise NotImplementedError
 
-    def seed(self, entries: dict[str, IndexEntry],
-             children: dict[str, list[str]], expires_at: datetime) -> None:
+    def seed(
+        self,
+        entries: dict[str, IndexEntry],
+        children: dict[str, list[str]],
+        expires_at: datetime,
+    ) -> None:
         """Merge a snapshot; flush deferred writes before operations or close.
 
         Repeated seeds merge by path. Clear discards queued snapshots.
@@ -60,13 +69,13 @@ class IndexCacheStore:
         raise NotImplementedError
 
     async def set_dir(
-            self,
-            vfs_path: str,
-            entries: list[tuple[str, IndexEntry]],
-            expired_at: datetime | None = None,
-            *,
-            window: bool = False,
-            excluded: tuple[str, ...] = (),
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+        *,
+        window: bool = False,
+        excluded: tuple[str, ...] = (),
     ) -> list[Evicted]:
         """Cache a complete directory listing.
 
@@ -137,10 +146,9 @@ class IndexCacheStore:
     async def invalidate_dir(self, vfs_path: str) -> None:
         raise NotImplementedError
 
-    async def invalidate_prefix(self,
-                                vfs_path: str,
-                                *,
-                                excluded: tuple[str, ...] = ()) -> None:
+    async def invalidate_prefix(
+        self, vfs_path: str, *, excluded: tuple[str, ...] = ()
+    ) -> None:
         """Drop ``vfs_path`` and everything cached below it.
 
         ``invalidate_dir`` drops one directory's listing and its direct

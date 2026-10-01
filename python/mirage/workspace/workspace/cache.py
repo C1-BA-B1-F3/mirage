@@ -20,16 +20,18 @@ from mirage.cache.file.ram import RAMFileCacheStore
 
 RedisFileCacheStore: Any
 try:
-    from mirage.cache.file.redis import \
-        RedisFileCacheStore as _RedisFileCacheStore
+    from mirage.cache.file.redis import (
+        RedisFileCacheStore as _RedisFileCacheStore,
+    )
 except ImportError:
     RedisFileCacheStore = None
 else:
     RedisFileCacheStore = _RedisFileCacheStore
 
 
-def build_file_cache(cache: CacheConfig | None,
-                     cache_limit: str | int) -> FileCacheMixin:
+def build_file_cache(
+    cache: CacheConfig | None, cache_limit: str | int
+) -> FileCacheMixin:
     """Build the workspace's file cache from its config.
 
     Args:
@@ -43,8 +45,10 @@ def build_file_cache(cache: CacheConfig | None,
     """
     if isinstance(cache, RedisCacheConfig):
         if RedisFileCacheStore is None:
-            raise ImportError("RedisCacheConfig requires the 'redis' extra. "
-                              "Install with: pip install mirage-ai[redis]")
+            raise ImportError(
+                "RedisCacheConfig requires the 'redis' extra. "
+                "Install with: pip install mirage-ai[redis]"
+            )
         return RedisFileCacheStore(
             cache_limit=cache.limit,
             url=cache.url,

@@ -58,15 +58,19 @@ def _workspace(store: dict[str, bytes], read: ReadSpec):
 
 def test_write_record_carries_the_backend_token():
     store: dict[str, bytes] = {}
-    with _workspace(store,
-                    ReadSpec(policy=ReadPolicy.BOUNDED)) as (ws, _client):
+    with _workspace(store, ReadSpec(policy=ReadPolicy.BOUNDED)) as (
+        ws,
+        _client,
+    ):
 
         async def run() -> list[tuple[str, str, str | None]]:
             try:
                 io = await ws.shell("tee /s3/x.txt", stdin=b"hello\n")
                 await io.materialize_stdout()
-                return [(r.op, r.path, r.fingerprint)
-                        for r in ws.vfs.network_records]
+                return [
+                    (r.op, r.path, r.fingerprint)
+                    for r in ws.vfs.network_records
+                ]
             finally:
                 await ws.close()
 
@@ -80,17 +84,20 @@ def test_written_path_caches_the_backend_token_not_md5():
     answered. Holding a fabricated md5(content) is only right by accident on a
     simple-PUT object, and never right on a multipart one."""
     store: dict[str, bytes] = {}
-    with _workspace(store,
-                    ReadSpec(policy=ReadPolicy.BOUNDED)) as (ws, _client):
+    with _workspace(store, ReadSpec(policy=ReadPolicy.BOUNDED)) as (
+        ws,
+        _client,
+    ):
 
         async def run() -> tuple[bool, bool]:
             try:
                 io = await ws.shell("tee /s3/x.txt", stdin=b"hello\n")
                 await io.materialize_stdout()
                 md5 = hashlib.md5(b"hello\n").hexdigest()
-                return (await ws.cache.is_fresh("/s3/x.txt",
-                                                _etag(b"hello\n")), await
-                        ws.cache.is_fresh("/s3/x.txt", md5))
+                return (
+                    await ws.cache.is_fresh("/s3/x.txt", _etag(b"hello\n")),
+                    await ws.cache.is_fresh("/s3/x.txt", md5),
+                )
             finally:
                 await ws.close()
 
@@ -126,10 +133,12 @@ def test_always_reads_a_written_path_from_cache():
     # stat and the gate reuse. Its TypeScript twin asserts the same exact
     # number.
     assert client.calls["head_object"] == 1, (
-        "a `fresh` mount must consult the remote fingerprint on the read")
+        "a `fresh` mount must consult the remote fingerprint on the read"
+    )
     assert client.calls["get_object"] == 0, (
         "the written bytes are already cached under the backend's own "
-        "token, so the read must not refetch them")
+        "token, so the read must not refetch them"
+    )
 
 
 def test_read_then_write_on_one_line_keeps_the_read_token():
@@ -142,8 +151,9 @@ def test_read_then_write_on_one_line_keeps_the_read_token():
 
         async def run() -> bytes:
             try:
-                io = await ws.shell("cat /s3/f.txt && echo new | tee /s3/f.txt"
-                                    )
+                io = await ws.shell(
+                    "cat /s3/f.txt && echo new | tee /s3/f.txt"
+                )
                 await io.materialize_stdout()
                 io2 = await ws.shell("cat /s3/f.txt")
                 return await io2.materialize_stdout()
@@ -154,7 +164,8 @@ def test_read_then_write_on_one_line_keeps_the_read_token():
 
     assert store["f.txt"] == b"new\n"
     assert served == b"new\n", (
-        "the cache served pre-write bytes under the post-write token")
+        "the cache served pre-write bytes under the post-write token"
+    )
 
 
 def test_write_then_truncate_on_one_line_does_not_pin_stale_bytes():
@@ -167,7 +178,8 @@ def test_write_then_truncate_on_one_line_does_not_pin_stale_bytes():
         async def run() -> bytes:
             try:
                 io = await ws.shell(
-                    "echo hello | tee /s3/f.txt && truncate -s 2 /s3/f.txt")
+                    "echo hello | tee /s3/f.txt && truncate -s 2 /s3/f.txt"
+                )
                 await io.materialize_stdout()
                 io2 = await ws.shell("cat /s3/f.txt")
                 return await io2.materialize_stdout()
@@ -190,7 +202,8 @@ def test_write_then_copy_over_it_does_not_pin_stale_bytes():
         async def run() -> bytes:
             try:
                 io = await ws.shell(
-                    "echo x | tee /s3/f.txt && cp /s3/a.txt /s3/f.txt")
+                    "echo x | tee /s3/f.txt && cp /s3/a.txt /s3/f.txt"
+                )
                 await io.materialize_stdout()
                 io2 = await ws.shell("cat /s3/f.txt")
                 return await io2.materialize_stdout()

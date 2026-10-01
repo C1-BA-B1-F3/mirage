@@ -22,8 +22,10 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "integ" / "truth" / "airtable_atlas.json"
 REVISION = "8c563b55d7c967755f474299848049834d624617"
-PARQUET_URL = ("https://huggingface.co/datasets/ScaleAI/MCP-Atlas/resolve/"
-               f"{REVISION}/MCP-Atlas.parquet")
+PARQUET_URL = (
+    "https://huggingface.co/datasets/ScaleAI/MCP-Atlas/resolve/"
+    f"{REVISION}/MCP-Atlas.parquet"
+)
 BASE_ID = "appIF9byLfQwdHqE2"
 SHARE_URL = f"https://airtable.com/{BASE_ID}/shr1KTZOgPl0qQmA8"
 TITLE_SUFFIX = " - Airtable"
@@ -50,20 +52,24 @@ def load_calls(parquet: Path) -> list[Json]:
                 pending[call["id"]] = call["function"]
             function = pending.get(message.get("tool_call_id", ""))
             if function is None or not function["name"].startswith(
-                    "airtable_"):
+                "airtable_"
+            ):
                 continue
             content = message["content"]
             if len(content) != 1 or content[0]["type"] != "text":
                 raise ValueError("Expected one JSON text reply")
-            calls.append({
-                "task": row["TASK"],
-                "tool": function["name"][len("airtable_"):],
-                "args": json.loads(function["arguments"]),
-                "reply": content[0]["text"],
-            })
+            calls.append(
+                {
+                    "task": row["TASK"],
+                    "tool": function["name"][len("airtable_") :],
+                    "args": json.loads(function["arguments"]),
+                    "reply": content[0]["text"],
+                }
+            )
     if len(calls) != 263:
         raise ValueError(
-            f"Expected 263 pinned Airtable calls, got {len(calls)}")
+            f"Expected 263 pinned Airtable calls, got {len(calls)}"
+        )
     return calls
 
 
@@ -74,7 +80,7 @@ def color(internal: str) -> str:
         internal (str): the share format's colour, e.g. `blue`.
     """
     if internal.endswith("Medium"):
-        return internal[:-len("Medium")] + "Light1"
+        return internal[: -len("Medium")] + "Light1"
     return internal + "Light2"
 
 
@@ -90,29 +96,30 @@ def field(column: Json) -> Json:
     if kind == "select":
         out["type"] = "singleSelect"
         out["options"] = {
-            "choices": [{
-                "id": options["choices"][choice]["id"],
-                "name": options["choices"][choice]["name"],
-                "color": color(options["choices"][choice]["color"]),
-            } for choice in options["choiceOrder"]]
+            "choices": [
+                {
+                    "id": options["choices"][choice]["id"],
+                    "name": options["choices"][choice]["name"],
+                    "color": color(options["choices"][choice]["color"]),
+                }
+                for choice in options["choiceOrder"]
+            ]
         }
     elif kind == "number":
-        precision = (0 if options["format"] == "integer" else
-                     options["precision"])
+        precision = (
+            0 if options["format"] == "integer" else options["precision"]
+        )
         out["options"] = {"precision": precision}
     elif kind == "checkbox":
         out["options"] = {
             "icon": options["icon"],
-            "color": options["color"] + "Bright"
+            "color": options["color"] + "Bright",
         }
     elif kind == "date":
         if options != {"isDateTime": False, "dateFormat": "ISO"}:
             raise ValueError(f"Unexpected date options {options}")
         out["options"] = {
-            "dateFormat": {
-                "name": "iso",
-                "format": "YYYY-MM-DD"
-            }
+            "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}
         }
     elif kind != "multilineText":
         raise ValueError(f"Unhandled column type {kind}")
@@ -159,48 +166,47 @@ def base(share: Path) -> Json:
         for row in rows:
             fields = {}
             for column in table["columns"]:
-                value = cell(column,
-                             row["cellValuesByColumnId"].get(column["id"]))
+                value = cell(
+                    column, row["cellValuesByColumnId"].get(column["id"])
+                )
                 if value is not None:
                     fields[column["name"]] = value
-            records.append({
-                "id": row["id"],
-                "createdTime": row["createdTime"],
-                "fields": fields,
-            })
-        tables.append({
-            "id":
-            table["id"],
-            "name":
-            table["name"],
-            "primaryFieldId":
-            table["primaryColumnId"],
-            "fields": [field(column) for column in table["columns"]],
-            "views": [{
-                "id": view["id"],
-                "name": view["name"],
-                "type": view["type"],
-            } for view in table["views"]],
-            "records":
-            records,
-        })
+            records.append(
+                {
+                    "id": row["id"],
+                    "createdTime": row["createdTime"],
+                    "fields": fields,
+                }
+            )
+        tables.append(
+            {
+                "id": table["id"],
+                "name": table["name"],
+                "primaryFieldId": table["primaryColumnId"],
+                "fields": [field(column) for column in table["columns"]],
+                "views": [
+                    {
+                        "id": view["id"],
+                        "name": view["name"],
+                        "type": view["type"],
+                    }
+                    for view in table["views"]
+                ],
+                "records": records,
+            }
+        )
     owner = schema["tableSchemas"][0]["columns"][0]["initialCreatedByUserId"]
     return {
-        "users": [{
-            "id": owner,
-            "email": EMAIL,
-            "name": NAME
-        }],
-        "tokens": [{
-            "token": TOKEN,
-            "userId": owner
-        }],
-        "bases": [{
-            "id": BASE_ID,
-            "name": title[:-len(TITLE_SUFFIX)],
-            "permissionLevel": "create",
-            "tables": tables,
-        }],
+        "users": [{"id": owner, "email": EMAIL, "name": NAME}],
+        "tokens": [{"token": TOKEN, "userId": owner}],
+        "bases": [
+            {
+                "id": BASE_ID,
+                "name": title[: -len(TITLE_SUFFIX)],
+                "permissionLevel": "create",
+                "tables": tables,
+            }
+        ],
     }
 
 
@@ -213,8 +219,11 @@ def digest(share: Path) -> str:
     sha = hashlib.sha256()
     for path in sorted(share.glob("*.json")):
         rows = json.loads(path.read_text())["data"]
-        body = rows.get("tableSchemas") if path.name == "schema.json" else (
-            rows["tableDatas"][0]["rows"])
+        body = (
+            rows.get("tableSchemas")
+            if path.name == "schema.json"
+            else (rows["tableDatas"][0]["rows"])
+        )
         sha.update(path.name.encode())
         sha.update(json.dumps(body, sort_keys=True).encode())
     return sha.hexdigest()
@@ -234,12 +243,14 @@ def dumps(corpus: Json) -> str:
         key = f"@records:{table['id']}"
         lines[key] = ",\n".join(
             " " * 12 + json.dumps(r, ensure_ascii=False, separators=(",", ":"))
-            for r in table["records"])
+            for r in table["records"]
+        )
         table["records"] = key
     text = json.dumps(corpus, ensure_ascii=False, indent=2)
     for key, body in lines.items():
-        text = text.replace(json.dumps(key),
-                            "[\n" + body + "\n" + " " * 10 + "]")
+        text = text.replace(
+            json.dumps(key), "[\n" + body + "\n" + " " * 10 + "]"
+        )
     return text
 
 
@@ -256,18 +267,12 @@ def main() -> None:
     seed = base(opts.share)
     corpus = {
         "source": {
-            "dataset":
-            "ScaleAI/MCP-Atlas",
-            "revision":
-            REVISION,
-            "license":
-            "CC-BY-4.0",
-            "server":
-            "@felores/airtable-mcp-server@0.3.0",
-            "share_url":
-            SHARE_URL,
-            "share_sha256":
-            digest(opts.share),
+            "dataset": "ScaleAI/MCP-Atlas",
+            "revision": REVISION,
+            "license": "CC-BY-4.0",
+            "server": "@felores/airtable-mcp-server@0.3.0",
+            "share_url": SHARE_URL,
+            "share_sha256": digest(opts.share),
             "notes": [
                 "The base is read from the share link Atlas publishes in "
                 "place of an export, through the share page's own read "

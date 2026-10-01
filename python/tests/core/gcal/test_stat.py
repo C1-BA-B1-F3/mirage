@@ -21,9 +21,9 @@ pytestmark = pytest.mark.asyncio
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_root_is_a_directory(api, accessor, index):
@@ -43,7 +43,8 @@ async def test_day_holding_events_is_a_directory(api, accessor, index):
 
 
 async def test_event_free_day_still_resolves_as_a_directory(
-        api, accessor, index):
+    api, accessor, index
+):
     # The range query over that day is positive proof of what is there, so
     # an empty day is an empty directory rather than ENOENT.
     row = await stat(accessor, spec("/primary/2027-03-04"), index)
@@ -73,7 +74,8 @@ async def test_event_reports_json_with_a_rendered_size(api, accessor, index):
     row = await stat(
         accessor,
         spec("/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"),
-        index)
+        index,
+    )
     assert row.content is ContentType.JSON
     assert row.extra["event_id"] == "aaaa1"
     # Size is the rendered payload's byte length, never a source-side number.
@@ -87,6 +89,8 @@ async def test_calendar_json_reports_json(api, accessor, index):
 
 async def test_unknown_event_is_enoent(api, accessor, index):
     with pytest.raises(FileNotFoundError):
-        await stat(accessor,
-                   spec("/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
-                   index)
+        await stat(
+            accessor,
+            spec("/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
+            index,
+        )

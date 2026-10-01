@@ -46,16 +46,11 @@ async def test_a_clone_keeps_the_declared_instances():
         secrets={
             "prod": {
                 "source": "acct-clone",
-                "config": {
-                    "account": "a1"
-                },
+                "config": {"account": "a1"},
             }
         },
-        env={"TOKEN": {
-            "from": "prod",
-            "ref": "r",
-            "key": "credential"
-        }})
+        env={"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+    )
     try:
         clone = await clone_workspace_with_override(src, None)
         try:
@@ -79,28 +74,23 @@ async def test_an_override_replaces_the_declared_instances():
         secrets={
             "prod": {
                 "source": "acct-override",
-                "config": {
-                    "account": "live"
-                },
+                "config": {"account": "live"},
             }
         },
-        env={"TOKEN": {
-            "from": "prod",
-            "ref": "r",
-            "key": "credential"
-        }})
+        env={"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+    )
     try:
         clone = await clone_workspace_with_override(
-            src, {
+            src,
+            {
                 "secrets": {
                     "prod": {
                         "source": "acct-override",
-                        "config": {
-                            "account": "staging"
-                        },
+                        "config": {"account": "staging"},
                     }
                 }
-            })
+            },
+        )
         try:
             result = await clone.shell('echo "$TOKEN"')
             assert (await result.stdout_str()) == "staging:r\n"
@@ -121,16 +111,11 @@ async def test_an_empty_override_drops_the_declared_instances():
         secrets={
             "aws-sm": {
                 "source": "aws-sm",
-                "config": {
-                    "account": "declared"
-                },
+                "config": {"account": "declared"},
             }
         },
-        env={"TOKEN": {
-            "from": "aws-sm",
-            "ref": "r",
-            "key": "credential"
-        }})
+        env={"TOKEN": {"from": "aws-sm", "ref": "r", "key": "credential"}},
+    )
     try:
         clone = await clone_workspace_with_override(src, {"secrets": {}})
         try:
@@ -154,16 +139,16 @@ async def test_an_override_mount_reads_a_pointer():
             "/": RAMVFS(),
             "/slack": SlackVFS(config=SlackConfig(token="xoxb-src")),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     try:
         clone = await clone_workspace_with_override(
-            src, {
+            src,
+            {
                 "secrets": {
                     "prod": {
                         "source": "acct-mount",
-                        "config": {
-                            "account": "live"
-                        },
+                        "config": {"account": "live"},
                     }
                 },
                 "mounts": {
@@ -173,12 +158,13 @@ async def test_an_override_mount_reads_a_pointer():
                             "token": {
                                 "from": "prod",
                                 "ref": "bot",
-                                "key": "credential"
+                                "key": "credential",
                             }
                         },
                     }
                 },
-            })
+            },
+        )
         try:
             mount = clone._registry.mount_for_prefix("/slack")
             token = mount.vfs.config.token
@@ -199,7 +185,7 @@ def broken_bootstrap(source: str) -> dict[str, dict]:
                 "account": {
                     "from": "dotenv",
                     "ref": "/no/such/file",
-                    "key": "ACCOUNT"
+                    "key": "ACCOUNT",
                 }
             },
         }
@@ -213,9 +199,11 @@ async def test_a_clone_with_no_override_pointer_builds_no_source():
     that fills a managed variable. Building them here would read a
     bootstrap file on behalf of an override that named no pointer."""
     register_secrets("acct-lazy", AccountConfig, fetch_account)
-    src = Workspace({"/": RAMVFS()},
-                    mode=MountMode.WRITE,
-                    secrets=broken_bootstrap("acct-lazy"))
+    src = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        secrets=broken_bootstrap("acct-lazy"),
+    )
     try:
         clone = await clone_workspace_with_override(src, None)
         try:
@@ -225,11 +213,8 @@ async def test_a_clone_with_no_override_pointer_builds_no_source():
         # An override that swaps a mount without naming a pointer is
         # the same case.
         clone = await clone_workspace_with_override(
-            src, {"mounts": {
-                "/": {
-                    "vfs": "ram"
-                }
-            }})
+            src, {"mounts": {"/": {"vfs": "ram"}}}
+        )
         await clone.close()
     finally:
         await src.close()
@@ -238,13 +223,16 @@ async def test_a_clone_with_no_override_pointer_builds_no_source():
 @pytest.mark.asyncio
 async def test_an_override_pointer_still_builds_the_declared_sources():
     register_secrets("acct-wanted", AccountConfig, fetch_account)
-    src = Workspace({"/": RAMVFS()},
-                    mode=MountMode.WRITE,
-                    secrets=broken_bootstrap("acct-wanted"))
+    src = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        secrets=broken_bootstrap("acct-wanted"),
+    )
     try:
         with pytest.raises(SecretsError, match="secrets.prod.config.account"):
             await clone_workspace_with_override(
-                src, {
+                src,
+                {
                     "mounts": {
                         "/slack": {
                             "vfs": "slack",
@@ -252,11 +240,12 @@ async def test_an_override_pointer_still_builds_the_declared_sources():
                                 "token": {
                                     "from": "prod",
                                     "ref": "bot",
-                                    "key": "credential"
+                                    "key": "credential",
                                 }
                             },
                         }
                     }
-                })
+                },
+            )
     finally:
         await src.close()

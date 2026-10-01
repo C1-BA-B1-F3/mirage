@@ -80,8 +80,9 @@ def normalize_card(card: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_comment(comment: dict[str, Any], *,
-                      card_id: str) -> dict[str, Any]:
+def normalize_comment(
+    comment: dict[str, Any], *, card_id: str
+) -> dict[str, Any]:
     member = comment.get("memberCreator") or {}
     data = comment.get("data") or {}
     return {

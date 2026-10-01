@@ -26,15 +26,13 @@ export function newSlide(st: GwsState, objectId?: string): SlidePage {
 export function fmtPage(slide: SlidePage): JsonObj {
   return {
     objectId: slide.objectId,
-    pageElements: [...slide.texts.entries()].map(
-      ([objectId, text]): JsonValue => ({
-        objectId,
-        shape: {
-          shapeType: 'TEXT_BOX',
-          text: { textElements: [{ textRun: { content: text, style: {} } }] },
-        },
-      }),
-    ),
+    pageElements: [...slide.texts.entries()].map(([objectId, text]): JsonValue => ({
+      objectId,
+      shape: {
+        shapeType: 'TEXT_BOX',
+        text: { textElements: [{ textRun: { content: text, style: {} } }] },
+      },
+    })),
   }
 }
 

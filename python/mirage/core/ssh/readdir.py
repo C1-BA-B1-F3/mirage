@@ -31,12 +31,16 @@ logger = logging.getLogger(__name__)
 # file arrives as SFTPNoSuchFile just like a component that is simply
 # absent; later protocol versions split SFTPNotADirectory out. Both mean
 # "this name does not resolve", which is what a probe asks.
-UNRESOLVED = (asyncssh.SFTPNoSuchFile, asyncssh.SFTPNoSuchPath,
-              asyncssh.SFTPNotADirectory)
+UNRESOLVED = (
+    asyncssh.SFTPNoSuchFile,
+    asyncssh.SFTPNoSuchPath,
+    asyncssh.SFTPNotADirectory,
+)
 
 
-async def _attrs_or_none(accessor: SSHAccessor,
-                         key: str) -> asyncssh.SFTPAttrs | None:
+async def _attrs_or_none(
+    accessor: SSHAccessor, key: str
+) -> asyncssh.SFTPAttrs | None:
     sftp = await accessor.sftp()
     try:
         return await sftp.stat(_abs(accessor.config, key))
@@ -54,14 +58,16 @@ async def _is_dir(accessor: SSHAccessor, key: str) -> bool:
     return attrs is not None and attrs.type == asyncssh.FILEXFER_TYPE_DIRECTORY
 
 
-async def readdir(accessor: SSHAccessor,
-                  path_spec: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: SSHAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     virtual = path_spec.virtual
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     path = path_spec.directory if path_spec.pattern else path_spec.virtual
     if prefix and path.startswith(prefix):
-        rest = path[len(prefix):]
+        rest = path[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
     config = accessor.config
@@ -106,17 +112,27 @@ async def readdir(accessor: SSHAccessor,
             is_dir = attrs.type == asyncssh.FILEXFER_TYPE_DIRECTORY
             is_file = attrs.type == asyncssh.FILEXFER_TYPE_REGULAR
             index_entries.append(
-                (leaf,
-                 IndexEntry(id=child,
-                            name=leaf,
-                            resource_type="folder" if is_dir else "file",
-                            size=attrs.size if is_file else None,
-                            remote_time=epoch_to_iso(attrs.mtime)
-                            if attrs.mtime is not None else "")))
+                (
+                    leaf,
+                    IndexEntry(
+                        id=child,
+                        name=leaf,
+                        resource_type="folder" if is_dir else "file",
+                        size=attrs.size if is_file else None,
+                        remote_time=epoch_to_iso(attrs.mtime)
+                        if attrs.mtime is not None
+                        else "",
+                    ),
+                )
+            )
         await index.set_dir(virtual_key, index_entries)
         return virtual_entries
     except asyncssh.SFTPPermissionDenied as exc:
         raise eacces(virtual) from exc
     except UNRESOLVED:
-        raise await listing_error(virtual, path, partial(_is_file, accessor),
-                                  partial(_is_dir, accessor))
+        raise await listing_error(
+            virtual,
+            path,
+            partial(_is_file, accessor),
+            partial(_is_dir, accessor),
+        )

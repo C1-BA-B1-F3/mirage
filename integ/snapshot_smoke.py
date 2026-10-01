@@ -44,14 +44,15 @@ async def check(ws: Workspace, command: str, stdout: str = "") -> None:
 async def write(path: Path) -> None:
     ws = Workspace(
         {
-            "/direct/":
-            RAMVFS(),
-            "/nested/registered/":
-            Mount(build_vfs("portable-ram"),
-                  vfs_ref="portable-ram",
-                  index=IndexConfig(ttl=37))
+            "/direct/": RAMVFS(),
+            "/nested/registered/": Mount(
+                build_vfs("portable-ram"),
+                vfs_ref="portable-ram",
+                index=IndexConfig(ttl=37),
+            ),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     try:
         await check(ws, "printf 'portable\\n' > /direct/note.txt")
         await check(ws, "printf 'registered\\n' > /nested/registered/note.txt")
@@ -67,8 +68,9 @@ async def read(path: Path) -> None:
         await check(ws, "cat /direct/note.txt", "portable\n")
         await check(ws, "cat /nested/registered/*.txt", "registered\n")
         await check(ws, "cat /nested/registered/link", "portable\n")
-        registered = next(m for m in ws.mounts()
-                          if m.prefix == "/nested/registered/")
+        registered = next(
+            m for m in ws.mounts() if m.prefix == "/nested/registered/"
+        )
         assert isinstance(registered.vfs, PortableRAM)
         assert registered.index_config == IndexConfig(ttl=37)
     finally:
@@ -79,23 +81,33 @@ async def main() -> None:
     register_vfs("portable-ram", PortableRAM)
     here = Path(__file__).resolve().parent
     command = [
-        "pnpm", "--filter", "@struktoai/mirage-integ", "exec", "tsx",
-        "snapshot_smoke.ts"
+        "pnpm",
+        "--filter",
+        "@struktoai/mirage-integ",
+        "exec",
+        "tsx",
+        "snapshot_smoke.ts",
     ]
     with TemporaryDirectory(prefix="mirage-snapshot-smoke-") as folder:
         path = Path(folder) / "state.tar"
         await write(path)
-        subprocess.run([*command, "read", str(path)],
-                       cwd=here.parent / "typescript",
-                       check=True,
-                       timeout=60)
-        subprocess.run([*command, "write", str(path)],
-                       cwd=here.parent / "typescript",
-                       check=True,
-                       timeout=60)
+        subprocess.run(
+            [*command, "read", str(path)],
+            cwd=here.parent / "typescript",
+            check=True,
+            timeout=60,
+        )
+        subprocess.run(
+            [*command, "write", str(path)],
+            cwd=here.parent / "typescript",
+            check=True,
+            timeout=60,
+        )
         await read(path)
-    print("Snapshot smoke passed in both directions: "
-          "direct and registered mounts")
+    print(
+        "Snapshot smoke passed in both directions: "
+        "direct and registered mounts"
+    )
 
 
 if __name__ == "__main__":

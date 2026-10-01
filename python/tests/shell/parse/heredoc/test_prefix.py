@@ -42,12 +42,14 @@ def _prefix(command: str) -> str:
 class _Node:
     """The slice of a tree_sitter.Node that body_prefix reads."""
 
-    def __init__(self,
-                 type_: str,
-                 start: int,
-                 end: int,
-                 source: bytes,
-                 children: "list[_Node] | None" = None):
+    def __init__(
+        self,
+        type_: str,
+        start: int,
+        end: int,
+        source: bytes,
+        children: "list[_Node] | None" = None,
+    ):
         self.type = type_
         self.start_byte = start
         self.end_byte = end
@@ -70,12 +72,18 @@ TWO_ON_A_LINE = b"cat <<A <<B\nb\nB\n\na\nA\n"
 def _heredoc(operator: int, body: int) -> _Node:
     """A redirect of TWO_ON_A_LINE: ``<<`` at ``operator``, a one-letter
     delimiter, and a one-letter body line at ``body``."""
-    return _Node(HEREDOC_REDIRECT, operator, body + 3, TWO_ON_A_LINE, [
-        _Node("<<", operator, operator + 2, TWO_ON_A_LINE),
-        _Node("heredoc_start", operator + 2, operator + 3, TWO_ON_A_LINE),
-        _Node("heredoc_body", body, body + 2, TWO_ON_A_LINE),
-        _Node("heredoc_end", body + 2, body + 3, TWO_ON_A_LINE),
-    ])
+    return _Node(
+        HEREDOC_REDIRECT,
+        operator,
+        body + 3,
+        TWO_ON_A_LINE,
+        [
+            _Node("<<", operator, operator + 2, TWO_ON_A_LINE),
+            _Node("heredoc_start", operator + 2, operator + 3, TWO_ON_A_LINE),
+            _Node("heredoc_body", body, body + 2, TWO_ON_A_LINE),
+            _Node("heredoc_end", body + 2, body + 3, TWO_ON_A_LINE),
+        ],
+    )
 
 
 def test_body_prefix_is_empty_when_the_node_starts_the_body():
@@ -137,7 +145,8 @@ def test_body_prefix_of_an_unterminated_body():
 
 def test_body_prefix_of_a_heredoc_inside_a_command_substitution():
     outer, inner = _redirects(
-        _parse_bytes(b"cat <<A $(cat <<B\n\nb\nB\n)\na\nA\n"))
+        _parse_bytes(b"cat <<A $(cat <<B\n\nb\nB\n)\na\nA\n")
+    )
     assert body_prefix(outer) == ""
     assert body_prefix(inner) == "\n"
 
@@ -150,10 +159,21 @@ def test_body_prefix_of_an_earlier_heredoc_on_the_line():
     # from the operator line's newline the two share.
     first = _heredoc(4, 17)
     second = _heredoc(8, 12)
-    root = _Node("program", 0, len(TWO_ON_A_LINE), TWO_ON_A_LINE, [
-        _Node("redirected_statement", 0, 20, TWO_ON_A_LINE,
-              [_Node("command", 0, 3, TWO_ON_A_LINE), first, second])
-    ])
+    root = _Node(
+        "program",
+        0,
+        len(TWO_ON_A_LINE),
+        TWO_ON_A_LINE,
+        [
+            _Node(
+                "redirected_statement",
+                0,
+                20,
+                TWO_ON_A_LINE,
+                [_Node("command", 0, 3, TWO_ON_A_LINE), first, second],
+            )
+        ],
+    )
     assert tree_root(cast(tree_sitter.Node, second)) is root
     assert body_prefix(cast(tree_sitter.Node, second)) == ""
     assert body_prefix(cast(tree_sitter.Node, first)) == "\n"

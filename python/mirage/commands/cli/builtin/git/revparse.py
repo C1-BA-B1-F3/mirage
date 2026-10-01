@@ -19,8 +19,10 @@ from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import (AmbiguousArgumentError,
-                                                    BadRevisionError)
+from mirage.commands.cli.builtin.git.errors import (
+    AmbiguousArgumentError,
+    BadRevisionError,
+)
 from mirage.commands.cli.builtin.git.refs import TAG_PREFIX
 from mirage.commands.cli.builtin.git.types import AncestryStep, PeelStep, RevOp
 
@@ -93,7 +95,7 @@ def split_operators(revision: str) -> tuple[str, tuple[RevOp, ...]]:
             close = rest.find(PEEL_CLOSE, position)
             if close < 0:
                 raise AmbiguousArgumentError(revision)
-            ops.append(PeelStep(rest[position + len(PEEL_OPEN):close]))
+            ops.append(PeelStep(rest[position + len(PEEL_OPEN) : close]))
             position = close + 1
             continue
         position += 1
@@ -106,8 +108,9 @@ def split_operators(revision: str) -> tuple[str, tuple[RevOp, ...]]:
     return base or HEAD, tuple(ops)
 
 
-def _step(repo: BaseRepo, commit: Commit, step: AncestryStep,
-          revision: str) -> Commit:
+def _step(
+    repo: BaseRepo, commit: Commit, step: AncestryStep, revision: str
+) -> Commit:
     """Apply one ancestry suffix to a commit.
 
     ``~n`` walks n generations along first parents; ``^n`` takes the
@@ -202,15 +205,16 @@ def _range_ends(revision: str) -> tuple[str, str, bool] | None:
     at = revision.find(RANGE)
     if at < 0:
         return None
-    right = revision[at + len(RANGE):]
+    right = revision[at + len(RANGE) :]
     symmetric = right.startswith(SYMMETRIC_DOT)
     if symmetric:
-        right = right[len(SYMMETRIC_DOT):]
+        right = right[len(SYMMETRIC_DOT) :]
     return revision[:at] or HEAD, right or HEAD, symmetric
 
 
-def range_commits(repo: BaseRepo,
-                  revision: str) -> tuple[Commit, Commit, bool] | None:
+def range_commits(
+    repo: BaseRepo, revision: str
+) -> tuple[Commit, Commit, bool] | None:
     """Both ends of a range operand, or None when it names one revision.
 
     A lone ``..`` is a path to git, and mirage limits nothing by path,
@@ -232,9 +236,11 @@ def range_commits(repo: BaseRepo,
     if ends is None:
         return None
     try:
-        return (resolve_commit(repo,
-                               ends[0]), resolve_commit(repo,
-                                                        ends[1]), ends[2])
+        return (
+            resolve_commit(repo, ends[0]),
+            resolve_commit(repo, ends[1]),
+            ends[2],
+        )
     except AmbiguousArgumentError as exc:
         raise AmbiguousArgumentError(revision) from exc
 
@@ -274,8 +280,8 @@ def merge_bases(repo: BaseRepo, one: Commit, other: Commit) -> list[Commit]:
 
 
 def split_revisions(
-        repo: BaseRepo,
-        revisions: tuple[str, ...]) -> tuple[list[Commit], list[Commit]]:
+    repo: BaseRepo, revisions: tuple[str, ...]
+) -> tuple[list[Commit], list[Commit]]:
     """The commits a walk starts from and the commits whose history it hides.
 
     ``A..B`` walks B and hides A, ``A...B`` walks both and hides their
@@ -296,7 +302,7 @@ def split_revisions(
     hidden: list[Commit] = []
     for revision in revisions:
         if revision.startswith(NEGATION):
-            name = revision[len(NEGATION):]
+            name = revision[len(NEGATION) :]
             if not name or RANGE in name:
                 raise BadRevisionError(revision)
             try:
@@ -438,8 +444,9 @@ def _at_path(repo: BaseRepo, rev: str, path: str, revision: str) -> ShaFile:
     if not isinstance(holder, Tree):
         raise AmbiguousArgumentError(revision)
     try:
-        _mode, sha = holder.lookup_path(repo.object_store.__getitem__,
-                                        path.encode())
+        _mode, sha = holder.lookup_path(
+            repo.object_store.__getitem__, path.encode()
+        )
     except (KeyError, NotTreeError, ValueError) as exc:
         raise AmbiguousArgumentError(revision) from exc
     return _object_by_id(repo, sha, revision)
@@ -466,8 +473,11 @@ def tag_object(repo: BaseRepo, stem: str) -> Tag | None:
     """
     ref = Ref(f"{TAG_PREFIX}{stem}".encode())
     try:
-        found = (repo.object_store[ObjectID(repo.refs[ref])]
-                 if ref in repo.refs.allkeys() else object_at(repo, stem))
+        found = (
+            repo.object_store[ObjectID(repo.refs[ref])]
+            if ref in repo.refs.allkeys()
+            else object_at(repo, stem)
+        )
     except (KeyError, ValueError):
         return None
     return found if isinstance(found, Tag) else None

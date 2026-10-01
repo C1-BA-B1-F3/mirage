@@ -40,11 +40,7 @@ async def test_whoami_labels_the_orgs_the_way_upstream_does(mock_whoami):
     """
     mock_whoami.return_value = {
         "name": "zoe",
-        "orgs": [{
-            "name": "acme"
-        }, {
-            "name": "widgets"
-        }],
+        "orgs": [{"name": "acme"}, {"name": "widgets"}],
     }
     assert await _text(await whoami_cmd(inv())) == "zoe\norgs:  acme,widgets\n"
 
@@ -64,8 +60,9 @@ async def test_whoami_names_a_private_endpoint(mock_whoami):
     mock_whoami.return_value = {"name": "zoe"}
     config = HfConfig(token="hf_test", endpoint="http://127.0.0.1:5199")
     text = await _text(await whoami_cmd(inv(config=config)))
-    assert text == ("zoe\nAuthenticated through private endpoint: "
-                    "http://127.0.0.1:5199\n")
+    assert text == (
+        "zoe\nAuthenticated through private endpoint: http://127.0.0.1:5199\n"
+    )
 
 
 @pytest.mark.asyncio

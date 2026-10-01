@@ -41,9 +41,9 @@ class _GatedStore:
         await self._gate.wait()
         return await self._inner.append(channel, data)
 
-    async def read_from(self,
-                        seq: int,
-                        limit: int | None = None) -> ReadResult:
+    async def read_from(
+        self, seq: int, limit: int | None = None
+    ) -> ReadResult:
         return await self._inner.read_from(seq, limit)
 
     @property
@@ -67,8 +67,9 @@ async def _run_forever(job: Job) -> tuple[IOResult, ExecutionNode]:
     return IOResult(), ExecutionNode()
 
 
-def _tracked_ram_console(stores: list[RAMConsoleStore],
-                         job_id: int) -> JobConsole:
+def _tracked_ram_console(
+    stores: list[RAMConsoleStore], job_id: int
+) -> JobConsole:
     """A console factory that remembers the stores it built.
 
     Args:
@@ -185,10 +186,9 @@ async def test_settle_kill_marker_survives_second_cancel():
 
 
 def _submit(table: JobTable, session_id: str, command: str = "x") -> Job:
-    return table.submit(command=command,
-                        run=_run_forever,
-                        cwd="/",
-                        session_id=session_id)
+    return table.submit(
+        command=command, run=_run_forever, cwd="/", session_id=session_id
+    )
 
 
 @pytest.mark.asyncio
@@ -262,12 +262,14 @@ async def test_close_session_stops_and_forgets_its_jobs():
 @pytest.mark.asyncio
 async def test_load_restores_a_job_into_its_session():
     table = JobTable()
-    restored = Job(id=3,
-                   command="x",
-                   task=None,
-                   cwd="/",
-                   status=JobStatus.COMPLETED,
-                   session_id="a")
+    restored = Job(
+        id=3,
+        command="x",
+        task=None,
+        cwd="/",
+        status=JobStatus.COMPLETED,
+        session_id="a",
+    )
     table.load(restored)
     assert table.get(3, "a") is restored
     assert table.get(3) is None
@@ -320,8 +322,9 @@ async def test_process_ids_do_not_restart_with_shell_job_numbers():
     assert replacement.id == 1
     assert replacement.process.info.pid > b.process.info.pid
     await table.kill_all()
-    await asyncio.gather(a.process.join(), b.process.join(),
-                         replacement.process.join())
+    await asyncio.gather(
+        a.process.join(), b.process.join(), replacement.process.join()
+    )
 
 
 @pytest.mark.asyncio
@@ -334,11 +337,11 @@ async def test_refused_job_never_allocates_a_factory_console():
         await release.wait()
         return IOResult(), ExecutionNode()
 
-    job = table.submit(command='held', run=run, cwd='/', limit=1)
+    job = table.submit(command="held", run=run, cwd="/", limit=1)
     try:
         for _ in range(3):
             with pytest.raises(BlockingIOError):
-                table.submit(command='refused', run=run, cwd='/', limit=1)
+                table.submit(command="refused", run=run, cwd="/", limit=1)
         assert len(stores) == 1
         assert table.list_jobs() == [job]
     finally:
@@ -354,15 +357,15 @@ async def test_factory_failure_never_enters_job_runner():
 
     def factory(job_id):
         entered.append(job_id)
-        raise ValueError('console unavailable')
+        raise ValueError("console unavailable")
 
     async def run(job):
-        entered.append('runner')
+        entered.append("runner")
         return IOResult(), ExecutionNode()
 
     table = JobTable(console_factory=factory)
-    with pytest.raises(ValueError, match='console unavailable'):
-        table.submit(command='refused', run=run, cwd='/', limit=1)
+    with pytest.raises(ValueError, match="console unavailable"):
+        table.submit(command="refused", run=run, cwd="/", limit=1)
     await table.processes.drain()
     assert table.list_jobs() == []
     assert table.processes.live() == ()

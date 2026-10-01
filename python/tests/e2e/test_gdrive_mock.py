@@ -43,7 +43,8 @@ async def test_gdrive_mock_cat(gdrive_ws):
     await ws.shell("ls /gd")
     r = await ws.shell("cat /gd/hello.txt")
     assert (await r.stdout_str()) == "hello world\n", (
-        f"exit={r.exit_code} stderr={await r.stderr_str()!r}")
+        f"exit={r.exit_code} stderr={await r.stderr_str()!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -120,9 +121,9 @@ async def test_a_stat_that_relists_the_parent_cleans_up_a_dropped_sibling():
     fake = FakeGDrive()
     fake.add_file("dir/a.txt", b"alpha\n")
     fake.add_file("dir/b.txt", b"bravo\n")
-    config = GoogleDriveConfig(client_id="i",
-                               client_secret="s",
-                               refresh_token="r")
+    config = GoogleDriveConfig(
+        client_id="i", client_secret="s", refresh_token="r"
+    )
     ws = Workspace({"/gd": GoogleDriveVFS(config)}, mode=MountMode.READ)
     with patch_gdrive(fake):
         try:
@@ -148,12 +149,14 @@ async def test_under_fresh_a_stat_relists_and_cleans_up_a_dropped_sibling():
     fake = FakeGDrive()
     fake.add_file("dir/a.txt", b"alpha\n")
     fake.add_file("dir/b.txt", b"bravo\n")
-    config = GoogleDriveConfig(client_id="i",
-                               client_secret="s",
-                               refresh_token="r")
-    ws = Workspace({"/gd": GoogleDriveVFS(config)},
-                   mode=MountMode.READ,
-                   read=ReadSpec(policy=ReadPolicy.FRESH))
+    config = GoogleDriveConfig(
+        client_id="i", client_secret="s", refresh_token="r"
+    )
+    ws = Workspace(
+        {"/gd": GoogleDriveVFS(config)},
+        mode=MountMode.READ,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
     with patch_gdrive(fake):
         try:
             await ws.shell("ls /gd/dir")

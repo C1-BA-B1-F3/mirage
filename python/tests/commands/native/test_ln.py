@@ -31,7 +31,8 @@ def test_ln_sf(env):
 def test_ln_n(env):
     env.create_file("a.txt", b"hello")
     result = env.mirage(
-        "ln -s -n /data/a.txt /data/link.txt && readlink /data/link.txt")
+        "ln -s -n /data/a.txt /data/link.txt && readlink /data/link.txt"
+    )
     assert "/data/a.txt" in result
 
 

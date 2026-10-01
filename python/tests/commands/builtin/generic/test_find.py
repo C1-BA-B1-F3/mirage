@@ -6,18 +6,28 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mirage.commands.builtin.find_eval import FindArgs, Name, Not, Or
-from mirage.commands.builtin.generic.find import (apply_mount_prefix,
-                                                  apply_mtime_filter)
+from mirage.commands.builtin.generic.find import (
+    apply_mount_prefix,
+    apply_mtime_filter,
+    parse_find_args,
+    walk_find,
+)
 from mirage.commands.builtin.generic.find import find as stream_find
-from mirage.commands.builtin.generic.find import \
-    find_walk_generic as stream_walk_find
-from mirage.commands.builtin.generic.find import parse_find_args, walk_find
+from mirage.commands.builtin.generic.find import (
+    find_walk_generic as stream_walk_find,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import CommandTimeoutError, FindParseError
 from mirage.io.types import materialize
 from mirage.ops.types import LinkView
-from mirage.types import (ContentType, FileStat, FileType, FindType, MountMode,
-                          PathSpec)
+from mirage.types import (
+    ContentType,
+    FileStat,
+    FileType,
+    FindType,
+    MountMode,
+    PathSpec,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -102,9 +112,10 @@ def test_parse_find_args_unknown_type_left_as_string():
 
 
 def test_parse_find_args_unknown_predicate_raises():
-    with pytest.raises(FindParseError,
-                       match="find: unknown predicate '-bogus'"):
-        parse_find_args(("-bogus", ))
+    with pytest.raises(
+        FindParseError, match="find: unknown predicate '-bogus'"
+    ):
+        parse_find_args(("-bogus",))
 
 
 def test_parse_find_args_negation_builds_not_tree():
@@ -140,11 +151,13 @@ async def test_apply_mtime_filter_keeps_within_window():
     iso = now.isoformat()
 
     async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(name="a.txt",
-                        size=1,
-                        modified=iso,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="a.txt",
+            size=1,
+            modified=iso,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -158,11 +171,15 @@ async def test_apply_mtime_filter_keeps_within_window():
 @pytest.mark.asyncio
 async def test_apply_mtime_filter_stats_the_mounted_virtual_path():
     now = datetime.now(tz=timezone.utc)
-    stat = AsyncMock(return_value=FileStat(name="a.txt",
-                                           size=1,
-                                           modified=now.isoformat(),
-                                           type=FileType.FILE,
-                                           content=ContentType.TEXT))
+    stat = AsyncMock(
+        return_value=FileStat(
+            name="a.txt",
+            size=1,
+            modified=now.isoformat(),
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
+    )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -183,11 +200,13 @@ async def test_apply_mtime_filter_drops_outside_window():
     old = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
     async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(name="a.txt",
-                        size=1,
-                        modified=old.isoformat(),
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="a.txt",
+            size=1,
+            modified=old.isoformat(),
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -202,11 +221,13 @@ async def test_apply_mtime_filter_drops_outside_window():
 async def test_apply_mtime_filter_drops_entries_with_no_modified_time():
 
     async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(name="a.txt",
-                        size=1,
-                        modified=None,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="a.txt",
+            size=1,
+            modified=None,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -227,11 +248,13 @@ async def test_apply_mtime_filter_honours_a_reported_utc_offset():
     moment = datetime(2025, 6, 1, 12, 0, tzinfo=timezone(timedelta(hours=9)))
 
     async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(name="a.txt",
-                        size=1,
-                        modified=moment.isoformat(),
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="a.txt",
+            size=1,
+            modified=moment.isoformat(),
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -247,11 +270,13 @@ async def test_apply_mtime_filter_drops_a_malformed_timestamp():
     """An unparseable stamp drops the entry instead of raising out of find."""
 
     async def stat(_spec: PathSpec) -> FileStat:
-        return FileStat(name="a.txt",
-                        size=1,
-                        modified="not-a-date",
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="a.txt",
+            size=1,
+            modified="not-a-date",
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out = await apply_mtime_filter(
         ["/a.txt"],
@@ -282,8 +307,10 @@ def test_apply_mount_prefix_noop_when_empty():
 
 
 def test_apply_mount_prefix_prepends():
-    assert apply_mount_prefix(["/a.txt", "/dir/b.txt"],
-                              "/mnt") == ["/mnt/a.txt", "/mnt/dir/b.txt"]
+    assert apply_mount_prefix(["/a.txt", "/dir/b.txt"], "/mnt") == [
+        "/mnt/a.txt",
+        "/mnt/dir/b.txt",
+    ]
 
 
 def test_apply_mount_prefix_strips_leading_slash_from_entries():
@@ -302,11 +329,9 @@ def _root_spec() -> PathSpec:
 async def test_walk_find_tolerates_not_found_readdir():
     readdir = AsyncMock(side_effect=FileNotFoundError("/"))
     stat = AsyncMock(side_effect=FileNotFoundError("/"))
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs())
+    results = await walk_find(
+        _root_spec(), readdir=readdir, stat=stat, index=None, args=FindArgs()
+    )
     assert results == []
 
 
@@ -314,11 +339,13 @@ async def test_walk_find_tolerates_not_found_readdir():
 async def test_walk_find_emits_start_path_at_depth_zero():
     readdir = AsyncMock(return_value=["/child.txt"])
     stat = AsyncMock(return_value=FileStat(name="/", type=FileType.DIRECTORY))
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(maxdepth=0))
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(maxdepth=0),
+    )
     assert results == ["/"]
     readdir.assert_not_awaited()
 
@@ -330,22 +357,26 @@ async def test_walk_find_propagates_non_not_found_readdir_errors():
     # point that is not one has no children to read.
     stat = AsyncMock(return_value=FileStat(name="/", type=FileType.DIRECTORY))
     with pytest.raises(ValueError, match="bad page token"):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs())
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(),
+        )
 
 
 @pytest.mark.asyncio
 async def test_walk_find_stat_fallback_treats_not_found_as_file():
     readdir = AsyncMock(return_value=["/mystery"])
     stat = AsyncMock(side_effect=FileNotFoundError("/mystery"))
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(type=FindType.FILE))
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(type=FindType.FILE),
+    )
     assert results == ["/mystery"]
 
 
@@ -360,9 +391,9 @@ def _flaky(exc: Exception, calls: list[str] | None = None):
     stats = {
         "/": FileStat(name="/", type=FileType.DIRECTORY),
         **{
-            f"/{n}.json": FileStat(name=f"{n}.json",
-                                   size=1,
-                                   type=FileType.FILE)
+            f"/{n}.json": FileStat(
+                name=f"{n}.json", size=1, type=FileType.FILE
+            )
             for n in "abc"
         },
     }
@@ -385,12 +416,14 @@ async def test_walk_find_records_an_entry_whose_stat_fails_and_walks_on():
     exc = RuntimeError("upstream 502 Bad Gateway")
     readdir, stat = _flaky(exc)
     unstatted: dict[str, Exception] = {}
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(type=FindType.FILE),
-                              unstatted=unstatted)
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(type=FindType.FILE),
+        unstatted=unstatted,
+    )
     assert results == ["/a.json", "/b.json", "/c.json"]
     assert unstatted == {"/b.json": exc}
 
@@ -399,12 +432,14 @@ async def test_walk_find_records_an_entry_whose_stat_fails_and_walks_on():
 async def test_walk_find_fails_a_stat_test_without_asking_again():
     calls: list[str] = []
     readdir, stat = _flaky(RuntimeError("upstream 502 Bad Gateway"), calls)
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(min_size=1),
-                              unstatted={})
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(min_size=1),
+        unstatted={},
+    )
     assert results == ["/", "/a.json", "/c.json"]
     assert calls.count("/b.json") == 1
 
@@ -413,23 +448,27 @@ async def test_walk_find_fails_a_stat_test_without_asking_again():
 async def test_walk_find_propagates_an_entry_failure_it_does_not_collect():
     readdir, stat = _flaky(RuntimeError("upstream 502 Bad Gateway"))
     with pytest.raises(RuntimeError, match="502"):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs())
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(),
+        )
 
 
 @pytest.mark.asyncio
 async def test_walk_find_propagates_a_timeout_even_when_collecting():
     readdir, stat = _flaky(CommandTimeoutError("stat", 5))
     with pytest.raises(CommandTimeoutError):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs(),
-                        unstatted={})
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(),
+            unstatted={},
+        )
 
 
 @pytest.mark.asyncio
@@ -445,35 +484,37 @@ async def test_walk_find_empty_matches_empty_files_and_dirs():
 
     async def stat(spec: PathSpec, _index):
         stats = {
-            "/":
-            FileStat(name="/", type=FileType.DIRECTORY),
-            "/empty.txt":
-            FileStat(name="empty.txt",
-                     size=0,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
-            "/full.txt":
-            FileStat(name="full.txt",
-                     size=1,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
-            "/empty-dir":
-            FileStat(name="empty-dir", type=FileType.DIRECTORY),
-            "/full-dir":
-            FileStat(name="full-dir", type=FileType.DIRECTORY),
-            "/full-dir/a.txt":
-            FileStat(name="a.txt",
-                     size=1,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
+            "/": FileStat(name="/", type=FileType.DIRECTORY),
+            "/empty.txt": FileStat(
+                name="empty.txt",
+                size=0,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
+            "/full.txt": FileStat(
+                name="full.txt",
+                size=1,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
+            "/empty-dir": FileStat(name="empty-dir", type=FileType.DIRECTORY),
+            "/full-dir": FileStat(name="full-dir", type=FileType.DIRECTORY),
+            "/full-dir/a.txt": FileStat(
+                name="a.txt",
+                size=1,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
         }
         return stats[spec.virtual]
 
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=parse_find_args(("-empty", )))
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=parse_find_args(("-empty",)),
+    )
     assert results == ["/empty-dir", "/empty.txt"]
 
 
@@ -502,19 +543,17 @@ async def test_walk_find_time_test_before_prune_gates_it():
         return FileStat(name=name, type=kind, modified=stamps[spec.virtual])
 
     gated = parse_find_args(
-        ("-mindepth", "1", "-newermt", "2010-01-01", "-prune"))
-    assert await walk_find(_root_spec(),
-                           readdir=readdir,
-                           stat=stat,
-                           index=None,
-                           args=gated) == ["/new", "/old/f.txt"]
+        ("-mindepth", "1", "-newermt", "2010-01-01", "-prune")
+    )
+    assert await walk_find(
+        _root_spec(), readdir=readdir, stat=stat, index=None, args=gated
+    ) == ["/new", "/old/f.txt"]
     firm = parse_find_args(
-        ("-mindepth", "1", "-prune", "-newermt", "2010-01-01"))
-    assert await walk_find(_root_spec(),
-                           readdir=readdir,
-                           stat=stat,
-                           index=None,
-                           args=firm) == ["/new"]
+        ("-mindepth", "1", "-prune", "-newermt", "2010-01-01")
+    )
+    assert await walk_find(
+        _root_spec(), readdir=readdir, stat=stat, index=None, args=firm
+    ) == ["/new"]
 
 
 @pytest.mark.asyncio
@@ -524,16 +563,20 @@ async def test_walk_find_not_negates_predicate():
     async def stat(spec: PathSpec, _index):
         if spec.virtual == "/":
             return FileStat(name="/", type=FileType.DIRECTORY)
-        return FileStat(name=spec.virtual.rsplit("/", 1)[-1],
-                        size=1,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=spec.virtual.rsplit("/", 1)[-1],
+            size=1,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=parse_find_args(("-not", "-name", "*.txt")))
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=parse_find_args(("-not", "-name", "*.txt")),
+    )
     assert results == ["/", "/b.md"]
 
 
@@ -542,22 +585,26 @@ async def test_walk_find_stat_fallback_propagates_other_errors():
     readdir = AsyncMock(return_value=["/mystery"])
     stat = AsyncMock(side_effect=ValueError("rate limited"))
     with pytest.raises(ValueError, match="rate limited"):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs())
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(),
+        )
 
 
 @pytest.mark.asyncio
 async def test_walk_find_size_filter_drops_not_found_entries():
     readdir = AsyncMock(return_value=["/a.json"])
     stat = AsyncMock(side_effect=FileNotFoundError("/a.json"))
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(min_size=1))
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(min_size=1),
+    )
     assert results == []
 
 
@@ -566,47 +613,44 @@ async def test_walk_find_size_filter_propagates_other_stat_errors():
     readdir = AsyncMock(return_value=["/a.json"])
     stat = AsyncMock(side_effect=ValueError("rate limited"))
     with pytest.raises(ValueError, match="rate limited"):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs(min_size=1))
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(min_size=1),
+        )
 
 
-@pytest.mark.parametrize("kwargs,message", [
-    ({
-        "maxdepth": "abc"
-    }, "find: invalid argument 'abc' to '-maxdepth'"),
-    ({
-        "mindepth": "xx"
-    }, "find: invalid argument 'xx' to '-mindepth'"),
-    ({
-        "size": ""
-    }, "find: invalid null argument to -size"),
-    ({
-        "size": "abc"
-    }, "find: Invalid argument `abc' to -size"),
-    ({
-        "size": "5x"
-    }, "find: invalid -size type `x'"),
-    ({
-        "mtime": "abc"
-    }, "find: invalid argument 'abc' to '-mtime'"),
-])
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"maxdepth": "abc"}, "find: invalid argument 'abc' to '-maxdepth'"),
+        ({"mindepth": "xx"}, "find: invalid argument 'xx' to '-mindepth'"),
+        ({"size": ""}, "find: invalid null argument to -size"),
+        ({"size": "abc"}, "find: Invalid argument `abc' to -size"),
+        ({"size": "5x"}, "find: invalid -size type `x'"),
+        ({"mtime": "abc"}, "find: invalid argument 'abc' to '-mtime'"),
+    ],
+)
 def test_parse_find_args_invalid_numeric_raises_find_parse_error(
-        kwargs, message):
+    kwargs, message
+):
     with pytest.raises(FindParseError) as exc:
         parse_find_args((), **kwargs)
     assert str(exc.value) == message
 
 
-@pytest.mark.parametrize("expr,message", [
-    ("-maxdepth abc", "find: invalid argument 'abc' to '-maxdepth'"),
-    ("-mindepth xx", "find: invalid argument 'xx' to '-mindepth'"),
-    ("-size ''", "find: invalid null argument to -size"),
-    ("-size abc", "find: Invalid argument `abc' to -size"),
-    ("-mtime abc", "find: invalid argument 'abc' to '-mtime'"),
-])
+@pytest.mark.parametrize(
+    "expr,message",
+    [
+        ("-maxdepth abc", "find: invalid argument 'abc' to '-maxdepth'"),
+        ("-mindepth xx", "find: invalid argument 'xx' to '-mindepth'"),
+        ("-size ''", "find: invalid null argument to -size"),
+        ("-size abc", "find: Invalid argument `abc' to -size"),
+        ("-mtime abc", "find: invalid argument 'abc' to '-mtime'"),
+    ],
+)
 def test_find_invalid_numeric_arg_exits_one_with_clean_stderr(expr, message):
 
     async def _go() -> tuple[int, str]:
@@ -626,8 +670,10 @@ def test_find_invalid_numeric_arg_exits_one_with_clean_stderr(expr, message):
 @pytest.mark.asyncio
 async def test_find_time_test_before_prune_gates_it():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-    await ws.shell("mkdir -p /d/old/x /d/new/y && touch /d/old/x/f /d/new/y/g "
-                   "/d/old/o.txt && touch -d 2000-01-01 /d/old")
+    await ws.shell(
+        "mkdir -p /d/old/x /d/new/y && touch /d/old/x/f /d/new/y/g "
+        "/d/old/o.txt && touch -d 2000-01-01 /d/old"
+    )
     gated = await ws.shell("find /d -mindepth 1 -newermt 2010-01-01 -prune")
     assert gated.stdout == b"/d/new\n/d/old/o.txt\n/d/old/x\n"
     firm = await ws.shell("find /d -mindepth 1 -prune -newermt 2010-01-01")
@@ -635,7 +681,8 @@ async def test_find_time_test_before_prune_gates_it():
     old = await ws.shell("find /d -mindepth 1 -mtime +3650 -prune")
     assert old.stdout == b"/d/old\n"
     both = await ws.shell(
-        "find /d -mindepth 1 -newermt 1990-01-01 -prune -newermt 2010-01-01")
+        "find /d -mindepth 1 -newermt 1990-01-01 -prune -newermt 2010-01-01"
+    )
     assert both.stdout == b"/d/new\n"
 
 
@@ -650,7 +697,7 @@ def test_parse_find_args_maxdepth_zero():
 
 
 def test_parse_find_args_empty_predicate():
-    args = parse_find_args(("-empty", ))
+    args = parse_find_args(("-empty",))
     assert args.empty is True
 
 
@@ -663,13 +710,15 @@ def test_parse_find_args_not_negation():
 
 def test_parse_find_args_bogus_predicate_raises():
     with pytest.raises(FindParseError, match="unknown predicate"):
-        parse_find_args(("-boguspredicate", ))
+        parse_find_args(("-boguspredicate",))
 
 
 def _file_spec(virtual: str = "/mnt/a.txt", key: str = "a.txt") -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path=key)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path=key,
+    )
 
 
 def _stat_path(stat: FileStat | None):
@@ -704,10 +753,13 @@ async def test_find_file_start_point_is_reported_not_walked():
         (),
         find_core=_unreached_core,
         stat_path=_stat_path(
-            FileStat(name="a.txt",
-                     size=6,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT)),
+            FileStat(
+                name="a.txt",
+                size=6,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            )
+        ),
     )
     assert io.exit_code == 0
     assert stdout == b"/mnt/a.txt\n"
@@ -715,61 +767,47 @@ async def test_find_file_start_point_is_reported_not_walked():
 
 @pytest.mark.asyncio
 async def test_find_file_start_point_type_filters():
-    start = FileStat(name="a.txt",
-                     size=6,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT)
+    start = FileStat(
+        name="a.txt", size=6, type=FileType.FILE, content=ContentType.TEXT
+    )
     for ftype, expected in (("f", b"/mnt/a.txt\n"), ("d", b""), ("l", b"")):
-        stdout, io = await find([_file_spec()], ("-type", ftype),
-                                find_core=_unreached_core,
-                                stat_path=_stat_path(start))
+        stdout, io = await find(
+            [_file_spec()],
+            ("-type", ftype),
+            find_core=_unreached_core,
+            stat_path=_stat_path(start),
+        )
         assert io.exit_code == 0
         assert stdout == expected, f"-type {ftype}"
 
 
 @pytest.mark.asyncio
 async def test_find_file_start_point_depth_and_size():
-    start = FileStat(name="a.txt",
-                     size=6,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT)
+    start = FileStat(
+        name="a.txt", size=6, type=FileType.FILE, content=ContentType.TEXT
+    )
     cases = [
-        ({
-            "maxdepth": "0"
-        }, b"/mnt/a.txt\n"),
-        ({
-            "mindepth": "1"
-        }, b""),
-        ({
-            "size": "+1c"
-        }, b"/mnt/a.txt\n"),
-        ({
-            "size": "+99c"
-        }, b""),
-        ({
-            "name": "a.txt"
-        }, b"/mnt/a.txt\n"),
-        ({
-            "name": "nope"
-        }, b""),
+        ({"maxdepth": "0"}, b"/mnt/a.txt\n"),
+        ({"mindepth": "1"}, b""),
+        ({"size": "+1c"}, b"/mnt/a.txt\n"),
+        ({"size": "+99c"}, b""),
+        ({"name": "a.txt"}, b"/mnt/a.txt\n"),
+        ({"name": "nope"}, b""),
         # The flag form passes the value through, so `-type l` (a namespace
         # symlink, which no backend entry ever is) filters instead of
         # reading as "no filter" and printing everything.
-        ({
-            "type": "f"
-        }, b"/mnt/a.txt\n"),
-        ({
-            "type": "d"
-        }, b""),
-        ({
-            "type": "l"
-        }, b""),
+        ({"type": "f"}, b"/mnt/a.txt\n"),
+        ({"type": "d"}, b""),
+        ({"type": "l"}, b""),
     ]
     for flags, expected in cases:
-        stdout, io = await find([_file_spec()], (),
-                                find_core=_unreached_core,
-                                stat_path=_stat_path(start),
-                                **flags)
+        stdout, io = await find(
+            [_file_spec()],
+            (),
+            find_core=_unreached_core,
+            stat_path=_stat_path(start),
+            **flags,
+        )
         assert io.exit_code == 0
         assert stdout == expected, f"{flags}"
 
@@ -781,19 +819,24 @@ async def test_find_file_start_point_respells_the_operand():
     That is what makes `find -L <link>` name the link rather than the
     target the router resolved it to.
     """
-    spec = PathSpec(virtual="/mnt/a.txt",
-                    directory="/mnt/",
-                    vfs_path="a.txt",
-                    raw_path="/other/link.txt")
+    spec = PathSpec(
+        virtual="/mnt/a.txt",
+        directory="/mnt/",
+        vfs_path="a.txt",
+        raw_path="/other/link.txt",
+    )
     stdout, _ = await find(
         [spec],
         (),
         find_core=_unreached_core,
         stat_path=_stat_path(
-            FileStat(name="a.txt",
-                     size=6,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT)),
+            FileStat(
+                name="a.txt",
+                size=6,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            )
+        ),
     )
     assert stdout == b"/other/link.txt\n"
 
@@ -832,9 +875,12 @@ async def test_find_missing_start_point_is_gnu_error():
     That is what makes the diagnostic uniform instead of arriving only on
     the backends that wire a stat into find.
     """
-    stdout, io = await find([_file_spec(virtual="/mnt/nope", key="nope")], (),
-                            find_core=_unreached_core,
-                            stat_path=_stat_path(None))
+    stdout, io = await find(
+        [_file_spec(virtual="/mnt/nope", key="nope")],
+        (),
+        find_core=_unreached_core,
+        stat_path=_stat_path(None),
+    )
     assert io.exit_code == 1
     assert stdout == b""
     assert io.stderr == b"find: '/mnt/nope': No such file or directory\n"
@@ -851,9 +897,12 @@ async def test_find_missing_start_point_falls_back_to_backend_stat():
     async def stat(_spec: PathSpec) -> FileStat:
         raise FileNotFoundError("/mnt/nope")
 
-    stdout, io = await find([_file_spec(virtual="/mnt/nope", key="nope")], (),
-                            find_core=_unreached_core,
-                            stat=stat)
+    stdout, io = await find(
+        [_file_spec(virtual="/mnt/nope", key="nope")],
+        (),
+        find_core=_unreached_core,
+        stat=stat,
+    )
     assert io.exit_code == 1
     assert stdout == b""
     assert io.stderr == b"find: '/mnt/nope': No such file or directory\n"
@@ -1051,10 +1100,9 @@ def _stat_map(stats: dict[str, FileStat | None]):
 
 
 _DIR_STAT = FileStat(name="d", type=FileType.DIRECTORY)
-_FILE_STAT = FileStat(name="f",
-                      size=6,
-                      type=FileType.FILE,
-                      content=ContentType.TEXT)
+_FILE_STAT = FileStat(
+    name="f", size=6, type=FileType.FILE, content=ContentType.TEXT
+)
 
 # GNU findutils 4.10.0, pinned on debian:stable-slim:
 #   find A B           -> A's rows, then B's rows (operand order, never
@@ -1079,10 +1127,7 @@ async def test_find_walks_every_start_point_in_operand_order():
         ],
         (),
         find_core=core,
-        stat_path=_stat_map({
-            "/mnt/sub": _DIR_STAT,
-            "/mnt/a.txt": _FILE_STAT
-        }),
+        stat_path=_stat_map({"/mnt/sub": _DIR_STAT, "/mnt/a.txt": _FILE_STAT}),
     )
     assert io.exit_code == 0
     # /mnt/a.txt sorts before /mnt/sub; operand order must win anyway.
@@ -1098,9 +1143,12 @@ async def test_find_duplicate_start_points_walk_twice():
         return ["/sub/z.txt"]
 
     root = _file_spec(virtual="/mnt/sub", key="sub")
-    stdout, io = await find([root, root], (),
-                            find_core=core,
-                            stat_path=_stat_map({"/mnt/sub": _DIR_STAT}))
+    stdout, io = await find(
+        [root, root],
+        (),
+        find_core=core,
+        stat_path=_stat_map({"/mnt/sub": _DIR_STAT}),
+    )
     assert io.exit_code == 0
     assert stdout == b"/mnt/sub\n/mnt/sub/z.txt\n" * 2
 
@@ -1124,10 +1172,7 @@ async def test_find_missing_middle_operand_keeps_partial_output():
         ],
         (),
         find_core=core,
-        stat_path=_stat_map({
-            "/mnt/sub": _DIR_STAT,
-            "/mnt/a.txt": _FILE_STAT
-        }),
+        stat_path=_stat_map({"/mnt/sub": _DIR_STAT, "/mnt/a.txt": _FILE_STAT}),
     )
     assert io.exit_code == 1
     assert stdout == b"/mnt/sub\n/mnt/sub/z.txt\n/mnt/a.txt\n"
@@ -1141,10 +1186,12 @@ async def test_find_no_operands_defaults_to_the_mount_root():
         assert path.virtual == "/"
         return ["/a.txt"]
 
-    stdout, io = await find([], (),
-                            find_core=core,
-                            stat_path=_stat_path(
-                                FileStat(name="/", type=FileType.DIRECTORY)))
+    stdout, io = await find(
+        [],
+        (),
+        find_core=core,
+        stat_path=_stat_path(FileStat(name="/", type=FileType.DIRECTORY)),
+    )
     assert io.exit_code == 0
     assert stdout == b"/\n/a.txt\n"
 
@@ -1172,30 +1219,36 @@ async def test_walk_find_reports_a_directory_it_may_not_open():
         return FileStat(name=spec.virtual, type=kinds[spec.virtual])
 
     unreadable: list[str] = []
-    results = await walk_find(_root_spec(),
-                              readdir=readdir,
-                              stat=stat,
-                              index=None,
-                              args=FindArgs(),
-                              unreadable=unreadable)
+    results = await walk_find(
+        _root_spec(),
+        readdir=readdir,
+        stat=stat,
+        index=None,
+        args=FindArgs(),
+        unreadable=unreadable,
+    )
     assert results == ["/", "/open", "/open/o", "/sealed"]
     assert unreadable == ["/sealed"]
     with pytest.raises(PermissionError):
-        await walk_find(_root_spec(),
-                        readdir=readdir,
-                        stat=stat,
-                        index=None,
-                        args=FindArgs())
+        await walk_find(
+            _root_spec(),
+            readdir=readdir,
+            stat=stat,
+            index=None,
+            args=FindArgs(),
+        )
 
 
 @pytest.mark.asyncio
 async def test_walk_selection_preserves_newlines_before_rendering():
     stats = {"/mnt": _DIR_STAT, "/mnt/a\nb": _FILE_STAT}
     _, io = await find_walk_generic(
-        [_file_spec(virtual="/mnt", key="")], ["-type", "f"],
+        [_file_spec(virtual="/mnt", key="")],
+        ["-type", "f"],
         CommandOpts(stat_path=_stat_map(stats)),
         readdir=AsyncMock(return_value=["/mnt/a\nb"]),
-        stat=AsyncMock(side_effect=lambda path, *_: stats[path.virtual]))
+        stat=AsyncMock(side_effect=lambda path, *_: stats[path.virtual]),
+    )
     assert io.matched_runs is not None
     assert [p.virtual for run in io.matched_runs for p in run] == ["/mnt/a\nb"]
 
@@ -1205,7 +1258,8 @@ async def test_start_point_streams_before_native_walk():
     root = PathSpec.from_str_path("/remote")
     core = AsyncMock(side_effect=AssertionError("must not fetch descendants"))
     probe = AsyncMock(
-        return_value=FileStat(name="remote", type=FileType.DIRECTORY))
+        return_value=FileStat(name="remote", type=FileType.DIRECTORY)
+    )
     out, _ = await stream_find([root], (), find_core=core, stat_path=probe)
     assert await anext(out) == b"/remote\n"
     await out.aclose()
@@ -1213,15 +1267,17 @@ async def test_start_point_streams_before_native_walk():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("size, expected", [(None, b""), (0, b"/mnt/a.txt\n"),
-                                            (1, b"")])
+@pytest.mark.parametrize(
+    "size, expected", [(None, b""), (0, b"/mnt/a.txt\n"), (1, b"")]
+)
 async def test_empty_file_start_requires_known_zero_size(size, expected):
     stdout, _ = await find(
         [PathSpec.from_str_path("/mnt/a.txt", "a.txt")],
         (),
         find_core=_unreached_core,
         stat_path=_stat_path(
-            FileStat(name="a.txt", type=FileType.FILE, size=size)),
+            FileStat(name="a.txt", type=FileType.FILE, size=size)
+        ),
         empty=True,
     )
     assert stdout == expected
@@ -1229,8 +1285,11 @@ async def test_empty_file_start_requires_known_zero_size(size, expected):
 
 @pytest.mark.asyncio
 async def test_empty_walk_does_not_treat_unknown_size_as_zero():
-    stat = AsyncMock(return_value=FileStat(
-        name="records.jsonl", type=FileType.FILE, size=None))
+    stat = AsyncMock(
+        return_value=FileStat(
+            name="records.jsonl", type=FileType.FILE, size=None
+        )
+    )
     readdir = AsyncMock(return_value=[])
     result = await walk_find(
         PathSpec.from_str_path("/records.jsonl", "records.jsonl"),

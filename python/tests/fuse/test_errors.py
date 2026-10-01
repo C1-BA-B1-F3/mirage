@@ -23,14 +23,17 @@ from mirage.utils.errors import no_mount
 from mirage.utils.path import CycleError
 
 
-@pytest.mark.parametrize("err,expected", [
-    (NotADirectoryError("x"), errno.ENOTDIR),
-    (IsADirectoryError("x"), errno.EISDIR),
-    (FileExistsError("x"), errno.EEXIST),
-    (PermissionError("x"), errno.EACCES),
-    (FileNotFoundError("x"), errno.ENOENT),
-    (no_mount("/x"), errno.ENOENT),
-])
+@pytest.mark.parametrize(
+    "err,expected",
+    [
+        (NotADirectoryError("x"), errno.ENOTDIR),
+        (IsADirectoryError("x"), errno.EISDIR),
+        (FileExistsError("x"), errno.EEXIST),
+        (PermissionError("x"), errno.EACCES),
+        (FileNotFoundError("x"), errno.ENOENT),
+        (no_mount("/x"), errno.ENOENT),
+    ],
+)
 def test_exception_class_wins(err, expected):
     assert classify_error(err) == expected
 
@@ -50,8 +53,9 @@ def test_errno_carrying_oserror_uses_its_errno():
 
 def test_bare_oserror_falls_back_to_the_message():
     # ram/redis/databricks rmdir raise a bare OSError with no errno set.
-    assert classify_error(
-        OSError("directory not empty: /d")) == errno.ENOTEMPTY
+    assert (
+        classify_error(OSError("directory not empty: /d")) == errno.ENOTEMPTY
+    )
 
 
 def test_missing_path_in_rmdir_is_enoent_not_enotempty():

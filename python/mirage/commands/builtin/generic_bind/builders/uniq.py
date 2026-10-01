@@ -16,28 +16,36 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.uniq import uniq as generic_uniq
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          dir_aware_stat,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    dir_aware_stat,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def uniq(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def uniq(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     return await generic_uniq(
         paths,
         read_stream=bound_op(ops.read_stream, accessor, opts.index),
-        write_bytes=(partial(ops.write, accessor)
-                     if ops.write is not None else None),
+        write_bytes=(
+            partial(ops.write, accessor) if ops.write is not None else None
+        ),
         stdin=opts.stdin,
         flags=opts.flags,
         stat=dir_aware_stat(ops, accessor, opts),
     )
 
 
-BUILDER = Builder('uniq', uniq, read=True)
+BUILDER = Builder("uniq", uniq, read=True)

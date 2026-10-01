@@ -34,7 +34,8 @@ async def test_chown_recursive_changes_a_traversed_link_itself():
     code, _, err = await _run(ws, "chown -R alice /data/tree")
     assert code == 0, err
     _, out, _ = await _run(
-        ws, "stat -c '%U %n' /data/tree /data/tree/a.txt /data/tree/link.txt")
+        ws, "stat -c '%U %n' /data/tree /data/tree/a.txt /data/tree/link.txt"
+    )
     assert out.splitlines() == [
         "alice /data/tree",
         "alice /data/tree/a.txt",
@@ -52,7 +53,8 @@ async def test_chown_recursive_does_not_follow_a_link_operand():
     assert code == 0, err
     # POSIX gives -R an implicit -P: the link changes, its target does not.
     _, out, _ = await _run(
-        ws, "stat -c '%U %n' /data/dirlink /data/tree/sub/b.txt")
+        ws, "stat -c '%U %n' /data/dirlink /data/tree/sub/b.txt"
+    )
     assert out.splitlines() == [
         "bob /data/dirlink",
         "- /data/tree/sub/b.txt",

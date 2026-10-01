@@ -50,8 +50,9 @@ async def test_mkdir_parent_missing_fails(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_mkdir_parents_creates_chain(accessor, files, remote_root,
-                                           index):
+async def test_mkdir_parents_creates_chain(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     await mkdir(accessor, _path("/dbx/a/b/c"), parents=True, index=index)
@@ -60,8 +61,9 @@ async def test_mkdir_parents_creates_chain(accessor, files, remote_root,
 
 
 @pytest.mark.asyncio
-async def test_mkdir_existing_target_fails(accessor, files, remote_root,
-                                           index):
+async def test_mkdir_existing_target_fails(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_directory(files, f"{remote_root}/exists")
 
@@ -73,7 +75,8 @@ async def test_mkdir_existing_target_fails(accessor, files, remote_root,
 async def test_mkdir_parent_is_file_fails(accessor, files, remote_root, index):
     _seed_directory(files, remote_root)
     files.metadata[f"{remote_root}/file.txt"] = SimpleNamespace(
-        is_directory=False, file_size=3)
+        is_directory=False, file_size=3
+    )
 
     with pytest.raises(NotADirectoryError):
         await mkdir(accessor, _path("/dbx/file.txt/sub"), index=index)

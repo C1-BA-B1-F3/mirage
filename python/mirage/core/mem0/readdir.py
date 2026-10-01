@@ -27,8 +27,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _list_memories(accessor: Mem0Accessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_memories(
+    accessor: Mem0Accessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     memories = await get_all_memories(
         accessor.client,
         filters=accessor.config.scope_filter,
@@ -59,8 +60,9 @@ readdir = make_readdir(
 )
 
 
-async def listed_memory(accessor: Mem0Accessor, path: PathSpec,
-                        index: IndexCacheStore) -> dict[str, Any]:
+async def listed_memory(
+    accessor: Mem0Accessor, path: PathSpec, index: IndexCacheStore
+) -> dict[str, Any]:
     """The memory a path names, as the scoped listing holds it.
 
     Which memories exist is a function of the configured entity filter,

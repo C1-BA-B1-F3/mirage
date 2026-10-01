@@ -22,12 +22,15 @@ from mirage.vfs.tencent import TencentConfig, TencentVFS
 
 
 def test_tencent_regional_endpoint():
-    config = TencentConfig(bucket="b-1250",
-                           region="ap-guangzhou",
-                           access_key_id="k",
-                           secret_access_key="s")
+    config = TencentConfig(
+        bucket="b-1250",
+        region="ap-guangzhou",
+        access_key_id="k",
+        secret_access_key="s",
+    )
     assert config.resolved_endpoint_url() == (
-        "https://cos.ap-guangzhou.myqcloud.com")
+        "https://cos.ap-guangzhou.myqcloud.com"
+    )
 
 
 def test_tencent_requires_region():
@@ -36,19 +39,23 @@ def test_tencent_requires_region():
 
 
 def test_tencent_custom_endpoint_override():
-    config = TencentConfig(bucket="b",
-                           region="ap-beijing",
-                           endpoint_url="https://custom.example.com",
-                           access_key_id="k",
-                           secret_access_key="s")
+    config = TencentConfig(
+        bucket="b",
+        region="ap-beijing",
+        endpoint_url="https://custom.example.com",
+        access_key_id="k",
+        secret_access_key="s",
+    )
     assert config.resolved_endpoint_url() == "https://custom.example.com"
 
 
 def test_tencent_to_s3_config():
-    config = TencentConfig(bucket="b-1250",
-                           region="ap-singapore",
-                           access_key_id="key",
-                           secret_access_key="secret")
+    config = TencentConfig(
+        bucket="b-1250",
+        region="ap-singapore",
+        access_key_id="key",
+        secret_access_key="secret",
+    )
     s3 = config.to_s3_config()
     assert isinstance(s3, S3Config)
     assert s3.endpoint_url == "https://cos.ap-singapore.myqcloud.com"
@@ -57,9 +64,12 @@ def test_tencent_to_s3_config():
 
 def test_tencent_resource_uses_s3_resource_type():
     vfs = TencentVFS(
-        TencentConfig(bucket="b-1250",
-                      region="ap-guangzhou",
-                      access_key_id="k",
-                      secret_access_key="s"))
+        TencentConfig(
+            bucket="b-1250",
+            region="ap-guangzhou",
+            access_key_id="k",
+            secret_access_key="s",
+        )
+    )
     assert vfs.name == VFSName.S3
     assert isinstance(vfs.config, S3Config)

@@ -29,7 +29,20 @@ def test_vocabulary_names_the_probed_conditions():
     # policy, or the cross-mount guard can produce.
     names = {c.name for c in FsCondition}
     assert names == {
-        "ENOENT", "ENOTDIR", "EISDIR", "EEXIST", "EACCES", "EPERM",
-        "ENOTEMPTY", "EXDEV", "CROSS_MOUNT", "ENOTSUP", "ELOOP", "EINVAL",
-        "EIO", "EBUSY", "EROFS", "NO_XATTR"
+        "ENOENT",
+        "ENOTDIR",
+        "EISDIR",
+        "EEXIST",
+        "EACCES",
+        "EPERM",
+        "ENOTEMPTY",
+        "EXDEV",
+        "CROSS_MOUNT",
+        "ENOTSUP",
+        "ELOOP",
+        "EINVAL",
+        "EIO",
+        "EBUSY",
+        "EROFS",
+        "NO_XATTR",
     }

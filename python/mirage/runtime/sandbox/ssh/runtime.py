@@ -68,19 +68,23 @@ class SSHRuntime(RemoteSandbox):
             raise ImportError(ASYNCSSH_HINT)
         self._conn = await sdk.connect(**self._connect_kwargs())
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
-        stdout, stderr, code = await self._ssh(wrap_line(line, env, cwd),
-                                               stdin)
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
+        stdout, stderr, code = await self._ssh(
+            wrap_line(line, env, cwd), stdin
+        )
         return RunResult(stdout=stdout, stderr=stderr, exit_code=code)
 
-    async def _ssh(self, command: str,
-                   stdin: bytes | None) -> tuple[bytes, bytes, int]:
+    async def _ssh(
+        self, command: str, stdin: bytes | None
+    ) -> tuple[bytes, bytes, int]:
         """One exec channel on the connection; the seam tests override."""
         # asyncssh's run(input=b"") leaves stdin open. Close it explicitly
         # for every finite command, including empty or absent piped input.
-        async with self._conn.create_process(command,
-                                             encoding=None) as process:
+        async with self._conn.create_process(
+            command, encoding=None
+        ) as process:
             if stdin:
                 process.stdin.write(stdin)
             process.stdin.write_eof()

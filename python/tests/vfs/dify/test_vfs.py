@@ -98,11 +98,13 @@ async def test_dify_vfs_registers_expected_commands_and_ops():
         ro.name
         for item in vfs.ops()
         for ro in (
-            [item] if isinstance(item, RegisteredOp) else item._registered_ops)
+            [item] if isinstance(item, RegisteredOp) else item._registered_ops
+        )
     }
 
-    assert {"cat", "ls", "grep", "find", "head", "tail",
-            "wc"}.issubset(commands)
+    assert {"cat", "ls", "grep", "find", "head", "tail", "wc"}.issubset(
+        commands
+    )
     assert {"read", "readdir", "stat"}.issubset(ops)
 
 

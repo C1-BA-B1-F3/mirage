@@ -19,15 +19,23 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from mirage.commands.builtin.general.interpreter import run_output
-from mirage.commands.builtin.utils.limit import (maybe_with_timeout,
-                                                 run_with_timeout)
+from mirage.commands.builtin.utils.limit import (
+    maybe_with_timeout,
+    run_with_timeout,
+)
 from mirage.commands.cli.constants import CLI_CONFIG_ENV, GIT_LONG_OPTIONS
-from mirage.commands.cli.refusal import (CLAP_EXIT, clap_missing_operands,
-                                         leaf_refusal)
+from mirage.commands.cli.refusal import (
+    CLAP_EXIT,
+    clap_missing_operands,
+    leaf_refusal,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation, CLISpec
 from mirage.commands.cli.walk import owns_argv, walk
-from mirage.commands.errors import (CommandTimeoutError, PartialOutputError,
-                                    UsageError)
+from mirage.commands.errors import (
+    CommandTimeoutError,
+    PartialOutputError,
+    UsageError,
+)
 from mirage.commands.spec import flag_kwarg_name
 from mirage.commands.spec.constants import HELP_OPTION
 from mirage.commands.spec.flag_view import FlagBag
@@ -104,12 +112,12 @@ def parse_spec_for(leaf: CLISpec) -> tuple[CLISpec, bool]:
         return replace(leaf, rest=PASSTHROUGH_REST), False
     if any(option.long == "--help" for option in leaf.options):
         return leaf, False
-    return replace(leaf, options=leaf.options + (HELP_OPTION, )), True
+    return replace(leaf, options=leaf.options + (HELP_OPTION,)), True
 
 
 def _select_runtime(
-        prog: str, leaf: CLISpec,
-        entries: list[Runtime]) -> tuple[LanguageRuntime | None, str | None]:
+    prog: str, leaf: CLISpec, entries: list[Runtime]
+) -> tuple[LanguageRuntime | None, str | None]:
     """Pick the workspace entry that runs a script leaf.
 
     A ``runtime:`` pin names the entry, and the entry must speak the
@@ -127,30 +135,44 @@ def _select_runtime(
     script = leaf.script
     if script is None:
         raise RuntimeError(
-            f"selecting a runtime for {prog!r} without a script")
+            f"selecting a runtime for {prog!r} without a script"
+        )
     known = ", ".join(repr(entry.name) for entry in entries) or "none"
     if leaf.runtime is not None:
         pinned = next(
-            (entry for entry in entries if entry.name == leaf.runtime), None)
+            (entry for entry in entries if entry.name == leaf.runtime), None
+        )
         if pinned is None:
-            return None, (f"{prog}: unknown runtime: {leaf.runtime!r} "
-                          f"(workspace runtimes: {known})")
-        if (not isinstance(pinned, LanguageRuntime)
-                or pinned.language != script.language):
-            return None, (f"{prog}: runtime {pinned.name!r} does not run "
-                          f"{script.language} scripts")
+            return None, (
+                f"{prog}: unknown runtime: {leaf.runtime!r} "
+                f"(workspace runtimes: {known})"
+            )
+        if (
+            not isinstance(pinned, LanguageRuntime)
+            or pinned.language != script.language
+        ):
+            return None, (
+                f"{prog}: runtime {pinned.name!r} does not run "
+                f"{script.language} scripts"
+            )
         return pinned, None
     entry = runtime_for_language(entries, script.language)
     if entry is None:
-        return None, (f"{prog}: no workspace runtime runs "
-                      f"{script.language} scripts "
-                      f"(workspace runtimes: {known})")
+        return None, (
+            f"{prog}: no workspace runtime runs "
+            f"{script.language} scripts "
+            f"(workspace runtimes: {known})"
+        )
     return entry, None
 
 
-async def _script_output(inv: CLIInvocation[Any], script: ScriptSource,
-                         runtime: LanguageRuntime, prog: str,
-                         cwd: PathSpec) -> CommandOutput:
+async def _script_output(
+    inv: CLIInvocation[Any],
+    script: ScriptSource,
+    runtime: LanguageRuntime,
+    prog: str,
+    cwd: PathSpec,
+) -> CommandOutput:
     """Render the invocation onto the selected runtime as one CodeExecution.
 
     The script tier's whole contract, the one a native binary could
@@ -176,15 +198,18 @@ async def _script_output(inv: CLIInvocation[Any], script: ScriptSource,
     # js command derives from the operand's extension.
     flags = {"module": True} if script.module else {}
     result = await runtime.execute(
-        CodeExecution(language=runtime.language,
-                      code=script.source,
-                      args=list(inv.argv),
-                      prog=prog,
-                      script_cli=True,
-                      cwd=cwd,
-                      env=env,
-                      stdin=stdin,
-                      flags=flags))
+        CodeExecution(
+            language=runtime.language,
+            code=script.source,
+            args=list(inv.argv),
+            prog=prog,
+            script_cli=True,
+            cwd=cwd,
+            env=env,
+            stdin=stdin,
+            flags=flags,
+        )
+    )
     return run_output(result)
 
 
@@ -303,17 +328,22 @@ async def handle_cli(
     # The walk takes the same environment the leaf parse below does, so
     # a group-level option declaring ``Option.env`` fills at its own
     # level; without it the fetched credential never enters group_flags.
-    result = walk(install.name, install.spec, argv, session.cwd,
-                  env_snapshot(session))
+    result = walk(
+        install.name, install.spec, argv, session.cwd, env_snapshot(session)
+    )
     if result.leaf is None:
         stderr = result.output if result.stream == "stderr" else b""
         stdout = result.output if result.stream == "stdout" else None
         io = IOResult(exit_code=result.exit_code, stderr=stderr)
-        return stdout, io, ExecutionNode(command=cmd_str,
-                                         exit_code=result.exit_code,
-                                         stderr=stderr)
+        return (
+            stdout,
+            io,
+            ExecutionNode(
+                command=cmd_str, exit_code=result.exit_code, stderr=stderr
+            ),
+        )
 
-    prog = " ".join((install.name, ) + result.path)
+    prog = " ".join((install.name,) + result.path)
     leaf = result.leaf
     # argparse add_help, minus the two nodes that answer for themselves
     # (parse_spec_for). No injected --version: that is a GNU coreutils
@@ -329,19 +359,27 @@ async def handle_cli(
     # git resolves an abbreviated long option against the verb's own full
     # table (parse-options), and its revision walkers take whole words
     # only.
-    abbreviations = (GIT_LONG_OPTIONS.get(" ".join(result.path), ())
-                     if install.spec.name == "git" else None)
-    parsed = parse_flags(list(result.argv),
-                         parse_spec,
-                         prog,
-                         session.cwd,
-                         env=env_snapshot(session),
-                         unknown_is_operand=True,
-                         abbreviations=abbreviations)
+    abbreviations = (
+        GIT_LONG_OPTIONS.get(" ".join(result.path), ())
+        if install.spec.name == "git"
+        else None
+    )
+    parsed = parse_flags(
+        list(result.argv),
+        parse_spec,
+        prog,
+        session.cwd,
+        env=env_snapshot(session),
+        unknown_is_operand=True,
+        abbreviations=abbreviations,
+    )
     if mirage_help and parsed.flag_kwargs.get("help") is True:
         help_text = render_help(prog, parse_spec, style=style).encode()
-        return help_text, IOResult(), ExecutionNode(command=cmd_str,
-                                                    exit_code=0)
+        return (
+            help_text,
+            IOResult(),
+            ExecutionNode(command=cmd_str, exit_code=0),
+        )
 
     refusal = option_error(prog, parsed)
     msg: bytes | None = None
@@ -352,24 +390,30 @@ async def handle_cli(
         # Only clap names the empty slots. Under every other style a
         # required operand stays the leaf's own business, worded by the
         # command, which is what every mirage CLI did before this.
-        msg = clap_missing_operands(prog, parse_spec,
-                                    parsed.missing_required_operands,
-                                    parsed.typed_dests, session.env)
+        msg = clap_missing_operands(
+            prog,
+            parse_spec,
+            parsed.missing_required_operands,
+            parsed.typed_dests,
+            session.env,
+        )
         code = CLAP_EXIT
     if msg is not None:
         refusal_io = IOResult(exit_code=code, stderr=msg)
-        refusal_node = ExecutionNode(command=cmd_str,
-                                     exit_code=code,
-                                     stderr=msg)
+        refusal_node = ExecutionNode(
+            command=cmd_str, exit_code=code, stderr=msg
+        )
         return None, refusal_io, refusal_node
 
     # Group flags merge into the one bag: ancestor/descendant collisions
     # are a build-time CLISpec error, so a group flag can never shadow a
     # leaf flag.
-    kw: FlagBag[FlagValue] = FlagBag({
-        flag_kwarg_name(spelling): value
-        for spelling, value in result.group_flags.items()
-    })
+    kw: FlagBag[FlagValue] = FlagBag(
+        {
+            flag_kwarg_name(spelling): value
+            for spelling, value in result.group_flags.items()
+        }
+    )
     kw.update(parsed.flag_kwargs)
     if isinstance(parsed.flag_kwargs, FlagBag):
         kw.occurrences.extend(parsed.flag_kwargs.occurrences)
@@ -383,12 +427,17 @@ async def handle_cli(
     # is nothing but one. None outside a workspace, so a verb that needs
     # a plane refuses there on its own.
     opened = (dispatch, stat_path, ns, session_view, context.processes)
-    doors = (CLIDoors(dispatch=dispatch,
-                      stat_path=stat_path,
-                      ns=ns,
-                      session_view=session_view,
-                      processes=context.processes) if any(
-                          door is not None for door in opened) else None)
+    doors = (
+        CLIDoors(
+            dispatch=dispatch,
+            stat_path=stat_path,
+            ns=ns,
+            session_view=session_view,
+            processes=context.processes,
+        )
+        if any(door is not None for door in opened)
+        else None
+    )
     active = True
 
     async def shell(command: str) -> IOResult:
@@ -398,23 +447,27 @@ async def handle_cli(
             raise RuntimeError("CLI shell is unavailable")
         return await context.shell(command)
 
-    inv = CLIInvocation(install.config,
-                        argv=tuple(argv),
-                        paths=tuple(parsed.paths),
-                        texts=tuple(parsed.texts),
-                        flags=kw,
-                        stdin=stdin,
-                        env=env_snapshot(session),
-                        doors=doors,
-                        spec=leaf,
-                        shell=shell if context.shell is not None else None)
+    inv = CLIInvocation(
+        install.config,
+        argv=tuple(argv),
+        paths=tuple(parsed.paths),
+        texts=tuple(parsed.texts),
+        flags=kw,
+        stdin=stdin,
+        env=env_snapshot(session),
+        doors=doors,
+        spec=leaf,
+        shell=shell if context.shell is not None else None,
+    )
 
     # asyncio's timeout cancels the runtime task as well as the caller;
     # TypeScript forwards an explicit deadline and abort signal instead.
-    limit = resolve_limit(prog,
-                          command_default=leaf.limit,
-                          workspace_limits=context.command_limits,
-                          profile_limits=session.command_limits)
+    limit = resolve_limit(
+        prog,
+        command_default=leaf.limit,
+        workspace_limits=context.command_limits,
+        profile_limits=session.command_limits,
+    )
     timeout = limit.timeout_seconds if limit is not None else None
     if leaf.script is not None:
         runtime, refused = _select_runtime(prog, leaf, entries or [])
@@ -423,11 +476,20 @@ async def handle_cli(
             # interpreter command no runtime entry captures (run_code).
             sel_stderr = f"{refused}\n".encode()
             sel_io = IOResult(exit_code=127, stderr=sel_stderr)
-            return None, sel_io, ExecutionNode(command=cmd_str,
-                                               exit_code=127,
-                                               stderr=sel_stderr)
-        body = _script_output(inv, leaf.script, runtime, prog,
-                              PathSpec.from_str_path(session.cwd))
+            return (
+                None,
+                sel_io,
+                ExecutionNode(
+                    command=cmd_str, exit_code=127, stderr=sel_stderr
+                ),
+            )
+        body = _script_output(
+            inv,
+            leaf.script,
+            runtime,
+            prog,
+            PathSpec.from_str_path(session.cwd),
+        )
     else:
         fn = leaf.fn
         if fn is None:
@@ -435,7 +497,8 @@ async def handle_cli(
             # walk only returns handler-bearing nodes as leaf; reaching
             # this is a bug.
             raise RuntimeError(
-                f"walk returned a leaf without a handler for {prog!r}")
+                f"walk returned a leaf without a handler for {prog!r}"
+            )
         body = call_leaf(fn, inv)
     # The leaf's declared limit bounds the handler body and its
     # streams, exactly like mount dispatch: without the wrap a blocking
@@ -448,9 +511,13 @@ async def handle_cli(
         # message and exit 2, matching the refusal branch above.
         usage_stderr = f"{exc}\n".encode()
         usage_io = IOResult(exit_code=exc.exit_code, stderr=usage_stderr)
-        return None, usage_io, ExecutionNode(command=cmd_str,
-                                             exit_code=exc.exit_code,
-                                             stderr=usage_stderr)
+        return (
+            None,
+            usage_io,
+            ExecutionNode(
+                command=cmd_str, exit_code=exc.exit_code, stderr=usage_stderr
+            ),
+        )
     except CommandTimeoutError:
         # A limit timeout is answered by the workspace-level handler
         # (exit 124), not here. The cancelled leaf may already have sent
@@ -473,9 +540,11 @@ async def handle_cli(
         err_stderr = f"{prog}: {exc}\n".encode()
         err_io = IOResult(exit_code=1, stderr=err_stderr)
         printed = exc.stdout if isinstance(exc, PartialOutputError) else None
-        return printed, err_io, ExecutionNode(command=cmd_str,
-                                              exit_code=1,
-                                              stderr=err_stderr)
+        return (
+            printed,
+            err_io,
+            ExecutionNode(command=cmd_str, exit_code=1, stderr=err_stderr),
+        )
     finally:
         active = False
     if out is None:

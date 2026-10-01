@@ -10,8 +10,9 @@ from mirage.workspace.session.session import SessionState
 
 @pytest.mark.asyncio
 async def test_source_without_a_filename_is_a_usage_error():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     r = await ws.shell("source")
     assert r.exit_code == 2
     assert b"filename argument required" in r.stderr
@@ -21,19 +22,22 @@ async def test_source_without_a_filename_is_a_usage_error():
 async def test_source_of_the_empty_name_is_a_missing_file():
     # bash opens the empty name and fails ENOENT, where no argument at all
     # is the usage error.
-    out, io, node = await handle_source(None, None, "",
-                                        SessionState(session_id="s1"))
+    out, io, node = await handle_source(
+        None, None, "", SessionState(session_id="s1")
+    )
     assert out is None
     assert io.exit_code == 1
-    assert (await
-            materialize(io.stderr)) == b"source: : No such file or directory\n"
+    assert (
+        await materialize(io.stderr)
+    ) == b"source: : No such file or directory\n"
     assert node.command == "source "
 
 
 @pytest.mark.asyncio
 async def test_source_runs_the_file_in_the_calling_shell():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("printf 'X=from_file\\necho arg1=$1\\n' > /data/s.sh")
     r = await ws.shell("source /data/s.sh one; echo X=$X")
     assert r.exit_code == 0
@@ -42,8 +46,9 @@ async def test_source_runs_the_file_in_the_calling_shell():
 
 @pytest.mark.asyncio
 async def test_source_reports_a_missing_file():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     r = await ws.shell("source /data/nope.sh")
     assert r.exit_code == 1
     assert b"No such file or directory" in r.stderr

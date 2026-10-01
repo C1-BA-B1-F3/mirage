@@ -27,7 +27,8 @@ NO_FOLLOW_OPS = frozenset({"unlink", "rename", "rmdir", "symlink", "readlink"})
 # Content-writing ops whose completion stamps an observed mtime on the
 # namespace node (removals invalidate but must not stamp).
 STAMP_WRITE_OPS = frozenset(
-    {"write", "write_bytes", "append", "create", "truncate", "mkdir"})
+    {"write", "write_bytes", "append", "create", "truncate", "mkdir"}
+)
 
 
 @runtime_checkable

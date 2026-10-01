@@ -17,7 +17,6 @@ class NotFoundError(Exception):
 
 
 class ToThreadRecorder:
-
     def __init__(self) -> None:
         self.calls = []
 
@@ -27,13 +26,11 @@ class ToThreadRecorder:
 
 
 class FakeDownload:
-
     def __init__(self, data: bytes) -> None:
         self.contents = BytesIO(data)
 
 
 class FakeFiles:
-
     def __init__(self) -> None:
         self.downloads: dict[str, bytes] = {}
         self.metadata: dict[str, object] = {}
@@ -89,7 +86,8 @@ class FakeFiles:
             self.directories.setdefault(cur, [])
             parent = posixpath.dirname(cur) or "/"
             self._upsert_directory_entry(
-                parent, SimpleNamespace(path=cur, is_directory=True))
+                parent, SimpleNamespace(path=cur, is_directory=True)
+            )
 
     def delete_directory(self, path: str) -> None:
         self.delete_directory_calls.append(path)
@@ -102,7 +100,8 @@ class FakeFiles:
         self.directories.pop(path, None)
         parent = posixpath.dirname(path.rstrip("/")) or "/"
         self.directories[parent] = [
-            entry for entry in self.directories.get(parent, [])
+            entry
+            for entry in self.directories.get(parent, [])
             if getattr(entry, "path", None) != path
         ]
 
@@ -130,18 +129,21 @@ class FakeFiles:
         self.downloads.pop(path, None)
         parent = posixpath.dirname(path.rstrip("/")) or "/"
         self.directories[parent] = [
-            entry for entry in self.directories.get(parent, [])
+            entry
+            for entry in self.directories.get(parent, [])
             if getattr(entry, "path", None) != path
         ]
 
     def _upsert_directory_entry(self, parent: str, entry: object) -> None:
         entries = [
-            existing for existing in self.directories.get(parent, [])
+            existing
+            for existing in self.directories.get(parent, [])
             if getattr(existing, "path", None) != getattr(entry, "path", None)
         ]
         entries.append(entry)
         self.directories[parent] = sorted(
-            entries, key=lambda item: getattr(item, "path", ""))
+            entries, key=lambda item: getattr(item, "path", "")
+        )
 
 
 def _apply_range_header(data: bytes, range_header: str) -> bytes:
@@ -154,7 +156,6 @@ def _apply_range_header(data: bytes, range_header: str) -> bytes:
 
 
 class FakeApiClient:
-
     def __init__(self, files: FakeFiles) -> None:
         self.files = files
         self.do_calls: list[dict[str, object]] = []
@@ -208,7 +209,6 @@ class FakeApiClient:
 
 
 class FakeClient:
-
     def __init__(self, files: FakeFiles) -> None:
         self.files = files
         self.api_client = FakeApiClient(files)
@@ -257,16 +257,14 @@ def file_metadata(size: int = 0, modified: str | None = None) -> object:
 
 
 def directory_entry(path: str, modified: int | None = None) -> object:
-    return SimpleNamespace(path=path,
-                           is_directory=True,
-                           file_size=None,
-                           last_modified=modified)
+    return SimpleNamespace(
+        path=path, is_directory=True, file_size=None, last_modified=modified
+    )
 
 
-def file_entry(path: str,
-               size: int = 0,
-               modified: int | None = None) -> object:
-    return SimpleNamespace(path=path,
-                           is_directory=False,
-                           file_size=size,
-                           last_modified=modified)
+def file_entry(
+    path: str, size: int = 0, modified: int | None = None
+) -> object:
+    return SimpleNamespace(
+        path=path, is_directory=False, file_size=size, last_modified=modified
+    )

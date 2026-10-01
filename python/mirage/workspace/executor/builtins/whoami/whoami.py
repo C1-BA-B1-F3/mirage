@@ -20,7 +20,7 @@ from mirage.workspace.types import ExecutionNode
 
 
 async def handle_whoami(
-        namespace: Namespace,  # noqa: E125
+    namespace: Namespace,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     # GNU whoami reports the effective user and never consults $USER;
     # the workspace user (launch agent_id, shared via the namespace
@@ -28,10 +28,11 @@ async def handle_whoami(
     # it fails like GNU does for a uid with no passwd entry.
     if namespace.user is None:
         err = b"whoami: cannot find name for user ID\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="whoami",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="whoami", exit_code=1, stderr=err),
+        )
     out = f"{namespace.user}\n".encode()
     return out, IOResult(), ExecutionNode(command="whoami", exit_code=0)
 

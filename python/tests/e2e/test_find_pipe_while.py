@@ -70,8 +70,10 @@ def test_find_name_pattern(vfs_ws):
 
 
 def test_find_pipe_sort_pipe_while_read_echo(vfs_ws):
-    cmd = ("find /data -maxdepth 2 -type f | sort | "
-           "while read f; do echo \"=== $f ===\"; done")
+    cmd = (
+        "find /data -maxdepth 2 -type f | sort | "
+        'while read f; do echo "=== $f ==="; done'
+    )
     result = run(vfs_ws, cmd)
     lines = result.strip().splitlines()
     for line in lines:
@@ -82,8 +84,10 @@ def test_find_pipe_sort_pipe_while_read_echo(vfs_ws):
 
 
 def test_find_pipe_sort_pipe_while_read_file(vfs_ws):
-    cmd = ("find /data -maxdepth 2 -type f -name '*.json' | sort | "
-           "while read f; do echo \"=== $f ===\"; file $f; done")
+    cmd = (
+        "find /data -maxdepth 2 -type f -name '*.json' | sort | "
+        'while read f; do echo "=== $f ==="; file $f; done'
+    )
     result = run(vfs_ws, cmd)
     lines = result.strip().splitlines()
     assert "=== /data/data.json ===" in lines
@@ -91,8 +95,10 @@ def test_find_pipe_sort_pipe_while_read_file(vfs_ws):
 
 
 def test_find_pipe_while_read_echo_content(vfs_ws):
-    cmd = ("find /data -name '*.txt' -type f | sort | "
-           "while read f; do echo \"FILE: $f\"; done")
+    cmd = (
+        "find /data -name '*.txt' -type f | sort | "
+        'while read f; do echo "FILE: $f"; done'
+    )
     result = run(vfs_ws, cmd)
     lines = result.strip().splitlines()
     file_paths = [line.removeprefix("FILE: ") for line in lines]

@@ -22,9 +22,12 @@ from mirage.runtime.types import EvalValue, ScriptSource
 CTX_GLOBAL = "ctx"
 
 
-async def eval_with_ctx(source: str, ctx: dict[str, EvalValue],
-                        evaluator: EvaluatorMixin,
-                        timeout: float) -> EvalValue:
+async def eval_with_ctx(
+    source: str,
+    ctx: dict[str, EvalValue],
+    evaluator: EvaluatorMixin,
+    timeout: float,
+) -> EvalValue:
     """Evaluate a config-borne script and return its last expression.
 
     The one place the config-script calling convention is written down:
@@ -55,9 +58,9 @@ async def eval_with_ctx(source: str, ctx: dict[str, EvalValue],
     """
     release = evaluator.admit() if isinstance(evaluator, Runtime) else None
     try:
-        result = await asyncio.wait_for(evaluator.eval(
-            source, inputs={CTX_GLOBAL: ctx}),
-                                        timeout=timeout)
+        result = await asyncio.wait_for(
+            evaluator.eval(source, inputs={CTX_GLOBAL: ctx}), timeout=timeout
+        )
     finally:
         if release is not None:
             release()
@@ -100,12 +103,14 @@ def script_engine(script: ScriptSource, runtime: str) -> Runtime:
         if not issubclass(named, EvaluatorMixin):
             raise ValueError(
                 f"script names runtime {runtime!r}, which runs programs but "
-                f"cannot evaluate one")
+                f"cannot evaluate one"
+            )
         spoken = getattr(named, "language", None)
         if spoken is not None and spoken != script.language:
             raise ValueError(
                 f"script is {script.language}, but names runtime {runtime!r}, "
-                f"which speaks {spoken}")
+                f"which speaks {spoken}"
+            )
     try:
         built = build_runtime(runtime)
     except (ValueError, ImportError, OSError) as exc:
@@ -115,5 +120,6 @@ def script_engine(script: ScriptSource, runtime: str) -> Runtime:
         raise ValueError(f"script names runtime {runtime!r}: {exc}") from exc
     if not isinstance(built, EvaluatorMixin):
         raise ValueError(
-            f"script names runtime {runtime!r}, which cannot evaluate")
+            f"script names runtime {runtime!r}, which cannot evaluate"
+        )
     return built

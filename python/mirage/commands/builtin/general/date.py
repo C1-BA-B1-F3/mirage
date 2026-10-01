@@ -22,8 +22,11 @@ from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName
-from mirage.commands.spec.usage import (extra_operand_error, usage_exit_code,
-                                        usage_hint)
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    usage_exit_code,
+    usage_hint,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 from mirage.utils.dates import parse_date_expr, parse_posix_time
@@ -89,7 +92,8 @@ def invalid_date(text: str) -> tuple[ByteSource | None, IOResult]:
     """
     return None, IOResult(
         exit_code=1,
-        stderr=f"date: invalid date '{quote_text(text)}'\n".encode())
+        stderr=f"date: invalid date '{quote_text(text)}'\n".encode(),
+    )
 
 
 def lacks_plus_error(operand: str) -> UsageError:
@@ -102,7 +106,9 @@ def lacks_plus_error(operand: str) -> UsageError:
         f"date: the argument '{quote_text(operand)}' lacks a leading '+';\n"
         "when using an option to specify date(s), any non-option\n"
         "argument must be a format string beginning with '+'\n"
-        f"{usage_hint(CommandName.DATE)}", usage_exit_code(CommandName.DATE))
+        f"{usage_hint(CommandName.DATE)}",
+        usage_exit_code(CommandName.DATE),
+    )
 
 
 @command("date", vfs=None, spec=SPECS["date"])

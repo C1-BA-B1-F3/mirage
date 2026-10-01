@@ -136,8 +136,8 @@ export async function repoLanguages(
   const stated = metaOf(repo).languages
   if (typeof stated === 'object' && stated !== null && !Array.isArray(stated)) {
     return Object.entries(stated)
-      .flatMap(
-        ([name, size]): Array<[string, number]> => (typeof size === 'number' ? [[name, size]] : []),
+      .flatMap(([name, size]): Array<[string, number]> =>
+        typeof size === 'number' ? [[name, size]] : [],
       )
       .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
   }
@@ -707,7 +707,7 @@ export async function tagRefs(db: C, tenant: string, repo: RepoRow): Promise<Tag
 export async function peeled(db: C, tenant: string, repo: RepoRow, sha: string): Promise<string> {
   const seen = new Set<string>()
   let at = sha
-  for (let tag = await tagObject(db, tenant, repo, at); tag !== null && !seen.has(at); ) {
+  for (let tag = await tagObject(db, tenant, repo, at); tag !== null && !seen.has(at);) {
     seen.add(at)
     at = tag.objectSha
     tag = await tagObject(db, tenant, repo, at)

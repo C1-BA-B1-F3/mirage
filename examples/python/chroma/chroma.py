@@ -39,8 +39,9 @@ def build_vfs() -> ChromaVFS:
         ssl=bool_env("CHROMA_SSL", False),
         collection_name=require_env("CHROMA_COLLECTION"),
         slug_field=os.environ.get("CHROMA_SLUG_FIELD", "page_slug"),
-        chunk_index_field=os.environ.get("CHROMA_CHUNK_INDEX_FIELD",
-                                         "chunk_index"),
+        chunk_index_field=os.environ.get(
+            "CHROMA_CHUNK_INDEX_FIELD", "chunk_index"
+        ),
     )
     return ChromaVFS(config=config)
 
@@ -91,29 +92,37 @@ async def main() -> None:
     # namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {first_path} ===")
-    meta_res = await ws.shell(f"chmod 640 {quoted_path}"
-                              f" && chown 500:dev {quoted_path}"
-                              f" && touch -t 202601021530 {quoted_path}")
+    meta_res = await ws.shell(
+        f"chmod 640 {quoted_path}"
+        f" && chown 500:dev {quoted_path}"
+        f" && touch -t 202601021530 {quoted_path}"
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch("stat", PathSpec.from_str_path(first_path))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
     await run(ws, f"head -n 5 {quoted_path}")
     await run(ws, f"tail -n 5 {quoted_path}")
 
     query = os.environ.get("CHROMA_EXAMPLE_QUERY", "getting started")
     quoted_query = shlex.quote(query)
     await run(ws, f"grep -in {quoted_query} /knowledge/", max_chars=1500)
-    await run(ws,
-              f"chroma-query --top-k 5 {quoted_query} /knowledge/",
-              max_chars=1500)
+    await run(
+        ws,
+        f"chroma-query --top-k 5 {quoted_query} /knowledge/",
+        max_chars=1500,
+    )
 
     records = ws.vfs.records
     network_bytes = ws.vfs.network_bytes
     cache_bytes = ws.vfs.cache_bytes
     print("=== Stats ===")
-    print(f"{len(records)} ops, {network_bytes} network bytes, "
-          f"{cache_bytes} cache bytes")
+    print(
+        f"{len(records)} ops, {network_bytes} network bytes, "
+        f"{cache_bytes} cache bytes"
+    )
 
 
 if __name__ == "__main__":

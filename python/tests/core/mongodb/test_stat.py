@@ -30,8 +30,9 @@ def index():
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -40,14 +41,17 @@ def _path(s: str) -> PathSpec:
 
 @pytest.fixture(autouse=True)
 def _stub_existence_checks():
-    with patch(
+    with (
+        patch(
             "mirage.core.mongodb.readdir.database_exists",
             new_callable=AsyncMock,
             return_value=True,
-    ), patch(
+        ),
+        patch(
             "mirage.core.mongodb.readdir.entity_exists",
             new_callable=AsyncMock,
             return_value=True,
+        ),
     ):
         yield
 
@@ -84,17 +88,27 @@ async def test_stat_views_kind_dir(accessor, index):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("suffix,kind", [
-    ("collections/movies", FileType.DIRECTORY),
-    ("collections/movies/documents.jsonl", FileType.FILE),
-    ("views/recent/documents.jsonl", FileType.FILE),
-])
-async def test_stat_never_counts_or_reads_documents(accessor, index, suffix,
-                                                    kind):
-    with patch("mirage.core.mongodb.client.count_documents",
-               new=AsyncMock(side_effect=AssertionError("count scan"))), patch(
-                   "mirage.core.mongodb.client.get_indexes",
-                   new=AsyncMock(side_effect=AssertionError("index fetch"))):
+@pytest.mark.parametrize(
+    "suffix,kind",
+    [
+        ("collections/movies", FileType.DIRECTORY),
+        ("collections/movies/documents.jsonl", FileType.FILE),
+        ("views/recent/documents.jsonl", FileType.FILE),
+    ],
+)
+async def test_stat_never_counts_or_reads_documents(
+    accessor, index, suffix, kind
+):
+    with (
+        patch(
+            "mirage.core.mongodb.client.count_documents",
+            new=AsyncMock(side_effect=AssertionError("count scan")),
+        ),
+        patch(
+            "mirage.core.mongodb.client.get_indexes",
+            new=AsyncMock(side_effect=AssertionError("index fetch")),
+        ),
+    ):
         result = await stat(accessor, _path("/sample_mflix/" + suffix), index)
     assert result.type == kind
     assert result.size is None
@@ -104,9 +118,9 @@ async def test_stat_never_counts_or_reads_documents(accessor, index, suffix,
 
 @pytest.mark.asyncio
 async def test_stat_schema_json(accessor, index):
-    result = await stat(accessor,
-                        _path("/sample_mflix/collections/movies/schema.json"),
-                        index)
+    result = await stat(
+        accessor, _path("/sample_mflix/collections/movies/schema.json"), index
+    )
     assert result.content == ContentType.TEXT
     assert result.name == "schema.json"
     assert result.extra["kind"] == "collection"
@@ -130,9 +144,9 @@ async def test_stat_unknown_path_raises(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_database_missing_raises(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.database_exists",
-            new_callable=AsyncMock,
-            return_value=False,
+        "mirage.core.mongodb.readdir.database_exists",
+        new_callable=AsyncMock,
+        return_value=False,
     ):
         with pytest.raises(FileNotFoundError):
             await stat(accessor, _path("/ghost"), index)
@@ -141,24 +155,26 @@ async def test_stat_database_missing_raises(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_collection_missing_raises(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.entity_exists",
-            new_callable=AsyncMock,
-            return_value=False,
+        "mirage.core.mongodb.readdir.entity_exists",
+        new_callable=AsyncMock,
+        return_value=False,
     ):
         with pytest.raises(FileNotFoundError):
-            await stat(accessor, _path("/sample_mflix/collections/ghost"),
-                       index)
+            await stat(
+                accessor, _path("/sample_mflix/collections/ghost"), index
+            )
 
 
 @pytest.mark.asyncio
 async def test_stat_documents_under_missing_collection_raises(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.entity_exists",
-            new_callable=AsyncMock,
-            return_value=False,
+        "mirage.core.mongodb.readdir.entity_exists",
+        new_callable=AsyncMock,
+        return_value=False,
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
                 _path("/sample_mflix/collections/ghost/documents.jsonl"),
-                index)
+                index,
+            )

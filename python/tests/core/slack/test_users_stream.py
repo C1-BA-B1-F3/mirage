@@ -30,18 +30,11 @@ async def test_list_users_stream_walks_pages_and_filters():
                     "id": "U1",
                     "name": "alice",
                     "deleted": False,
-                    "is_bot": False
+                    "is_bot": False,
                 },
-                {
-                    "id": "U2",
-                    "name": "bot",
-                    "deleted": False,
-                    "is_bot": True
-                },
+                {"id": "U2", "name": "bot", "deleted": False, "is_bot": True},
             ],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            },
+            "response_metadata": {"next_cursor": "cur1"},
         },
         {
             "members": [
@@ -49,18 +42,11 @@ async def test_list_users_stream_walks_pages_and_filters():
                     "id": "USLACKBOT",
                     "name": "slackbot",
                     "deleted": False,
-                    "is_bot": False
+                    "is_bot": False,
                 },
-                {
-                    "id": "U3",
-                    "name": "bob",
-                    "deleted": False,
-                    "is_bot": False
-                },
+                {"id": "U3", "name": "bob", "deleted": False, "is_bot": False},
             ],
-            "response_metadata": {
-                "next_cursor": ""
-            },
+            "response_metadata": {"next_cursor": ""},
         },
     ]
     calls = []

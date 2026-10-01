@@ -17,9 +17,16 @@ import zlib
 import pytest
 
 from mirage.io.types import materialize
-from mirage.utils.compress import (GZIP_CHUNK_SIZE, GZIP_CRC, GZIP_LENGTH,
-                                   GzipDecoder, gunzip_checked, gunzip_partial,
-                                   gunzip_stream, gzip_compress)
+from mirage.utils.compress import (
+    GZIP_CHUNK_SIZE,
+    GZIP_CRC,
+    GZIP_LENGTH,
+    GzipDecoder,
+    gunzip_checked,
+    gunzip_partial,
+    gunzip_stream,
+    gzip_compress,
+)
 from mirage.utils.errors import GzipDataError
 
 HELLO = gzip.compress(b"hello\n", mtime=0)
@@ -30,21 +37,42 @@ def test_every_member_decompresses():
     assert gunzip_checked(HELLO + HELLO) == b"hello\nhello\n"
 
 
-@pytest.mark.parametrize("data,reason,fatal", [
-    (b"", "\ngzip: f: unexpected end of file\n", True),
-    (b"x", "\ngzip: f: unexpected end of file\n", True),
-    (b"hello\n", "\ngzip: f: not in gzip format\n", False),
-    (HELLO[:10], "\ngzip: f: unexpected end of file\n", True),
-    (HELLO[:-3], "\ngzip: f: unexpected end of file\n", True),
-    (b"\x1f\x8b\x08\x00garbage-here",
-     "\ngzip: f: invalid compressed data--format violated\n", True),
-    (b"\x1f\x8b\x07", "gzip: f: unknown method 7 -- not supported\n", False),
-    (b"\x1f\x8b\x08\x20", "gzip: f is encrypted -- not supported\n", False),
-    (b"\x1f\x8b\x08\x48", "gzip: f has flags 0x48 -- not supported\n", False),
-    (HCRC_HEAD + b"\0\0" + HELLO[10:],
-     "gzip: f: header checksum 0x0000 != computed checksum "
-     f"0x{zlib.crc32(HCRC_HEAD) & 0xFFFF:04x}\n", False),
-])
+@pytest.mark.parametrize(
+    "data,reason,fatal",
+    [
+        (b"", "\ngzip: f: unexpected end of file\n", True),
+        (b"x", "\ngzip: f: unexpected end of file\n", True),
+        (b"hello\n", "\ngzip: f: not in gzip format\n", False),
+        (HELLO[:10], "\ngzip: f: unexpected end of file\n", True),
+        (HELLO[:-3], "\ngzip: f: unexpected end of file\n", True),
+        (
+            b"\x1f\x8b\x08\x00garbage-here",
+            "\ngzip: f: invalid compressed data--format violated\n",
+            True,
+        ),
+        (
+            b"\x1f\x8b\x07",
+            "gzip: f: unknown method 7 -- not supported\n",
+            False,
+        ),
+        (
+            b"\x1f\x8b\x08\x20",
+            "gzip: f is encrypted -- not supported\n",
+            False,
+        ),
+        (
+            b"\x1f\x8b\x08\x48",
+            "gzip: f has flags 0x48 -- not supported\n",
+            False,
+        ),
+        (
+            HCRC_HEAD + b"\0\0" + HELLO[10:],
+            "gzip: f: header checksum 0x0000 != computed checksum "
+            f"0x{zlib.crc32(HCRC_HEAD) & 0xFFFF:04x}\n",
+            False,
+        ),
+    ],
+)
 def test_refusals_carry_gzips_reason_and_severity(data, reason, fatal):
     # gzip 1.13: no header, or a header gzip does not support, is
     # reported and skipped, while a short, truncated or corrupt input
@@ -63,11 +91,14 @@ def test_optional_header_fields_are_skipped():
     assert gunzip_checked(head + HELLO[10:]) == b"hello\n"
 
 
-@pytest.mark.parametrize("trailer,reasons", [
-    (b"\0" * 8, (GZIP_CRC, GZIP_LENGTH)),
-    (b"\0" * 4 + HELLO[-4:], (GZIP_CRC, )),
-    (HELLO[-8:-4] + b"\0" * 4, (GZIP_LENGTH, )),
-])
+@pytest.mark.parametrize(
+    "trailer,reasons",
+    [
+        (b"\0" * 8, (GZIP_CRC, GZIP_LENGTH)),
+        (b"\0" * 4 + HELLO[-4:], (GZIP_CRC,)),
+        (HELLO[-8:-4] + b"\0" * 4, (GZIP_LENGTH,)),
+    ],
+)
 @pytest.mark.asyncio
 async def test_trailer_mismatch_follows_the_inflated_bytes(trailer, reasons):
     # gzip 1.13 writes what it inflated, then names each mismatch.
@@ -89,23 +120,29 @@ def test_trailer_mismatch_only_skips_the_input_under_test():
     assert not exc.value.fatal
 
 
-@pytest.mark.parametrize("data,decoded,keeps", [
-    (HELLO + b"junk", b"hello\n", True),
-    (HELLO[:-8] + b"\0" * 8, b"hello\n", True),
-    (HELLO + HELLO[:-3], b"hello\nhello\n", True),
-])
+@pytest.mark.parametrize(
+    "data,decoded,keeps",
+    [
+        (HELLO + b"junk", b"hello\n", True),
+        (HELLO[:-8] + b"\0" * 8, b"hello\n", True),
+        (HELLO + HELLO[:-3], b"hello\nhello\n", True),
+    ],
+)
 def test_partial_keeps_what_gzip_wrote_before_it_stopped(data, decoded, keeps):
     out, failure = gunzip_partial(data)
     assert (out, failure.keeps_output) == (decoded, keeps)
     assert gunzip_partial(HELLO) == (b"hello\n", None)
 
 
-@pytest.mark.parametrize("data,keeps", [
-    (HELLO[:2] + b"\x07" + HELLO[3:], False),
-    (HELLO + HELLO[:2] + b"\x07" + HELLO[3:], True),
-    (gzip.compress(b"", mtime=0) + HELLO[:2] + b"\x07", True),
-    (HELLO + b"junk", True),
-])
+@pytest.mark.parametrize(
+    "data,keeps",
+    [
+        (HELLO[:2] + b"\x07" + HELLO[3:], False),
+        (HELLO + HELLO[:2] + b"\x07" + HELLO[3:], True),
+        (gzip.compress(b"", mtime=0) + HELLO[:2] + b"\x07", True),
+        (HELLO + b"junk", True),
+    ],
+)
 def test_a_later_members_refusal_keeps_the_members_before_it(data, keeps):
     with pytest.raises(GzipDataError) as exc:
         gunzip_checked(data)
@@ -119,7 +156,7 @@ async def test_member_headers_trailers_and_padding_across_chunks(width):
 
     async def source():
         for offset in range(0, len(data), width):
-            yield data[offset:offset + width]
+            yield data[offset : offset + width]
 
     assert await materialize(gunzip_stream(source())) == b"hello\nhello\n"
 
@@ -161,20 +198,24 @@ def test_large_member_preserves_buffered_output():
     assert gunzip_checked(gzip.compress(data)) == data
 
 
-@pytest.mark.parametrize("data,keeps", [
-    (HELLO[:-8], True),
-    (HELLO[:-3], True),
-    (HELLO + HELLO[:2], True),
-    (HELLO[:2], False),
-    (HELLO + HELLO[:10], False),
-    (HELLO[:-9], False),
-])
+@pytest.mark.parametrize(
+    "data,keeps",
+    [
+        (HELLO[:-8], True),
+        (HELLO[:-3], True),
+        (HELLO + HELLO[:2], True),
+        (HELLO[:2], False),
+        (HELLO + HELLO[:10], False),
+        (HELLO[:-9], False),
+    ],
+)
 @pytest.mark.parametrize("width", [1, 7, 65536])
 def test_eof_distinguishes_complete_bodies_from_partial_ones(
-        data, keeps, width):
+    data, keeps, width
+):
     decoder = GzipDecoder()
     for offset in range(0, len(data), width):
-        list(decoder.feed(data[offset:offset + width]))
+        list(decoder.feed(data[offset : offset + width]))
     with pytest.raises(GzipDataError) as exc:
         decoder.finish()
     assert exc.value.fatal
@@ -185,13 +226,14 @@ def test_eof_distinguishes_complete_bodies_from_partial_ones(
 @pytest.mark.parametrize("fields", [b"\0\0\0\0", b"\x03\0abcname\0comment\0"])
 def test_optional_fields_and_header_crc_across_chunks(width, fields):
     head = HELLO[:3] + b"\x1e" + HELLO[4:10] + fields
-    member = head + (zlib.crc32(head) & 0xFFFF).to_bytes(2,
-                                                         "little") + HELLO[10:]
+    member = (
+        head + (zlib.crc32(head) & 0xFFFF).to_bytes(2, "little") + HELLO[10:]
+    )
     decoder = GzipDecoder()
     data = member + member
     output = []
     for offset in range(0, len(data), width):
-        output.extend(decoder.feed(data[offset:offset + width]))
+        output.extend(decoder.feed(data[offset : offset + width]))
     decoder.finish()
     assert b"".join(output) == b"hello\nhello\n"
 

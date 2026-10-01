@@ -14,10 +14,21 @@
 
 import pytest
 
-from mirage.utils.path import (ancestors, drop_trailing_segments, expand_tilde,
-                               glob_prefix_match, gnu_basename, gnu_dirname,
-                               norm, norm_dir, owner_prefix, parent,
-                               resolve_path, resolve_symlinks, respell_one)
+from mirage.utils.path import (
+    ancestors,
+    drop_trailing_segments,
+    expand_tilde,
+    glob_prefix_match,
+    gnu_basename,
+    gnu_dirname,
+    norm,
+    norm_dir,
+    owner_prefix,
+    parent,
+    resolve_path,
+    resolve_symlinks,
+    respell_one,
+)
 
 
 def test_norm_strips_and_adds_leading_slash():
@@ -171,6 +182,7 @@ def test_expand_tilde_plain_word_unchanged():
 
 def test_resolve_symlinks_prefix_substitution():
     from mirage.utils.path import resolve_symlinks
+
     links = {"/a/link": "/a/real"}
     assert resolve_symlinks("/a/link/f.txt", links) == "/a/real/f.txt"
     assert resolve_symlinks("/a/link", links) == "/a/real"
@@ -178,18 +190,21 @@ def test_resolve_symlinks_prefix_substitution():
 
 def test_resolve_symlinks_relative_target_resolved_against_link_dir():
     from mirage.utils.path import resolve_symlinks
+
     links = {"/a/link": "real"}
     assert resolve_symlinks("/a/link", links) == "/a/real"
 
 
 def test_resolve_symlinks_respects_path_boundary():
     from mirage.utils.path import resolve_symlinks
+
     links = {"/a/b": "/x"}
     assert resolve_symlinks("/a/bc", links) == "/a/bc"
 
 
 def test_resolve_symlinks_no_links_is_identity():
     from mirage.utils.path import resolve_symlinks
+
     assert resolve_symlinks("/a/b", {}) == "/a/b"
 
 
@@ -197,6 +212,7 @@ def test_resolve_symlinks_cycle_raises():
     import pytest
 
     from mirage.utils.path import CycleError, resolve_symlinks
+
     links = {"/a": "/b", "/b": "/a"}
     with pytest.raises(CycleError):
         resolve_symlinks("/a", links)
@@ -237,13 +253,16 @@ def test_ancestors_tolerates_a_trailing_slash():
     assert ancestors("/a/b/") == ["/a"]
 
 
-@pytest.mark.parametrize("path,count,expected", [
-    ("a/b/c", 1, "a/b"),
-    ("/x/y/z", 2, "/x"),
-    ("f.txt/sub", 1, "f.txt"),
-    ("/data/mkc/f.txt/sub", 1, "/data/mkc/f.txt"),
-    ("a.txt", 0, "a.txt"),
-])
+@pytest.mark.parametrize(
+    "path,count,expected",
+    [
+        ("a/b/c", 1, "a/b"),
+        ("/x/y/z", 2, "/x"),
+        ("f.txt/sub", 1, "f.txt"),
+        ("/data/mkc/f.txt/sub", 1, "/data/mkc/f.txt"),
+        ("a.txt", 0, "a.txt"),
+    ],
+)
 def test_drop_trailing_segments(path, count, expected):
     assert drop_trailing_segments(path, count) == expected
 
@@ -254,25 +273,32 @@ def test_drop_trailing_segments_is_clamped():
     assert drop_trailing_segments("a/b", 5) == "a/b"
 
 
-@pytest.mark.parametrize("path,original,raw,expected", [
-    ("/data/sub/x", "/data", ".", "./sub/x"),
-    ("/data/sub", "/data/sub", "sub", "sub"),
-    ("/data/x:hit", "/data", ".", "./x:hit"),
-    ("/other/x", "/data", ".", "/other/x"),
-    ("/data/x", "/data", "/data", "/data/x"),
-])
+@pytest.mark.parametrize(
+    "path,original,raw,expected",
+    [
+        ("/data/sub/x", "/data", ".", "./sub/x"),
+        ("/data/sub", "/data/sub", "sub", "sub"),
+        ("/data/x:hit", "/data", ".", "./x:hit"),
+        ("/other/x", "/data", ".", "/other/x"),
+        ("/data/x", "/data", "/data", "/data/x"),
+    ],
+)
 def test_respell_one_respells_the_typed_base(path, original, raw, expected):
     assert respell_one(path, original, raw) == expected
 
 
-@pytest.mark.parametrize("path,original,expected", [
-    ("/data/sub/x", "/data", "sub/x"),
-    ("/data/x:hit", "/data", "x:hit"),
-    ("/ram/a.txt:hello", "/", "ram/a.txt:hello"),
-    ("/data", "/data", "."),
-])
+@pytest.mark.parametrize(
+    "path,original,expected",
+    [
+        ("/data/sub/x", "/data", "sub/x"),
+        ("/data/x:hit", "/data", "x:hit"),
+        ("/ram/a.txt:hello", "/", "ram/a.txt:hello"),
+        ("/data", "/data", "."),
+    ],
+)
 def test_respell_one_empty_raw_is_the_bare_no_operand_spelling(
-        path, original, expected):
+    path, original, expected
+):
     # GNU grep -r with no path operand prints names relative to the cwd
     # with no ./ prefix; the synthetic operand carries raw_path "".
     assert respell_one(path, original, "") == expected
@@ -286,38 +312,38 @@ def test_respell_one_root_original_collapses_to_raw():
     assert respell_one("/ram/a.txt", "/", ".") == "./ram/a.txt"
 
 
-@pytest.mark.parametrize("path, links, expected", [
-    ("/data/s/al", {
-        "/data/s/al": "../a.txt"
-    }, "/data/a.txt"),
-    ("/data/s/al", {
-        "/data/s/al": "../next",
-        "/data/next": "./a.txt"
-    }, "/data/a.txt"),
-    ("/data/al", {
-        "/data/al": "/data/s/../a.txt"
-    }, "/data/a.txt"),
-    ("/data/al/x", {
-        "/data/al": "s/.."
-    }, "/data/x"),
-    ("/data/al", {
-        "/data/al": "dir/../a.txt",
-        "/data/dir": "/other/deep"
-    }, "/other/a.txt"),
-    ("/data/al", {
-        "/data/al": "../../../../a.txt"
-    }, "/a.txt"),
-])
+@pytest.mark.parametrize(
+    "path, links, expected",
+    [
+        ("/data/s/al", {"/data/s/al": "../a.txt"}, "/data/a.txt"),
+        (
+            "/data/s/al",
+            {"/data/s/al": "../next", "/data/next": "./a.txt"},
+            "/data/a.txt",
+        ),
+        ("/data/al", {"/data/al": "/data/s/../a.txt"}, "/data/a.txt"),
+        ("/data/al/x", {"/data/al": "s/.."}, "/data/x"),
+        (
+            "/data/al",
+            {"/data/al": "dir/../a.txt", "/data/dir": "/other/deep"},
+            "/other/a.txt",
+        ),
+        ("/data/al", {"/data/al": "../../../../a.txt"}, "/a.txt"),
+    ],
+)
 def test_link_targets_walk_dots_and_links_in_order(path, links, expected):
     assert resolve_symlinks(path, links) == expected
 
 
-@pytest.mark.parametrize("path, expected", [
-    ("/data/al/", "/other/dir/"),
-    ("/data/al/../", "/other/"),
-    ("/data/plain/", "/data/plain/"),
-    ("/data/root/", "/"),
-])
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("/data/al/", "/other/dir/"),
+        ("/data/al/../", "/other/"),
+        ("/data/plain/", "/data/plain/"),
+        ("/data/root/", "/"),
+    ],
+)
 def test_resolve_symlinks_preserves_directory_suffix(path, expected):
     links = {"/data/al": "/other/dir", "/data/root": "/"}
     assert resolve_symlinks(path, links) == expected

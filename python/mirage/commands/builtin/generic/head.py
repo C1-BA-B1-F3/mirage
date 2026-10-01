@@ -5,17 +5,27 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from mirage.cache.read_through import cache_aware_read
-from mirage.commands.builtin.tail_counts import (number_flag_error,
-                                                 parse_byte_count)
-from mirage.commands.builtin.utils.constants import (CHAR_DEVICE_MAX_BYTES,
-                                                     STDIN_HEADER_NAME)
+from mirage.commands.builtin.tail_counts import (
+    number_flag_error,
+    parse_byte_count,
+)
+from mirage.commands.builtin.utils.constants import (
+    CHAR_DEVICE_MAX_BYTES,
+    STDIN_HEADER_NAME,
+)
 from mirage.commands.builtin.utils.limit import truncate_stream
-from mirage.commands.builtin.utils.operands import (normalized_read,
-                                                    operands_io,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
-                                                  resolve_source, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    normalized_read,
+    operands_io,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    operand_label,
+    resolve_source,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -96,7 +106,7 @@ async def head(
                     if start < len(chunk):
                         yield chunk[start:]
                     break
-                yield chunk[start:end + 1]
+                yield chunk[start : end + 1]
                 emitted_lines += 1
                 if emitted_lines >= target:
                     return
@@ -149,12 +159,14 @@ def head_multi(
             returns bytes, an awaitable of bytes, or an async byte iterator.
     """
     cached = cache_aware_read(read)
-    return _head_multi(paths,
-                       read=lambda p: read(p) if is_stdin(p) else cached(p),
-                       n=n,
-                       c=c,
-                       show_headers=show_headers,
-                       zero_terminated=zero_terminated)
+    return _head_multi(
+        paths,
+        read=lambda p: read(p) if is_stdin(p) else cached(p),
+        n=n,
+        c=c,
+        show_headers=show_headers,
+        zero_terminated=zero_terminated,
+    )
 
 
 async def _head_multi(
@@ -175,10 +187,9 @@ async def _head_multi(
         source = read(p)
         if inspect.isawaitable(source):
             source = await source
-        async for chunk in head(source,
-                                n=n,
-                                c=c,
-                                zero_terminated=zero_terminated):
+        async for chunk in head(
+            source, n=n, c=c, zero_terminated=zero_terminated
+        ):
             yield chunk
 
 
@@ -225,11 +236,14 @@ async def head_generic(
             source = read(p)
 
             async def bounded() -> AsyncIterator[bytes]:
-                if (getattr(await stat(p), "type", None)
-                        is FileType.CHAR_DEVICE and parsed.bytes_ is None):
+                if (
+                    getattr(await stat(p), "type", None)
+                    is FileType.CHAR_DEVICE
+                    and parsed.bytes_ is None
+                ):
                     async for chunk in truncate_stream(
-                            source, io,
-                            Limit(max_bytes=CHAR_DEVICE_MAX_BYTES)):
+                        source, io, Limit(max_bytes=CHAR_DEVICE_MAX_BYTES)
+                    ):
                         yield chunk
                     return
                 async for chunk in source:
@@ -237,17 +251,21 @@ async def head_generic(
 
             return bounded()
 
-        return head_multi(readable,
-                          read=source_for,
-                          n=parsed.lines,
-                          c=parsed.bytes_,
-                          show_headers=show_headers,
-                          zero_terminated=parsed.zero_terminated), io
+        return head_multi(
+            readable,
+            read=source_for,
+            n=parsed.lines,
+            c=parsed.bytes_,
+            show_headers=show_headers,
+            zero_terminated=parsed.zero_terminated,
+        ), io
     source = resolve_source(opts.stdin, "head: missing operand")
-    body = head(source,
-                n=parsed.lines,
-                c=parsed.bytes_,
-                zero_terminated=parsed.zero_terminated)
+    body = head(
+        source,
+        n=parsed.lines,
+        c=parsed.bytes_,
+        zero_terminated=parsed.zero_terminated,
+    )
     if parsed.verbose and not parsed.quiet:
         # -v heads a stdin nobody named with the name it gives `-`.
         body = async_chain([f"==> {STDIN_HEADER_NAME} <==\n".encode(), body])

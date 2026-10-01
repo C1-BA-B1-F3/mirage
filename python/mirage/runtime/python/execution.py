@@ -80,26 +80,44 @@ def prepare_source(args: RunArgs, *, search_path: bool = False) -> str:
     """
     prog = args.prog
     filename = main_filename(args)
-    if not args.script_cli and filename is None and prog in (None,
-                                                             PAYLOAD_ARGV0):
+    if (
+        not args.script_cli
+        and filename is None
+        and prog in (None, PAYLOAD_ARGV0)
+    ):
         return args.code
-    input_source = ("None" if args.stdin is None else
-                    "__import__('sys').stdin.buffer.read()")
+    input_source = (
+        "None"
+        if args.stdin is None
+        else "__import__('sys').stdin.buffer.read()"
+    )
     bindings = (
-        "argv = list(__import__('sys').argv)\n"
-        f"stdin = {input_source}\n"
-        "__import__('sys').stdin = __import__('io').TextIOWrapper("
-        "__import__('io').BytesIO(stdin or b''), "
-        "encoding=__import__('sys').stdin.encoding, "
-        "errors=__import__('sys').stdin.errors)\n") if args.script_cli else ""
-    run_file = ("" if filename is None else
-                f"__file__ = {filename!r}\n__cached__ = None\n")
+        (
+            "argv = list(__import__('sys').argv)\n"
+            f"stdin = {input_source}\n"
+            "__import__('sys').stdin = __import__('io').TextIOWrapper("
+            "__import__('io').BytesIO(stdin or b''), "
+            "encoding=__import__('sys').stdin.encoding, "
+            "errors=__import__('sys').stdin.errors)\n"
+        )
+        if args.script_cli
+        else ""
+    )
+    run_file = (
+        ""
+        if filename is None
+        else f"__file__ = {filename!r}\n__cached__ = None\n"
+    )
     if search_path and args.script_path is not None:
-        run_file += ("if not __import__('sys').flags.safe_path:\n"
-                     "    __import__('sys').path[0] = __import__('os').path"
-                     ".dirname(__import__('os').path.realpath(__file__))\n")
+        run_file += (
+            "if not __import__('sys').flags.safe_path:\n"
+            "    __import__('sys').path[0] = __import__('os').path"
+            ".dirname(__import__('os').path.realpath(__file__))\n"
+        )
     argv0 = prog if prog is not None else PAYLOAD_ARGV0
     name = filename or prog or "<string>"
-    return (f"__import__('sys').argv[0] = {argv0!r}\n"
-            f"{run_file}{bindings}"
-            f"exec(compile({args.code!r}, {name!r}, 'exec'), globals())\n")
+    return (
+        f"__import__('sys').argv[0] = {argv0!r}\n"
+        f"{run_file}{bindings}"
+        f"exec(compile({args.code!r}, {name!r}, 'exec'), globals())\n"
+    )

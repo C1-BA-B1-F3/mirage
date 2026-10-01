@@ -42,18 +42,38 @@ _CREDS = {
 
 # (name, class, region, expected endpoint for that region)
 REGION_DERIVED = [
-    ("aliyun", AliyunConfig, "cn-hangzhou",
-     "https://s3.oss-cn-hangzhou.aliyuncs.com"),
-    ("tencent", TencentConfig, "ap-guangzhou",
-     "https://cos.ap-guangzhou.myqcloud.com"),
-    ("backblaze", BackblazeConfig, "us-west-002",
-     "https://s3.us-west-002.backblazeb2.com"),
-    ("digitalocean", DigitalOceanConfig, "nyc3",
-     "https://nyc3.digitaloceanspaces.com"),
+    (
+        "aliyun",
+        AliyunConfig,
+        "cn-hangzhou",
+        "https://s3.oss-cn-hangzhou.aliyuncs.com",
+    ),
+    (
+        "tencent",
+        TencentConfig,
+        "ap-guangzhou",
+        "https://cos.ap-guangzhou.myqcloud.com",
+    ),
+    (
+        "backblaze",
+        BackblazeConfig,
+        "us-west-002",
+        "https://s3.us-west-002.backblazeb2.com",
+    ),
+    (
+        "digitalocean",
+        DigitalOceanConfig,
+        "nyc3",
+        "https://nyc3.digitaloceanspaces.com",
+    ),
     ("qingstor", QingStorConfig, "pek3b", "https://s3.pek3b.qingstor.com"),
     ("scaleway", ScalewayConfig, "fr-par", "https://s3.fr-par.scw.cloud"),
-    ("wasabi", WasabiConfig, "eu-central-1",
-     "https://s3.eu-central-1.wasabisys.com"),
+    (
+        "wasabi",
+        WasabiConfig,
+        "eu-central-1",
+        "https://s3.eu-central-1.wasabisys.com",
+    ),
 ]
 
 # Providers whose endpoint_url is required and taken verbatim.
@@ -71,22 +91,23 @@ def test_region_derived_endpoint(name, cls, region, expected):
 
 
 @pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
-def test_explicit_endpoint_overrides_the_region_rule(name, cls, region,
-                                                     expected):
-    cfg = cls(bucket="b",
-              region=region,
-              endpoint_url="https://custom.example",
-              **_CREDS)
+def test_explicit_endpoint_overrides_the_region_rule(
+    name, cls, region, expected
+):
+    cfg = cls(
+        bucket="b",
+        region=region,
+        endpoint_url="https://custom.example",
+        **_CREDS,
+    )
     assert cfg.resolved_endpoint_url() == "https://custom.example"
 
 
 @pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
 def test_region_derived_maps_onto_s3_config(name, cls, region, expected):
-    cfg = cls(bucket="b",
-              region=region,
-              key_prefix="pre/",
-              timeout=7,
-              **_CREDS)
+    cfg = cls(
+        bucket="b", region=region, key_prefix="pre/", timeout=7, **_CREDS
+    )
     s3 = cfg.to_s3_config()
     assert s3.bucket == "b"
     assert s3.region == region
@@ -109,25 +130,30 @@ def test_endpoint_required_defaults(name, cls):
 
 @pytest.mark.parametrize("name,cls", ENDPOINT_REQUIRED)
 def test_endpoint_required_path_style_override(name, cls):
-    cfg = cls(bucket="b",
-              endpoint_url="https://host:9000",
-              path_style=False,
-              **_CREDS)
+    cfg = cls(
+        bucket="b",
+        endpoint_url="https://host:9000",
+        path_style=False,
+        **_CREDS,
+    )
     assert cfg.to_s3_config().path_style is False
 
 
 @pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
 def test_proxy_reaches_s3_config(name, cls, region, expected):
-    cfg = cls(bucket="b",
-              region=region,
-              proxy=SecretStr("http://proxy:3128"),
-              **_CREDS)
+    cfg = cls(
+        bucket="b",
+        region=region,
+        proxy=SecretStr("http://proxy:3128"),
+        **_CREDS,
+    )
     assert cfg.to_s3_config().proxy.get_secret_value() == "http://proxy:3128"
 
 
 @pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
 def test_credentials_may_be_omitted_for_ambient_resolution(
-        name, cls, region, expected):
+    name, cls, region, expected
+):
     s3 = cls(bucket="b", region=region).to_s3_config()
     assert s3.aws_access_key_id is None
     assert s3.aws_secret_access_key is None
@@ -141,10 +167,9 @@ def test_every_alias_forwards_the_aws_profile(name, cls, region, expected):
 
 @pytest.mark.parametrize("name,cls,region,expected", REGION_DERIVED)
 def test_every_alias_forwards_the_session_token(name, cls, region, expected):
-    cfg = cls(bucket="b",
-              region=region,
-              session_token=SecretStr("tok"),
-              **_CREDS)
+    cfg = cls(
+        bucket="b", region=region, session_token=SecretStr("tok"), **_CREDS
+    )
     assert cfg.to_s3_config().aws_session_token.get_secret_value() == "tok"
 
 
@@ -161,14 +186,15 @@ def test_wasabi_defaults_to_the_regionless_host():
 
 
 def test_wasabi_explicit_endpoint_wins_over_the_regionless_host():
-    cfg = WasabiConfig(bucket="b",
-                       endpoint_url="https://custom.example",
-                       **_CREDS)
+    cfg = WasabiConfig(
+        bucket="b", endpoint_url="https://custom.example", **_CREDS
+    )
     assert cfg.resolved_endpoint_url() == "https://custom.example"
 
 
-@pytest.mark.parametrize("name,cls", [("oci", OCIConfig),
-                                      ("supabase", SupabaseConfig)])
+@pytest.mark.parametrize(
+    "name,cls", [("oci", OCIConfig), ("supabase", SupabaseConfig)]
+)
 def test_namespace_providers_default_to_path_style(name, cls):
     extra = {"namespace": "ns"} if name == "oci" else {"project_ref": "abc"}
     cfg = cls(bucket="b", region="us-east-1", **extra, **_CREDS)
@@ -182,18 +208,19 @@ def test_gcs_uses_a_fixed_endpoint():
 
 
 def test_oci_endpoint_uses_namespace_and_region():
-    cfg = OCIConfig(bucket="b",
-                    namespace="ns",
-                    region="us-ashburn-1",
-                    **_CREDS)
+    cfg = OCIConfig(
+        bucket="b", namespace="ns", region="us-ashburn-1", **_CREDS
+    )
     assert cfg.resolved_endpoint_url() == (
-        "https://ns.compat.objectstorage.us-ashburn-1.oci.customer-oci.com")
+        "https://ns.compat.objectstorage.us-ashburn-1.oci.customer-oci.com"
+    )
 
 
 def test_r2_endpoint_uses_account_id():
     cfg = R2Config(bucket="b", account_id="acct", **_CREDS)
     assert cfg.resolved_endpoint_url() == (
-        "https://acct.r2.cloudflarestorage.com")
+        "https://acct.r2.cloudflarestorage.com"
+    )
 
 
 def test_r2_without_account_id_or_endpoint_raises():
@@ -207,20 +234,22 @@ def test_r2_forwards_the_aws_profile():
 
 
 def test_supabase_endpoint_uses_project_ref():
-    cfg = SupabaseConfig(bucket="b",
-                         region="us-east-1",
-                         project_ref="abc",
-                         **_CREDS)
+    cfg = SupabaseConfig(
+        bucket="b", region="us-east-1", project_ref="abc", **_CREDS
+    )
     assert cfg.resolved_endpoint_url() == (
-        "https://abc.storage.supabase.co/storage/v1/s3")
+        "https://abc.storage.supabase.co/storage/v1/s3"
+    )
 
 
 def test_supabase_forwards_the_session_token():
-    cfg = SupabaseConfig(bucket="b",
-                         region="us-east-1",
-                         project_ref="abc",
-                         session_token=SecretStr("tok"),
-                         **_CREDS)
+    cfg = SupabaseConfig(
+        bucket="b",
+        region="us-east-1",
+        project_ref="abc",
+        session_token=SecretStr("tok"),
+        **_CREDS,
+    )
     s3 = cfg.to_s3_config()
     assert s3.aws_session_token.get_secret_value() == "tok"
 

@@ -347,9 +347,10 @@ function hideReasonsOf(profile: SessionProfile): readonly HideReason[] {
   for (const [prefix, entry] of profile.mounts ?? new Map<string, ProfileMount>()) {
     const root = rootOf(prefix)
     groups.push(
-      ...(entry.paths?.reasons ?? []).map(
-        (g): HideReason => ({ patterns: anchored(g.patterns, root), reason: g.reason }),
-      ),
+      ...(entry.paths?.reasons ?? []).map((g): HideReason => ({
+        patterns: anchored(g.patterns, root),
+        reason: g.reason,
+      })),
     )
   }
   return groups

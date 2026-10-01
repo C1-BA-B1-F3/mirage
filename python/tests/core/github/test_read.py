@@ -67,9 +67,9 @@ def _index() -> RAMIndexCacheStore:
     # The root row is what makes this a live index rather than a dropped
     # one; without it every read here would be a refill, which is the
     # distinction ensure_live_snapshot draws.
-    index._entries["/src"] = IndexEntry(id="aaa",
-                                        name="src",
-                                        resource_type="folder")
+    index._entries["/src"] = IndexEntry(
+        id="aaa", name="src", resource_type="folder"
+    )
     index._children["/"] = ["/src"]
     index._expiry["/"] = datetime.now(timezone.utc) + timedelta(days=365)
     return index
@@ -86,10 +86,10 @@ async def test_read_refills_an_expired_index(monkeypatch):
     async def fake_fetch_tree(config, owner, repo, ref, session=None):
         calls.append(ref)
         return {
-            "src":
-            TreeEntry(path="src", type="tree", sha="aaa", size=None),
-            "src/main.py":
-            TreeEntry(path="src/main.py", type="blob", sha="bbb", size=3),
+            "src": TreeEntry(path="src", type="tree", sha="aaa", size=None),
+            "src/main.py": TreeEntry(
+                path="src/main.py", type="blob", sha="bbb", size=3
+            ),
         }, False
 
     async def fake_read_bytes(config, owner, repo, sha, session=None):
@@ -101,9 +101,11 @@ async def test_read_refills_an_expired_index(monkeypatch):
     accessor.truncated = False
     out = await read(
         accessor,
-        PathSpec(vfs_path="src/main.py",
-                 virtual="/src/main.py",
-                 directory="/src"), index)
+        PathSpec(
+            vfs_path="src/main.py", virtual="/src/main.py", directory="/src"
+        ),
+        index,
+    )
     assert out == b"hi\n"
     assert len(calls) == 1
 
@@ -123,22 +125,29 @@ async def test_read_does_not_refill_on_a_real_miss(monkeypatch):
     with pytest.raises(FileNotFoundError):
         await read(
             accessor,
-            PathSpec(vfs_path="src/gone.py",
-                     virtual="/src/gone.py",
-                     directory="/src"), index)
+            PathSpec(
+                vfs_path="src/gone.py",
+                virtual="/src/gone.py",
+                directory="/src",
+            ),
+            index,
+        )
     assert calls == []
 
 
 def _served(gh: FakeGitHub) -> GitHubAccessor:
-    return GitHubAccessor(GitHubConfig(token="t", base_url=gh.url), "o", "r",
-                          "main")
+    return GitHubAccessor(
+        GitHubConfig(token="t", base_url=gh.url), "o", "r", "main"
+    )
 
 
 def _at(rel: str, prefix: str) -> PathSpec:
     virtual = (prefix.rstrip("/") + "/" + rel) if prefix != "/" else "/" + rel
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] or "/",
-                    vfs_path=rel)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path=rel,
+    )
 
 
 # A mount at the root, one at /gh, and one named like a directory inside the
@@ -155,10 +164,14 @@ async def test_a_read_records_the_blob_sha_under_the_virtual_path(prefix):
             assert await read(_served(gh), path, RAMIndexCacheStore()) == data
         finally:
             scope.close()
-        (rec, ) = scope.records
-        assert (rec.op, rec.path, rec.source, rec.bytes,
-                rec.fingerprint) == ("read", path.virtual, "github", len(data),
-                                     blob_sha(data))
+        (rec,) = scope.records
+        assert (rec.op, rec.path, rec.source, rec.bytes, rec.fingerprint) == (
+            "read",
+            path.virtual,
+            "github",
+            len(data),
+            blob_sha(data),
+        )
         # The stamped token is the sha the blob was fetched by.
         assert ("blob", rec.fingerprint) in gh.log
 
@@ -170,14 +183,17 @@ async def test_the_synthesized_stream_records_once():
         scope = RecordingScope()
         try:
             chunks = [
-                c async for c in IO.read_stream(_served(gh), _at(
-                    "a.txt", "/gh"), RAMIndexCacheStore())
+                c
+                async for c in IO.read_stream(
+                    _served(gh), _at("a.txt", "/gh"), RAMIndexCacheStore()
+                )
             ]
         finally:
             scope.close()
         assert b"".join(chunks) == data
-        assert [(r.op, r.fingerprint)
-                for r in scope.records] == [("read", blob_sha(data))]
+        assert [(r.op, r.fingerprint) for r in scope.records] == [
+            ("read", blob_sha(data))
+        ]
 
 
 @pytest.mark.asyncio
@@ -190,8 +206,10 @@ async def test_a_read_retries_when_the_index_changes_under_it(kind):
         index.accessor = accessor
         index.fired = False
         gh.log.clear()
-        assert await read(accessor, _at("docs/sub/b.txt", "/gh"),
-                          index) == b"bravo"
+        assert (
+            await read(accessor, _at("docs/sub/b.txt", "/gh"), index)
+            == b"bravo"
+        )
         assert gh.counts() == (0, 1, 1)
 
 
@@ -203,8 +221,9 @@ async def test_a_read_after_a_clear_refills_the_mount_index():
         await refill_snapshot(accessor, index, "/gh")
         await index.clear()
         gh.log.clear()
-        assert await read(accessor, _at("docs/a.txt", "/gh"),
-                          index) == b"alpha"
+        assert (
+            await read(accessor, _at("docs/a.txt", "/gh"), index) == b"alpha"
+        )
         # A read reseeds the listing rather than asking one directory, so
         # the stats after it are answered from the index again.
         assert gh.counts() == (0, 1, 1)

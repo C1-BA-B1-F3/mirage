@@ -23,44 +23,28 @@ from mirage.runtime.verbs import refusal_of
 # module, and 18 here is EDOM where the host's 18 is EXDEV. The table
 # is total over the vocabulary; test_abi.py fails a half-added member.
 WASI: dict[FsCondition, int] = {
-    FsCondition.ENOENT:
-    44,
-    FsCondition.ENOTDIR:
-    54,
-    FsCondition.EISDIR:
-    31,
-    FsCondition.EEXIST:
-    20,
-    FsCondition.EACCES:
-    2,
-    FsCondition.EPERM:
-    63,
-    FsCondition.ENOTEMPTY:
-    55,
-    FsCondition.EXDEV:
-    75,
+    FsCondition.ENOENT: 44,
+    FsCondition.ENOTDIR: 54,
+    FsCondition.EISDIR: 31,
+    FsCondition.EEXIST: 20,
+    FsCondition.EACCES: 2,
+    FsCondition.EPERM: 63,
+    FsCondition.ENOTEMPTY: 55,
+    FsCondition.EXDEV: 75,
     # Each mount is its own preopen to a WASI guest, so a rename between
     # two of them reads as a destination that is not there. pathlib's
     # EXDEV is the monty dialect's answer, not this wire's; the row IS
     # that decision (finding 8).
-    FsCondition.CROSS_MOUNT:
-    44,
-    FsCondition.ENOTSUP:
-    58,
-    FsCondition.ELOOP:
-    32,
-    FsCondition.EINVAL:
-    28,
-    FsCondition.EIO:
-    29,
-    FsCondition.EBUSY:
-    10,
-    FsCondition.EROFS:
-    69,
+    FsCondition.CROSS_MOUNT: 44,
+    FsCondition.ENOTSUP: 58,
+    FsCondition.ELOOP: 32,
+    FsCondition.EINVAL: 28,
+    FsCondition.EIO: 29,
+    FsCondition.EBUSY: 10,
+    FsCondition.EROFS: 69,
     # preview1 has no xattr syscalls, so this row is unreachable from a
     # guest; ENOTSUP is the honest answer if a future host ever asks.
-    FsCondition.NO_XATTR:
-    58,
+    FsCondition.NO_XATTR: 58,
 }
 
 
@@ -179,8 +163,17 @@ def pack_filestat(size: int, mtime_ns: int, filetype: int, ino: int) -> bytes:
         filetype (int): preview1 filetype.
         ino (int): synthetic inode number, stable within a run.
     """
-    return struct.pack("<QQBxxxxxxxQQQQQ", 0, ino, filetype, 1, size, mtime_ns,
-                       mtime_ns, mtime_ns)
+    return struct.pack(
+        "<QQBxxxxxxxQQQQQ",
+        0,
+        ino,
+        filetype,
+        1,
+        size,
+        mtime_ns,
+        mtime_ns,
+        mtime_ns,
+    )
 
 
 def pack_dirent(index: int, name: bytes, filetype: int) -> bytes:
@@ -191,8 +184,10 @@ def pack_dirent(index: int, name: bytes, filetype: int) -> bytes:
         name (bytes): entry name, already encoded.
         filetype (int): preview1 filetype, FT_UNKNOWN when not known.
     """
-    return struct.pack("<QQIBxxx", index + 1, index + 1, len(name),
-                       filetype) + name
+    return (
+        struct.pack("<QQIBxxx", index + 1, index + 1, len(name), filetype)
+        + name
+    )
 
 
 def unpack_iovs(raw: bytes, count: int) -> list[tuple[int, int]]:

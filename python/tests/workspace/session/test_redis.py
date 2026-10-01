@@ -30,10 +30,13 @@ async def cas_increment(store: SessionStore, worker: str, rounds: int) -> None:
     """Read-modify-CAS one counter, retrying until each round lands."""
     for _ in range(rounds):
         for _ in range(200):
-            record = (await store.load()).get("hot", {
-                "session_id": "hot",
-                "env": {},
-            })
+            record = (await store.load()).get(
+                "hot",
+                {
+                    "session_id": "hot",
+                    "env": {},
+                },
+            )
             env = dict(record.get("env", {}))
             env[worker] = str(int(env.get(worker, "0")) + 1)
             expected = int(record.get("generation", 0))
@@ -48,8 +51,9 @@ async def cas_increment(store: SessionStore, worker: str, rounds: int) -> None:
 
 REDIS_URL = os.environ.get("REDIS_URL")
 
-pytestmark = pytest.mark.skipif(REDIS_URL is None,
-                                reason="REDIS_URL not configured")
+pytestmark = pytest.mark.skipif(
+    REDIS_URL is None, reason="REDIS_URL not configured"
+)
 
 
 @pytest.fixture
@@ -69,16 +73,14 @@ async def store(prefix):
 async def test_set_load_roundtrip(store):
     await store.set("s1", {"session_id": "s1", "cwd": "/a", "env": {}})
     await store.set(
-        "s2", {
+        "s2",
+        {
             "session_id": "s2",
             "cwd": "/",
-            "env": {
-                "K": "v"
-            },
-            "mount_modes": {
-                "/data": "read"
-            }
-        })
+            "env": {"K": "v"},
+            "mount_modes": {"/data": "read"},
+        },
+    )
     entries = await store.load()
     assert entries["s1"]["cwd"] == "/a"
     assert entries["s2"]["mount_modes"] == {"/data": "read"}
@@ -100,12 +102,12 @@ async def test_sessions_shared_across_workspaces(prefix):
     pointed at the same key prefix, with its mount grants intact."""
     store_a = RedisSessionStore(url=REDIS_URL, key_prefix=prefix)
     store_b = RedisSessionStore(url=REDIS_URL, key_prefix=prefix)
-    ws_a = Workspace({"/data": RAMVFS()},
-                     mode=MountMode.EXEC,
-                     session_store=store_a)
-    ws_b = Workspace({"/data": RAMVFS()},
-                     mode=MountMode.EXEC,
-                     session_store=store_b)
+    ws_a = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, session_store=store_a
+    )
+    ws_b = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, session_store=store_b
+    )
     try:
         ws_a.create_session("narrow", mounts={"/data": "read"})
         await ws_a.flush_sessions()
@@ -146,8 +148,9 @@ async def test_cas_set_legacy_record_counts_as_generation_zero(store):
 async def test_cas_concurrent_writers_lose_no_updates(store):
     """Five concurrent writers race one record; every increment must
     survive and the generation must equal the exact write count."""
-    await asyncio.gather(*(cas_increment(store, f"w{i}", 10)
-                           for i in range(5)))
+    await asyncio.gather(
+        *(cas_increment(store, f"w{i}", 10) for i in range(5))
+    )
     final = (await store.load())["hot"]
     assert final["generation"] == 50
     assert final["env"] == {f"w{i}": "10" for i in range(5)}

@@ -15,10 +15,12 @@
 import dataclasses
 
 from mirage.commands.spec.parser import ParsedArgs
-from mirage.commands.spec.usage import (ambiguous_option_error,
-                                        missing_value_error,
-                                        unexpected_value_error,
-                                        unknown_option_error)
+from mirage.commands.spec.usage import (
+    ambiguous_option_error,
+    missing_value_error,
+    unexpected_value_error,
+    unknown_option_error,
+)
 from mirage.errors import POSIX, FsCondition, classify
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.shared import result
@@ -28,14 +30,18 @@ from mirage.workspace.executor.builtins.types import Result
 # end every usage error (exit 2) with the older backquote hint.
 GETFATTR_USAGE = (
     "Usage: getfattr [-hRLP] [-n name|-d] [-e en] [-m pattern] path...\n"
-    "Try `getfattr --help' for more information.\n")
-SETFATTR_USAGE = ("Usage: setfattr {-n name} [-v value] [-h] file...\n"
-                  "       setfattr {-x name} [-h] file...\n"
-                  "Try `setfattr --help' for more information.\n")
+    "Try `getfattr --help' for more information.\n"
+)
+SETFATTR_USAGE = (
+    "Usage: setfattr {-n name} [-v value] [-h] file...\n"
+    "       setfattr {-x name} [-h] file...\n"
+    "Try `setfattr --help' for more information.\n"
+)
 
 
-def attr_usage_refusal(cmd: str, parsed: ParsedArgs,
-                       usage: str) -> Result | None:
+def attr_usage_refusal(
+    cmd: str, parsed: ParsedArgs, usage: str
+) -> Result | None:
     """The usage error attr prints for a line getopt refused, if any.
 
     getopt's own line (``invalid option -- 'Z'``, ``option requires an
@@ -47,9 +53,10 @@ def attr_usage_refusal(cmd: str, parsed: ParsedArgs,
         usage (str): the command's usage block.
     """
     message: bytes | None = None
-    if parsed.ambiguous_options and (not parsed.invalid_options
-                                     or parsed.option_error_kinds[:1]
-                                     == ["ambiguous"]):
+    if parsed.ambiguous_options and (
+        not parsed.invalid_options
+        or parsed.option_error_kinds[:1] == ["ambiguous"]
+    ):
         token, candidates = parsed.ambiguous_options[0]
         message, _ = ambiguous_option_error(cmd, token, candidates)
     elif parsed.invalid_options:

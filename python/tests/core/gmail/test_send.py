@@ -38,15 +38,13 @@ def token_manager():
 @pytest.mark.asyncio
 async def test_send_message(token_manager):
     with patch(
-            "mirage.core.gmail.send.google_post",
-            new_callable=AsyncMock,
-            return_value={
-                "id": "sent1",
-                "threadId": "t1"
-            },
+        "mirage.core.gmail.send.google_post",
+        new_callable=AsyncMock,
+        return_value={"id": "sent1", "threadId": "t1"},
     ) as mock_post:
-        result = await send_message(token_manager, "bob@example.com", "Hello",
-                                    "Hi Bob!")
+        result = await send_message(
+            token_manager, "bob@example.com", "Hello", "Hi Bob!"
+        )
         assert result["id"] == "sent1"
         call_args = mock_post.call_args
         payload = call_args[0][2]
@@ -60,33 +58,24 @@ async def test_reply_message(token_manager):
         "threadId": "t1",
         "payload": {
             "headers": [
-                {
-                    "name": "From",
-                    "value": "alice@example.com"
-                },
-                {
-                    "name": "Subject",
-                    "value": "Hello"
-                },
-                {
-                    "name": "Message-ID",
-                    "value": "<abc@example.com>"
-                },
+                {"name": "From", "value": "alice@example.com"},
+                {"name": "Subject", "value": "Hello"},
+                {"name": "Message-ID", "value": "<abc@example.com>"},
             ],
         },
     }
-    with patch(
+    with (
+        patch(
             "mirage.core.gmail.send.get_message_raw",
             new_callable=AsyncMock,
             return_value=raw_msg,
-    ), patch(
+        ),
+        patch(
             "mirage.core.gmail.send.google_post",
             new_callable=AsyncMock,
-            return_value={
-                "id": "reply1",
-                "threadId": "t1"
-            },
-    ) as mock_post:
+            return_value={"id": "reply1", "threadId": "t1"},
+        ) as mock_post,
+    ):
         result = await reply_message(token_manager, "msg1", "Thanks!")
         assert result["id"] == "reply1"
         payload = mock_post.call_args[0][2]
@@ -102,40 +91,29 @@ async def test_forward_message(token_manager):
         "snippet": "Original body",
         "labelIds": ["INBOX"],
         "payload": {
-            "mimeType":
-            "text/plain",
-            "body": {
-                "data": body_encoded
-            },
+            "mimeType": "text/plain",
+            "body": {"data": body_encoded},
             "headers": [
-                {
-                    "name": "From",
-                    "value": "alice@example.com"
-                },
-                {
-                    "name": "To",
-                    "value": "bob@example.com"
-                },
-                {
-                    "name": "Subject",
-                    "value": "Hello"
-                },
-                {
-                    "name": "Date",
-                    "value": "Mon, 1 Apr 2026"
-                },
+                {"name": "From", "value": "alice@example.com"},
+                {"name": "To", "value": "bob@example.com"},
+                {"name": "Subject", "value": "Hello"},
+                {"name": "Date", "value": "Mon, 1 Apr 2026"},
             ],
         },
     }
-    with patch(
+    with (
+        patch(
             "mirage.core.gmail.messages.google_get",
             new_callable=AsyncMock,
             return_value=raw_msg,
-    ), patch(
+        ),
+        patch(
             "mirage.core.gmail.send.google_post",
             new_callable=AsyncMock,
             return_value={"id": "fwd1"},
+        ),
     ):
-        result = await forward_message(token_manager, "msg1",
-                                       "charlie@example.com")
+        result = await forward_message(
+            token_manager, "msg1", "charlie@example.com"
+        )
         assert result["id"] == "fwd1"

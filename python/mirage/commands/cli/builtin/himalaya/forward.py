@@ -23,7 +23,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def forward(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     uid = first_text(inv.texts, "message id")
     mailbox = fl.as_str("mailbox") or "INBOX"
@@ -35,8 +36,9 @@ async def forward(
     source = Source(
         message=original,
         mode="forward",
-        posting_style=("bottom"
-                       if fl.as_str("posting_style") == "bottom" else "top"),
+        posting_style=(
+            "bottom" if fl.as_str("posting_style") == "bottom" else "top"
+        ),
         quote_headline=fl.as_str("quote_headline") or "",
     )
     return await route(inv.config, fl, inv.stdin, source, inv.doors)

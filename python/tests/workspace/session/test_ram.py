@@ -22,16 +22,14 @@ async def test_set_load_roundtrip():
     store = RAMSessionStore()
     await store.set("s1", {"session_id": "s1", "cwd": "/a", "env": {}})
     await store.set(
-        "s2", {
+        "s2",
+        {
             "session_id": "s2",
             "cwd": "/",
-            "env": {
-                "K": "v"
-            },
-            "mount_modes": {
-                "/data": "read"
-            }
-        })
+            "env": {"K": "v"},
+            "mount_modes": {"/data": "read"},
+        },
+    )
     entries = await store.load()
     assert entries["s1"]["cwd"] == "/a"
     assert entries["s2"]["mount_modes"] == {"/data": "read"}

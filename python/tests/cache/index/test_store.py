@@ -68,20 +68,24 @@ async def test_list_dir_not_found(store):
 @pytest.mark.asyncio
 async def test_set_dir_and_list(store):
     entries = [
-        ("a.txt",
-         IndexEntry(
-             id="a",
-             name="A",
-             resource_type="text/plain",
-             vfs_name="a.txt",
-         )),
-        ("b.txt",
-         IndexEntry(
-             id="b",
-             name="B",
-             resource_type="text/plain",
-             vfs_name="b.txt",
-         )),
+        (
+            "a.txt",
+            IndexEntry(
+                id="a",
+                name="A",
+                resource_type="text/plain",
+                vfs_name="a.txt",
+            ),
+        ),
+        (
+            "b.txt",
+            IndexEntry(
+                id="b",
+                name="B",
+                resource_type="text/plain",
+                vfs_name="b.txt",
+            ),
+        ),
     ]
     await store.set_dir("/mydir", entries)
     result = await store.list_dir("/mydir")
@@ -92,13 +96,15 @@ async def test_set_dir_and_list(store):
 @pytest.mark.asyncio
 async def test_set_dir_root(store):
     entries = [
-        ("top.txt",
-         IndexEntry(
-             id="t",
-             name="T",
-             resource_type="text/plain",
-             vfs_name="top.txt",
-         )),
+        (
+            "top.txt",
+            IndexEntry(
+                id="t",
+                name="T",
+                resource_type="text/plain",
+                vfs_name="top.txt",
+            ),
+        ),
     ]
     await store.set_dir("/", entries)
     result = await store.list_dir("/")
@@ -109,13 +115,15 @@ async def test_set_dir_root(store):
 @pytest.mark.asyncio
 async def test_list_dir_expired(store):
     entries = [
-        ("file.txt",
-         IndexEntry(
-             id="f",
-             name="F",
-             resource_type="text/plain",
-             vfs_name="file.txt",
-         )),
+        (
+            "file.txt",
+            IndexEntry(
+                id="f",
+                name="F",
+                resource_type="text/plain",
+                vfs_name="file.txt",
+            ),
+        ),
     ]
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
     await store.set_dir("/dir", entries, expired_at=past)
@@ -126,13 +134,15 @@ async def test_list_dir_expired(store):
 @pytest.mark.asyncio
 async def test_list_dir_fresh(store):
     entries = [
-        ("file.txt",
-         IndexEntry(
-             id="f",
-             name="F",
-             resource_type="text/plain",
-             vfs_name="file.txt",
-         )),
+        (
+            "file.txt",
+            IndexEntry(
+                id="f",
+                name="F",
+                resource_type="text/plain",
+                vfs_name="file.txt",
+            ),
+        ),
     ]
     future = datetime.now(timezone.utc) + timedelta(seconds=3600)
     await store.set_dir("/dir", entries, expired_at=future)

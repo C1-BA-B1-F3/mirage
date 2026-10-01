@@ -85,21 +85,41 @@ LONG_NAMES = {
 }
 
 # White_Space (PropList.txt), what Rust's Unicode `\s` is.
-WHITE_SPACE = CharSet.of((0x09, 0x0D), (0x20, 0x20), (0x85, 0x85),
-                         (0xA0, 0xA0), (0x1680, 0x1680), (0x2000, 0x200A),
-                         (0x2028, 0x2029), (0x202F, 0x202F), (0x205F, 0x205F),
-                         (0x3000, 0x3000))
+WHITE_SPACE = CharSet.of(
+    (0x09, 0x0D),
+    (0x20, 0x20),
+    (0x85, 0x85),
+    (0xA0, 0xA0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x2028, 0x2029),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x3000, 0x3000),
+)
 # PCRE2's `\h` and `\v`, its fixed horizontal and vertical space lists,
 # whose union is its UCP `\s` (U+180E stays in `\h`: pcre2_tables.c).
-PCRE_HSPACE = CharSet.of((0x09, 0x09), (0x20, 0x20), (0xA0, 0xA0),
-                         (0x1680, 0x1680), (0x180E, 0x180E), (0x2000, 0x200A),
-                         (0x202F, 0x202F), (0x205F, 0x205F), (0x3000, 0x3000))
+PCRE_HSPACE = CharSet.of(
+    (0x09, 0x09),
+    (0x20, 0x20),
+    (0xA0, 0xA0),
+    (0x1680, 0x1680),
+    (0x180E, 0x180E),
+    (0x2000, 0x200A),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x3000, 0x3000),
+)
 PCRE_VSPACE = CharSet.of((0x0A, 0x0D), (0x85, 0x85), (0x2028, 0x2029))
 # The Alphabetic code points that are neither a letter, a letter number
 # nor a mark: the circled and squared Latin letters, which Rust's `\w`
 # counts (`rg -o '\w+'` over `aⒶb` is one word).
-OTHER_ALPHABETIC_SYMBOLS = CharSet.of((0x24B6, 0x24E9), (0x1F130, 0x1F149),
-                                      (0x1F150, 0x1F169), (0x1F170, 0x1F189))
+OTHER_ALPHABETIC_SYMBOLS = CharSet.of(
+    (0x24B6, 0x24E9),
+    (0x1F130, 0x1F149),
+    (0x1F150, 0x1F169),
+    (0x1F170, 0x1F189),
+)
 JOIN_CONTROL = CharSet.of((0x200C, 0x200D))
 
 ASCII = CharSet.of((0, 0x7F))
@@ -118,8 +138,9 @@ ASCII_CLASSES = {
     "graph": CharSet.of((0x21, 0x7E)),
     "lower": CharSet.of((0x61, 0x7A)),
     "print": CharSet.of((0x20, 0x7E)),
-    "punct": CharSet.of((0x21, 0x2F), (0x3A, 0x40), (0x5B, 0x60),
-                        (0x7B, 0x7E)),
+    "punct": CharSet.of(
+        (0x21, 0x2F), (0x3A, 0x40), (0x5B, 0x60), (0x7B, 0x7E)
+    ),
     "space": ASCII_SPACE,
     "upper": CharSet.of((0x41, 0x5A)),
     "word": ASCII_WORD,
@@ -146,7 +167,7 @@ def categories() -> dict[str, CharSet]:
         start = low
         current = unicodedata.category(chr(low))
         for cp in range(low + 1, high + 2):
-            category = (unicodedata.category(chr(cp)) if cp <= high else "")
+            category = unicodedata.category(chr(cp)) if cp <= high else ""
             if category != current:
                 runs.setdefault(current, []).append((start, cp - 1))
                 start, current = cp, category
@@ -156,8 +177,9 @@ def categories() -> dict[str, CharSet]:
     for name, members in table.items():
         if name != "Cn":
             assigned = assigned.union(members)
-    table["Cn"] = CharSet.of(
-        (0, MAX_CODE_POINT)).intersect(CharSet.of(*_gaps(assigned)))
+    table["Cn"] = CharSet.of((0, MAX_CODE_POINT)).intersect(
+        CharSet.of(*_gaps(assigned))
+    )
     return table
 
 
@@ -185,7 +207,7 @@ def category(name: str) -> CharSet:
         name (str): ``Lu``, ``L``, ``LC`` and so on.
     """
     table = categories()
-    members = GROUPS.get(name, (name, ))
+    members = GROUPS.get(name, (name,))
     out = CharSet()
     for member in members:
         out = out.union(table.get(member, CharSet()))
@@ -205,7 +227,7 @@ def canonical_category(name: str) -> str | None:
     key = LOOSE.sub("", name).lower()
     for prefix in ("generalcategory=", "gc=", "generalcategory:", "gc:"):
         if key.startswith(prefix):
-            key = key[len(prefix):]
+            key = key[len(prefix) :]
     for short in (*GROUPS, *{c for g in GROUPS.values() for c in g}):
         if key == short.lower():
             return short
@@ -236,17 +258,26 @@ def unicode_property(name: str) -> CharSet | None:
 @cache
 def rust_word() -> CharSet:
     """Rust's Unicode ``\\w``: Alphabetic, marks, Nd, Pc, Join_Control."""
-    return (category("L").union(category("Nl")).union(category("M")).union(
-        category("Nd")).union(
-            category("Pc")).union(JOIN_CONTROL).union(OTHER_ALPHABETIC_SYMBOLS)
-            )
+    return (
+        category("L")
+        .union(category("Nl"))
+        .union(category("M"))
+        .union(category("Nd"))
+        .union(category("Pc"))
+        .union(JOIN_CONTROL)
+        .union(OTHER_ALPHABETIC_SYMBOLS)
+    )
 
 
 @cache
 def pcre_word() -> CharSet:
     """PCRE2's UCP ``\\w``: letters, numbers, Mn and Pc (10.43)."""
-    return (category("L").union(category("N")).union(category("Mn")).union(
-        category("Pc")))
+    return (
+        category("L")
+        .union(category("N"))
+        .union(category("Mn"))
+        .union(category("Pc"))
+    )
 
 
 @cache
@@ -307,8 +338,8 @@ def fold(cs: CharSet, ascii_only: bool) -> CharSet:
         upper = cs.intersect(CharSet.of((0x41, 0x5A)))
         lower = cs.intersect(CharSet.of((0x61, 0x7A)))
         return cs.union(
-            CharSet.of(*((a + 32, b + 32) for a, b in upper.ranges))).union(
-                CharSet.of(*((a - 32, b - 32) for a, b in lower.ranges)))
+            CharSet.of(*((a + 32, b + 32) for a, b in upper.ranges))
+        ).union(CharSet.of(*((a - 32, b - 32) for a, b in lower.ranges)))
     orbits = fold_orbits()
     extra: list[int] = []
     for cp in cased():

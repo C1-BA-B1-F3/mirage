@@ -28,28 +28,41 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _row_of(accessor: QdrantAccessor, match: ScopeMatch,
-                  virtual: str) -> dict[str, Any]:
+async def _row_of(
+    accessor: QdrantAccessor, match: ScopeMatch, virtual: str
+) -> dict[str, Any]:
     # The label is stripped before the retrieve, so every spelling that
     # ends in __<id> reaches the point; only the stem readdir publishes
     # names it, so an alias reads as absent rather than as the file.
     config = accessor.config
     stem = match.slots["row_id"]
-    row = await row_record(accessor, table_of(config.collection, match),
-                           config.id_field, point_id_from_stem(stem, config))
+    row = await row_record(
+        accessor,
+        table_of(config.collection, match),
+        config.id_field,
+        point_id_from_stem(stem, config),
+    )
     if row is None or row_stem(row, config) != stem:
         raise enoent(virtual)
     return row
 
 
-async def _read_json(accessor: QdrantAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_json(
+    accessor: QdrantAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     row = await _row_of(accessor, match, path.virtual)
     return render_json(row, accessor.config)
 
 
-async def _read_text(accessor: QdrantAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_text(
+    accessor: QdrantAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     config = accessor.config
     row = await _row_of(accessor, match, path.virtual)
     if not config.text_field or field_value(row, config.text_field) is None:
@@ -57,8 +70,12 @@ async def _read_text(accessor: QdrantAccessor, match: ScopeMatch,
     return render_text(row, config)
 
 
-async def _read_blob(accessor: QdrantAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_blob(
+    accessor: QdrantAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     config = accessor.config
     if not config.blob_field:
         raise enoent(path)

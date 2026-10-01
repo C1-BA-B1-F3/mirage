@@ -36,8 +36,9 @@ async def _fake_acquire():
 
 @pytest.fixture
 def accessor():
-    a = PostgresAccessor(config=PostgresConfig(
-        dsn="postgres://u:p@localhost:5432/db"))
+    a = PostgresAccessor(
+        config=PostgresConfig(dsn="postgres://u:p@localhost:5432/db")
+    )
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
     a.pool = AsyncMock(return_value=pool)
@@ -48,16 +49,25 @@ def accessor():
 def _guard_reads(monkeypatch):
     # The stat guard is captured by the search factory at import, so fake
     # what it reads at call time: the pool (above) and the client queries.
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(return_value=["public"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["books"]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_columns",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.estimated_row_count",
-                        AsyncMock(return_value=0))
-    monkeypatch.setattr("mirage.core.postgres.client.table_size_bytes",
-                        AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(return_value=["public"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["books"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_columns", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.estimated_row_count",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.table_size_bytes",
+        AsyncMock(return_value=0),
+    )
 
 
 def _path(s: str = "/public/tables/books/rows.jsonl") -> PathSpec:
@@ -74,13 +84,19 @@ async def test_rg_multi_pattern_skips_native_search(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("native search ran")),
-    ), patch.dict(GENERICS, {"rg": fake_generic}):
+        ),
+        patch.dict(GENERICS, {"rg": fake_generic}),
+    ):
         _, io = await rg(
-            accessor, [_path()], [],
-            CommandOpts(index=NULL_INDEX, flags={'regexp': ['ada', 'ben']}))
+            accessor,
+            [_path()],
+            [],
+            CommandOpts(index=NULL_INDEX, flags={"regexp": ["ada", "ben"]}),
+        )
 
     assert io.exit_code == 0
     assert seen["generic"] == ["/public/tables/books/rows.jsonl"]
@@ -90,12 +106,16 @@ async def test_rg_multi_pattern_skips_native_search(accessor):
 async def test_rg_single_pattern_uses_native_search(accessor, _guard_reads):
     search = AsyncMock(return_value=[])
     generic = AsyncMock(side_effect=AssertionError("generic ran"))
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=search,
-    ), patch.dict(GENERICS, {"rg": generic}):
-        _, io = await rg(accessor, [_path()], ['ada'],
-                         CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": generic}),
+    ):
+        _, io = await rg(
+            accessor, [_path()], ["ada"], CommandOpts(index=NULL_INDEX)
+        )
 
     assert io.exit_code == 1
     search.assert_awaited_once()

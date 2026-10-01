@@ -29,8 +29,7 @@ class MountRootQuery(Protocol):
     a Policies instance without a cycle.
     """
 
-    def is_mount_root(self, path: str) -> bool:
-        ...
+    def is_mount_root(self, path: str) -> bool: ...
 
 
 class DenyScope(StrEnum):
@@ -454,8 +453,9 @@ class SessionDecisionsQuery(Protocol):
         """
         ...
 
-    def set_decisions(self, session_id: str, records: tuple[Decision,
-                                                            ...]) -> None:
+    def set_decisions(
+        self, session_id: str, records: tuple[Decision, ...]
+    ) -> None:
         """Replace a session's records.
 
         Args:

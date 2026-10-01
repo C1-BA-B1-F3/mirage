@@ -28,45 +28,29 @@ def config():
 @pytest.mark.asyncio
 async def test_list_users(config):
     mock_data = {
-        "ok":
-        True,
+        "ok": True,
         "members": [
-            {
-                "id": "U001",
-                "name": "alice",
-                "deleted": False,
-                "is_bot": False
-            },
+            {"id": "U001", "name": "alice", "deleted": False, "is_bot": False},
             {
                 "id": "U002",
                 "name": "bot-helper",
                 "deleted": False,
-                "is_bot": True
+                "is_bot": True,
             },
-            {
-                "id": "U003",
-                "name": "gone",
-                "deleted": True,
-                "is_bot": False
-            },
+            {"id": "U003", "name": "gone", "deleted": True, "is_bot": False},
             {
                 "id": "USLACKBOT",
                 "name": "slackbot",
                 "deleted": False,
-                "is_bot": False
+                "is_bot": False,
             },
-            {
-                "id": "U004",
-                "name": "bob",
-                "deleted": False,
-                "is_bot": False
-            },
+            {"id": "U004", "name": "bob", "deleted": False, "is_bot": False},
         ],
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
         result = await list_users(config)
 
@@ -82,8 +66,7 @@ async def test_list_users(config):
 @pytest.mark.asyncio
 async def test_search_users(config):
     mock_data = {
-        "ok":
-        True,
+        "ok": True,
         "members": [
             {
                 "id": "U001",
@@ -91,9 +74,7 @@ async def test_search_users(config):
                 "real_name": "Alice Smith",
                 "deleted": False,
                 "is_bot": False,
-                "profile": {
-                    "email": "alice@example.com"
-                }
+                "profile": {"email": "alice@example.com"},
             },
             {
                 "id": "U002",
@@ -101,16 +82,14 @@ async def test_search_users(config):
                 "real_name": "Bob Jones",
                 "deleted": False,
                 "is_bot": False,
-                "profile": {
-                    "email": "bob@example.com"
-                }
+                "profile": {"email": "bob@example.com"},
             },
         ],
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
         result = await search_users(config, "alice")
 
@@ -121,8 +100,7 @@ async def test_search_users(config):
 @pytest.mark.asyncio
 async def test_search_users_by_email(config):
     mock_data = {
-        "ok":
-        True,
+        "ok": True,
         "members": [
             {
                 "id": "U001",
@@ -130,9 +108,7 @@ async def test_search_users_by_email(config):
                 "real_name": "Alice Smith",
                 "deleted": False,
                 "is_bot": False,
-                "profile": {
-                    "email": "alice@example.com"
-                }
+                "profile": {"email": "alice@example.com"},
             },
             {
                 "id": "U002",
@@ -140,16 +116,14 @@ async def test_search_users_by_email(config):
                 "real_name": "Bob Jones",
                 "deleted": False,
                 "is_bot": False,
-                "profile": {
-                    "email": "bob@example.com"
-                }
+                "profile": {"email": "bob@example.com"},
             },
         ],
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
         result = await search_users(config, "bob@example")
 
@@ -165,15 +139,13 @@ async def test_get_user_profile(config):
             "id": "U001",
             "name": "alice",
             "real_name": "Alice Smith",
-            "profile": {
-                "email": "alice@example.com"
-            },
+            "profile": {"email": "alice@example.com"},
         },
     }
     with patch(
-            "mirage.core.slack.users.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.users.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
         result = await get_user_profile(config, "U001")
 

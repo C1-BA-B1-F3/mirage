@@ -20,8 +20,12 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.cache.index.warm import entry_or_warm
 from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES
 from mirage.core.gdrive.resolve import root_context
-from mirage.core.google.drive import (FOLDER_MIME, MIME_TO_EXT, list_files,
-                                      list_shared_drives)
+from mirage.core.google.drive import (
+    FOLDER_MIME,
+    MIME_TO_EXT,
+    list_files,
+    list_shared_drives,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
@@ -78,10 +82,12 @@ async def readdir(
         folder_id, drive_id = await root_context(accessor)
     else:
         parent_virtual = virtual_key.rstrip("/").rsplit("/", 1)[0] or "/"
-        parent_path = PathSpec.from_str_path(parent_virtual,
-                                             mount_key(parent_virtual, prefix))
+        parent_path = PathSpec.from_str_path(
+            parent_virtual, mount_key(parent_virtual, prefix)
+        )
         entry = await entry_or_warm(
-            index, virtual_key, partial(readdir, accessor, parent_path, index))
+            index, virtual_key, partial(readdir, accessor, parent_path, index)
+        )
         if entry is None:
             raise enoent(virtual)
         if entry.resource_type not in DIRECTORY_RESOURCE_TYPES:
@@ -95,9 +101,9 @@ async def readdir(
         folder_id = entry.id
         drive_id = entry.extra.get("drive_id")
 
-    files = await list_files(accessor.token_manager,
-                             folder_id=folder_id,
-                             drive_id=drive_id)
+    files = await list_files(
+        accessor.token_manager, folder_id=folder_id, drive_id=drive_id
+    )
     entries = []
     for f in files:
         mime = f.get("mimeType", "")

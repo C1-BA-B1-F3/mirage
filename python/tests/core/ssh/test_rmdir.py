@@ -32,8 +32,9 @@ class _FakeSFTP:
             entries; None makes the probe itself fail.
     """
 
-    def __init__(self, refusal: Exception | None,
-                 names: list[str] | None) -> None:
+    def __init__(
+        self, refusal: Exception | None, names: list[str] | None
+    ) -> None:
         self.refusal = refusal
         self.names = names
         self.removed: list[str] = []

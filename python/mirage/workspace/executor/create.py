@@ -23,12 +23,14 @@ from mirage.workspace.session import SessionState
 logger = logging.getLogger(__name__)
 
 
-async def create_file(dispatch: DispatchFn,
-                      session: SessionState,
-                      scope: PathSpec,
-                      data: bytes,
-                      *,
-                      append: bool = False) -> None:
+async def create_file(
+    dispatch: DispatchFn,
+    session: SessionState,
+    scope: PathSpec,
+    data: bytes,
+    *,
+    append: bool = False,
+) -> None:
     """Write or append, giving a newly created file the umask's mode.
 
     Every shell path that opens a file for writing goes through here, so
@@ -61,12 +63,14 @@ async def create_file(dispatch: DispatchFn,
     if not created:
         return
     try:
-        await dispatch("setattr",
-                       scope,
-                       mode=0o666 & ~session.umask,
-                       uid=None,
-                       gid=None,
-                       atime=None,
-                       mtime=None)
+        await dispatch(
+            "setattr",
+            scope,
+            mode=0o666 & ~session.umask,
+            uid=None,
+            gid=None,
+            atime=None,
+            mtime=None,
+        )
     except FS_ERRORS as exc:
         logger.debug("umask mode write failed for %s: %s", scope.raw_path, exc)

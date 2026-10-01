@@ -14,10 +14,19 @@
 
 import pytest
 
-from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr, VarKind,
-                                   attr_letters, attrs_from_letters, detach,
-                                   stored_attrs, var_kind, with_attr,
-                                   with_value)
+from mirage.shell.variable import (
+    ManagedRef,
+    ShellVar,
+    VarAttr,
+    VarKind,
+    attr_letters,
+    attrs_from_letters,
+    detach,
+    stored_attrs,
+    var_kind,
+    with_attr,
+    with_value,
+)
 
 # The order `declare -p` prints a cluster in, pinned against bash 5.2.37
 # over all 72 ordered pairs of `a A i l n r t u x`. Stated here as a
@@ -68,13 +77,16 @@ def test_attrs_from_letters_ignores_a_letter_it_does_not_know():
     assert attrs_from_letters("") == frozenset()
 
 
-@pytest.mark.parametrize("value,kind", [
-    ("x", VarKind.SCALAR),
-    (None, VarKind.SCALAR),
-    ([], VarKind.INDEXED),
-    (["a"], VarKind.INDEXED),
-    ({}, VarKind.ASSOC),
-])
+@pytest.mark.parametrize(
+    "value,kind",
+    [
+        ("x", VarKind.SCALAR),
+        (None, VarKind.SCALAR),
+        ([], VarKind.INDEXED),
+        (["a"], VarKind.INDEXED),
+        ({}, VarKind.ASSOC),
+    ],
+)
 def test_var_kind_is_read_off_the_value(value, kind):
     assert var_kind(ShellVar(value)) == kind
 
@@ -90,8 +102,9 @@ def test_with_attr_sets_and_clears_without_touching_the_value():
     var = ShellVar("v")
     marked = with_attr(var, VarAttr.EXPORT)
     assert marked == ShellVar("v", frozenset({VarAttr.EXPORT}))
-    assert with_attr(marked, VarAttr.EXPORT,
-                     False) == ShellVar("v", frozenset())
+    assert with_attr(marked, VarAttr.EXPORT, False) == ShellVar(
+        "v", frozenset()
+    )
     # Clearing an attribute that was never set is a no-op, not an error:
     # `export -n NAME` on an unexported name exits 0 in bash.
     assert with_attr(var, VarAttr.EXPORT, False) == var

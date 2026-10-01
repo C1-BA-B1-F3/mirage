@@ -40,7 +40,9 @@ def _ws_with_paths():
     ram._store.files["/数据/中文.txt"] = b"unicode path content\n"
     ram._store.dirs.add("/my folder")
     ram._store.dirs.add("/数据")
-    ws = Workspace(mounts={"/data/": (ram, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/data/": (ram, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/data"
     return ws
 
@@ -106,8 +108,9 @@ def test_unicode_path():
 def test_unicode_directory_listing():
     ws = _ws_with_paths()
     io = _exec(ws, "ls /data/数据/")
-    assert b"\xe4\xb8\xad\xe6\x96\x87.txt" in _stdout(io) or \
-        "中文.txt".encode() in _stdout(io)
+    assert b"\xe4\xb8\xad\xe6\x96\x87.txt" in _stdout(
+        io
+    ) or "中文.txt".encode() in _stdout(io)
 
 
 # ── env vars in paths ──────────────────────────────────────
@@ -236,7 +239,7 @@ def test_grep_pattern_with_escaped_quote():
     """`grep "she said \\"hi\\"" file` — literal embedded double quote."""
     ws = _ws_with_paths()
     ram = ws.mount("/data/").vfs
-    ram._store.files['/quote.txt'] = b'she said "hi"\n'
+    ram._store.files["/quote.txt"] = b'she said "hi"\n'
     io = _exec(ws, 'grep "she said \\"hi\\"" /data/quote.txt')
     assert b"hi" in _stdout(io)
 
@@ -248,7 +251,8 @@ def test_grep_pattern_with_escaped_quote():
         # single quotes are literal inside double quotes (bash behavior)
         ("'inner'", b"'inner'\n"),
         ("$NONEXISTENT", b"\n"),
-    ])
+    ],
+)
 def test_echo_quoting_matrix(input_text, expected):
     ws = _ws_with_paths()
     io = _exec(ws, f'echo "{input_text}"')
@@ -285,7 +289,8 @@ def test_echo_quoting_matrix(input_text, expected):
         ('arr=(1 2); echo "$(echo p) ${arr[@]}"', b"p 1 2\n"),
         ('arr=(1 2); echo "${arr[@]} ${arr[@]}"', b"1 2 1 2\n"),
         ('x=a; arr=(); echo "[$x ${arr[@]}]"', b"[a ]\n"),
-    ])
+    ],
+)
 def test_whitespace_between_expansions_survives(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -305,7 +310,7 @@ def test_whitespace_between_expansions_survives(line, expected):
         ("echo `echo a``echo b`", b"ab\n"),
         ('echo "`echo a``echo b`"', b"ab\n"),
         ("echo `echo a` `echo b` `echo c`", b"a b c\n"),
-        ('echo "`echo \'q q\'` `echo b`"', b"q q b\n"),
+        ("echo \"`echo 'q q'` `echo b`\"", b"q q b\n"),
         # backslash parity: `\\` is one escaped backslash, so the
         # backtick after it still closes the region
         (r"echo `echo 'a\\'`", b"a\\\n"),
@@ -320,8 +325,9 @@ def test_whitespace_between_expansions_survives(line, expected):
         ('echo "x`echo a`y`echo b`z"', b"xaybz\n"),
         ('echo "`echo a` lit `echo b`"', b"a lit b\n"),
         ("echo `echo a` mid `echo b`", b"a mid b\n"),
-        ("x=`echo a`; y=`echo b`; echo \"$x $y\"", b"a b\n"),
-    ])
+        ('x=`echo a`; y=`echo b`; echo "$x $y"', b"a b\n"),
+    ],
+)
 def test_adjacent_backtick_substitutions(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -362,7 +368,8 @@ def test_adjacent_backtick_substitutions(line, expected):
         ('V=$"tv"; echo "$V"', b"tv\n"),
         # a bare trailing dollar is still literal text
         ("echo a$", b"a$\n"),
-    ])
+    ],
+)
 def test_ansi_c_and_translated_quoting(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -410,12 +417,16 @@ def test_ansi_c_in_test_command_is_literal():
         ("case x in '*') echo lit;; *) echo glob;; esac", b"glob\n"),
         # Expansion results are live patterns unless double-quoted.
         ("x='*'; case y in \"$x\") echo lit;; *) echo miss;; esac", b"miss\n"),
-        ("x='*'; case '*' in \"$x\") echo hit;; *) echo miss;; esac",
-         b"hit\n"),
+        (
+            "x='*'; case '*' in \"$x\") echo hit;; *) echo miss;; esac",
+            b"hit\n",
+        ),
         ("x='*'; case y in $x) echo glob;; *) echo miss;; esac", b"glob\n"),
         # Patterns are never word-split.
-        ("p='a b'; case 'a b' in $p) echo hit;; *) echo miss;; esac", b"hit\n"
-         ),
+        (
+            "p='a b'; case 'a b' in $p) echo hit;; *) echo miss;; esac",
+            b"hit\n",
+        ),
         # Concatenations mix literal and live segments.
         ("case ab in 'a'*) echo hit;; *) echo miss;; esac", b"hit\n"),
         ("case Xb in 'a'*) echo hit;; *) echo miss;; esac", b"miss\n"),
@@ -429,7 +440,8 @@ def test_ansi_c_in_test_command_is_literal():
         ("case b in [^a]) echo hit;; *) echo miss;; esac", b"hit\n"),
         ("case b in a|'b') echo hit;; *) echo miss;; esac", b"hit\n"),
         ("case '' in '') echo hit;; *) echo miss;; esac", b"hit\n"),
-    ])
+    ],
+)
 def test_quoted_case_patterns(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -456,10 +468,13 @@ def test_ansi_c_case_pattern_matches_decoded_bytes():
         ("declare 'x=y z'; echo [$x]", b"[y z]\n"),
         # Quoting keeps a compound-looking value scalar, exactly like bash.
         ("declare 'x=(1 2)'; echo [$x] [${x[1]-unset}]", b"[(1 2)] [unset]\n"),
-        ("f() { local 'l=v'; echo in:[$l]; }; f; echo out:[$l]",
-         b"in:[v]\nout:[]\n"),
+        (
+            "f() { local 'l=v'; echo in:[$l]; }; f; echo out:[$l]",
+            b"in:[v]\nout:[]\n",
+        ),
         ("readonly 'R=v'; echo [$R]", b"[v]\n"),
-    ])
+    ],
+)
 def test_quoted_declaration_operands(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -501,12 +516,15 @@ def test_quoted_declaration_operands(line, expected):
         ("x='a*c'; [[ $x == \"a*\"* ]] && echo hit || echo miss", b"hit\n"),
         ('x=aXb; [[ $x == "a"*"b" ]] && echo hit || echo miss', b"hit\n"),
         ('x=ab; [[ $x == "a*" ]] && echo hit || echo miss', b"miss\n"),
-        ('x=ab; [[ $x == a* ]] && echo hit || echo miss', b"hit\n"),
+        ("x=ab; [[ $x == a* ]] && echo hit || echo miss", b"hit\n"),
         ('x=ab; [[ $x != "a*" ]] && echo hit || echo miss', b"hit\n"),
-        ("x=$'a\\tb'; [[ $x == $'a\\tb' ]] && echo hit || echo miss",
-         b"hit\n"),
-        ('[[ abc < abd ]] && echo hit || echo miss', b"hit\n"),
-    ])
+        (
+            "x=$'a\\tb'; [[ $x == $'a\\tb' ]] && echo hit || echo miss",
+            b"hit\n",
+        ),
+        ("[[ abc < abd ]] && echo hit || echo miss", b"hit\n"),
+    ],
+)
 def test_quoted_parameter_and_test_patterns(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -517,14 +535,17 @@ def test_quoted_parameter_and_test_patterns(line, expected):
 # docker): the newline bytes belong to no token and must re-emit ──
 
 
-@pytest.mark.parametrize("line,expected", [
-    ('echo "a\nb"', b"a\nb\n"),
-    ('echo "a\n\nb"', b"a\n\nb\n"),
-    ('echo "\na"', b"\na\n"),
-    ('echo "a\n"', b"a\n\n"),
-    ('x=1; echo "p$x\n\nq"', b"p1\n\nq\n"),
-    ('case "a\nb" in "a\nb") echo hit;; *) echo miss;; esac', b"hit\n"),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ('echo "a\nb"', b"a\nb\n"),
+        ('echo "a\n\nb"', b"a\n\nb\n"),
+        ('echo "\na"', b"\na\n"),
+        ('echo "a\n"', b"a\n\n"),
+        ('x=1; echo "p$x\n\nq"', b"p1\n\nq\n"),
+        ('case "a\nb" in "a\nb") echo hit;; *) echo miss;; esac', b"hit\n"),
+    ],
+)
 def test_multiline_double_quoted_strings(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -544,7 +565,8 @@ def test_multiline_double_quoted_strings(line, expected):
         # two words.
         ('echo $"x"', b"x\n"),
         ('echo $ "x"', b"$ x\n"),
-    ])
+    ],
+)
 def test_bare_dollar_is_a_literal_word(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -572,19 +594,26 @@ def test_bare_dollar_is_a_literal_word(line, expected):
         ('set --; printf "[%s]\\n" x "$@" y', b"[x]\n[y]\n"),
         ('arr=(); printf "[%s]\\n" x "${arr[@]}" y', b"[x]\n[y]\n"),
         # A parameter's own spaces survive; only the splat splits.
-        ('set -- "x y" b; printf "[%s]\\n" "pre $@ post"',
-         b"[pre x y]\n[b post]\n"),
+        (
+            'set -- "x y" b; printf "[%s]\\n" "pre $@ post"',
+            b"[pre x y]\n[b post]\n",
+        ),
         # The braced spelling splits identically; "$*" joins instead.
-        ('set -- a b; printf "[%s]\\n" "pre ${@} post"', b"[pre a]\n[b post]\n"
-         ),
+        (
+            'set -- a b; printf "[%s]\\n" "pre ${@} post"',
+            b"[pre a]\n[b post]\n",
+        ),
         ('set -- a b; printf "[%s]\\n" "pre ${*} post"', b"[pre a b post]\n"),
         # A slice numbers the parameters from 1, so index 0 is $0.
         ('set -- a b c d; printf "[%s]\\n" "${@:2}"', b"[b]\n[c]\n[d]\n"),
-        ('set -- a b c d; printf "[%s]\\n" "${@:0}"',
-         b"[mirage]\n[a]\n[b]\n[c]\n[d]\n"),
+        (
+            'set -- a b c d; printf "[%s]\\n" "${@:0}"',
+            b"[mirage]\n[a]\n[b]\n[c]\n[d]\n",
+        ),
         # Every other op applies per element.
         ('set -- ax bx; printf "[%s]\\n" "${@/x/y}"', b"[ay]\n[by]\n"),
-    ])
+    ],
+)
 def test_at_splat_splices_into_its_word(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -609,7 +638,8 @@ def test_at_splat_splices_into_its_word(line, expected):
         ('arr=(); printf "[%s]\\n" A "$u${arr[@]}" B', b"[A]\n[B]\n"),
         # A literal does rescue it, even one space.
         ('set --; printf "[%s]\\n" A "$@ $@" B', b"[A]\n[ ]\n[B]\n"),
-    ])
+    ],
+)
 def test_empty_element_splat_is_still_a_word(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -636,7 +666,8 @@ def test_empty_element_splat_is_still_a_word(line, expected):
         # ...while an unquoted escape is removed exactly once.
         (r"""echo /data/hello\ world""", b"/data/hello world\n"),
         (r"""echo /data/Zecheng\'s\ Server""", b"/data/Zecheng's Server\n"),
-    ])
+    ],
+)
 def test_backslash_in_path_shaped_word(line, expected):
     ws = _ws_with_paths()
     io = _exec(ws, line)
@@ -656,7 +687,9 @@ def _ws_with_globbables():
     ram = RAMVFS()
     ram._store.files["/a.txt"] = b"hello\n"
     ram._store.files["/b.txt"] = b"world\n"
-    ws = Workspace(mounts={"/data/": (ram, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/data/": (ram, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/"
     return ws
 
@@ -669,18 +702,22 @@ def _stderr(io) -> bytes:
     return b""
 
 
-@pytest.mark.parametrize("line", [
-    "chmod 644 '/data/*.txt'",
-    'chmod 644 "/data/*.txt"',
-    "chmod 644 /data/\\*.txt",
-    "p='/data/*.txt'; chmod 644 \"$p\"",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "chmod 644 '/data/*.txt'",
+        'chmod 644 "/data/*.txt"',
+        "chmod 644 /data/\\*.txt",
+        "p='/data/*.txt'; chmod 644 \"$p\"",
+    ],
+)
 def test_quoted_glob_operand_is_the_literal_name(line):
     ws = _ws_with_globbables()
     io = _exec(ws, line)
     assert io.exit_code == 1
-    assert _stderr(io) == (b"chmod: cannot access '/data/*.txt': "
-                           b"No such file or directory\n")
+    assert _stderr(io) == (
+        b"chmod: cannot access '/data/*.txt': No such file or directory\n"
+    )
 
 
 def test_quoted_glob_touch_creates_the_literal_name():
@@ -738,7 +775,9 @@ def _ws_with_metachar_names():
     ram = RAMVFS()
     for name in ("*a.txt", "xa.txt", "a.txt", "?b.txt", "[c].txt"):
         ram._store.files["/" + name] = b"x\n"
-    ws = Workspace(mounts={"/data/": (ram, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/data/": (ram, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/data"
     return ws
 
@@ -764,7 +803,8 @@ def _ws_with_metachar_names():
         # A bracket class the user typed is not an escape: it still globs.
         ("echo [*]?.txt", b"*a.txt\n"),
         ("echo '[*]'?.txt", b"[*]?.txt\n"),
-    ])
+    ],
+)
 def test_metacharacters_are_quoted_one_at_a_time(line, out):
     assert _stdout(_exec(_ws_with_metachar_names(), line)) == out
 
@@ -782,5 +822,6 @@ def test_partly_quoted_glob_removes_only_what_bash_removes():
     ws = _ws_with_metachar_names()
     io = _exec(ws, "rm '/data/*'?.txt")
     assert io.exit_code == 0
-    assert _stdout(_exec(ws, "ls -1 /data")) == (b"?b.txt\n[c].txt\n"
-                                                 b"a.txt\nxa.txt\n")
+    assert _stdout(_exec(ws, "ls -1 /data")) == (
+        b"?b.txt\n[c].txt\na.txt\nxa.txt\n"
+    )

@@ -23,7 +23,6 @@ from mirage.types import PathSpec
 
 
 class _FakeManager:
-
     def __init__(self) -> None:
         self.writes: list[str] = []
         self.ancestors: list[str] = []
@@ -44,7 +43,6 @@ class _FakeManager:
 
 
 class _FakeClient:
-
     def __init__(self, puts: list[tuple[str, bytes]]) -> None:
         self._puts = puts
 
@@ -60,7 +58,6 @@ class _FakeClient:
 
 
 class _FakeSession:
-
     def __init__(self, puts: list[tuple[str, bytes]]) -> None:
         self._puts = puts
 
@@ -70,16 +67,19 @@ class _FakeSession:
 
 async def _write(monkeypatch, mount_path: str) -> tuple[_FakeManager, list]:
     puts: list[tuple[str, bytes]] = []
-    monkeypatch.setattr(s3_driver, "async_session",
-                        lambda config: _FakeSession(puts))
+    monkeypatch.setattr(
+        s3_driver, "async_session", lambda config: _FakeSession(puts)
+    )
     manager = _FakeManager()
     prev = push_cache_manager(manager)
     try:
         await write_bytes(
             S3Accessor(S3Config(bucket="b")),
-            PathSpec(virtual="/mnt" + mount_path,
-                     directory="/mnt/",
-                     vfs_path=mount_path.lstrip("/")),
+            PathSpec(
+                virtual="/mnt" + mount_path,
+                directory="/mnt/",
+                vfs_path=mount_path.lstrip("/"),
+            ),
             b"hi",
         )
     finally:

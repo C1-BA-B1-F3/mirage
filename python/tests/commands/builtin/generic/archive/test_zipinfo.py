@@ -20,60 +20,71 @@ STAMP = (2026, 9, 20, 7, 33, 0)
 
 
 def _row(**over) -> zipinfo.ZipRow:
-    base = dict(name="document.txt",
-                size=5,
-                csize=5,
-                method=0,
-                flags=0,
-                internal_attr=0,
-                external_attr=0o600 << 16,
-                host=3,
-                host_version=20,
-                date_time=STAMP,
-                has_extra=False,
-                crc=0,
-                comment=b"")
+    base = dict(
+        name="document.txt",
+        size=5,
+        csize=5,
+        method=0,
+        flags=0,
+        internal_attr=0,
+        external_attr=0o600 << 16,
+        host=3,
+        host_version=20,
+        date_time=STAMP,
+        has_extra=False,
+        crc=0,
+        comment=b"",
+    )
     base.update(over)
     return zipinfo.ZipRow(**base)
 
 
 def test_short_row_matches_info_zip():
     assert zipinfo.render_row(_row(), "short") == (
-        "?rw-------  2.0 unx        5 b- stor 26-Sep-20 07:33 document.txt")
+        "?rw-------  2.0 unx        5 b- stor 26-Sep-20 07:33 document.txt"
+    )
 
 
 def test_long_row_adds_the_compressed_size():
-    row = _row(name="dir/a.txt",
-               size=200,
-               csize=6,
-               method=8,
-               external_attr=0o100664 << 16)
+    row = _row(
+        name="dir/a.txt",
+        size=200,
+        csize=6,
+        method=8,
+        external_attr=0o100664 << 16,
+    )
     assert zipinfo.render_row(row, "long") == (
         "-rw-rw-r--  2.0 unx      200 b-        6 defN 26-Sep-20 07:33 "
-        "dir/a.txt")
+        "dir/a.txt"
+    )
 
 
 def test_directory_row_and_deflate_level_letter():
-    row = _row(name="dir/",
-               size=0,
-               csize=2,
-               method=8,
-               flags=2,
-               external_attr=(0o40775 << 16) | 0x10)
+    row = _row(
+        name="dir/",
+        size=0,
+        csize=2,
+        method=8,
+        flags=2,
+        external_attr=(0o40775 << 16) | 0x10,
+    )
     assert zipinfo.render_row(row, "short") == (
-        "drwxrwxr-x  2.0 unx        0 b- defX 26-Sep-20 07:33 dir/")
+        "drwxrwxr-x  2.0 unx        0 b- defX 26-Sep-20 07:33 dir/"
+    )
 
 
 def test_zero_stamp_renders_a_bogus_month():
     row = _row(date_time=(1980, 0, 0, 0, 0, 0))
-    assert zipinfo.render_row(
-        row, "short").endswith(" 80-000-00 00:00 document.txt")
+    assert zipinfo.render_row(row, "short").endswith(
+        " 80-000-00 00:00 document.txt"
+    )
 
 
 def test_fat_host_renders_dos_attributes():
     row = _row(name="setup.exe", host=0, external_attr=0x21)
     assert zipinfo.render_row(row, "short") == (
-        "-r-xa--     2.0 fat        5 b- stor 26-Sep-20 07:33 setup.exe")
+        "-r-xa--     2.0 fat        5 b- stor 26-Sep-20 07:33 setup.exe"
+    )
 
 
 def test_fat_host_whose_unix_bits_shadow_the_dos_byte_renders_unix():
@@ -83,23 +94,21 @@ def test_fat_host_whose_unix_bits_shadow_the_dos_byte_renders_unix():
 
 def test_text_extra_encrypted_and_descriptor_letters():
     assert " tx stor " in zipinfo.render_row(
-        _row(internal_attr=1, has_extra=True), "short")
+        _row(internal_attr=1, has_extra=True), "short"
+    )
     assert " Bl stor " in zipinfo.render_row(_row(flags=1 | 8), "short")
 
 
 def test_medium_row_adds_percent_saved_truncated_toward_zero():
     assert zipinfo.render_row(
-        _row(name="dir/", size=0, csize=2, method=8),
-        "medium") == ("?rw-------  2.0 unx        0 b-  0% defN "
-                      "26-Sep-20 07:33 dir/")
+        _row(name="dir/", size=0, csize=2, method=8), "medium"
+    ) == ("?rw-------  2.0 unx        0 b-  0% defN 26-Sep-20 07:33 dir/")
     assert zipinfo.render_row(
-        _row(name="dir/a.txt", size=200, csize=6, method=8),
-        "medium") == ("?rw-------  2.0 unx      200 b- 97% defN "
-                      "26-Sep-20 07:33 dir/a.txt")
+        _row(name="dir/a.txt", size=200, csize=6, method=8), "medium"
+    ) == ("?rw-------  2.0 unx      200 b- 97% defN 26-Sep-20 07:33 dir/a.txt")
     assert zipinfo.render_row(
-        _row(name="b.txt", size=1, csize=3, method=8),
-        "medium") == ("?rw-------  2.0 unx        1 b--199% defN "
-                      "26-Sep-20 07:33 b.txt")
+        _row(name="b.txt", size=1, csize=3, method=8), "medium"
+    ) == ("?rw-------  2.0 unx        1 b--199% defN 26-Sep-20 07:33 b.txt")
 
 
 def test_unknown_method_and_host_past_the_table():
@@ -116,36 +125,39 @@ def test_ratio_is_info_zip_tenths_rounded_and_signed():
 
 
 def test_totals_line():
-    assert zipinfo.render_totals([
-        _row()
-    ]) == ("1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n")
+    assert zipinfo.render_totals([_row()]) == (
+        "1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n"
+    )
     rows = [_row(size=4, csize=6), _row(name="d/", size=0, csize=0)]
     assert zipinfo.render_totals(rows) == (
-        "2 files, 4 bytes uncompressed, 6 bytes compressed:  -50.0%\n")
+        "2 files, 4 bytes uncompressed, 6 bytes compressed:  -50.0%\n"
+    )
 
 
 def test_encrypted_entry_header_is_not_compressed_data():
-    assert zipinfo.render_totals([
-        _row(flags=1, csize=17)
-    ]) == ("1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n")
+    assert zipinfo.render_totals([_row(flags=1, csize=17)]) == (
+        "1 file, 5 bytes uncompressed, 5 bytes compressed:  0.0%\n"
+    )
 
 
 def test_header_lines():
-    assert zipinfo.render_header(
-        "/data/x.zip", 127,
-        1) == ("Archive:  /data/x.zip\n"
-               "Zip file size: 127 bytes, number of entries: 1\n")
+    assert zipinfo.render_header("/data/x.zip", 127, 1) == (
+        "Archive:  /data/x.zip\n"
+        "Zip file size: 127 bytes, number of entries: 1\n"
+    )
 
 
 def _layout(**over) -> zipinfo.ZipinfoLayout:
-    base = dict(names_only=False,
-                names_headers=False,
-                long=False,
-                medium=False,
-                short=False,
-                header=False,
-                totals=False,
-                has_members=False)
+    base = dict(
+        names_only=False,
+        names_headers=False,
+        long=False,
+        medium=False,
+        short=False,
+        header=False,
+        totals=False,
+        has_members=False,
+    )
     base.update(over)
     return zipinfo.zipinfo_layout(**base)
 
@@ -154,24 +166,29 @@ def test_layout_follows_zi_opts():
     assert _layout() == zipinfo.ZipinfoLayout("short", True, True)
     assert _layout(long=True) == zipinfo.ZipinfoLayout("long", True, True)
     assert _layout(medium=True) == zipinfo.ZipinfoLayout("medium", True, True)
-    assert _layout(short=True,
-                   header=True) == zipinfo.ZipinfoLayout("short", True, True)
+    assert _layout(short=True, header=True) == zipinfo.ZipinfoLayout(
+        "short", True, True
+    )
     assert _layout(medium=True, has_members=True) == zipinfo.ZipinfoLayout(
-        "medium", False, False)
-    assert _layout(names_only=True, header=True,
-                   totals=True) == zipinfo.ZipinfoLayout(
-                       "names", False, False)
-    assert _layout(names_headers=True,
-                   header=True) == zipinfo.ZipinfoLayout("names", True, False)
+        "medium", False, False
+    )
+    assert _layout(
+        names_only=True, header=True, totals=True
+    ) == zipinfo.ZipinfoLayout("names", False, False)
+    assert _layout(names_headers=True, header=True) == zipinfo.ZipinfoLayout(
+        "names", True, False
+    )
     assert _layout(header=True) == zipinfo.ZipinfoLayout("none", True, False)
     assert _layout(totals=True) == zipinfo.ZipinfoLayout("none", False, True)
     assert _layout(has_members=True) == zipinfo.ZipinfoLayout(
-        "short", False, False)
+        "short", False, False
+    )
     assert _layout(header=True, has_members=True) == zipinfo.ZipinfoLayout(
-        "short", True, False)
-    assert _layout(names_only=True,
-                   names_headers=True) == zipinfo.ZipinfoLayout(
-                       "names", False, False)
+        "short", True, False
+    )
+    assert _layout(
+        names_only=True, names_headers=True
+    ) == zipinfo.ZipinfoLayout("names", False, False)
 
 
 def test_verbose_listing_matches_info_zip():
@@ -189,17 +206,21 @@ def test_verbose_listing_matches_info_zip():
         b"dir/a.txt\n"
         b"       1  Defl:N        3 -200% 2026-09-20 07:33 71beeff9  b.txt\n"
         b"--------          -------  ---                            -------\n"
-        b"     201               11  95%                            3 files\n")
+        b"     201               11  95%                            3 files\n"
+    )
 
 
-@pytest.mark.parametrize("method,flags,label", [
-    (0, 0, "Stored"),
-    (6, 6, "Implode"),
-    (8, 4, "Defl:F"),
-    (9, 2, "Def64X"),
-    (12, 0, "BZip2"),
-    (99, 0, "Unk:099"),
-])
+@pytest.mark.parametrize(
+    "method,flags,label",
+    [
+        (0, 0, "Stored"),
+        (6, 6, "Implode"),
+        (8, 4, "Defl:F"),
+        (9, 2, "Def64X"),
+        (12, 0, "BZip2"),
+        (99, 0, "Unk:099"),
+    ],
+)
 def test_verbose_method_names_follow_list_c(method, flags, label):
     row = _row(method=method, flags=flags)
     line = zipinfo.render_verbose("a", [row], True, b"").splitlines()[2]
@@ -212,16 +233,20 @@ def test_verbose_prints_a_full_growth_as_a_bare_hundred():
     assert line.split()[3] == b"100%"
 
 
-@pytest.mark.parametrize("comment,rendered", [
-    (b"note", b"note\n"),
-    (b"note\n", b"note\n"),
-    (b"note\r\nnext", b"note\nnext\n"),
-    (b"note\0hidden", b"note\n"),
-    (b"note caf\xe9 \xff", b"note caf\xe9 \xff\n"),
-    (b"note\x1b[1m\x13 end", b"note^[[1m end\n"),
-])
+@pytest.mark.parametrize(
+    "comment,rendered",
+    [
+        (b"note", b"note\n"),
+        (b"note\n", b"note\n"),
+        (b"note\r\nnext", b"note\nnext\n"),
+        (b"note\0hidden", b"note\n"),
+        (b"note caf\xe9 \xff", b"note caf\xe9 \xff\n"),
+        (b"note\x1b[1m\x13 end", b"note^[[1m end\n"),
+    ],
+)
 def test_verbose_comments_follow_info_zip_and_quiet_suppresses_them(
-        comment, rendered):
+    comment, rendered
+):
     row = _row(comment=comment)
     listing = zipinfo.render_verbose("a.zip", [row], False, comment)
     assert listing.startswith(b"Archive:  a.zip\n" + rendered)

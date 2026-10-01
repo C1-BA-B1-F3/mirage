@@ -19,8 +19,10 @@ from agents.sandbox.manifest import Manifest
 from agents.sandbox.session.base_sandbox_session import BaseSandboxSession
 from agents.sandbox.session.sandbox_session import SandboxSession
 
-from mirage.agents.openai_agents.constants import (MOUNTS_INTRO,
-                                                   NOT_MIRAGE_SESSION)
+from mirage.agents.openai_agents.constants import (
+    MOUNTS_INTRO,
+    NOT_MIRAGE_SESSION,
+)
 from mirage.agents.openai_agents.sandbox import MirageSandboxSession
 
 

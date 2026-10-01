@@ -15,14 +15,19 @@
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.builtin.email.grep import RG_SEARCH_HONORED
 from mirage.commands.builtin.email.io import resolve_glob
-from mirage.commands.builtin.generic.rg import (parse_flags,
-                                                refuse_missing_pattern)
+from mirage.commands.builtin.generic.rg import (
+    parse_flags,
+    refuse_missing_pattern,
+    rg_matcher,
+    rg_syntax,
+)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import rg_matcher, rg_syntax
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
-from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
-                                                   search_query)
+from mirage.commands.builtin.grep_pushdown import (
+    pushdown_operand,
+    search_query,
+)
 from mirage.commands.builtin.grep_scan import grep_lines
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
@@ -41,8 +46,12 @@ from mirage.utils.key_prefix import mount_prefix_of
 
 
 @command("rg", vfs="email", spec=SPECS["rg"])
-async def rg(accessor: EmailAccessor, paths: list[PathSpec], texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: EmailAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["rg"])
     pattern_str = pattern_arg(texts, fl, "regexp")
     f = parse_flags(fl)
@@ -54,21 +63,32 @@ async def rg(accessor: EmailAccessor, paths: list[PathSpec], texts: list[str],
     # way: a line the push-down cannot answer takes the generic scan below.
     # It used to return exit 1 instead, reporting "nothing matched" for a
     # search it had not run.
-    operand = pushdown_operand(paths, opts.flags, pattern_str,
-                               RG_SEARCH_HONORED)
+    operand = pushdown_operand(
+        paths, opts.flags, pattern_str, RG_SEARCH_HONORED
+    )
     # The server is asked for the literal every match must contain, never
     # the regex's own spelling: IMAP TEXT is a substring search.
-    query = (search_query(pattern_str, f.fixed_string, rg_syntax(f))
-             if pattern_str is not None else None)
+    query = (
+        search_query(pattern_str, f.fixed_string, rg_syntax(f))
+        if pattern_str is not None
+        else None
+    )
     match = detect_scope(operand) if operand is not None else None
-    if (operand is not None and pattern_str is not None and query is not None
-            and match is not None and match.kind in NATIVE_KINDS):
+    if (
+        operand is not None
+        and pattern_str is not None
+        and query is not None
+        and match is not None
+        and match.kind in NATIVE_KINDS
+    ):
         pat = rg_matcher(pattern_str, False, f)
         folder = match.slots["folder"]
-        uids = await search_messages(accessor,
-                                     folder,
-                                     text=query,
-                                     max_results=accessor.config.max_messages)
+        uids = await search_messages(
+            accessor,
+            folder,
+            text=query,
+            max_results=accessor.config.max_messages,
+        )
         if not uids:
             return b"", IOResult(exit_code=1)
 
@@ -80,15 +100,17 @@ async def rg(accessor: EmailAccessor, paths: list[PathSpec], texts: list[str],
             msg_text = message_json_text(msg)
             vfs_path = _build_vfs_path(file_prefix, folder, msg)
             lines = msg_text.splitlines()
-            matched = grep_lines(vfs_path,
-                                 lines,
-                                 pat,
-                                 invert=False,
-                                 line_numbers=f.line_numbers,
-                                 count_only=False,
-                                 files_only=f.files_only,
-                                 only_matching=f.only_matching,
-                                 max_count=f.max_count)
+            matched = grep_lines(
+                vfs_path,
+                lines,
+                pat,
+                invert=False,
+                line_numbers=f.line_numbers,
+                count_only=False,
+                files_only=f.files_only,
+                only_matching=f.only_matching,
+                max_count=f.max_count,
+            )
             if not matched:
                 continue
             any_match = True

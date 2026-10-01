@@ -36,7 +36,6 @@ LOCALE_ENCODING = "locale"
 
 
 class MirageFile:
-
     def __init__(
         self,
         ops: Ops,
@@ -59,7 +58,8 @@ class MirageFile:
         if self._binary:
             if encoding is not None:
                 raise ValueError(
-                    "binary mode doesn't take an encoding argument")
+                    "binary mode doesn't take an encoding argument"
+                )
             if errors is not None:
                 raise ValueError("binary mode doesn't take an errors argument")
             if newline is not None:
@@ -115,17 +115,20 @@ class MirageFile:
             if self._binary:
                 self._buf = io.BytesIO(data)
             else:
-                self._buf = io.StringIO(data.decode(self._encoding,
-                                                    self._errors),
-                                        newline=self._newline)
+                self._buf = io.StringIO(
+                    data.decode(self._encoding, self._errors),
+                    newline=self._newline,
+                )
             self._buf.seek(0, 2)
             return self._buf
         data = self._run(self._ops.read(self._path))
         if self._binary:
             self._buf = io.BytesIO(data)
         else:
-            self._buf = io.StringIO(data.decode(self._encoding, self._errors),
-                                    newline=self._newline)
+            self._buf = io.StringIO(
+                data.decode(self._encoding, self._errors),
+                newline=self._newline,
+            )
         return self._buf
 
     def _check_closed(self) -> None:
@@ -221,16 +224,19 @@ class MirageFile:
         try:
             self.close()
         except Exception:
-            logger.debug("failed to close mounted file %s",
-                         self._path,
-                         exc_info=True)
+            logger.debug(
+                "failed to close mounted file %s", self._path, exc_info=True
+            )
 
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None,
-                 exc_value: BaseException | None,
-                 traceback: TracebackType | None) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
     def __iter__(self) -> Iterator[bytes] | Iterator[str]:

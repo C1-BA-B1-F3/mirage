@@ -24,11 +24,13 @@ from mirage.workspace.mount import MountRegistry
 
 _NON_PATH_CHAR = re.compile(r"[(){}=;|&<> ]")
 _RELATIVE_PATH = re.compile(
-    r"(?:\.?[a-zA-Z0-9_\-]*/)*[a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+")
+    r"(?:\.?[a-zA-Z0-9_\-]*/)*[a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+"
+)
 
 
-def classify_word(word: str, registry: MountRegistry,
-                  cwd: str) -> str | PathSpec:
+def classify_word(
+    word: str, registry: MountRegistry, cwd: str
+) -> str | PathSpec:
     """Classify an expanded word as text or PathSpec.
 
     Every caller hands this an already-expanded word, so quote removal
@@ -68,23 +70,25 @@ def classify_word(word: str, registry: MountRegistry,
             last_slash = path.rfind("/")
             return PathSpec(
                 virtual=path,
-                directory=path[:last_slash + 1],
+                directory=path[: last_slash + 1],
                 vfs_path=vfs_path,
-                pattern=path[last_slash + 1:],
+                pattern=path[last_slash + 1 :],
                 raw_path=word,
                 resolved=False,
             )
         if is_dir:
-            return PathSpec(virtual=path,
-                            directory=path + "/",
-                            vfs_path=vfs_path,
-                            raw_path=word,
-                            resolved=False,
-                            dotted=dotted_spelling(word))
+            return PathSpec(
+                virtual=path,
+                directory=path + "/",
+                vfs_path=vfs_path,
+                raw_path=word,
+                resolved=False,
+                dotted=dotted_spelling(word),
+            )
         last_slash = path.rfind("/")
         return PathSpec(
             virtual=path,
-            directory=path[:last_slash + 1],
+            directory=path[: last_slash + 1],
             vfs_path=vfs_path,
             raw_path=word,
             resolved=True,

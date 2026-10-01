@@ -19,7 +19,6 @@ from mirage.vfs.hf_hub.base import HfHubVFS
 
 
 class HfDatasetsVFS(HfHubVFS[HfDatasetsAccessor]):
-
     ACCESSOR = HfDatasetsAccessor
     name: str = VFSName.HF_DATASETS
     prompt: str = PROMPT

@@ -51,5 +51,11 @@ GIT_SPACE = b" \t\n\r"
 GIT_DIR = ".git"
 
 # The rules a short ref name is tried against, rev-parse's dwim_ref order.
-DWIM_RULES = ("{}", "refs/{}", "refs/tags/{}", "refs/heads/{}",
-              "refs/remotes/{}", "refs/remotes/{}/HEAD")
+DWIM_RULES = (
+    "{}",
+    "refs/{}",
+    "refs/tags/{}",
+    "refs/heads/{}",
+    "refs/remotes/{}",
+    "refs/remotes/{}/HEAD",
+)

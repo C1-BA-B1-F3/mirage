@@ -48,18 +48,21 @@ data = S3VFS(
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
         key_prefix="ssh-runtime-demo/",
-    ))
+    )
+)
 
 proj = SSHVFS(SSHConfig(host="dev", root=REMOTE_DIR, known_hosts=None))
 
 runtime = SSHRuntime(captures=["python3"], config={"host": "dev"})
 
-LOAD_PY = ("import csv, json, sys\n"
-           "rows = list(csv.DictReader(open(sys.argv[1])))\n"
-           "total = sum(float(r[\"value\"]) for r in rows)\n"
-           "out = {\"rows\": len(rows), \"total\": total}\n"
-           "json.dump(out, open(\"result.json\", \"w\"))\n"
-           "print(\"loaded\", len(rows), \"rows; total\", total)\n")
+LOAD_PY = (
+    "import csv, json, sys\n"
+    "rows = list(csv.DictReader(open(sys.argv[1])))\n"
+    'total = sum(float(r["value"]) for r in rows)\n'
+    'out = {"rows": len(rows), "total": total}\n'
+    'json.dump(out, open("result.json", "w"))\n'
+    'print("loaded", len(rows), "rows; total", total)\n'
+)
 
 POINTS_CSV = "name,value\nalpha,1.5\nbeta,2.5\ngamma,4.0\n"
 
@@ -76,12 +79,11 @@ async def show(ws: Workspace, command: str) -> None:
 
 
 async def main() -> None:
-    ws = Workspace({
-        "/data": data,
-        REMOTE_DIR: proj
-    },
-                   mode=MountMode.EXEC,
-                   runtimes=[runtime, "workspace"])
+    ws = Workspace(
+        {"/data": data, REMOTE_DIR: proj},
+        mode=MountMode.EXEC,
+        runtimes=[runtime, "workspace"],
+    )
 
     # Seed both sides through the workspace: the dataset into S3, the
     # loader onto the box (an SFTP write; the box provisions itself).

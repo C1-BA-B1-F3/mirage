@@ -29,8 +29,12 @@ from mirage.config import load_config
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import classify
 from mirage.policy import Policy
-from mirage.policy.types import (CommandContext, Deny, OpsContext,
-                                 SessionContext)
+from mirage.policy.types import (
+    CommandContext,
+    Deny,
+    OpsContext,
+    SessionContext,
+)
 from mirage.process.types import SpawnRequest
 from mirage.runtime.types import ScriptSource
 from mirage.types import MountMode
@@ -49,12 +53,13 @@ class CachedRAMVFS(RAMVFS):
 
     def __init__(self, files: dict[str, str] | None = None) -> None:
         super().__init__()
-        self.load_state({
-            "files": {
-                path: data.encode()
-                for path, data in (files or {}).items()
+        self.load_state(
+            {
+                "files": {
+                    path: data.encode() for path, data in (files or {}).items()
+                }
             }
-        })
+        )
 
 
 register_vfs("cached-ram", CachedRAMVFS)
@@ -92,8 +97,12 @@ def profile_document(raw: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-async def action(ws: Workspace, step: dict[str, Any],
-                 policies: dict[str, RulePolicy], held: dict[str, Any]) -> Any:
+async def action(
+    ws: Workspace,
+    step: dict[str, Any],
+    policies: dict[str, RulePolicy],
+    held: dict[str, Any],
+) -> Any:
     """Run one host API action; no shell command mutates the mount table.
 
     Args:
@@ -111,17 +120,20 @@ async def action(ws: Workspace, step: dict[str, Any],
     if op in {"read", "write", "readdir", "stat"} and "session" in step:
         token = set_current_session(ws.get_session(step["session"]))
         try:
-            return await action(ws, {
-                k: v
-                for k, v in step.items() if k != "session"
-            }, policies, held)
+            return await action(
+                ws,
+                {k: v for k, v in step.items() if k != "session"},
+                policies,
+                held,
+            )
         finally:
             reset_current_session(token)
     if op == "mount":
         vfs = build_vfs(step["vfs"], step.get("config", {}))
         try:
-            return ws.add_mount(step["path"], vfs,
-                                MountMode(step.get("mode", "read"))).prefix
+            return ws.add_mount(
+                step["path"], vfs, MountMode(step.get("mode", "read"))
+            ).prefix
         except Exception:
             await vfs.close()
             raise
@@ -130,21 +142,27 @@ async def action(ws: Workspace, step: dict[str, Any],
     elif op == "set_mode":
         ws.set_mount_mode(step["path"], MountMode(step["mode"]))
     elif op == "session":
-        ws.create_session(step["id"],
-                          profile=profile_document(step.get("profile", {})))
+        ws.create_session(
+            step["id"], profile=profile_document(step.get("profile", {}))
+        )
     elif op == "close_session":
         await ws.close_session(step["id"])
     elif op == "set_profile":
         raw = step["profile"]
         profile = profile_document(raw) if isinstance(raw, dict) else raw
         await ws.set_session_profile(
-            step.get("session", ws.default_session_id), profile)
+            step.get("session", ws.default_session_id), profile
+        )
     elif op == "register_cli":
         ws.register_cli(
             step["name"],
-            CLISpec(name=step["name"],
-                    script=ScriptSource(**step["script"]),
-                    runtime=step.get("runtime")), step.get("config"))
+            CLISpec(
+                name=step["name"],
+                script=ScriptSource(**step["script"]),
+                runtime=step.get("runtime"),
+            ),
+            step.get("config"),
+        )
     elif op == "unregister_cli":
         ws.unregister_cli(step["name"])
     elif op == "clis":
@@ -176,13 +194,15 @@ async def action(ws: Workspace, step: dict[str, Any],
     elif op == "drain_processes":
         await ws.processes.drain()
     elif op == "spawn":
-        child = ws.spawn(SpawnRequest(tuple(step["argv"])),
-                         step.get("session"))
+        child = ws.spawn(
+            SpawnRequest(tuple(step["argv"])), step.get("session")
+        )
         child.stdin.close()
         return child.pid
     elif op == "exec":
-        result = await ws.shell(step["command"],
-                                session_id=step.get("session"))
+        result = await ws.shell(
+            step["command"], session_id=step.get("session")
+        )
         return {
             "exit_code": result.exit_code,
             "stdout": await result.stdout_str(),
@@ -190,8 +210,11 @@ async def action(ws: Workspace, step: dict[str, Any],
             "refusal": result.refusal.reason if result.refusal else None,
         }
     elif op == "concurrent":
-        return list(await asyncio.gather(*(action(ws, sub, policies, held)
-                                           for sub in step["steps"])))
+        return list(
+            await asyncio.gather(
+                *(action(ws, sub, policies, held) for sub in step["steps"])
+            )
+        )
     elif op == "snapshot":
         held["state"] = await to_state_dict(ws)
     elif op == "checkout":
@@ -225,8 +248,10 @@ async def run(case: dict[str, Any]) -> int:
                     actual["errno"] = condition.name
             expected = step.get("expect", {"value": None})
             if not matches(actual, expected):
-                raise AssertionError(f"step {index + 1} ({step['op']}): "
-                                     f"expected {expected!r}, got {actual!r}")
+                raise AssertionError(
+                    f"step {index + 1} ({step['op']}): "
+                    f"expected {expected!r}, got {actual!r}"
+                )
         return len(case["steps"])
     finally:
         await ws.close()
@@ -235,9 +260,11 @@ async def run(case: dict[str, Any]) -> int:
 def matches(actual: Any, expected: Any) -> bool:
     """Objects select fields; error and *_contains assertions select text."""
     if isinstance(expected, list):
-        return (isinstance(actual, list) and len(actual) == len(expected)
-                and all(
-                    matches(got, want) for got, want in zip(actual, expected)))
+        return (
+            isinstance(actual, list)
+            and len(actual) == len(expected)
+            and all(matches(got, want) for got, want in zip(actual, expected))
+        )
     if not isinstance(expected, dict):
         return actual == expected
     if not isinstance(actual, dict):

@@ -7,7 +7,7 @@ shift
 # Leading dash args are tool flags; the rest are repo-relative files from
 # pre-commit, rebased to the integ/ package root. This is the twin of
 # typescript/scripts/precommit-run.sh: integ is its own ESLint base path and
-# its own prettier root, so the two trees cannot share one runner.
+# its own formatter root, so the two trees cannot share one runner.
 args=()
 for a in "$@"; do
   if [[ "$a" == -* ]]; then

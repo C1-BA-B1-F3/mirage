@@ -29,13 +29,12 @@ from mirage.commands.errors import UsageError
 from mirage.types import PathSpec
 
 
-def _ok(body: bytes = b"file-body",
-        status: int = 200,
-        reason: str = "OK") -> HttpResponse:
-    return HttpResponse(status=status,
-                        reason=reason,
-                        body=body,
-                        url="http://x.test/f")
+def _ok(
+    body: bytes = b"file-body", status: int = 200, reason: str = "OK"
+) -> HttpResponse:
+    return HttpResponse(
+        status=status, reason=reason, body=body, url="http://x.test/f"
+    )
 
 
 def _stub(monkeypatch, resp=None, exc=None) -> list[str]:
@@ -51,10 +50,9 @@ def _stub(monkeypatch, resp=None, exc=None) -> list[str]:
     return calls
 
 
-def _run(*texts: str,
-         dispatch=None,
-         cwd=None,
-         **flags) -> tuple[bytes, object]:
+def _run(
+    *texts: str, dispatch=None, cwd=None, **flags
+) -> tuple[bytes, object]:
     base = cwd or "/"
     spec = PathSpec(virtual=base, directory=base, vfs_path="", resolved=False)
     opts = CommandOpts(dispatch=dispatch, cwd=spec, flags=flags)
@@ -143,9 +141,9 @@ def test_write_failure_is_exit_1_naming_the_path(monkeypatch):
     async def boom(op, scope, **kwargs):
         raise FileNotFoundError("/tmp/nope/w.txt")
 
-    _body, io = _run("http://x.test/f",
-                     args_O="/tmp/nope/w.txt",
-                     dispatch=boom)
+    _body, io = _run(
+        "http://x.test/f", args_O="/tmp/nope/w.txt", dispatch=boom
+    )
     assert io.exit_code == 1
     assert b"/tmp/nope/w.txt" in io.stderr
 
@@ -156,10 +154,9 @@ def test_write_failure_silenced_by_q(monkeypatch):
     async def boom(op, scope, **kwargs):
         raise FileNotFoundError("/tmp/nope/w.txt")
 
-    _body, io = _run("http://x.test/f",
-                     args_O="/tmp/nope/w.txt",
-                     dispatch=boom,
-                     q=True)
+    _body, io = _run(
+        "http://x.test/f", args_O="/tmp/nope/w.txt", dispatch=boom, q=True
+    )
     assert io.exit_code == 1
     assert io.stderr == b""
 
@@ -169,8 +166,11 @@ def test_exit_code_constants_match_wget():
     # submodule of the same name, so the module namespace is reached through
     # the unwrapped function (see CLAUDE.md).
     g = wget.__wrapped__.__globals__
-    assert (g["EXIT_GENERIC"], g["EXIT_NETWORK"],
-            g["EXIT_SERVER_ERROR"]) == (1, 4, 8)
+    assert (g["EXIT_GENERIC"], g["EXIT_NETWORK"], g["EXIT_SERVER_ERROR"]) == (
+        1,
+        4,
+        8,
+    )
 
 
 @pytest.mark.parametrize("quiet", [False, True])

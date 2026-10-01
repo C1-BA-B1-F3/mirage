@@ -92,10 +92,11 @@ def require_operands(inv: CLIInvocation[HfConfig], names: list[str]) -> None:
     Raises:
         UsageError: the line supplied fewer operands than that.
     """
-    missing = names[len(inv.texts):]
+    missing = names[len(inv.texts) :]
     if missing:
-        raise UsageError("the following arguments are required: " +
-                         ", ".join(missing))
+        raise UsageError(
+            "the following arguments are required: " + ", ".join(missing)
+        )
 
 
 def text_out(text: str) -> tuple[ByteSource | None, IOResult]:
@@ -117,5 +118,6 @@ def require_token(inv: CLIInvocation[HfConfig], what: str) -> None:
         UsageError: the install carries no token.
     """
     if inv.config.token is None:
-        raise UsageError(f"{what} requires a token; set `token` on the "
-                         "`hf` install")
+        raise UsageError(
+            f"{what} requires a token; set `token` on the `hf` install"
+        )

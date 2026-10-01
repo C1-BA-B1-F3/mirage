@@ -50,7 +50,6 @@ _CORE_MODULES = [
 
 
 class AsyncMockBody:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
 
@@ -59,18 +58,16 @@ class AsyncMockBody:
 
     async def iter_chunks(self, chunk_size: int = 8192):
         for i in range(0, len(self._data), chunk_size):
-            yield self._data[i:i + chunk_size]
+            yield self._data[i : i + chunk_size]
 
 
 class AsyncMockPaginator:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
 
-    async def paginate(self,
-                       Bucket: str,
-                       Prefix: str = "",
-                       Delimiter: str | None = None):
+    async def paginate(
+        self, Bucket: str, Prefix: str = "", Delimiter: str | None = None
+    ):
         del Bucket
         if Delimiter == "/":
             yield _paginate_directory(self.objects, Prefix)
@@ -79,14 +76,12 @@ class AsyncMockPaginator:
 
 
 class AsyncMockS3Client:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
 
-    async def get_object(self,
-                         Bucket: str,
-                         Key: str,
-                         Range: str | None = None) -> dict:
+    async def get_object(
+        self, Bucket: str, Key: str, Range: str | None = None
+    ) -> dict:
         del Bucket
         if Key not in self.objects:
             raise _mock_s3_error("NoSuchKey")
@@ -116,8 +111,9 @@ class AsyncMockS3Client:
     async def delete_object(self, Bucket: str, Key: str) -> None:
         self.objects.pop(Key, None)
 
-    async def copy_object(self, Bucket: str, CopySource: dict,
-                          Key: str) -> None:
+    async def copy_object(
+        self, Bucket: str, CopySource: dict, Key: str
+    ) -> None:
         src_key = CopySource["Key"]
         if src_key in self.objects:
             self.objects[Key] = self.objects[src_key]
@@ -126,12 +122,14 @@ class AsyncMockS3Client:
         for obj in Delete.get("Objects", []):
             self.objects.pop(obj["Key"], None)
 
-    async def list_objects_v2(self,
-                              Bucket: str,
-                              Prefix: str = "",
-                              Delimiter: str = "",
-                              MaxKeys: int = 1000,
-                              **kwargs) -> dict:
+    async def list_objects_v2(
+        self,
+        Bucket: str,
+        Prefix: str = "",
+        Delimiter: str = "",
+        MaxKeys: int = 1000,
+        **kwargs,
+    ) -> dict:
         if Delimiter == "/":
             return _paginate_directory(self.objects, Prefix)
         return _paginate_flat(self.objects, Prefix)
@@ -144,7 +142,6 @@ class AsyncMockS3Client:
 
 
 class MockAsyncSession:
-
     def __init__(self, objects: dict[str, bytes]) -> None:
         self._client = AsyncMockS3Client(objects)
 
@@ -164,7 +161,7 @@ def _paginate_directory(objects, prefix):
     for key, data in sorted(objects.items()):
         if not key.startswith(prefix):
             continue
-        relative = key[len(prefix):]
+        relative = key[len(prefix) :]
         if not relative:
             contents.append({"Key": key, "Size": len(data)})
             continue
@@ -174,19 +171,18 @@ def _paginate_directory(objects, prefix):
             continue
         contents.append({"Key": key, "Size": len(data)})
     return {
-        "CommonPrefixes": [{
-            "Prefix": v
-        } for v in sorted(common_prefixes)],
+        "CommonPrefixes": [{"Prefix": v} for v in sorted(common_prefixes)],
         "Contents": contents,
     }
 
 
 def _paginate_flat(objects, prefix):
     return {
-        "Contents": [{
-            "Key": k,
-            "Size": len(v)
-        } for k, v in sorted(objects.items()) if k.startswith(prefix)]
+        "Contents": [
+            {"Key": k, "Size": len(v)}
+            for k, v in sorted(objects.items())
+            if k.startswith(prefix)
+        ]
     }
 
 
@@ -196,7 +192,7 @@ def _slice_range(data: bytes, range_spec: str) -> bytes:
     bounds = range_spec.removeprefix("bytes=").split("-", 1)
     start = int(bounds[0]) if bounds[0] else 0
     end = int(bounds[1]) if bounds[1] else len(data) - 1
-    return data[start:end + 1]
+    return data[start : end + 1]
 
 
 def _patch_async_session(objects):
@@ -204,7 +200,8 @@ def _patch_async_session(objects):
     stack = ExitStack()
     for mod in _CORE_MODULES:
         stack.enter_context(
-            patch(f"{mod}.async_session", return_value=mock_session))
+            patch(f"{mod}.async_session", return_value=mock_session)
+        )
     return stack
 
 
@@ -277,13 +274,9 @@ def _collect(stdout: ByteSource | None) -> bytes:
 
 
 class NativeTestEnv:
-
-    def __init__(self,
-                 tmp_path,
-                 vfs,
-                 resource_type,
-                 objects=None,
-                 disk_root=None):
+    def __init__(
+        self, tmp_path, vfs, resource_type, objects=None, disk_root=None
+    ):
         self.tmp_path = tmp_path
         self.vfs = vfs
         self.resource_type = resource_type
@@ -346,9 +339,11 @@ class NativeTestEnv:
         io = asyncio.run(self.ws.shell(cmd, stdin=stdin))
         if io.exit_code:
             import sys
+
             err = _collect(io.stderr).decode(errors="replace")
             print(
                 f"\nMIRAGE-DEBUG exit={io.exit_code} cmd={cmd!r} "
                 f"stderr={err!r}",
-                file=sys.stderr)
+                file=sys.stderr,
+            )
         return _collect(io.stdout).decode(errors="replace")

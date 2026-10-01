@@ -31,7 +31,8 @@ clis:
 
 
 def test_a_load_override_rebases_relative_code_refs_onto_its_dir(
-        tmp_path: Path):
+    tmp_path: Path,
+):
     # `create` always did this; `load` and `clone` read their config
     # through this function and used to send the refs as spelled, so
     # the daemon resolved them against its own cwd and answered 500.
@@ -47,4 +48,5 @@ def test_a_load_override_rebases_relative_code_refs_onto_its_dir(
     assert mounts["/pkg"]["vfs"] == "my_pkg.backends:WikiVFS"
     assert mounts["/ram"]["vfs"] == "ram"
     assert resolved["clis"]["tally"]["cli"] == (
-        f"{deploy}/../tools/tally.py:TALLY")
+        f"{deploy}/../tools/tally.py:TALLY"
+    )

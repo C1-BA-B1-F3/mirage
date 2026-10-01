@@ -42,16 +42,18 @@ class RedisWorkspaceStateStore(WorkspaceStateStore):
     grants.
     """
 
-    def __init__(self,
-                 url: str = "redis://localhost:6379/0",
-                 key_prefix: str = "mirage:",
-                 *,
-                 namespace: WorkspaceStateStore | None = None,
-                 observer: WorkspaceStateStore | None = None,
-                 workspace: WorkspaceStateStore | None = None) -> None:
-        super().__init__(namespace=namespace,
-                         observer=observer,
-                         workspace=workspace)
+    def __init__(
+        self,
+        url: str = "redis://localhost:6379/0",
+        key_prefix: str = "mirage:",
+        *,
+        namespace: WorkspaceStateStore | None = None,
+        observer: WorkspaceStateStore | None = None,
+        workspace: WorkspaceStateStore | None = None,
+    ) -> None:
+        super().__init__(
+            namespace=namespace, observer=observer, workspace=workspace
+        )
         self._url = url
         self._prefix = key_prefix
         self._meta_client = aioredis.from_url(url)
@@ -67,42 +69,56 @@ class RedisWorkspaceStateStore(WorkspaceStateStore):
         if workspace_id not in self._namespaces:
             self._namespaces[workspace_id] = RedisNamespaceStore(
                 url=self._url,
-                key_prefix=f"{self._prefix}{workspace_id}:namespace:")
+                key_prefix=f"{self._prefix}{workspace_id}:namespace:",
+            )
         return self._namespaces[workspace_id]
 
     def _make_observer(self, workspace_id: str) -> ObserverStore:
         if workspace_id not in self._observers:
             self._observers[workspace_id] = RedisObserverStore(
                 url=self._url,
-                key_prefix=f"{self._prefix}{workspace_id}:observer:")
+                key_prefix=f"{self._prefix}{workspace_id}:observer:",
+            )
         return self._observers[workspace_id]
 
     def _make_sessions(self, workspace_id: str) -> SessionStore:
         if workspace_id not in self._sessions:
             self._sessions[workspace_id] = RedisSessionStore(
-                url=self._url, key_prefix=f"{self._prefix}{workspace_id}:")
+                url=self._url, key_prefix=f"{self._prefix}{workspace_id}:"
+            )
         return self._sessions[workspace_id]
 
     async def _load_meta(self, workspace_id: str) -> WorkspaceFields | None:
-        raw = await cast(Awaitable[Any],
-                         self._meta_client.hget(self._meta_key, workspace_id))
+        raw = await cast(
+            Awaitable[Any],
+            self._meta_client.hget(self._meta_key, workspace_id),
+        )
         return json.loads(raw) if raw is not None else None
 
-    async def _set_meta(self, workspace_id: str,
-                        fields: WorkspaceFields) -> None:
+    async def _set_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> None:
         await cast(
             Awaitable[Any],
-            self._meta_client.hset(self._meta_key, workspace_id,
-                                   json.dumps(fields)))
+            self._meta_client.hset(
+                self._meta_key, workspace_id, json.dumps(fields)
+            ),
+        )
 
-    async def _cas_set_meta(self, workspace_id: str, fields: WorkspaceFields,
-                            expected_generation: int) -> bool:
-        result = await self._meta_cas(keys=[self._meta_key],
-                                      args=[
-                                          workspace_id,
-                                          json.dumps(fields),
-                                          expected_generation,
-                                      ])
+    async def _cas_set_meta(
+        self,
+        workspace_id: str,
+        fields: WorkspaceFields,
+        expected_generation: int,
+    ) -> bool:
+        result = await self._meta_cas(
+            keys=[self._meta_key],
+            args=[
+                workspace_id,
+                json.dumps(fields),
+                expected_generation,
+            ],
+        )
         return bool(result)
 
     async def _close(self) -> None:

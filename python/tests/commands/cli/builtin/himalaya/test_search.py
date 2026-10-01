@@ -55,18 +55,22 @@ def patched(monkeypatch):
     async def fake_headers(accessor, folder, uids):
         return [HEADERS[uid] for uid in uids]
 
-    monkeypatch.setitem(search_envelopes.__globals__, "list_message_uids",
-                        fake_uids)
-    monkeypatch.setitem(search_envelopes.__globals__, "fetch_headers",
-                        fake_headers)
+    monkeypatch.setitem(
+        search_envelopes.__globals__, "list_message_uids", fake_uids
+    )
+    monkeypatch.setitem(
+        search_envelopes.__globals__, "fetch_headers", fake_headers
+    )
     return seen
 
 
 @pytest.mark.asyncio
 async def test_query_tokens_rejoin_before_parsing(patched):
     await search_envelopes(
-        CLIInvocation(CONFIG,
-                      texts=("from", "alice", "and", "subject", "invoice")))
+        CLIInvocation(
+            CONFIG, texts=("from", "alice", "and", "subject", "invoice")
+        )
+    )
     assert patched["criteria"] == '(FROM "alice" SUBJECT "invoice")'
 
 
@@ -79,7 +83,8 @@ async def test_no_query_searches_everything(patched):
 @pytest.mark.asyncio
 async def test_sort_clause_orders_the_results_client_side(patched):
     out, io = await search_envelopes(
-        CLIInvocation(CONFIG, texts=("order", "by", "subject")))
+        CLIInvocation(CONFIG, texts=("order", "by", "subject"))
+    )
     assert io.exit_code == 0
     data = json.loads(await materialize(out))
     assert [d["uid"] for d in data] == ["2", "1"]
@@ -88,12 +93,10 @@ async def test_sort_clause_orders_the_results_client_side(patched):
 @pytest.mark.asyncio
 async def test_mailbox_and_paging_flags_apply(patched):
     out, _ = await search_envelopes(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "mailbox": "Archive",
-                          "page": 2,
-                          "page_size": 1
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"mailbox": "Archive", "page": 2, "page_size": 1}
+        )
+    )
     assert patched["folder"] == "Archive"
     data = json.loads(await materialize(out))
     assert [d["uid"] for d in data] == ["1"]
@@ -102,37 +105,41 @@ async def test_mailbox_and_paging_flags_apply(patched):
 @pytest.mark.asyncio
 async def test_a_bad_query_never_reaches_the_server(patched):
     with pytest.raises(QueryError):
-        await search_envelopes(CLIInvocation(CONFIG,
-                                             texts=("sender", "alice")))
+        await search_envelopes(
+            CLIInvocation(CONFIG, texts=("sender", "alice"))
+        )
     assert "criteria" not in patched
 
 
 @pytest.mark.asyncio
 async def test_the_default_order_only_fetches_the_pages_asked_for(patched):
     await search_envelopes(
-        CLIInvocation(CONFIG,
-                      texts=("subject", "alpha"),
-                      flags={
-                          "page": 2,
-                          "page_size": 10
-                      }))
+        CLIInvocation(
+            CONFIG,
+            texts=("subject", "alpha"),
+            flags={"page": 2, "page_size": 10},
+        )
+    )
     assert patched["budget"] == 20
 
 
 @pytest.mark.asyncio
 async def test_an_explicit_sort_widens_the_fetch_to_the_account_window(
-        patched):
+    patched,
+):
     # `order by` is unrelated to arrival order, so the newest N is not
     # enough to know what belongs on page one.
     await search_envelopes(
-        CLIInvocation(CONFIG, texts=("order", "by", "subject")))
+        CLIInvocation(CONFIG, texts=("order", "by", "subject"))
+    )
     assert patched["budget"] == CONFIG.max_messages
 
 
 @pytest.mark.asyncio
 async def test_search_results_are_header_only_like_list(patched):
     out, _ = await search_envelopes(
-        CLIInvocation(CONFIG, texts=("subject", "alpha")))
+        CLIInvocation(CONFIG, texts=("subject", "alpha"))
+    )
     data = json.loads(await materialize(out))
     assert [d["subject"] for d in data] == ["alpha", "beta"]
     assert all("body_text" not in d and "body_html" not in d for d in data)

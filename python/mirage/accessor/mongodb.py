@@ -25,10 +25,9 @@ from mirage.vfs.secrets import reveal_secret
 
 
 class MongoDBAccessor(Accessor):
-
-    def __init__(self,
-                 config: MongoDBConfig,
-                 listing_cache_ttl: float = 5.0) -> None:
+    def __init__(
+        self, config: MongoDBConfig, listing_cache_ttl: float = 5.0
+    ) -> None:
         self.config = config
         self.listing_cache_ttl = listing_cache_ttl
         self._clients: dict[int, AsyncMongoClient[dict[str, Any]]] = {}
@@ -52,8 +51,9 @@ class MongoDBAccessor(Accessor):
             self._clients[key] = client
         return client
 
-    async def cached_list(self, key: str,
-                          fetch: Callable[[], Awaitable[Any]]) -> Any:
+    async def cached_list(
+        self, key: str, fetch: Callable[[], Awaitable[Any]]
+    ) -> Any:
         if self.listing_cache_ttl <= 0:
             return await fetch()
         now = time.monotonic()

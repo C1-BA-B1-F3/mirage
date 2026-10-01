@@ -92,9 +92,11 @@ def describe(mountpoint: str) -> None:
         mountpoint (str): the mountpoint to describe.
     """
     print(f"# mountpoint: {mountpoint}")
-    print(f"# exists={os.path.exists(mountpoint)} "
-          f"isdir={os.path.isdir(mountpoint)} "
-          f"ismount={os.path.ismount(mountpoint)}")
+    print(
+        f"# exists={os.path.exists(mountpoint)} "
+        f"isdir={os.path.isdir(mountpoint)} "
+        f"ismount={os.path.ismount(mountpoint)}"
+    )
     print(f"# mount row: {mount_line(mountpoint) or '(not in mount table)'}")
     try:
         print(f"# listdir: {sorted(os.listdir(mountpoint))}")
@@ -131,10 +133,9 @@ def sh(script: str) -> str:
     Returns:
         str: "ok" on exit 0, else the first stderr line or the exit code.
     """
-    proc = subprocess.run(["/bin/sh", "-c", script],
-                          capture_output=True,
-                          text=True,
-                          timeout=60)
+    proc = subprocess.run(
+        ["/bin/sh", "-c", script], capture_output=True, text=True, timeout=60
+    )
     if proc.returncode == 0:
         return "ok"
     detail = proc.stderr.strip().splitlines()
@@ -147,10 +148,13 @@ def main() -> None:
     data._store.files["/api.json"] = CONTENT
     data._store.files["/existing.txt"] = EXISTING
 
-    with Workspace({
-            "/data":
-            Mount(data, mode=MountMode.WRITE, backend=MountBackend.FSKIT),
-    }) as ws:
+    with Workspace(
+        {
+            "/data": Mount(
+                data, mode=MountMode.WRITE, backend=MountBackend.FSKIT
+            ),
+        }
+    ) as ws:
         mp = ws.fuse_mountpoints["/data"]
         describe(mp)
         line = mount_line(mp)
@@ -184,8 +188,9 @@ def main() -> None:
         # When a macFUSE release starts delivering real bytes, this turns
         # False and the truth check flags it; flip the expectation and
         # delete the caveat.
-        new_file_store_zeroed = wait_store(data, "/new.txt",
-                                           b"\x00" * len(b"fresh\n"))
+        new_file_store_zeroed = wait_store(
+            data, "/new.txt", b"\x00" * len(b"fresh\n")
+        )
 
         result = {
             # Volatile, reported but never asserted.

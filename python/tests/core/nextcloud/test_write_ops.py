@@ -42,8 +42,11 @@ async def test_mkdir_creates_collection(make_acc):
 @pytest.mark.asyncio
 async def test_copy_duplicates_file(make_acc):
     acc = make_acc({"src.txt": b"payload"})
-    await copy(acc, PathSpec.from_str_path("/src.txt"),
-               PathSpec.from_str_path("/dst.txt"))
+    await copy(
+        acc,
+        PathSpec.from_str_path("/src.txt"),
+        PathSpec.from_str_path("/dst.txt"),
+    )
     assert acc._fake.files["dst.txt"] == b"payload"
     assert acc._fake.files["src.txt"] == b"payload"
 
@@ -51,19 +54,20 @@ async def test_copy_duplicates_file(make_acc):
 @pytest.mark.asyncio
 async def test_rename_moves_file(make_acc):
     acc = make_acc({"old.txt": b"data"})
-    await rename(acc, PathSpec.from_str_path("/old.txt"),
-                 PathSpec.from_str_path("/new.txt"))
+    await rename(
+        acc,
+        PathSpec.from_str_path("/old.txt"),
+        PathSpec.from_str_path("/new.txt"),
+    )
     assert acc._fake.files.get("new.txt") == b"data"
     assert "old.txt" not in acc._fake.files
 
 
 @pytest.mark.asyncio
 async def test_rm_r_removes_subtree(make_acc):
-    acc = make_acc({
-        "dir/a.txt": b"a",
-        "dir/sub/b.txt": b"b",
-        "keep.txt": b"k"
-    })
+    acc = make_acc(
+        {"dir/a.txt": b"a", "dir/sub/b.txt": b"b", "keep.txt": b"k"}
+    )
     await rm_r(acc, PathSpec.from_str_path("/dir"))
     assert "dir/a.txt" not in acc._fake.files
     assert "dir/sub/b.txt" not in acc._fake.files

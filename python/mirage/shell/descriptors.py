@@ -41,8 +41,11 @@ def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
             continue
         if r.fd not in SHELL_FDS and r.fd != FD_BOTH:
             return r.fd
-        if (isinstance(r.target, int) and r.target not in SHELL_FDS
-                and r.target != FD_CLOSE):
+        if (
+            isinstance(r.target, int)
+            and r.target not in SHELL_FDS
+            and r.target != FD_CLOSE
+        ):
             return r.target
     return None
 

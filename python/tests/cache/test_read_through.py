@@ -21,15 +21,16 @@ from mirage.cache.context import push_cache_manager
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.manager import CacheManager
-from mirage.cache.read_through import (cache_aware_read_bytes,
-                                       cache_aware_read_stream)
+from mirage.cache.read_through import (
+    cache_aware_read_bytes,
+    cache_aware_read_stream,
+)
 from mirage.commands.builtin.utils.stream import stdin_stream
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
 class _CountingBackend:
-
     def __init__(self, data: bytes) -> None:
         self.data = data
         self.stream_calls = 0
@@ -49,9 +50,11 @@ class _CountingBackend:
 
 
 def _spec() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/s3/a.txt", "/s3/"),
-                    virtual="/s3/a.txt",
-                    directory="/s3/")
+    return PathSpec(
+        vfs_path=mount_key("/s3/a.txt", "/s3/"),
+        virtual="/s3/a.txt",
+        directory="/s3/",
+    )
 
 
 async def _warm_manager(data: bytes) -> CacheManager:
@@ -168,7 +171,8 @@ async def test_stdin_wrapper_preserves_file_cache_context():
     backend = _CountingBackend(b"changed")
     manager = await _warm_manager(b"cached")
     reader = stdin_stream(
-        partial(cache_aware_read_stream(backend.read_stream), None), b"pipe")
+        partial(cache_aware_read_stream(backend.read_stream), None), b"pipe"
+    )
     prev = push_cache_manager(manager)
     try:
         source = reader(_spec())
@@ -182,8 +186,8 @@ async def test_stdin_wrapper_preserves_file_cache_context():
 
 @pytest.mark.asyncio
 async def test_complete_read_populates_cache_and_rendered_size():
-    backend = _CountingBackend('雪\n'.encode())
-    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+    backend = _CountingBackend("雪\n".encode())
+    manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
     prev = push_cache_manager(manager)
     try:
         reader = cache_aware_read_bytes(backend.read_bytes)
@@ -197,42 +201,41 @@ async def test_complete_read_populates_cache_and_rendered_size():
 
 @pytest.mark.asyncio
 async def test_inflight_read_cannot_repopulate_after_mutation():
-    manager = CacheManager(RAMFileCacheStore(), RAMIndexCacheStore(), '/s3/',
-                           True)
+    manager = CacheManager(
+        RAMFileCacheStore(), RAMIndexCacheStore(), "/s3/", True
+    )
 
     async def fetch():
         await manager.invalidate_after_write(_spec())
-        return b'old'
+        return b"old"
 
-    assert await manager.read_through(_spec(), fetch) == b'old'
+    assert await manager.read_through(_spec(), fetch) == b"old"
     assert await manager.cached_bytes(_spec()) is None
 
 
 @pytest.mark.asyncio
 async def test_inflight_read_cannot_repopulate_retired_mount():
     live = True
-    manager = CacheManager(RAMFileCacheStore(),
-                           None,
-                           '/s3/',
-                           True,
-                           owns_path=lambda _: live)
+    manager = CacheManager(
+        RAMFileCacheStore(), None, "/s3/", True, owns_path=lambda _: live
+    )
 
     async def fetch():
         nonlocal live
         live = False
-        return b'old'
+        return b"old"
 
-    assert await manager.read_through(_spec(), fetch) == b'old'
+    assert await manager.read_through(_spec(), fetch) == b"old"
     live = True
     assert await manager.cached_bytes(_spec()) is None
 
 
 @pytest.mark.asyncio
 async def test_failed_read_never_populates_cache():
-    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+    manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
 
-    fetch = AsyncMock(side_effect=OSError('failed read'))
+    fetch = AsyncMock(side_effect=OSError("failed read"))
 
-    with pytest.raises(OSError, match='failed read'):
+    with pytest.raises(OSError, match="failed read"):
         await manager.read_through(_spec(), fetch)
     assert await manager.cached_bytes(_spec()) is None

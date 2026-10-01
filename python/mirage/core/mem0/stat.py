@@ -39,8 +39,12 @@ def _file_stat(memory: dict[str, Any]) -> FileStat:
     )
 
 
-async def _memory_stat(accessor: Mem0Accessor, match: ScopeMatch,
-                       path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _memory_stat(
+    accessor: Mem0Accessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     return _file_stat(await listed_memory(accessor, path, index))
 
 

@@ -80,10 +80,13 @@ class JobTable:
             j for j in self._jobs.values() if j.workspace_id == workspace_id
         ]
 
-    def submit(self, workspace_id: str, command: str,
-               schedule: Callable[[Awaitable[Any]],
-                                  concurrent.futures.Future[Any]],
-               coro_factory: Callable[[], Awaitable[Any]]) -> JobEntry:
+    def submit(
+        self,
+        workspace_id: str,
+        command: str,
+        schedule: Callable[[Awaitable[Any]], concurrent.futures.Future[Any]],
+        coro_factory: Callable[[], Awaitable[Any]],
+    ) -> JobEntry:
         """Register a job and start running it on the workspace loop.
 
         Args:
@@ -115,12 +118,17 @@ class JobTable:
         fut.add_done_callback(callback)
         return entry
 
-    def _dispatch_done(self, entry: JobEntry, loop: asyncio.AbstractEventLoop,
-                       fut: concurrent.futures.Future[Any]) -> None:
+    def _dispatch_done(
+        self,
+        entry: JobEntry,
+        loop: asyncio.AbstractEventLoop,
+        fut: concurrent.futures.Future[Any],
+    ) -> None:
         loop.call_soon_threadsafe(self._on_done, entry, fut)
 
-    def _on_done(self, entry: JobEntry,
-                 fut: concurrent.futures.Future[Any]) -> None:
+    def _on_done(
+        self, entry: JobEntry, fut: concurrent.futures.Future[Any]
+    ) -> None:
         entry.finished_at = time.time()
         if fut.cancelled():
             entry.status = JobStatus.CANCELED
@@ -134,12 +142,15 @@ class JobTable:
                 entry.result = fut.result()
         entry._done_event.set()
 
-    async def wait(self,
-                   job_id: str,
-                   timeout: float | None = None) -> JobEntry:
+    async def wait(
+        self, job_id: str, timeout: float | None = None
+    ) -> JobEntry:
         entry = self.get(job_id)
-        if entry.status in (JobStatus.DONE, JobStatus.FAILED,
-                            JobStatus.CANCELED):
+        if entry.status in (
+            JobStatus.DONE,
+            JobStatus.FAILED,
+            JobStatus.CANCELED,
+        ):
             return entry
         try:
             await asyncio.wait_for(entry._done_event.wait(), timeout=timeout)
@@ -149,8 +160,11 @@ class JobTable:
 
     def cancel(self, job_id: str) -> bool:
         entry = self.get(job_id)
-        if entry.status in (JobStatus.DONE, JobStatus.FAILED,
-                            JobStatus.CANCELED):
+        if entry.status in (
+            JobStatus.DONE,
+            JobStatus.FAILED,
+            JobStatus.CANCELED,
+        ):
             return False
         if entry._future is None:
             return False

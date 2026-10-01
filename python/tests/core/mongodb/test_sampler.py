@@ -21,7 +21,6 @@ from mirage.core.mongodb._sampler import sample_field_types
 
 
 class _AsyncIter:
-
     def __init__(self, items):
         self._items = list(items)
 
@@ -43,22 +42,9 @@ def _col(docs):
 @pytest.mark.asyncio
 async def test_sample_field_types_tallies_types_and_presence():
     docs = [
-        {
-            "_id": 1,
-            "title": "Hi",
-            "year": 2020,
-            "tags": ["a", "b"]
-        },
-        {
-            "_id": 2,
-            "title": "Bye",
-            "year": "2021",
-            "tags": ["c"]
-        },
-        {
-            "_id": 3,
-            "title": "Yo"
-        },
+        {"_id": 1, "title": "Hi", "year": 2020, "tags": ["a", "b"]},
+        {"_id": 2, "title": "Bye", "year": "2021", "tags": ["c"]},
+        {"_id": 3, "title": "Yo"},
     ]
     out = await sample_field_types(_col(docs), sample_size=3)
     by_path = {f["path"]: f for f in out}
@@ -81,20 +67,8 @@ async def test_sample_field_types_recognizes_fixed_numeric_arrays():
 @pytest.mark.asyncio
 async def test_sample_field_types_walks_nested_objects():
     docs = [
-        {
-            "_id": 1,
-            "metadata": {
-                "tag": "a",
-                "ratings": [1.0, 2.0]
-            }
-        },
-        {
-            "_id": 2,
-            "metadata": {
-                "tag": "b",
-                "extra": ObjectId()
-            }
-        },
+        {"_id": 1, "metadata": {"tag": "a", "ratings": [1.0, 2.0]}},
+        {"_id": 2, "metadata": {"tag": "b", "extra": ObjectId()}},
     ]
     out = await sample_field_types(_col(docs), sample_size=2)
     paths = {f["path"] for f in out}
@@ -105,11 +79,13 @@ async def test_sample_field_types_walks_nested_objects():
 
 @pytest.mark.asyncio
 async def test_sample_field_types_handles_bson_scalars():
-    docs = [{
-        "_id": 1,
-        "dec": Decimal128("1.23"),
-        "oid": ObjectId("65f0000000000000000000a1")
-    }]
+    docs = [
+        {
+            "_id": 1,
+            "dec": Decimal128("1.23"),
+            "oid": ObjectId("65f0000000000000000000a1"),
+        }
+    ]
     out = await sample_field_types(_col(docs), sample_size=1)
     by_path = {f["path"]: f for f in out}
     assert by_path["dec"]["types"] == {"decimal": 1.0}

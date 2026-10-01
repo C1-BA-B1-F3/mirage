@@ -38,31 +38,32 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_auto_bootstraps_from_empty_index(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.presentation",
-        "id": "slide1",
-        "name": "Deck",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.presentation",
+            "id": "slide1",
+            "name": "Deck",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     with (
-            patch(
-                "mirage.core.google.entry.get_file",
-                new_callable=AsyncMock,
-                return_value=files[0],
-            ),
-            patch(
-                "mirage.core.gslides.read.read_presentation",
-                new_callable=AsyncMock,
-                return_value=b'{"presentationId":"slide1"}',
-            ),
+        patch(
+            "mirage.core.google.entry.get_file",
+            new_callable=AsyncMock,
+            return_value=files[0],
+        ),
+        patch(
+            "mirage.core.gslides.read.read_presentation",
+            new_callable=AsyncMock,
+            return_value=b'{"presentationId":"slide1"}',
+        ),
     ):
         path = PathSpec(
             vfs_path=mount_key(
                 "/gslides/owned/2026-04-01_Deck__slide1.gslide.json",
-                "/gslides"),
+                "/gslides",
+            ),
             virtual="/gslides/owned/2026-04-01_Deck__slide1.gslide.json",
             directory="/gslides/owned/2026-04-01_Deck__slide1.gslide.json",
         )
@@ -73,21 +74,21 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
 @pytest.mark.asyncio
 async def test_read_missing_file_raises_by_id(accessor, index):
     with (
-            patch(
-                "mirage.core.google.entry.get_file",
-                new_callable=AsyncMock,
-                side_effect=FileNotFoundError("missing"),
-            ),
-            patch(
-                "mirage.core.gslides.read.read_presentation",
-                new_callable=AsyncMock,
-                side_effect=AssertionError(
-                    "should not call read_presentation"),
-            ),
+        patch(
+            "mirage.core.google.entry.get_file",
+            new_callable=AsyncMock,
+            side_effect=FileNotFoundError("missing"),
+        ),
+        patch(
+            "mirage.core.gslides.read.read_presentation",
+            new_callable=AsyncMock,
+            side_effect=AssertionError("should not call read_presentation"),
+        ),
     ):
         path = PathSpec(
-            vfs_path=mount_key("/gslides/owned/Missing__xyz.gslide.json",
-                               "/gslides"),
+            vfs_path=mount_key(
+                "/gslides/owned/Missing__xyz.gslide.json", "/gslides"
+            ),
             virtual="/gslides/owned/Missing__xyz.gslide.json",
             directory="/gslides/owned/Missing__xyz.gslide.json",
         )
@@ -98,29 +99,42 @@ async def test_read_missing_file_raises_by_id(accessor, index):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("stamp", "token"),
-    [("2026-04-01T00:00:00.000Z", "2026-04-01T00:00:00.000Z"), ("", None)])
-async def test_read_records_the_token_stat_reports(accessor, index, stamp,
-                                                   token):
+    [("2026-04-01T00:00:00.000Z", "2026-04-01T00:00:00.000Z"), ("", None)],
+)
+async def test_read_records_the_token_stat_reports(
+    accessor, index, stamp, token
+):
     # read: fresh compares this record with stat's fingerprint, so both take
     # the entry's modified stamp, and an entry without one stamps nothing.
     name = "2026-04-01_My_Deck__d1.gslide.json"
     target = "/gslides/owned/" + name
-    await index.set_dir("/gslides/owned", [
-        (name,
-         IndexEntry(id="d1",
+    await index.set_dir(
+        "/gslides/owned",
+        [
+            (
+                name,
+                IndexEntry(
+                    id="d1",
                     name="My Deck",
                     resource_type="gslides/file",
                     remote_time=stamp,
-                    vfs_name=name)),
-    ])
-    path = PathSpec(vfs_path=mount_key(target, "/gslides"),
-                    virtual=target,
-                    directory=target)
+                    vfs_name=name,
+                ),
+            ),
+        ],
+    )
+    path = PathSpec(
+        vfs_path=mount_key(target, "/gslides"),
+        virtual=target,
+        directory=target,
+    )
     scope = RecordingScope()
     try:
-        with patch("mirage.core.gslides.read.read_presentation",
-                   new_callable=AsyncMock,
-                   return_value=b'{"presentationId":"d1"}'):
+        with patch(
+            "mirage.core.gslides.read.read_presentation",
+            new_callable=AsyncMock,
+            return_value=b'{"presentationId":"d1"}',
+        ):
             data = await read(accessor, path, index)
     finally:
         scope.close()

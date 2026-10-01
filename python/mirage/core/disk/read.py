@@ -22,9 +22,11 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def read_bytes(accessor: DiskAccessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX) -> bytes:
+async def read_bytes(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> bytes:
     virtual = path_spec.virtual
     root = accessor.root
     timer = start_op()
@@ -36,11 +38,13 @@ async def read_bytes(accessor: DiskAccessor,
     return data
 
 
-async def read_range(accessor: DiskAccessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_range(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a byte range, seeking rather than reading the whole file.
 
     Args:

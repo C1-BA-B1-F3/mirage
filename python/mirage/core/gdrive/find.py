@@ -14,9 +14,14 @@
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               emit_start_path, keep,
-                                               start_basename)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    emit_start_path,
+    keep,
+    start_basename,
+)
 from mirage.core.gdrive.resolve import resolve_key
 from mirage.core.gdrive.tree import iter_tree
 from mirage.types import PathSpec
@@ -68,17 +73,23 @@ async def find(
     base = path.vfs_path
     results: list[str] = []
     saw_descendant = False
-    tree = tree if tree is not None else build_tree(name=name,
-                                                    iname=iname,
-                                                    path_pattern=path_pattern,
-                                                    type=type,
-                                                    name_exclude=name_exclude,
-                                                    or_names=or_names,
-                                                    empty=empty)
+    tree = (
+        tree
+        if tree is not None
+        else build_tree(
+            name=name,
+            iname=iname,
+            path_pattern=path_pattern,
+            type=type,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            empty=empty,
+        )
+    )
     try:
         walker = iter_tree(accessor, path)
         async for rel, item, is_dir in walker:
-            relative = rel[len(base):].lstrip("/") if base else rel
+            relative = rel[len(base) :].lstrip("/") if base else rel
             depth = relative.count("/") + 1
             if maxdepth is not None and depth > maxdepth:
                 continue
@@ -86,13 +97,16 @@ async def find(
             entry_name = rel.rsplit("/", 1)[-1]
             full_path = "/" + rel
             size = int(item.get("size") or 0)
-            is_empty = (None if not empty else
-                        (size == 0 if not is_dir else False))
-            entry = FindEntry(key=full_path,
-                              name=entry_name,
-                              kind="d" if is_dir else "f",
-                              depth=depth,
-                              is_empty=is_empty)
+            is_empty = (
+                None if not empty else (size == 0 if not is_dir else False)
+            )
+            entry = FindEntry(
+                key=full_path,
+                name=entry_name,
+                kind="d" if is_dir else "f",
+                depth=depth,
+                is_empty=is_empty,
+            )
             if not keep(entry, tree, mindepth):
                 continue
             if min_size is not None or max_size is not None:
@@ -107,17 +121,19 @@ async def find(
     exists = saw_descendant or await _dir_exists(accessor, path)
     if exists:
         root_key = "/" + base if base else "/"
-        emit_start_path(results,
-                        root_key,
-                        start_basename(path),
-                        kind="d",
-                        is_empty=False if empty else None,
-                        exists=True,
-                        tree=tree,
-                        maxdepth=maxdepth,
-                        mindepth=mindepth,
-                        min_size=min_size,
-                        max_size=max_size)
+        emit_start_path(
+            results,
+            root_key,
+            start_basename(path),
+            kind="d",
+            is_empty=False if empty else None,
+            exists=True,
+            tree=tree,
+            maxdepth=maxdepth,
+            mindepth=mindepth,
+            min_size=min_size,
+            max_size=max_size,
+        )
     return sorted(results)
 
 

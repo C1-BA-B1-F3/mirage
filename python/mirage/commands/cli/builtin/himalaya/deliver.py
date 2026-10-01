@@ -27,8 +27,9 @@ DEFAULT_SENT_FOLDER = "Sent"
 SEEN_FLAG = "\\Seen"
 
 
-async def resolve_sent_folder(accessor: EmailAccessor,
-                              configured: str | None) -> str:
+async def resolve_sent_folder(
+    accessor: EmailAccessor, configured: str | None
+) -> str:
     """Name the mailbox a sent copy belongs in.
 
     IMAP never standardized that name: it is ``Sent`` on most servers,
@@ -55,9 +56,9 @@ async def resolve_sent_folder(accessor: EmailAccessor,
     return DEFAULT_SENT_FOLDER
 
 
-async def save_sent_copy(config: EmailConfig,
-                         raw: bytes,
-                         folder: str | None = None) -> str:
+async def save_sent_copy(
+    config: EmailConfig, raw: bytes, folder: str | None = None
+) -> str:
     """APPEND a message to a mailbox, seen, the way upstream saves one.
 
     Args:
@@ -74,27 +75,29 @@ async def save_sent_copy(config: EmailConfig,
     """
     accessor = EmailAccessor(config)
     try:
-        folder = folder or await resolve_sent_folder(accessor,
-                                                     config.sent_folder)
+        folder = folder or await resolve_sent_folder(
+            accessor, config.sent_folder
+        )
         imap = await accessor.get_imap()
-        response = await imap.append(raw,
-                                     mailbox=quote_mailbox(folder),
-                                     flags=SEEN_FLAG)
+        response = await imap.append(
+            raw, mailbox=quote_mailbox(folder), flags=SEEN_FLAG
+        )
         if response.result != "OK":
             detail = " ".join(
-                line.decode(
-                    errors="replace") if isinstance(line, (
-                        bytes, bytearray)) else str(line)
-                for line in (response.lines or []))
+                line.decode(errors="replace")
+                if isinstance(line, (bytes, bytearray))
+                else str(line)
+                for line in (response.lines or [])
+            )
             raise ValueError(f"{folder}: {detail or response.result}")
     finally:
         await accessor.close()
     return folder
 
 
-async def deliver(config: EmailConfig,
-                  raw: bytes,
-                  save: str | None = None) -> tuple[Message, str]:
+async def deliver(
+    config: EmailConfig, raw: bytes, save: str | None = None
+) -> tuple[Message, str]:
     """Send a message over SMTP, then file the sender's own copy.
 
     Two conversations with two servers: SMTP hands the message to the

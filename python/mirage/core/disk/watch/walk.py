@@ -29,8 +29,8 @@ from mirage.watch.fingerprint import stat_fingerprint
 
 
 def walk_sync(
-        root: Path,
-        spec: PathSpec) -> list[tuple[str, bool, str | None, int | None]]:
+    root: Path, spec: PathSpec
+) -> list[tuple[str, bool, str | None, int | None]]:
     """Collect (mount-relative path, is_dir, mtime, size) under a path.
 
     Runs the complete traversal in one worker handoff.
@@ -60,8 +60,14 @@ def walk_sync(
                 continue
             if stat.S_ISLNK(info.st_mode):
                 continue
-            out.append(("/" + relative, False, ns_to_iso(info.st_mtime_ns),
-                        info.st_size))
+            out.append(
+                (
+                    "/" + relative,
+                    False,
+                    ns_to_iso(info.st_mtime_ns),
+                    info.st_size,
+                )
+            )
     return out
 
 
@@ -78,7 +84,7 @@ class DiskWalk:
 
     def __init__(self, accessor: DiskAccessor) -> None:
         """Args:
-            accessor (DiskAccessor): Backend handle.
+        accessor (DiskAccessor): Backend handle.
         """
         self._accessor = accessor
 
@@ -91,20 +97,23 @@ class DiskWalk:
         prefix = mount_prefix_of(root.virtual, root.vfs_path)
         try:
             with disk_errors(root.virtual):
-                found = await asyncio.to_thread(walk_sync, self._accessor.root,
-                                                root)
+                found = await asyncio.to_thread(
+                    walk_sync, self._accessor.root, root
+                )
         except FileNotFoundError:
             return
         for relative, is_dir, modified, size in found:
-            virtual = (prefix.rstrip("/") + relative if prefix else relative)
+            virtual = prefix.rstrip("/") + relative if prefix else relative
             if is_dir:
                 yield WalkEntry(virtual=virtual, is_dir=True, fingerprint=None)
                 continue
-            yield WalkEntry(virtual=virtual,
-                            is_dir=False,
-                            fingerprint=stat_fingerprint(None, modified, size),
-                            size=size,
-                            modified=modified)
+            yield WalkEntry(
+                virtual=virtual,
+                is_dir=False,
+                fingerprint=stat_fingerprint(None, modified, size),
+                size=size,
+                modified=modified,
+            )
 
 
 def build_delta_hook(accessor: DiskAccessor) -> DeltaHook:

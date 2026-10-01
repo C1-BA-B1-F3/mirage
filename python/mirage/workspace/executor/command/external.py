@@ -34,48 +34,64 @@ async def run_external(
     stdin: ByteSource | None,
     session: SessionState,
     registry: MountRegistry,
-    routing: RouteDecision | None = None
+    routing: RouteDecision | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Execute one admitted program; its surrounding shell stays in Mirage."""
-    bindings = (routing.bindings
-                if routing is not None else registry.runtime_bindings)
+    bindings = (
+        routing.bindings if routing is not None else registry.runtime_bindings
+    )
     runtime = bindings.get(argv.name, bindings.get(EXTERNAL_COMMANDS))
     command = shlex.join(argv.tokens)
     if runtime is None:
         err = f"{argv.name}: no runtime accepted this line\n".encode()
-        return None, IOResult(exit_code=126,
-                              stderr=err), ExecutionNode(command=command,
-                                                         exit_code=126,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=126, stderr=err),
+            ExecutionNode(command=command, exit_code=126, stderr=err),
+        )
     cwd = PathSpec.from_str_path(session.cwd)
     env = env_snapshot(session)
-    guard = resolve_limit(argv.name,
-                          registry.mounts(),
-                          workspace_limits=registry.command_limits,
-                          profile_limits=session.command_limits)
+    guard = resolve_limit(
+        argv.name,
+        registry.mounts(),
+        workspace_limits=registry.command_limits,
+        profile_limits=session.command_limits,
+    )
 
     async def execute() -> RunResult:
         data = await materialize(stdin) if stdin is not None else None
         if isinstance(runtime, ProcessExecutorMixin):
             return await runtime.execute(
-                ProcessExecution(argv=argv.tokens,
-                                 cwd=cwd,
-                                 env=env,
-                                 stdin=data))
+                ProcessExecution(
+                    argv=argv.tokens, cwd=cwd, env=env, stdin=data
+                )
+            )
         return await runtime.execute(
-            ShellExecution(line=command, cwd=cwd, env=env, stdin=data))
+            ShellExecution(line=command, cwd=cwd, env=env, stdin=data)
+        )
 
     try:
         result = await run_with_timeout(
-            execute(), guard.timeout_seconds if guard is not None else None,
-            argv.name)
+            execute(),
+            guard.timeout_seconds if guard is not None else None,
+            argv.name,
+        )
     finally:
         await registry.invalidate_after_external()
-    io = IOResult(exit_code=result.exit_code,
-                  stderr=result.stderr or b"",
-                  producer=Producer(command=argv.name,
-                                    prefixes=tuple(
-                                        m.prefix for m in registry.mounts())))
-    return result.stdout, io, ExecutionNode(command=command,
-                                            exit_code=result.exit_code,
-                                            stderr=result.stderr or b"")
+    io = IOResult(
+        exit_code=result.exit_code,
+        stderr=result.stderr or b"",
+        producer=Producer(
+            command=argv.name,
+            prefixes=tuple(m.prefix for m in registry.mounts()),
+        ),
+    )
+    return (
+        result.stdout,
+        io,
+        ExecutionNode(
+            command=command,
+            exit_code=result.exit_code,
+            stderr=result.stderr or b"",
+        ),
+    )

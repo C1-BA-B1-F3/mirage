@@ -18,15 +18,16 @@ from mirage.vfs.gdocs.prompt import PROMPT, WRITE_PROMPT
 ALL_TEXT = "[.. | .textRun? // empty | .content] | add"
 TAB_NAMES = "[.. | .tabProperties? // empty | .title]"
 TAB_COUNT = "[.. | .tabProperties? // empty] | length"
-FIRST_TAB = ("[.tabs[0].documentTab.body.content[]\n"
-             "      | .paragraph?.elements[]?.textRun.content] | add")
+FIRST_TAB = (
+    "[.tabs[0].documentTab.body.content[]\n"
+    "      | .paragraph?.elements[]?.textRun.content] | add"
+)
 OLD_FLAT_RECIPE = ".body.content[].paragraph.elements[].textRun.content"
 
 
-def _tab(tab_id: str,
-         title: str,
-         text: str,
-         children: list | None = None) -> dict:
+def _tab(
+    tab_id: str, title: str, text: str, children: list | None = None
+) -> dict:
     tab: dict = {
         "tabProperties": {
             "tabId": tab_id,
@@ -37,19 +38,17 @@ def _tab(tab_id: str,
         "documentTab": {
             "body": {
                 "content": [
-                    {
-                        "sectionBreak": {
-                            "sectionStyle": {}
-                        }
-                    },
+                    {"sectionBreak": {"sectionStyle": {}}},
                     {
                         "paragraph": {
-                            "elements": [{
-                                "textRun": {
-                                    "content": text + "\n",
-                                    "textStyle": {}
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": text + "\n",
+                                        "textStyle": {},
+                                    }
                                 }
-                            }]
+                            ]
                         }
                     },
                 ]
@@ -65,17 +64,18 @@ def _tab(tab_id: str,
 
 def _doc() -> dict:
     return {
-        "documentId":
-        "doc1",
-        "title":
-        "Log",
+        "documentId": "doc1",
+        "title": "Log",
         "tabs": [
             _tab("t.0", "Tab 1", "first tab"),
-            _tab("t.1", "Tab 2", "second tab",
-                 [_tab("t.2", "Child", "child tab")]),
+            _tab(
+                "t.1",
+                "Tab 2",
+                "second tab",
+                [_tab("t.2", "Child", "child tab")],
+            ),
         ],
-        "revisionId":
-        "rev-3",
+        "revisionId": "rev-3",
     }
 
 

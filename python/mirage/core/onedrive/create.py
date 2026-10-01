@@ -32,9 +32,11 @@ async def create(accessor: OneDriveAccessor, path: PathSpec) -> None:
         path (PathSpec): the file to create.
     """
     timer = start_op()
-    await write_item(accessor.config,
-                     drive_loc(accessor.config, path.vfs_path),
-                     b"",
-                     session=accessor.pool)
+    await write_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        b"",
+        session=accessor.pool,
+    )
     record("create", path.virtual, "onedrive", 0, timer)
     await invalidate_after_write(path)

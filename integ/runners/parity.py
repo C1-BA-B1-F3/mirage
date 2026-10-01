@@ -33,22 +33,22 @@ def load(path: str) -> dict[tuple[str, str], dict]:
     return {(r["target"], r["id"]): r for r in rows}
 
 
-def emit_python(out: str, target_args: list[str]) -> None:
-    subprocess.run([
+def emit_python(out: str, target_args: list[str]) -> int:
+    return subprocess.run([
         sys.executable,
         str(INTEG / "runners" / "python" / "main.py"), "--emit", out,
         *target_args
     ],
-                   check=False)
+                          check=False).returncode
 
 
-def emit_typescript(out: str, target_args: list[str]) -> None:
-    subprocess.run([
+def emit_typescript(out: str, target_args: list[str]) -> int:
+    return subprocess.run([
         "pnpm", "exec", "tsx", "runners/typescript/main.ts", "--emit", out,
         *target_args
     ],
-                   cwd=INTEG,
-                   check=False)
+                          cwd=INTEG,
+                          check=False).returncode
 
 
 def diff_row(a: dict, b: dict) -> list[str]:
@@ -92,6 +92,7 @@ def main() -> None:
         source = Path(args[1])
         args = args[2:]
     targets = args or default_targets
+    failed: list[str] = []
     if source is not None:
         wanted = set(targets)
         py = {
@@ -103,6 +104,13 @@ def main() -> None:
             for k, v in load_dir(source / "typescript").items()
             if k[0] in wanted
         }
+        # A battery job that never uploaded a target's emit drops it from
+        # both sides at once, which no ONLY-PY/ONLY-TS row would show.
+        missing = sorted(wanted - {k[0] for k in py.keys() | ts.keys()})
+        if missing:
+            print(f"no rows in {source} for: {', '.join(missing)}",
+                  file=sys.stderr)
+            sys.exit(2)
     else:
         target_args: list[str] = []
         for t in targets:
@@ -110,8 +118,13 @@ def main() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             py_out = str(Path(tmp) / "py.json")
             ts_out = str(Path(tmp) / "ts.json")
-            emit_python(py_out, target_args)
-            emit_typescript(ts_out, target_args)
+            if emit_python(py_out, target_args):
+                failed.append("python")
+            if emit_typescript(ts_out, target_args):
+                failed.append("typescript")
+            # A runner whose target raised wrote no emit and said why.
+            if not (Path(py_out).exists() and Path(ts_out).exists()):
+                sys.exit(2)
             py = load(py_out)
             ts = load(ts_out)
 
@@ -141,7 +154,11 @@ def main() -> None:
     if compared == 0:
         print("no case/target pairs compared", file=sys.stderr)
         sys.exit(2)
-    if mismatches:
+    # Each runner checks its own goldens too, and a case that misses its
+    # golden the same way on both hosts agrees with itself here.
+    if failed:
+        print(f"battery failed on: {', '.join(failed)}", file=sys.stderr)
+    if mismatches or failed:
         sys.exit(1)
 
 

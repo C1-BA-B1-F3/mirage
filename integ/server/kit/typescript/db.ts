@@ -89,6 +89,7 @@ function pushFailure(schema: string, err: unknown): KitError {
 const PREPARED = new Map<string, string>()
 const PREPARING = new Map<string, Promise<string>>()
 let preparedRoot: string | null = null
+let preparedFiles = 0
 
 function preparedDir(): string {
   if (preparedRoot === null) {
@@ -104,7 +105,7 @@ function preparedDir(): string {
 export function prepareTemplate(schema: string): Promise<string> {
   const live = PREPARING.get(schema)
   if (live !== undefined) return live
-  const target = join(preparedDir(), `${String(PREPARING.size)}.db`)
+  const target = join(preparedDir(), `${String(preparedFiles++)}.db`)
   writeFileSync(target, '', { flag: 'a' })
   const made = new Promise<string>((resolve, reject) => {
     execFile('node', pushArgs(schema), { env: pushEnv(target), timeout: 30_000 }, (err) => {

@@ -191,7 +191,7 @@ export class Workspace {
     return this.closing !== null || this.closed
   }
   private readonly watchManager: WatchManager
-  private readonly runtimes: Runtimes
+  private readonly runtimeWorld: Runtimes
   // Named for what it holds: the source declarations, never a secret.
   private readonly declaredSecretSources: Readonly<Record<string, SecretSource>>
   private secretSourcesBuilt: Readonly<Record<string, ResolvedSource>> | null = null
@@ -443,18 +443,15 @@ export class Workspace {
       },
       { bind: (sessionId, run) => this.bindSession(sessionId, run) },
     )
-    this.runtimes = new Runtimes({
+    this.runtimeWorld = new Runtimes({
       registry: this.registry,
       entries: options.runtimes,
-      pythonConfig: options.python ?? {},
       binding: this.runtimeBinding,
-      registerCloser: (fn) => {
-        this.closers.push(fn)
-      },
     })
+    this.closers.push(() => this.runtimeWorld.close())
     this.router = new Router(
       this.registry,
-      this.runtimes,
+      this.runtimeWorld,
       this.routePolicy,
       this.agentId,
       sandboxResolver,
@@ -486,15 +483,21 @@ export class Workspace {
     return prefixes
   }
 
+  /** The ordered runtime world, first capturer first. */
+  runtimes(): readonly Runtime[] {
+    return this.runtimeWorld.entries
+  }
+
   /** Append a runtime entry to the workspace's ordered world (last, first capturer still wins). */
   addRuntime(runtime: RuntimeEntry): Runtime {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
-    return this.runtimes.add(runtime)
+    return this.runtimeWorld.add(runtime)
   }
 
-  /** The ordered runtime world, as a read-only view of the live list. */
-  get runtimeEntries(): readonly Runtime[] {
-    return this.runtimes.entries
+  /** Remove a runtime entry, closing it once its runs finish; `workspace` is permanent. */
+  async removeRuntime(name: string): Promise<void> {
+    if (this.isShuttingDown()) throw new Error('Workspace is closed')
+    await this.runtimeWorld.remove(name)
   }
 
   /**
@@ -1455,7 +1458,7 @@ export class Workspace {
       jobTable: this.jobTable,
       agentId: this.agentId,
       workspaceId: this.wsId,
-      runtimes: this.runtimes,
+      runtimes: this.runtimeWorld,
       router: this.router,
       secretSources: () => this.secretSources(),
       registerCloser: (fn) => {
@@ -1581,7 +1584,7 @@ export class Workspace {
   async executePythonRepl(code: string, options: { sessionId?: string } = {}): Promise<EvalResult> {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
     const sessionId = options.sessionId ?? this.sessionManager.defaultId
-    const bound = this.runtimes.bindings.python3
+    const bound = this.runtimeWorld.bindings.python3
     if (bound === undefined || !isEvaluator(bound)) {
       throw new Error('no evaluator runtime bound for the repl')
     }

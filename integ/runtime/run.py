@@ -723,7 +723,7 @@ async def _run_case(suite: str, case: dict[str, Any]) -> list[str]:
     ws = await _build_workspace(world, run_id)
     problems: list[str] = []
     try:
-        runtimes = {runtime.name: runtime for runtime in ws._runtimes.entries}
+        runtimes = {runtime.name: runtime for runtime in ws.runtimes()}
         for name, operations in case.get("filesystem", {}).items():
             supported = runtimes[name].capabilities.filesystem
             for operation, expected in operations.items():

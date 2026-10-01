@@ -25,6 +25,7 @@ from mirage.runtime.types import (ExecutionRequest, FilesystemOperation,
                                   ProcessExecution, RunResult,
                                   RuntimeCapabilities, RuntimeContext,
                                   RuntimeReach, ScriptSource, ShellExecution)
+from mirage.utils.activity import Activity
 
 
 class Runtime(ABC):
@@ -69,6 +70,8 @@ class Runtime(ABC):
     config_cls: ClassVar[type[RuntimeConfig]] = RuntimeConfig
     config: RuntimeConfig = RuntimeConfig()
     _binding: WorkspaceBinding | None = None
+    _activity: Activity | None = None
+    _retired: bool = False
 
     def __init__(
             self,
@@ -107,6 +110,10 @@ class Runtime(ABC):
 
     def bind(self, binding: WorkspaceBinding) -> None:
         """Bind this instance to one workspace."""
+        if self._retired:
+            raise ValueError(
+                f"{self.name}: runtime was removed from its workspace; "
+                "construct a new one")
         if self._binding is not None and self._binding is not binding:
             raise ValueError(
                 f"{self.name}: runtime is already bound to another workspace")
@@ -120,15 +127,30 @@ class Runtime(ABC):
         This is the engine door. Workspace.shell remains the shell admission
         and routing door, as it was for callers of run and run_line.
         """
-        if context is None and self._binding is not None:
-            context = self._binding.capture()
-        if context is not None:
-            if context.binding is not self._binding:
-                raise ValueError(
-                    f"{self.name}: context belongs to another binding")
-            return await context.scope.run(
-                lambda: self._execute(request, context))
-        return await self._execute(request, None)
+        if self._retired:
+            raise RuntimeError(
+                f"{self.name}: runtime was removed from the workspace")
+        if self._activity is None:
+            self._activity = Activity()
+        release = self._activity.acquire()
+        try:
+            if context is None and self._binding is not None:
+                context = self._binding.capture()
+            if context is not None:
+                if context.binding is not self._binding:
+                    raise ValueError(
+                        f"{self.name}: context belongs to another binding")
+                return await context.scope.run(
+                    lambda: self._execute(request, context))
+            return await self._execute(request, None)
+        finally:
+            release()
+
+    async def retire(self) -> None:
+        """Refuse new executions and binds, then wait for running ones."""
+        self._retired = True
+        if self._activity is not None:
+            await self._activity.wait()
 
     def _capture_context(self) -> RuntimeContext | None:
         return self._binding.capture() if self._binding is not None else None

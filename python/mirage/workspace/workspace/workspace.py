@@ -842,6 +842,10 @@ class Workspace:
 
         return ChildProcess(process, input_stream, output, cancel)
 
+    def runtimes(self) -> list[Runtime]:
+        """The ordered runtime world, first capturer first."""
+        return list(self._runtimes.entries)
+
     def add_runtime(self, runtime: Runtime | str) -> Runtime:
         """Append a runtime entry to the workspace's ordered set.
 
@@ -855,6 +859,16 @@ class Workspace:
         if self._shutting_down:
             raise RuntimeError("Workspace is closed")
         return self._runtimes.add(runtime)
+
+    async def remove_runtime(self, name: str) -> None:
+        """Remove a runtime entry, closing it once its runs finish.
+
+        Args:
+            name (str): the entry's name; ``workspace`` is permanent.
+        """
+        if self._shutting_down:
+            raise RuntimeError("Workspace is closed")
+        await self._runtimes.remove(name)
 
     @property
     def _cwd(self) -> str:

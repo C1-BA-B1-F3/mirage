@@ -7,11 +7,12 @@ from typing import Any
 from mirage.commands.builtin.generic.program import (program_file_refusal,
                                                      read_program_file)
 from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
-from mirage.commands.config import CommandOpts, help_page, version_line
+from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.constants import OPERAND, REFUSED
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import (args_text, decode_utf8, error_report,
                             format_jq_output, halt_report, jq_check,

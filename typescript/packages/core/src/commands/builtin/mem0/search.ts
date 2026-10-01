@@ -6,7 +6,6 @@ import { VFSName, type PathSpec } from '../../../types.ts'
 
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { metadataProvision } from '../generic_bind/provision.ts'
 
 import { defaultPaths } from '../utils/operands.ts'
 import { MEM0_IO } from './io.ts'
@@ -66,5 +65,4 @@ export const MEM0_SEARCH = command({
   vfs: VFSName.MEM0,
   spec: specOf('search'),
   fn: searchCommand,
-  provision: metadataProvision,
 })

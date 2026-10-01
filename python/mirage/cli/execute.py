@@ -56,12 +56,8 @@ def execute_cmd(
         help="Don't wait; return job_id immediately.",
     ),
 ) -> None:
-    """Execute a command in a workspace.
-
-    For dry-run / cost-estimate output, use ``mirage provision``
-    instead.
-    """
-    payload: dict[str, Any] = {"command": command, "provision": False}
+    """Execute a command in a workspace."""
+    payload: dict[str, Any] = {"command": command}
     if session_id:
         payload["session_id"] = session_id
     if cwd:

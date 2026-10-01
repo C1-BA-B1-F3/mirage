@@ -53,62 +53,6 @@
       }
     },
     {
-      "id": "pg_prov_cat",
-      "seq": 610094,
-      "targets": [
-        "postgres"
-      ],
-      "command": "cat /pg/public/tables/books/rows.jsonl",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=unknown\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "pg_prov_grep",
-      "seq": 610095,
-      "targets": [
-        "postgres"
-      ],
-      "command": "grep x /pg/public/tables/books/rows.jsonl",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=unknown\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "pg_prov_ls",
-      "seq": 610096,
-      "targets": [
-        "postgres"
-      ],
-      "command": "ls /pg/public/tables/books",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "pg_prov_rg",
-      "seq": 610097,
-      "targets": [
-        "postgres"
-      ],
-      "provision": true,
-      "command": "rg x /pg/public/tables/books/rows.jsonl",
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=unknown\n",
-        "stderr": ""
-      }
-    },
-    {
       "id": "pg_head_reports_and_continues",
       "seq": 610098,
       "targets": [

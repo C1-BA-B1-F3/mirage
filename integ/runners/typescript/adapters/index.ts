@@ -1179,7 +1179,13 @@ const LANCEDB_WIDE_CAP = 5
 function lancedbWideRows(): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = []
   for (let i = 0; i < 40; i += 1) {
-    rows.push({ id: `doc-${String(i).padStart(3, '0')}`, label: 'all', name: `row ${String(i)}` })
+    rows.push({
+      id: `doc-${String(i).padStart(3, '0')}`,
+      label: 'all',
+      name: `row ${String(i)}`,
+      score: i / 2,
+      even: i % 2 === 0,
+    })
   }
   return rows
 }
@@ -1199,7 +1205,6 @@ async function openLancedb(target: Target): Promise<Open> {
           groupBy: ['label'],
           idColumn: 'id',
           titleColumn: 'name',
-          textColumn: 'name',
           maxRows: LANCEDB_WIDE_CAP,
         })
       : new LanceDBVFS({
@@ -1207,7 +1212,6 @@ async function openLancedb(target: Target): Promise<Open> {
           groupBy: ['label', 'kind'],
           idColumn: 'id',
           titleColumn: 'name',
-          textColumn: 'name',
         })
     mounts[mount.path] = mount.mode === 'read' ? [vfs, MountMode.READ] : vfs
   }

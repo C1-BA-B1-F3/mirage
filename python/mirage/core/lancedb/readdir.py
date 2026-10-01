@@ -22,7 +22,7 @@ from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.lancedb.query import (ValueTest, distinct_values,
                                        rows_matching, table_columns,
                                        table_exists)
-from mirage.core.lancedb.render import render_card
+from mirage.core.lancedb.render import cell_text, render_card
 from mirage.core.vector.readdir import dir_entry
 from mirage.core.vector.scope import filters_of, table_of
 from mirage.utils.glob_walk import glob_prefix, glob_stem_prefix
@@ -36,7 +36,7 @@ def _row_entries(rows: list[dict[str, Any]],
     # time, so blob entries stay size-unknown and stat renders them itself.
     entries: list[tuple[str, IndexEntry]] = []
     for row in rows:
-        rid = str(row[config.id_column])
+        rid = cell_text(row[config.id_column])
         entries.append((f"{rid}.md",
                         IndexEntry(
                             id=rid,

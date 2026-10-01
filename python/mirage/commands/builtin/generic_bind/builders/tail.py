@@ -36,4 +36,4 @@ async def tail(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               read_range)
 
 
-BUILDER = Builder('tail', tail, None, False, header_aggregate, read=True)
+BUILDER = Builder('tail', tail, aggregate=header_aggregate, read=True)

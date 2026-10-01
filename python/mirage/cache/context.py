@@ -12,11 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Protocol
 
 from mirage.types import FileStat, PathSpec
+
+logger = logging.getLogger(__name__)
 
 
 class CacheInvalidator(Protocol):
@@ -133,6 +136,30 @@ async def invalidate_subtree(path: PathSpec) -> None:
     manager = _active.get()
     if manager is not None:
         await manager.invalidate_subtree(path)
+
+
+async def invalidate_subtree_after(path: PathSpec,
+                                   op: Awaitable[None]) -> None:
+    """Run ``op``, then evict the subtree at ``path``, also when ``op``
+    fails: an op that fails partway (a folder copy that merged some
+    children) has already changed what lies below ``path``. After a
+    failed op an eviction error is logged, not raised, so the caller
+    still learns why the op failed.
+
+    Args:
+        path (PathSpec): Root of the subtree the op changes.
+        op (Awaitable[None]): The backend change.
+    """
+    try:
+        await op
+    except BaseException:
+        try:
+            await invalidate_subtree(path)
+        except Exception as exc:
+            logger.debug("evicting %s after a failed op: %s", path.virtual,
+                         exc)
+        raise
+    await invalidate_subtree(path)
 
 
 async def invalidate_ancestors(path: PathSpec) -> None:

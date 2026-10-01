@@ -13,17 +13,31 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.onedrive import OneDriveAccessor
+from mirage.cache.context import invalidate_subtree_after
 from mirage.core.msgraph.drive import copy_tree
-from mirage.core.onedrive.client import drive_loc, split_path
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
 async def copy(accessor: OneDriveAccessor, src: PathSpec,
                dst: PathSpec) -> None:
-    _, src_s = split_path(src)
-    _, dst_s = split_path(dst)
+    """Copy a file or folder server-side.
+
+    The whole destination subtree is invalidated here, under its own
+    path: a folder copy that merges into an existing folder changes
+    listings below ``dst``, and only the op knows the mount-absolute
+    spelling of ``dst``. A failed copy invalidates too, since a merge
+    may have landed some children before one failed.
+
+    Args:
+        accessor (OneDriveAccessor): OneDrive accessor.
+        src (PathSpec): the item to copy.
+        dst (PathSpec): where the copy lands.
+    """
     config = accessor.config
-    await copy_tree(config,
-                    drive_loc(config, src_s),
-                    drive_loc(config, dst_s),
-                    session=accessor.pool)
+    await invalidate_subtree_after(
+        dst,
+        copy_tree(config,
+                  drive_loc(config, src.vfs_path),
+                  drive_loc(config, dst.vfs_path),
+                  session=accessor.pool))

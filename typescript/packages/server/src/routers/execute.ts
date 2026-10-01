@@ -28,16 +28,17 @@ interface ExecuteParams {
   wsId: string
 }
 
-const ExecuteBodySchema = z.object({
-  command: z.string(),
-  sessionId: z.string().optional(),
-  provision: z.boolean().optional(),
-  agentId: z.string().optional(),
-  cwd: z.string().optional(),
-  runtime: z.string().optional(),
-  stdinBase64: z.string().optional(),
-  record: z.boolean().optional(),
-})
+const ExecuteBodySchema = z
+  .object({
+    command: z.string(),
+    sessionId: z.string().optional(),
+    agentId: z.string().optional(),
+    cwd: z.string().optional(),
+    runtime: z.string().optional(),
+    stdinBase64: z.string().optional(),
+    record: z.boolean().optional(),
+  })
+  .strict()
 
 type ExecuteBody = z.infer<typeof ExecuteBodySchema>
 
@@ -99,7 +100,6 @@ export function registerExecuteRoutes(app: FastifyInstance, deps: ExecuteRoutesD
           ...(body.cwd !== undefined ? { cwd: body.cwd } : {}),
           ...(body.runtime !== undefined ? { runtime: body.runtime } : {}),
           ...(body.record !== undefined ? { record: body.record } : {}),
-          ...(body.provision === true ? { provision: true as const } : {}),
           // Pyodide rejects Node Buffer even though it subclasses Uint8Array.
           ...(stdin !== undefined ? { stdin: new Uint8Array(stdin) } : {}),
           signal,

@@ -21,13 +21,11 @@ import {
   command,
   type CommandFnResult,
   type CommandOpts,
-  type ProvisionFn,
   type RegisteredCommand,
 } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { exactZeroProvision } from '../generic_bind/provision.ts'
 import { defaultPaths } from '../utils/operands.ts'
 
 const ENC = new TextEncoder()
@@ -51,17 +49,13 @@ export function semanticOptions(fl: FlagView): Record<string, JsonValue> {
 /**
  * Build `NAME QUERY [PATH...]` over a backend's native search. A missing
  * query is a usage error; the backend reads the rest of its options off the
- * flags. A null `provision` leaves the default one for the caller to wrap on.
- * Mirrors `make_search` in `commands/builtin/generic/search.py`.
+ * flags. Mirrors `make_search` in `commands/builtin/generic/search.py`.
  */
 export function makeSearch<A extends Accessor>(
   vfs: VFSName,
   capability: SearchOps<A> | undefined,
   options: (fl: FlagView) => Record<string, JsonValue> = semanticOptions,
-  {
-    name = 'search',
-    provision = exactZeroProvision as ProvisionFn,
-  }: { name?: string; provision?: ProvisionFn | null } = {},
+  { name = 'search' }: { name?: string } = {},
 ): RegisteredCommand[] {
   async function search(
     accessor: A,
@@ -93,6 +87,5 @@ export function makeSearch<A extends Accessor>(
     vfs,
     spec: specOf('search'),
     fn: search,
-    ...(provision !== null ? { provision } : {}),
   })
 }

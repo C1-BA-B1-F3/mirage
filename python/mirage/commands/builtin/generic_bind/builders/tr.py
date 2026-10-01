@@ -35,4 +35,4 @@ async def tr(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('tr', tr, None, False, None, read=True)
+BUILDER = Builder('tr', tr, read=True)

@@ -32,4 +32,4 @@ async def expand(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                 bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('expand', expand, None, False, None, read=True)
+BUILDER = Builder('expand', expand, read=True)

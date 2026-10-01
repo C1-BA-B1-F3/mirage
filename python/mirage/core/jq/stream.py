@@ -453,13 +453,3 @@ def value_text(text: bytes) -> "str | NoValue":
     if parser.next() is not NO_VALUE:
         return NO_VALUE
     return value
-
-
-def is_jsonl_path(path: str) -> bool:
-    """Whether a file's name says it holds JSON Lines, one document to a
-    line, which jq reads one line at a time.
-
-    Args:
-        path (str): the file's path.
-    """
-    return path.endswith(".jsonl") or path.endswith(".ndjson")

@@ -104,7 +104,6 @@ def capped(tmp_path) -> LanceDBAccessor:
                       group_by=["label"],
                       id_column="id",
                       title_column="name",
-                      text_column="name",
                       max_rows=CAP))
 
 
@@ -156,7 +155,6 @@ def underscored(tmp_path) -> LanceDBAccessor:
                       group_by=["label"],
                       id_column="id",
                       title_column="name",
-                      text_column="name",
                       max_rows=2))
 
 
@@ -207,8 +205,7 @@ def slashed(tmp_path) -> LanceDBAccessor:
                       table="docs",
                       group_by=["label"],
                       id_column="id",
-                      title_column="name",
-                      text_column="name"))
+                      title_column="name"))
 
 
 @pytest.mark.asyncio
@@ -268,7 +265,6 @@ def crowded(tmp_path) -> LanceDBAccessor:
                       group_by=["label"],
                       id_column="id",
                       title_column="name",
-                      text_column="name",
                       max_rows=CAP))
 
 

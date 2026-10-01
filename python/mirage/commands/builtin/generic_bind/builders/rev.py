@@ -32,4 +32,4 @@ async def rev(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('rev', rev, None, False, None, read=True)
+BUILDER = Builder('rev', rev, read=True)

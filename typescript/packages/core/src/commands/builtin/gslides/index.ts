@@ -14,12 +14,9 @@
 
 import type { GSlidesAccessor } from '../../../accessor/gslides.ts'
 import { VFSName } from '../../../types.ts'
-import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
+import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GSLIDES_IO } from './io.ts'
-import { fileReadProvision } from './_provision.ts'
 import { GSLIDES_RM } from './rm.ts'
 
 // Slides API passthroughs live in the gws CLI
@@ -28,15 +25,6 @@ import { GSLIDES_RM } from './rm.ts'
 export const GSLIDES_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GSlidesAccessor>(VFSName.GSLIDES, GSLIDES_IO, {
     overrides: new Set(['rm']),
-    provisionOverrides: {
-      grep: fileReadProvision as ProvisionFn,
-      rg: fileReadProvision as ProvisionFn,
-    },
   }),
-  ...withDefaultProvisions(
-    [...GSLIDES_RM],
-    GSLIDES_IO.stat,
-    resolveGlobOf(GSLIDES_IO),
-    GSLIDES_IO.readdir,
-  ),
+  ...GSLIDES_RM,
 ]

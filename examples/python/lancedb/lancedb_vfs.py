@@ -40,7 +40,6 @@ async def main() -> None:
         title_column="productDisplayName",
         blob_column="image_bytes",
         blob_ext="jpg",
-        text_column="productDisplayName",
         vector_column="vector",
         search_limit=4,
     )

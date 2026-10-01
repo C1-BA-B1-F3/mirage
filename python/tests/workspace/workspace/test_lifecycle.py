@@ -46,11 +46,10 @@ _RELEASE: list[asyncio.Event] = []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action", [
-    "glob", "midpath", "provision", "metadata", "touch", "chmod", "chown",
-    "chgrp"
-])
-async def test_first_mount_access_prepares_expansion_and_provision(action):
+@pytest.mark.parametrize(
+    "action",
+    ["glob", "midpath", "metadata", "touch", "chmod", "chown", "chgrp"])
+async def test_first_mount_access_prepares_expansion(action):
 
     class IndexedRAM(RAMVFS):
 
@@ -98,14 +97,9 @@ async def test_first_mount_access_prepares_expansion_and_provision(action):
         directory,
         [("stale.txt",
           IndexEntry(id="old", name="stale.txt", resource_type="file"))])
-    await ws.cache.set("/data/file", b"old")
     ws.add_mount("/data", replacement, MountMode.WRITE)
     try:
-        if action == "provision":
-            result = await ws.shell("cat /data/file", provision=True)
-            assert result.cache_hits == 0
-            assert (await ws.shell("cat /data/file")).stdout == b"new"
-        elif action == "metadata":
+        if action == "metadata":
             expanded = await expand_operands(ws._namespace, [
                 PathSpec(virtual="/data/*.txt",
                          directory="/data/",

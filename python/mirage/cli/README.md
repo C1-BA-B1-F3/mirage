@@ -29,7 +29,7 @@ mirage workspace delete myws
 mirage daemon stop
 ```
 
-Other command groups: `session`, `provision`, `daemon`, plus
+Other command groups: `session`, `daemon`, plus
 `workspace clone|snapshot|load`. Run `mirage <command> --help` for details.
 
 ## Environment variables

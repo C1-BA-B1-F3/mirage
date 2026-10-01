@@ -3,7 +3,7 @@ from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
-from mirage.core.onedrive.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.onedrive.rename import rename
 from mirage.types import PathSpec
 

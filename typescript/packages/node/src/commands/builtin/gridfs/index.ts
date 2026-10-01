@@ -12,11 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import {
-  makeGenericCommands,
-  resolveGlobOf,
-  withDefaultProvisions,
-} from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
+import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import {
   makeObjectStoreCommands,
   OBJECT_STORE_OVERRIDES,
@@ -30,10 +26,5 @@ export const GRIDFS_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GridFSAccessor>(VFSName.GRIDFS, GRIDFS_IO, {
     overrides: OBJECT_STORE_OVERRIDES,
   }),
-  ...withDefaultProvisions(
-    makeObjectStoreCommands(VFSName.GRIDFS, GRIDFS_IO),
-    GRIDFS_IO.stat,
-    resolveGlobOf(GRIDFS_IO),
-    GRIDFS_IO.readdir,
-  ),
+  ...makeObjectStoreCommands(VFSName.GRIDFS, GRIDFS_IO),
 ]

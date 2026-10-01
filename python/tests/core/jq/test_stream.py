@@ -18,8 +18,8 @@ import math
 import pytest
 
 from mirage.core.jq.parse import JqParser
-from mirage.core.jq.stream import (READ_CHUNK, InputReader, is_jsonl_path,
-                                   pieces_through, read_texts, value_text)
+from mirage.core.jq.stream import (READ_CHUNK, InputReader, pieces_through,
+                                   read_texts, value_text)
 from mirage.core.jq.types import NO_VALUE, InputSource, JqOptions, JqParseError
 
 
@@ -473,9 +473,3 @@ def test_value_text_takes_one_value_as_jv_parse_does():
     assert value_text(b"") is NO_VALUE
     assert value_text(b"nope") is NO_VALUE
     assert value_text(b"[1,") is NO_VALUE
-
-
-def test_is_jsonl_path():
-    assert is_jsonl_path("/d/f.jsonl")
-    assert is_jsonl_path("/d/f.ndjson")
-    assert not is_jsonl_path("/d/f.json")

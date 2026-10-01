@@ -32,4 +32,4 @@ async def tac(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('tac', tac, None, False, None, read=True)
+BUILDER = Builder('tac', tac, read=True)

@@ -29,4 +29,4 @@ async def dirname(ops: CommandIO, accessor: Accessor,
     return await generic_dirname(*texts, zero=fl.as_bool("zero"))
 
 
-BUILDER = Builder('dirname', dirname, None, False, None)
+BUILDER = Builder('dirname', dirname)

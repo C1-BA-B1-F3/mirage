@@ -14,6 +14,7 @@
 
 import type { DifyAccessor } from '../../accessor/dify.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
+import { epochToIso } from '../../utils/dates.ts'
 import { gnuBasename } from '../../utils/path.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { dirRows, dropCollisions, normalizeSlug, scalarString } from '../slug_tree/rows.ts'
@@ -71,15 +72,17 @@ export function buildDirEntries(
   return dirRows(
     kept,
     prefix,
+    // No size: the API's is the uploaded source file (a PDF, say), not the
+    // segment text this mount serves, so it rides in extra.
     (path, document) =>
       new IndexEntry({
         id: scalarString(document.id) ?? '',
         name: gnuBasename(path),
         resourceType: 'file',
-        size: extractDocumentSize(document),
-        remoteTime: timestampToIso(document.created_at),
+        remoteTime: epochText(document.created_at) ?? '',
         extra: {
           slug: stripSlash(path),
+          source_size: extractDocumentSize(document),
           slug_metadata_name: slugMetadataName,
           raw_slug: rawSlugs.get(path) ?? '',
           has_slug: hasSlugs.get(path) ?? false,
@@ -129,10 +132,10 @@ export function extractDocumentSize(document: Record<string, unknown>): number |
   return null
 }
 
-export function timestampToIso(value: unknown): string {
-  if (typeof value === 'number') return new Date(value * 1000).toISOString()
-  if (typeof value === 'string') return value
-  return ''
+/** A Dify timestamp (epoch seconds) as `YYYY-MM-DDTHH:MM:SSZ`; a string passes through. */
+export function epochText(value: unknown): string | null {
+  if (typeof value === 'number') return epochToIso(value)
+  return typeof value === 'string' ? value : null
 }
 
 export const DIFY_TREE = new SlugTree<DifyAccessor>(loadTree)

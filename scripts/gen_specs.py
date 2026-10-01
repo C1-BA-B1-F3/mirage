@@ -93,24 +93,21 @@ def _collect_registrations() -> dict[str, list[RegisteredCommand]]:
 def _by_vfs(rcs: list[RegisteredCommand]) -> dict[str, Any]:
     """Per-registration metadata, keyed by VFS.
 
-    The union flags below cannot say *which* VFS carries a provision,
-    an aggregate, the write flag or a filetype, so dropping one backend's
-    provision while another keeps it leaves every union unchanged. Key the
-    same facts by VFS so the parity check sees that difference.
+    The union flags below cannot say *which* VFS carries an aggregate,
+    the write flag or a filetype, so dropping one backend's aggregate
+    while another keeps it leaves every union unchanged. Key the same
+    facts by VFS so the parity check sees that difference.
 
     Args:
         rcs (list[RegisteredCommand]): every registration for one command.
     """
     out: dict[str, Any] = {}
     for rc in rcs:
-        entry = out.setdefault(
-            rc.vfs if rc.vfs is not None else "", {
-                "has_provision": False,
-                "has_aggregate": False,
-                "has_write": False,
-                "filetypes": set(),
-            })
-        entry["has_provision"] |= rc.provision_fn is not None
+        entry = out.setdefault(rc.vfs if rc.vfs is not None else "", {
+            "has_aggregate": False,
+            "has_write": False,
+            "filetypes": set(),
+        })
         entry["has_aggregate"] |= rc.aggregate is not None
         entry["has_write"] |= bool(rc.write)
         if rc.filetype is not None:
@@ -122,7 +119,6 @@ def _meta_for(rcs: list[RegisteredCommand]) -> dict[str, Any]:
     vfs_names = sorted({rc.vfs for rc in rcs if rc.vfs is not None})
     filetypes = sorted({rc.filetype for rc in rcs if rc.filetype is not None})
     return {
-        "has_provision": any(rc.provision_fn is not None for rc in rcs),
         "has_aggregate": any(rc.aggregate is not None for rc in rcs),
         "has_write": any(rc.write for rc in rcs),
         "vfs_names": vfs_names,

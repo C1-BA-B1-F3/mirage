@@ -15,9 +15,7 @@
 import type { GCalAccessor } from '../../../accessor/gcal.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GCAL_IO } from './io.ts'
 import { GCAL_RM } from './rm.ts'
 
@@ -26,5 +24,5 @@ import { GCAL_RM } from './rm.ts'
 // filesystem surface, and rm is the one mutation a path can express.
 export const GCAL_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GCalAccessor>(VFSName.GCAL, GCAL_IO, { overrides: new Set(['rm']) }),
-  ...withDefaultProvisions([...GCAL_RM], GCAL_IO.stat, resolveGlobOf(GCAL_IO), GCAL_IO.readdir),
+  ...GCAL_RM,
 ]

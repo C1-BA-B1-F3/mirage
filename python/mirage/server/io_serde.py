@@ -16,20 +16,13 @@ from dataclasses import asdict
 from typing import Any
 
 from mirage.io.types import IOResult
-from mirage.provision.types import ProvisionResult
 
 
-async def io_result_to_dict(
-        result: IOResult | ProvisionResult | None) -> dict[str, Any]:
+async def io_result_to_dict(result: IOResult | None) -> dict[str, Any]:
     """Materialize an IOResult into a JSON-friendly dict.
 
-    Falls back to ``result.model_dump()`` for ``ProvisionResult`` (which
-    uses pydantic), so the same helper handles both ``mirage provision``
-    and normal execute outputs.
-
     Args:
-        result (IOResult | ProvisionResult | None): the
-            workspace.shell return value.
+        result (IOResult | None): the workspace.shell return value.
 
     Returns:
         dict[str, Any]: serializable response payload.
@@ -49,6 +42,4 @@ async def io_result_to_dict(
             "refusal":
             (asdict(result.refusal) if result.refusal is not None else None),
         }
-    if isinstance(result, ProvisionResult):
-        return {"kind": "provision", **result.model_dump()}
     return {"kind": "raw", "value": str(result)}

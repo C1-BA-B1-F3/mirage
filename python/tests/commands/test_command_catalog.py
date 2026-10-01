@@ -24,14 +24,6 @@ async def _handler(accessor, paths, texts, opts):
     return None, None
 
 
-async def _replacement_handler(accessor, paths, texts, opts):
-    return None, None
-
-
-async def _provision(*args, **kwargs):
-    return None
-
-
 def _decorated(name: str, filetype: str | None = None):
     return command(name, vfs="s3", spec=CommandSpec(),
                    filetype=filetype)(_handler)
@@ -65,46 +57,14 @@ def test_catalog_get_and_require_have_explicit_missing_behavior():
         catalog.require("missing")
 
 
-def test_catalog_is_an_immutable_snapshot():
+def test_catalog_is_a_snapshot_of_its_source():
     source = [_decorated("cat")]
     catalog = CommandCatalog(source)
 
     source.append(_decorated("tail"))
 
     assert len(catalog) == 1
-    with pytest.raises(FrozenInstanceError):
-        catalog._items = ()
-
-
-def test_with_overrides_returns_an_independent_definition():
-    original = RegisteredCommand(name="cat",
-                                 spec=CommandSpec(),
-                                 vfs="s3",
-                                 filetype=None,
-                                 fn=_handler)
-
-    changed = original.with_overrides(fn=_replacement_handler,
-                                      provision=_provision)
-
-    assert changed is not original
-    assert changed.fn is _replacement_handler
-    assert changed.provision_fn is _provision
-    assert original.fn is _handler
-    assert original.provision_fn is None
-
-
-def test_with_overrides_can_clear_a_provision():
-    original = RegisteredCommand(name="cat",
-                                 spec=CommandSpec(),
-                                 vfs="s3",
-                                 filetype=None,
-                                 fn=_handler,
-                                 provision_fn=_provision)
-
-    changed = original.with_overrides(provision=None)
-
-    assert changed.provision_fn is None
-    assert original.provision_fn is _provision
+    assert catalog.get("tail") is None
 
 
 def test_registered_command_is_immutable():
@@ -116,6 +76,23 @@ def test_registered_command_is_immutable():
 
     with pytest.raises(FrozenInstanceError):
         registered.name = "tail"
+
+
+def test_with_overrides_returns_an_independent_definition():
+    original = RegisteredCommand(name="cat",
+                                 spec=CommandSpec(),
+                                 vfs="s3",
+                                 filetype=None,
+                                 fn=_handler)
+
+    async def replacement(accessor, paths, texts, opts):
+        return None, None
+
+    changed = original.with_overrides(fn=replacement)
+
+    assert changed is not original
+    assert changed.fn is replacement
+    assert original.fn is _handler
 
 
 def test_s3_commands_expose_static_lookup():

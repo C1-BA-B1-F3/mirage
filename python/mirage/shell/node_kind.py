@@ -20,14 +20,11 @@ from mirage.shell.types import NodeType as NT
 
 
 class NodeKind(StrEnum):
-    """Statement kinds both tree walkers dispatch on.
+    """Statement kinds the executor dispatches on.
 
-    The executor and the provision planner walk the same tree-sitter
-    AST. This enum is the single classification both use, so a
-    construct cannot be supported by one walker and silently
-    unclassified by the other: `node_kind` owns every tree-sitter
-    node-type check, including the lookahead that distinguishes
-    `select` from `for` and `until` from `while`.
+    `node_kind` owns every tree-sitter node-type check, including the
+    lookahead that distinguishes `select` from `for` and `until` from
+    `while`.
     """
     COMMENT = "comment"
     PROGRAM = "program"

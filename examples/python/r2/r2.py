@@ -44,43 +44,12 @@ def ops_summary() -> str:
 
 
 async def main():
-    print("=== PLAN ESTIMATES ===\n")
-
-    dr = await ws.shell("grep mirage /r2/data/example.jsonl", provision=True)
-    print("--- plan: grep mirage /r2/data/example.jsonl ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}, precision: {dr.precision}")
-
-    dr = await ws.shell("grep mirage /r2/data/example.jsonl | head -n 3",
-                        provision=True)
-    print("\n--- plan: grep mirage ... | head -n 3 ---")
-    print(f"  op: {dr.op}, children: {len(dr.children)}")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  precision: {dr.precision}")
-    for c in dr.children:
-        net, cache = c.network_read, c.cache_read
-        print(f"    {c.command}: net={net}, cache={cache}, {c.precision}")
-
-    dr = await ws.shell("grep mirage /r2/data/example.jsonl && echo found",
-                        provision=True)
-    print("\n--- plan: grep ... && echo found ---")
-    print(f"  op: {dr.op}, network_read: {dr.network_read}")
-    for c in dr.children:
-        print(f"    {c.command}: net={c.network_read}, {c.precision}")
-
-    print(f"\n  Stats after plans (should be 0): {ops_summary()}")
-
-    print("\n--- caching: cat /r2/data/example.jsonl | wc -l ---")
+    print("--- caching: cat /r2/data/example.jsonl | wc -l ---")
     result = await ws.shell("cat /r2/data/example.jsonl | wc -l")
     print(f"  lines: {(await result.stdout_str()).strip()}")
     print(f"  Stats after caching: {ops_summary()}")
 
-    dr = await ws.shell("grep mirage /r2/data/example.jsonl", provision=True)
-    print("\n--- plan after cache: grep mirage ... ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  cache_hits: {dr.cache_hits}, read_ops: {dr.read_ops}")
-
-    print("\n=== ACTUAL EXECUTION ===\n")
+    print("\n=== EXECUTION ===\n")
 
     print("--- grep mirage /r2/data/example.jsonl ---")
     output = await (

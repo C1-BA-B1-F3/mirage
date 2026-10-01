@@ -202,17 +202,6 @@ async def main() -> None:
     result = await ws.shell("head -c 8 /dev/zero | xxd")
     print(await result.stdout_str())
 
-    # ── provision: dry-run cost estimates (nothing executes) ────────
-    # Read families estimate bytes from stat; pipes/&&/; sum, || takes
-    # a min-max envelope, and writes report UNKNOWN.
-    print("\n=== PROVISION (dry-run cost estimates) ===\n")
-    for cmd in ("cat /data/hello.txt", "sort /data/hello.txt | head -n 1",
-                "head /data/hello.txt || cat /data/hello.txt",
-                "tee /data/out.txt"):
-        plan = await ws.shell(cmd, provision=True)
-        print(f"  {cmd}: net={plan.network_read} ops={plan.read_ops} "
-              f"precision={plan.precision.value}")
-
     # ── persistence: save / load / copy / deepcopy ──────────────────
     # RAM has no redacted config: full content is in the snapshot, so
     # no mounts= needed at load time.

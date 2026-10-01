@@ -67,7 +67,6 @@ import type { MountRegistry } from '../mount/registry.ts'
 import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import {
   Consumer,
-  SHELL_NAMES,
   SLASH_KEEPS_LAST,
   WordPolicy,
   followsLastComponent,
@@ -327,15 +326,8 @@ export function redirectPaths(
  * reaches the host, which is what makes it safe for `explain`;
  * `admit` adds exactly those and renders.
  *
- * `definedFn` is the caller vouching the head word is a shell function
- * defined by run time. The provision walk vouches for a function its
- * own script defines — the run stores that definition in the session
- * before the call, a dry run keeps it in plan state, where neither
- * `commandVisible` nor `isTool` can see it. The word is then judged
- * exactly as the run would judge it: exempt from the allow lists
- * unless a builtin shadows it (`SHELL_NAMES`), and `ctx.tool` false
- * accordingly. `intrinsic` keeps shell-provided operations subject to
- * tool allow lists even when a function shadows their policy name.
+ * `intrinsic` keeps shell-provided operations subject to tool allow lists
+ * even when a function shadows their policy name.
  */
 export async function gate(
   name: string,
@@ -347,10 +339,9 @@ export async function gate(
   agentId = '',
   stdin: ByteSource | null = null,
   redirects: readonly PathSpec[] = [],
-  definedFn = false,
   intrinsic = false,
 ): Promise<Refused | [CommandContext, Deny | Ask | null]> {
-  const tool = intrinsic || (definedFn ? SHELL_NAMES.has(name) : isTool(name, session))
+  const tool = intrinsic || isTool(name, session)
   if (tool && !listed(name, session)) {
     return {
       stderr: new TextEncoder().encode(`${name}: command not found\n`),
@@ -419,7 +410,6 @@ export async function admit(
     agentId,
     stdin,
     redirects,
-    false,
     intrinsic,
   )
   if (!Array.isArray(gated)) return gated

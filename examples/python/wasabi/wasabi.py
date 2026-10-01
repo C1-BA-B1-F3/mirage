@@ -46,11 +46,6 @@ async def main():
     r = await ws.shell("find /wasabi/ -name '*.json' | head -n 5")
     print("find *.json:\n" + await r.stdout_str())
 
-    r = await ws.shell("grep -m 1 mirage /wasabi/data/example.jsonl",
-                       provision=True)
-    print(f"plan grep -m 1: network_read={r.network_read} "
-          f"precision={r.precision}")
-
     print(f"\nStats: {ops_summary()}")
 
 

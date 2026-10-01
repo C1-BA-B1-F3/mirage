@@ -61,6 +61,24 @@ async def test_execute_sync_returns_io_result():
 
 
 @pytest.mark.asyncio
+async def test_execute_refuses_an_unknown_field():
+    app = build_app(idle_grace_seconds=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport,
+                           base_url="http://test") as client:
+        wid = await _create_workspace(client)
+        r = await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={
+                "command": "echo hello",
+                "provision": True
+            },
+        )
+        assert r.status_code == 400, r.text
+        assert "provision" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_execute_honors_cwd():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)

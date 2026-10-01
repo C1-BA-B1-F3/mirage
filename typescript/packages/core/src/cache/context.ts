@@ -136,6 +136,31 @@ export async function invalidateSubtree(path: string | PathSpec): Promise<void> 
 }
 
 /**
+ * Run `op`, then evict the subtree at `path`, also when `op` fails: an op
+ * that fails partway (a folder copy that merged some children) has already
+ * changed what lies below `path`. After a failed op an eviction error is
+ * reported, not thrown, so the caller still learns why the op failed.
+ *
+ * Args:
+ *   path: root of the subtree the op changes.
+ *   op: the backend change.
+ */
+export async function invalidateSubtreeAfter(
+  path: PathSpec,
+  op: () => Promise<void>,
+): Promise<void> {
+  try {
+    await op()
+  } catch (error) {
+    await invalidateSubtree(path).catch((evictError: unknown) => {
+      console.warn(`evicting ${path.virtual} after a failed op: ${String(evictError)}`)
+    })
+    throw error
+  }
+  await invalidateSubtree(path)
+}
+
+/**
  * Evict every ancestor directory listing of `path`.
  *
  * A single invalidateAfterWrite only refreshes the immediate parent

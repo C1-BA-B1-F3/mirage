@@ -45,11 +45,11 @@
       "targets": [
         "ram-history"
       ],
-      "command": "tail -c 1 /.bash_history /nope",
+      "command": "tail -c 1 /.bash_history /nope; sort /.bash_history | grep -m1 marker-one; cat /.bash_history/; ls /.bash_history/",
       "expect": {
-        "exit": 1,
-        "stdout": "==> /.bash_history <==\n\n",
-        "stderr": "tail: cannot open '/nope' for reading: No such file or directory\n"
+        "exit": 2,
+        "stdout": "==> /.bash_history <==\n\ncat /.bash_history | grep -c marker-one\n",
+        "stderr": "tail: cannot open '/nope' for reading: No such file or directory\ncat: /.bash_history/: Not a directory\nls: cannot access '/.bash_history/': Not a directory\n"
       }
     }
   ]

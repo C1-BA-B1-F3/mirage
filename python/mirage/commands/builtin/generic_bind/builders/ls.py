@@ -45,4 +45,4 @@ async def ls(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             partial(ops.readdir, accessor), stat_fn)
 
 
-BUILDER = Builder('ls', ls, None, False, None)
+BUILDER = Builder('ls', ls)

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { helpPage, versionLine } from '../../../../commands/config.ts'
+import { helpPage, versionLine } from '../../../../commands/spec/standard.ts'
 import { quoteText } from '../../../../commands/quote.ts'
 import { specOf } from '../../../../commands/spec/index.ts'
 import { NUMERIC_SHORT } from '../../../../commands/spec/constants.ts'

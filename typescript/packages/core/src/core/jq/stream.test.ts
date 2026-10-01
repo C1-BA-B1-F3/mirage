@@ -14,14 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { JqParser } from './parse.ts'
-import {
-  InputReader,
-  READ_CHUNK,
-  isJsonlPath,
-  piecesThrough,
-  readTexts,
-  valueText,
-} from './stream.ts'
+import { InputReader, READ_CHUNK, piecesThrough, readTexts, valueText } from './stream.ts'
 import { JqParseError, NO_VALUE, jqOptions, type InputSource, type JqOptions } from './types.ts'
 import { eacces, eisdir, enoent } from '../../utils/errors.ts'
 
@@ -502,13 +495,5 @@ describe('valueText', () => {
     expect(valueText(bytes(''))).toBe(NO_VALUE)
     expect(valueText(bytes('nope'))).toBe(NO_VALUE)
     expect(valueText(bytes('[1,'))).toBe(NO_VALUE)
-  })
-})
-
-describe('isJsonlPath', () => {
-  it('knows JSON Lines by name', () => {
-    expect(isJsonlPath('/d/f.jsonl')).toBe(true)
-    expect(isJsonlPath('/d/f.ndjson')).toBe(true)
-    expect(isJsonlPath('/d/f.json')).toBe(false)
   })
 })

@@ -1,6 +1,17 @@
 import pytest
+from aioresponses import aioresponses
 
-from mirage.core.msgraph.client import id_segment
+from mirage.core.msgraph.client import (GraphError, encoded_path, graph_get,
+                                        graph_get_bytes, graph_list,
+                                        graph_post_monitor, headers,
+                                        id_segment)
+from mirage.core.msgraph.config import MsGraphConfig
+
+_ROOT = "https://graph.microsoft.com/v1.0/me/drive/root"
+
+
+def _cfg(**kw) -> MsGraphConfig:
+    return MsGraphConfig(access_token="tok", **kw)
 
 
 @pytest.mark.parametrize("value,expected", [
@@ -28,3 +39,127 @@ def test_id_segment_escapes_the_guest_upn_fragment():
     # URL fragment, so Graph is asked for a truncated path and answers
     # 404 for a user that exists.
     assert "#" not in id_segment("guest_contoso.com#EXT#@fabrikam.com")
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("a b/c.txt", "a%20b/c.txt"),
+    ("/a(1)/b!*'.txt", "a(1)/b!*'.txt"),
+    ("x#y/z?.md", "x%23y/z%3F.md"),
+])
+def test_encoded_path_escapes_each_segment_like_typescript(path, expected):
+    assert encoded_path(path) == expected
+
+
+@pytest.mark.parametrize("token,expected", [
+    ("tok", "Bearer tok"),
+    (lambda: "live", "Bearer live"),
+])
+def test_headers_carry_the_bearer_token(token, expected):
+    assert headers(
+        MsGraphConfig(access_token=token))["Authorization"] == (expected)
+
+
+@pytest.mark.asyncio
+async def test_graph_get_returns_parsed_json():
+    with aioresponses() as m:
+        m.get(_ROOT, payload={"id": "01ABC", "name": "root"})
+        result = await graph_get(_cfg(), _ROOT)
+    assert result["id"] == "01ABC"
+
+
+@pytest.mark.asyncio
+async def test_graph_get_raises_grapherror_with_status():
+    with aioresponses() as m:
+        m.get(_ROOT,
+              status=404,
+              payload={"error": {
+                  "code": "itemNotFound",
+                  "message": "nope"
+              }})
+        with pytest.raises(GraphError) as exc:
+            await graph_get(_cfg(), _ROOT)
+    assert exc.value.status == 404
+    assert exc.value.code == "itemNotFound"
+
+
+@pytest.mark.asyncio
+async def test_graph_post_monitor_requires_location_header():
+    url = _ROOT + ":/a.txt:/copy"
+    with aioresponses() as m:
+        m.post(url, status=202, payload={})
+        with pytest.raises(GraphError) as exc:
+            await graph_post_monitor(_cfg(), url)
+    assert exc.value.code == "missingMonitor"
+
+
+@pytest.mark.asyncio
+async def test_graph_list_follows_odata_nextlink():
+    page2 = _ROOT + "/children?$skiptoken=abc"
+    with aioresponses() as m:
+        m.get(_ROOT + "/children",
+              payload={
+                  "value": [{
+                      "id": "a"
+                  }],
+                  "@odata.nextLink": page2
+              })
+        m.get(page2, payload={"value": [{"id": "b"}]})
+        items = await graph_list(_cfg(), _ROOT + "/children")
+    assert [i["id"] for i in items] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_graph_get_bytes_returns_raw_content():
+    url = _ROOT + ":/a.txt:/content"
+    with aioresponses() as m:
+        m.get(url, body=b"hello bytes")
+        data = await graph_get_bytes(_cfg(), url)
+    assert data == b"hello bytes"
+
+
+@pytest.mark.asyncio
+async def test_request_retries_on_429_then_succeeds():
+    with aioresponses() as m:
+        m.get(_ROOT, status=429, headers={"Retry-After": "0"})
+        m.get(_ROOT, payload={"id": "ok"})
+        result = await graph_get(_cfg(), _ROOT)
+    assert result["id"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_request_gives_up_after_max_retries():
+    with aioresponses() as m:
+        for _ in range(3):
+            m.get(_ROOT, status=429, headers={"Retry-After": "0"})
+        with pytest.raises(GraphError) as exc:
+            await graph_get(_cfg(max_retries=2), _ROOT)
+    assert exc.value.status == 429
+
+
+@pytest.mark.asyncio
+async def test_401_refreshes_callable_token_once_then_succeeds():
+    calls = {"n": 0}
+
+    def provider():
+        calls["n"] += 1
+        return "fresh" if calls["n"] > 1 else "stale"
+
+    with aioresponses() as m:
+        m.get(_ROOT,
+              status=401,
+              payload={"error": {
+                  "code": "InvalidAuthenticationToken"
+              }})
+        m.get(_ROOT, payload={"id": "ok"})
+        result = await graph_get(MsGraphConfig(access_token=provider), _ROOT)
+    assert result["id"] == "ok"
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_401_with_static_token_does_not_retry():
+    with aioresponses() as m:
+        m.get(_ROOT, status=401, payload={"error": {"code": "x"}})
+        with pytest.raises(GraphError) as exc:
+            await graph_get(_cfg(), _ROOT)
+    assert exc.value.status == 401

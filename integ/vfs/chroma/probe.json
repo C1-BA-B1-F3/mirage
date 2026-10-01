@@ -51,48 +51,6 @@
         "stdout": "",
         "stderr": "sed: -i not supported on this backend: Permission denied\n"
       }
-    },
-    {
-      "id": "chroma_prov_cat",
-      "seq": 630051,
-      "targets": [
-        "chroma"
-      ],
-      "command": "cat /knowledge/guides/auth.md",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=188 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "chroma_prov_grep",
-      "seq": 630052,
-      "targets": [
-        "chroma"
-      ],
-      "command": "grep x /knowledge/guides/auth.md",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=188 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "chroma_prov_ls",
-      "seq": 630053,
-      "targets": [
-        "chroma"
-      ],
-      "command": "ls /knowledge/guides",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
     }
   ]
 }

@@ -17,9 +17,7 @@ from dataclasses import replace
 from mirage.commands.builtin.dify.io import IO as _IO
 from mirage.commands.builtin.dify.search import search
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
-from mirage.commands.builtin.slug_tree.find import make_find
+from mirage.commands.builtin.slug_tree.find import make_find, reads_times
 from mirage.core.dify.stat import stat, stat_light
 from mirage.core.dify.tree import DIFY_TREE
 
@@ -30,7 +28,6 @@ COMMANDS = [
         overrides={"find"},
         ops_overrides={"ls": replace(_IO, stat=stat_light)},
     ),
-    *with_default_provisions(
-        [make_find("dify", _IO, DIFY_TREE, stat, stat_light), search],
-        _IO.stat, _IO.resolve_glob, _IO.readdir),
+    make_find("dify", _IO, DIFY_TREE, stat, stat_light, reads_times),
+    search,
 ]

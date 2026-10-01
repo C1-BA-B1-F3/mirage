@@ -13,8 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
 from mirage.commands.builtin.github.du import du
 from mirage.commands.builtin.github.find import find
 from mirage.commands.builtin.github.grep import grep
@@ -29,6 +27,8 @@ COMMANDS = [
         _IO,
         overrides=_GITHUB_OVERRIDES,
     ),
-    *with_default_provisions([du, find, grep, rg], _IO.stat, _IO.resolve_glob,
-                             _IO.readdir),
+    du,
+    find,
+    grep,
+    rg,
 ]

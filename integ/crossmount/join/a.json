@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "join -a 1 /data/xj1.txt /data2/xj2.txt && rm /data/xc1.txt /data2/xc2.txt /data/xj1.txt /data2/xj2.txt",
+      "command": "join -a 1 /data/xj1.txt /data2/xj2.txt && join -j 2 -a 1 -a 2 /data/xj1.txt /data2/xj2.txt && rm /data/xc1.txt /data2/xc2.txt /data/xj1.txt /data2/xj2.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1 alpha one\n2 beta\n",
+        "stdout": "1 alpha one\n2 beta\nalpha 1\nbeta 2\none 1\nthree 3\n",
         "stderr": ""
       }
     }

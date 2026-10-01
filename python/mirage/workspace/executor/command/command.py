@@ -25,10 +25,10 @@ from mirage.commands.builtin.generic.program import (PROGRAM_FILE_COMMANDS,
                                                      program_files)
 from mirage.commands.builtin.utils.identity import identity_from
 from mirage.commands.builtin.utils.limit import maybe_with_timeout
-from mirage.commands.config import standard_request
 from mirage.commands.errors import FindParseError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.builtins import registered_spec
+from mirage.commands.spec.standard import standard_request
 from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource

@@ -1825,7 +1825,9 @@ LANCEDB_WIDE_CAP = 5
 LANCEDB_WIDE_ROWS = [{
     "id": f"doc-{i:03d}",
     "label": "all",
-    "name": f"row {i}"
+    "name": f"row {i}",
+    "score": i / 2,
+    "even": i % 2 == 0
 } for i in range(40)]
 
 
@@ -1854,14 +1856,12 @@ class LanceDBService:
                               group_by=["label"],
                               id_column="id",
                               title_column="name",
-                              text_column="name",
                               max_rows=LANCEDB_WIDE_CAP))
         return LanceDBVFS(
             LanceDBConfig(uri=self.uri,
                           group_by=["label", "kind"],
                           id_column="id",
-                          title_column="name",
-                          text_column="name"))
+                          title_column="name"))
 
     async def teardown(self) -> None:
         shutil.rmtree(self.uri, ignore_errors=True)

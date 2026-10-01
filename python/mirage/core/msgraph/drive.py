@@ -17,10 +17,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any, Protocol, TypeVar
-from urllib.parse import quote
 
 from mirage.accessor.base import Accessor
-from mirage.cache.context import invalidate_after_write
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 ResourceType)
 from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
@@ -29,15 +27,16 @@ from mirage.core.api.client import SessionArg
 from mirage.core.msgraph.client import (GraphError, graph_delete, graph_get,
                                         graph_get_bytes, graph_list,
                                         graph_patch, graph_post,
-                                        graph_post_monitor, graph_stream,
-                                        poll_monitor, session_scope,
-                                        upload_chunk)
+                                        graph_post_monitor, graph_put_bytes,
+                                        graph_stream, id_segment, poll_monitor,
+                                        session_scope, upload_chunk)
 from mirage.core.msgraph.config import MsGraphConfig
 from mirage.observe.context import (active_recorder, record, record_stream,
                                     revision_for, start_op)
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent, enotsup, listing_error
 from mirage.utils.filetype import content_type_for_path
+from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.ranges import window_for
 from mirage.utils.stat_view import DIR_SIZE
 
@@ -97,12 +96,26 @@ def _parent_reference(src: DriveLoc, dst: DriveLoc) -> dict[str, Any]:
     return ref
 
 
-def _virt_spec(loc: DriveLoc) -> PathSpec:
-    # Cache invalidation takes a PathSpec; DriveLoc carries the
-    # mount-relative spelling, which is exactly the vfs_path.
-    stripped = loc.virt.strip("/")
-    return PathSpec.from_str_path("/" + stripped if stripped else "/",
-                                  stripped)
+def directory_path(path: PathSpec) -> PathSpec:
+    """The directory a listing names: a glob lists the folder it sits in.
+
+    Args:
+        path (PathSpec): the operand.
+    """
+    return path.dir if path.pattern else path
+
+
+def virtual_key(path: PathSpec) -> str:
+    """The mount-absolute key the index files a listing or entry under.
+
+    Args:
+        path (PathSpec): the path, a glob standing for its folder.
+    """
+    target = directory_path(path)
+    prefix = mount_prefix_of(target.virtual, target.vfs_path)
+    if target.vfs_path:
+        return f"{prefix}/{target.vfs_path}"
+    return prefix or "/"
 
 
 async def copy_once(config: MsGraphConfig,
@@ -160,7 +173,6 @@ async def copy_tree(config: MsGraphConfig,
                     session: SessionArg = None) -> None:
     err = await copy_once(config, src, dst, session=session)
     if err is None:
-        await invalidate_after_write(_virt_spec(dst))
         return
     code, message = err
     if code != "nameAlreadyExists":
@@ -186,7 +198,6 @@ async def copy_tree(config: MsGraphConfig,
     err = await copy_once(config, src, dst, session=session)
     if err is not None:
         raise GraphError(500, err[0], err[1])
-    await invalidate_after_write(_virt_spec(dst))
 
 
 def _move_body(src: DriveLoc, dst: DriveLoc) -> dict[str, Any]:
@@ -270,6 +281,33 @@ async def upload_session_write(config: MsGraphConfig,
             start = int(ranges[0].split("-", 1)[0])
         else:
             start += len(chunk)
+
+
+async def write_item(config: MsGraphConfig,
+                     loc: DriveLoc,
+                     data: bytes,
+                     session: SessionArg = None) -> None:
+    """Replace a drive item's content, creating it and its parents.
+
+    A small body is one ``PUT``; anything past the simple-upload limit
+    goes through an upload session.
+
+    Args:
+        config (MsGraphConfig): Graph config.
+        loc (DriveLoc): the item to write.
+        data (bytes): its new content.
+        session (SessionArg): pool or live session to ride.
+    """
+    if len(data) <= SIMPLE_UPLOAD_MAX:
+        await graph_put_bytes(config,
+                              loc.item("/content"),
+                              data,
+                              session=session)
+    else:
+        await upload_session_write(config,
+                                   loc.item("/createUploadSession"),
+                                   data,
+                                   session=session)
 
 
 def folder_child_count(item: dict[str, Any]) -> int | None:
@@ -369,7 +407,7 @@ async def read_item(config: MsGraphConfig,
     revision = pinned
     try:
         if pinned:
-            action = f"/versions/{quote(pinned, safe='')}/content"
+            action = f"/versions/{id_segment(pinned)}/content"
             data = await graph_get_bytes(config,
                                          loc.item(action),
                                          window,
@@ -417,7 +455,7 @@ async def stream_item(config: MsGraphConfig,
     auth = True
     try:
         if pinned is not None:
-            url = loc.item(f"/versions/{quote(pinned, safe='')}/content")
+            url = loc.item(f"/versions/{id_segment(pinned)}/content")
             if rec is not None:
                 rec.revision = pinned
         elif rec is not None:
@@ -457,44 +495,6 @@ async def iter_tree(
         if is_dir:
             async for entry in iter_tree(config, child_loc, session=session):
                 yield entry
-
-
-async def du_tree_total(config: MsGraphConfig,
-                        loc: DriveLoc,
-                        session: SessionArg = None) -> int:
-    total = 0
-    async with session_scope(config, session) as sess:
-        async for _rel, item, is_dir in iter_tree(config, loc, session=sess):
-            if not is_dir:
-                total += item.get("size", 0)
-    return total
-
-
-async def du_tree_entries(
-        config: MsGraphConfig,
-        loc: DriveLoc,
-        session: SessionArg = None) -> tuple[list[tuple[str, int]], int]:
-    """Per-file sizes under a drive item plus their total.
-
-    Paths are mount-relative and leaf files only; the caller lifts them
-    onto virtual paths and renders any roll-up line itself.
-
-    Args:
-        config (MsGraphConfig): Graph credentials and endpoint.
-        loc (DriveLoc): the drive item to walk.
-        session (SessionArg): pool or live session to ride.
-    """
-    results: list[tuple[str, int]] = []
-    total = 0
-    async with session_scope(config, session) as sess:
-        async for rel, item, is_dir in iter_tree(config, loc, session=sess):
-            if is_dir:
-                continue
-            size = item.get("size", 0)
-            results.append(("/" + rel, size))
-            total += size
-    results.sort()
-    return results, total
 
 
 async def find_items(

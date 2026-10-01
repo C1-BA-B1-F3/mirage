@@ -51,48 +51,6 @@
         "stdout": "",
         "stderr": "sed: -i not supported on this backend: Permission denied\n"
       }
-    },
-    {
-      "id": "notion_prov_cat",
-      "seq": 660034,
-      "targets": [
-        "notion"
-      ],
-      "command": "cat /notion/pages/Project_Roadmap__aaaa1111-2222-3333-4444-555566667777/page.json",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=1 precision=unknown\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "notion_prov_grep",
-      "seq": 660035,
-      "targets": [
-        "notion"
-      ],
-      "command": "grep x /notion/pages/Project_Roadmap__aaaa1111-2222-3333-4444-555566667777/page.json",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=1 precision=unknown\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "notion_prov_ls",
-      "seq": 660036,
-      "targets": [
-        "notion"
-      ],
-      "command": "ls /notion/pages/Project_Roadmap__aaaa1111-2222-3333-4444-555566667777",
-      "provision": true,
-      "expect": {
-        "exit": 0,
-        "stdout": "net=0 write=0 cache=0 ops=1 hits=0 precision=exact\n",
-        "stderr": ""
-      }
     }
   ]
 }

@@ -24,9 +24,9 @@ from mirage.vfs.types import NativeReadOps, ReadOps, SearchOps
 # the full document-detail stat; the commands that would multiply that
 # per-entry API call stay cheap through lighter routes instead (ls receives a
 # light-stat adapter from the package factory, the find wrapper stats through
-# stat_light unless -mtime needs detail timestamps). search pushes down to the
-# Dify retrieval API. Dify is read-only, so the generic byte-mutation commands
-# are intentionally absent (no write op wired).
+# stat_light unless a time test needs detail timestamps). search pushes down
+# to the Dify retrieval API. Dify is read-only, so the generic byte-mutation
+# commands are intentionally absent (no write op wired).
 IO = VFSAdapter(search=SearchOps(search=search_resource,
                                  search_many=search_many),
                 read=ReadOps(readdir=DIFY_TREE.readdir,

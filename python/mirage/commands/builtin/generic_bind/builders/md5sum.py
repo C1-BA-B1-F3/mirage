@@ -32,4 +32,4 @@ async def md5sum(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                 dir_aware_stream(ops, accessor, opts))
 
 
-BUILDER = Builder('md5sum', md5sum, None, False, None, read=True)
+BUILDER = Builder('md5sum', md5sum, read=True)

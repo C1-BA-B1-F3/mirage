@@ -107,59 +107,7 @@ Empty input and arbitrary bytes are preserved; input is buffered before executio
 echo -e "a\nb\nc" | mirage execute --workspace_id demo --command "wc -l"
 ```
 
-### 5. Dry-run with `provision`
-
-`provision` returns a `ProvisionResult` (network bytes, cache hits,
-estimated cost) without running the command -- handy for predicting
-spend before kicking off an expensive read.
-
-```bash
-mirage provision --workspace_id demo \
-  --command "cat /s3/data/example.jsonl | wc -l"
-```
-
-Every factory-built backend estimates commands out of the box, by
-family: whole-file readers (`cat`, `sort`, `md5`, ...) charge the byte
-total from `stat`, `head`/`tail`/`file` charge a bounded range,
-`grep`/`rg` charge a worst-case full read, and metadata commands (`ls`,
-`find`, `stat`, `du`, ...) charge op counts only. Transforms (`gzip`,
-`tar`, `split`, ...) keep the read total as a floor with
-`precision=unknown` output; `cp` brackets both read and write between 0
-(server-side copy) and the source total; metadata writes (`rm`,
-`mkdir`, `touch`, ...) are zero-byte op counts, with recursive `rm`
-degrading to a floor; pure commands (`seq`, `date`, `bc`, `expr`) and
-shell builtins (`echo`, `cd`, ...) are zero-cost. Anything the planner
-cannot estimate honestly -- `mv` (free rename or full cross-mount
-copy), `tee` (stdin size), arbitrary programs -- reports
-`precision=unknown` with all totals as floors, never an error. Virtual
-files whose size cannot be resolved (for example a rendered
-`chat.jsonl`) degrade the estimate to `precision=unknown` while keeping
-the known byte total as a floor.
-
-Provision is optional when you register your own commands: leave it out
-and the planner reports `precision=unknown`. To opt in with one line,
-reuse the estimator helpers (`make_file_read_provision`,
-`make_search_provision`, `metadata_provision`, ... in Python;
-`makeFileReadProvision` and friends in TypeScript), or pass
-`provision_overrides={"grep": my_estimator}` to the command factory. An
-explicit `None`/`null` override disables a default.
-
-Pipelines combine field-wise: `|`, `;` and `&&` sum the estimates, `||`
-brackets the branches (cheapest low, priciest high), and `for` loops
-multiply by the iteration count. A stage downstream of an unknown stage
-is also unknown, and totals under `precision=unknown` are floors.
-
-### 6. Cache: network → hit after a real read
-
-After a real `cat`, `provision` flips that path from a network read
-to a cache hit (`cache_hits=1`).
-
-```bash
-mirage execute  --workspace_id demo --command "cat /s3/data/example.jsonl > /dev/null"
-mirage provision --workspace_id demo --command "cat /s3/data/example.jsonl"
-```
-
-### 7. Command history
+### 5. Command history
 
 Every executed command is recorded by a hidden recorder (the
 [Observer](/home/observer)). The `history` builtin shows the calling
@@ -173,7 +121,7 @@ mirage execute --workspace_id demo --command "tail -n 6 /.bash_history"
 mirage execute --workspace_id demo --command "grep cat /.bash_history"
 ```
 
-### 8. Background jobs
+### 6. Background jobs
 
 Long-running commands take `--background` and return a `job_id`
 immediately. `mirage job wait` blocks until it's done.
@@ -185,13 +133,13 @@ JOB=$(mirage execute --workspace_id demo --background \
 mirage job wait $JOB
 ```
 
-### 9. Snapshot to disk
+### 7. Snapshot to disk
 
 ```bash
 mirage workspace snapshot demo /tmp/demo.tar
 ```
 
-### 10. Restore from snapshot
+### 8. Restore from snapshot
 
 Snapshots redact cloud creds at save time, so loading needs fresh
 creds via a config file. The same workspace YAML used for create works.
@@ -214,7 +162,7 @@ mirage execute --workspace_id demo_loaded \
   no extra config needed.
 </Note>
 
-### 11. Clean up
+### 9. Clean up
 
 The daemon exits ~30s after the last workspace is deleted.
 
@@ -307,7 +255,6 @@ mirage workspace clone demo --at <version> --id demo_at_v1
 | `mirage session list WS` | List sessions for a workspace. |
 | `mirage session delete WS SESSION` | Close a session. |
 | `mirage execute --workspace_id WS [--session_id S] [--background] --command "..."` | Run a command. Uploads piped stdin for foreground execution. |
-| `mirage provision --workspace_id WS [--session_id S] --command "..."` | Dry-run / cost estimate -- returns a `ProvisionResult` shape (network bytes, cache hits, estimated cost) without running the command. |
 | `mirage job list [--workspace_id WS]` | List jobs the daemon has run, plus their status. |
 | `mirage job get JOB` | Detail for one job. |
 | `mirage job wait JOB [--timeout SECS]` | Block until the job is done; returns the result. |

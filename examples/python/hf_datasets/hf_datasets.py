@@ -39,13 +39,6 @@ def ops_summary() -> str:
     return f"{len(records)} ops, {total} bytes transferred"
 
 
-def show_plan(label: str, dr) -> None:
-    print(f"\n--- plan: {label} ---")
-    print(f"  network_read: {dr.network_read}  cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}  cache_hits: {dr.cache_hits}  "
-          f"precision: {dr.precision}")
-
-
 async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /ds/ ===")
 
@@ -186,30 +179,6 @@ async def main():
                        " wc -l /ds/README.md &"
                        " wait; echo all done")
     print(f"  parallel: {(await r.stdout_str()).strip()}")
-
-    # ── PROVISION (dry-run cost plans) ──────────────────
-    print("\n=== PROVISION (plan without executing) ===")
-    await ws.cache.clear()
-    before = ops_summary()
-
-    dr = await ws.shell("cat /ds/README.md", provision=True)
-    show_plan("cat /ds/README.md", dr)
-
-    dr = await ws.shell("head -c 100 /ds/README.md", provision=True)
-    show_plan("head -c 100 /ds/README.md (byte budget, EXACT)", dr)
-
-    dr = await ws.shell("head -n 5 /ds/README.md", provision=True)
-    show_plan("head -n 5 /ds/README.md (line budget, RANGE)", dr)
-    print(f"  range: [{dr.network_read_low}, {dr.network_read_high}]")
-
-    dr = await ws.shell("ls /ds/", provision=True)
-    show_plan("ls /ds/ (metadata only, 0 bytes)", dr)
-
-    dr = await ws.shell("find /ds/ -name '*.parquet'", provision=True)
-    show_plan("find /ds/ -name '*.parquet' (metadata only)", dr)
-
-    print(f"\n  before plans: {before}")
-    print(f"  after plans:  {ops_summary()}  (planning is read-free)")
 
     # ── streaming chain backpressure ────────────────────
     print("\n=== STREAMING (chain backpressure) ===")

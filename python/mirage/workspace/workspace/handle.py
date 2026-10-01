@@ -13,12 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING
 
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.ops.ops import Ops
-from mirage.provision import ProvisionResult
 from mirage.workspace.session import SessionState
 
 if TYPE_CHECKING:
@@ -54,50 +53,21 @@ class Session:
         """The op facade run as this session."""
         return self._ws.vfs._for_session(self._id)
 
-    @overload
-    async def shell(self,
-                    command: str,
-                    stdin: ByteSource | None = ...,
-                    provision: Literal[False] = ...,
-                    agent_id: str | None = ...,
-                    cwd: str | None = ...,
-                    env: dict[str, str] | None = ...,
-                    cancel: asyncio.Event | None = ...,
-                    record: bool = ...,
-                    runtime: str | None = ...) -> IOResult:
-        ...
-
-    @overload
-    async def shell(self,
-                    command: str,
-                    stdin: ByteSource | None = ...,
-                    *,
-                    provision: Literal[True],
-                    agent_id: str | None = ...,
-                    cwd: str | None = ...,
-                    env: dict[str, str] | None = ...,
-                    cancel: asyncio.Event | None = ...,
-                    record: bool = ...,
-                    runtime: str | None = ...) -> ProvisionResult:
-        ...
-
     async def shell(self,
                     command: str,
                     stdin: ByteSource | None = None,
-                    provision: bool = False,
                     agent_id: str | None = None,
                     cwd: str | None = None,
                     env: dict[str, str] | None = None,
                     cancel: asyncio.Event | None = None,
                     record: bool = True,
-                    runtime: str | None = None) -> IOResult | ProvisionResult:
+                    runtime: str | None = None) -> IOResult:
         """Run a shell line as this session; ``Workspace.shell`` with
         the session fixed.
 
         Args:
             command (str): the shell line.
             stdin (ByteSource | None): stdin payload.
-            provision (bool): return a ProvisionResult instead of running.
             agent_id (str | None): agent identifier for observability.
             cwd (str | None): per-call working directory, run in an
                 ephemeral clone of the session.
@@ -107,17 +77,6 @@ class Session:
             record (bool): whether the line enters history.
             runtime (str | None): the runtime to route the line to.
         """
-        if provision:
-            return await self._ws.shell(command,
-                                        session_id=self._id,
-                                        stdin=stdin,
-                                        provision=True,
-                                        agent_id=agent_id,
-                                        cwd=cwd,
-                                        env=env,
-                                        cancel=cancel,
-                                        record=record,
-                                        runtime=runtime)
         return await self._ws.shell(command,
                                     session_id=self._id,
                                     stdin=stdin,

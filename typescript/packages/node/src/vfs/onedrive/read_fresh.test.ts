@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { OneDriveAccessor } from '@struktoai/mirage-core/accessor/onedrive'
-import { read, stream } from '@struktoai/mirage-core/core/onedrive/index'
+import { read } from '@struktoai/mirage-core/core/onedrive/read'
+import { stream } from '@struktoai/mirage-core/core/onedrive/stream'
 import { runWithRecording, runWithRevisions } from '@struktoai/mirage-core/observe/context'
 import {
   DEFAULT_READ_TTL,

@@ -15,10 +15,10 @@
 import asyncio
 import math
 
-from mirage.commands.config import help_page, version_line
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.constants import NUMERIC_SHORT
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.commands.spec.usage import (ambiguous_option_error,
                                         unexpected_value_error,
                                         unknown_option_error, usage_hint)

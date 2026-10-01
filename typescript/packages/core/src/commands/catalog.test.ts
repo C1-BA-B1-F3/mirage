@@ -20,7 +20,6 @@ import { S3_COMMANDS } from './builtin/s3/index.ts'
 const SPEC = new CommandSpec()
 const FN = () => Promise.resolve([null, { exitCode: 0 } as never] as [null, never])
 const REPLACEMENT_FN = () => Promise.resolve([null, { exitCode: 1 } as never] as [null, never])
-const PROVISION = () => null
 
 function registered(name: string, filetype: string | null = null): RegisteredCommand {
   return new RegisteredCommand({ name, spec: SPEC, vfs: 's3', filetype, fn: FN })
@@ -74,28 +73,11 @@ describe('RegisteredCommand.withOverrides', () => {
   it('returns an independent definition', () => {
     const original = registered('cat')
 
-    const changed = original.withOverrides({ fn: REPLACEMENT_FN, provision: PROVISION })
+    const changed = original.withOverrides({ fn: REPLACEMENT_FN })
 
     expect(changed).not.toBe(original)
     expect(changed.fn).toBe(REPLACEMENT_FN)
-    expect(changed.provisionFn).toBe(PROVISION)
     expect(original.fn).toBe(FN)
-    expect(original.provisionFn).toBeNull()
-  })
-
-  it('can clear a provision', () => {
-    const original = new RegisteredCommand({
-      name: 'cat',
-      spec: SPEC,
-      vfs: 's3',
-      fn: FN,
-      provisionFn: PROVISION,
-    })
-
-    const changed = original.withOverrides({ provision: null })
-
-    expect(changed.provisionFn).toBeNull()
-    expect(original.provisionFn).toBe(PROVISION)
   })
 })
 

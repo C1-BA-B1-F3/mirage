@@ -12,7 +12,7 @@ async def list_documents(config):
 
 
 async def get_detail(config, document_id):
-    return {"updated_at": 1716282000, "tokens": 21}
+    return {"updated_at": 1716285600, "tokens": 21}
 
 
 async def refuse_detail(config, document_id):
@@ -35,7 +35,8 @@ async def test_stat_light_uses_index_entry_without_detail_call(
     assert item.content == ContentType.TEXT
     assert item.size is None
     assert item.extra["source_size"] == 123
-    assert item.modified == "2024-05-21T09:00:00+00:00"
+    assert item.modified == "2024-05-21T09:00:00Z"
+    assert item.birthtime == "2024-05-21T09:00:00Z"
     assert item.extra["slug"] == "guides/quickstart"
 
 
@@ -63,4 +64,21 @@ async def test_stat_fills_the_detail_fields(monkeypatch, dify_accessor,
     assert item.extra["document_id"] == "doc-1"
     assert item.extra["source_size"] == 123
     assert item.extra["tokens"] == 21
+    assert item.modified == "2024-05-21T10:00:00Z"
+    assert item.birthtime == "2024-05-21T09:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_stat_falls_back_to_the_listing_without_detail_times(
+        monkeypatch, dify_accessor, dify_index, guide_path):
+
+    async def bare_detail(config, document_id):
+        return {}
+
+    monkeypatch.setattr(stat, "get_document_detail", bare_detail)
+
+    item = await stat.stat(dify_accessor, guide_path, dify_index)
+
+    assert item.extra["source_size"] == 123
     assert item.modified == "2024-05-21T09:00:00Z"
+    assert item.birthtime == "2024-05-21T09:00:00Z"

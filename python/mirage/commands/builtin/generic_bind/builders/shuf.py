@@ -86,4 +86,4 @@ async def _shuf(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               if write_op is not None else None)
 
 
-BUILDER = Builder('shuf', shuf, None, False, None, read=True)
+BUILDER = Builder('shuf', shuf, read=True)

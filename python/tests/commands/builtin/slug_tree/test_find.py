@@ -3,17 +3,25 @@ from types import SimpleNamespace
 import pytest
 
 from mirage.cache.index import RAMIndexCacheStore
+from mirage.commands.builtin.chroma import COMMANDS as CHROMA_COMMANDS
 from mirage.commands.builtin.dify import COMMANDS
-from mirage.commands.builtin.slug_tree.find import _default_name, _expr_texts
+from mirage.commands.builtin.find_parse import parse_find_expression
+from mirage.commands.builtin.slug_tree.find import (_default_name, _expr_texts,
+                                                    reads_sizes, reads_times)
 from mirage.commands.config import CommandOpts
+from mirage.context import reset_current_session, set_current_session
 from mirage.core.dify import tree
 from mirage.io.types import IOResult, materialize
-from mirage.types import PathSpec
+from mirage.types import HiddenPaths, PathSpec
 from mirage.utils.key_prefix import mount_key
+from mirage.workspace.session import SessionState
 from tests.commands.builtin.dify.conftest import document
+from tests.core.chroma.conftest import accessor_for, seeded_collection
 
 find = next(cmd for cmd in COMMANDS
             if cmd._registered_commands[0].name == "find")
+chroma_find = next(cmd for cmd in CHROMA_COMMANDS
+                   if cmd._registered_commands[0].name == "find")
 
 
 def spec(virtual: str) -> PathSpec:
@@ -106,3 +114,69 @@ def test_default_name_only_for_bare_word():
     assert _default_name(None, ['!', '-name', 'x']) is None
     assert _default_name(None, ['(', '-name', 'a']) is None
     assert _default_name('given', ['foo']) == "given"
+
+
+@pytest.mark.parametrize("texts, times, sizes", [
+    (["-name", "*.md"], False, False),
+    (["-name", "-size"], False, False),
+    (["-mtime", "-1"], True, False),
+    (["-mtime", "+0", "-o", "-mtime", "-1"], True, False),
+    (["-newer", "/knowledge/README.md"], True, False),
+    (["-newermt", "2024-01-01"], True, False),
+    (["-size", "+1k"], False, True),
+    (["!", "-empty"], False, True),
+    (["-printf", "%TY %s\n"], False, False),
+])
+def test_which_fields_an_expression_tests(texts, times, sizes):
+    expr = parse_find_expression(texts)
+    assert (reads_times(expr), reads_sizes(expr)) == (times, sizes)
+
+
+_SIZED = ["-type", "f", "-size", "+0"]
+_SIZED_FLAGS = {"type": "f", "size": "+0"}
+_NEWER = ["-type", "f", "-newermt", "2026-01-15"]
+_QUICKSTART = "/knowledge/guides/quickstart"
+_REFERENCE = "/knowledge/api/reference"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hidden, texts, flags, rows, scans", [
+    (_QUICKSTART, _SIZED, {}, [_REFERENCE], True),
+    (None, _SIZED, {}, [_REFERENCE, _QUICKSTART], True),
+    (_QUICKSTART, [], _SIZED_FLAGS, [_REFERENCE], True),
+    (_REFERENCE, _NEWER, {}, [_QUICKSTART], False),
+    (None, _NEWER, {}, [_QUICKSTART], False),
+])
+async def test_chroma_scans_chunks_only_for_a_size_test(
+        hidden, texts, flags, rows, scans):
+    collection = seeded_collection()
+    session = SessionState(
+        session_id="veiled",
+        hidden_paths=HiddenPaths(paths=(hidden, ) if hidden else ()))
+    token = set_current_session(session)
+    try:
+        stdout, io = await chroma_find(
+            accessor_for(collection), [spec("/knowledge")], texts,
+            CommandOpts(index=RAMIndexCacheStore(), flags=flags))
+        stdout = await materialize(stdout)
+    finally:
+        reset_current_session(token)
+
+    assert stdout.decode().splitlines() == rows
+    assert io.exit_code == 0
+    assert any("where" in call for call in collection.get_calls) is scans
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_child_leaves_its_directory_empty():
+    session = SessionState(
+        session_id="veiled",
+        hidden_paths=HiddenPaths(paths=("/knowledge/guides/deep/note.md", )))
+    token = set_current_session(session)
+    try:
+        stdout, io = await run([spec("/knowledge/guides")], ["-empty"])
+    finally:
+        reset_current_session(token)
+
+    assert stdout == b"/knowledge/guides/deep\n"
+    assert io.exit_code == 0

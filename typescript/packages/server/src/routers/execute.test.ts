@@ -140,6 +140,19 @@ describe('execute router', () => {
     await app.close()
   })
 
+  it('refuses an unknown field rather than ignoring it', async () => {
+    const app = buildApp()
+    await createWs(app, 'ew-strict')
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/workspaces/ew-strict/execute',
+      payload: { command: 'echo hi', provision: true },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json<{ detail: string }>().detail).toContain('provision')
+    await app.close()
+  })
+
   it('honors a cwd for the line', async () => {
     const app = buildApp()
     await createWs(app, 'ecwd')

@@ -17,6 +17,16 @@ import { type ByteWindow } from '../../utils/ranges.ts'
 import { apiRequest, headerDelay, type ApiRequestOptions, type RetryPolicy } from '../api/client.ts'
 import { MAX_BACKOFF, RETRY_STATUSES } from './constants.ts'
 
+// A drive-relative item path as a Graph URL path: each segment escaped on
+// its own, so a `/` inside the path stays a separator.
+export function encodedPath(path: string): string {
+  return path
+    .split('/')
+    .filter((part) => part !== '')
+    .map(encodeURIComponent)
+    .join('/')
+}
+
 export class GraphError extends Error {
   readonly status: number
   readonly code: string

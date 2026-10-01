@@ -13,10 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import logging
-from dataclasses import replace
 
 from mirage.accessor.discord import DiscordAccessor
-from mirage.commands.builtin.discord._provision import file_read_provision
 from mirage.commands.builtin.discord.io import resolve_glob
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
@@ -36,7 +34,6 @@ from mirage.core.discord.scope import NATIVE_KINDS, detect_scope
 from mirage.core.discord.search import search_guild
 from mirage.core.discord.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult, materialize
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -60,15 +57,7 @@ RG_SEARCH_HONORED = ("word_regexp", )
 SEARCH_MAX_RESULTS = 100
 
 
-async def grep_provision(accessor: DiscordAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep", vfs="discord", spec=SPECS["grep"], provision=grep_provision)
+@command("grep", vfs="discord", spec=SPECS["grep"])
 async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
                texts: list[str],
                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

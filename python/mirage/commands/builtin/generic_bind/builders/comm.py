@@ -31,4 +31,4 @@ async def comm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('comm', comm, None, False, None, read=True)
+BUILDER = Builder('comm', comm, read=True)

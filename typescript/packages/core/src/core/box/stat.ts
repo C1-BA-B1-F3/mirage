@@ -74,8 +74,8 @@ export async function stat(
   }
 
   if (index === undefined) {
-    // The write-family builders and provision estimation call stat without a
-    // threaded index; resolve the id directly rather than ENOENT.
+    // The write-family builders call stat without a threaded index;
+    // resolve the id directly rather than ENOENT.
     const item = await absentOn404(path.virtual, () => resolveItem(accessor, pathParts(path)))
     // Weblinks are hidden from listings; a direct lookup must not
     // resurface a sizeless, unreadable entry.

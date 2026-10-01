@@ -40,4 +40,4 @@ async def stat(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return await stat_generic(resolved, list(texts), opts, stat_fn)
 
 
-BUILDER = Builder('stat', stat, None, False, None)
+BUILDER = Builder('stat', stat)

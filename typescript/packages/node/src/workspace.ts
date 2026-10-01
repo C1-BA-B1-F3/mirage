@@ -14,7 +14,6 @@
 
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import type { ProvisionResult } from '@struktoai/mirage-core/provision/types'
 import { createShellParser } from '@struktoai/mirage-core/shell/parse'
 import type { ShellParser } from '@struktoai/mirage-core/shell/parse'
 import { KERNEL_BACKENDS, MountBackend } from '@struktoai/mirage-core/types'
@@ -146,19 +145,7 @@ export class Workspace extends CoreWorkspace {
     }
   }
 
-  override shell(
-    command: string,
-    options?: ExecuteOptions & { provision?: false | undefined },
-  ): Promise<ExecuteResult>
-  override shell(
-    command: string,
-    options: ExecuteOptions & { provision: true },
-  ): Promise<ProvisionResult>
-  override shell(command: string, options: ExecuteOptions): Promise<ExecuteResult | ProvisionResult>
-  override async shell(
-    command: string,
-    options: ExecuteOptions = {},
-  ): Promise<ExecuteResult | ProvisionResult> {
+  override async shell(command: string, options: ExecuteOptions = {}): Promise<ExecuteResult> {
     await this.fuseReady()
     return super.shell(command, options)
   }

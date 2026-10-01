@@ -31,4 +31,4 @@ async def wc(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             dir_aware_stream(ops, accessor, opts))
 
 
-BUILDER = Builder('wc', wc, None, False, wc_aggregate, read=True)
+BUILDER = Builder('wc', wc, aggregate=wc_aggregate, read=True)

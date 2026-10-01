@@ -30,4 +30,4 @@ async def column(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                 bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('column', column, None, False, None, read=True)
+BUILDER = Builder('column', column, read=True)

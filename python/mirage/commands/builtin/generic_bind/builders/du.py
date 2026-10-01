@@ -212,4 +212,4 @@ async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             directories=partial(_budget_directories, budget))
 
 
-BUILDER = Builder('du', du, None, False, None)
+BUILDER = Builder('du', du)

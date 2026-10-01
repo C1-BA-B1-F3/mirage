@@ -1,6 +1,5 @@
 import pytest
 
-from mirage.commands.builtin.generic.join import join_cmd
 from mirage.commands.builtin.generic.split import parse_chunks_value, split
 from mirage.commands.builtin.generic.tee import tee
 from mirage.types import PathSpec
@@ -83,53 +82,6 @@ async def test_split_numeric_suffix():
                         numeric_suffix=True)
     assert "/x00" in io.writes
     assert "/x01" in io.writes
-
-
-@pytest.mark.asyncio
-async def test_join_basic_inner_join():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1 alpha\n2 beta\n3 gamma\n",
-        "/b.txt": b"1 x\n2 y\n4 z\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
-    decoded = output.decode()
-    assert "1 alpha x" in decoded
-    assert "2 beta y" in decoded
-    assert "3" not in decoded.split("\n")[0]
-    assert "4" not in decoded
-
-
-@pytest.mark.asyncio
-async def test_join_requires_two_paths():
-    rb, _, _, _ = _make_backend({"/a.txt": b"x"})
-    with pytest.raises(ValueError, match="^join: missing operand after "):
-        await join_cmd([_spec("/a.txt")], read_bytes=rb)
-
-
-@pytest.mark.asyncio
-async def test_join_custom_separator():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1,alpha\n2,beta\n",
-        "/b.txt": b"1,x\n2,y\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, separator=",")
-    decoded = output.decode()
-    assert "1,alpha,x" in decoded
-
-
-@pytest.mark.asyncio
-async def test_join_outer_via_a_flag():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1 alpha\n2 beta\n3 gamma\n",
-        "/b.txt": b"1 x\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, also_unpairable="1")
-    decoded = output.decode()
-    assert "2 beta" in decoded
-    assert "3 gamma" in decoded
 
 
 @pytest.mark.asyncio

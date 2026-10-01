@@ -32,4 +32,4 @@ async def file(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               bound_op(ops.stat, accessor, opts.index))
 
 
-BUILDER = Builder('file', file, None, False, None, read=True)
+BUILDER = Builder('file', file, read=True)

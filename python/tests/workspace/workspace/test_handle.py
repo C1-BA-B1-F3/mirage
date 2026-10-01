@@ -113,8 +113,6 @@ async def test_a_handle_forwards_per_call_options():
         forked = await reviewer.shell("pwd", cwd="/repo")
         assert forked.stdout == b"/repo\n"
         assert reviewer.state.cwd != "/repo"
-        plan = await reviewer.shell("cat /repo/README.md", provision=True)
-        assert plan is not None
         token = set_current_session(ws.get_session(ws.default_session_id))
         try:
             # A session already bound is kept by the op door, so a

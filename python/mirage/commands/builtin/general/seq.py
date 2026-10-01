@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -52,7 +51,7 @@ def _seq_generate(texts: list[str], separator: str, width: bool,
     return separator.join(parts) + "\n"
 
 
-@command("seq", vfs=None, spec=SPECS["seq"], provision=pure_provision)
+@command("seq", vfs=None, spec=SPECS["seq"])
 async def seq(
     accessor: Accessor,
     paths: list[PathSpec],

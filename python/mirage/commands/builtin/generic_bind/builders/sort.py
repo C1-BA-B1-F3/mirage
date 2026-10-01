@@ -38,4 +38,4 @@ async def sort(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('sort', sort, None, False, None, read=True)
+BUILDER = Builder('sort', sort, read=True)

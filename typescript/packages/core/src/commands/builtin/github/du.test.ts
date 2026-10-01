@@ -36,6 +36,7 @@ const TREE: Record<string, TreeEntry> = {
   'docs/b.md': { path: 'docs/b.md', type: 'blob', sha: 's3', size: 50 },
   'docs/c.md': { path: 'docs/c.md', type: 'blob', sha: 's5', size: null },
   'readme.txt': { path: 'readme.txt', type: 'blob', sha: 's4', size: 7 },
+  vendor: { path: 'vendor', type: 'tree', sha: 's6', size: null },
 }
 
 async function runDu(
@@ -59,11 +60,11 @@ async function runDu(
 }
 
 it.each([
-  ['/', {}, '150\t/docs\n159\t/\n'],
+  ['/', {}, '150\t/docs\n0\t/vendor\n159\t/\n'],
   [
     '/',
     { a: true },
-    '2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n0\t/docs/c.md\n150\t/docs\n7\t/readme.txt\n159\t/\n',
+    '2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n0\t/docs/c.md\n150\t/docs\n7\t/readme.txt\n0\t/vendor\n159\t/\n',
   ],
   ['/docs', { s: true }, '150\t/docs\n'],
   ['/readme.txt', { a: true }, '7\t/readme.txt\n'],

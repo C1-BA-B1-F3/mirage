@@ -31,6 +31,7 @@ TREE = {
     "docs/b.md": TreeEntry("docs/b.md", "blob", "s3", 50),
     "docs/c.md": TreeEntry("docs/c.md", "blob", "s5", None),
     "readme.txt": TreeEntry("readme.txt", "blob", "s4", 7),
+    "vendor": TreeEntry("vendor", "tree", "s6", None),
 }
 
 
@@ -99,12 +100,12 @@ async def _run(accessor, operand, flags):
 @pytest.mark.parametrize(
     "operand,flags,expected",
     [
-        ("/", {}, "150\t/docs\n159\t/\n"),
+        ("/", {}, "150\t/docs\n0\t/vendor\n159\t/\n"),
         (
             "/",
             {"a": True},
             "2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n"
-            "0\t/docs/c.md\n150\t/docs\n7\t/readme.txt\n159\t/\n",
+            "0\t/docs/c.md\n150\t/docs\n7\t/readme.txt\n0\t/vendor\n159\t/\n",
         ),
         ("/docs", {"s": True}, "150\t/docs\n"),
         ("/readme.txt", {"a": True}, "7\t/readme.txt\n"),

@@ -25,30 +25,37 @@ import { DEFAULT_MAX_DU_ENTRIES, runDu } from '../generic/du.ts'
 import { WalkBudget, walkEntries, walkSize } from '../generic_bind/builders/du.ts'
 import type { DuEntries } from '../../../vfs/types.ts'
 import { stripSlash } from '../../../utils/slash.ts'
+import { mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
 const resolveGlob = resolveGlobOf(GITHUB_IO)
 
 /**
- * Every blob at or under `path`, in mount-relative space, and their sum.
+ * Every blob and every directory at or under `path`, and the blobs' sum.
  *
  * Read off the git tree rather than the index: the tree is keyed
- * repo-relative, which is the space these comparisons are in. A directory
- * row is du's to derive, and a blob of unknown size counts 0, as the walked
- * du counts any file.
+ * repo-relative, which is the space these comparisons are in, so both come
+ * back mount-relative. A blob of unknown size counts 0, as the walked du
+ * counts any file. A directory comes back on its own because one holding no
+ * blob (only a submodule, which the tree drops) still gets du's 0 row.
  */
-function subtree(accessor: GitHubAccessor, path: PathSpec): DuEntries {
+function subtree(accessor: GitHubAccessor, path: PathSpec): [DuEntries, string[]] {
   const key = stripSlash(path.vfsPath)
   const prefix = key === '' ? '' : `${key}/`
-  const found: [string, number][] = []
+  const blobs: [string, number][] = []
+  const directories: string[] = []
   let total = 0
   for (const [p, entry] of Object.entries(accessor.tree)) {
-    if ((p !== key && !p.startsWith(prefix)) || entry.type !== 'blob') continue
-    found.push([`/${p}`, entry.size ?? 0])
-    total += entry.size ?? 0
+    if (p !== key && !p.startsWith(prefix)) continue
+    if (entry.type === 'blob') {
+      blobs.push([`/${p}`, entry.size ?? 0])
+      total += entry.size ?? 0
+    } else {
+      directories.push(`/${p}`)
+    }
   }
-  found.sort((a, b) => compareCodePoints(a[0], b[0]))
-  return [found, total]
+  blobs.sort((a, b) => compareCodePoints(a[0], b[0]))
+  return [[blobs, total], directories]
 }
 
 async function duCommand(
@@ -82,13 +89,16 @@ async function duCommand(
       await live()
       if (accessor.truncated)
         return walkSize(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
-      return subtree(accessor, p)[1]
+      return subtree(accessor, p)[0][1]
     },
     async (p) => {
       await live()
       if (accessor.truncated)
         return walkEntries(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
-      return subtree(accessor, p)
+      const [entries, directories] = subtree(accessor, p)
+      const mount = mountPrefixOf(p.virtual, p.vfsPath)
+      budget.directories.push(...directories.map((d) => `${mount}${d}`))
+      return entries
     },
     () => budget.hit,
     () => budget.unreadable,

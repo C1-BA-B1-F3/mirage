@@ -17,7 +17,6 @@ import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult } from '../../../io/types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { pureProvision } from '../generic_bind/provision.ts'
 import { encodeText } from '../../../shell/bytes.ts'
 import { BreError, compileBre } from '../utils/bre.ts'
 import { quoteWord } from '../../quote.ts'
@@ -525,5 +524,4 @@ export const GENERAL_EXPR = command({
   vfs: null,
   spec: specOf('expr'),
   fn: exprCommand,
-  provision: pureProvision,
 })

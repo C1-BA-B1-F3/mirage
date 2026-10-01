@@ -31,4 +31,4 @@ async def cmp_cmd(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('cmp', cmp_cmd, None, False, None, read=True)
+BUILDER = Builder('cmp', cmp_cmd, read=True)

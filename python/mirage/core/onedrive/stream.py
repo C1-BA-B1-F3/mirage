@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.msgraph.drive import stream_item
-from mirage.core.onedrive.client import drive_loc, split_path
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
@@ -27,12 +27,9 @@ async def read_stream(
     index: IndexCacheStore = NULL_INDEX,
     chunk_size: int = 8192,
 ) -> AsyncIterator[bytes]:
-    virtual = path.virtual if isinstance(path, PathSpec) else path
-    _, stripped = split_path(path)
-    loc = drive_loc(accessor.config, stripped)
     async for chunk in stream_item(accessor.config,
-                                   loc,
-                                   virtual,
+                                   drive_loc(accessor.config, path.vfs_path),
+                                   path.virtual,
                                    "onedrive",
                                    chunk_size,
                                    session=accessor.pool):

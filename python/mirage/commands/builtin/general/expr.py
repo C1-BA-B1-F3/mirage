@@ -15,7 +15,6 @@
 import re
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.bre import BreError, compile_bre
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.quote import quote_word
@@ -800,7 +799,7 @@ def _expr_eval(args: list[str]) -> tuple[str, int]:
     return value, 1 if is_null(value) else 0
 
 
-@command("expr", vfs=None, spec=SPECS["expr"], provision=pure_provision)
+@command("expr", vfs=None, spec=SPECS["expr"])
 async def expr(accessor: Accessor, paths: list[PathSpec] | None,
                texts: list[str],
                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

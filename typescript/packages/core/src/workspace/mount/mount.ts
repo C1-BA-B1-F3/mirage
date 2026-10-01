@@ -27,7 +27,7 @@ import type {
   ExecContext,
   RegisteredCommand,
 } from '../../commands/config.ts'
-import { hasInjectedVersion } from '../../commands/config.ts'
+import { hasInjectedVersion } from '../../commands/spec/standard.ts'
 import { ROOT_CWD } from '../../commands/constants.ts'
 import type { OpKwargs } from '../../ops/registry.ts'
 import type { LinkView } from '../../ops/types.ts'

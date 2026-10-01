@@ -17,7 +17,6 @@ import { RegisteredCommand } from '../commands/config.ts'
 import { CommandSpec, Operand } from '../commands/spec/types.ts'
 import { IOResult } from '../io/types.ts'
 import { OpsRegistry } from '../ops/registry.ts'
-import { ProvisionResult } from '../provision/types.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import { MountMode, VFSName } from '../types.ts'
 import { getTestParser, stderrStr } from './fixtures/workspace_fixture.ts'
@@ -29,16 +28,6 @@ const SPEC = new CommandSpec({ rest: new Operand({ type: 'path' }) })
 
 const noopFn = (): Promise<[Uint8Array, IOResult]> =>
   Promise.resolve([ENC.encode('ok'), new IOResult()])
-
-const noopProvision = (): Promise<ProvisionResult> =>
-  Promise.resolve(
-    new ProvisionResult({
-      command: 'noop',
-      networkReadLow: 10,
-      networkReadHigh: 10,
-      readOps: 1,
-    }),
-  )
 
 async function makeWs(mounts: Record<string, RAMVFS>): Promise<Workspace> {
   const parser = await getTestParser()
@@ -146,27 +135,6 @@ describe('cross-VFS dispatch (port of test_cross_provider_dispatch.py)', () => {
     expect(io.exitCode).toBe(1)
     const err = stderrStr(io)
     expect(err.includes('/m1') || err.includes('/m2') || err.includes('/m3')).toBe(true)
-    await ws.close()
-  })
-
-  it('plan (provision) cross-mount single-mount returns ProvisionResult', async () => {
-    const m1 = new RAMVFS()
-    const m2 = new RAMVFS()
-    seed(m1, '/a.txt', 'a')
-    seed(m2, '/b.txt', 'b')
-    const ws = await makeWs({ '/m1': m1, '/m2': m2 })
-    const rc = new RegisteredCommand({
-      name: 'nocross',
-      spec: SPEC,
-      vfs: VFSName.RAM,
-      fn: noopFn,
-      provisionFn: noopProvision,
-    })
-    registerOnAll(ws, ['/m1', '/m2'], rc)
-    const result = await ws.shell('nocross /m1/a.txt', { provision: true })
-    expect(result).toBeInstanceOf(ProvisionResult)
-    if (!(result instanceof ProvisionResult)) throw new Error('expected ProvisionResult')
-    expect(result.networkReadLow).toBe(10)
     await ws.close()
   })
 

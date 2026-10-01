@@ -32,4 +32,4 @@ async def nl(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('nl', nl, None, False, None, read=True)
+BUILDER = Builder('nl', nl, read=True)

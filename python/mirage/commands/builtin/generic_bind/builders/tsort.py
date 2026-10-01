@@ -32,4 +32,4 @@ async def tsort(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                stdin=opts.stdin)
 
 
-BUILDER = Builder('tsort', tsort, None, False, None, read=True)
+BUILDER = Builder('tsort', tsort, read=True)

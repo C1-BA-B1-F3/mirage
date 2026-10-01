@@ -15,7 +15,7 @@
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import { PATH_SAFE } from '../hierarchy/codec.ts'
 import type { Row } from '../vector/types.ts'
-import { renderCard, toStr } from './render.ts'
+import { cellText, renderCard } from './render.ts'
 
 /** A ranked row's path below its table, and its card. */
 export function hit(accessor: LanceDBAccessor, row: Row): [string[], Uint8Array] {
@@ -23,7 +23,7 @@ export function hit(accessor: LanceDBAccessor, row: Row): [string[], Uint8Array]
   const segments: string[] = []
   for (const column of config.groupBy) {
     const value = row[column]
-    if (value !== null && value !== undefined) segments.push(PATH_SAFE.encode(toStr(value)))
+    if (value !== null && value !== undefined) segments.push(PATH_SAFE.encode(cellText(value)))
   }
-  return [[...segments, `${toStr(row[config.idColumn])}.md`], renderCard(row, config)]
+  return [[...segments, `${cellText(row[config.idColumn])}.md`], renderCard(row, config)]
 }

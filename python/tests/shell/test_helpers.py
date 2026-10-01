@@ -25,9 +25,9 @@ from mirage.shell.helpers import (  # isort: skip
     get_function_body, get_function_name, get_heredoc_meta, get_heredoc_parts,
     get_if_branches, get_list_parts, get_negated_command, get_parts,
     get_pipeline_commands, get_pipeline_stages, get_process_sub_body,
-    get_redirects, get_subshell_body, get_text, get_while_parts,
-    is_backgrounded, literal_word, normalize_heredoc_body, quoted_parts,
-    source_parts, split_env_prefix, take_continuation)
+    get_redirects, get_text, get_while_parts, is_backgrounded, literal_word,
+    normalize_heredoc_body, quoted_parts, source_parts, split_env_prefix,
+    take_continuation)
 
 _LANG = tree_sitter.Language(tree_sitter_bash.language())
 _PARSER = tree_sitter.Parser(_LANG)
@@ -157,11 +157,6 @@ def test_get_for_select():
     var, values, body = get_for_parts(node)
     assert var == "f"
     assert [get_text(v) for v in values] == ["x", "y"]
-
-
-def test_get_subshell_body():
-    body = get_subshell_body(_first("(echo a; echo b)"))
-    assert len(body) == 2
 
 
 def test_get_list_parts_and():
@@ -329,11 +324,6 @@ def test_get_pipeline_single():
     cmds, stderr = get_pipeline_commands(_first("echo a | grep b"))
     assert get_command_name(cmds[0]) == "echo"
     assert get_command_name(cmds[1]) == "grep"
-
-
-def test_get_subshell_single():
-    body = get_subshell_body(_first("(echo a)"))
-    assert len(body) == 1
 
 
 def test_export_keyword():

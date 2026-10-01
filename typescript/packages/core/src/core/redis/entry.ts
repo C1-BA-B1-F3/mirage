@@ -23,8 +23,8 @@ type RedisResourceType = (typeof RedisResourceType)[keyof typeof RedisResourceTy
 
 export class RedisIndexEntry extends IndexEntry {
   // size defaults to null, not 0: a readdir knows a key exists but not
-  // its length, and a lying 0 would be trusted by index-first size
-  // lookups (provision estimates) over a real stat.
+  // its length, and a lying 0 would be trusted by an index-first size
+  // lookup over a real stat.
   static file(path: string, size: number | null = null): RedisIndexEntry {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return new RedisIndexEntry({

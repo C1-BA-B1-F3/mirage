@@ -85,10 +85,10 @@ def test_nested_functions_capture_enclosing_state():
     """A nested def exists to close over its enclosing scope, or not at all.
 
     The flat rule -- never nest -- is one the architecture cannot keep:
-    every op factory, every provision builder, and the read-through cache
-    are closure factories, and a decorator has nowhere else to put its
-    wrapper. Forbidding the shape outright would mean 39 standing
-    violations and a rule nobody could enforce.
+    every op factory and the read-through cache are closure factories,
+    and a decorator has nowhere else to put its wrapper. Forbidding the
+    shape outright would mean 39 standing violations and a rule nobody
+    could enforce.
 
     What the rule was reaching for is the nesting that buys nothing: a
     helper written inside a function although it reads only its own

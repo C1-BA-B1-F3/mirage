@@ -13,8 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
 from mirage.commands.builtin.mongodb.cat import cat
 from mirage.commands.builtin.mongodb.grep import grep
 from mirage.commands.builtin.mongodb.io import IO as _IO
@@ -30,6 +28,9 @@ COMMANDS = [
         _IO,
         overrides=_MONGODB_OVERRIDES,
     ),
-    *with_default_provisions([cat, grep, rg, tail, wc], _IO.stat,
-                             _IO.resolve_glob, _IO.readdir),
+    cat,
+    grep,
+    rg,
+    tail,
+    wc,
 ]

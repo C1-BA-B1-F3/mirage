@@ -64,10 +64,10 @@ def canonical(name: str) -> str:
     """Fold a module name so a rename does not read as a missing module.
 
     ``findEval.ts`` and ``find_eval.py`` are the same module spelled two
-    ways, and so are ``_provision.py`` and ``provision.ts``, and
-    ``claude-agent-sdk`` and ``claude_agent_sdk``. Folding camelCase,
-    hyphens and a leading underscore separates "spelled differently" from
-    "absent", which are different pieces of work.
+    ways, and so are ``claude-agent-sdk`` and ``claude_agent_sdk``.
+    Folding camelCase, hyphens and a leading underscore separates
+    "spelled differently" from "absent", which are different pieces of
+    work.
 
     Args:
         name (str): A module or directory basename with no extension.

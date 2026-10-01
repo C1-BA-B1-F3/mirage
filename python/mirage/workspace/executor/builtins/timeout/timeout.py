@@ -19,10 +19,10 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from mirage.commands.config import version_line
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
+from mirage.commands.spec.standard import version_line
 from mirage.commands.spec.usage import (ambiguous_option_error,
                                         missing_value_error,
                                         unexpected_value_error,

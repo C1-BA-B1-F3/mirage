@@ -14,13 +14,10 @@
 
 import type { GmailAccessor } from '../../../accessor/gmail.ts'
 import { VFSName } from '../../../types.ts'
-import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
+import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GMAIL_GREP } from './grep.ts'
 import { GMAIL_IO } from './io.ts'
-import { metadataProvision } from './_provision.ts'
 import { GMAIL_RG } from './rg.ts'
 
 const GMAIL_OVERRIDES = new Set(['grep', 'rg'])
@@ -31,14 +28,7 @@ const GMAIL_OVERRIDES = new Set(['grep', 'rg'])
 export const GMAIL_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GmailAccessor>(VFSName.GMAIL, GMAIL_IO, {
     overrides: GMAIL_OVERRIDES,
-    provisionOverrides: {
-      ls: metadataProvision as ProvisionFn,
-    },
   }),
-  ...withDefaultProvisions(
-    [...GMAIL_GREP, ...GMAIL_RG],
-    GMAIL_IO.stat,
-    resolveGlobOf(GMAIL_IO),
-    GMAIL_IO.readdir,
-  ),
+  ...GMAIL_GREP,
+  ...GMAIL_RG,
 ]

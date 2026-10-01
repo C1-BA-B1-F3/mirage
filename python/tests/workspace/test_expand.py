@@ -22,8 +22,8 @@ from mirage.shell.helpers import get_parts
 from mirage.types import PathSpec
 from mirage.workspace.cli.registry import CLIRegistry
 from mirage.workspace.expand import (classify_parts, classify_word,
-                                     expand_and_classify, expand_node,
-                                     expand_parts)
+                                     expand_and_classify, expand_node)
+from mirage.workspace.expand.parts import expand_words
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.session import vars_from_env
 
@@ -254,106 +254,106 @@ def test_expand_raw_string():
     assert result == "no $expansion"
 
 
-# ── expand_parts ───────────────────────────────
+# ── expand_words ───────────────────────────────
 
 
-def test_expand_parts_basic():
+def test_expand_words_basic():
     parts = _cmd_parts("echo hello world")
     session = _session()
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "hello", "world"]
 
 
-def test_expand_parts_with_var():
+def test_expand_words_with_var():
     parts = _cmd_parts("echo $A $B")
     session = _session(env={"A": "foo", "B": "bar"})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "foo", "bar"]
 
 
-def test_expand_parts_cmd_sub_splits():
+def test_expand_words_cmd_sub_splits():
     parts = _cmd_parts("echo $(ls)")
     execute_fn = AsyncMock()
     io = IOResult()
     io.stdout = b"file1\nfile2\nfile3\n"
     execute_fn.return_value = io
     session = _session()
-    result = _run(expand_parts(parts, session, execute_fn))
+    result = _run(expand_words(parts, session, execute_fn))
     assert "file1" in result
     assert "file2" in result
     assert "file3" in result
 
 
-def test_expand_parts_empty_var_skipped():
+def test_expand_words_empty_var_skipped():
     parts = _cmd_parts("echo $EMPTY")
     session = _session()
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo"]
 
 
-def test_expand_parts_splits_unquoted_var():
+def test_expand_words_splits_unquoted_var():
     parts = _cmd_parts("echo $VAR")
     session = _session(env={"VAR": "a b c"})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "a", "b", "c"]
 
 
-def test_expand_parts_no_split_quoted_var():
+def test_expand_words_no_split_quoted_var():
     parts = _cmd_parts('echo "$VAR"')
     session = _session(env={"VAR": "a b c"})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "a b c"]
 
 
-def test_expand_parts_splits_dollar_at():
+def test_expand_words_splits_dollar_at():
     parts = _cmd_parts("echo $@")
     cs = CallStack()
     cs.push(["a", "b", "c"])
     session = _session()
-    result = _run(expand_parts(parts, session, _execute_fn(), call_stack=cs))
+    result = _run(expand_words(parts, session, _execute_fn(), call_stack=cs))
     assert result == ["echo", "a", "b", "c"]
 
 
-def test_expand_parts_no_split_empty_var():
+def test_expand_words_no_split_empty_var():
     parts = _cmd_parts("echo $EMPTY")
     session = _session(env={"EMPTY": ""})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo"]
 
 
-def test_expand_parts_splits_expansion_braces():
+def test_expand_words_splits_expansion_braces():
     parts = _cmd_parts("echo ${VAR}")
     session = _session(env={"VAR": "x y z"})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "x", "y", "z"]
 
 
-def test_expand_parts_keeps_empty_raw_string():
+def test_expand_words_keeps_empty_raw_string():
     """A quoted empty literal '' is a real (empty) argument, not dropped."""
     parts = _cmd_parts("echo a '' b")
-    result = _run(expand_parts(parts, _session(), _execute_fn()))
+    result = _run(expand_words(parts, _session(), _execute_fn()))
     assert result == ["echo", "a", "", "b"]
 
 
-def test_expand_parts_keeps_empty_double_quote():
+def test_expand_words_keeps_empty_double_quote():
     """A quoted empty literal "" is a real (empty) argument, not dropped."""
     parts = _cmd_parts('echo a "" b')
-    result = _run(expand_parts(parts, _session(), _execute_fn()))
+    result = _run(expand_words(parts, _session(), _execute_fn()))
     assert result == ["echo", "a", "", "b"]
 
 
-def test_expand_parts_keeps_empty_quoted_var():
+def test_expand_words_keeps_empty_quoted_var():
     """A quoted expansion that yields empty stays a word (bash keeps "$x")."""
     parts = _cmd_parts('echo a "$EMPTY" b')
     session = _session(env={"EMPTY": ""})
-    result = _run(expand_parts(parts, session, _execute_fn()))
+    result = _run(expand_words(parts, session, _execute_fn()))
     assert result == ["echo", "a", "", "b"]
 
 
-def test_expand_parts_drops_empty_quoted_dollar_at():
+def test_expand_words_drops_empty_quoted_dollar_at():
     """Quoted "$@" with no positional args yields zero words, not one empty."""
     parts = _cmd_parts('echo a "$@" b')
-    result = _run(expand_parts(parts, _session(), _execute_fn()))
+    result = _run(expand_words(parts, _session(), _execute_fn()))
     assert result == ["echo", "a", "b"]
 
 

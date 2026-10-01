@@ -15,7 +15,7 @@
 import { type Accessor, NOOPAccessor } from '../accessor/base.ts'
 import type { PredNode } from '../commands/builtin/find_eval.ts'
 import { type CommandIO, makeGenericCommands } from '../commands/builtin/generic_bind/index.ts'
-import type { ProvisionFn, RegisteredCommand } from '../commands/config.ts'
+import type { RegisteredCommand } from '../commands/config.ts'
 import { makeGenericOps } from '../ops/generic/factory.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import type { CapacityResult } from '../types.ts'
@@ -120,8 +120,6 @@ export interface VFSOptions<A extends Accessor = Accessor> {
    * decorator form to carry its registration.
    */
   ops?: readonly RegisteredOp[]
-  /** Per-command cost estimators replacing the catalog default. */
-  provisionOverrides?: Record<string, ProvisionFn<A>>
   /**
    * Derive the VFS/FUSE op set from the table (read/readdir/stat plus
    * whatever mutations the table carries). Set false to serve only the
@@ -301,12 +299,11 @@ export class BaseVFS<A extends Accessor = Accessor> {
     this.readRevalidatable = options.readRevalidatable ?? false
     const table = io instanceof VFSAdapter ? io.toCommandIO() : io
     this.#commands = [
-      ...makeGenericCommands<A>(options.name, table, {
-        ...(options.overrides !== undefined ? { overrides: options.overrides } : {}),
-        ...(options.provisionOverrides !== undefined
-          ? { provisionOverrides: options.provisionOverrides }
-          : {}),
-      }),
+      ...makeGenericCommands<A>(
+        options.name,
+        table,
+        options.overrides !== undefined ? { overrides: options.overrides } : {},
+      ),
       ...(options.commands ?? []),
     ]
     const userOps = options.ops ?? []

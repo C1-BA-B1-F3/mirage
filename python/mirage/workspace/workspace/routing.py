@@ -51,7 +51,6 @@ class Router:
         ast: Any,
         command: str,
         runtime: str | None,
-        provision: bool,
         session: SessionState,
         session_id: str,
         agent_id: str,
@@ -63,15 +62,13 @@ class Router:
         Returns None when nothing decides (no runtime argument, no
         policy configured) so dispatch falls to the static bindings. A
         nested eval passes its typed line's decision as ``inherited``
-        and keeps it: nested lines never re-route. Provision never
-        routes.
+        and keeps it: nested lines never re-route.
 
         Args:
             ast: the parsed tree-sitter root node.
             command (str): the raw command line.
             runtime (str | None): the execute() runtime argument, which
                 wins over the policy.
-            provision (bool): whether this is a provision run.
             session (SessionState): the effective session (cwd, env).
             session_id (str): session hosting the line.
             agent_id (str): agent the line runs as.
@@ -96,8 +93,6 @@ class Router:
                 **overlay
             },
                                  fallback=catch_all(entries))
-        if provision:
-            return None
         has_scripts = any(entry.script is not None for entry in entries)
         if route_policy is None and not has_scripts:
             return None

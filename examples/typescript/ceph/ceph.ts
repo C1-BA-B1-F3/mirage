@@ -46,9 +46,6 @@ async function main(): Promise<void> {
     r = await ws.shell("find /ceph/ -name '*.json' | head -n 5")
     console.log('find *.json:\n' + r.stdoutText)
 
-    const plan = await ws.shell('grep -m 1 mirage /ceph/data/example.jsonl', { provision: true })
-    console.log(`plan grep -m 1: network_read=${plan.networkRead} precision=${plan.precision}`)
-
     const bytes = ws.records.reduce((acc, rec) => acc + rec.bytes, 0)
     console.log(`\nStats: ${String(ws.records.length)} ops, ${String(bytes)} bytes`)
 

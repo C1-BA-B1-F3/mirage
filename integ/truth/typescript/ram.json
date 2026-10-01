@@ -219,13 +219,6 @@
     "head -c 8 /dev/zero | xxd",
     "",
     "",
-    "=== PROVISION (dry-run cost estimates) ===",
-    "",
-    "  cat /data/hello.txt: net=12 ops=1 precision=exact",
-    "  sort /data/hello.txt | head -n 1: net=12 ops=1 precision=exact",
-    "  head /data/hello.txt || cat /data/hello.txt: net=0-12 ops=1 precision=range",
-    "  tee /data/out.txt: net=0 ops=0 precision=unknown",
-    "",
     "=== PERSISTENCE ===",
     "",
     {

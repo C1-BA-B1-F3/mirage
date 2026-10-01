@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { helpPage, versionLine } from '../../commands/config.ts'
+import { helpPage, versionLine } from '../../commands/spec/standard.ts'
 import { HELP as PRINTF_HELP } from './builtins/printf/printf.ts'
 import { specOf } from '../../commands/spec/index.ts'
 import { renderHelp } from '../../commands/spec/help.ts'

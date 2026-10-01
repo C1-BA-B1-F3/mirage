@@ -66,4 +66,4 @@ async def grep(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('grep', grep, None, False, prefix_aggregate, read=True)
+BUILDER = Builder('grep', grep, aggregate=prefix_aggregate, read=True)

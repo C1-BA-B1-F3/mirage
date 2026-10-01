@@ -28,68 +28,10 @@ from mirage.core.github.read import read as github_read
 from mirage.core.github.readdir import readdir as github_readdir
 from mirage.core.github.stat import stat as github_stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision import ProvisionResult
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_prefix_of
 
 
-async def _estimate_recursive(index, path: str) -> tuple[int, int]:
-    prefix = path.rstrip("/") + "/"
-    total = 0
-    ops = 0
-    for entry_path, entry in index._entries.items():
-        if entry.resource_type != "file":
-            continue
-        if not entry_path.startswith(prefix):
-            continue
-        total += entry.size or 0
-        ops += 1
-    return total, ops
-
-
-async def grep_provision(
-    accessor: GitHubAccessor,
-    paths: list[PathSpec],
-    texts: list[str],
-    opts: CommandOpts,
-) -> ProvisionResult:
-    if not paths:
-        return ProvisionResult(command="grep " + " ".join(texts))
-    fl = FlagView(opts.flags, spec=SPECS["grep"])
-    recursive = fl.as_bool("r") or fl.as_bool("R")
-    index = opts.index
-    total = 0
-    ops = 0
-    for p in paths:
-        p_prefix = mount_prefix_of(p.virtual, p.vfs_path) if isinstance(
-            p, PathSpec) else ""
-        key = p.virtual if isinstance(p, PathSpec) else str(p)
-        if p_prefix and key.startswith(p_prefix):
-            key = key[len(p_prefix):] or "/"
-        result = await index.get(key)
-        if result.entry is None:
-            continue
-        if result.entry.resource_type == "folder":
-            if recursive:
-                t, o = await _estimate_recursive(index, key)
-                total += t
-                ops += o
-        else:
-            total += result.entry.size or 0
-            ops += 1
-    return ProvisionResult(
-        command=f"grep {texts[0] if texts else ''} ...",
-        network_read_low=total,
-        network_read_high=total,
-        read_ops=ops,
-    )
-
-
-@command("grep",
-         vfs="github",
-         spec=SPECS["grep"],
-         provision=grep_provision,
-         aggregate=prefix_aggregate)
+@command("grep", vfs="github", spec=SPECS["grep"], aggregate=prefix_aggregate)
 async def grep(accessor: GitHubAccessor, paths: list[PathSpec],
                texts: list[str],
                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

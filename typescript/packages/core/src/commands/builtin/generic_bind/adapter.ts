@@ -69,7 +69,7 @@ import {
 import { norm, parent } from '../../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
-import type { AggregateFn, CommandFnResult, CommandOpts, ProvisionFn } from '../../config.ts'
+import type { AggregateFn, CommandFnResult, CommandOpts } from '../../config.ts'
 
 export function makeResolveGlob<A extends Accessor = Accessor>(
   readdir: ReaddirOp<A>,
@@ -1187,7 +1187,6 @@ export type BuilderFn<A extends Accessor = Accessor> = (
 export interface Builder<A extends Accessor = Accessor> {
   name: string
   fn: BuilderFn<A>
-  provision?: (stat: StatOp<A>) => ProvisionFn<A>
   write?: boolean
   aggregate?: AggregateFn
   read?: boolean

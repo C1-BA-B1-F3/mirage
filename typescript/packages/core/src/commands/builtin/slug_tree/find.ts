@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
+import { hiddenPathsIntersect, pathRulesActive } from '../../../context/session_context.ts'
 import { makeSearchBackedFind } from '../../../core/generic/find.ts'
 import type { SlugTree } from '../../../core/slug_tree/tree.ts'
 import { materialize, type ByteSource } from '../../../io/types.ts'
@@ -29,8 +30,16 @@ import {
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
+import { treeHasMtime } from '../find_eval.ts'
+import { parseFindExpression, type FindExpr } from '../find_parse.ts'
 import { findGeneric } from '../generic/find.ts'
-import { resolveGlobOf, type CommandIO } from '../generic_bind/adapter.ts'
+import {
+  resolveGlobOf,
+  withPathGuards,
+  withPolicyGuard,
+  type CommandIO,
+} from '../generic_bind/adapter.ts'
+import { findWalk } from '../generic_bind/builders/find.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -59,6 +68,21 @@ async function normalizeFindOutput(
   return ENC.encode(normalized.join('\n') + '\n')
 }
 
+/** Whether the expression tests a timestamp. `-printf` and `-ls` are not tests: they stat through the dispatcher. */
+export function readsTimes(expr: FindExpr): boolean {
+  return expr.newer.length > 0 || treeHasMtime(expr.tree)
+}
+
+/** Whether the expression tests a file size (`-empty` compares one with zero). */
+export function readsSizes(expr: FindExpr): boolean {
+  return expr.minSize !== null || expr.maxSize !== null || expr.usesEmpty
+}
+
+/** Whether the flag bag carries a size or time test. Only a direct call hands tests over as flags; the shell passes them as words. */
+function flagsTest(fl: FlagView): boolean {
+  return fl.asStr('size') !== undefined || fl.asStr('mtime') !== undefined || fl.asBool('empty')
+}
+
 /**
  * Build `find` for a slug-tree backend, filtered over one tree walk.
  *
@@ -66,20 +90,30 @@ async function normalizeFindOutput(
  *   vfs: the backend the command registers for.
  *   io: the backend's command IO.
  *   tree: the backend's tree.
- *   stat: the full stat the walk filters with.
- *   statLight: the index-only stat find otherwise stats through; the full
- *     stat is paid only when -mtime needs times. Without one, find wires no
- *     stat at all and -mtime is pushed down into the walk.
+ *   stat: the full stat.
+ *   statLight: the index-only stat, used unless the expression tests a
+ *     field it lacks.
+ *   needsFull: whether an expression tests a field `statLight` lacks:
+ *     `readsSizes` where the size costs a content scan, `readsTimes` where
+ *     the listing carries no modified time.
  */
 export function makeFind<A extends Accessor>(
   vfs: VFSName,
   io: CommandIO<A>,
   tree: SlugTree<A>,
   stat: StatOp<A>,
-  statLight?: StatOp<A>,
+  statLight: StatOp<A>,
+  needsFull: (expr: FindExpr) => boolean,
 ): RegisteredCommand[] {
   const resolveGlob = resolveGlobOf(io)
-  const findCore = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
+  const findFull = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
+  const findLight = makeSearchBackedFind<A>({
+    resolvePath: tree.resolve,
+    stat: statLight,
+    walk: tree.walk,
+  })
+  const walkFull = withPolicyGuard(withPathGuards(io))
+  const walkLight = withPolicyGuard(withPathGuards({ ...io, stat: statLight }))
   return command({
     name: 'find',
     vfs,
@@ -94,23 +128,31 @@ export function makeFind<A extends Accessor>(
       const resolved = paths.length > 0 ? await resolveGlob(accessor, paths, index) : []
       const searchPath = resolved[0]
       // Push-down choices: a bare word acts as the -name filter, and the
-      // heavier per-document stat is only paid when -mtime needs times.
+      // heavier stat is only paid when a test needs what it adds.
       const fl = new FlagView(opts.flags, specOf('find'))
       const bag: Record<string, FlagValue> = { ...opts.flags }
       const name = defaultName(fl.asStr('name'), texts)
       if (name !== undefined) bag.name = name
-      const full = fl.asStr('mtime') !== undefined
-      const statFn =
-        statLight === undefined
-          ? undefined
-          : (spec: PathSpec) => (full ? stat : statLight)(accessor, spec, index)
-      const result = await findGeneric(
-        resolved,
-        texts,
-        { ...opts, flags: bag },
-        (root, options) => findCore(accessor, root, options, index),
-        statFn,
-      )
+      const full = texts.length > 0 ? needsFull(parseFindExpression(texts)) : flagsTest(fl)
+      const findCore = full ? findFull : findLight
+      const statFn = full ? stat : statLight
+      // A tree walk classifies on the raw backend tree, so under hidden
+      // paths or a path rule it would answer for entries the session cannot
+      // see; the walk classifies through the guarded readdir/stat, the fork
+      // the factory builder takes.
+      const result =
+        pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
+          ? await findWalk(full ? walkFull : walkLight, accessor, resolved, texts, {
+              ...opts,
+              flags: bag,
+            })
+          : await findGeneric(
+              resolved,
+              texts,
+              { ...opts, flags: bag },
+              (root, options) => findCore(accessor, root, options, index),
+              (spec: PathSpec) => statFn(accessor, spec, index),
+            )
       if (result === null || searchPath === undefined) return result
       const [stdout, ioResult] = result
       return [await normalizeFindOutput(stdout, searchPath), ioResult]

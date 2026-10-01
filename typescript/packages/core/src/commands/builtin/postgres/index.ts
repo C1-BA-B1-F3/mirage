@@ -22,8 +22,6 @@ import { POSTGRES_IO } from './io.ts'
 import { POSTGRES_RG } from './rg.ts'
 import { POSTGRES_TAIL } from './tail.ts'
 import { POSTGRES_WC } from './wc.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 
 const POSTGRES_OVERRIDES = new Set(['grep', 'head', 'rg', 'tail', 'wc'])
 
@@ -31,10 +29,9 @@ export const POSTGRES_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<PostgresAccessor>(VFSName.POSTGRES, POSTGRES_IO, {
     overrides: POSTGRES_OVERRIDES,
   }),
-  ...withDefaultProvisions(
-    [...POSTGRES_GREP, ...POSTGRES_HEAD, ...POSTGRES_RG, ...POSTGRES_TAIL, ...POSTGRES_WC],
-    POSTGRES_IO.stat,
-    resolveGlobOf(POSTGRES_IO),
-    POSTGRES_IO.readdir,
-  ),
+  ...POSTGRES_GREP,
+  ...POSTGRES_HEAD,
+  ...POSTGRES_RG,
+  ...POSTGRES_TAIL,
+  ...POSTGRES_WC,
 ]

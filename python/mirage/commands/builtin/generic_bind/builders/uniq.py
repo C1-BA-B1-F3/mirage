@@ -40,4 +40,4 @@ async def uniq(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('uniq', uniq, None, False, None, read=True)
+BUILDER = Builder('uniq', uniq, read=True)

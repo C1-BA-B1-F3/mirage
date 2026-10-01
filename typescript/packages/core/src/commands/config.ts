@@ -20,38 +20,20 @@ import type { Limit, PathSpec } from '../types.ts'
 import type { Runtime } from '../runtime/base.ts'
 import type { DispatchFn, ShellFn } from '../runtime/types.ts'
 import type { NamespaceView, ReaddirPath, SessionView, StatPath } from '../ops/types.ts'
-import { VERSION } from '../version.ts'
 import type { AggregateResult } from './builtin/aggregators.ts'
-import { ROOT_CWD } from './constants.ts'
 import { isBuiltinGrammar, registeredSpec } from './spec/builtins.ts'
-import {
-  HELP_OPTION,
-  OWN_OPTION_LOOP,
-  STANDARD_AFTER_SCAN,
-  STANDARD_BEFORE_SCAN,
-  VERSION_OPTION,
-} from './spec/constants.ts'
-import { renderHelp } from './spec/help.ts'
-import { type ParsedArgs, parseCommand } from './spec/parser.ts'
-import { SYNOPSES } from './spec/synopsis.ts'
-import type { CommandSpec } from './spec/types.ts'
-import { UsageStyle, type FlagValue } from './spec/types.ts'
+import { OWN_OPTION_LOOP } from './spec/constants.ts'
+import { helpPage, versionLine } from './spec/standard.ts'
+import type { CommandSpec, FlagValue } from './spec/types.ts'
 
 /**
- * The execution context `Mount.executeCmd` takes: everything the
- * workspace supplies for one invocation beyond the parsed line — the
- * one bag its fifth argument has always been, now named (mirrors
- * Python's `ExecContext`, commands/config.py). `executeCmd` re-boxes
- * these onto `CommandOpts` beside the facts only the mount can supply
- * (mountPrefix, index, filetypeFns), so every field is spelled exactly
- * as `CommandOpts` spells it — pinned by a mapped type in
- * workspace/mount/mount.test.ts. The two exceptions are execution
- * controls `executeCmd` consumes itself rather than forwards:
- * `limitOverride` (the caller-resolved limit guard), while `signal`
- * both rides onto `CommandOpts` and arms the guard. `sessionView`
- * stays although no opts reader wants it today, because
- * `CLIDoors.sessionView` has production readers and the doors record
- * is pinned to be a subset of `CommandOpts`.
+ * What the workspace hands `Mount.executeCmd` for one command.
+ *
+ * `executeCmd` copies these fields onto `CommandOpts`, next to the facts only
+ * the mount knows (`mountPrefix`, `index`, `filetypeFns`). Each field is named
+ * as on `CommandOpts` and means the same; a mapped type in
+ * workspace/mount/mount.test.ts pins that. `limitOverride` is the caller's
+ * output limit, which `executeCmd` applies itself instead of forwarding.
  */
 export interface ExecContext {
   stdin?: ByteSource | null
@@ -74,78 +56,74 @@ export interface ExecContext {
 }
 
 /**
- * The dispatcher context of one command invocation, as one value.
- * `Mount.executeCmd` constructs it once and hands it to every handler
- * as the fourth argument; the provision path builds the same bag with
- * `command`/`spec` set. Mirrors Python's `CommandOpts`
- * (commands/config.py) field for field.
+ * Everything a command handler gets besides its operands.
+ *
+ * `Mount.executeCmd` builds one per invocation and passes it as the handler's
+ * fourth argument. A handler reads the fields it needs and ignores the rest.
  */
 export interface CommandOpts {
+  /** Piped standard input, if any. */
   stdin: ByteSource | null
+  /** The parsed flags. Read them through a spec-bound `FlagView`. */
   flags: Record<string, FlagValue>
+  /**
+   * Handlers of the same command for one file extension, so a generic can
+   * hand an operand to one; null inside such a handler.
+   */
   filetypeFns: Record<string, CommandFn> | null
+  /** The prefix of the mount running the command. */
   mountPrefix?: string
+  /** The working directory. */
   cwd: string
+  /** The name the command was invoked as. */
   command?: string
-  // The invoked command's spec, set on the provision path. A provision
-  // function is shared across commands, so it cannot name a dest the way a
-  // handler does -- `-c` is `bytes` on head and `c` on tail -- and needs
-  // the spec to resolve a spelling. Mirrors Python's `spec=` provision
-  // keyword (`workspace/provision/command.py`).
-  spec?: CommandSpec
+  /** The mount's index cache. */
   index?: IndexCacheStore | null
+  /** The workspace op dispatcher. */
   dispatch?: DispatchFn
+  /** The calling session. */
   sessionId?: string
+  /** A snapshot of the session environment. */
   env?: Record<string, string>
-  // The session plane's live, gated handle (reads and gate-cleared
-  // writes); `env` above stays the frozen process-view snapshot. A
-  // command that does not read this simply ignores it.
+  /** The live session, with policy applied to writes; `env` stays the snapshot. */
   sessionView?: SessionView
+  /** The session's processes. */
   processes?: ProcessView
+  /** Whether policy lets the command start an interpreter. */
   execAllowed?: boolean
   /**
-   * Whether code may be loaded from one path, for an interpreter's file
-   * operand; absent outside a workspace, where `execAllowed` answers
-   * for files too.
+   * Whether policy lets an interpreter load code from a path; absent outside
+   * a workspace, where `execAllowed` decides.
    */
   execPathAllowed?: (virtual: string) => boolean
+  /** The runtime an interpreter runs in. */
   runtime?: Runtime
-  // The name plane's facts (symlinks, mount boundaries, attr overlay,
-  // child names the namespace owes a directory), which no backend can
-  // see. A command that does not read this simply ignores it, so there
-  // is no allowlist of name-plane-aware commands anywhere.
+  /**
+   * What the namespace knows and no backend does: symlinks, mount
+   * boundaries, the attribute overlay.
+   */
   ns?: NamespaceView
-  // Dispatcher-backed stat of one path, for a traversal command's start
-  // point: only a directory has a subtree to walk, and a start point the
-  // router resolved into another mount answers there, not on this mount.
+  /** Stat one path through the dispatcher, which may land on another mount. */
   statPath?: StatPath
-  // Dispatcher-backed readdir of one path, for a walker that has to read
-  // past a mount boundary (tree).
+  /** List one directory through the dispatcher, for a walk that crosses a mount. */
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   timeoutSeconds?: number
-  // Runs a nested line in the calling session, reading the input it is
-  // handed, the way the session's `sh -c` would: awk's command pipes and
-  // `system()` go through it. Absent outside a workspace.
+  /** Run a nested line in the calling session, as `sh -c` would (awk's pipes and `system()`). */
   shell?: ShellFn
-  // The words after the command name, as the line spelled them (an
-  // operand's rawPath), for the GNU diagnostic that quotes a word the
-  // classified operands do not hold: diffutils names the line's last
-  // argument, an option included (`cmp: missing operand after '-s'`).
-  // Flags are read through a spec-bound FlagView, never from here. Absent
-  // where a line runs split per operand or per mount, since no one word
-  // list describes such a run. Mirrors Python's `argv`.
+  /**
+   * The words after the command name as typed, for a GNU diagnostic that
+   * quotes one (`cmp: missing operand after '-s'`). Absent when a line runs
+   * split per operand or per mount.
+   */
   argv?: readonly string[]
 }
 
 export type CommandFnResult = [ByteSource | null, IOResult] | null
 
 /**
- * Command function signature mirroring Python's
- * `async def cat(accessor, paths, *texts, stdin=None, n=False, **_extra)`.
- * TS gets four positional params: accessor, paths, texts (Python `*texts`),
- * and an opts bag (Python `**kwargs`). Generic on the accessor type so
- * VFS-specific commands can declare e.g. `accessor: RAMAccessor`.
+ * A command handler: `(accessor, paths, texts, opts)`. Generic on the
+ * accessor so a backend's handler can take its own accessor type.
  */
 export type CommandFn<A extends Accessor = Accessor> = (
   accessor: A,
@@ -153,13 +131,6 @@ export type CommandFn<A extends Accessor = Accessor> = (
   texts: string[],
   opts: CommandOpts,
 ) => Promise<CommandFnResult> | CommandFnResult
-
-export type ProvisionFn<A extends Accessor = Accessor> = (
-  accessor: A,
-  paths: PathSpec[],
-  texts: string[],
-  opts: CommandOpts,
-) => unknown
 
 export type AggregateFn = (results: AggregateResult[]) => Uint8Array
 
@@ -169,7 +140,6 @@ export interface RegisteredCommandInit {
   vfs: string | null
   filetype?: string | null
   fn: CommandFn
-  provisionFn?: ProvisionFn | null
   aggregate?: AggregateFn | null
   write?: boolean
   limit?: Limit | null
@@ -178,16 +148,21 @@ export interface RegisteredCommandInit {
 
 export interface RegisteredCommandOverrides {
   fn?: CommandFn
-  provision?: ProvisionFn | null
 }
 
+/**
+ * One command as a mount registers it: the grammar (with `--help` and
+ * `--version` added), the backend it belongs to, the file extension it
+ * handles (null for every file), the handler, how to merge a run split
+ * across mounts, whether it changes files, its output limit, and whether
+ * mount-root policy checks its operands.
+ */
 export class RegisteredCommand {
   readonly name: string
   readonly spec: CommandSpec
   readonly vfs: string | null
   readonly filetype: string | null
   readonly fn: CommandFn
-  readonly provisionFn: ProvisionFn | null
   readonly aggregate: AggregateFn | null
   readonly write: boolean
   readonly pathGuarded: boolean
@@ -199,7 +174,6 @@ export class RegisteredCommand {
     this.vfs = init.vfs
     this.filetype = init.filetype ?? null
     this.fn = init.fn
-    this.provisionFn = init.provisionFn ?? null
     this.aggregate = init.aggregate ?? null
     this.write = init.write ?? false
     this.pathGuarded = init.pathGuarded ?? false
@@ -207,7 +181,7 @@ export class RegisteredCommand {
     Object.freeze(this)
   }
 
-  /** Return an independent command definition with selected changes. */
+  /** A copy with the handler replaced. */
   withOverrides(overrides: RegisteredCommandOverrides): RegisteredCommand {
     return new RegisteredCommand({
       name: this.name,
@@ -215,7 +189,6 @@ export class RegisteredCommand {
       vfs: this.vfs,
       filetype: this.filetype,
       fn: overrides.fn ?? this.fn,
-      provisionFn: overrides.provision === undefined ? this.provisionFn : overrides.provision,
       aggregate: this.aggregate,
       write: this.write,
       limit: this.limit,
@@ -224,7 +197,7 @@ export class RegisteredCommand {
   }
 }
 
-/** Immutable command array with exact name/filetype lookup. */
+/** A fixed list of commands, looked up by name and file extension. */
 export class CommandCatalog extends Array<RegisteredCommand> {
   readonly #byKey: ReadonlyMap<string, RegisteredCommand>
 
@@ -251,11 +224,11 @@ export class CommandCatalog extends Array<RegisteredCommand> {
   }
 
   require(name: string, filetype: string | null = null): RegisteredCommand {
-    const command = this.get(name, filetype)
-    if (command === null) {
+    const found = this.get(name, filetype)
+    if (found === null) {
       throw new Error(`command '${name}' with filetype ${String(filetype)} is not registered`)
     }
-    return command
+    return found
   }
 
   private static key(name: string, filetype: string | null): string {
@@ -273,217 +246,58 @@ export interface CommandOptions<A extends Accessor = Accessor> {
   spec: CommandSpec
   fn: CommandFn<A>
   filetype?: string | null
-  provision?: ProvisionFn<A> | null
   aggregate?: AggregateFn | null
   write?: boolean
   limit?: Limit | null
   pathGuarded?: boolean
 }
 
-const HELP_ENC = new TextEncoder()
-
-/** Render the GNU-style version line for a command. */
-export function versionLine(name: string): string {
-  return `${name} (Mirage) ${VERSION}\n`
-}
-
-// gnulib's two standard options, in the order `helpSpec` injects them. Both
-// are answered INSIDE the getopt loop, so the one the scan reaches FIRST
-// decides the line: measured on coreutils 9.7, `cat --help --version` prints
-// the help page and `cat --version --help` prints the version line.
-const STANDARD_DESTS = ['--help', '--version'] as const
+const ENC = new TextEncoder()
 
 /**
- * Read these words the way the line is read downstream.
+ * Add `--help` and `--version` to a command, as GNU tools have.
  *
- * The same parse, so the two agree by construction rather than by a second
- * reading of the grammar. Only the option reports and the typed dests are
- * consumed, which is why a cwd the caller does not have is not one it needs:
- * nothing here looks at a resolved path. `_scan` in config.py is the twin.
+ * Either one prints to stdout and exits 0 without running the handler. A
+ * command that declares its own `--version`, or a program that runs its own
+ * option loop (OWN_OPTION_LOOP), answers that option itself.
  */
-function scan(name: string, spec: CommandSpec, words: string[]): ParsedArgs {
-  return parseCommand(spec, words, ROOT_CWD, name)
-}
-
-/**
- * Whether the scan refused an option in the words it read.
- *
- * `missingRequiredOptions` is deliberately not read: the words are a PREFIX of
- * the line for every command but the two that defer, so an option declared
- * later has not been reached yet. `_scan_refuses` in config.py is the twin.
- */
-function scanRefuses(parsed: ParsedArgs): boolean {
-  return parsed.optionErrorKinds.length > 0 || parsed.oldOptionNeedsValue !== null
-}
-
-/**
- * Where the parser reads one injected standard option, if anywhere.
- *
- * Deliberately not a raw scan over argv. A word that only looks like the
- * option can be an earlier option's value, and a lookalike stops at the wrong
- * one: `grep -e -- --version` hands `--` to -e, so the line is not ended and
- * the `--version` after it really is the option, while
- * `sort -o --version --version` hands the first spelling to -o's output file
- * and only the second is read. Reading each prefix in turn puts the answer
- * where the grammar already lives, so `--`, a declared remainder and a
- * consumed value all follow from the parser rather than from three rules
- * restated here. Adding words never un-types a dest, so the first prefix that
- * carries it is the position. `_standard_index` in config.py is the twin.
- */
-function standardIndex(
-  name: string,
-  spec: CommandSpec,
-  argv: string[],
-  dest: string,
-): number | null {
-  for (let index = 0; index < argv.length; index++) {
-    if (scan(name, spec, argv.slice(0, index + 1)).typedDests.includes(dest)) return index
-  }
-  return null
-}
-
-/** What one standard option answers with. `_standard_output` is the twin. */
-function standardOutput(name: string, spec: CommandSpec, dest: string): Uint8Array {
-  return HELP_ENC.encode(dest === '--help' ? helpPage(name, spec) : versionLine(name))
-}
-
-/**
- * Output when argv asks a command for an injected standard option.
- * Null when the command declares that option itself, when the parser does not
- * read any word as one, or when an option the scan reads first is one the
- * parser refuses.
- *
- * This is the one door both standard options come through, and it runs ahead
- * of routing because neither answer belongs to a backend: `rm --version /ro/x`
- * would otherwise meet the read-only refusal, and `mv --help /ram/a /disk/b`
- * would otherwise reach the cross-mount relay, which bypasses the registered
- * wrapper that answers help and MOVED THE FILE instead of printing the page.
- * The two are one mechanism rather than two because GNU answers both from the
- * same long_options table, so they are ordered against each other by scan
- * position like any other pair of options: measured on coreutils 9.7,
- * `cat --help --version` is the help page and `cat --version --help` is the
- * version line.
- *
- * Three rules about position, all of them GNU's and none of them restated
- * here. Which words the scan has read when it answers, because a standard
- * option is an option like any other and an error the scan meets first is what
- * GNU reports (`cat --bogus --vers` is `unrecognized option '--bogus'`), with
- * STANDARD_AFTER_SCAN and STANDARD_BEFORE_SCAN for the two families that
- * answer elsewhere. Whether that word is the option at all, which only the
- * parser can say: a declared remainder slot is argparse's REMAINDER, `--` ends
- * the scan, and a value-taking option swallows the word after it. And gnulib's
- * `parse_long_options` window, which the parser already applies for
- * SOLE_ARGUMENT_LONG_OPTIONS, so this reads its answer rather than carrying a
- * second copy of the rule. `standard_request` in config.py is the twin.
- */
-export function standardRequest(
-  name: string,
-  spec: CommandSpec | null,
-  argv: string[],
-): Uint8Array | null {
-  if (spec === null) return null
-  const injected: Record<string, boolean> = {
-    '--help': hasInjectedHelp(spec),
-    '--version': hasInjectedVersion(spec),
-  }
-  if (!STANDARD_DESTS.some((d) => injected[d] === true)) return null
-  const whole = scan(name, spec, argv)
-  const found: { index: number; dest: string }[] = []
-  for (const dest of STANDARD_DESTS) {
-    if (injected[dest] !== true || !whole.typedDests.includes(dest)) continue
-    const index = standardIndex(name, spec, argv, dest)
-    if (index !== null) found.push({ index, dest })
-  }
-  if (found.length === 0) return null
-  // The one the scan reaches first decides; no two options share a word, so
-  // the positions cannot tie.
-  const first = found.reduce((a, b) => (a.index <= b.index ? a : b))
-  const builtin = isBuiltinGrammar(name, spec)
-  if (builtin && STANDARD_BEFORE_SCAN.has(name)) return standardOutput(name, spec, first.dest)
-  // Everything ahead of the option has to scan cleanly: a refusal among those
-  // words is what GNU reports instead of the answer.
-  if (scanRefuses(scan(name, spec, argv.slice(0, first.index)))) return null
-  // A program that answers only after the whole scan needs the rest of the
-  // line to be clean as well.
-  if (builtin && STANDARD_AFTER_SCAN.has(name) && scanRefuses(whole)) return null
-  return standardOutput(name, spec, first.dest)
-}
-
-/** Whether the wrapper supplies this spec's help response. */
-export function hasInjectedHelp(spec: CommandSpec | null): boolean {
-  return spec?.options.some((o) => o === HELP_OPTION) ?? false
-}
-
-/** Whether the wrapper supplies this spec's version response. */
-export function hasInjectedVersion(spec: CommandSpec | null): boolean {
-  return spec?.options.some((o) => o === VERSION_OPTION) ?? false
-}
-
-/**
- * One command's `--help` page.
- *
- * Rendered from `helpSpec`, not from the declared spec, so it documents the
- * two options every command answers rather than only the ones its author
- * wrote down. Only the builtin itself gets GNU's own synopsis line: a
- * registered command that borrowed the name keeps the line its own spec
- * synthesizes, which is why this asks for the spec OBJECT rather than
- * trusting the name. `help_page` in config.py is the twin.
- */
-export function helpPage(name: string, spec: CommandSpec): string {
-  // Either form of the builtin's own grammar answers the same page: the
-  // declared spec the wrapper holds, and the one enriched copy the registry
-  // parses, which is what a caller reaching this from the routing door has.
-  // That is exactly what `isBuiltinGrammar` settles, and asking it rather than
-  // `BUILTIN_SPECS[name] === spec` is what keeps a cross-mount `--help` from
-  // losing GNU's synopsis line.
-  const synopsis = isBuiltinGrammar(name, spec) ? SYNOPSES[name] : undefined
-  return renderHelp(name, registeredSpec(name, spec), [], UsageStyle.ARGPARSE, synopsis)
-}
-
-/**
- * Inject --help / --version and short-circuit them before the handler.
- * Mirrors GNU coreutils: every registered command accepts both flags,
- * prints to stdout, and exits 0 without running the command body.
- * A command declaring its own --version handles that flag itself, and a
- * program that runs its own option loop (OWN_OPTION_LOOP) answers --help
- * there too, after any option typed before it.
- */
-function withHelpSupport(
+function answerStandardOptions(
   name: string,
   spec: CommandSpec,
   fn: CommandFn,
 ): { spec: CommandSpec; fn: CommandFn } {
-  const hasVersion = spec.options.some((o) => o.long === '--version')
+  const ownVersion = spec.options.some((o) => o.long === '--version')
   const ownHelp = isBuiltinGrammar(name, spec) && OWN_OPTION_LOOP.has(name)
-  const newSpec = registeredSpec(name, spec)
   const helpText = helpPage(name, spec)
   const versionText = versionLine(name)
-  const wrappedFn: CommandFn = async (accessor, paths, texts, opts) => {
-    if (!ownHelp && opts.flags.help === true) {
-      return [HELP_ENC.encode(helpText), new IOResult()]
-    }
-    if (!hasVersion && opts.flags.version === true) {
-      return [HELP_ENC.encode(versionText), new IOResult()]
+  const wrapped: CommandFn = async (accessor, paths, texts, opts) => {
+    if (!ownHelp && opts.flags.help === true) return [ENC.encode(helpText), new IOResult()]
+    if (!ownVersion && opts.flags.version === true) {
+      return [ENC.encode(versionText), new IOResult()]
     }
     return fn(accessor, paths, texts, opts)
   }
-  return { spec: newSpec, fn: wrappedFn }
+  return { spec: registeredSpec(name, spec), fn: wrapped }
 }
 
+/**
+ * Register a handler as a command of one or more VFSes: one
+ * `RegisteredCommand` per VFS, with the handler wrapped to answer `--help`
+ * and `--version`.
+ */
 export function command<A extends Accessor = Accessor>(
   options: CommandOptions<A>,
 ): RegisteredCommand[] {
   const vfsNames = Array.isArray(options.vfs) ? options.vfs : [options.vfs]
-  const { spec, fn } = withHelpSupport(options.name, options.spec, options.fn as CommandFn)
+  const { spec, fn } = answerStandardOptions(options.name, options.spec, options.fn as CommandFn)
   return vfsNames.map(
-    (r) =>
+    (vfs) =>
       new RegisteredCommand({
         name: options.name,
         spec,
-        vfs: r,
+        vfs,
         filetype: options.filetype ?? null,
         fn,
-        provisionFn: (options.provision ?? null) as ProvisionFn | null,
         aggregate: options.aggregate ?? null,
         write: options.write ?? false,
         limit: options.limit ?? null,

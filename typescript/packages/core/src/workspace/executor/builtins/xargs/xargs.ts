@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { decodeLine } from '../../../../commands/builtin/grep_offsets.ts'
-import { versionLine } from '../../../../commands/config.ts'
+import { versionLine } from '../../../../commands/spec/standard.ts'
 import { quoteText } from '../../../../commands/quote.ts'
 import { runAsProgram, runWithSession } from '../../../../context/session_context.ts'
 import { renderHelp } from '../../../../commands/spec/help.ts'

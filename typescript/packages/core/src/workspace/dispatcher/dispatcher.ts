@@ -1398,7 +1398,7 @@ export class Dispatcher {
 
   // The file cache only holds paths for read-caching mounts, mirroring
   // Python's cache_facts_for gate; without it every backend's reads
-  // land in the cache and provision reports phantom cache hits.
+  // land in the cache.
   cacheFactsFor = (path: string): CacheFacts => {
     const mount = this.namespace.tryMountFor(path)
     if (mount === null || mount.retiring || !mount.vfs.cachesReads) {

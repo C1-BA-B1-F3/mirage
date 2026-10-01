@@ -19,7 +19,6 @@ from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.sed import sed_generic
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           bound_op)
-from mirage.commands.builtin.generic_bind.provision import make_sed_provision
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -39,4 +38,4 @@ async def sed(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         (partial(ops.write, accessor) if ops.write is not None else None))
 
 
-BUILDER = Builder('sed', sed, make_sed_provision)
+BUILDER = Builder('sed', sed)

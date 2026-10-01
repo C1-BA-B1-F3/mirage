@@ -71,27 +71,7 @@ mirage       execute --workspace_id cross \
   --command 'cat /s3/data/example.jsonl "/gdrive/AWS CDK.gdoc.json" | wc -l'
 ```
 
-## 4. Dry-run with `provision`
-
-```bash
-mirage       provision --workspace_id cross --command "cat /s3/data/example.jsonl | wc -l"
-./mirage-ts  provision --workspace_id cross --command "cat /s3/data/example.jsonl | wc -l"
-```
-
-After a real read the same path flips from a network read to a cache
-hit (`cache_hits=1`):
-
-```bash
-mirage       execute   --workspace_id cross --command "cat /s3/data/example.jsonl > /dev/null"
-./mirage-ts  execute   --workspace_id cross --command "cat /s3/data/example.jsonl > /dev/null"
-```
-
-```bash
-mirage       provision --workspace_id cross --command "cat /s3/data/example.jsonl"
-./mirage-ts  provision --workspace_id cross --command "cat /s3/data/example.jsonl"
-```
-
-## 5. Snapshot and restore
+## 4. Snapshot and restore
 
 Snapshots redact cloud creds at snapshot time, so loading needs fresh
 creds via a config file. The same workspace YAML used for create works.
@@ -113,7 +93,7 @@ mirage       workspace get cross_loaded --verbose
 ./mirage-ts  workspace get cross_loaded --verbose
 ```
 
-## 6. Clean up
+## 5. Clean up
 
 The daemon exits ~30s after the last workspace is deleted.
 
@@ -127,7 +107,7 @@ mirage       workspace delete cross_loaded
 ./mirage-ts  workspace delete cross_loaded
 ```
 
-## 7. Per-mount command limits (Python CLI)
+## 6. Per-mount command limits (Python CLI)
 
 A mount can cap what a command streams back with `command_limits`,
 so a runaway `cat`/`grep`/`rg` can't flood the agent or hang forever.
@@ -188,7 +168,7 @@ Clean up:
 mirage workspace delete cross_sg
 ```
 
-## 8. Versioning (Python CLI)
+## 7. Versioning (Python CLI)
 
 The daemon keeps a git-backed history per workspace under
 `~/.mirage/repos/<id>` (set `MIRAGE_HOME` to relocate the whole data

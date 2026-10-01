@@ -13,4 +13,4 @@ def _options(fl: FlagView) -> dict[str, JsonValue]:
     }
 
 
-search = make_search("dify", IO.search, _options, provision=None)
+search = make_search("dify", IO.search, _options)

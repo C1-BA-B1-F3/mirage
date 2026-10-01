@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Ops } from '../../ops/ops.ts'
-import type { ProvisionResult } from '../../provision/types.ts'
 import type { SessionState } from '../session/session.ts'
 import type { ExecuteOptions, ExecuteResult } from './types.ts'
 import type { Workspace } from './workspace.ts'
@@ -51,19 +50,7 @@ export class Session {
   }
 
   /** Run a shell line as this session; `Workspace.shell` with the session fixed. */
-  shell(
-    command: string,
-    options?: SessionExecuteOptions & { provision?: false | undefined },
-  ): Promise<ExecuteResult>
-  shell(
-    command: string,
-    options: SessionExecuteOptions & { provision: true },
-  ): Promise<ProvisionResult>
-  shell(command: string, options: SessionExecuteOptions): Promise<ExecuteResult | ProvisionResult>
-  shell(
-    command: string,
-    options: SessionExecuteOptions = {},
-  ): Promise<ExecuteResult | ProvisionResult> {
+  shell(command: string, options: SessionExecuteOptions = {}): Promise<ExecuteResult> {
     return this.ws.shell(command, { ...options, sessionId: this.sessionId })
   }
 }

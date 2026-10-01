@@ -28,12 +28,12 @@ from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
-from mirage.commands.config import (CommandOpts, ExecContext,
-                                    RegisteredCommand, has_injected_version)
+from mirage.commands.config import CommandOpts, ExecContext, RegisteredCommand
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.flag_view import FlagBag
+from mirage.commands.spec.standard import has_injected_version
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import (effective_mount_mode, require_paths_writable,

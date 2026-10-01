@@ -33,4 +33,4 @@ async def diff(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               bound_op(ops.stat, accessor, opts.index))
 
 
-BUILDER = Builder('diff', diff, None, False, None, read=True)
+BUILDER = Builder('diff', diff, read=True)

@@ -12,10 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.core.generic.du import make_walked_du
 from mirage.core.onedrive.copy import copy as _copy
 from mirage.core.onedrive.create import create as _create
-from mirage.core.onedrive.du import entries as _du_entries
-from mirage.core.onedrive.du import size as _du_size
 from mirage.core.onedrive.exists import exists as _exists
 from mirage.core.onedrive.find import find as _find
 from mirage.core.onedrive.mkdir import mkdir as _mkdir
@@ -30,15 +29,14 @@ from mirage.core.onedrive.truncate import truncate as _truncate
 from mirage.core.onedrive.unlink import unlink as _unlink
 from mirage.core.onedrive.write import write_bytes as _write
 from mirage.vfs.adapter import VFSAdapter
-from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
+from mirage.vfs.types import NativeReadOps, ReadOps, WriteOps
 
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 native=NativeReadOps(read_range=_read,
                                      read_stream=_read_stream,
                                      exists=_exists,
                                      find=_find,
-                                     du=DuOps(size=_du_size,
-                                              entries=_du_entries)),
+                                     du=make_walked_du(_stat, _readdir)),
                 writes=WriteOps(write=_write,
                                 mkdir=_mkdir,
                                 unlink=_unlink,

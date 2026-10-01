@@ -24,10 +24,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/pjo && printf '1 a\\n2 b\\n' > /data/pjo/a && printf '1 x\\n3 z\\n' > /data/pjo/b && join -a 1 -e NA -o '0,1.2,2.2' /data/pjo/a /data/pjo/b",
+      "command": "mkdir -p /data/pjo && printf '1 a\\n2 b\\n' > /data/pjo/a && printf '1 x\\n3 z\\n' > /data/pjo/b && join -a 1 -a 2 -e NA -o '0,1.2,2.2' /data/pjo/a /data/pjo/b",
       "expect": {
         "exit": 0,
-        "stdout": "1 a x\n2 b NA\n",
+        "stdout": "1 a x\n2 b NA\n3 NA z\n",
         "stderr": ""
       },
       "flags": [

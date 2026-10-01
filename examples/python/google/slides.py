@@ -43,14 +43,6 @@ async def main():
 
     first = (await r.stdout_str()).strip().split("\n")[0]
 
-    print("=== plan: cat ===")
-    dr = await ws.shell(f"cat /gslides/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
-    print("=== plan: grep ===")
-    dr = await ws.shell(f"grep textRun /gslides/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
     print("=== jq .title ===")
     r = await ws.shell(f'jq ".title" /gslides/owned/{first}')
     print(await r.stdout_str())

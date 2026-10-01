@@ -251,11 +251,6 @@ async def test_slash_guard_leaves_write_absent_when_the_backend_has_none():
         "overrides": {"cat", "search"}
     },
     {
-        "provision_overrides": {
-            "gerp": lambda *a, **k: None
-        }
-    },
-    {
         "ops_overrides": {
             "lss": _ops(_CountingBackend(b""))
         }

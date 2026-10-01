@@ -574,11 +574,3 @@ export function valueText(text: Uint8Array): string | NoValue {
   const parsed = parser.text()
   return parser.next() === NO_VALUE ? parsed : NO_VALUE
 }
-
-/**
- * Whether a file's name says it holds JSON Lines, one document to a line,
- * which jq reads one line at a time.
- */
-export function isJsonlPath(path: string): boolean {
-  return path.endsWith('.jsonl') || path.endsWith('.ndjson')
-}

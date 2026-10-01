@@ -45,12 +45,6 @@ export { REDIS_PROMPT } from '@struktoai/mirage-core/vfs/redis/prompt'
 export { RedisStore, type RedisStoreOptions } from './vfs/redis/store.ts'
 export { RedisAccessor } from '@struktoai/mirage-core/accessor/redis'
 export { REDIS_OPS } from '@struktoai/mirage-core/ops/redis/index'
-export {
-  fileReadProvision,
-  headTailProvision,
-  metadataProvision,
-  type RedisResourceLike,
-} from '@struktoai/mirage-core/commands/builtin/redis/_provision'
 export { RedisFileCacheStore, type RedisFileCacheOptions } from './cache/file/redis.ts'
 export { FuseManager } from './workspace/fuse.ts'
 export { MirageFS, type MirageFSOptions, type FuseAttr } from './fuse/fs.ts'

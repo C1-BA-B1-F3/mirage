@@ -69,10 +69,6 @@ def test_bg_submission():
     }) == 0
 
 
-def test_provision_kind():
-    assert exit_code_from_response({"kind": "provision", "detail": "ok"}) == 0
-
-
 def test_raw_kind():
     assert exit_code_from_response({"kind": "raw", "value": "hi"}) == 0
 

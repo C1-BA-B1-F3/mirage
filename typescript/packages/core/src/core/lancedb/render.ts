@@ -14,31 +14,46 @@
 
 import type { LanceRow } from './query.ts'
 import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
+import { valueText } from '../render/json.ts'
 
 const ENC = new TextEncoder()
 const SKIP_KEYS = new Set(['_distance', '_rowid', '_score'])
 
-/** A column value as the card and the tree spell it. */
-export function toStr(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value as string | number | boolean | bigint)
+function isJson(value: unknown): boolean {
+  if (value === null) return true
+  if (['string', 'boolean', 'number', 'bigint'].includes(typeof value)) return true
+  if (Array.isArray(value)) return value.every(isJson)
+  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.values(value as Record<string, unknown>).every(isJson)
+  }
+  return false
+}
+
+/**
+ * One column value as the card and the tree spell it.
+ *
+ * A JSON value spells as `valueText` does, so both hosts print one card
+ * (`true`, `null`, `1.5`); a value JSON cannot hold, such as an Arrow
+ * timestamp or bytes, falls back to `String`.
+ */
+export function cellText(value: unknown): string {
+  return isJson(value) ? valueText(value) : String(value)
 }
 
 export function renderCard(row: LanceRow, config: LanceDBConfigResolved): Uint8Array {
   const lines: string[] = []
   const title = config.titleColumn !== null ? row[config.titleColumn] : undefined
   if (title !== undefined && title !== null) {
-    lines.push(`# ${toStr(title)}`)
+    lines.push(`# ${cellText(title)}`)
     lines.push('')
   }
   for (const [key, value] of Object.entries(row)) {
     if (SKIP_KEYS.has(key)) continue
     if (key === config.vectorColumn || key === config.blobColumn) continue
-    lines.push(`${key}: ${toStr(value)}`)
+    lines.push(`${key}: ${cellText(value)}`)
   }
   if (config.blobColumn !== null && config.idColumn in row) {
-    lines.push(`blob: ${toStr(row[config.idColumn])}.${config.blobExt}`)
+    lines.push(`blob: ${cellText(row[config.idColumn])}.${config.blobExt}`)
   }
   return ENC.encode(lines.join('\n') + '\n')
 }

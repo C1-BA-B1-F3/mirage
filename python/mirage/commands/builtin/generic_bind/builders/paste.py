@@ -38,4 +38,4 @@ async def paste(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                zero_terminated=fl.as_bool("zero_terminated"))
 
 
-BUILDER = Builder('paste', paste, None, False, None, read=True)
+BUILDER = Builder('paste', paste, read=True)

@@ -261,7 +261,6 @@ async function judgeWords(
     agentId,
     null,
     redirectPaths(redirectWords, registry, session.cwd),
-    false,
     intrinsic,
   )
   if (!Array.isArray(gated)) {
@@ -715,7 +714,6 @@ async function verdictRefuses(
     agentId,
     null,
     redirects,
-    false,
     judged.intrinsic,
   )
   if (!Array.isArray(gated)) return true

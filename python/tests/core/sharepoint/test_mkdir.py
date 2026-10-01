@@ -3,7 +3,7 @@ from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
-from mirage.core.sharepoint.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.sharepoint.mkdir import mkdir
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key

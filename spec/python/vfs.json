@@ -2099,9 +2099,6 @@
         "table": {
           "required": false
         },
-        "text_column": {
-          "required": false
-        },
         "title_column": {
           "required": false
         },

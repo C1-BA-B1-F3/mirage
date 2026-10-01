@@ -36,4 +36,4 @@ async def cat(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              local=ops.local)
 
 
-BUILDER = Builder('cat', cat, None, False, concat_aggregate, read=True)
+BUILDER = Builder('cat', cat, aggregate=concat_aggregate, read=True)

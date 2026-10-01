@@ -38,12 +38,11 @@ async def expand_redirects(
 ) -> tuple[list[Redirect], Any]:
     """Expand redirect targets: heredoc vars, target words, pipelines.
 
-    The single expansion path for redirected statements, shared by the
-    executor (which then applies the redirects) and the provision
-    planner (which only costs them). Heredoc/herestring bodies get
-    session variables substituted; file targets are expanded and
-    classified into PathSpec or plain text; the first attached
-    pipeline is detached and returned separately.
+    The single expansion path for redirected statements, which the
+    executor then applies. Heredoc/herestring bodies get session
+    variables substituted; file targets are expanded and classified
+    into PathSpec or plain text; the first attached pipeline is
+    detached and returned separately.
 
     Args:
         redirects (list[Redirect]): parsed redirects from get_redirects.

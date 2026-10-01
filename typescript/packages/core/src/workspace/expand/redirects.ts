@@ -30,9 +30,8 @@ import type { TSNodeLike } from '../../shell/types.ts'
 /**
  * Expand redirect targets: heredoc vars, target words, pipelines.
  *
- * The single expansion path for redirected statements, shared by the
- * executor (which then applies the redirects) and the provision
- * planner (which only costs them). Heredoc/herestring bodies get
+ * The single expansion path for redirected statements; the executor
+ * then applies the redirects. Heredoc/herestring bodies get
  * session variables substituted; file targets are expanded and
  * classified into PathSpec or plain text; the first attached pipeline
  * is detached and returned separately.

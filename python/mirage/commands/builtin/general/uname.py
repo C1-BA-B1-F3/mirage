@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -41,7 +40,7 @@ UNAME_FIELDS = (
 UNKNOWN = "unknown"
 
 
-@command("uname", vfs=None, spec=SPECS["uname"], provision=pure_provision)
+@command("uname", vfs=None, spec=SPECS["uname"])
 async def uname(
     accessor: Accessor,
     paths: list[PathSpec],

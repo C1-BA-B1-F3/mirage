@@ -44,48 +44,13 @@ async def main():
     await ws.shell("ls /gdrive/")
     await ws.shell("ls /gdrive/mirage/")
 
-    # ── plan: estimate before executing ──
-    print("=== PLAN ESTIMATES ===\n")
-
-    dr = await ws.shell("grep mirage /gdrive/mirage/example.jsonl",
-                        provision=True)
-    print("--- plan: grep mirage /gdrive/mirage/example.jsonl ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}, precision: {dr.precision}")
-
-    dr = await ws.shell("grep mirage /gdrive/mirage/example.jsonl | head -n 3",
-                        provision=True)
-    print("\n--- plan: grep mirage ... | head -n 3 ---")
-    print(f"  op: {dr.op}, children: {len(dr.children)}")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  precision: {dr.precision}")
-    for c in dr.children:
-        net, cache = c.network_read, c.cache_read
-        print(f"    {c.command}: net={net}, cache={cache}, {c.precision}")
-
-    dr = await ws.shell(
-        "grep mirage /gdrive/mirage/example.jsonl && echo found",
-        provision=True)
-    print("\n--- plan: grep ... && echo found ---")
-    print(f"  op: {dr.op}, network_read: {dr.network_read}")
-    for c in dr.children:
-        print(f"    {c.command}: net={c.network_read}, {c.precision}")
-
-    print(f"\n  Stats after plans (should be 0): {ops_summary()}")
-
-    # ── cache-aware plan ──
-    print("\n--- caching: cat /gdrive/mirage/example.jsonl | wc -l ---")
+    # ── caching: one full read warms the file cache ──
+    print("--- caching: cat /gdrive/mirage/example.jsonl | wc -l ---")
     result = await ws.shell("cat /gdrive/mirage/example.jsonl | wc -l")
     print(f"  lines: {(await result.stdout_str()).strip()}")
     print(f"  Stats after caching: {ops_summary()}")
 
-    dr = await ws.shell("grep mirage /gdrive/mirage/example.jsonl",
-                        provision=True)
-    print("\n--- plan after cache: grep mirage ... ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  cache_hits: {dr.cache_hits}, read_ops: {dr.read_ops}")
-
-    print("\n=== ACTUAL EXECUTION ===\n")
+    print("\n=== EXECUTION ===\n")
 
     # ── simple grep ──
     print("--- grep mirage /gdrive/mirage/example.jsonl ---")
@@ -342,11 +307,6 @@ async def main():
     print("\n--- printenv ---")
     result = await ws.shell("printenv")
     print(f"  {(await result.stdout_str()).strip()}")
-
-    print("\n--- plan: cd + grep ---")
-    await ws.shell("cd /gdrive/mirage")
-    dr = await ws.shell("grep mirage example.jsonl", provision=True)
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
 
     # ── execution history: hidden recorder + GNU views ──
     print("\n=== EXECUTION HISTORY ===\n")

@@ -7,8 +7,8 @@ registries. `python/general` is the Python surface; `typescript/node` and
 
 Each file carries the parsed spec (description, epilog, options, positional
 operands, rest operand, ignored tokens) plus a `_meta` block recording which
-VFS register the command and whether any registration carries a
-provision, an aggregate, or the write flag.
+VFS register the command and whether any registration carries an
+aggregate or the write flag.
 
 `vfs_commands` beside each `general` holds, in the same shape, every
 registered command the shared `SPECS` table does not declare: a backend verb
@@ -18,8 +18,8 @@ after the command with spaces as underscores (`trello_card_create.json`),
 and the directory is rewritten whole on every run.
 
 `_meta.by_vfs` keys those same facts by the registering VFS. The
-union flags cannot say *which* backend carries a provision, so dropping one
-backend's provision while another keeps it leaves every union unchanged. The
+union flags cannot say *which* backend carries an aggregate, so dropping one
+backend's aggregate while another keeps it leaves every union unchanged. The
 parity check compares per VFS for that reason, and falls back to the
 unions only once the per-VFS entries agree. Registrations with no
 vfs (the general commands) are keyed under the empty string.

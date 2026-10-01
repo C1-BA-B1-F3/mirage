@@ -62,22 +62,6 @@ async def main():
     await ws.shell("ls /gdrive/")
     await ws.shell("ls /gdrive/mirage/")
 
-    # ── plan: directory scans across mounts ──
-    print("=== PLAN: DIRECTORY SCANS ===\n")
-
-    dr = await ws.shell("grep mirage /s3/data/example.jsonl", provision=True)
-    print(f"s3 single file: network_read={dr.network_read}")
-
-    dr = await ws.shell("grep mirage /gdrive/mirage/example.jsonl",
-                        provision=True)
-    print(f"gdrive single file: network_read={dr.network_read}")
-
-    dr = await ws.shell("rg import /github/mirage/commands/config.py",
-                        provision=True)
-    print(f"github single file: network_read={dr.network_read}")
-
-    print(f"\nStats after plans (should be 0): {ops_summary()}")
-
     # ── S3: grep on single file vs directory ──
     print("\n=== S3: SINGLE FILE vs DIRECTORY ===\n")
 

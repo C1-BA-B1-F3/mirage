@@ -4,13 +4,11 @@
       "trello": {
         "filetypes": [],
         "has_aggregate": false,
-        "has_provision": false,
         "has_write": true
       }
     },
     "filetypes": [],
     "has_aggregate": false,
-    "has_provision": false,
     "has_write": true,
     "vfs_names": [
       "trello"

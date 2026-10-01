@@ -30,4 +30,4 @@ async def look(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               bound_op(ops.read_bytes, accessor, opts.index))
 
 
-BUILDER = Builder('look', look, None, False, None, read=True)
+BUILDER = Builder('look', look, read=True)

@@ -12,11 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
-
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.builtin.aggregators import prefix_aggregate
-from mirage.commands.builtin.email._provision import file_read_provision
 from mirage.commands.builtin.email.io import resolve_glob
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
@@ -37,7 +34,6 @@ from mirage.core.email.scope import NATIVE_KINDS, detect_scope
 from mirage.core.email.search import search_and_format
 from mirage.core.email.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -59,19 +55,7 @@ RG_SEARCH_HONORED = ("line_number", "files_with_matches", "word_regexp",
                      "only_matching", "max_count", "line_regexp")
 
 
-async def grep_provision(accessor: EmailAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep",
-         vfs="email",
-         spec=SPECS["grep"],
-         provision=grep_provision,
-         aggregate=prefix_aggregate)
+@command("grep", vfs="email", spec=SPECS["grep"], aggregate=prefix_aggregate)
 async def grep(accessor: EmailAccessor, paths: list[PathSpec],
                texts: list[str],
                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

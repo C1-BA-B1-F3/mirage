@@ -29,4 +29,4 @@ async def realpath(ops: CommandIO, accessor: Accessor,
                                   bound_op(ops.stat, accessor, opts.index))
 
 
-BUILDER = Builder('realpath', realpath, None, False, None)
+BUILDER = Builder('realpath', realpath)

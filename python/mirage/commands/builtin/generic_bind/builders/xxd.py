@@ -30,4 +30,4 @@ async def xxd(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                              bound_op(ops.read_stream, accessor, opts.index))
 
 
-BUILDER = Builder('xxd', xxd, None, False, None, read=True)
+BUILDER = Builder('xxd', xxd, read=True)

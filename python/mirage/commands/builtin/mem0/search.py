@@ -15,7 +15,6 @@
 from dataclasses import dataclass
 
 from mirage.accessor.mem0 import Mem0Accessor
-from mirage.commands.builtin.generic_bind import metadata_provision
 from mirage.commands.builtin.mem0.io import IO
 from mirage.commands.builtin.utils.paths import default_paths
 from mirage.commands.config import CommandOpts, command
@@ -46,10 +45,7 @@ def parse_flags(fl: FlagView, default_limit: int) -> SearchFlags:
     return SearchFlags(method=method, top_k=top_k, threshold=threshold)
 
 
-@command("search",
-         vfs="mem0",
-         spec=SPECS["search"],
-         provision=metadata_provision)
+@command("search", vfs="mem0", spec=SPECS["search"])
 async def search(accessor: Mem0Accessor, paths: list[PathSpec],
                  texts: list[str],
                  opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

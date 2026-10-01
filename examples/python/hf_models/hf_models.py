@@ -38,13 +38,6 @@ def ops_summary() -> str:
     return f"{len(records)} ops, {total} bytes transferred"
 
 
-def show_plan(label: str, dr) -> None:
-    print(f"\n--- plan: {label} ---")
-    print(f"  network_read: {dr.network_read}  cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}  cache_hits: {dr.cache_hits}  "
-          f"precision: {dr.precision}")
-
-
 async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /m/ ===")
 
@@ -190,29 +183,6 @@ async def main():
                        " jq .vocab_size /m/config.json &"
                        " wait; echo done")
     print(f"  stdout: {(await r.stdout_str()).strip()}")
-
-    # ── PROVISION ───────────────────────────────────────
-    print("\n=== PROVISION (plan without executing) ===")
-    await ws.cache.clear()
-    before = ops_summary()
-
-    dr = await ws.shell("cat /m/config.json", provision=True)
-    show_plan("cat /m/config.json (tiny)", dr)
-
-    dr = await ws.shell("cat /m/model.safetensors", provision=True)
-    show_plan("cat /m/model.safetensors (2GB! plan only, no read)", dr)
-
-    dr = await ws.shell("head -c 256 /m/model.safetensors", provision=True)
-    show_plan("head -c 256 /m/model.safetensors (byte range, 256B)", dr)
-
-    dr = await ws.shell("stat /m/model.safetensors", provision=True)
-    show_plan("stat /m/model.safetensors (metadata, 0 bytes)", dr)
-
-    dr = await ws.shell("jq .hidden_size /m/config.json", provision=True)
-    show_plan("jq .hidden_size /m/config.json", dr)
-
-    print(f"\n  before plans: {before}")
-    print(f"  after plans:  {ops_summary()}  (planning is read-free)")
 
     # ── byte-range read of the safetensors header ───────
     print("\n=== STREAMING (range reads on 2GB weights) ===")

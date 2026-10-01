@@ -18,7 +18,8 @@ import type { FileStat, PathSpec } from '../../types.ts'
 import type { DeltaHook } from '../../watch/base.ts'
 import { ListingDeltaHook } from '../../watch/delta.ts'
 import { ReaddirWalk } from '../../watch/walk.ts'
-import { readdir, stat } from './index.ts'
+import { readdir } from './readdir.ts'
+import { stat } from './stat.ts'
 
 /**
  * Build the SharePoint delta hook.

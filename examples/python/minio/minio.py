@@ -97,13 +97,6 @@ async def main():
     r = await ws.shell("jq .tags /minio/data/config.json")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print("\n--- PROVISION: cat (plan only) vs head -c (byte budget) ---")
-    dr = await ws.shell("cat /minio/data/example.jsonl", provision=True)
-    print(f"  cat: network_read={dr.network_read} precision={dr.precision}")
-    dr = await ws.shell("head -c 20 /minio/data/example.jsonl", provision=True)
-    print(f"  head -c 20: network_read={dr.network_read} "
-          f"precision={dr.precision}")
-
     print("\n--- rm seeded objects ---")
     for key in ("/minio/data/example.jsonl", "/minio/data/config.json",
                 "/minio/notes.txt"):

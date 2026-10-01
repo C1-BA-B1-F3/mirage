@@ -59,5 +59,5 @@ def test_join_o_empty(env):
 def test_join_12(env):
     env.create_file("a.txt", b"a 1\nb 2\n")
     env.create_file("b.txt", b"1 x\n2 y\n")
-    result = env.mirage("join -1 1 -2 1 /data/a.txt /data/b.txt")
-    assert len(result.strip()) > 0 or result.strip() == ""
+    assert env.mirage("join -1 2 -2 1 /data/a.txt /data/b.txt") == env.native(
+        "join -1 2 -2 1 a.txt b.txt")

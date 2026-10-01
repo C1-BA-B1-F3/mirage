@@ -49,10 +49,10 @@ from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.expand.spec_hints import (spec_for_command,
                                                 spec_word_bases,
                                                 spec_word_kinds)
-from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, Consumer,
-                                     WordPolicy, follows_last_component,
-                                     is_tool, listed, lookup, reads_subtrees,
-                                     walks_mounts, word_policy)
+from mirage.workspace.lookup import (SLASH_KEEPS_LAST, Consumer, WordPolicy,
+                                     follows_last_component, is_tool, listed,
+                                     lookup, reads_subtrees, walks_mounts,
+                                     word_policy)
 from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
@@ -243,7 +243,6 @@ async def gate(
     agent_id: str = "",
     stdin: ByteSource | None = None,
     redirects: Sequence[PathSpec] = (),
-    defined_fn: bool = False,
     intrinsic: bool = False,
 ) -> Refused | tuple[CommandContext, Deny | Ask | None]:
     """Everything the gate decides about one command before anything is
@@ -270,22 +269,12 @@ async def gate(
             redirect targets, empty when it has none.
         intrinsic (bool): judge a shell-provided operation as a tool even
             when a function shadows its policy name.
-        defined_fn (bool): the caller vouches the head word is a shell
-            function defined by run time. The provision walk vouches
-            for a function its own script defines: the run stores that
-            definition in the session before the call, a dry run keeps
-            it in plan state, where neither ``command_visible`` nor
-            ``is_tool`` can see it. The word is then judged exactly as
-            the run would judge it — exempt from the allow lists unless
-            a builtin shadows it (``SHELL_NAMES``), and ``ctx.tool``
-            False accordingly.
 
     Returns:
         A Refused when the session cannot see the head word, else the
         context and whatever the policy chain answered.
     """
-    tool = intrinsic or (
-        (name in SHELL_NAMES) if defined_fn else is_tool(name, session))
+    tool = intrinsic or is_tool(name, session)
     if tool and not listed(name, session):
         return Refused(f"{name}: command not found\n".encode(), 127)
     tokens, program = program_tokens(registry, name, args, session.cwd)

@@ -40,4 +40,4 @@ async def zgrep(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('zgrep', zgrep, None, False, None, read=True)
+BUILDER = Builder('zgrep', zgrep, read=True)

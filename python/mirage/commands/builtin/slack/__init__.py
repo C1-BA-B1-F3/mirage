@@ -13,8 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
 from mirage.commands.builtin.slack.grep import grep
 from mirage.commands.builtin.slack.io import IO as _IO
 from mirage.commands.builtin.slack.rg import rg
@@ -25,6 +23,6 @@ COMMANDS = [
         _IO,
         overrides={"grep", "rg"},
     ),
-    *with_default_provisions([grep, rg], _IO.stat, _IO.resolve_glob,
-                             _IO.readdir),
+    grep,
+    rg,
 ]

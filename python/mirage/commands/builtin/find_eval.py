@@ -523,6 +523,16 @@ def tree_has_empty(node: PredNode) -> bool:
     return False
 
 
+def tree_has_mtime(node: PredNode) -> bool:
+    if isinstance(node, Mtime):
+        return True
+    if isinstance(node, Not):
+        return tree_has_mtime(node.kid)
+    if isinstance(node, (And, Or)):
+        return any(tree_has_mtime(kid) for kid in node.kids)
+    return False
+
+
 def has_link_children(links: LinkView | None, virtual: str) -> bool:
     """Whether a directory holds namespace symlinks directly under it.
 

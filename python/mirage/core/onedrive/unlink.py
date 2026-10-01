@@ -14,21 +14,19 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_after_unlink
-from mirage.core.onedrive.client import (GraphError, graph_delete, item_url,
-                                         split_path)
+from mirage.core.msgraph.client import GraphError, graph_delete
+from mirage.core.onedrive.client import item_url
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
 async def unlink(accessor: OneDriveAccessor, path: PathSpec) -> None:
-    virtual = path.virtual if isinstance(path, PathSpec) else path
-    _, stripped = split_path(path)
     try:
         await graph_delete(accessor.config,
-                           item_url(accessor.config, "/" + stripped),
+                           item_url(accessor.config, path.vfs_path),
                            session=accessor.pool)
     except GraphError as exc:
         if exc.status == 404:
-            raise enoent(virtual)
+            raise enoent(path)
         raise
     await invalidate_after_unlink(path)

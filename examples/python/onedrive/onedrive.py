@@ -18,6 +18,7 @@ import os
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
+from mirage.core.onedrive.versions import list_versions
 from mirage.types import PathSpec
 from mirage.vfs.onedrive import OneDriveConfig, OneDriveVFS
 
@@ -30,7 +31,8 @@ config = OneDriveConfig(
 backend = OneDriveVFS(config)
 ws = Workspace({"/onedrive/": backend}, mode=MountMode.WRITE)
 
-TEST_FILE = "/onedrive/mirage_onedrive_example.txt"
+TEST_KEY = "mirage_onedrive_example.txt"
+TEST_FILE = f"/onedrive/{TEST_KEY}"
 
 
 async def main() -> None:
@@ -78,9 +80,8 @@ async def main() -> None:
     print(await (await ws.shell(f"cat {TEST_FILE}")).stdout_str())
 
     print("=== version history ===")
-    from mirage.core.onedrive.versions import list_versions
     versions = await list_versions(backend.accessor,
-                                   PathSpec.from_str_path(TEST_FILE))
+                                   PathSpec.from_str_path(TEST_FILE, TEST_KEY))
     for v in versions:
         print(f"  version {v.get('id')}  size={v.get('size')}  "
               f"modified={v.get('lastModifiedDateTime')}")

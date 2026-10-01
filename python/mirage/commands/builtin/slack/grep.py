@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import logging
-from dataclasses import replace
 
 from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.generic.grep import grep as generic_grep
@@ -21,7 +20,6 @@ from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
                                                    text_search_results)
-from mirage.commands.builtin.slack._provision import file_read_provision
 from mirage.commands.builtin.slack.io import resolve_glob
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
@@ -37,7 +35,6 @@ from mirage.core.slack.search import (search_available, search_files,
                                       search_messages)
 from mirage.core.slack.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -63,15 +60,7 @@ RG_SEARCH_HONORED = ("word_regexp", )
 SEARCH_MAX_RESULTS = 100
 
 
-async def grep_provision(accessor: SlackAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep", vfs="slack", spec=SPECS["grep"], provision=grep_provision)
+@command("grep", vfs="slack", spec=SPECS["grep"])
 async def grep(accessor: SlackAccessor, paths: list[PathSpec],
                texts: list[str],
                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:

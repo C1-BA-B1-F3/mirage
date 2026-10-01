@@ -18,4 +18,7 @@ for a in "$@"; do
 done
 
 cd "$(dirname "$0")/.."
-exec pnpm exec "$tool" "${args[@]}"
+# The installed bin, not `pnpm exec`: integ/package.json pins no pnpm, so
+# corepack's default pnpm 11 runs it, treats integ/ as its own workspace
+# root and cannot resolve the workspace:* dependencies.
+exec "node_modules/.bin/$tool" "${args[@]}"

@@ -19,8 +19,10 @@ from aioresponses import aioresponses
 from yarl import URL
 
 from mirage.core.box.client import (BoxTokenManager, api_base_of,
-                                    box_get_bytes, token_url_of)
-from mirage.core.box.constants import BOX_API_BASE, BOX_TOKEN_URL
+                                    box_get_bytes, token_url_of,
+                                    upload_base_of)
+from mirage.core.box.constants import (BOX_API_BASE, BOX_TOKEN_URL,
+                                       BOX_UPLOAD_BASE)
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.box.config import BoxConfig
 
@@ -29,12 +31,15 @@ def test_urls_default_to_real_box():
     config = BoxConfig(access_token="tok")
     assert token_url_of(config) == BOX_TOKEN_URL
     assert api_base_of(config) == BOX_API_BASE
+    assert upload_base_of(config) == BOX_UPLOAD_BASE
+    assert BOX_UPLOAD_BASE == "https://upload.box.com/api/2.0"
 
 
 def test_urls_derive_from_endpoint_override():
     config = BoxConfig(access_token="tok", endpoint="http://127.0.0.1:5096/")
     assert token_url_of(config) == "http://127.0.0.1:5096/oauth2/token"
     assert api_base_of(config) == "http://127.0.0.1:5096/2.0"
+    assert upload_base_of(config) == "http://127.0.0.1:5096/2.0"
 
 
 def test_token_manager_requires_some_credentials():

@@ -16,9 +16,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404, events_now,
-                                 events_since, list_folder_items,
-                                 realtime_server, search_content)
+from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404, create_folder,
+                                 events_now, events_since, list_folder_items,
+                                 realtime_server, search_content,
+                                 upload_file_version, upload_new_file)
 from mirage.core.box.client import BoxApiError, BoxTokenManager
 from mirage.vfs.box.config import BoxConfig
 
@@ -291,3 +292,39 @@ async def test_realtime_server_refuses_an_empty_answer(tm):
                return_value={"chunk_size": 0}):
         with pytest.raises(RuntimeError, match="realtime server"):
             await realtime_server(tm)
+
+
+async def _upload_urls(tm: BoxTokenManager) -> list[str]:
+    with patch("mirage.core.box.api.box_upload_multipart",
+               new_callable=AsyncMock,
+               return_value={}) as mock_upload:
+        await upload_new_file(tm, "0", "a.txt", b"a")
+        await upload_file_version(tm, "7", "a.txt", b"b")
+    return [c.args[1] for c in mock_upload.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_uploads_go_to_the_upload_host(tm):
+    assert await _upload_urls(tm) == [
+        "https://upload.box.com/api/2.0/files/content",
+        "https://upload.box.com/api/2.0/files/7/content",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_folder_calls_stay_on_the_api_host(tm):
+    with patch("mirage.core.box.api.box_post_json",
+               new_callable=AsyncMock,
+               return_value={}) as mock_post:
+        await create_folder(tm, "0", "d")
+    assert mock_post.call_args.args[1] == "https://api.box.com/2.0/folders"
+
+
+@pytest.mark.asyncio
+async def test_uploads_follow_an_endpoint_override():
+    tm = BoxTokenManager(
+        BoxConfig(access_token="tok", endpoint="http://127.0.0.1:5096/"))
+    assert await _upload_urls(tm) == [
+        "http://127.0.0.1:5096/2.0/files/content",
+        "http://127.0.0.1:5096/2.0/files/7/content",
+    ]

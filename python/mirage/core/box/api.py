@@ -251,7 +251,7 @@ async def upload_new_file(tm: BoxTokenManager, parent_id: str, name: str,
                           data: bytes) -> dict[str, Any]:
     return await box_upload_multipart(
         tm,
-        f"{tm.api_base}/files/content",
+        f"{tm.upload_base}/files/content",
         {
             "name": name,
             "parent": {
@@ -267,7 +267,7 @@ async def upload_file_version(tm: BoxTokenManager, file_id: str, name: str,
                               data: bytes) -> dict[str, Any]:
     return await box_upload_multipart(
         tm,
-        f"{tm.api_base}/files/{file_id}/content",
+        f"{tm.upload_base}/files/{file_id}/content",
         {"name": name},
         name,
         data,

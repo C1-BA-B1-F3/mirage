@@ -18,8 +18,9 @@ key prefix. The writer records a listing, an empty listing and the
 entries under them; the reader, in the other language, attaches to the
 same prefix and must read back the same facts: the entry field by field,
 the listing in order, the empty listing as listed rather than missing,
-an unlisted directory as not found, and its own ``invalidate`` as an
-expiry the writer's listing honours while the entries stay.
+an unlisted directory as not found, a listing's version as written (and
+an unversioned one as none), and its own ``invalidate`` as an expiry the
+writer's listing honours while the entries stay.
 """
 
 # ruff: noqa: E402
@@ -48,6 +49,8 @@ DIR = "/data"
 EMPTY_DIR = "/data/empty"
 PARTIAL_DIR = "/data/partial"
 UNLISTED_DIR = "/data/never"
+VERSIONED_DIR = "/data/versioned"
+VERSION = "0123456789abcdef0123456789abcdef01234567"
 FILE_NAME = "a.txt"
 FOLDER_NAME = "sub"
 FILE = f"{DIR}/{FILE_NAME}"
@@ -112,6 +115,9 @@ async def write(prefix: str) -> None:
     await store.put(f"{DIR}/{FOLDER_NAME}/unlisted", file_entry)
     await store.set_dir(EMPTY_DIR, [])
     await store.set_partial_dir(PARTIAL_DIR, [(FILE_NAME, file_entry)])
+    await store.set_dir(
+        VERSIONED_DIR, [(FILE_NAME, file_entry)], version=VERSION
+    )
     listing = await store.list_dir(DIR)
     check(
         "py write: listing reads back",
@@ -144,6 +150,19 @@ async def read(prefix: str) -> None:
         "py read: listing in order",
         listing.status is None and listing.entries == CHILDREN,
         f"got {listing!r}",
+    )
+    check(
+        "py read: an unversioned listing has no version",
+        listing.version is None,
+        f"got {listing!r}",
+    )
+    versioned = await store.list_dir(VERSIONED_DIR)
+    check(
+        "py read: a listing's version as written",
+        versioned.status is None
+        and versioned.entries == [f"{VERSIONED_DIR}/{FILE_NAME}"]
+        and versioned.version == VERSION,
+        f"got {versioned!r}",
     )
     empty = await store.list_dir(EMPTY_DIR)
     check(

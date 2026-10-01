@@ -443,3 +443,59 @@ async def test_repeated_partial_invalidation_preserves_folder_evidence(
         assert (await store.get("/dir/sub")).entry.resource_type == "file"
     else:
         assert (await store.get("/dir/sub")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_a_seed_stamps_every_folder_it_writes(store, store_factory):
+    future = datetime.now(timezone.utc) + timedelta(hours=1)
+    store.seed(
+        {"/repo/a": entry(), "/repo/sub/b": entry("b")},
+        {"/repo": ["/repo/a", "/repo/sub"], "/repo/sub": ["/repo/sub/b"]},
+        future,
+        version="v1",
+    )
+    await store.close()
+    reader = store_factory()
+    assert (await reader.list_dir("/repo")).version == "v1"
+    assert (await reader.list_dir("/repo/sub")).version == "v1"
+
+
+@pytest.mark.asyncio
+async def test_an_unversioned_relist_clears_the_version(store):
+    await store.set_dir("/dir", [("a", entry())], version="v1")
+    assert (await store.list_dir("/dir")).version == "v1"
+    await store.set_dir("/dir", [("a", entry())])
+    listing = await store.list_dir("/dir")
+    assert listing.entries == ["/dir/a"]
+    assert listing.version is None
+
+
+@pytest.mark.asyncio
+async def test_a_partial_listing_never_inherits_the_version(store):
+    await store.set_dir("/dir", [("a", entry())], version="v1")
+    await store.set_partial_dir("/dir", [("b", entry("b"))])
+    listing = await store.list_dir("/dir")
+    assert listing.partial_entries == ["/dir/b"]
+    assert listing.version is None
+
+
+@pytest.mark.asyncio
+async def test_an_unversioned_seed_clears_the_version(store):
+    future = datetime.now(timezone.utc) + timedelta(hours=1)
+    store.seed({"/dir/a": entry()}, {"/dir": ["/dir/a"]}, future, version="v1")
+    assert (await store.list_dir("/dir")).version == "v1"
+    store.seed({"/dir/a": entry()}, {"/dir": ["/dir/a"]}, future, version=None)
+    listing = await store.list_dir("/dir")
+    assert listing.entries == ["/dir/a"]
+    assert listing.version is None
+
+
+@pytest.mark.asyncio
+async def test_a_peer_reads_the_version_the_writer_stored(
+    store, store_factory
+):
+    await store.set_dir("/dir", [("a", entry())], version="v1")
+    peer = store_factory()
+    listing = await peer.list_dir("/dir")
+    assert listing.entries == ["/dir/a"]
+    assert listing.version == "v1"

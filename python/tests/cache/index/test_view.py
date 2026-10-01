@@ -592,14 +592,64 @@ async def test_report_gone_on_a_raw_store_is_a_no_op():
     await RAMIndexCacheStore().report_gone([Evicted("/a", folder=False)])
 
 
-def _gate(answer: bool) -> tuple[list[str], Callable[[str], Awaitable[bool]]]:
+def _gate(
+    answer: bool,
+) -> tuple[list[str], Callable[[str, str | None], Awaitable[bool]]]:
     asked: list[str] = []
 
-    async def may_serve(key: str) -> bool:
+    async def may_serve(key: str, version: str | None = None) -> bool:
         asked.append(key)
         return answer
 
     return asked, may_serve
+
+
+class _VersionGate:
+    def __init__(self, answer: bool) -> None:
+        self.answer = answer
+        self.asked: list[tuple[str, str | None]] = []
+
+    async def __call__(self, key: str, version: str | None = None) -> bool:
+        self.asked.append((key, version))
+        return self.answer
+
+
+@pytest.mark.asyncio
+async def test_the_gate_is_handed_the_stored_version():
+    gate = _VersionGate(True)
+    view = IndexView(
+        RAMIndexCacheStore(),
+        RAMFileCacheStore(),
+        "/data",
+        _owns_all,
+        may_serve_listing=gate,
+    )
+    await view.set_dir("/data", [("a", _child("a"))], version="v1")
+    await view.set_partial_dir("/data/p", [("b", _child("b"))])
+    await view.list_dir("/data")
+    await view.list_dir("/data/p")
+    assert gate.asked == [("/data", "v1"), ("/data/p", None)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["ram", "fake-redis", "redis"])
+async def test_a_refusal_keeps_the_version_for_the_next_serve(kind):
+    gate = _VersionGate(False)
+    async with _store(kind, 600) as store:
+        view = IndexView(
+            store,
+            RAMFileCacheStore(),
+            "/data",
+            _owns_all,
+            may_serve_listing=gate,
+        )
+        await view.set_dir("/data", [("a", _child("a"))], version="v1")
+        assert (await view.list_dir("/data")).status == LookupStatus.EXPIRED
+        gate.answer = True
+        served = await view.list_dir("/data")
+        assert served.entries == ["/data/a"]
+        assert served.version == "v1"
+        assert gate.asked == [("/data", "v1"), ("/data", "v1")]
 
 
 @pytest.mark.asyncio
@@ -699,7 +749,7 @@ async def test_the_gate_runs_outside_the_fence():
     cache = RAMFileCacheStore()
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def slow_gate(_key: str) -> bool:
+    async def slow_gate(_key: str, _version: str | None = None) -> bool:
         entered.set()
         await release.wait()
         return True

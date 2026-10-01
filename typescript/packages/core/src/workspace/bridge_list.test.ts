@@ -22,7 +22,7 @@ import { RuntimeVFS } from '../runtime/vfs.ts'
 import { MountMode } from '../types.ts'
 import { getTestParser } from './fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace/workspace.ts'
-import { FILE_MODE } from '../utils/stat_view.ts'
+import { FILE_MODE, LINK_MODE } from '../utils/stat_view.ts'
 
 function mkWorld(): { ws: Workspace; ops: OpsRegistry; vfs: RAMVFS } {
   const vfs = new RAMVFS()
@@ -52,13 +52,20 @@ function doorOn(ws: Workspace): RuntimeVFS {
 // what it fails, a guest sees as the whole directory failing, so one
 // entry's stat never fails it; that entry's own stat still reports why.
 describe('runtime door readdir', () => {
-  it('a dangling link degrades to a zero row instead of failing the listing', async () => {
+  // A link row is stat'd without following, so a dangling target never
+  // reaches the backend: the node table answers with the link's own row.
+  it('lists a dangling link as its own row instead of failing the listing', async () => {
     const { ws } = mkWorld()
     await ws.vfs.writeFile('/data/a.txt', 'hi')
     await ws.namespace.symlink('/data/lnk', '/data/gone', 1)
     const entries = await doorOn(ws).readdir('/data')
     const row = entries.find((e) => e.path.endsWith('/lnk'))
-    expect(row).toMatchObject({ size: 0, isDir: false, isLink: true })
+    expect(row).toMatchObject({
+      size: '/data/gone'.length,
+      isDir: false,
+      isLink: true,
+      mode: LINK_MODE,
+    })
   })
 
   it('a failing entry stat leaves the row unclassified and surfaces on its own stat', async () => {
@@ -82,14 +89,19 @@ describe('runtime door readdir', () => {
     await expect(door.stat('/data/a.txt')).rejects.toThrow('401 Unauthorized')
   })
 
-  // A live link stats as its target, so the row's own kind says nothing
-  // about it; only the node table does.
-  it('marks a live link whose stat followed through to a file', async () => {
+  // A live link lists as itself, the row lstat gives, not its target's:
+  // the size is the target path's length.
+  it('lists a live link as its own row, not its target', async () => {
     const { ws } = mkWorld()
     await ws.vfs.writeFile('/data/a.txt', 'hello')
     await ws.namespace.symlink('/data/lnk', '/data/a.txt', 1)
     const entries = await doorOn(ws).readdir('/data')
-    expect(entries.find((e) => e.path.endsWith('/lnk'))).toMatchObject({ size: 5, isLink: true })
+    expect(entries.find((e) => e.path.endsWith('/lnk'))).toMatchObject({
+      size: '/data/a.txt'.length,
+      isDir: false,
+      isLink: true,
+      mode: LINK_MODE,
+    })
     const plain = entries.find((e) => e.path.endsWith('/a.txt'))
     expect(plain).toMatchObject({ path: '/data/a.txt', size: 5, isDir: false, mode: FILE_MODE })
     expect(plain?.isLink).toBeUndefined()

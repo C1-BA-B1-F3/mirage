@@ -183,8 +183,16 @@ async function get(conn: S3Conn, key: string): Promise<Uint8Array | null> {
 async function put(conn: S3Conn, key: string, data: Uint8Array): Promise<ObjectMeta | null> {
   // The ETag is read through the same helper `head` uses, so the token a
   // write stamps and the token a later stat reports are one spelling.
+  // A write carries no type of its own, so the mount's default is the one the
+  // store keeps and serves back.
+  const contentType = conn.config.defaultContentType
   const resp = (await conn.send(
-    new conn.mod.PutObjectCommand({ Bucket: conn.config.bucket, Key: key, Body: data }),
+    new conn.mod.PutObjectCommand({
+      Bucket: conn.config.bucket,
+      Key: key,
+      Body: data,
+      ...(contentType !== undefined && contentType !== '' ? { ContentType: contentType } : {}),
+    }),
   )) as { ETag?: string; VersionId?: string }
   const etag = etagOf(resp)
   return {

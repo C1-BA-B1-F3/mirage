@@ -370,30 +370,33 @@ function queryClient(seen: QueryOpts[]) {
 }
 
 describe('qdrant query search', () => {
-  it('sends the caller-supplied vector when embed is configured', async () => {
+  const embed = (text: string): Promise<number[]> => Promise.resolve([text.length, 0.5])
+
+  it.each([
+    ['the caller-supplied vector', { embed }, [3, 0.5]],
+    [
+      'the text, for the cluster to embed',
+      { cloudInference: true },
+      { text: 'dog', model: 'sentence-transformers/all-MiniLM-L6-v2' },
+    ],
+  ] as const)('sends %s', async (_name, extra, query) => {
     const seen: QueryOpts[] = []
-    const embed = (text: string): Promise<number[]> => Promise.resolve([text.length, 0.5])
     const acc = withClient(
       new QdrantAccessor(
-        resolveQdrantConfig({ url: 'http://x', collection: 'c', idField: 'id', embed }),
+        resolveQdrantConfig({ url: 'http://x', collection: 'c', idField: 'id', ...extra }),
       ),
       queryClient(seen),
     )
     const rows = await searchRows(acc, 'c', 'dog', 3)
-    expect(seen).toEqual([{ query: [3, 0.5], limit: 3, with_payload: true }])
+    expect(seen).toEqual([{ query, limit: 3, with_payload: true }])
     expect(rows).toEqual([{ id: 1, name: 'alpha', _score: 0.9 }])
   })
 
-  it('asks the server to embed the text otherwise', async () => {
+  it('refuses a query nothing can vectorize', async () => {
     const seen: QueryOpts[] = []
-    const acc = accessorWith(queryClient(seen))
-    await searchRows(acc, 'c', 'dog', 3)
-    expect(seen).toEqual([
-      {
-        query: { text: 'dog', model: 'sentence-transformers/all-MiniLM-L6-v2' },
-        limit: 3,
-        with_payload: true,
-      },
-    ])
+    await expect(searchRows(accessorWith(queryClient(seen)), 'c', 'dog', 3)).rejects.toThrow(
+      /pass embed, or set cloud_inference/,
+    )
+    expect(seen).toEqual([])
   })
 })

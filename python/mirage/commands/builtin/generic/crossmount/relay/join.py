@@ -42,9 +42,12 @@ async def run_join(
         stdin (ByteSource | None): The line's input, which a ``-`` or
             ``/dev/stdin`` operand reads.
     """
+    paths = flat_scopes(scopes)
     return await join(
-        flat_scopes(scopes),
+        paths,
         read_bytes=functools.partial(relay, dispatch, "read"),
         stdin=stdin,
-        flags=parse_flags(flag_kwargs),
+        flags=parse_flags(
+            flag_kwargs, [path.raw_path or path.virtual for path in paths]
+        ),
     )

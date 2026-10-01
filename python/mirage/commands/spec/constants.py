@@ -67,8 +67,21 @@ OPERAND = ""
 # (jq 1.8.2 reads `jq -c '[., $ARGS.positional]' f.json --args a` as f.json
 # plus ["a"]). tar reads the whole line first: GNU tar 1.35 lists `d/m` for
 # `tar -f a.tar d/m -t` as it does for `tar -f a.tar -t d/m`. Measured, not
-# derived, like the other per-program rules.
-IN_ORDER_OPERANDS = frozenset({"jq"})
+# derived, like the other per-program rules. join's getopt loop runs
+# RETURN_IN_ORDER too, so `join a b c -a 3` refuses the extra operand
+# before the bad file number, and a missing-operand line names the line's
+# last word rather than its last operand: `join a.txt -t ,` is missing an
+# operand after ',' (coreutils 9.7).
+IN_ORDER_OPERANDS = frozenset({"jq", "join"})
+
+# The option words an IN_ORDER_OPERANDS program's own loop reads by their
+# spelling, so the tape keeps each one where it was typed, as (SPELLED,
+# word) just before the occurrence it spells. join.c takes a lone `-j1` or
+# `-j2` (`optarg == argv[optind - 1] + 2`) as the obsolete `-j1 FIELD`
+# until no operand is left for FIELD, while `-j 1` and `-ij1` are always
+# both files' field 1, and it reads every operand after `--` as a file
+# (coreutils 9.7).
+SPELLED_WORDS = {"join": frozenset({"-j1", "-j2", "--"})}
 
 # The programs whose option loop reads a dash-led word as options only when
 # a letter follows the dash, and any other one as an operand where it sits:
@@ -110,6 +123,10 @@ OWN_OPTION_LOOP = frozenset({"jq"})
 # the line ends before its value (`--arg`). No option of such a program is
 # spelled `-?`, so no dest is `?`.
 REFUSED = "?"
+
+# The name a SPELLED_WORDS word goes by on the tape. No option is spelled
+# `-=`, so no dest is `=`.
+SPELLED = "="
 
 # Numeric shorthand token like `-5` (head/tail count), never a flag
 # cluster or a path.
@@ -693,12 +710,6 @@ OLD_OPTION_EXIT = 2
 # Commands whose `Try '--help'` hint line is prefixed with the command
 # name (GNU diffutils style: `diff: Try 'diff --help' ...`).
 USAGE_HINT_PREFIX = frozenset({"diff", "cmp", "patch"})
-
-# Commands that read their operands in line order (getopt's
-# RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
-# the line's last word, not its last operand: `join a.txt -t ,` is missing
-# an operand after ',' (coreutils 9.7).
-ARGV_IN_ORDER = frozenset({"join"})
 
 
 def flag_kwarg_name(flag: str) -> str:

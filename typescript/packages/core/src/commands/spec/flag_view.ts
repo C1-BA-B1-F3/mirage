@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { flagKwargName, OPERAND, REFUSED } from './constants.ts'
+import { flagKwargName, OPERAND, REFUSED, SPELLED } from './constants.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { PathSpec } from '../../types.ts'
 import type { CommandSpec, FlagValue, ParsedFlagValue } from './types.ts'
@@ -20,13 +20,14 @@ import type { CommandSpec, FlagValue, ParsedFlagValue } from './types.ts'
 // The tape records what the parser scanned, so its values are the parser's
 // own; a PATH value recovered as a PathSpec replaces the bag entry only. It
 // holds each option occurrence as [dest, value], each operand as [OPERAND,
-// word], and for a program that runs its own option loop each refused option
-// as [REFUSED, word], so it also says which options were typed before an
-// operand or a refusal.
+// word], for a program that runs its own option loop each refused option as
+// [REFUSED, word], and each SPELLED_WORDS word as [SPELLED, word], so it also
+// says which options were typed before an operand or a refusal.
 const occurrenceTapes = new WeakMap<Record<string, FlagValue>, [string, ParsedFlagValue][]>()
 
-// The tape names no option declares: they mark operands and refusals.
-const TAPE_ONLY: ReadonlySet<string> = new Set([OPERAND, REFUSED])
+// The tape names no option declares: they mark operands, refusals and spelled
+// words.
+const TAPE_ONLY: ReadonlySet<string> = new Set([OPERAND, REFUSED, SPELLED])
 
 export function flagOccurrences(flags: Record<string, FlagValue>): [string, ParsedFlagValue][] {
   let tape = occurrenceTapes.get(flags)
@@ -107,9 +108,9 @@ export class FlagView {
    * Read each typed occurrence, then defaults without a typed value.
    *
    * OPERAND among the names reads the operands too, each as [OPERAND, word]
-   * where it was typed among the options, and REFUSED reads the refused
-   * options the same way. Flags with no tape (a plain record) have neither on
-   * it.
+   * where it was typed among the options, and REFUSED and SPELLED read the
+   * refused options and the spelled words the same way. Flags with no tape (a
+   * plain record) have none of them.
    */
   occurrences(...names: string[]): [string, ParsedFlagValue][] {
     const wanted = new Set(names.map((name) => (TAPE_ONLY.has(name) ? name : this.key(name))))

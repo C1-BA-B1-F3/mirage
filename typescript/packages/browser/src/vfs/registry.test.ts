@@ -244,7 +244,7 @@ describe('browser VFS registry', () => {
   })
 
   it('builds a NotionVFS via buildVfs', async () => {
-    const { MemoryOAuthClientProvider } = await import('@struktoai/mirage-core/core/notion/_oauth')
+    const { MemoryOAuthClientProvider } = await import('@struktoai/mirage-core/core/notion/client')
     const clientMetadata: OAuthClientMetadata = {
       redirect_uris: ['http://example.com/cb'],
     } as OAuthClientMetadata

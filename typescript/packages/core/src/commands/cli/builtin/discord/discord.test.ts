@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { DiscordAccessor } from '../../../../accessor/discord.ts'
+import type * as DiscordAccessorModule from '../../../../accessor/discord.ts'
 import type {
   DiscordMethod,
   DiscordResponse,
@@ -59,9 +59,10 @@ class FakeTransport implements DiscordTransport {
   }
 }
 
-vi.mock('./accessor.ts', () => ({
-  discordAccessor: () => new DiscordAccessor(new FakeTransport()),
-}))
+vi.mock('../../../../accessor/discord.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof DiscordAccessorModule>()
+  return { ...actual, discordAccessor: () => new actual.DiscordAccessor(new FakeTransport()) }
+})
 
 function unwrap(result: CommandFnResult): [ByteSource | null, IOResult] {
   if (result === null) throw new Error('expected a result tuple')

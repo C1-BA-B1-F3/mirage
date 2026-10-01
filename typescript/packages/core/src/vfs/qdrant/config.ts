@@ -44,6 +44,7 @@ const QdrantConfigSchema = z.object({
   searchLimit: z.number().optional(),
   maxRows: z.number().optional(),
   embeddingModel: z.string().optional(),
+  cloudInference: z.boolean().optional(),
   // Declared so parse keeps it, and marked secret so no snapshot carries
   // it: a restored mount asks for a fresh VFS rather than searching
   // with a hook it cannot have.
@@ -74,6 +75,7 @@ export interface QdrantConfigResolved {
   searchLimit: number
   maxRows: number
   embeddingModel: string
+  cloudInference: boolean
   embed: EmbedFn | null
 }
 
@@ -96,6 +98,7 @@ export function resolveQdrantConfig(config: QdrantConfig): QdrantConfigResolved 
     searchLimit: config.searchLimit ?? 10,
     maxRows: config.maxRows ?? 1000,
     embeddingModel: config.embeddingModel ?? 'sentence-transformers/all-MiniLM-L6-v2',
+    cloudInference: config.cloudInference ?? false,
     embed: config.embed ?? null,
   }
 }

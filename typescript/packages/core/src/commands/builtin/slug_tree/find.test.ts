@@ -144,6 +144,8 @@ describe('chroma find', () => {
     [QUICKSTART, [], { type: 'f', size: '+0' }, [REFERENCE], true],
     [REFERENCE, NEWER, {}, [QUICKSTART], false],
     [null, NEWER, {}, [QUICKSTART], false],
+    [null, ['quick*'], {}, [QUICKSTART], false],
+    [REFERENCE, ['quick*'], {}, [QUICKSTART], false],
   ])(
     'hiding %s, %j %j prints its rows and scans chunks only for a size test',
     async (hidden, texts, flags, rows, scans) => {

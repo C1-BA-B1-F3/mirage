@@ -13,7 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.redis import RedisAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    ResourceType,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import readdir_error
 from mirage.utils.key_prefix import mount_prefix_of
@@ -57,13 +62,17 @@ async def readdir(
                 seen.add(dir_prefix + child)
     entries = sorted(seen)
     virtual_entries = sorted((prefix + e if prefix else e) for e in entries)
+    file_set = set(all_files)
     index_entries = [
         (
             e.rsplit("/", 1)[-1],
             IndexEntry(
                 id=e,
                 name=e.rsplit("/", 1)[-1],
-                resource_type="file",
+                vfs_name=e.rsplit("/", 1)[-1],
+                resource_type=(
+                    ResourceType.FILE if e in file_set else ResourceType.FOLDER
+                ),
             ),
         )
         for e in entries

@@ -45,7 +45,7 @@ export type { CLIInvocation } from './commands/cli/types.ts'
 export { command } from './commands/config.ts'
 export type { CommandFnResult } from './commands/config.ts'
 export { CommandSpec, Operand, Option, SPECS, specOf } from './commands/spec/index.ts'
-export { MemoryOAuthClientProvider } from './core/notion/_oauth.ts'
+export { MemoryOAuthClientProvider } from './core/notion/client.ts'
 export { IOResult } from './io/types.ts'
 export { OpsRegistry } from './ops/registry.ts'
 export type {

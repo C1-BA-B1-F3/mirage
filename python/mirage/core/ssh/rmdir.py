@@ -17,7 +17,7 @@ import asyncssh
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir, enotempty
 
@@ -66,7 +66,7 @@ async def rmdir(
     """
     config = accessor.config
     sftp = await accessor.sftp()
-    remote = _abs(config, path.mount_path)
+    remote = join_root(config.root, path.mount_path)
     try:
         await sftp.rmdir(remote)
     except asyncssh.SFTPNoSuchFile as exc:

@@ -15,23 +15,29 @@
 from collections.abc import Mapping
 from typing import Generic, TypeVar
 
-from mirage.commands.spec.constants import OPERAND, REFUSED, flag_kwarg_name
+from mirage.commands.spec.constants import (
+    OPERAND,
+    REFUSED,
+    SPELLED,
+    flag_kwarg_name,
+)
 from mirage.commands.spec.types import CommandSpec, FlagValue
 from mirage.types import PathSpec
 
 T = TypeVar("T")
 
 # The tape names no option declares: they mark operands and refusals.
-_TAPE_ONLY = frozenset({OPERAND, REFUSED})
+_TAPE_ONLY = frozenset({OPERAND, REFUSED, SPELLED})
 
 
 class FlagBag(dict[str, T], Generic[T]):
     """Flag values with a separate tape of occurrences in scan order.
 
     The tape holds each option occurrence as (dest, value), each operand
-    as (OPERAND, word), and for a program that runs its own option loop
-    each refused option as (REFUSED, word), so it also says which options
-    were typed before an operand or a refusal.
+    as (OPERAND, word), for a program that runs its own option loop each
+    refused option as (REFUSED, word), and each SPELLED_WORDS word as
+    (SPELLED, word), so it also says which options were typed before an
+    operand or a refusal.
 
     Args:
         values (Mapping[str, T] | None): Values to copy, preserving their tape.
@@ -99,12 +105,12 @@ class FlagView:
 
         OPERAND among the names reads the operands too, each as
         (OPERAND, word) where it was typed among the options, and REFUSED
-        reads the refused options the same way. Flags with no tape
-        (keywords) have neither on it.
+        and SPELLED read the refused options and the spelled words the
+        same way. Flags with no tape (keywords) have none of them.
 
         Args:
-            names (str): Spec-bound option names to read, OPERAND and
-                REFUSED.
+            names (str): Spec-bound option names to read, OPERAND,
+                REFUSED and SPELLED.
         """
         wanted = {
             name if name in _TAPE_ONLY else self._key(name) for name in names

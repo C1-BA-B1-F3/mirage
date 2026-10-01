@@ -20,8 +20,17 @@ import pytest
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.github.du import du
 from mirage.commands.config import CommandOpts
+from mirage.core.github.tree_entry import TreeEntry
 from mirage.io.stream import materialize
 from mirage.types import FileStat, FileType, PathSpec
+
+TREE = {
+    "Banana.md": TreeEntry("Banana.md", "blob", "s0", 2),
+    "docs": TreeEntry("docs", "tree", "s1", None),
+    "docs/a.md": TreeEntry("docs/a.md", "blob", "s2", 100),
+    "docs/b.md": TreeEntry("docs/b.md", "blob", "s3", 50),
+    "readme.txt": TreeEntry("readme.txt", "blob", "s4", 7),
+}
 
 
 async def _readdir(_accessor, path, _index):
@@ -48,13 +57,20 @@ async def _resolve(_accessor, paths, _index):
     return paths
 
 
-@pytest.mark.asyncio
-async def test_truncated_du_preserves_directory_rows_and_permission_errors(
-    monkeypatch,
-):
+async def _tree_stat(_accessor, path, _index):
+    entry = TREE.get(path.vfs_path)
+    is_file = entry is not None and entry.type == "blob"
+    return FileStat(
+        name=path.virtual,
+        type=FileType.FILE if is_file else FileType.DIRECTORY,
+        size=entry.size if is_file else None,
+    )
+
+
+def _patch(monkeypatch, readdir, stat):
     ops = CommandIO(
-        readdir=_readdir,
-        stat=_stat,
+        readdir=readdir,
+        stat=stat,
         read_bytes=AsyncMock(),
         read_stream=AsyncMock(),
         is_mounted=lambda _: True,
@@ -62,17 +78,51 @@ async def test_truncated_du_preserves_directory_rows_and_permission_errors(
     monkeypatch.setitem(du.__wrapped__.__globals__, "IO", ops)
     monkeypatch.setitem(du.__wrapped__.__globals__, "ensure_tree", AsyncMock())
     monkeypatch.setitem(du.__wrapped__.__globals__, "resolve_glob", _resolve)
+
+
+async def _run(accessor, operand, flags):
     stream, io = await du.__wrapped__(
-        SimpleNamespace(truncated=True),
-        [PathSpec.from_str_path("/db")],
+        accessor,
+        [PathSpec.from_str_path(operand)],
         [],
-        CommandOpts(),
+        CommandOpts(flags=flags),
     )
-    assert (
-        await materialize(stream)
-    ).decode() == "0\t/db/empty\n0\t/db/sealed\n3\t/db\n"
-    assert io.exit_code == 1
-    assert await io.stderr_str() == (
+    return (
+        (await materialize(stream)).decode(),
+        io.exit_code,
+        await io.stderr_str(),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operand,flags,expected",
+    [
+        ("/", {}, "150\t/docs\n159\t/\n"),
+        (
+            "/",
+            {"a": True},
+            "2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n"
+            "150\t/docs\n7\t/readme.txt\n159\t/\n",
+        ),
+        ("/docs", {"s": True}, "150\t/docs\n"),
+        ("/readme.txt", {"a": True}, "7\t/readme.txt\n"),
+    ],
+)
+async def test_du_sums_the_live_tree(monkeypatch, operand, flags, expected):
+    _patch(monkeypatch, AsyncMock(), _tree_stat)
+    accessor = SimpleNamespace(truncated=False, tree=TREE)
+    assert await _run(accessor, operand, flags) == (expected, 0, "")
+
+
+@pytest.mark.asyncio
+async def test_truncated_du_preserves_directory_rows_and_permission_errors(
+    monkeypatch,
+):
+    _patch(monkeypatch, _readdir, _stat)
+    assert await _run(SimpleNamespace(truncated=True), "/db", {}) == (
+        "0\t/db/empty\n0\t/db/sealed\n3\t/db\n",
+        1,
         "du: cannot read directory '/db/sealed': Permission denied\n"
-        "du: cannot read directory '/db/walled': Permission denied\n"
+        "du: cannot read directory '/db/walled': Permission denied\n",
     )

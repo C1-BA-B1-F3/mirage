@@ -22,11 +22,11 @@ import { shiftPerformanceNow } from './_test_util.ts'
 import { PathSpec } from '../types.ts'
 import {
   activeCacheManager,
+  evictAfter,
   invalidateAfterUnlink,
   invalidateAfterWrite,
   invalidateAncestors,
   invalidateSubtree,
-  invalidateSubtreeAfter,
   listingRefreshed,
   runWithCacheManager,
 } from './context.ts'
@@ -178,34 +178,31 @@ describe('listingRefreshed', () => {
 class OpFailed extends Error {}
 class EvictFailed extends Error {}
 
-class BrokenEviction extends FakeManager {
-  override invalidateSubtree(path: string | PathSpec): Promise<void> {
-    void super.invalidateSubtree(path)
-    return Promise.reject(new EvictFailed())
-  }
-}
-
-describe('invalidateSubtreeAfter', () => {
+describe('evictAfter', () => {
   // The op's own error wins over an eviction that fails after it; that
   // eviction error is reported instead.
   it.each([
-    [null, false, null],
-    [OpFailed, false, OpFailed],
-    [OpFailed, true, OpFailed],
-    [null, true, EvictFailed],
-  ] as const)('op error %o, eviction breaks %s: raises %o', async (opError, breaks, raised) => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const manager = breaks ? new BrokenEviction() : new FakeManager()
-    const path = new PathSpec({ virtual: '/c', directory: '/c', vfsPath: 'c' })
-    const run = runWithCacheManager(manager, () =>
-      invalidateSubtreeAfter(path, () =>
-        opError === null ? Promise.resolve() : Promise.reject(new opError()),
-      ),
-    )
-    if (raised === null) await run
-    else await expect(run).rejects.toBeInstanceOf(raised)
-    expect(manager.subtrees).toEqual([path])
-    expect(warn).toHaveBeenCalledTimes(opError !== null && breaks ? 1 : 0)
-    warn.mockRestore()
-  })
+    [null, false, null, 'done'],
+    [OpFailed, false, OpFailed, undefined],
+    [OpFailed, true, OpFailed, undefined],
+    [null, true, EvictFailed, 'done'],
+  ] as const)(
+    'op error %o, eviction breaks %s: raises %o',
+    async (opError, breaks, raised, seen) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const results: (string | undefined)[] = []
+      const run = evictAfter(
+        () => (opError === null ? Promise.resolve('done') : Promise.reject(new opError())),
+        (result) => {
+          results.push(result)
+          return breaks ? Promise.reject(new EvictFailed()) : Promise.resolve()
+        },
+      )
+      if (raised === null) expect(await run).toBe('done')
+      else await expect(run).rejects.toBeInstanceOf(raised)
+      expect(results).toEqual([seen])
+      expect(warn).toHaveBeenCalledTimes(opError !== null && breaks ? 1 : 0)
+      warn.mockRestore()
+    },
+  )
 })

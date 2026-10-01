@@ -57,3 +57,7 @@ S3VFS(S3Config(
 </CodeGroup>
 
 Leading slashes are stripped and a trailing slash is added automatically. `None` / `undefined` and empty strings both mean "no prefix." For browser security considerations, see the [TypeScript S3 setup doc](/typescript/setup/s3).
+
+## Content type of uploads
+
+A write carries no content type of its own, so the mount decides what S3 stores and serves back. Set `default_content_type` (`defaultContentType` in TypeScript) to stamp every upload with it. Unset, S3 picks its own default, and the browser's presigned PUT, which has to sign a type, sends `application/octet-stream`.

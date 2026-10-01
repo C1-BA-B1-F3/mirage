@@ -298,12 +298,17 @@ export async function searchRows(
   if (hit !== undefined) return hit
   const config = accessor.config
   const client = await accessor.client()
-  // A caller-supplied `embed` vectorizes the query here; without one the
-  // text goes to the server, which only a cluster with inference answers.
-  const vector =
-    config.embed !== null
-      ? await config.embed(query)
-      : { text: query, model: config.embeddingModel }
+  // A caller-supplied `embed` vectorizes the query here, and cloud inference
+  // sends the text to a cluster that embeds it. Python embeds in process when
+  // neither is set, which no JS client can.
+  let vector: number[] | { text: string; model: string }
+  if (config.embed !== null) vector = await config.embed(query)
+  else if (config.cloudInference) vector = { text: query, model: config.embeddingModel }
+  else {
+    throw new Error(
+      'search: the query needs a vector: pass embed, or set cloud_inference for a cluster with inference',
+    )
+  }
   const res = (await client.query(table, {
     query: vector,
     limit,

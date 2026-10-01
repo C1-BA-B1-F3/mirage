@@ -43,7 +43,7 @@ class _FakeManager:
 
 
 class _FakeClient:
-    def __init__(self, puts: list[tuple[str, bytes]]) -> None:
+    def __init__(self, puts: list[tuple[str, bytes, str | None]]) -> None:
         self._puts = puts
 
     async def __aenter__(self) -> "_FakeClient":
@@ -52,21 +52,29 @@ class _FakeClient:
     async def __aexit__(self, *exc: object) -> bool:
         return False
 
-    async def put_object(self, Bucket: str, Key: str, Body: bytes) -> dict:
-        self._puts.append((Key, Body))
+    async def put_object(
+        self,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str | None = None,
+    ) -> dict:
+        self._puts.append((Key, Body, ContentType))
         return {"ETag": f'"{hashlib.md5(Body).hexdigest()}"'}
 
 
 class _FakeSession:
-    def __init__(self, puts: list[tuple[str, bytes]]) -> None:
+    def __init__(self, puts: list[tuple[str, bytes, str | None]]) -> None:
         self._puts = puts
 
     def client(self, **kwargs: object) -> _FakeClient:
         return _FakeClient(self._puts)
 
 
-async def _write(monkeypatch, mount_path: str) -> tuple[_FakeManager, list]:
-    puts: list[tuple[str, bytes]] = []
+async def _write(
+    monkeypatch, mount_path: str, content_type: str | None = None
+) -> tuple[_FakeManager, list]:
+    puts: list[tuple[str, bytes, str | None]] = []
     monkeypatch.setattr(
         s3_driver, "async_session", lambda config: _FakeSession(puts)
     )
@@ -74,7 +82,9 @@ async def _write(monkeypatch, mount_path: str) -> tuple[_FakeManager, list]:
     prev = push_cache_manager(manager)
     try:
         await write_bytes(
-            S3Accessor(S3Config(bucket="b")),
+            S3Accessor(
+                S3Config(bucket="b", default_content_type=content_type)
+            ),
             PathSpec(
                 virtual="/mnt" + mount_path,
                 directory="/mnt/",
@@ -89,7 +99,7 @@ async def _write(monkeypatch, mount_path: str) -> tuple[_FakeManager, list]:
 
 def test_write_invalidates_every_ancestor_listing(monkeypatch):
     manager, puts = asyncio.run(_write(monkeypatch, "/a/b/c.txt"))
-    assert puts == [("a/b/c.txt", b"hi")]
+    assert puts == [("a/b/c.txt", b"hi", None)]
     # The put materializes `a` and `a/b` too, so their listings are stale.
     assert manager.writes == ["/a/b/c.txt"]
     assert manager.ancestors == ["/mnt/a/b/c.txt"]
@@ -98,3 +108,8 @@ def test_write_invalidates_every_ancestor_listing(monkeypatch):
 def test_write_at_mount_root_invalidates_only_itself(monkeypatch):
     manager, _ = asyncio.run(_write(monkeypatch, "/c.txt"))
     assert manager.writes == ["/c.txt"]
+
+
+def test_write_stamps_the_mounts_default_content_type(monkeypatch):
+    _, puts = asyncio.run(_write(monkeypatch, "/c.txt", "text/plain"))
+    assert puts == [("c.txt", b"hi", "text/plain")]

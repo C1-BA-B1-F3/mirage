@@ -44,13 +44,14 @@ import { findWalk } from '../generic_bind/builders/find.ts'
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
+function isBareName(texts: readonly string[]): boolean {
+  const first = texts[0]
+  return first !== undefined && !first.startsWith('-') && !['(', ')', '!'].includes(first)
+}
+
 function defaultName(name: string | undefined, texts: readonly string[]): string | undefined {
   if (name !== undefined) return name
-  const first = texts[0]
-  if (first !== undefined && !first.startsWith('-') && !['(', ')', '!'].includes(first)) {
-    return first
-  }
-  return undefined
+  return isBareName(texts) ? texts[0] : undefined
 }
 
 async function normalizeFindOutput(
@@ -133,7 +134,8 @@ export function makeFind<A extends Accessor>(
       const bag: Record<string, FlagValue> = { ...opts.flags }
       const name = defaultName(fl.asStr('name'), texts)
       if (name !== undefined) bag.name = name
-      const full = texts.length > 0 ? needsFull(parseFindExpression(texts)) : flagsTest(fl)
+      const words = isBareName(texts) ? [] : texts
+      const full = words.length > 0 ? needsFull(parseFindExpression(words)) : flagsTest(fl)
       const findCore = full ? findFull : findLight
       const statFn = full ? stat : statLight
       // A tree walk classifies on the raw backend tree, so under hidden
@@ -142,13 +144,13 @@ export function makeFind<A extends Accessor>(
       // the factory builder takes.
       const result =
         pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
-          ? await findWalk(full ? walkFull : walkLight, accessor, resolved, texts, {
+          ? await findWalk(full ? walkFull : walkLight, accessor, resolved, words, {
               ...opts,
               flags: bag,
             })
           : await findGeneric(
               resolved,
-              texts,
+              words,
               { ...opts, flags: bag },
               (root, options) => findCore(accessor, root, options, index),
               (spec: PathSpec) => statFn(accessor, spec, index),

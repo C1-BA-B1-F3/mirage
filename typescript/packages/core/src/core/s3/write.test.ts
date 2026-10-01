@@ -71,26 +71,31 @@ class FakeManager {
 }
 
 class FakeCommand {
-  constructor(readonly input: { Key?: string }) {}
+  constructor(readonly input: { Key?: string; ContentType?: string }) {}
 }
 
-function mockPut(keys: string[]): void {
+function mockPut(keys: string[], types: (string | undefined)[] = []): void {
   vi.mocked(clientMod.loadS3Module).mockResolvedValue({
     PutObjectCommand: FakeCommand,
   } as never)
   vi.mocked(clientMod.createS3Client).mockResolvedValue({
     send: (command: FakeCommand) => {
       keys.push(command.input.Key ?? '')
+      types.push(command.input.ContentType)
       return Promise.resolve({})
     },
   } as never)
 }
 
-async function runWrite(mountPath: string): Promise<{ manager: FakeManager; keys: string[] }> {
+async function runWrite(
+  mountPath: string,
+  config: Partial<S3Config> = {},
+): Promise<{ manager: FakeManager; keys: string[]; types: (string | undefined)[] }> {
   const keys: string[] = []
-  mockPut(keys)
+  const types: (string | undefined)[] = []
+  mockPut(keys, types)
   const manager = new FakeManager()
-  const accessor = new S3Accessor({ bucket: 'b' } as S3Config)
+  const accessor = new S3Accessor({ bucket: 'b', ...config } as S3Config)
   const spec = new PathSpec({
     vfsPath: mountPath.replace(/^\//, ''),
     virtual: `/mnt${mountPath}`,
@@ -99,7 +104,7 @@ async function runWrite(mountPath: string): Promise<{ manager: FakeManager; keys
   await runWithCacheManager(manager, async () => {
     await write(accessor, spec, new TextEncoder().encode('hi'))
   })
-  return { manager, keys }
+  return { manager, keys, types }
 }
 
 describe('s3 core write', () => {
@@ -119,5 +124,13 @@ describe('s3 core write', () => {
   it('invalidates only itself at the mount root', async () => {
     const { manager } = await runWrite('/c.txt')
     expect(manager.writes).toEqual(['/c.txt'])
+  })
+
+  it.each([
+    [{}, undefined],
+    [{ defaultContentType: 'text/plain' }, 'text/plain'],
+  ])('with %j sends content type %s', async (config, type) => {
+    const { types } = await runWrite('/c.txt', config)
+    expect(types).toEqual([type])
   })
 })

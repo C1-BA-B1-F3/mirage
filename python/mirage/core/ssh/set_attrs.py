@@ -17,7 +17,7 @@ from datetime import datetime
 import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.client import _abs
+from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -57,7 +57,7 @@ async def set_attrs(
         not hold.
     """
     sftp = await accessor.sftp()
-    remote = _abs(accessor.config, path.mount_path)
+    remote = join_root(accessor.config.root, path.mount_path)
     try:
         attrs = await sftp.stat(remote)
     except asyncssh.SFTPNoSuchFile:

@@ -17,7 +17,7 @@ import { listMembers, searchMembers } from '../../../../core/discord/members.ts'
 import { IOResult, type ByteSource } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { discordAccessor } from './accessor.ts'
+import { discordAccessor } from '../../../../accessor/discord.ts'
 
 const ENC = new TextEncoder()
 

@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.cache.context import (
+    evict_after,
     invalidate_after_unlink,
     invalidate_ancestors,
     invalidate_subtree,
@@ -42,26 +43,26 @@ def make_unlink(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
         path = path_spec.mount_path
         key = kp.apply(driver.key_prefix_of(accessor), path)
         timer = start_op()
+
+        async def settle(_: None) -> None:
+            # Also when the delete raised: one that raises part-way has
+            # already removed keys, and a pin that outlives the object it
+            # names fails the next snapshot load.
+            record("unlink", path_spec.virtual, driver.vfs, 0, timer)
+            # The eviction rides with the record: a retracted pin and a
+            # cached body for the same path must not both survive, or a
+            # restored snapshot serves the body with nothing left to
+            # check it. Over-dropping costs one refetch.
+            await invalidate_after_unlink(path_spec)
+            # Deleting the last key under a prefix makes every ancestor
+            # that existed only as that prefix disappear, so their cached
+            # listings are stale symmetrically to the write case.
+            await invalidate_ancestors(path_spec)
+
+        # The connect is outside, because a connection that never opened
+        # removed nothing.
         async with driver.connect(accessor) as conn:
-            try:
-                await driver.delete_file(conn, key)
-            finally:
-                # In `finally`, not on success: a delete that raises
-                # part-way has already removed keys, and a pin that
-                # outlives the object it names fails the next snapshot
-                # load. The connect is outside, because a connection that
-                # never opened removed nothing.
-                record("unlink", path_spec.virtual, driver.vfs, 0, timer)
-                # The eviction rides with the record: a retracted pin and
-                # a cached body for the same path must not both survive,
-                # or a restored snapshot serves the body with nothing
-                # left to check it. Over-dropping costs one refetch.
-                await invalidate_after_unlink(path_spec)
-                # Deleting the last key under a prefix makes every
-                # ancestor that existed only as that prefix disappear, so
-                # their cached listings are stale symmetrically to the
-                # write case.
-                await invalidate_ancestors(path_spec)
+            await evict_after(driver.delete_file(conn, key), settle)
 
     return unlink
 
@@ -81,22 +82,22 @@ def make_remove_prefix(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
         path = path_spec.mount_path
         pfx = kp.apply_dir(driver.key_prefix_of(accessor), path)
         timer = start_op()
+
+        async def settle(_: None) -> None:
+            # A prefix delete is a paginated walk, so a failure mid-walk
+            # has already removed keys. The eviction rides with the
+            # record, as in unlink.
+            record("rm_r", path_spec.virtual, driver.vfs, 0, timer)
+            # Not invalidate_after_unlink: a prefix delete takes every key
+            # below with it, and each of those listings and bodies was
+            # cached under its own key, so nothing above them evicts one.
+            await invalidate_subtree(path_spec)
+            # Same rationale as unlink: ancestors that existed only as
+            # this prefix are gone now.
+            await invalidate_ancestors(path_spec)
+
         async with driver.connect(accessor) as conn:
-            try:
-                await driver.delete_prefix(conn, pfx)
-            finally:
-                # A prefix delete is a paginated walk, so a failure
-                # mid-walk has already removed keys. The eviction rides
-                # with the record, as in unlink.
-                record("rm_r", path_spec.virtual, driver.vfs, 0, timer)
-                # Not invalidate_after_unlink: a prefix delete takes
-                # every key below with it, and each of those listings
-                # and bodies was cached under its own key, so nothing
-                # above them evicts one.
-                await invalidate_subtree(path_spec)
-                # Same rationale as unlink: ancestors that existed only
-                # as this prefix are gone now.
-                await invalidate_ancestors(path_spec)
+            await evict_after(driver.delete_prefix(conn, pfx), settle)
 
     return remove_prefix
 

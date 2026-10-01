@@ -17,7 +17,7 @@ import type { ArgmatchChoices, ArgmatchKind } from './argmatch.ts'
 import { quoteText } from '../quote.ts'
 import { gnuStrerror } from '../../utils/errors.ts'
 import {
-  ARGV_IN_ORDER,
+  IN_ORDER_OPERANDS,
   OLD_OPTION_EXIT,
   OPERAND_EXIT,
   PYTHON_NAMES,
@@ -515,7 +515,7 @@ export function missingOperandError(
 ): UsageError {
   let after = last
   const lastWord = argv[argv.length - 1]
-  if (after !== null && ARGV_IN_ORDER.has(cmdName) && lastWord !== undefined) after = lastWord
+  if (after !== null && IN_ORDER_OPERANDS.has(cmdName) && lastWord !== undefined) after = lastWord
   if (after === null && USAGE_HINT_PREFIX.has(cmdName)) after = lastWord ?? cmdName
   const line =
     after === null ? `${cmdName}: missing operand` : `${cmdName}: missing operand after '${after}'`

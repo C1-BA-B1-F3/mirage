@@ -734,6 +734,29 @@
             "SLACK_TOKEN": "xoxb-integ",
             "ROLE": "analyst"
           }
+        },
+        "walled": {
+          "commands": {
+            "deny": [
+              {
+                "reason": "held for review",
+                "commands": {
+                  "grep": [
+                    "/data/warmwalk/locked.txt"
+                  ],
+                  "tar": [
+                    "/data/warmwalk/locked.txt"
+                  ]
+                }
+              },
+              {
+                "reason": "kept off limits",
+                "paths": [
+                  "/data/warmwalk/sealed.txt"
+                ]
+              }
+            ]
+          }
         }
       }
     },

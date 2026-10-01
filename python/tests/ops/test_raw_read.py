@@ -17,7 +17,7 @@ import pytest
 from mirage import MountMode, Workspace
 from mirage.io import IOResult
 from mirage.ops.registry import op
-from mirage.types import PathSpec
+from mirage.types import PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
 
 # A raw read is what read-modify-write needs: FUSE hands the merged
@@ -197,3 +197,36 @@ async def test_an_extensionless_path_beside_a_user_renderer_is_served_warm():
     ws = _workspace(_CachingRAM())
     await _seed(ws, "/data/README")
     assert await ws.vfs.read("/data/README") == b"CACHED"
+
+
+def _fresh_rendering_workspace(vfs: RAMVFS) -> Workspace:
+    vfs.read_revalidatable = True
+    ws = Workspace(
+        {"/data/": vfs},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
+    ws.mount("/data/").register_fns([_read_tally])
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_a_user_renderer_read_of_a_remotely_deleted_path_fails_under_fresh():
+    # The cached entry is never served to a user renderer, but its freshness
+    # check still runs: a path the backend reports gone fails, as it does
+    # for every other warm read, instead of reaching a renderer that may not
+    # look at the backend at all.
+    vfs = _CachingRAM()
+    ws = _fresh_rendering_workspace(vfs)
+    await _seed(ws, "/data/books.tally")
+    other = Workspace({"/data/": vfs}, mode=MountMode.WRITE)
+    await other.vfs.unlink("/data/books.tally")
+    with pytest.raises(FileNotFoundError):
+        await ws.vfs.read("/data/books.tally")
+
+
+@pytest.mark.asyncio
+async def test_a_user_renderer_still_renders_under_fresh():
+    ws = _fresh_rendering_workspace(_CachingRAM())
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"

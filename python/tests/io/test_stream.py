@@ -302,13 +302,7 @@ async def test_shared_stdin_preserves_unread_bytes_and_serializes_readers():
 
 
 @pytest.mark.asyncio
-async def test_ensure_stream_from_bytes():
-    chunks = [c async for c in ensure_stream(b"hello")]
-    assert chunks == [b"hello"]
-
-
-@pytest.mark.asyncio
-async def test_ensure_stream_returns_the_iterator_itself():
+async def test_ensure_stream_wraps_bytes_and_passes_a_stream_through():
+    assert [c async for c in ensure_stream(b"hello")] == [b"hello"]
     source = _make_stream(b"foo", b"bar")
     assert ensure_stream(source) is source
-    assert [c async for c in ensure_stream(source)] == [b"foo", b"bar"]

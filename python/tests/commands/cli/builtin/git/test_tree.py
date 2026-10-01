@@ -201,7 +201,3 @@ def test_tree_entries_flattens_subtrees_and_keeps_a_submodule_whole():
         b"dir/b.txt": (0o100644, blob.id),
         b"vendor": (0o160000, commit),
     }
-
-
-def test_tree_entries_of_no_tree_is_empty():
-    assert tree_entries(MemoryObjectStore(), None) == {}

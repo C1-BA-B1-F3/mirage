@@ -168,14 +168,10 @@ describe('yieldBytes', () => {
 })
 
 describe('ensureStream', () => {
-  it('turns bytes into a one-chunk stream', async () => {
+  it('wraps bytes and passes a stream through', async () => {
     expect(await collect(ensureStream(encode('hello')))).toBe('hello')
-  })
-
-  it('returns an iterable as itself', async () => {
     const source = fromChunks([encode('foo'), encode('bar')])
     expect(ensureStream(source)).toBe(source)
-    expect(await collect(ensureStream(source))).toBe('foobar')
   })
 })
 

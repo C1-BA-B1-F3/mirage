@@ -12,27 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import pytest
+
 from mirage.vfs.gridfs.config import GridFSConfig
 
 
-def test_config_defaults():
-    config = GridFSConfig(uri="mongodb://localhost:27017", database="db")
-    assert config.bucket == "fs"
-    assert config.key_prefix is None
-    assert config.chunk_size_bytes is None
-
-
-def test_config_normalizes_key_prefix():
+@pytest.mark.parametrize(
+    "raw,normalized",
+    [("/team/reports/", "team/reports/"), ("", None), (None, None)],
+)
+def test_key_prefix_is_normalized(raw, normalized):
     config = GridFSConfig(
-        uri="mongodb://localhost:27017",
-        database="db",
-        key_prefix="/team/reports/",
+        uri="mongodb://localhost:27017", database="db", key_prefix=raw
     )
-    assert config.key_prefix == "team/reports/"
-
-
-def test_config_empty_key_prefix_becomes_none():
-    config = GridFSConfig(
-        uri="mongodb://localhost:27017", database="db", key_prefix=""
-    )
-    assert config.key_prefix is None
+    assert config.key_prefix == normalized

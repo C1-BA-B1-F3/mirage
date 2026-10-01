@@ -3,7 +3,6 @@ from opendal.exceptions import NotFound
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.nextcloud.util import nextcloud_key
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotempty
 
@@ -33,7 +32,7 @@ async def rmdir(
         index (IndexCacheStore): accepted for the rmdir slot's shape;
             unused.
     """
-    key = nextcloud_key(path).rstrip("/") + "/"
+    key = path.mount_path.strip("/") + "/"
     stem = key.strip("/")
     op = accessor.operator()
     has_child = False

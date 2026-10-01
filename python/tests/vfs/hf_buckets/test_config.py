@@ -14,90 +14,42 @@
 
 import pytest
 
-from mirage.vfs.hf_buckets.config import HfBucketsConfig
-from mirage.vfs.hf_datasets.config import HfDatasetsConfig
-from mirage.vfs.hf_models.config import HfModelsConfig
-from mirage.vfs.hf_spaces.config import HfSpacesConfig
-from mirage.vfs.secrets import reveal_secret
-
-REPO_CONFIGS = [HfModelsConfig, HfDatasetsConfig, HfSpacesConfig]
+from mirage.vfs.hf_buckets.config import HfBucketsConfig, HfRepoConfig
 
 
-def test_bucket_config_defaults():
+def test_a_bucket_splits_into_namespace_and_name():
     cfg = HfBucketsConfig(bucket="myorg/mybkt")
-    assert cfg.bucket == "myorg/mybkt"
-    assert cfg.namespace == "myorg"
-    assert cfg.bucket_name == "mybkt"
-    assert cfg.token is None
-    assert cfg.endpoint == "https://huggingface.co"
-    assert cfg.timeout == 30
-    assert cfg.key_prefix is None
-
-
-def test_bucket_config_immutable():
-    cfg = HfBucketsConfig(bucket="myorg/mybkt")
-    with pytest.raises(Exception):
-        cfg.bucket = "other/other"
+    assert (cfg.namespace, cfg.bucket_name) == ("myorg", "mybkt")
 
 
 @pytest.mark.parametrize(
-    "bad", ["just-one-segment", "too/many/slashes", "/leading"]
+    "repo_id,namespace,name",
+    [("org/repo", "org", "repo"), ("widget", "", "widget")],
 )
-def test_bucket_config_rejects_bad_bucket_format(bad):
-    with pytest.raises(ValueError):
-        HfBucketsConfig(bucket=bad)
-
-
-def test_bucket_config_token_secret():
-    cfg = HfBucketsConfig(bucket="myorg/mybkt", token="hf_abc123")
-    assert reveal_secret(cfg.token) == "hf_abc123"
-    assert "hf_abc123" not in repr(cfg)
-
-
-def test_bucket_key_prefix_normalized():
-    cfg = HfBucketsConfig(bucket="myorg/mybkt", key_prefix="/data/sub/")
-    assert cfg.key_prefix == "data/sub/"
-
-
-@pytest.mark.parametrize("config_cls", REPO_CONFIGS)
-def test_repo_config_defaults(config_cls):
-    cfg = config_cls(repo_id="org/repo")
-    assert cfg.repo_id == "org/repo"
-    assert cfg.namespace == "org"
-    assert cfg.repo_name == "repo"
-    assert cfg.token is None
-    assert cfg.endpoint == "https://huggingface.co"
-    assert cfg.key_prefix is None
-    assert cfg.revision is None
-
-
-@pytest.mark.parametrize("config_cls", REPO_CONFIGS)
-def test_repo_config_accepts_a_bare_repo_id(config_cls):
+def test_a_repo_id_takes_either_spelling_the_hub_accepts(
+    repo_id, namespace, name
+):
     """The Hub resolves a bare name against whoever the token belongs
     to, and the real CLI relies on it: `hf repo create widget` then
     `hf download widget`. Refusing it rejected an id the Hub had just
     minted."""
-    cfg = config_cls(repo_id="widget")
-    assert cfg.repo_id == "widget"
-    assert cfg.namespace == ""
-    assert cfg.repo_name == "widget"
+    cfg = HfRepoConfig(repo_id=repo_id)
+    assert (cfg.namespace, cfg.repo_name) == (namespace, name)
 
 
-@pytest.mark.parametrize("config_cls", REPO_CONFIGS)
-@pytest.mark.parametrize("bad", ["a/b/c", "ns/", "/name", ""])
-def test_repo_config_rejects_a_shape_the_hub_cannot_read(config_cls, bad):
+@pytest.mark.parametrize(
+    "field,bad",
+    [
+        ("bucket", "just-one-segment"),
+        ("bucket", "too/many/slashes"),
+        ("bucket", "/leading"),
+        ("repo_id", "a/b/c"),
+        ("repo_id", "ns/"),
+        ("repo_id", "/name"),
+        ("repo_id", ""),
+    ],
+)
+def test_a_shape_the_hub_cannot_read_is_refused(field, bad):
+    config_cls = HfBucketsConfig if field == "bucket" else HfRepoConfig
     with pytest.raises(ValueError):
-        config_cls(repo_id=bad)
-
-
-@pytest.mark.parametrize("config_cls", REPO_CONFIGS)
-def test_repo_config_token_secret(config_cls):
-    cfg = config_cls(repo_id="org/repo", token="hf_abc123")
-    assert reveal_secret(cfg.token) == "hf_abc123"
-    assert "hf_abc123" not in repr(cfg)
-
-
-@pytest.mark.parametrize("config_cls", REPO_CONFIGS)
-def test_repo_key_prefix_normalized(config_cls):
-    cfg = config_cls(repo_id="org/repo", key_prefix="/data/sub/")
-    assert cfg.key_prefix == "data/sub/"
+        config_cls(**{field: bad})

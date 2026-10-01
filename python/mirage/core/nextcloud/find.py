@@ -23,7 +23,6 @@ from mirage.core.nextcloud.search import (
     search_files,
     supports_query,
 )
-from mirage.core.nextcloud.util import raw_path_of
 from mirage.types import FindType, PathSpec
 from mirage.utils.stat_view import DIR_SIZE
 
@@ -49,7 +48,7 @@ class _FindScope:
 
     @classmethod
     def from_path(cls, path: PathSpec) -> "_FindScope":
-        relative = raw_path_of(path).strip("/")
+        relative = path.mount_path.strip("/")
         base_key = "/" + relative if relative else "/"
         scan_key = relative + "/" if relative else "/"
         return cls(

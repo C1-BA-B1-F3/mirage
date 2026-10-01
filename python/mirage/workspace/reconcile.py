@@ -14,11 +14,12 @@
 
 import logging
 from enum import Enum
+from functools import partial
 
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.types import FileStat, PathSpec, ReadPolicy
+from mirage.types import FileStat, ListingVersion, PathSpec, ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import ancestors
 from mirage.workspace.mount.mount import MountEntry
@@ -212,18 +213,27 @@ class Reconciler:
         """Gate a cached listing: may it be served without re-listing?
 
         Under ``bounded`` the listing is trusted within its bound. Under
-        ``fresh`` it is trusted only if the running command refreshed it
-        itself, so one command re-lists a folder once however often it
-        reads it; a read outside any command trusts a listing written
-        within the last ``LISTING_TRUST_WINDOW`` seconds instead
-        (``CacheManager.listing_trusted``). Anything older lists again.
-        Task 1.3 replaces "list again" with a cheaper check.
+        ``fresh`` a listing the running command wrote itself is served (a
+        read outside any command trusts one written within the last
+        ``LISTING_TRUST_WINDOW`` seconds instead,
+        ``CacheManager.listing_trusted``). Past that, a listing stored at
+        the mount's pin is served without asking, since a pinned commit
+        cannot move. A mount that declares a ``listing_version`` then has
+        its stored ``version`` checked against a stat of the mount root
+        (MOUNT) or of the folder (FOLDER), sent through a throwaway index
+        so no cached row answers it. One check answers for a whole command,
+        and concurrent callers share it (``CacheManager.checked_version``).
+
+        A match serves the listing. Anything else answers EXPIRED and keeps
+        the listing stored for the re-list to diff: a moved version, a path
+        the backend no longer has, a stat with no fingerprint, a mount with
+        no stat at all, and a backend that cannot answer, which is logged.
+        The index is never cleared here. A programming error propagates.
 
         Args:
             mount (MountEntry): the mount holding the listing.
             folder (str): mount-absolute listing key.
-            version (str | None): the version stored with the listing, for
-                the cheaper check; not consulted yet.
+            version (str | None): the version stored with the listing.
 
         Returns:
             bool: True when the cached listing may be served.
@@ -231,7 +241,50 @@ class Reconciler:
         if mount.read.policy is not ReadPolicy.FRESH:
             return True
         manager = mount.cache_manager
-        return manager is not None and manager.listing_trusted(folder)
+        if manager is None:
+            return False
+        if manager.listing_trusted(folder):
+            return True
+        vfs = mount.vfs
+        if vfs.listings_pin is not None and version == vfs.listings_pin:
+            return True
+        if vfs.listing_version == ListingVersion.NONE or version is None:
+            return False
+        key = (
+            folder
+            if vfs.listing_version == ListingVersion.FOLDER
+            else mount.prefix.rstrip("/") or "/"
+        )
+        try:
+            remote = await manager.checked_version(
+                key, version, partial(self._listing_fingerprint, mount, key)
+            )
+        except (
+            FileNotFoundError,
+            NotADirectoryError,
+            OperationNotSupportedError,
+        ):
+            return False
+        except (TypeError, AttributeError, NameError):
+            raise
+        except Exception as exc:
+            logger.debug("listing check failed for %s: %s", key, exc)
+            return False
+        return remote == version
+
+    async def _listing_fingerprint(
+        self, mount: MountEntry, path: str
+    ) -> str | None:
+        """Ask the backend for the version a listing check compares.
+
+        Args:
+            mount (MountEntry): the mount holding the listing.
+            path (str): the mount root or the folder the version covers.
+        """
+        remote = await mount.execute_op(
+            "stat", path, index=RAMIndexCacheStore()
+        )
+        return remote.fingerprint if isinstance(remote, FileStat) else None
 
     async def reconcile_read(self, mount: MountEntry, path: str) -> None:
         """Reconcile a single-mount shell read before the command runs.

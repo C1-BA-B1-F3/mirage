@@ -19,7 +19,7 @@ import type { RegisteredCommand } from '../commands/config.ts'
 import { makeGenericOps } from '../ops/generic/factory.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import type { CapacityResult } from '../types.ts'
-import { CapacityState } from '../types.ts'
+import { CapacityState, ListingVersion } from '../types.ts'
 import type { DeltaHook } from '../watch/base.ts'
 import { VFSAdapter } from './adapter.ts'
 
@@ -248,6 +248,25 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * Mirrors Python's `BaseVFS.read_revalidatable`.
    */
   readonly readRevalidatable: boolean = false
+  /**
+   * What a `read: fresh` mount checks a cached listing against before it
+   * lists again: nothing (NONE, the default), one version for the whole mount
+   * answered by a stat of its root (MOUNT), or each folder's own version
+   * answered by a stat of that folder (FOLDER). A declarer stores the version
+   * with each listing it writes, taken from the same response as the rows,
+   * and its `stat` must answer the same kind of token: node's
+   * listing_version.test.ts holds each one to that.
+   *
+   * Mirrors Python's `BaseVFS.listing_version`.
+   */
+  readonly listingVersion: ListingVersion = ListingVersion.NONE
+  /**
+   * The version every listing of this mount is pinned at, when the mount is
+   * pinned to something that cannot move (a full commit sha). A stored
+   * listing whose version equals it is served without a check. It depends on
+   * the mount's config, so an instance sets it; null pins nothing.
+   */
+  readonly listingsPin: string | null = null
   /**
    * The backend handle every core function on the tables takes. A driver
    * built from a table takes it from its options; a builtin declares and

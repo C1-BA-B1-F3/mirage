@@ -17,7 +17,7 @@ import { RAMIndexCacheStore } from '../cache/index/ram.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
-import { FileStat, PathSpec, ReadPolicy } from '../types.ts'
+import { FileStat, ListingVersion, PathSpec, ReadPolicy } from '../types.ts'
 import { enoent, isEnoent, isEnotdir, isMissingOp } from '../utils/errors.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
@@ -26,6 +26,16 @@ import type { MountEntry } from './mount/mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
 
 const REVALIDATE_OPS = new Set(['read', 'read_bytes', 'stat'])
+
+// The spec a backend op sees for an absolute virtual path on `mount`.
+function scopeOf(mount: MountEntry, path: string): PathSpec {
+  const lastSlash = path.lastIndexOf('/')
+  return new PathSpec({
+    virtual: path,
+    directory: lastSlash > 0 ? path.slice(0, lastSlash + 1) : '/',
+    vfsPath: mountKey(path, rstripSlash(mount.prefix)),
+  })
+}
 
 enum Verdict {
   FRESH = 'fresh',
@@ -82,12 +92,7 @@ export class Reconciler {
   // verdict and its reactions still run, only the round trip is skipped.
   private async probe(mount: MountEntry, path: string): Promise<Verdict> {
     const vfs = mount.vfs
-    const lastSlash = path.lastIndexOf('/')
-    const scope = new PathSpec({
-      virtual: path,
-      directory: lastSlash > 0 ? path.slice(0, lastSlash + 1) : '/',
-      vfsPath: mountKey(path, rstripSlash(mount.prefix)),
-    })
+    const scope = scopeOf(mount, path)
     const manager = mount.cacheManager
     let remoteStat: unknown = manager?.probedStat(scope) ?? null
     if (remoteStat === null) {
@@ -196,18 +201,64 @@ export class Reconciler {
   /**
    * Gate a cached listing: may it be served without re-listing?
    *
-   * Under `bounded` the listing is trusted within its bound. Under `fresh`
-   * it is trusted only if the running command refreshed it itself, so one
-   * command re-lists a folder once however often it reads it; a read outside
-   * any command trusts a listing written within the last
-   * `LISTING_TRUST_WINDOW` seconds instead (`CacheManager.listingTrusted`).
-   * Anything older lists again. Task 1.3 replaces "list again" with a
-   * cheaper check against `version`, the one stored with the listing,
-   * which is not consulted yet.
+   * Under `bounded` the listing is trusted within its bound. Under `fresh` a
+   * listing the running command wrote itself is served (a read outside any
+   * command trusts one written within the last `LISTING_TRUST_WINDOW`
+   * seconds instead, `CacheManager.listingTrusted`). Past that, a listing
+   * stored at the mount's pin is served without asking, since a pinned commit
+   * cannot move. A mount that declares a `listingVersion` then has its stored
+   * `version` checked against a stat of the mount root (MOUNT) or of the
+   * folder (FOLDER), sent through a throwaway index so no cached row answers
+   * it. One check answers for a whole command, and concurrent callers share
+   * it (`CacheManager.checkedVersion`).
+   *
+   * A match serves the listing. Anything else answers EXPIRED and keeps the
+   * listing stored for the re-list to diff: a moved version, a path the
+   * backend no longer has, a stat with no fingerprint, a mount with no stat
+   * at all, and a backend that cannot answer, which is logged. The index is
+   * never cleared here. A programming error propagates.
    */
-  mayServeListing(mount: MountEntry, folder: string, _version: string | null): Promise<boolean> {
-    if (mount.read.policy !== ReadPolicy.FRESH) return Promise.resolve(true)
-    return Promise.resolve(mount.cacheManager?.listingTrusted(folder) === true)
+  async mayServeListing(
+    mount: MountEntry,
+    folder: string,
+    version: string | null,
+  ): Promise<boolean> {
+    if (mount.read.policy !== ReadPolicy.FRESH) return true
+    const manager = mount.cacheManager
+    if (manager === null) return false
+    if (manager.listingTrusted(folder)) return true
+    const vfs = mount.vfs
+    if (vfs.listingsPin !== null && version === vfs.listingsPin) return true
+    if (vfs.listingVersion === ListingVersion.NONE || version === null) return false
+    const key =
+      vfs.listingVersion === ListingVersion.FOLDER ? folder : rstripSlash(mount.prefix) || '/'
+    let remote: string | null
+    try {
+      remote = await manager.checkedVersion(key, version, () => this.listingFingerprint(mount, key))
+    } catch (err) {
+      if (isEnoent(err) || isEnotdir(err) || isMissingOp(err, 'stat')) return false
+      if (err instanceof TypeError || err instanceof ReferenceError) throw err
+      console.warn(`listing check failed for ${key}: ${String(err)}`)
+      return false
+    }
+    return remote === version
+  }
+
+  // Ask the backend for the version a listing check compares: the mount root
+  // or the folder the version covers.
+  private async listingFingerprint(mount: MountEntry, path: string): Promise<string | null> {
+    const vfs = mount.vfs
+    const remote = await this.opsRegistry.call(
+      'stat',
+      vfs,
+      vfs.accessor,
+      scopeOf(mount, path),
+      [],
+      {
+        index: new RAMIndexCacheStore(),
+      },
+    )
+    return remote instanceof FileStat ? remote.fingerprint : null
   }
 
   // Reconcile a single-mount shell read before the command runs.

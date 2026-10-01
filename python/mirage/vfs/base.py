@@ -25,7 +25,7 @@ from mirage.commands.builtin.generic_bind import (
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.generic import make_generic_ops
 from mirage.ops.registry import RegisteredOp
-from mirage.types import CapacityResult, CapacityState
+from mirage.types import CapacityResult, CapacityState, ListingVersion
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.secrets import redacted_config_dump
 from mirage.watch.base import DeltaHook
@@ -126,6 +126,21 @@ class BaseVFS:
     # or not; a stream stamps only under a recorder, the one place its token
     # can land.
     read_revalidatable: bool = False
+
+    # What a `read: fresh` mount checks a cached listing against before it
+    # lists again: nothing (NONE, the default), one version for the whole
+    # mount answered by a stat of its root (MOUNT), or each folder's own
+    # version answered by a stat of that folder (FOLDER). A declarer stores
+    # the version with each listing it writes, taken from the same response
+    # as the rows, and its stat must answer the same kind of token:
+    # tests/vfs/test_listing_version.py holds each one to that.
+    listing_version: ListingVersion = ListingVersion.NONE
+
+    # The version every listing of this mount is pinned at, when the mount
+    # is pinned to something that cannot move (a full commit sha). A stored
+    # listing whose version equals it is served without a check. It depends
+    # on the mount's config, so an instance sets it; None pins nothing.
+    listings_pin: str | None = None
 
     _closed: bool = False
 

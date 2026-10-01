@@ -88,8 +88,8 @@ flowchart LR
     D["data/**"] --> core
     DB["mongodb · postgres · chroma · qdrant<br/>python layers, integ/vfs/&lt;name&gt;,<br/>integ/runners, targets.json"] --> database
     OB["langfuse · jaeger layers<br/>integ/vfs/observability, seeds,<br/>integ/runners, targets.json"] --> observability
-    FS["python and node fuse modules<br/>integ/fuse"] --> fuse
-    RT["python/** and typescript/** minus<br/>what the runtime filter drops<br/>integ/runtime, integ/fixtures/runtime"] --> runtime
+    FS["fuse modules, workspace fuse wiring<br/>integ/fuse, check_json.py"] --> fuse
+    RT["python/** and typescript/**<br/>minus the runtime drop list<br/>integ/runtime, integ/fixtures/runtime"] --> runtime
     core --> J1["integ"]
     ts --> J2["integ-ts"]
     core & ts --> J3["integ-shared-py · integ-shared-ts<br/>integ-shared-parity · integ-selftests<br/>integ-facets · integ-wandb"]
@@ -100,29 +100,36 @@ flowchart LR
     runtime --> J8["integ-runtime"]
 ```
 
-The same wiring from the side of a change (`core` for a python file, `ts`
-for a typescript file; a typescript file also sets `database`):
+The same wiring from the side of a change. Every file under `python/` sets
+`core` and `data`, every file under `typescript/` sets `ts`, `data` and
+`database`, and every file under `integ/` sets `core`, `ts` and `data`. These
+set more:
 
-| Changed                                                                                                                                                                     | Filters set                                                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| shared code: shell, workspace, executor, generic commands (cat, ls, grep, ...), runtime, CLI, server, policy, cache; the ram, disk, s3, redis, mongodb, ssh backends        | core or ts, data, runtime                                                                                            |
-| another backend's four layers (github, notion, gdrive, ...), an account CLI (gh, git, ntn, gws, ...), or jq, sed, awk, tar, gzip, zip, diff, cmp, sort, cut, rg, curl, wget | core or ts, data                                                                                                     |
-| mongodb, postgres, chroma, qdrant                                                                                                                                           | core or ts, data, database (mongodb also runtime)                                                                    |
-| langfuse, jaeger                                                                                                                                                            | core or ts, data, observability                                                                                      |
-| `mirage/fuse/`, `node/src/fuse/`                                                                                                                                            | core or ts, data, fuse                                                                                               |
-| python agent adapters, the browser, dsh and opencode packages, unit tests, markdown                                                                                         | core or ts, data                                                                                                     |
-| `integ/runtime/`, `integ/fixtures/runtime/`                                                                                                                                 | core, ts, data, runtime                                                                                              |
-| the rest of `integ/`: corpus, fakes, runners, goldens                                                                                                                       | core, ts, data (`runners/` and `targets.json` also database and observability; `package.json` also fuse and runtime) |
-| `data/`                                                                                                                                                                     | core                                                                                                                 |
-| `test_integ.yml`                                                                                                                                                            | every filter                                                                                                         |
+| Changed                                                                                                      | Also sets               |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| python or typescript source, except the runtime drop list below                                              | runtime                 |
+| `integ/runtime/`, `integ/fixtures/runtime/`, `integ/tsconfig.json`                                           | runtime                 |
+| `integ/package.json`                                                                                         | runtime, fuse           |
+| the python mongodb, postgres, chroma and qdrant layers; their `integ/vfs/` cases                             | database                |
+| the langfuse and jaeger layers in either language; `integ/vfs/observability/`; the langfuse and jaeger seeds | observability           |
+| `integ/runners/`, `integ/targets.json`                                                                       | database, observability |
+| the FUSE modules and the workspace's FUSE wiring in either language; `integ/fuse/`, `integ/check_json.py`    | fuse                    |
+| `data/`                                                                                                      | core only               |
+| `test_integ.yml`                                                                                             | every filter            |
 
-The `runtime` filter is the only one that subtracts: it takes all of
-`python/` and `typescript/` and drops what integ-runtime cannot reach, so a
-new module runs the job until someone adds it to the drop list. Keep the
-filters and this section in step with the code: a new or moved backend,
-CLI or package belongs in the filter that tests it, and a runtime case that
-starts mounting a dropped backend or calling a dropped command takes that
-name off the drop list.
+The runtime drop list is the only subtraction in any filter, and it holds
+only what nothing integ-runtime loads can import, directly or not: unit
+tests, markdown, the python agent adapters, the browser, dsh and opencode
+packages, and the python layers of the backends and account CLIs no runtime
+case mounts or runs (the python VFS registry imports a backend only when one
+is mounted). A typescript backend stays in, since the core barrel imports
+every VFS, and so do FUSE and every command, which the workspace and the
+command tables import.
+
+Keep the filters and this section in step with the code: a new or moved
+backend, CLI or package belongs in the filter that tests it, a module joins
+the drop list only when nothing kept imports it, and a runtime case that
+starts mounting a dropped backend takes that name off the list.
 
 ## Running locally
 

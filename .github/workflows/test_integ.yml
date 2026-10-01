@@ -136,14 +136,18 @@ jobs:
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
-            # integ-runtime mounts only ram, s3, redis and mongodb, and runs
-            # no account CLI and none of the text, archive or network
-            # commands dropped below, so a change confined to another
-            # backend's four layers, one of those commands, an account CLI,
-            # an agent adapter, FUSE, the browser package or a unit test
-            # cannot reach it. The list names what to drop, so a new module
-            # runs the job until it is added here; a case that starts calling
-            # a dropped command takes that command off the list.
+            # integ-runtime runs every case through the python and typescript
+            # hosts, so a '!' rule may drop only a module that nothing those
+            # hosts load can import, directly or not. That holds for unit
+            # tests, markdown, the python agent adapters, the browser, dsh
+            # and opencode packages, and the python layers of the backends
+            # and account CLIs no runtime case mounts or runs: the python VFS
+            # registry imports a backend only when one is mounted. It does
+            # not hold for any typescript backend, since the core barrel
+            # imports every VFS, nor for FUSE or any command, which the
+            # workspace and the command tables import. A new module runs the
+            # job until it is added here, and a runtime case that starts
+            # mounting a dropped backend takes that name off the list.
             runtime:
               - 'integ/runtime/**'
               - 'integ/fixtures/runtime/**'
@@ -156,18 +160,12 @@ jobs:
               - '!**/*.md'
               - '!python/tests/**'
               - '!typescript/**/*.test.ts'
-              - '!python/mirage/fuse/**'
               - '!python/mirage/agents/{agno,camel,claude_agent_sdk,langchain,openai_agents,openhands,pydantic_ai}/**'
               - '!typescript/packages/{browser,dsh,opencode}/**'
-              - '!typescript/packages/node/src/fuse/**'
-              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{airtable,aliyun,backblaze,box,ceph,chroma,databricks_volume,dify,digitalocean,discord,dropbox,email,gcal,gcs}{.py,.ts,/**}'
-              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{gdocs,gdrive,gh,git,github,gmail,google,google_api,gridfs,gsheets,gslides,gws,hf,hf_buckets,hf_datasets}{.py,.ts,/**}'
-              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{hf_hub,hf_models,hf_spaces,himalaya,jaeger,lancedb,langfuse,linear,mem0,minio,msgraph,nextcloud,notion,ntn}{.py,.ts,/**}'
-              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{oci,onedrive,postgres,qdrant,qingstor,r2,scaleway,seaweedfs,sharepoint,slack,supabase,tencent,trello,wandb,wasabi}{.py,.ts,/**}'
-              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/{generic,generic_bind/builders,generic/crossmount/relay}/{archive,awk,awk_types,cmp,column,comm,csplit,cut,decompress,diff,gunzip,gzip,jq,join,rg,sed,sort,tar,unzip,zcat,zgrep,zip_cmd}{.py,.ts,/**}'
-              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/{cut_ranges,diff_format,diff_types,rg_filetypes,rg_glob,rg_scan,rg_search,sed_exec,sed_script,sort_keys,tar_helper}.{py,ts}'
-              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/general/{curl,curl_write_out,wget}.{py,ts}'
-              - '!{python/mirage,typescript/packages/core/src}/core/{awk,jq}/**'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{airtable,aliyun,backblaze,box,ceph,chroma,databricks_volume,dify,digitalocean,discord,dropbox,email,gcal,gcs}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{gdocs,gdrive,gh,git,github,gmail,google,google_api,gridfs,gsheets,gslides,gws,hf,hf_buckets,hf_datasets}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{hf_hub,hf_models,hf_spaces,himalaya,jaeger,lancedb,langfuse,linear,mem0,minio,msgraph,nextcloud,notion,ntn}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{oci,onedrive,postgres,qdrant,qingstor,r2,scaleway,seaweedfs,sharepoint,slack,supabase,tencent,trello,wandb,wasabi}{.py,/**}'
 
   typescript-build:
     needs: changes

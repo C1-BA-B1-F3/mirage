@@ -536,6 +536,22 @@ describe('what a probe saw this command', () => {
   // Only the probing command is ever served an answer, so once the map is
   // full the other commands' entries are dead weight; dropping one costs at
   // most a backend stat, never a wrong answer.
+  // Past the bound, a prune that frees nothing (every entry is the running
+  // command's) must not run again on the next insert, or a large walk turns
+  // quadratic: the next prune waits until the map has doubled.
+  it('does not rescan one large command on every insert', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    const spy = vi.spyOn(manager as unknown as { pruneProbes: () => void }, 'pruneProbes')
+    await runInCommandScope(() => {
+      for (let n = 0; n < PROBED_LIMIT * 4; n++) {
+        manager.noteProbed(PathSpec.fromStrPath(`/data/f${String(n)}`), probed())
+      }
+      return Promise.resolve()
+    })
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
   it('drops finished commands past the bound', async () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)

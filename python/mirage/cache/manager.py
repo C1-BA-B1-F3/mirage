@@ -110,6 +110,7 @@ class CacheManager:
         self._may_serve_listing = may_serve_listing
         self._written: dict[str, tuple[int, float]] = {}
         self._probed: dict[str, tuple[int, int, FileStat]] = {}
+        self._probe_bound = PROBED_LIMIT
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -180,6 +181,7 @@ class CacheManager:
         """
         self._read_generation += 1
         self._probed.clear()
+        self._probe_bound = PROBED_LIMIT
 
     def _note_written(self, folder: str) -> None:
         self._written[folder] = (tick(), _now())
@@ -230,15 +232,21 @@ class CacheManager:
         started = command_started()
         if started is None:
             return
-        if len(self._probed) >= PROBED_LIMIT:
-            # Only the probing command is ever served an answer, so the
-            # other commands' entries are dead weight here.
-            self._probed = {
-                key: probed
-                for key, probed in self._probed.items() if probed[0] == started
-            }
+        if len(self._probed) >= self._probe_bound:
+            self._prune_probes(started)
+            # What is left is all the running command's; the next prune
+            # waits for the map to double, so one large walk stays linear.
+            self._probe_bound = max(PROBED_LIMIT, 2 * len(self._probed))
         self._probed[self._cache_key(path)] = (started, self._read_generation,
                                                stat)
+
+    def _prune_probes(self, started: int) -> None:
+        # Only the probing command is ever served an answer, so the other
+        # commands' entries are dead weight here.
+        self._probed = {
+            key: probed
+            for key, probed in self._probed.items() if probed[0] == started
+        }
 
     def probed_stat(self, path: PathSpec) -> FileStat | None:
         """The backend's answer for ``path`` from this command's probe.

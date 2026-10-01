@@ -63,6 +63,7 @@ export class CacheManager {
   // Cache key to what the freshness probe got from the backend: its command
   // identity, the read generation then, and the stat.
   private readonly probed = new Map<string, [number, number, FileStat]>()
+  private probeBound = PROBED_LIMIT
 
   constructor(
     fileCache: FileCache | null,
@@ -117,6 +118,7 @@ export class CacheManager {
   private retire(): void {
     this.readGeneration += 1
     this.probed.clear()
+    this.probeBound = PROBED_LIMIT
   }
 
   // A re-list found children gone: the backend changed under the command, so
@@ -207,14 +209,21 @@ export class CacheManager {
   noteProbed(path: PathSpec, stat: FileStat): void {
     const started = commandStarted()
     if (started === null) return
-    if (this.probed.size >= PROBED_LIMIT) {
-      // Only the probing command is ever served an answer, so the other
-      // commands' entries are dead weight here.
-      for (const [key, [stamp]] of this.probed) {
-        if (stamp !== started) this.probed.delete(key)
-      }
+    if (this.probed.size >= this.probeBound) {
+      this.pruneProbes(started)
+      // What is left is all the running command's; the next prune waits for
+      // the map to double, so one large walk stays linear.
+      this.probeBound = Math.max(PROBED_LIMIT, 2 * this.probed.size)
     }
     this.probed.set(this.cacheKey(path), [started, this.readGeneration, stat])
+  }
+
+  // Only the probing command is ever served an answer, so the other commands'
+  // entries are dead weight here.
+  private pruneProbes(started: number): void {
+    for (const [key, [stamp]] of this.probed) {
+      if (stamp !== started) this.probed.delete(key)
+    }
   }
 
   /** Mutation generation, captured before a freshness probe starts. */

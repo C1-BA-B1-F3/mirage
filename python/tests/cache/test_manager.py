@@ -741,3 +741,28 @@ async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
     await manager.scope_index(index).set_dir("/data", [])
     clock.now -= 5
     assert manager.listing_trusted("/data") is False
+
+
+@pytest.mark.asyncio
+async def test_one_large_command_does_not_rescan_its_probes_on_every_insert(
+        monkeypatch):
+    # Past the bound, a prune that frees nothing (every entry is the running
+    # command's) must not run again on the next insert, or a large walk turns
+    # quadratic: the next prune waits until the map has doubled.
+    monkeypatch.setattr("mirage.cache.manager.PROBED_LIMIT", 4)
+    scans = []
+    original = CacheManager._prune_probes
+
+    def counting(self, started):
+        scans.append(len(self._probed))
+        original(self, started)
+
+    monkeypatch.setattr(CacheManager, "_prune_probes", counting)
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    async with command_scope():
+        for n in range(64):
+            manager.note_probed(PathSpec.from_str_path(f"/data/f{n}"),
+                                _probed())
+        assert len(manager._probed) == 64
+    assert len(scans) <= 5

@@ -83,6 +83,19 @@ jobs:
         working-directory: typescript
         run: pnpm -r build
 
+      # The PathSpec discipline hook runs mypy over python/tests, which
+      # imports all of mirage; from an empty store that is 73-140 s of this
+      # job. Test (Python) saves the store for mirage, so read it under the
+      # same key and check only the tests from scratch (51 s -> 12 s locally).
+      - name: Restore the mypy incremental store
+        uses: actions/cache/restore@v6
+        with:
+          path: python/.mypy_cache
+          key: mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-${{ hashFiles('python/mirage/**/*.py', 'scripts/**/*.py') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-
+            mypy-${{ runner.os }}-py3.12-
+
       # Plain `git`, not a paths-filter action: an action reads the API
       # and can disagree with the three-dot diff pre-commit itself uses,
       # and asking for `pull-requests: read` at job level would replace

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -24,6 +25,23 @@ HEAVY = (
     "jose",
     "isomorphic-git",
     "rate-limiter-flexible",
+)
+
+# The python CLI's half of the same budget, checked by what one import of
+# its entry module leaves in `sys.modules`. Package barrels resolve their
+# names on first use, so reaching any of these from a CLI module means a
+# top-level import that belongs inside the one verb that needs it (`mcp`
+# serving, `workspace create` validating), as the TypeScript CLI awaits.
+PY_CLI_ENTRY = "mirage.cli.main"
+PY_HEAVY = (
+    "mirage.workspace.workspace",
+    "mirage.vfs.base",
+    "mirage.config",
+    "mirage.agents",
+    "mirage.server.app",
+    "fastapi",
+    "aioboto3",
+    "mcp",
 )
 
 # `.` is the barrel and is *meant* to be heavy; `./bin/daemon` is a program,
@@ -175,6 +193,39 @@ def check_cli_sources() -> list[str]:
     return problems
 
 
+def heavy_python_modules(statement: str) -> list[str]:
+    """The heavy modules one python statement leaves loaded.
+
+    Runs in a fresh interpreter, so nothing this process imported counts.
+
+    Args:
+        statement (str): Python source to run, e.g. ``import x``.
+
+    Returns:
+        list[str]: the loaded module names under a `PY_HEAVY` prefix.
+    """
+    probe = f"{statement}\nimport sys\nprint('\\n'.join(sys.modules))"
+    out = subprocess.run([sys.executable, "-c", probe],
+                         cwd=ROOT / "python",
+                         capture_output=True,
+                         text=True,
+                         check=True).stdout.split()
+    return sorted(name for name in out if any(
+        name == h or name.startswith(h + ".") for h in PY_HEAVY))
+
+
+def check_python_cli() -> list[str]:
+    """Fail when importing the python CLI entry loads a heavy module.
+
+    Returns:
+        list[str]: one line per heavy module reached.
+    """
+    return [
+        f"python {PY_CLI_ENTRY} loads {name}"
+        for name in heavy_python_modules(f"import {PY_CLI_ENTRY}")
+    ]
+
+
 def check_splitting() -> list[str]:
     """Fail if tsup's code splitting has been turned off.
 
@@ -231,6 +282,15 @@ SELFTEST_BARREL = (
     ("const { A } = await import('@struktoai/mirage-server')", False),
 )
 
+# The python half: a heavy module reached through a lazy barrel name must
+# count, and a leaf that loads none must not.
+SELFTEST_PYTHON = (
+    ("import mirage.config", True),
+    ("from mirage import Workspace", True),
+    ("import mirage", False),
+    ("import mirage.types", False),
+)
+
 
 def selftest(tmp: Path) -> int:
     """Prove the gate's own patterns see what it claims they see.
@@ -265,7 +325,13 @@ def selftest(tmp: Path) -> int:
         failures += 1
         print("  walker: an unresolvable relative import was skipped in "
               "silence instead of raising")
-    total = len(SELFTEST_IMPORTS) + len(SELFTEST_BARREL) + 1
+    for statement, want in SELFTEST_PYTHON:
+        got = bool(heavy_python_modules(statement))
+        if got != want:
+            failures += 1
+            print(f"  python: {statement!r} -> heavy={got}, want {want}")
+    total = (len(SELFTEST_IMPORTS) + len(SELFTEST_BARREL) +
+             len(SELFTEST_PYTHON) + 1)
     if failures:
         print(f"\n{failures} of {total} selftest case(s) failed; the gate "
               f"is blind to a shape it claims to catch")
@@ -278,16 +344,18 @@ def main() -> int:
     if "--selftest" in sys.argv[1:]:
         with tempfile.TemporaryDirectory() as tmp:
             return selftest(Path(tmp))
-    problems = check_entries() + check_cli_sources() + check_splitting()
+    problems = (check_entries() + check_cli_sources() + check_splitting() +
+                check_python_cli())
     if problems:
         print(f"{len(problems)} cold-start regression(s):")
         for line in problems:
             print(f"  {line}")
         print("\nThe mirage CLI pays every one of these on every spawn. "
-              "See 'CLI tier' in CLAUDE.md.")
+              "See the barrel note under Patterns in CLAUDE.md.")
         return 1
     print(f"cli cold start: {len(gated_entries())} entries reach no heavy "
-          f"package; no cli source imports the server barrel bare")
+          f"package; no cli source imports the server barrel bare; "
+          f"python {PY_CLI_ENTRY} loads no heavy module")
     return 0
 
 

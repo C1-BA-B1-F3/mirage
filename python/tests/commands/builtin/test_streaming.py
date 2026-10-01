@@ -15,21 +15,22 @@
 import pytest
 
 from mirage.accessor import NOOPAccessor
-from mirage.commands import COMMANDS as _CMDS
-from mirage.commands.config import CommandOpts
+from mirage.commands.builtin.ram import COMMANDS
+from mirage.commands.config import CommandCatalog, CommandOpts
 from mirage.types import PathSpec
 from tests.fixtures.driver_ops import ops
 
 _ps = PathSpec.from_str_path
 
-cat = _CMDS["cat"]
-cut = _CMDS["cut"]
-grep = _CMDS["grep"]
-head = _CMDS["head"]
-nl = _CMDS["nl"]
-tr = _CMDS["tr"]
-uniq = _CMDS["uniq"]
-wc = _CMDS["wc"]
+_CMDS = CommandCatalog(COMMANDS)
+cat = _CMDS.require("cat").fn
+cut = _CMDS.require("cut").fn
+grep = _CMDS.require("grep").fn
+head = _CMDS.require("head").fn
+nl = _CMDS.require("nl").fn
+tr = _CMDS.require("tr").fn
+uniq = _CMDS.require("uniq").fn
+wc = _CMDS.require("wc").fn
 
 _NOOP = NOOPAccessor()
 

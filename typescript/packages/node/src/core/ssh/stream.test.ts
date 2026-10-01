@@ -19,7 +19,7 @@ import { PathSpec } from '@struktoai/mirage-core/types'
 import type { ReadStream, SFTPWrapper } from 'ssh2'
 import { SSHAccessor } from '../../accessor/ssh.ts'
 import { makeFakeAccessor } from './_test_utils.ts'
-import { rangeRead, stream } from './stream.ts'
+import { stream } from './stream.ts'
 
 class DelayedCloseStream extends Readable {
   private sent = false
@@ -121,16 +121,5 @@ describe('core/ssh/stream', () => {
     rs.releaseClose()
     await expect(done).resolves.toEqual({ done: true, value: undefined })
     expect(settledBeforeClose).toBe(false)
-  })
-})
-
-describe('core/ssh/stream.rangeRead', () => {
-  it('returns the byte slice [start, end)', async () => {
-    const accessor = makeFakeAccessor({
-      files: new Map([['/x', { data: new TextEncoder().encode('abcdefghij') }]]),
-      dirs: new Map([['/', {}]]),
-    })
-    const out = await rangeRead(accessor, spec('/x'), 2, 6)
-    expect(new TextDecoder().decode(out)).toBe('cdef')
   })
 })

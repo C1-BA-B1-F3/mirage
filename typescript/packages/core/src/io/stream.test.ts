@@ -22,8 +22,6 @@ import {
   discardStreams,
   drain,
   exitOnEmpty,
-  mergeStdoutStderr,
-  quietMatch,
   wrapCachableStreams,
   yieldBytes,
 } from './stream.ts'
@@ -43,25 +41,6 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {
   for await (const c of stream) out.push(new TextDecoder().decode(c))
   return out.join('')
 }
-
-describe('mergeStdoutStderr', () => {
-  it('yields stderr before stdout and clears io.stderr', async () => {
-    const io = new IOResult({ stderr: encode('err:') })
-    const stream = fromChunks([encode('out1'), encode('out2')])
-    expect(await collect(mergeStdoutStderr(stream, io))).toBe('err:out1out2')
-    expect(io.stderr).toBeNull()
-  })
-
-  it('handles bytes stdout', async () => {
-    const io = new IOResult()
-    expect(await collect(mergeStdoutStderr(encode('data'), io))).toBe('data')
-  })
-
-  it('null stdout yields nothing extra', async () => {
-    const io = new IOResult({ stderr: encode('e') })
-    expect(await collect(mergeStdoutStderr(null, io))).toBe('e')
-  })
-})
 
 describe('wrapCachableStreams', () => {
   it('wraps listed cache paths in CachableAsyncIterator', () => {
@@ -184,20 +163,6 @@ describe('asyncChain', () => {
 describe('yieldBytes', () => {
   it('yields one chunk and stops', async () => {
     expect(await collect(yieldBytes(encode('once')))).toBe('once')
-  })
-})
-
-describe('quietMatch', () => {
-  it('sets exit_code=0 when stream has any chunk', async () => {
-    const io = new IOResult()
-    await collect(quietMatch(fromChunks([encode('a')]), io))
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('sets exit_code=1 when stream empty', async () => {
-    const io = new IOResult()
-    await collect(quietMatch(fromChunks([]), io))
-    expect(io.exitCode).toBe(1)
   })
 })
 

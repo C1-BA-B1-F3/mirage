@@ -40,10 +40,6 @@ def _key(path: str, config: S3Config) -> str:
     return kp.apply(config.key_prefix or "", path)
 
 
-def _prefix(path: str, config: S3Config) -> str:
-    return kp.apply_dir(config.key_prefix or "", path)
-
-
 def _strip_prefix(key: str, config: S3Config) -> str:
     return kp.strip(config.key_prefix or "", key)
 

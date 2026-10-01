@@ -32,5 +32,3 @@ IO = CommandIO(
     is_mounted=lambda a: True,
     local=False,
 )
-
-resolve_glob = IO.resolve_glob

@@ -15,7 +15,7 @@
 import { gnuDirname } from '@struktoai/mirage-core/utils/path'
 import type { ExecuteResult, Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { FileVersionTracker, StaleMirageFileError } from './file-version.ts'
-import { decode, ioToStr } from './io-text.ts'
+import { decode, ioToStr, replaceText } from './io-text.ts'
 
 export interface ToolResult {
   [key: string]: unknown
@@ -118,16 +118,13 @@ export class MirageToolOperations {
       }
       return errorResult(`Error: ${errorMessage(err)}`)
     }
-    const count = content.split(oldString).length - 1
+    const [newContent, count] = replaceText(content, oldString, newString, replaceAll)
     if (count === 0) {
       return errorResult(`Error: string not found in file: '${oldString}'`)
     }
     if (count > 1 && !replaceAll) {
       return errorResult(`Error: string appears ${String(count)} times. Pass replace_all=true`)
     }
-    const newContent = replaceAll
-      ? content.split(oldString).join(newString)
-      : content.replace(oldString, newString)
     try {
       await this.versions.writeEdit(path, newContent)
     } catch (err) {

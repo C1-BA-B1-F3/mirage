@@ -21,14 +21,10 @@ import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync } from '../utils/stream.ts'
+import { splitLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
 
 function splitByPatterns(
   lines: readonly string[],
@@ -115,7 +111,7 @@ export async function csplitGeneric(
     raw = stdinData ?? new Uint8Array(0)
   }
   const text = DEC.decode(raw)
-  const lines = splitLinesNoTrailing(text)
+  const lines = splitLines(text)
   const parts = splitByPatterns(lines, texts, suppressMatched)
   const writes: Record<string, Uint8Array> = {}
   const sizes: string[] = []

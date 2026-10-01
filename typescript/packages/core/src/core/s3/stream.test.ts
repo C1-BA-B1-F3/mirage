@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { S3Accessor } from '../../accessor/s3.ts'
 import type { S3Config } from '../../vfs/s3/config.ts'
 import { PathSpec } from '../../types.ts'
-import { rangeRead, readRange } from './stream.ts'
+import { readRange } from './stream.ts'
 
 const DEC = new TextDecoder()
 const BODY = '0123456789'
@@ -130,16 +130,5 @@ describe('core/s3 readRange on the presigned browser path', () => {
     serve(whole)
     const got = await readRange(browserAccessor(), PATH, undefined, CHUNK - 5, CHUNK + 10)
     expect(got).toEqual(whole.subarray(CHUNK - 5, CHUNK * 2 + 5))
-  })
-})
-
-describe('core/s3 rangeRead', () => {
-  it('takes its fourth argument as one past the last byte', async () => {
-    // The VFS-level spelling every other backend and all of python use.
-    // s3 read it as a length, so this call used to return ten bytes from
-    // offset two rather than the four between two and six.
-    serve(text(BODY))
-    const got = await rangeRead(browserAccessor(), PATH, 2, 6)
-    expect(DEC.decode(got)).toBe('2345')
   })
 })

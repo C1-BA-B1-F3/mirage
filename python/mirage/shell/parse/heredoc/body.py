@@ -88,9 +88,8 @@ def heredoc_bodies(data: bytes, operators: Sequence[HeredocOperator], *,
         nested (bool): whether one line's bodies stand innermost-first,
             the order tree-sitter-bash's grammar closes them in, rather
             than in the order bash gathers them. The source the parser
-            reads is kept in that order (see relayout), so the shield
-            and body_prefix read it, while relayout reads the typed
-            source as bash does. A line with one operator reads the same
+            reads is kept in that order, so the shield and body_prefix
+            read it that way. A line with one operator reads the same
             either way.
 
     Returns:

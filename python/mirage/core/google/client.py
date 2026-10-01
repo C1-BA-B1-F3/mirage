@@ -205,21 +205,6 @@ async def google_post(
     return data
 
 
-async def google_put(
-    token_manager: TokenManager,
-    url: str,
-    json: dict[str, Any],
-) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("PUT",
-                                             url,
-                                             error_of=_error_of,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             json_body=json,
-                                             session=token_manager.pool)
-    return data
-
-
 async def google_patch(
     token_manager: TokenManager,
     url: str,

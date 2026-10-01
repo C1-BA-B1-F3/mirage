@@ -59,7 +59,7 @@ from mirage.workspace.executor.builtins.xargs import handle_xargs
 
 from mirage.workspace.executor.builtins.links import (  # isort: skip
     accepts_line, follow_directory_links, follow_paths, handle_ln,
-    handle_readlink, link_flags, prepare_mv, settle_moves, strip_link_operands)
+    handle_readlink, prepare_mv, settle_moves, strip_link_operands)
 
 from mirage.workspace.executor.builtins.control import (  # isort: skip
     handle_colon, handle_exit, handle_false, handle_return, handle_true,
@@ -95,7 +95,6 @@ __all__ = [
     'handle_ln',
     'handle_local',
     'handle_readlink',
-    'link_flags',
     'accepts_line',
     'follow_directory_links',
     'follow_paths',

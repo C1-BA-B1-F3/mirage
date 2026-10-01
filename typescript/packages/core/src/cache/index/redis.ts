@@ -36,6 +36,7 @@ import {
   PATHS_KEY,
   TOMBSTONE_PREFIX,
 } from './constants.ts'
+import { globEscape } from '../file/utils.ts'
 
 const PATH_REGISTRY = `
 local function track(registry, prefixes, paths)
@@ -255,18 +256,6 @@ redis.call('DEL', KEYS[3])
 prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
   string.sub(KEYS[1], #ARGV[2] + 1))
 `
-
-/**
- * Escape redis MATCH metacharacters in a literal path.
- *
- * A path may legally contain `*?[]`, and SCAN's pattern is a glob, so an
- * unescaped path would match keys it does not name. The escaping is a
- * narrowing optimization only; the caller still filters at a path boundary.
- * Mirrors Python `_glob_escape` (`cache/index/redis.py`).
- */
-function globEscape(value: string): string {
-  return value.replace(/[*?[\]\\]/g, (char) => `\\${char}`)
-}
 
 interface RedisPipeline {
   eval: (script: string, options: { keys: string[]; arguments: string[] }) => RedisPipeline

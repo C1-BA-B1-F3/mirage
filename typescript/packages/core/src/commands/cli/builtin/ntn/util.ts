@@ -178,12 +178,6 @@ export function parseJsonText(text: string, flag: string): Record<string, unknow
   return parsed as Record<string, unknown>
 }
 
-export function parseJsonFlag(value: unknown, flag: string): Record<string, unknown> {
-  if (value === undefined || value === null || value === '') return {}
-  if (typeof value !== 'string') throw new Error(`${flag} must be a JSON string`)
-  return parseJsonText(value, flag)
-}
-
 export function usageError(err: unknown): CommandFnResult {
   const msg = err instanceof Error ? err.message : String(err)
   return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(`${msg}\n`) })]

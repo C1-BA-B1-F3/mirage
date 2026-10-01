@@ -20,14 +20,10 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
+import { splitLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
 
 export async function lookGeneric(
   paths: PathSpec[],
@@ -51,7 +47,7 @@ export async function lookGeneric(
     const stdinData = await readStdinAsync(opts.stdin)
     raw = stdinData ?? new Uint8Array(0)
   }
-  const lines = splitLinesNoTrailing(DEC.decode(raw))
+  const lines = splitLines(DEC.decode(raw))
   const cmpPrefix = caseInsensitive ? prefix.toLowerCase() : prefix
   const matched: string[] = []
   for (const line of lines) {

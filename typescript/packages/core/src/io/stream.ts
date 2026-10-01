@@ -15,7 +15,7 @@
 import { KeyLock } from '../cache/lock.ts'
 import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
-import { type ByteSource, type IOResult, materialize } from './types.ts'
+import type { ByteSource, IOResult } from './types.ts'
 
 /**
  * One lazy byte cursor shared by commands inheriting an input descriptor.
@@ -55,21 +55,6 @@ export class SharedStdin implements AsyncIterable<Uint8Array> {
         }),
     }
   }
-}
-
-export async function* mergeStdoutStderr(
-  stdout: ByteSource | null,
-  io: IOResult,
-): AsyncIterable<Uint8Array> {
-  const stderrBytes = await materialize(io.stderr)
-  if (stderrBytes.byteLength > 0) yield stderrBytes
-  io.stderr = null
-  if (stdout === null) return
-  if (stdout instanceof Uint8Array) {
-    if (stdout.byteLength > 0) yield stdout
-    return
-  }
-  for await (const chunk of stdout) yield chunk
 }
 
 export function wrapCachableStreams(
@@ -163,17 +148,4 @@ export async function* asyncChain(streams: Iterable<ByteSource | null>): AsyncIt
 export async function* yieldBytes(data: Uint8Array): AsyncIterable<Uint8Array> {
   await Promise.resolve()
   yield data
-}
-
-// eslint-disable-next-line require-yield -- mirrors Python's unreachable `yield b""` for generator contract
-export async function* quietMatch(
-  stream: AsyncIterable<Uint8Array>,
-  io: IOResult,
-): AsyncIterable<Uint8Array> {
-  for await (const _chunk of stream) {
-    void _chunk
-    io.exitCode = 0
-    return
-  }
-  io.exitCode = 1
 }

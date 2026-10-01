@@ -18,7 +18,6 @@ export {
   followPaths,
   handleLn,
   handleReadlink,
-  linkFlags,
   followDirectoryLinks,
   prepareMv,
   settleMoves,

@@ -82,17 +82,6 @@ export async function createRepo(
   return typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
 }
 
-/** Delete a repository from the Hub. */
-export async function deleteRepo(
-  config: HfConfig,
-  repoId: string,
-  repoType = 'model',
-): Promise<void> {
-  const [organization, name] = splitRepoId(repoId)
-  const url = `${rstripSlash(hfEndpoint(config))}/api/repos/delete`
-  await hubRequest(config.token, 'DELETE', url, { name, organization, type: repoType })
-}
-
 /** Tag a revision of a repository. */
 export async function createTag(
   config: HfConfig,

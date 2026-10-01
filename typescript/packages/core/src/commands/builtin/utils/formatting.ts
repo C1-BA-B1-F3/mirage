@@ -31,7 +31,6 @@ import {
   FIND_OLD_SECONDS,
   LS_RECENT_SECONDS,
   MONTHS,
-  NUMERIC_PREFIX,
   TYPE_CHARS,
 } from './constants.ts'
 import { UNKNOWN_NAME, groupName, ownerName, type Identity } from './identity.ts'
@@ -475,9 +474,4 @@ export function formatFindLs(s: FileStat, identity: Identity | null): string {
     `${lsModeString(s)} ${padLeft('1', 3)} ${who.padEnd(8)} ${grp.padEnd(8)} ` +
     `${padLeft(size, 8)} ${time} ${findLsName(s)}`
   )
-}
-
-export function toNumber(val: string): number {
-  const m = NUMERIC_PREFIX.exec(val.trim())
-  return m === null ? 0 : Number.parseFloat(m[0])
 }

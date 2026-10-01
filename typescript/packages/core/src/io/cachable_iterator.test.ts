@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { CachableAsyncIterator } from './cachable_iterator.ts'
+import { CachableAsyncIterator, concat } from './cachable_iterator.ts'
 
 async function* fromChunks(chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   await Promise.resolve()
@@ -140,5 +140,17 @@ describe('discard behind a pull that never settles', () => {
     await iterator.next()
     await iterator.discard()
     expect(closed).toBe(true)
+  })
+})
+
+describe('concat', () => {
+  it('concatenates byte arrays in order', () => {
+    const a = new Uint8Array([1, 2, 3])
+    const b = new Uint8Array([4, 5])
+    expect(Array.from(concat([a, b]))).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('returns empty array for empty input', () => {
+    expect(concat([])).toEqual(new Uint8Array(0))
   })
 })

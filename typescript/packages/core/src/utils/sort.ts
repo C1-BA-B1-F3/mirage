@@ -41,13 +41,3 @@ export function compareCodePoints(a: string, b: string): number {
   }
   return a.length - i - (b.length - j)
 }
-
-/**
- * Sort a copy of `items` by code point.
- *
- * The copy is the point: sorting in place mutates, and most callers here
- * are handing back a list they do not own.
- */
-export function sortedByCodePoints(items: Iterable<string>): string[] {
-  return [...items].sort(compareCodePoints)
-}

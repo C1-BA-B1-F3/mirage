@@ -57,35 +57,3 @@ export function patternReaches(pattern: string, path: readonly string[]): boolea
 export function patternNames(pattern: string, name: string): boolean {
   return patternReaches(pattern, [name])
 }
-
-function unify(a: readonly string[], b: readonly string[]): string[] | null {
-  const out: string[] = []
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = i < a.length ? a[i] : undefined
-    const y = i < b.length ? b[i] : undefined
-    if (x === undefined) out.push(y ?? WILDCARD)
-    else if (y === undefined) out.push(x)
-    else if (x === y || y === WILDCARD) out.push(x)
-    else if (x === WILDCARD) out.push(y)
-    else return null
-  }
-  return out
-}
-
-/**
- * The allow list both lists grant: every pair unified token by token,
- * the longer prefix winning where one extends the other and a wildcard
- * yielding to the concrete token.
- */
-export function intersectPatterns(a: readonly string[], b: readonly string[]): string[] {
-  const out: string[] = []
-  for (const x of a) {
-    for (const y of b) {
-      const joined = unify(splitPattern(x), splitPattern(y))
-      if (joined === null) continue
-      const text = joined.join(' ') || WILDCARD
-      if (!out.includes(text)) out.push(text)
-    }
-  }
-  return out
-}

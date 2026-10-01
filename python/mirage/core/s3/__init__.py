@@ -25,7 +25,7 @@ from mirage.core.s3.rename import rename
 from mirage.core.s3.rm import rm_r
 from mirage.core.s3.rmdir import rmdir
 from mirage.core.s3.stat import stat
-from mirage.core.s3.stream import range_read, read_stream
+from mirage.core.s3.stream import read_stream
 from mirage.core.s3.truncate import truncate
 from mirage.core.s3.unlink import unlink
 from mirage.core.s3.write import write_bytes
@@ -38,7 +38,6 @@ __all__ = [
     "exists",
     "find",
     "mkdir",
-    "range_read",
     "read_bytes",
     "read_stream",
     "readdir",

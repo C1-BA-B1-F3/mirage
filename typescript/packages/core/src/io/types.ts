@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec, Producer, Refusal } from '../types.ts'
-import { CachableAsyncIterator } from './cachable_iterator.ts'
+import { CachableAsyncIterator, concat } from './cachable_iterator.ts'
 import { chunks } from './cooperative.ts'
 
 export type ByteSource = Uint8Array | AsyncIterable<Uint8Array>
@@ -193,16 +193,4 @@ export class IOResult {
 
 function decodeBytes(bytes: Uint8Array, errors: 'replace' | 'strict'): string {
   return new TextDecoder('utf-8', { fatal: errors === 'strict' }).decode(bytes)
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }

@@ -24,6 +24,7 @@ from mirage.runtime.sandbox.apple_container.constants import (
     APPLE_CONTAINER_CLI_HINT, PRELUDE, RUNNING_STATE, no_container_hint,
     not_running_hint)
 from mirage.runtime.sandbox.base import RemoteSandbox
+from mirage.runtime.sandbox.cli import run_cli
 from mirage.runtime.sandbox.config import SandboxConfig
 from mirage.runtime.types import ProcessExecution, RunResult, ScriptSource
 
@@ -77,26 +78,8 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
             args (list[str]): CLI arguments after the executable.
             stdin (bytes | None): input delivered to the guest command.
         """
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "container",
-                *args,
-                stdin=(asyncio.subprocess.PIPE
-                       if stdin is not None else asyncio.subprocess.DEVNULL),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError:
-            raise RuntimeError(APPLE_CONTAINER_CLI_HINT) from None
-        try:
-            stdout, stderr = await process.communicate(stdin)
-        except asyncio.CancelledError:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            raise
-        code = process.returncode if process.returncode is not None else 1
-        return stdout, stderr, code
+        return await run_cli("container", APPLE_CONTAINER_CLI_HINT, args,
+                             stdin)
 
     async def connect(self) -> None:
         """Attach nothing up front.

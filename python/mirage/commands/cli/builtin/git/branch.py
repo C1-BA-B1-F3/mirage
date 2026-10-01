@@ -64,7 +64,6 @@ from mirage.runtime.types import DispatchFn
 
 HEADS_PREFIX = b"refs/heads/"
 REMOTES_PREFIX = b"refs/remotes/"
-SYMREF_PREFIX = b"ref: "
 REMOTE = "remotes/"
 AUTO_SETUP_MERGE = "branch.autosetupmerge"
 TRACK_WORDS = (Track.ALWAYS, Track.SIMPLE, Track.INHERIT)

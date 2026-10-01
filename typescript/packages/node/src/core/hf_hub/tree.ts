@@ -383,23 +383,15 @@ export async function refillSnapshot(
 }
 
 /**
- * Refetch when the root listing is missing or expired.
+ * Refetch when the root listing is missing or expired, returning the rows of
+ * the refill it made.
  *
  * Every reader treats a missing listing as a real absence, which is right
  * against a *live* index and wrong against one that was never filled or has
  * been dropped. The root listing is what tells the two apart, in one lookup
  * and no request: the tree is written whole, so while the index is live the
- * mount root always has a row.
+ * mount root always has a row. Mirrors Python's `ensure_live_snapshot`.
  */
-export async function ensureLiveIndex(
-  accessor: HfHubAccessor,
-  index: IndexCacheStore,
-  prefix: string,
-): Promise<boolean> {
-  return (await ensureLiveSnapshot(accessor, index, prefix)) !== null
-}
-
-/** `ensureLiveIndex`, returning the rows of the refill it made. Mirrors Python's `ensure_live_snapshot`. */
 export async function ensureLiveSnapshot(
   accessor: HfHubAccessor,
   index: IndexCacheStore,

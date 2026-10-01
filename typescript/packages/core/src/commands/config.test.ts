@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { command, crossCommand, RegisteredCommand } from './config.ts'
+import { command, RegisteredCommand } from './config.ts'
 import { specOf } from './spec/builtins.ts'
 import { CommandSpec, Operand, Option } from './spec/types.ts'
 
@@ -32,8 +32,6 @@ describe('RegisteredCommand', () => {
     expect(rc.write).toBe(false)
     expect(rc.provisionFn).toBeNull()
     expect(rc.aggregate).toBeNull()
-    expect(rc.src).toBeNull()
-    expect(rc.dst).toBeNull()
   })
 })
 
@@ -129,14 +127,5 @@ describe('command()', () => {
     })
     if (result === null) throw new Error('expected result')
     expect(new TextDecoder().decode(result[0] as Uint8Array)).toContain('Services:\n  drive\n')
-  })
-})
-
-describe('crossCommand()', () => {
-  it('encodes VFS as "src->dst" and stores src/dst', () => {
-    const rc = crossCommand({ name: 'cp', src: 'ram', dst: 'disk', spec: STUB_SPEC, fn: STUB_FN })
-    expect(rc.vfs).toBe('ram->disk')
-    expect(rc.src).toBe('ram')
-    expect(rc.dst).toBe('disk')
   })
 })

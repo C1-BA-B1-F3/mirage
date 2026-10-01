@@ -164,7 +164,7 @@ describe('protectedSource', () => {
 
   it('shields both bodies of one operator line', () => {
     // Laid out as the parser's source keeps two heredocs on one line:
-    // innermost-first (see relayout), so B's body precedes A's.
+    // innermost-first, so B's body precedes A's.
     const cmd = 'cat <<A && cat <<B\n\\two\nB\n\\one\nA\n'
     const out = protectedSource(cmd, root(cmd))
     expect(diff(cmd, out ?? '')).toEqual([

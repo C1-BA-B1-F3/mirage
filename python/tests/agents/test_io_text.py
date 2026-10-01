@@ -1,4 +1,5 @@
-from mirage.agents.io_text import decode, io_to_str, with_refusal_bytes
+from mirage.agents.io_text import (decode, io_to_str, replace_text,
+                                   with_refusal_bytes)
 from mirage.io.types import IOResult
 from mirage.types import Refusal
 
@@ -143,3 +144,19 @@ def test_with_refusal_trusts_the_reason_wherever_the_line_landed():
                   exit_code=1,
                   refusal=operand)
     assert io_to_str(io) == "cat: /protected: frozen\n"
+
+
+def test_replace_text_first_occurrence_counts_every_one():
+    assert replace_text("a-a-a", "a", "b", False) == ("b-a-a", 3)
+
+
+def test_replace_text_replace_all():
+    assert replace_text("a-a-a", "a", "b", True) == ("b-b-b", 3)
+
+
+def test_replace_text_writes_dollar_patterns_literally():
+    assert replace_text("x=1", "1", "$$ $& $1", False) == ("x=$$ $& $1", 1)
+
+
+def test_replace_text_miss_is_a_zero_count():
+    assert replace_text("abc", "z", "y", False) == ("abc", 0)

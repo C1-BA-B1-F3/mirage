@@ -18,7 +18,7 @@ import { encodeBase64 } from '@struktoai/mirage-core/utils/base64'
 import { gnuDirname } from '@struktoai/mirage-core/utils/path'
 import { FileVersionTracker } from '../file-version.ts'
 import { readWorkspaceFile } from '../read-file.ts'
-import { withRefusal } from '../io-text.ts'
+import { replaceText, withRefusal } from '../io-text.ts'
 
 const z = tool.schema
 
@@ -154,17 +154,13 @@ export function mirageTools(
         if (await w.vfs.exists(filePath)) return `Error: ${errMsg(err)}`
         return `Error: file '${filePath}' not found`
       }
-      const count = current.split(oldString).length - 1
+      const [next, count] = replaceText(current, oldString, newString, replaceAll === true)
       if (count === 0) {
         return `Error: string not found in file: '${oldString}'`
       }
       if (count > 1 && replaceAll !== true) {
         return `Error: string '${oldString}' appears ${String(count)} times. Use replaceAll=true`
       }
-      const next =
-        replaceAll === true
-          ? current.split(oldString).join(newString)
-          : current.replace(oldString, newString)
       try {
         await versions.writeEdit(filePath, next)
       } catch (err) {

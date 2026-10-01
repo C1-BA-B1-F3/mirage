@@ -1310,7 +1310,7 @@ def test_partial_search_cannot_evict_live_app_bytes_or_overlay(
                 await _line(ws, f"chmod 600 {virtual}")
                 search = AsyncMock(return_value=([], False))
                 monkeypatch.setattr(
-                    f"mirage.core.{name}.readdir.list_all_files", search)
+                    "mirage.core.google.readdir.list_all_files", search)
                 before = fake.fetches()
                 assert await _line(ws, f"cat {virtual}") == SEED
                 assert await _line(ws, f"stat -c %a {virtual}") == b"600\n"

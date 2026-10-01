@@ -61,8 +61,6 @@ export const DEFAULT_MODES: Partial<Record<FileType, number>> = {
   [FileType.CHAR_DEVICE]: 0o666,
 }
 
-export const NUMERIC_PREFIX = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/
-
 // GNU ls's window of "recent" times: half a Gregorian year of 365.2425
 // days, in seconds (ls.c). findutils draws its own line (listfile.c):
 // old past 180 days, future past an hour.

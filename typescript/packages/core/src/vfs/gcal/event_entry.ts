@@ -89,15 +89,3 @@ export function makeCalendarDirname(summary: string, calendarId: string, primary
   if (primary) return PRIMARY_DIR
   return makeIdName(summary, calendarId)
 }
-
-/** Recover the calendar id a directory name addresses. */
-export function parseCalendarDirname(name: string): string {
-  if (name === PRIMARY_DIR) return PRIMARY_DIR
-  // lastIndexOf, not indexOf: a calendar id holds "@" and "." but the
-  // sanitized title before it may itself contain "__".
-  const idx = name.lastIndexOf('__')
-  if (idx === -1) throw enoent(name)
-  const calendarId = name.slice(idx + 2)
-  if (calendarId === '') throw enoent(name)
-  return calendarId
-}

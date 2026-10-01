@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { Channel } from '@struktoai/mirage-core/shell/console/index'
+import { concat } from '@struktoai/mirage-core/io/cachable_iterator'
 
 /** Where a spill sink writes: a workspace directory it can create and extend. */
 export interface SpillTarget {
@@ -57,16 +58,6 @@ export async function ensureDirPath(dirs: DirMaker, dir: string): Promise<void> 
 
 function totalLength(parts: Uint8Array[]): number {
   return parts.reduce((sum, p) => sum + p.byteLength, 0)
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(totalLength(parts))
-  let at = 0
-  for (const p of parts) {
-    out.set(p, at)
-    at += p.byteLength
-  }
-  return out
 }
 
 /**

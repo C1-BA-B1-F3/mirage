@@ -550,22 +550,3 @@ def format_find_ls(s: FileStat, identity: Identity | None) -> str:
     return (f"{UNKNOWN_STAT_FIELD:>9} {UNKNOWN_STAT_FIELD:>6} "
             f"{ls_mode_string(s)} {1:>3} {who:<8} {grp:<8} {size:>8} {when} "
             f"{_find_ls_name(s)}")
-
-
-def to_number(val: str) -> float:
-    """Coerce a string to a number with GNU awk semantics.
-
-    Args:
-        val (str): raw token; the leading numeric prefix counts, else 0.
-    """
-    m = constants.NUMERIC_PREFIX.match(val.strip())
-    return float(m.group(0)) if m else 0.0
-
-
-def format_number(val: float) -> str:
-    """Render an awk numeric value, collapsing integral floats.
-
-    Args:
-        val (float): numeric value to render.
-    """
-    return str(int(val)) if val == int(val) else str(val)

@@ -15,7 +15,6 @@
 import { describe, expect, it } from 'vitest'
 import { jqRunTexts } from './eval.ts'
 import {
-  concatBytes,
   dumpText,
   errorReport,
   formatJqOutput,
@@ -188,18 +187,6 @@ describe('printable', () => {
     expect(printable(escaped, opts)).toBe(escaped)
     expect(printable(run, jqOptions({ rawOutput: true, compact: true }))).toBe(run)
     expect(printable(run, jqOptions({ nulOutput: true, asciiOutput: true }))).toBe(run)
-  })
-})
-
-describe('concatBytes', () => {
-  it('concatenates byte arrays in order', () => {
-    const a = new Uint8Array([1, 2, 3])
-    const b = new Uint8Array([4, 5])
-    expect(Array.from(concatBytes([a, b]))).toEqual([1, 2, 3, 4, 5])
-  })
-
-  it('returns empty array for empty input', () => {
-    expect(concatBytes([])).toEqual(new Uint8Array(0))
   })
 })
 

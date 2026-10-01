@@ -15,7 +15,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { JqCompileError } from './errors.ts'
 import {
-  halts,
   jqCheck,
   jqEval,
   jqRaised,
@@ -675,19 +674,6 @@ describe('jqCheck', () => {
   it('compiles a program without running it', async () => {
     await jqCheck('repeat(1)')
     await expect(jqCheck('1 +')).rejects.toThrow(/1 compile error$/)
-  })
-})
-
-describe('halts', () => {
-  it.each([
-    ['halt', true],
-    ['"x" | halt_error(1)', true],
-    ['.halt', false],
-    ['"halt"', false],
-    ['$halt', false],
-    ['def halting: 1; halting', false],
-  ])('finds a call to either halt in %s', (expr, expected) => {
-    expect(halts(expr)).toBe(expected)
   })
 })
 

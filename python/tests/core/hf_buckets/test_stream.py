@@ -14,20 +14,13 @@
 
 import pytest
 
-from mirage.core.hf_buckets.stream import range_read, read_stream
+from mirage.core.hf_buckets.stream import read_stream
 from mirage.core.hf_hub.client import HfHubError
 from mirage.observe.context import RecordingScope, active_recorder
 from mirage.types import PathSpec
 from tests.fixtures.hf_hub_api import NO_ETAG, xet_hash
 
 BIG = (b"x" * 1023 + b"\n") * 300
-
-
-@pytest.mark.asyncio
-async def test_range_read_returns_slice(make_acc):
-    acc = make_acc({"x": b"abcdef"})
-    out = await range_read(acc, PathSpec.from_str_path("/x"), 1, 4)
-    assert out == b"bcd"
 
 
 @pytest.mark.asyncio
@@ -160,5 +153,3 @@ async def test_a_prefixed_stream_serves_the_prefixed_object(make_acc):
     assert b"".join([
         c async for c in read_stream(acc, PathSpec.from_str_path("/a.txt"))
     ]) == b"seed"
-    assert await range_read(acc, PathSpec.from_str_path("/a.txt"), 1,
-                            3) == b"ee"

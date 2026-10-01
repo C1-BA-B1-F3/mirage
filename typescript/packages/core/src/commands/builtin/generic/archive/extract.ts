@@ -12,8 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { type FileStat, FileType, PathSpec } from '../../../../types.ts'
-import { mountKey } from '../../../../utils/key_prefix.ts'
+import type { PathSpec } from '../../../../types.ts'
+import { type FileStat, FileType } from '../../../../types.ts'
 
 export type StatDoor = (p: PathSpec) => Promise<FileStat>
 export type MkdirDoor = (p: PathSpec, parents?: boolean) => Promise<void>
@@ -29,15 +29,6 @@ export type MkdirDoor = (p: PathSpec, parents?: boolean) => Promise<void>
 export function extractDest(explicit: string | null, cwd: string): string {
   const target = explicit ?? cwd
   return target !== '' ? target : '/'
-}
-
-export function flatPathSpec(virtual: string): PathSpec {
-  return new PathSpec({
-    virtual,
-    directory: virtual,
-    vfsPath: mountKey(virtual, ''),
-    resolved: true,
-  })
 }
 
 async function dirExists(stat: StatDoor, level: PathSpec): Promise<boolean> {

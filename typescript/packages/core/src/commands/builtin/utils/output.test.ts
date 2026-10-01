@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { formatOptionalRecords, formatRecordText, formatRecords } from './output.ts'
+import { formatOptionalRecords, formatRecords } from './output.ts'
 
 const DEC = new TextDecoder()
 
@@ -34,11 +34,5 @@ describe('formatRecords', () => {
 describe('formatOptionalRecords', () => {
   it('empty returns null', () => {
     expect(formatOptionalRecords([])).toBeNull()
-  })
-})
-
-describe('formatRecordText', () => {
-  it('multiple records terminates last line', () => {
-    expect(formatRecordText(['a', 'b'])).toBe('a\nb\n')
   })
 })

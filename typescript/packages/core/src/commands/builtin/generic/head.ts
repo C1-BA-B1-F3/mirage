@@ -27,6 +27,7 @@ import { resolveSource } from '../utils/stream.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 
@@ -53,15 +54,6 @@ function parseFlags(bag: Record<string, FlagValue>): HeadFlags | string {
     verbose: fl.asBool('verbose'),
     zeroTerminated: fl.asBool('zero_terminated'),
   }
-}
-
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  if (a.byteLength === 0) return b
-  if (b.byteLength === 0) return a
-  const out = new Uint8Array(a.byteLength + b.byteLength)
-  out.set(a, 0)
-  out.set(b, a.byteLength)
-  return out
 }
 
 /**
@@ -95,7 +87,7 @@ async function* headStream(
     const keep = -bytesMode
     let buf: Uint8Array = new Uint8Array(0)
     for await (const chunk of source) {
-      buf = concat(buf, chunk)
+      buf = concat([buf, chunk])
       if (buf.byteLength > keep) {
         yield buf.subarray(0, buf.byteLength - keep)
         buf = buf.subarray(buf.byteLength - keep)
@@ -129,7 +121,7 @@ async function* headStream(
   const recent: Uint8Array[] = []
   let buf: Uint8Array = new Uint8Array(0)
   for await (const chunk of source) {
-    buf = concat(buf, chunk)
+    buf = concat([buf, chunk])
     let nl = buf.indexOf(delimiter)
     while (nl >= 0) {
       recent.push(buf.subarray(0, nl + 1))

@@ -55,11 +55,6 @@ CONCAT_START_OPS = frozenset({"$", "(", "++", "--", "!"})
 
 LVALUE_TYPES = (Var, Field, ArrayRef)
 
-STMT_KEYWORDS = frozenset({
-    "if", "while", "for", "do", "break", "continue", "next", "nextfile",
-    "exit", "return", "delete", "print", "printf", "getline"
-})
-
 
 class Parser:
 

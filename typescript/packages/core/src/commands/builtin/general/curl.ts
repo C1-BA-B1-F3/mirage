@@ -32,6 +32,7 @@ import { compareCodePoints } from '../../../utils/sort.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 import { renderWriteOut } from './curl_write_out.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 
@@ -173,15 +174,6 @@ function writeFailure(shown: string, err: unknown): string {
   return `curl: (${String(EXIT_WRITE)}) ${shown}: ${detail}\n`
 }
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  if (a.length === 0) return b
-  if (b.length === 0) return a
-  const out = new Uint8Array(a.length + b.length)
-  out.set(a, 0)
-  out.set(b, a.length)
-  return out
-}
-
 async function curlCommand(
   _accessor: Accessor,
   paths: PathSpec[],
@@ -295,8 +287,8 @@ async function curlCommand(
       exitcode: String(io.exitCode),
       time_total: ((performance.now() - started) / 1000).toFixed(6),
     })
-    io.stderr = concat(await materialize(io.stderr), err)
-    return [concat(await materialize(stdout), out), io]
+    io.stderr = concat([await materialize(io.stderr), err])
+    return [concat([await materialize(stdout), out]), io]
   }
   let method: string
   let bodyLen: number | null = null
@@ -404,7 +396,7 @@ async function curlCommand(
           null,
           new IOResult({
             exitCode: EXIT_WRITE,
-            stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+            stderr: concat([trace, quiet ? new Uint8Array() : ENC.encode(line)]),
           }),
           resp,
         )
@@ -421,7 +413,7 @@ async function curlCommand(
       headerOut,
       new IOResult({
         exitCode: EXIT_HTTP_ERROR,
-        stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+        stderr: concat([trace, quiet ? new Uint8Array() : ENC.encode(line)]),
         writes,
       }),
       resp,
@@ -432,7 +424,7 @@ async function curlCommand(
     // -I prints the headers alone, whatever method -X made it send.
     result = blocks
   } else if (include) {
-    result = concat(blocks, result)
+    result = concat([blocks, result])
   }
   if (output !== null && output !== '-') {
     if (opts.dispatch !== undefined) {
@@ -445,7 +437,7 @@ async function curlCommand(
           headerOut,
           new IOResult({
             exitCode: EXIT_WRITE,
-            stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+            stderr: concat([trace, quiet ? new Uint8Array() : ENC.encode(line)]),
             writes,
           }),
           resp,
@@ -460,8 +452,8 @@ async function curlCommand(
   if (dumpToStdout) {
     result =
       head || include
-        ? concat(ENC.encode(doubled(hops)), head ? new Uint8Array() : resp.body)
-        : concat(blocks, result)
+        ? concat([ENC.encode(doubled(hops)), head ? new Uint8Array() : resp.body])
+        : concat([blocks, result])
   }
   return await finish(result, new IOResult({ writes, stderr: trace }), resp)
 }

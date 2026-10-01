@@ -36,6 +36,7 @@ import {
   SPLIT_TRY_HELP,
   UINTMAX,
 } from '../constants.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 // The three -n modes: byte chunks, line-preserving chunks, round robin.
@@ -215,18 +216,6 @@ function* byteChunks(data: Uint8Array, count: number): Generator<Uint8Array> {
   }
 }
 
-function concatParts(parts: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const part of parts) total += part.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.byteLength
-  }
-  return out
-}
-
 // The line chunks of `data` in order, no record cut: GNU's
 // `lines_chunk_split`. The byte boundaries are those of `byteChunks` over
 // `max(size, count)`, and a chunk runs to the first terminator at or after
@@ -253,14 +242,14 @@ function* lineChunks(data: Uint8Array, count: number, eol: number): Generator<Ui
     pos = end
     while (terminated || chunkEnd(chunk + 1, base, rem) <= pos) {
       if (!terminated && pos >= data.byteLength) break
-      yield concatParts(buf)
+      yield concat(buf)
       buf = []
       chunk += 1
       if (chunk >= count) break
       if (chunkEnd(chunk + 1, base, rem) > pos) terminated = false
     }
   }
-  if (chunk < count) yield concatParts(buf)
+  if (chunk < count) yield concat(buf)
 }
 
 // The records of `data`, a final unterminated one included.
@@ -285,7 +274,7 @@ function* roundRobinChunks(data: Uint8Array, count: number, eol: number): Genera
   for (let index = 0; index < filled; index++) {
     const own: Uint8Array[] = []
     for (let at = index; at < dealt.length; at += count) own.push(dealt[at] ?? new Uint8Array(0))
-    yield concatParts(own)
+    yield concat(own)
   }
 }
 
@@ -533,7 +522,7 @@ export async function splitGeneric(
   if (chunks !== null) {
     const gathered: Uint8Array[] = []
     for await (const c of source) gathered.push(c)
-    const all = concatParts(gathered)
+    const all = concat(gathered)
     if (chunks.only !== null) {
       // `K/N` writes the one chunk to stdout and no file at all.
       return [chunkAt(all, chunks, separator, chunks.only), new IOResult()]

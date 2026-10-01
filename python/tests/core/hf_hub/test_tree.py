@@ -22,10 +22,11 @@ from mirage.cache.index import NULL_INDEX, Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.core.hf_hub.client import HfHubError
-from mirage.core.hf_hub.tree import (collect, ensure_live_index, ensure_tree,
-                                     fetch_path, fetch_tree, index_rows,
-                                     next_cursor, parse_entry, paths_info_url,
-                                     refill_index, refill_snapshot, tree_url)
+from mirage.core.hf_hub.tree import (collect, ensure_live_snapshot,
+                                     ensure_tree, fetch_path, fetch_tree,
+                                     index_rows, next_cursor, parse_entry,
+                                     paths_info_url, refill_index,
+                                     refill_snapshot, tree_url)
 from tests.core.hf_hub.conftest import FakeAccessor, dir_row, file_row, page
 
 
@@ -296,18 +297,6 @@ async def test_refill_index_clears_the_derived_row_memo(mock_fetch, accessor):
 
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.tree.fetch_tree")
-async def test_ensure_live_index_refetches_a_dropped_index(
-        mock_fetch, accessor):
-    mock_fetch.return_value = {"a.txt": parse_entry(file_row("a.txt"))}
-    index = RAMIndexCacheStore()
-    assert await ensure_live_index(accessor, index, "") is True
-    # Live now: a second call must cost no request.
-    assert await ensure_live_index(accessor, index, "") is False
-    assert mock_fetch.await_count == 1
-
-
-@pytest.mark.asyncio
-@patch("mirage.core.hf_hub.tree.fetch_tree")
 async def test_ensure_tree_hydrates_an_empty_repo_exactly_once(
         mock_fetch, accessor):
     """An empty repository hydrates to {}; reading that as 'not
@@ -466,3 +455,15 @@ async def test_a_refill_reports_what_left_the_repository(
     mock_fetch.return_value = after
     await refill_snapshot(accessor, index, "/m")
     assert gone == reported
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_ensure_live_snapshot_refetches_a_dropped_index(
+        mock_fetch, accessor):
+    mock_fetch.return_value = {"a.txt": parse_entry(file_row("a.txt"))}
+    index = RAMIndexCacheStore()
+    assert await ensure_live_snapshot(accessor, index, "") is not None
+    # Live now: a second call must cost no request.
+    assert await ensure_live_snapshot(accessor, index, "") is None
+    assert mock_fetch.await_count == 1

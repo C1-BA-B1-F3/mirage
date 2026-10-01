@@ -12,7 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { spawn } from 'node:child_process'
 import { PROCESS_EXECUTOR, type ProcessExecutor } from '@struktoai/mirage-core/runtime/mixin'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
@@ -23,12 +22,7 @@ import type {
 } from '@struktoai/mirage-core/runtime/types'
 import { SMOLVM_CONFIG_KEYS, type SmolvmConfig } from './config.ts'
 import { RUNNING_STATE, SMOLVM_CLI_HINT, notRunningHint } from './constants.ts'
-
-interface SmolvmResult {
-  stdout: Uint8Array
-  stderr: Uint8Array
-  code: number
-}
+import { type CliResult, runCli } from '../cli.ts'
 
 /**
  * A microVM the user runs as a whole-line runtime.
@@ -61,36 +55,8 @@ export class SmolvmRuntime extends RemoteSandbox<SmolvmConfig> implements Proces
     args: string[],
     stdin: Uint8Array | null = null,
     signal?: AbortSignal,
-  ): Promise<SmolvmResult> {
-    return new Promise((resolve, reject) => {
-      const child = spawn('smolvm', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        signal,
-        killSignal: 'SIGKILL',
-      })
-      const out: Buffer[] = []
-      const err: Buffer[] = []
-      child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
-      child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
-      child.on('error', (error: NodeJS.ErrnoException) => {
-        reject(error.code === 'ENOENT' ? new Error(SMOLVM_CLI_HINT) : error)
-      })
-      child.on('close', (code) => {
-        resolve({
-          stdout: new Uint8Array(Buffer.concat(out)),
-          stderr: new Uint8Array(Buffer.concat(err)),
-          code: code ?? 1,
-        })
-      })
-      // EPIPE means the guest command exited without draining its
-      // stdin (`head`-like); python's communicate() suppresses the
-      // matching BrokenPipeError, so it is not an error here either.
-      child.stdin.on('error', (error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EPIPE') reject(error)
-      })
-      if (stdin !== null) child.stdin.write(stdin)
-      child.stdin.end()
-    })
+  ): Promise<CliResult> {
+    return runCli('smolvm', SMOLVM_CLI_HINT, args, stdin, signal)
   }
 
   /**

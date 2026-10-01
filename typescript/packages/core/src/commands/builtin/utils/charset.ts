@@ -155,7 +155,6 @@ export class CharSet {
 }
 
 export const ALL = CharSet.of([0, MAX_CODE_POINT]).minusSurrogates()
-export const EMPTY = new CharSet()
 
 /**
  * One code point as a `u`-flag `RegExp` reads it inside or out. A BMP code

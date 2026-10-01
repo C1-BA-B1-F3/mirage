@@ -27,11 +27,6 @@ import type { BuiltinCall, Result } from '../types.ts'
 
 const USAGE = 'shopt: usage: shopt [-pqsu] [-o] [optname ...]'
 
-/** Whether a `shopt` option is on for the session. */
-export function shoptEnabled(session: SessionState, name: string): boolean {
-  return session.shopts[name] ?? SHOPT_DEFAULTS.get(name) ?? false
-}
-
 function row(name: string, on: boolean, reusable: boolean, setO: boolean): string {
   if (reusable) {
     if (setO) return `set ${on ? '-' : '+'}o ${name}`

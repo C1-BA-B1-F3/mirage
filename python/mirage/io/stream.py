@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator, Iterable
 
 from mirage.io import CachableAsyncIterator, IOResult
 from mirage.io.async_line_iterator import SharedInput
-from mirage.io.types import ByteSource, materialize
+from mirage.io.types import ByteSource, materialize  # noqa: F401
 from mirage.utils.stream import ensure_stream
 
 logger = logging.getLogger(__name__)
@@ -59,31 +59,6 @@ class SharedStdin:
             chunk = self._buffer[self._pos:self._pos + 1]
             self._pos += 1
             return chunk
-
-
-async def merge_stdout_stderr(
-    stdout: ByteSource | None,
-    io: IOResult,
-) -> AsyncIterator[bytes]:
-    """Stream stdout chunks with stderr prepended (for `cmd 2>&1 | next`).
-
-    Emits stderr first (was conceptually produced before/around stdout
-    output), then streams stdout chunk-by-chunk without materializing.
-    Clears io.stderr after consumption so the pipeline's stderr
-    accumulator does not double-emit it.
-    """
-    stderr_bytes = await materialize(io.stderr)
-    if stderr_bytes:
-        yield stderr_bytes
-    io.stderr = None
-    if stdout is None:
-        return
-    if isinstance(stdout, bytes):
-        if stdout:
-            yield stdout
-        return
-    async for chunk in stdout:
-        yield chunk
 
 
 def wrap_cachable_streams(
@@ -207,15 +182,3 @@ async def chain_cachables(
 
 async def yield_bytes(data: bytes) -> AsyncIterator[bytes]:
     yield data
-
-
-async def quiet_match(
-    stream: AsyncIterator[bytes],
-    io: IOResult,
-) -> AsyncIterator[bytes]:
-    async for _ in stream:
-        io.exit_code = 0
-        return
-    io.exit_code = 1
-    return
-    yield b""

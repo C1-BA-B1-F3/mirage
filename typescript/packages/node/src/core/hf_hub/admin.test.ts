@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { createRepo, createTag, deleteRepo, deleteTag, splitRepoId } from './admin.ts'
+import { createRepo, createTag, deleteTag, splitRepoId } from './admin.ts'
 import * as client from './client.ts'
 import type { HfConfig } from './config.ts'
 import { API_BASE } from './constants.ts'
@@ -54,17 +54,6 @@ describe('createRepo', () => {
     await createRepo(CONFIG, 'a/b', { repoType: 'space', spaceSdk: 'gradio' })
     expect((post.mock.calls[0]?.[2] as Record<string, unknown>).sdk).toBe('gradio')
     post.mockRestore()
-  })
-})
-
-describe('deleteRepo', () => {
-  it('posts the same shape to /api/repos/delete', async () => {
-    const req = vi.spyOn(client, 'hubRequest').mockResolvedValue(undefined as never)
-    await deleteRepo(CONFIG, 'acme/widget', 'space')
-    expect(req.mock.calls[0]?.[1]).toBe('DELETE')
-    expect(String(req.mock.calls[0]?.[2])).toMatch(/\/api\/repos\/delete$/)
-    expect((req.mock.calls[0]?.[3] as Record<string, unknown>).type).toBe('space')
-    req.mockRestore()
   })
 })
 

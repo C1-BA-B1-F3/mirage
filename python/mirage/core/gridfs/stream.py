@@ -20,7 +20,6 @@ from gridfs.errors import NoFile
 from mirage.accessor.gridfs import GridFSAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.gridfs.client import _key, bucket, latest_file
-from mirage.core.gridfs.read import read_bytes
 from mirage.observe.context import record_stream, revision_for
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -71,19 +70,3 @@ async def read_stream(
             yield bytes(chunk)
     finally:
         await out.close()
-
-
-async def range_read(accessor: GridFSAccessor, path_spec: PathSpec, start: int,
-                     end: int) -> bytes:
-    """Read a byte range from a GridFS file.
-
-    Args:
-        accessor (GridFSAccessor): GridFS accessor.
-        path_spec (PathSpec): File path.
-        start (int): Start byte offset.
-        end (int): End byte offset (exclusive).
-    """
-    return await read_bytes(accessor,
-                            path_spec,
-                            offset=start,
-                            size=end - start)

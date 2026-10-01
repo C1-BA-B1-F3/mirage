@@ -71,6 +71,7 @@ import {
   toStr,
   type Value,
 } from './value.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 const SCALAR_DEFAULTS: Readonly<Record<string, string>> = {
   FS: ' ',
@@ -156,18 +157,6 @@ interface Frame {
 export interface InputPipe {
   readonly reader: RecordReader
   readonly status: number
-}
-
-function concat(parts: readonly Uint8Array[]): Uint8Array {
-  let size = 0
-  for (const part of parts) size += part.byteLength
-  const out = new Uint8Array(size)
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.byteLength
-  }
-  return out
 }
 
 /**

@@ -133,17 +133,6 @@ export async function childLine(
   })
 }
 
-export function unescapeHeredoc(text: string): string {
-  if (!text.includes('\\')) return text
-  const NUL = String.fromCharCode(0)
-  let out = text
-  out = out.replaceAll('\\\\', NUL)
-  out = out.replaceAll('\\$', '$')
-  out = out.replaceAll('\\`', '`')
-  out = out.replaceAll('\\\n', '')
-  return out.replaceAll(NUL, '\\')
-}
-
 const DOLLAR_NODE_TYPES: ReadonlySet<string> = new Set([
   NT.SIMPLE_EXPANSION,
   NT.EXPANSION,

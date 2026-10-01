@@ -45,5 +45,3 @@ STREAMING_IO = dataclasses.replace(
     read_stream=_read_stream,
 )
 IO = dataclasses.replace(STREAMING_IO, read_stream=_finite_read_stream)
-
-resolve_glob = IO.resolve_glob

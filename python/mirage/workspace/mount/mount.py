@@ -251,7 +251,6 @@ class MountEntry:
         self._ops: dict[tuple[Any, ...], RegisteredOp] = {}
         self._general_ops: dict[str, RegisteredOp] = {}
         # key: (cmd_name, target_resource_type)
-        self._cross_cmds: dict[tuple[Any, ...], RegisteredCommand] = {}
 
     @asynccontextmanager
     async def use(self) -> AsyncIterator[None]:
@@ -424,10 +423,6 @@ class MountEntry:
         """Get the spec for a command name."""
         return self._cmd_specs.get(cmd_name)
 
-    def is_general_command(self, cmd_name: str) -> bool:
-        """Whether `cmd_name` is registered as a general command here."""
-        return cmd_name in self._general_cmds
-
     def all_commands(self) -> list[RegisteredCommand]:
         """All registered commands (per-mount + general), deduped by name."""
         seen: set[str] = set()
@@ -570,35 +565,6 @@ class MountEntry:
             result[name] = sorted(result[name],
                                   key=lambda x: (x is not None, x or ""))
         return dict(sorted(result.items()))
-
-    # ── cross-mount registration ─────────────────────
-
-    def register_cross(
-        self,
-        cmd: RegisteredCommand,
-        target_resource_type: str,
-    ) -> None:
-        """Register a cross-mount command for a target.
-
-        Example::
-
-            mount.register_cross(cp_cmd, "ram")
-            # This mount can now cp to ram mounts
-
-        Args:
-            cmd: the cross-mount command.
-            target_resource_type: e.g. "ram", "s3".
-        """
-        key = (cmd.name, target_resource_type)
-        self._cross_cmds[key] = cmd
-
-    def resolve_cross(
-        self,
-        cmd_name: str,
-        target_resource_type: str,
-    ) -> RegisteredCommand | None:
-        """Find a cross-mount command for a target."""
-        return self._cross_cmds.get((cmd_name, target_resource_type))
 
     # ── op registration ───────────────────────────────
 

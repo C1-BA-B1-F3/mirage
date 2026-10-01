@@ -15,9 +15,8 @@
 from datetime import date, datetime
 
 from mirage.core.gcal.day import (DEFAULT_TZ, clamped_hhmm, day_bounds,
-                                  days_covered, event_span, is_all_day,
-                                  local_midnight, slot_instant, valid_day,
-                                  window_bounds, zone)
+                                  days_covered, event_span, local_midnight,
+                                  slot_instant, valid_day, window_bounds, zone)
 
 HK = "Asia/Hong_Kong"
 LA = "America/Los_Angeles"
@@ -60,11 +59,6 @@ def test_window_bounds_bracket_the_day():
     lo, hi = window_bounds(date(2026, 8, 11), HK)
     assert lo is None
     assert hi == "2026-11-10T00:00:00+08:00"
-
-
-def test_is_all_day_reads_the_slot_shape():
-    assert is_all_day({"date": "2026-08-11"})
-    assert not is_all_day({"dateTime": "2026-08-11T09:00:00+08:00"})
 
 
 def test_event_span_parses_offsets_and_z():

@@ -14,7 +14,6 @@
 
 import { registeredSpec } from '../../commands/spec/builtins.ts'
 import { SPECS } from '../../commands/spec/index.ts'
-import { concatBytes } from '../../core/jq/format.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -80,6 +79,7 @@ import {
 import { findStartPoints, runOnMount, type RunOnMountCtx } from './command/run.ts'
 import type { Result } from './command/types.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 // One handler per JOB_BUILTINS member; lookup already narrowed the name.
 const JOB_HANDLERS: Record<
@@ -142,7 +142,7 @@ async function finishFind(
   )
   if (actionErr.length > 0) {
     const existing = await materialize(io.stderr)
-    io.stderr = concatBytes([existing, actionErr])
+    io.stderr = concat([existing, actionErr])
   }
   if (io.exitCode === 0) io.exitCode = actionExit
   return newStdout
@@ -534,8 +534,8 @@ export async function handleCommand(
         csParsed.warnings.map((w) => `${cmdName}: ${w}\n`).join(''),
       )
       const csExisting = await materialize(csIo.stderr)
-      csIo.stderr = concatBytes([csWarn, csExisting])
-      csExec.stderr = concatBytes([csWarn, csExec.stderr])
+      csIo.stderr = concat([csWarn, csExisting])
+      csExec.stderr = concat([csWarn, csExec.stderr])
     }
     // The native sub-runs carry their own mount's scope; the cross-mount
     // command as a whole is bounded by the strictest cap across the
@@ -682,8 +682,8 @@ export async function handleCommand(
     }
     if (warnBytes !== null) {
       const existing = await materialize(fanIo.stderr)
-      fanIo.stderr = concatBytes([warnBytes, existing])
-      fanNode.stderr = concatBytes([warnBytes, fanNode.stderr])
+      fanIo.stderr = concat([warnBytes, existing])
+      fanNode.stderr = concat([warnBytes, fanNode.stderr])
     }
     return [fanOut, fanIo, fanNode]
   }
@@ -723,7 +723,7 @@ export async function handleCommand(
   }
   if (warnBytes !== null) {
     const existing = await materialize(io.stderr)
-    io.stderr = concatBytes([warnBytes, existing])
+    io.stderr = concat([warnBytes, existing])
   }
   const resolved =
     io.producer !== null

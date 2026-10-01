@@ -23,14 +23,10 @@ import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync, stdinStream } from '../utils/stream.ts'
+import { splitLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
 
 function shuffleInPlace(arr: string[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -421,7 +417,7 @@ export async function shufGeneric(
     for (const p of paths) {
       const data = DEC.decode(await materialize(stream(p)))
       if (zeroSep) for (const l of data.split('\x00')) items.push(l)
-      else for (const l of splitLinesNoTrailing(data)) items.push(l)
+      else for (const l of splitLines(data)) items.push(l)
     }
   } else {
     const stdinData = await readStdinAsync(opts.stdin)
@@ -429,7 +425,7 @@ export async function shufGeneric(
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('shuf: missing operand\n') })]
     }
     const text = DEC.decode(stdinData)
-    items = zeroSep ? text.split('\x00') : splitLinesNoTrailing(text)
+    items = zeroSep ? text.split('\x00') : splitLines(text)
   }
   if (out === null) {
     const need = emitCount(BigInt(items.length), nFlag, repeat)

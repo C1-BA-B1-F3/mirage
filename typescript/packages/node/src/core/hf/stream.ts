@@ -22,16 +22,7 @@ import { hubStream } from '../hf_hub/client.ts'
 import { REFUSED_STATUSES } from '../hf_hub/constants.ts'
 import { asRefusal } from '../hf_hub/lookup.ts'
 import { readToken, resolveUrl } from './hub.ts'
-import { isMissing, read } from './read.ts'
-
-export async function rangeRead(
-  accessor: HfBucketsAccessor,
-  path: PathSpec,
-  start: number,
-  end: number,
-): Promise<Uint8Array> {
-  return read(accessor, path, undefined, { offset: start, size: end - start })
-}
+import { isMissing } from './read.ts'
 
 /** Stream a bucket file from the Hub, stamped with its ETag. */
 export async function* stream(

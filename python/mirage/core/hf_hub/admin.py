@@ -88,26 +88,6 @@ async def create_repo(config: HfConfig,
     return data if isinstance(data, dict) else {}
 
 
-async def delete_repo(config: HfConfig,
-                      repo_id: str,
-                      repo_type: str = "model") -> None:
-    """Delete a repository from the Hub.
-
-    Args:
-        config (HfConfig): the install's configuration.
-        repo_id (str): "namespace/name".
-        repo_type (str): "model", "dataset" or "space".
-    """
-    organization, name = split_repo_id(repo_id)
-    body: dict[str, JsonValue] = {
-        "name": name,
-        "organization": organization,
-        "type": repo_type,
-    }
-    url = f"{config.endpoint.rstrip('/')}/api/repos/delete"
-    await hub_request(config.token, "DELETE", url, body)
-
-
 def repo_api_url(config: HfConfig, repo_type: str, repo_id: str,
                  suffix: str) -> str:
     """The /api URL for a repository the CLI named on the line."""

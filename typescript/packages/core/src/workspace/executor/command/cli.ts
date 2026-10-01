@@ -28,7 +28,6 @@ import { Operand, type FlagValue } from '../../../commands/spec/types.ts'
 import { PartialOutputError, UsageError } from '../../../commands/errors.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { wordText, PathSpec, type Limit } from '../../../types.ts'
-import { concatBytes } from '../../../core/jq/format.ts'
 import { maybeWithTimeout, runWithTimeout } from '../../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import type { CLIInstall } from '../../cli/types.ts'
@@ -42,6 +41,7 @@ import { runOutput } from '../../../commands/builtin/general/interpreter.ts'
 import type { Runtime } from '../../../runtime/base.ts'
 import { LanguageRuntime } from '../../../runtime/language.ts'
 import { optionError, parseFlags } from './flags.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 // A textual rest operand is a CLI node's pass-through form: parsed under
 // unknownIsOperand, it takes the undeclared dashed tokens the node does not
@@ -462,7 +462,7 @@ export async function handleCli(
   if (warnings.length > 0) {
     const warn = new TextEncoder().encode(warnings.map((w) => `${prog}: ${w}\n`).join(''))
     const existing = await materialize(io.stderr)
-    io.stderr = concatBytes([warn, existing])
+    io.stderr = concat([warn, existing])
   }
 
   stdout = maybeWithTimeout(stdout, limit, prog)

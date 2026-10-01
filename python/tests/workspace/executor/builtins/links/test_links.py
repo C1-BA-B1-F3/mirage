@@ -6,19 +6,12 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.links import (accepts_line,
                                                       follow_parent,
-                                                      follow_paths, link_flags,
-                                                      prepare_mv)
+                                                      follow_paths, prepare_mv)
 
 
 def _ws() -> Workspace:
     return Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
                      mode=MountMode.WRITE)
-
-
-def test_link_flags_reads_the_known_letters():
-    assert link_flags(["-sf", PathSpec.from_str_path("/data/a")],
-                      "sfnvrT") == {"s", "f"}
-    assert link_flags([PathSpec.from_str_path("/data/a")], "sfnvrT") == set()
 
 
 @pytest.mark.asyncio

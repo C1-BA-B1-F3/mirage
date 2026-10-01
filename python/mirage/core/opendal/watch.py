@@ -21,8 +21,6 @@ from opendal.types import Metadata
 from mirage.core.opendal.types import OperatorAccessor
 from mirage.types import PathSpec, WalkEntry
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.watch.base import DeltaHook
-from mirage.watch.delta import ListingDeltaHook
 from mirage.watch.fingerprint import stat_fingerprint
 
 
@@ -104,13 +102,3 @@ class OpendalWalk:
             # Deleted between the listing and the stat; the next pull
             # reports the DELETE from the snapshot diff.
             return None
-
-
-def build_delta_hook(accessor: OperatorAccessor) -> DeltaHook:
-    """Build a delta hook for any opendal-backed accessor.
-
-    Args:
-        accessor (OperatorAccessor): Backend handle exposing an opendal
-            operator.
-    """
-    return ListingDeltaHook(OpendalWalk(accessor))

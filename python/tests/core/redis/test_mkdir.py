@@ -19,7 +19,6 @@ import pytest_asyncio
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.core.redis.mkdir import mkdir
-from mirage.core.redis.mkdir_p import mkdir_p
 from mirage.types import PathSpec
 from mirage.vfs.redis.store import RedisStore
 
@@ -155,30 +154,3 @@ async def test_mkdir_with_parents(mk_store):
     assert await a.store.has_dir("/a")
     assert await a.store.has_dir("/a/b")
     assert await a.store.has_dir("/a/b/c")
-
-
-@pytest.mark.asyncio
-async def test_mkdir_p(mk_store):
-    a = await mk_store("test:mkdir:5:")
-    await mkdir_p(a, PathSpec.from_str_path("/x/y/z"))
-    assert await a.store.has_dir("/x")
-    assert await a.store.has_dir("/x/y")
-    assert await a.store.has_dir("/x/y/z")
-
-
-@pytest.mark.asyncio
-async def test_mkdir_p_existing_parent(mk_store):
-    a = await mk_store("test:mkdir:6:")
-    await a.store.add_dir("/existing")
-    await mkdir_p(a, PathSpec.from_str_path("/existing/child/grandchild"))
-    assert await a.store.has_dir("/existing/child")
-    assert await a.store.has_dir("/existing/child/grandchild")
-
-
-@pytest.mark.asyncio
-async def test_mkdir_p_does_not_overwrite_modified(mk_store):
-    a = await mk_store("test:mkdir:7:")
-    await mkdir_p(a, PathSpec.from_str_path("/a"))
-    original = await a.store.get_modified("/a")
-    await mkdir_p(a, PathSpec.from_str_path("/a/b"))
-    assert await a.store.get_modified("/a") == original

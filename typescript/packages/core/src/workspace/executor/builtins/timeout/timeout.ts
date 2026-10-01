@@ -45,6 +45,7 @@ import {
   SIGSTOP,
   STOP_SIGNALS,
 } from './constants.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 const SYNOPSIS = 'timeout [OPTION] DURATION COMMAND [ARG]...'
 
@@ -202,18 +203,6 @@ async function executeDrained(
   return io
 }
 
-function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
-}
-
 async function raceDeadline<T>(run: Promise<T>, seconds: number): Promise<T | typeof TIMED_OUT> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
@@ -367,7 +356,7 @@ async function supervise(
   const result = seconds > 0 && seconds < Infinity ? await raceDeadline(run, seconds) : await run
   if (result !== TIMED_OUT) {
     return [
-      concatChunks(drained),
+      concat(drained),
       result,
       new ExecutionNode({ command: 'timeout', exitCode: result.exitCode }),
     ]
@@ -434,8 +423,8 @@ async function ended(
       ? source
       : new Uint8Array()
   const tail = ENCODER.encode(said.join(''))
-  const stderr = concatChunks([head, tail])
-  const partial = concatChunks(drained)
+  const stderr = concat([head, tail])
+  const partial = concat(drained)
   return [
     partial.byteLength > 0 ? partial : null,
     new IOResult({ exitCode, stderr: stderr.byteLength > 0 ? stderr : null }),

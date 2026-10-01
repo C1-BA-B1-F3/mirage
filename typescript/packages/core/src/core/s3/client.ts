@@ -23,10 +23,6 @@ export function s3Key(path: string, config: S3Config): string {
   return kp.apply(config.keyPrefix ?? '', path)
 }
 
-export function s3Prefix(path: string, config: S3Config): string {
-  return kp.applyDir(config.keyPrefix ?? '', path)
-}
-
 export function stripKeyPrefix(key: string, config: S3Config): string {
   return kp.strip(config.keyPrefix ?? '', key)
 }

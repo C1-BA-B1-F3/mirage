@@ -18,8 +18,7 @@ import pytest
 
 from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import (SharedStdin, async_chain, close_quietly,
-                              discard_streams, drain, exit_on_empty,
-                              merge_stdout_stderr, quiet_match)
+                              discard_streams, drain, exit_on_empty)
 from mirage.io.types import IOResult
 
 
@@ -59,18 +58,6 @@ def test_exit_on_empty_single_item():
         stream = exit_on_empty(_make_stream(b"only"), io)
         chunks = [chunk async for chunk in stream]
         assert chunks == [b"only"]
-        assert io.exit_code == 0
-
-    asyncio.run(_run())
-
-
-def test_quiet_match_with_items():
-
-    async def _run():
-        io = IOResult(exit_code=1)
-        stream = quiet_match(_make_stream(b"a", b"b"), io)
-        chunks = [chunk async for chunk in stream]
-        assert chunks == []
         assert io.exit_code == 0
 
     asyncio.run(_run())
@@ -149,94 +136,6 @@ def test_async_chain_empty():
         assert chunks == []
 
     asyncio.run(run())
-
-
-def test_quiet_match_no_items():
-
-    async def _run():
-        io = IOResult(exit_code=1)
-        stream = quiet_match(_make_stream(), io)
-        chunks = [chunk async for chunk in stream]
-        assert chunks == []
-        assert io.exit_code == 1
-
-    asyncio.run(_run())
-
-
-def test_merge_stdout_stderr_emits_stderr_first():
-
-    async def _run():
-        io = IOResult(stderr=b"warn: bad\n")
-        merged = merge_stdout_stderr(_make_stream(b"out1\n", b"out2\n"), io)
-        chunks = [chunk async for chunk in merged]
-        assert chunks[0] == b"warn: bad\n"
-        assert chunks[1:] == [b"out1\n", b"out2\n"]
-
-    asyncio.run(_run())
-
-
-def test_merge_stdout_stderr_clears_io_stderr():
-    """After merge, io.stderr is cleared so the pipeline accumulator
-    does not double-emit it as pipeline stderr.
-    """
-
-    async def _run():
-        io = IOResult(stderr=b"err\n")
-        merged = merge_stdout_stderr(_make_stream(b"x"), io)
-        async for _ in merged:
-            pass
-        assert io.stderr is None
-
-    asyncio.run(_run())
-
-
-def test_merge_stdout_stderr_streams_stdout_lazy():
-    """Stdout chunks pass through one at a time, never materialized."""
-    pulls = 0
-
-    async def _lazy(n):
-        nonlocal pulls
-        for i in range(n):
-            pulls += 1
-            yield f"chunk{i}\n".encode()
-
-    async def _run():
-        io = IOResult(stderr=b"hi\n")
-        merged = merge_stdout_stderr(_lazy(1000), io)
-        seen = 0
-        async for _ in merged:
-            seen += 1
-            if seen >= 5:
-                break
-        # 5 stdout chunks + 1 stderr blob = 6 yields; producer pulled
-        # at most ~5 times, not 1000.
-        assert pulls < 50, f"expected lazy pulls (~5), got {pulls}"
-
-    asyncio.run(_run())
-
-
-def test_merge_stdout_stderr_no_stderr():
-    """No stderr → just streams stdout."""
-
-    async def _run():
-        io = IOResult()
-        merged = merge_stdout_stderr(_make_stream(b"a", b"b"), io)
-        chunks = [chunk async for chunk in merged]
-        assert chunks == [b"a", b"b"]
-
-    asyncio.run(_run())
-
-
-def test_merge_stdout_stderr_bytes_stdout():
-    """stdout as bytes (not iterator) still works."""
-
-    async def _run():
-        io = IOResult(stderr=b"e\n")
-        merged = merge_stdout_stderr(b"out\n", io)
-        chunks = [chunk async for chunk in merged]
-        assert chunks == [b"e\n", b"out\n"]
-
-    asyncio.run(_run())
 
 
 def test_close_quietly_fires_finally():

@@ -15,13 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { WILDCARD } from '../constants.ts'
-import {
-  intersectPatterns,
-  patternMatches,
-  patternNames,
-  patternReaches,
-  splitPattern,
-} from './pattern.ts'
+import { patternMatches, patternNames, patternReaches, splitPattern } from './pattern.ts'
 
 describe('patterns', () => {
   it('splitPattern drops trailing wildcards only', () => {
@@ -73,16 +67,5 @@ describe('patterns', () => {
     expect(patternReaches('*', ['anything', 'at', 'all'])).toBe(true)
     // An empty path asks nothing, so nothing can refuse it.
     expect(patternReaches('linear issue', [])).toBe(true)
-  })
-
-  it('intersectPatterns unifies token by token', () => {
-    expect(intersectPatterns(['git'], ['git log', 'git diff'])).toEqual(['git log', 'git diff'])
-    expect(intersectPatterns(['ls', 'cat', 'git'], ['cat', 'git log'])).toEqual(['cat', 'git log'])
-    expect(intersectPatterns(['*'], ['ls'])).toEqual(['ls'])
-    expect(intersectPatterns(['git * --hard'], ['git reset'])).toEqual(['git reset --hard'])
-    expect(intersectPatterns(['rm'], ['ls'])).toEqual([])
-    expect(intersectPatterns(['*'], ['*'])).toEqual(['*'])
-    // Duplicates collapse, order follows the first list.
-    expect(intersectPatterns(['git', 'git log'], ['git log'])).toEqual(['git log'])
   })
 })

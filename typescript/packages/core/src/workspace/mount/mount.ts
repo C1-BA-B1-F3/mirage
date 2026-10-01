@@ -100,10 +100,6 @@ function opKey(name: string, filetype: string | null): OpKey {
   return `${name}\u0000${filetype ?? ''}`
 }
 
-function crossKey(name: string, targetVfs: string): string {
-  return `${name}\u0000${targetVfs}`
-}
-
 export interface MountInit {
   prefix: string
   vfs: BaseVFS
@@ -167,7 +163,6 @@ export class MountEntry {
   readonly commandLimits = new Map<string, Limit>()
   private readonly ops = new Map<OpKey, RegisteredOp>()
   private readonly generalOps = new Map<string, RegisteredOp>()
-  private readonly crossCmds = new Map<string, RegisteredCommand>()
   // first token -> descending token counts of multi-word command names
   // (e.g. "gws docs documents get"); backs longest-prefix command
   // resolution. null until first built; invalidated on register.
@@ -373,10 +368,6 @@ export class MountEntry {
     return 1
   }
 
-  isGeneralCommand(cmdName: string): boolean {
-    return this.generalCmds.has(cmdName)
-  }
-
   allCommands(): readonly RegisteredCommand[] {
     const seen = new Set<string>()
     const out: RegisteredCommand[] = []
@@ -447,16 +438,6 @@ export class MountEntry {
       if (!result.has(name)) result.set(name, [])
     }
     return sortFiletypeMap(result)
-  }
-
-  // ── cross-mount registration ─────────────────────
-
-  registerCross(cmd: RegisteredCommand, targetResourceType: string): void {
-    this.crossCmds.set(crossKey(cmd.name, targetResourceType), cmd)
-  }
-
-  resolveCross(cmdName: string, targetResourceType: string): RegisteredCommand | null {
-    return this.crossCmds.get(crossKey(cmdName, targetResourceType)) ?? null
   }
 
   // ── op registration ───────────────────────────────

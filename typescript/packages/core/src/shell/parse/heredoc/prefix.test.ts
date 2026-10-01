@@ -68,7 +68,7 @@ function prefix(command: string): string {
 }
 
 // Two heredocs on one line, laid out as the parser's source keeps them:
-// innermost-first (see relayout), so B's body precedes A's.
+// innermost-first, so B's body precedes A's.
 const TWO_ON_A_LINE = 'cat <<A <<B\nb\nB\n\na\nA\n'
 
 // The slice of a web-tree-sitter Node that bodyPrefix reads, over
@@ -175,7 +175,7 @@ describe('bodyPrefix', () => {
   it('measures an earlier heredoc on the line from the line after the later body', () => {
     // tree-sitter-bash has no tree for two heredocs on one command; were
     // it to grow one, the line's bodies would stand innermost-first as
-    // relayout writes them, so B's body follows the operator line and A's
+    // the parser's source keeps them, so B's body follows the operator line and A's
     // blank line is measured from the line after B's terminator, not from
     // the operator line's newline the two share.
     const first = heredoc(4, 17)

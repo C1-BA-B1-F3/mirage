@@ -18,19 +18,6 @@ from mirage.commands.builtin.utils import formatting
 from mirage.types import FileStat, FileType
 
 
-def test_to_number_gnu_awk_coercion():
-    assert formatting.to_number("3") == 3.0
-    assert formatting.to_number("2.5x") == 2.5
-    assert formatting.to_number("abc") == 0.0
-    assert formatting.to_number(" -4.5 ") == -4.5
-    assert formatting.to_number("1e3zzz") == 1000.0
-
-
-def test_format_number_collapses_integral_floats():
-    assert formatting.format_number(60.0) == "60"
-    assert formatting.format_number(5.5) == "5.5"
-
-
 def test_find_ls_and_ls_show_the_year_for_an_old_or_future_time():
     # GNU: a time older than the recent window, or in the future, shows
     # `Mon DD  YYYY` in place of `HH:MM`. findutils' window is 180 days

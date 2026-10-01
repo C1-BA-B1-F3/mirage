@@ -18,15 +18,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from mirage.accessor.s3 import S3Config
-from mirage.core.s3.client import _client_kwargs, async_session
+from mirage.core.s3.client import _client_kwargs, async_session, is_not_found
 from mirage.workspace.record.types import generation_of
-
-
-def _is_missing(exc: Exception) -> bool:
-    if hasattr(exc, "response"):
-        code = exc.response.get("Error", {}).get("Code")
-        return code in ("404", "NoSuchKey")
-    return False
 
 
 def _is_condition_lost(exc: Exception) -> bool:
@@ -76,7 +69,7 @@ class S3RecordClient:
             resp = await client.get_object(Bucket=self._config.bucket,
                                            Key=self.key(name))
         except Exception as exc:
-            if _is_missing(exc):
+            if is_not_found(exc):
                 return None, ""
             raise
         body = await resp["Body"].read()

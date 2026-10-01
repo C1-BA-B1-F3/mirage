@@ -35,40 +35,6 @@
       }
     },
     {
-      "id": "zcat_plain_file_is_not_in_gzip_format",
-      "seq": 846,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "zcat /data/a.txt",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "\ngzip: /data/a.txt: not in gzip format\n"
-      }
-    },
-    {
       "id": "zcat_empty_stdin_is_an_unexpected_end",
       "seq": 847,
       "targets": [

@@ -22,7 +22,7 @@ import { CycleError, gnuBasename, posixNormpath } from '../../../../utils/path.t
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-import { fail, splitFlags } from '../shared.ts'
+import { fail } from '../shared.ts'
 import { dispatchStat } from '../../../../commands/builtin/utils/paths.ts'
 import { statOrNull } from './probe.ts'
 import type { Result } from '../types.ts'
@@ -35,10 +35,6 @@ export function posixRelative(target: string, startDir: string): string {
   while (i < t.length && i < s.length && t[i] === s[i]) i += 1
   const parts = [...s.slice(i).map(() => '..'), ...t.slice(i)]
   return parts.length > 0 ? parts.join('/') : '.'
-}
-
-export function linkFlags(args: (string | PathSpec)[], known: string): Set<string> {
-  return splitFlags(args, known)[0]
 }
 
 // Resolve every component of a path but the last one. POSIX resolves a

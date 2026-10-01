@@ -158,24 +158,3 @@ async function windowFromStream(
   }
   return out
 }
-
-/**
- * The VFS-level `range_read(path, start, end)`, end exclusive.
- *
- * Every other backend's `rangeRead` and all of python's spell the window this
- * way; s3 read its fourth argument as a length, so `range_read(p, 10, 20)`
- * returned twenty bytes from offset ten where python returned ten.
- *
- * @param accessor the S3 accessor
- * @param path the object path
- * @param start first byte to read
- * @param end one past the last byte to read
- */
-export function rangeRead(
-  accessor: S3Accessor,
-  path: PathSpec,
-  start: number,
-  end: number,
-): Promise<Uint8Array> {
-  return readRange(accessor, path, undefined, start, end - start)
-}

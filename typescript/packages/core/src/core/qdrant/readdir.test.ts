@@ -12,42 +12,73 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import type { QdrantClient } from '@qdrant/js-client-rest'
+import { describe, expect, it, vi } from 'vitest'
 
-import type { QdrantAccessor } from '../../accessor/qdrant.ts'
+import { QdrantAccessor } from '../../accessor/qdrant.ts'
 import type { Evicted, IndexEntry, SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { resolveQdrantConfig } from '../../vfs/qdrant/config.ts'
+import { resolveQdrantConfig, type QdrantConfig } from '../../vfs/qdrant/config.ts'
 import { PathSpec } from '../../types.ts'
-import type { QdrantRow } from './client.ts'
-import { readdir } from './readdir.ts'
-import { blobBytes, renderJson, renderText } from './render.ts'
+import { blobBytes } from '../vector/read.ts'
+import { fieldValue } from './payload.ts'
+import { pointToRow, type QdrantPoint } from './query.ts'
+import { renderJson, renderText } from './render.ts'
+import { readdir } from './tree.ts'
 
-const ROW: QdrantRow = {
-  id: 1,
-  label: 'cat',
-  kind: 'big',
-  name: 'a big orange cat',
-  image_bytes: 'UE5HLTE=',
+interface Condition {
+  key?: string
+  match?: { value: unknown }
+  range?: { gte: number; lte: number }
+  must?: Condition[]
+  should?: Condition[]
 }
 
-const config = resolveQdrantConfig({
+/** The server's reading of a filter: typed matches, numeric ranges. */
+function holds(point: QdrantPoint, c: Condition | undefined): boolean {
+  if (c === undefined) return true
+  if (c.must !== undefined && !c.must.every((child) => holds(point, child))) return false
+  if (c.should !== undefined && !c.should.some((child) => holds(point, child))) return false
+  if (c.key === undefined) return true
+  const value = fieldValue(point.payload ?? {}, c.key)
+  if (c.range !== undefined) {
+    return typeof value === 'number' && c.range.gte <= value && value <= c.range.lte
+  }
+  return c.match !== undefined && value === c.match.value
+}
+
+/** A collection served the way the scroll API pages it. */
+function accessorOf(config: QdrantConfig, points: QdrantPoint[], collection = 'animals') {
+  const client = {
+    getCollections: () => Promise.resolve({ collections: [{ name: collection }] }),
+    collectionExists: (name: string) => Promise.resolve({ exists: name === collection }),
+    scroll: (_c: string, opts: { filter?: Condition; limit: number; offset: number | null }) => {
+      const matched = points.filter((point) => holds(point, opts.filter))
+      const start = opts.offset ?? 0
+      const next = start + opts.limit < matched.length ? start + opts.limit : null
+      return Promise.resolve({
+        points: matched.slice(start, start + opts.limit),
+        next_page_offset: next,
+      })
+    },
+  }
+  const accessor = new QdrantAccessor(resolveQdrantConfig(config))
+  vi.spyOn(accessor, 'client').mockResolvedValue(client as unknown as QdrantClient)
+  return accessor
+}
+
+const ANIMALS: QdrantConfig = {
   idField: 'id',
   groupBy: ['label', 'kind'],
   textField: 'name',
   blobField: 'image_bytes',
   blobExt: 'png',
   vectorField: 'vector',
-})
+}
 
-function accessor(): QdrantAccessor {
-  return {
-    config,
-    listTables: () => Promise.resolve(['animals']),
-    tableExists: (name: string) => Promise.resolve(name === 'animals'),
-    distinct: () => Promise.resolve(['big']),
-    rowsMatching: () => Promise.resolve([ROW]),
-  } as unknown as QdrantAccessor
+const CAT: QdrantPoint = {
+  id: 1,
+  payload: { label: 'cat', kind: 'big', name: 'a big orange cat', image_bytes: 'UE5HLTE=' },
 }
 
 class WindowSpy extends RAMIndexCacheStore {
@@ -64,144 +95,12 @@ class WindowSpy extends RAMIndexCacheStore {
   }
 }
 
-function spec(virtual: string): PathSpec {
-  return new PathSpec({ virtual, directory: virtual, vfsPath: virtual.replace(/^\//, '') })
-}
-
-describe('qdrant readdir sizes', () => {
-  it('lists the row files of a leaf group', async () => {
-    const out = await readdir(accessor(), spec('/animals/cat/big'), new RAMIndexCacheStore())
-    expect(out).toEqual([
-      '/animals/cat/big/1.json',
-      '/animals/cat/big/1.txt',
-      '/animals/cat/big/1.png',
-    ])
-  })
-
-  it('seeds the exact rendered size of every row file', async () => {
-    const idx = new RAMIndexCacheStore()
-    await readdir(accessor(), spec('/animals/cat/big'), idx)
-    const json = await idx.get('/animals/cat/big/1.json')
-    expect(json.entry?.size).toBe(renderJson(ROW, config).byteLength)
-    const txt = await idx.get('/animals/cat/big/1.txt')
-    expect(txt.entry?.size).toBe(renderText(ROW, config).byteLength)
-    const blob = await idx.get('/animals/cat/big/1.png')
-    expect(blob.entry?.size).toBe(blobBytes(ROW.image_bytes).byteLength)
-  })
-
-  it('lists without an index when none is given', async () => {
-    const out = await readdir(accessor(), spec('/animals/cat/big'))
-    expect(out).toHaveLength(3)
-  })
-
-  it('keeps listing when a blob value cannot be sized', async () => {
-    // An undecodable blob must leave that one size unknown, not fail the
-    // whole directory listing.
-    const broken = { ...ROW, image_bytes: 42 }
-    const acc = {
-      config,
-      listTables: () => Promise.resolve(['animals']),
-      tableExists: (name: string) => Promise.resolve(name === 'animals'),
-      distinct: () => Promise.resolve(['big']),
-      rowsMatching: () => Promise.resolve([broken]),
-    } as unknown as QdrantAccessor
-    const idx = new RAMIndexCacheStore()
-    const out = await readdir(acc, spec('/animals/cat/big'), idx)
-    expect(out).toHaveLength(3)
-    const blob = await idx.get('/animals/cat/big/1.png')
-    expect(blob.entry?.size).toBeNull()
-    const json = await idx.get('/animals/cat/big/1.json')
-    expect(json.entry?.size).toBe(renderJson(broken, config).byteLength)
-  })
-})
-
-describe('qdrant document lineage', () => {
-  const lineageConfig = resolveQdrantConfig({
-    collection: 'docs',
-    groupBy: ['metadata.source'],
-    basenameFields: ['metadata.source'],
-    nameField: 'metadata.page',
-    textField: 'page_content',
-  })
-  const lineageRow: QdrantRow = {
-    id: 17,
-    page_content: 'Refunds are processed within 14 days',
-    metadata: { source: 's3://docs/policies/refund-2026.pdf', page: '004' },
-  }
-  const lineageAccessor = {
-    config: lineageConfig,
-    tableExists: () => Promise.resolve(true),
-    distinct: (
-      _table: string,
-      _column: string,
-      filters: Record<string, string>,
-    ): Promise<string[]> =>
-      Promise.resolve(
-        Object.keys(filters).length === 0
-          ? ['s3://docs/policies/refund-2026.pdf']
-          : ['s3://docs/policies/refund-2026.pdf'],
-      ),
-    resolveGroup: () => Promise.resolve(['s3://docs/policies/refund-2026.pdf']),
-    rowsMatching: () => Promise.resolve([lineageRow]),
-  } as unknown as QdrantAccessor
-
-  it('lists a source basename then meaningful chunk files', async () => {
-    await expect(readdir(lineageAccessor, spec('/'))).resolves.toEqual(['/refund-2026.pdf'])
-    await expect(readdir(lineageAccessor, spec('/refund-2026.pdf'))).resolves.toEqual([
-      '/refund-2026.pdf/004__17.json',
-      '/refund-2026.pdf/004__17.txt',
-    ])
-  })
-
-  it('refuses a basename two sources render as, wherever the second scrolls', async () => {
-    // Resolution asks the accessor for every source behind the rendered
-    // name, so a collision is refused even when the capped listing showed
-    // only the first one.
-    const seen: { args?: unknown[] } = {}
-    const acc = {
-      config: lineageConfig,
-      tableExists: () => Promise.resolve(true),
-      resolveGroup: (...args: unknown[]) => {
-        seen.args = args
-        return Promise.resolve(['s3://one/report.pdf', 's3://two/report.pdf'])
-      },
-    } as unknown as QdrantAccessor
-    await expect(readdir(acc, spec('/report.pdf'))).rejects.toThrow('basename collision')
-    expect(seen.args).toEqual(['docs', 'metadata.source', {}, 'report.pdf', true])
-  })
-})
-
-const CAP = 5
-const WIDE = 40
-
-function cappedAccessor(seen: { prefix: string | undefined }): QdrantAccessor {
-  // The accessor stands in for the scroll: with a prefix the cap bounds the
-  // MATCHES, so the fake filters first and slices second.
-  const rows: QdrantRow[] = []
-  for (let i = 0; i < WIDE; i += 1) rows.push({ id: `doc-${String(i).padStart(3, '0')}` })
-  return {
-    config: resolveQdrantConfig({
-      idField: 'id',
-      collection: 'wide',
-      groupBy: ['label'],
-      maxRows: CAP,
-    }),
-    listTables: () => Promise.resolve(['wide']),
-    tableExists: (name: string) => Promise.resolve(name === 'wide'),
-    distinct: () => Promise.resolve(['all']),
-    rowsMatching: (_t: string, _f: unknown, _c: string[], limit: number, prefix: string) => {
-      seen.prefix = prefix
-      return Promise.resolve(rows.filter((r) => String(r.id).startsWith(prefix)).slice(0, limit))
-    },
-  } as unknown as QdrantAccessor
-}
-
-function globbed(virtual: string, pattern: string): PathSpec {
+function spec(virtual: string, pattern?: string): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual,
     vfsPath: virtual.replace(/^\//, ''),
-    pattern,
+    ...(pattern !== undefined ? { pattern } : {}),
   })
 }
 
@@ -209,71 +108,131 @@ function ids(paths: string[]): string[] {
   return [...new Set(paths.map((p) => (p.split('/').pop() ?? '').split('.')[0] ?? ''))]
 }
 
+describe('qdrant readdir sizes', () => {
+  it('lists the row files of a leaf group, with or without an index', async () => {
+    const files = ['/animals/cat/big/1.json', '/animals/cat/big/1.txt', '/animals/cat/big/1.png']
+    const acc = accessorOf(ANIMALS, [CAT])
+    await expect(readdir(acc, spec('/animals/cat/big'), new RAMIndexCacheStore())).resolves.toEqual(
+      files,
+    )
+    await expect(readdir(acc, spec('/animals/cat/big'))).resolves.toEqual(files)
+  })
+
+  it('seeds the exact rendered size of every row file', async () => {
+    const acc = accessorOf(ANIMALS, [CAT])
+    const row = pointToRow(CAT, 'id')
+    const idx = new RAMIndexCacheStore()
+    await readdir(acc, spec('/animals/cat/big'), idx)
+    const json = await idx.get('/animals/cat/big/1.json')
+    expect(json.entry?.size).toBe(renderJson(row, acc.config).byteLength)
+    const txt = await idx.get('/animals/cat/big/1.txt')
+    expect(txt.entry?.size).toBe(renderText(row, acc.config).byteLength)
+    const blob = await idx.get('/animals/cat/big/1.png')
+    expect(blob.entry?.size).toBe(blobBytes(row.image_bytes).byteLength)
+  })
+
+  it('keeps listing when a blob value cannot be sized, and says why', async () => {
+    // An undecodable blob must leave that one size unknown, not fail the
+    // whole directory listing; the failure is logged rather than swallowed.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const broken = { id: 1, payload: { ...CAT.payload, image_bytes: 42 } }
+    const idx = new RAMIndexCacheStore()
+    const out = await readdir(accessorOf(ANIMALS, [broken]), spec('/animals/cat/big'), idx)
+    expect(out).toHaveLength(3)
+    const blob = await idx.get('/animals/cat/big/1.png')
+    expect(blob.entry?.size).toBeNull()
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+  })
+})
+
+describe('qdrant document lineage', () => {
+  const lineage: QdrantConfig = {
+    collection: 'docs',
+    groupBy: ['metadata.source'],
+    basenameFields: ['metadata.source'],
+    nameField: 'metadata.page',
+    textField: 'page_content',
+  }
+
+  it('lists a source basename then meaningful chunk files', async () => {
+    const acc = accessorOf(
+      lineage,
+      [
+        {
+          id: 17,
+          payload: {
+            page_content: 'Refunds are processed within 14 days',
+            metadata: { source: 's3://docs/policies/refund-2026.pdf', page: '004' },
+          },
+        },
+      ],
+      'docs',
+    )
+    await expect(readdir(acc, spec('/'))).resolves.toEqual(['/refund-2026.pdf'])
+    await expect(readdir(acc, spec('/refund-2026.pdf'))).resolves.toEqual([
+      '/refund-2026.pdf/004__17.json',
+      '/refund-2026.pdf/004__17.txt',
+    ])
+  })
+
+  it('refuses a basename two sources render as', async () => {
+    const acc = accessorOf(
+      lineage,
+      [
+        { id: 1, payload: { metadata: { source: 's3://one/report.pdf' } } },
+        { id: 2, payload: { metadata: { source: 's3://two/report.pdf' } } },
+      ],
+      'docs',
+    )
+    await expect(readdir(acc, spec('/report.pdf'))).rejects.toThrow('basename collision')
+  })
+})
+
+const CAP = 5
+const WIDE = 40
+
+function cappedAccessor(): QdrantAccessor {
+  const points: QdrantPoint[] = []
+  for (let i = 0; i < WIDE; i += 1) {
+    points.push({ id: `doc-${String(i).padStart(3, '0')}`, payload: { label: 'all' } })
+  }
+  return accessorOf(
+    { idField: 'id', collection: 'wide', groupBy: ['label'], maxRows: CAP },
+    points,
+    'wide',
+  )
+}
+
 describe('qdrant readdir narrows a capped listing', () => {
-  it('pushes a row glob prefix into the scroll', async () => {
-    const seen: { prefix: string | undefined } = { prefix: undefined }
-    const out = await readdir(
-      cappedAccessor(seen),
-      globbed('/all', 'doc-03*'),
-      new RAMIndexCacheStore(),
+  it.each([
+    ['doc-03*', ['doc-030', 'doc-031', 'doc-032', 'doc-033', 'doc-034']],
+    // The prefix is cut at the suffix, so a leaf glob cannot ask for a dot.
+    ['doc-039.js*', ['doc-039']],
+    ['*9.json', ['doc-000', 'doc-001', 'doc-002', 'doc-003', 'doc-004']],
+  ])('scrolls %s to the rows its literal head names', async (pattern, expected) => {
+    const out = await readdir(cappedAccessor(), spec('/all', pattern), new RAMIndexCacheStore())
+    expect(ids(out)).toEqual(expected)
+  })
+
+  it('reaches a rendered basename past the cap', async () => {
+    const points: QdrantPoint[] = Array.from({ length: WIDE }, (_, i) => ({
+      id: i + 1,
+      payload: { source: `s3://docs/other-${String(i)}.pdf` },
+    }))
+    points.push({ id: WIDE + 1, payload: { source: 's3://archive/target-late.pdf' } })
+    const acc = accessorOf(
+      { collection: 'wide', groupBy: ['source'], basenameFields: ['source'], maxRows: CAP },
+      points,
+      'wide',
     )
-    expect(ids(out)).toEqual(['doc-030', 'doc-031', 'doc-032', 'doc-033', 'doc-034'])
-    expect(seen.prefix).toBe('doc-03')
-  })
-
-  it('cuts the prefix at the suffix so a leaf glob cannot ask for a dot', async () => {
-    const seen: { prefix: string | undefined } = { prefix: undefined }
-    await readdir(cappedAccessor(seen), globbed('/all', 'doc-039.js*'), new RAMIndexCacheStore())
-    expect(seen.prefix).toBe('doc-039')
-  })
-
-  it('sends no prefix for a glob with no literal head', async () => {
-    const seen: { prefix: string | undefined } = { prefix: undefined }
-    const out = await readdir(
-      cappedAccessor(seen),
-      globbed('/all', '*9.json'),
-      new RAMIndexCacheStore(),
-    )
-    expect(ids(out)).toEqual(['doc-000', 'doc-001', 'doc-002', 'doc-003', 'doc-004'])
-    expect(seen.prefix).toBe('')
-  })
-
-  it('passes a rendered basename prefix into the capped scan', async () => {
-    const seen: { prefix?: string; basename?: boolean } = {}
-    const acc = {
-      config: resolveQdrantConfig({
-        collection: 'wide',
-        groupBy: ['source'],
-        basenameFields: ['source'],
-        maxRows: CAP,
-      }),
-      tableExists: () => Promise.resolve(true),
-      distinct: (
-        _table: string,
-        _column: string,
-        _filters: Record<string, string>,
-        _limit: number,
-        prefix: string,
-        basename: boolean,
-      ) => {
-        seen.prefix = prefix
-        seen.basename = basename
-        const values = Array.from({ length: WIDE }, (_, i) => `s3://docs/other-${String(i)}.pdf`)
-        values.push('s3://archive/target-late.pdf')
-        return Promise.resolve(
-          values.filter((value) => (value.split('/').pop() ?? '').startsWith(prefix)).slice(0, CAP),
-        )
-      },
-    } as unknown as QdrantAccessor
-    await expect(readdir(acc, globbed('/', 'target*'))).resolves.toEqual(['/target-late.pdf'])
-    expect(seen).toEqual({ prefix: 'target', basename: true })
+    await expect(readdir(acc, spec('/', 'target*'))).resolves.toEqual(['/target-late.pdf'])
   })
 
   it('does not cache a narrowed listing as the directory', async () => {
-    const seen: { prefix: string | undefined } = { prefix: undefined }
-    const acc = cappedAccessor(seen)
+    const acc = cappedAccessor()
     const idx = new RAMIndexCacheStore()
-    await readdir(acc, globbed('/all', 'doc-03*'), idx)
+    await readdir(acc, spec('/all', 'doc-03*'), idx)
     const listed = await idx.listDir('/all/')
     expect(listed.entries === undefined || listed.entries === null).toBe(true)
     const plain = await readdir(acc, spec('/all'), idx)
@@ -282,33 +241,17 @@ describe('qdrant readdir narrows a capped listing', () => {
 })
 
 describe('qdrant blank and dot-led group values', () => {
-  const edgedConfig = resolveQdrantConfig({
-    collection: 'animals',
-    groupBy: ['label'],
-    textField: 'name',
-  })
-
-  function edgedAccessor(seen: Record<string, string>[]): QdrantAccessor {
-    return {
-      config: edgedConfig,
-      tableExists: () => Promise.resolve(true),
-      distinct: () => Promise.resolve(['', '.env']),
-      rowsMatching: (_table: string, filters: Record<string, string>) => {
-        seen.push(filters)
-        return Promise.resolve([ROW])
-      },
-    } as unknown as QdrantAccessor
-  }
-
   it('list with the escape lead and filter for their own value', async () => {
     // A blank value listed as `unknown` and then filtered for that word; a
     // dot-led one was dropped as hidden and refused as a path. Both carry
     // the escape lead, so each lists and filters for its own value.
-    const seen: Record<string, string>[] = []
-    await expect(readdir(edgedAccessor(seen), spec('/'))).resolves.toEqual(['/⁄', '/⁄.env'])
-    await readdir(edgedAccessor(seen), spec('/⁄'))
-    await readdir(edgedAccessor(seen), spec('/⁄.env'))
-    expect(seen).toEqual([{ label: '' }, { label: '.env' }])
+    const acc = accessorOf({ collection: 'animals', groupBy: ['label'], textField: 'name' }, [
+      { id: 1, payload: { label: '', name: 'blank' } },
+      { id: 2, payload: { label: '.env', name: 'dotted' } },
+    ])
+    await expect(readdir(acc, spec('/'))).resolves.toEqual(['/⁄', '/⁄.env'])
+    expect(ids(await readdir(acc, spec('/⁄')))).toEqual(['1'])
+    expect(ids(await readdir(acc, spec('/⁄.env')))).toEqual(['2'])
   })
 })
 
@@ -317,7 +260,7 @@ describe('qdrant capped listings', () => {
     // Groups and rows are read up to maxRows, so a row outside the head of
     // the table is not gone because a listing no longer names it.
     const index = new WindowSpy()
-    const acc = accessor()
+    const acc = accessorOf(ANIMALS, [CAT])
     await readdir(acc, spec('/animals'), index)
     await readdir(acc, spec('/animals/cat/big'), index)
     expect(index.windows.get('/animals')).toBe(true)

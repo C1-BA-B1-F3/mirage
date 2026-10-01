@@ -16,8 +16,7 @@ import asyncio
 
 import pytest
 
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import CommandSpec
 from mirage.fuse.core import MountCore
 from mirage.io.types import IOResult

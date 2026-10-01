@@ -83,17 +83,6 @@ describe('dify stat', () => {
     expect(clientMod.getDocumentDetail).not.toHaveBeenCalled()
   })
 
-  it('statLight returns a directory without a detail call', async () => {
-    const index = new RAMIndexCacheStore()
-
-    const item = await statLight(ACCESSOR, pathAt('/knowledge/guides'), index)
-
-    expect(item.name).toBe('guides')
-    expect(item.type).toBe(FileType.DIRECTORY)
-    expect(item.extra).toEqual({ children_count: 0 })
-    expect(clientMod.getDocumentDetail).not.toHaveBeenCalled()
-  })
-
   it('stat returns a directory without a detail call', async () => {
     const index = new RAMIndexCacheStore()
 

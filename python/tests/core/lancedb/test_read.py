@@ -14,7 +14,7 @@
 
 import pytest
 
-from mirage.core.lancedb.read import read
+from mirage.core.lancedb.tree import read
 from mirage.types import PathSpec
 
 

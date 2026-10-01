@@ -22,7 +22,6 @@ import yaml
 from mirage.cli.client import make_client
 from mirage.cli.output import (emit, fail, format_age, format_table,
                                handle_response)
-from mirage.config import _absolutize_scripts, _interpolate_env, load_config
 
 app = typer.Typer(no_args_is_help=True, help="Manage workspaces.")
 
@@ -45,6 +44,8 @@ def _resolve_config(path: Path) -> dict[str, Any]:
     compiler-set ``mount`` field, which the document grammar refuses
     as never typed).
     """
+    from mirage.config import load_config
+
     try:
         load_config(path)
     except ValueError as e:
@@ -59,8 +60,12 @@ def _resolve_config_arg(path: Path) -> dict[str, Any]:
     ``vfs: ./wiki.py:WikiVFS`` in a ``load``/``clone`` override
     means "next to this file", never "wherever the daemon runs". Skips
     validation because load/clone may only need a subset of mounts.
-    Mirrors ``loadConfigArgument`` in the TypeScript CLI.
+    Mirrors ``loadConfigArgument`` in the TypeScript CLI, which defers
+    the config module the same way so a spawn that loads no config
+    never pays for it.
     """
+    from mirage.config import _absolutize_scripts, _interpolate_env
+
     raw = _load_yaml(path)
     try:
         resolved = _interpolate_env(raw, dict(os.environ))

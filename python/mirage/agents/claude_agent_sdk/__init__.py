@@ -13,9 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.agents.claude_agent_sdk.options import build_options
-from mirage.agents.claude_agent_sdk.prompt import (MIRAGE_SYSTEM_PROMPT,
-                                                   build_system_prompt)
 from mirage.agents.claude_agent_sdk.server import MirageServer
+from mirage.agents.prompt import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 
 __all__ = [
     "MirageServer",

@@ -75,3 +75,17 @@ async def test_search_result_path_is_readable(ws):
 async def test_grep_recursive_over_cards(ws):
     out = await _out(ws, "grep -rl cat /db/animals")
     assert ".md" in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cmd,exit_code,stderr", [
+    ("search", 2, "search: query is required\n"),
+    ('search "" /db/animals', 2, "search: query is required\n"),
+    ("search --method hybrid dog /db/animals", 2,
+     "search: only the 'semantic' method is supported\n"),
+    ("search dog /db", 1, "search: no table to search\n"),
+])
+async def test_search_refusals(ws, cmd, exit_code, stderr):
+    result = await ws.shell(cmd)
+    assert result.exit_code == exit_code
+    assert await result.stderr_str() == stderr

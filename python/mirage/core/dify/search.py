@@ -2,16 +2,15 @@ import logging
 from typing import Any
 
 from mirage.accessor.dify import DifyAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.dify.client import dify_post
-from mirage.core.dify.path import resolve_path
 from mirage.core.dify.read import segment_text
-from mirage.core.dify.readdir import readdir
-from mirage.core.dify.tree import normalize_slug
-from mirage.core.dify.walk import walk
+from mirage.core.dify.tree import DIFY_TREE, SLUG_NOUN
+from mirage.core.slug_tree.rows import normalize_slug
+from mirage.core.slug_tree.search import (hit_lines, search_scope,
+                                          target_entries, validate_query)
 from mirage.types import PathSpec
-from mirage.utils.glob_walk import make_resolve_glob
-from mirage.utils.key_prefix import mount_prefix_of, rekey
+from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.score import format_score
 from mirage.vfs.search import (float_option, int_option, text_option,
                                validate_options)
@@ -76,12 +75,7 @@ async def search_segments(
 
 def validate_args(query: str, method: str, top_k: int,
                   threshold: float) -> str:
-    if not query:
-        raise ValueError("search: query is required")
-    if len(query) > 250:
-        raise ValueError("search: query cannot exceed 250 characters")
-    if top_k <= 0:
-        raise ValueError("search: top-k must be positive")
+    validate_query(query, top_k)
     if threshold < 0 or threshold > 1:
         raise ValueError("search: threshold must be in [0, 1]")
     if method not in METHODS:
@@ -96,7 +90,7 @@ async def metadata_conditions(
     paths: list[PathSpec],
     index: IndexCacheStore = NULL_INDEX,
 ) -> tuple[list[dict[str, Any]], bool]:
-    targets = await target_entries(accessor, paths, index)
+    targets = await target_entries(DIFY_TREE, accessor, paths, index)
     slug_values: list[str] = []
     name_values: list[str] = []
     for entry in targets.values():
@@ -118,33 +112,6 @@ async def metadata_conditions(
             "value": sorted(name_values),
         })
     return conditions, bool(name_values)
-
-
-async def target_entries(
-    accessor: DifyAccessor,
-    paths: list[PathSpec],
-    index: IndexCacheStore = NULL_INDEX,
-) -> dict[str, IndexEntry]:
-    targets: dict[str, IndexEntry] = {}
-    for path in paths:
-        resolved = await resolve_path(accessor, path, index)
-        if not resolved.is_dir:
-            targets[resolved.entry.id] = resolved.entry
-            continue
-        if resolved.is_dir:
-            children = await walk(accessor,
-                                  path,
-                                  index,
-                                  include_root=False,
-                                  strip_prefix=False)
-            for child in children:
-                child_spec = PathSpec.from_str_path(
-                    child, rekey(path.virtual, path.vfs_path, child))
-                child_resolved = await resolve_path(accessor, child_spec,
-                                                    index)
-                if not child_resolved.is_dir:
-                    targets[child_resolved.entry.id] = child_resolved.entry
-    return targets
 
 
 def response_records(value: Any) -> list[dict[str, Any]]:
@@ -207,7 +174,7 @@ def record_path(
     if raw_path is None:
         return None
     try:
-        normalized: str = normalize_slug(raw_path)
+        normalized = normalize_slug(raw_path, SLUG_NOUN)
     except ValueError:
         logger.debug("Skipping Dify record with invalid slug/name: %r",
                      raw_path)
@@ -244,23 +211,17 @@ async def search_many(accessor: DifyAccessor,
                       index: IndexCacheStore = NULL_INDEX) -> list[str]:
     validate_options(query, {'top_k', 'method', 'threshold'})
     top_k = int_option(query, "top_k", 10)
-    if not paths:
-        raise ValueError("search: at least one scope is required")
-    prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     method = text_option(query, "method", "semantic")
     threshold = float_option(query, "threshold", 0.0)
-    targets = [] if any(not p.vfs_path.strip("/")
-                        for p in paths) else await make_resolve_glob(readdir)(
-                            accessor, paths, index)
-    output = await search_segments(accessor,
-                                   query.query,
-                                   targets,
-                                   index,
-                                   top_k=top_k,
-                                   mount_prefix=prefix,
-                                   method=method,
-                                   threshold=threshold)
-    return output.decode().removesuffix("\n").split("\n") if output else []
+    targets, prefix = await search_scope(DIFY_TREE, accessor, paths, index)
+    return hit_lines(await search_segments(accessor,
+                                           query.query,
+                                           targets,
+                                           index,
+                                           top_k=top_k,
+                                           mount_prefix=prefix,
+                                           method=method,
+                                           threshold=threshold))
 
 
 async def search_resource(accessor: DifyAccessor,

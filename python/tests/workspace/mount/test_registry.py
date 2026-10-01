@@ -16,7 +16,7 @@ import pytest
 
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.commands.cli.types import CLISpec
-from mirage.commands.registry import command
+from mirage.commands.config import command
 from mirage.commands.spec.types import CommandSpec
 from mirage.io.types import IOResult
 from mirage.types import MountMode, PathSpec

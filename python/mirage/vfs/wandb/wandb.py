@@ -2,8 +2,7 @@ from typing import Any
 
 from mirage.accessor.wandb import WandbAccessor
 from mirage.commands.builtin.wandb import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.wandb.config import WandbConfig
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.wandb import OPS

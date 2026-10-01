@@ -24,7 +24,7 @@ import {
   treeInputsFromState,
   type VersionMeta,
   type WorkspaceStateDict,
-} from './stateTree.ts'
+} from './state_tree.ts'
 import type { DiffResult, VersionStore } from './store.ts'
 
 export interface VersionLogItem {

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { QdrantRow } from './client.ts'
+import type { QdrantRow } from './query.ts'
 
 /** Read a Qdrant payload field, including `metadata.source`-style nested keys. */
 export function fieldValue(row: QdrantRow, field: string | null): unknown {

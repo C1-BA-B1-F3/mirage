@@ -17,7 +17,7 @@ import json
 import struct
 
 from mirage import MountMode, Workspace
-from mirage.commands.registry import RegisteredCommand
+from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec import SPECS
 from mirage.core.ram.read import read_bytes
 from mirage.io.types import IOResult

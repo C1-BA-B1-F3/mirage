@@ -19,7 +19,7 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     GitError, MoveOverlapError, MoveRefusedError, MoveUsageError,
     NotADirectoryDestinationError, NoWorkspaceError, RenameFailedError,
     UnknownSwitchError)
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.io import remove_file, rename_path
 from mirage.commands.cli.builtin.git.pathspec import repo_relative, under
 from mirage.commands.cli.builtin.git.session import opened

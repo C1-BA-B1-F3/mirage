@@ -16,7 +16,7 @@ import { VERSION } from '@struktoai/mirage-core/version'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
-import { MirageToolOperations, type MirageToolOperationsOptions } from '../tool-operations.ts'
+import { MirageToolOperations, type MirageToolOperationsOptions } from '../tool_operations.ts'
 import {
   EDIT_DESCRIPTION,
   EXECUTE_DESCRIPTION,
@@ -24,7 +24,7 @@ import {
   LS_DESCRIPTION,
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
-} from './descriptions.ts'
+} from '../tool_descriptions.ts'
 
 export function MirageServer(workspace: Workspace, options: MirageToolOperationsOptions = {}) {
   const operations = new MirageToolOperations(workspace, options)

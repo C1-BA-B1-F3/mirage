@@ -23,8 +23,7 @@ from mirage.commands.builtin.generic_bind.adapter import (bound_op,
 from mirage.commands.builtin.postgres.io import IO
 from mirage.commands.builtin.utils.limit import row_cap_notice
 from mirage.commands.builtin.utils.paths import has_unresolved_glob
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.postgres import client
 from mirage.core.postgres.read import read as postgres_read

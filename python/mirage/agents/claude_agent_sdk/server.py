@@ -22,9 +22,11 @@ except ImportError as exc:
         "Install with: pip install 'mirage-ai[claude-agent-sdk]'") from exc
 
 from mirage import __version__
-from mirage.agents.claude_agent_sdk.prompt import (  # yapf: disable
-    EDIT_DESCRIPTION, EXECUTE_DESCRIPTION, GREP_DESCRIPTION, LS_DESCRIPTION,
-    READ_DESCRIPTION, WRITE_DESCRIPTION)
+from mirage.agents.tool_descriptions import (EDIT_DESCRIPTION,
+                                             EXECUTE_DESCRIPTION,
+                                             GREP_DESCRIPTION, LS_DESCRIPTION,
+                                             READ_DESCRIPTION,
+                                             WRITE_DESCRIPTION)
 from mirage.agents.tool_operations import (DEFAULT_READ_LIMIT,
                                            MirageToolOperations, ToolResult)
 from mirage.workspace.workspace import Workspace

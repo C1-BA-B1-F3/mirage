@@ -21,8 +21,7 @@ from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
 from mirage.commands.builtin.postgres.io import IO
 from mirage.commands.builtin.utils.limit import note_after, row_cap_notice
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.postgres.read import read as postgres_read
 from mirage.core.postgres.scope import detect_scope

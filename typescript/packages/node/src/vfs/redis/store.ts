@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { TRUNCATE_SCRIPT } from '@struktoai/mirage-core/vfs/redis/constants'
-import { escapeGlob } from '@struktoai/mirage-core/core/redis/utils'
+import { escapeGlob } from '@struktoai/mirage-core/vfs/redis/store'
 import type { RedisRestore, RedisStoreLike } from '@struktoai/mirage-core/vfs/redis/store'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type { RedisClientType } from 'redis'

@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { LanceRow } from './_driver.ts'
+import type { LanceRow } from './query.ts'
 import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
 
 const ENC = new TextEncoder()
 const SKIP_KEYS = new Set(['_distance', '_rowid', '_score'])
 
-function toStr(value: unknown): string {
+/** A column value as the card and the tree spell it. */
+export function toStr(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value as string | number | boolean | bigint)
@@ -38,10 +39,6 @@ export function renderCard(row: LanceRow, config: LanceDBConfigResolved): Uint8A
   }
   if (config.blobColumn !== null && config.idColumn in row) {
     lines.push(`blob: ${toStr(row[config.idColumn])}.${config.blobExt}`)
-  }
-  const distance = row._distance
-  if (distance !== undefined && distance !== null) {
-    lines.push(`score: ${Number(distance).toFixed(4)}`)
   }
   return ENC.encode(lines.join('\n') + '\n')
 }

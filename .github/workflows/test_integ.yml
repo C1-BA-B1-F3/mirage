@@ -43,10 +43,14 @@ jobs:
       data: ${{ steps.filter.outputs.data }}
       fuse: ${{ steps.filter.outputs.fuse }}
       observability: ${{ steps.filter.outputs.observability }}
+      runtime: ${{ steps.filter.outputs.runtime }}
     steps:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # A filter with no '!' rule matches exactly as under 'some'; a '!'
+          # rule drops a file even when another rule of its filter matched it.
+          predicate-quantifier: some-with-excludes
           filters: |
             core:
               - 'integ/**'
@@ -80,11 +84,15 @@ jobs:
               - 'python/mirage/core/chroma/**'
               - 'python/mirage/commands/builtin/chroma/**'
               - 'python/mirage/vfs/chroma/**'
+              - 'python/mirage/core/slug_tree/**'
+              - 'python/mirage/commands/builtin/slug_tree/**'
               - 'integ/vfs/qdrant/**'
               - 'python/mirage/accessor/qdrant.py'
               - 'python/mirage/core/qdrant/**'
               - 'python/mirage/commands/builtin/qdrant/**'
               - 'python/mirage/vfs/qdrant/**'
+              - 'python/mirage/core/vector/**'
+              - 'python/mirage/commands/builtin/generic/search.py'
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
@@ -132,10 +140,40 @@ jobs:
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
+            # integ-runtime runs every case through the python and typescript
+            # hosts, so a '!' rule may drop only a module that nothing those
+            # hosts load can import, directly or not. That holds for unit
+            # tests, markdown, the python agent adapters, the browser, dsh
+            # and opencode packages, and the python layers of the backends
+            # and account CLIs no runtime case mounts or runs: the python VFS
+            # registry imports a backend only when one is mounted. It does
+            # not hold for any typescript backend, since the core barrel
+            # imports every VFS, nor for FUSE or any command, which the
+            # workspace and the command tables import. A new module runs the
+            # job until it is added here, and a runtime case that starts
+            # mounting a dropped backend takes that name off the list.
+            runtime:
+              - 'integ/runtime/**'
+              - 'integ/fixtures/runtime/**'
+              - 'integ/package.json'
+              - 'integ/tsconfig.json'
+              - 'python/**'
+              - 'typescript/**'
+              - '.github/workflows/test_integ.yml'
+              - '.github/actions/setup-node-pnpm/action.yml'
+              - '!**/*.md'
+              - '!python/tests/**'
+              - '!typescript/**/*.test.ts'
+              - '!python/mirage/agents/{agno,camel,claude_agent_sdk,langchain,openai_agents,openhands,pydantic_ai}/**'
+              - '!typescript/packages/{browser,dsh,opencode}/**'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{airtable,aliyun,backblaze,box,ceph,chroma,databricks_volume,dify,digitalocean,discord,dropbox,email,gcal,gcs}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{gdocs,gdrive,gh,git,github,gmail,google,google_api,gridfs,gsheets,gslides,gws,hf,hf_buckets,hf_datasets}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{hf_hub,hf_models,hf_spaces,himalaya,jaeger,lancedb,langfuse,linear,mem0,minio,msgraph,nextcloud,notion,ntn}{.py,/**}'
+              - '!python/mirage/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{oci,onedrive,postgres,qdrant,qingstor,r2,scaleway,seaweedfs,sharepoint,slack,supabase,tencent,trello,wandb,wasabi}{.py,/**}'
 
   typescript-build:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true' || needs.changes.outputs.database == 'true' || needs.changes.outputs.fuse == 'true' || needs.changes.outputs.observability == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true' || needs.changes.outputs.database == 'true' || needs.changes.outputs.fuse == 'true' || needs.changes.outputs.observability == 'true' || needs.changes.outputs.runtime == 'true') }}
     name: TypeScript build bootstrap
     runs-on: ubuntu-latest
     steps:
@@ -1329,7 +1367,7 @@ jobs:
   # is left, so a new integ/runtime/*.json joins a leg instead of leaving CI.
   integ-runtime:
     needs: [changes, typescript-build]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:

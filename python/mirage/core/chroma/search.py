@@ -1,13 +1,12 @@
 from typing import Any
 
 from mirage.accessor.chroma import ChromaAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.chroma.path import resolve_path
-from mirage.core.chroma.readdir import readdir
-from mirage.core.chroma.walk import walk
+from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.chroma.tree import CHROMA_TREE
+from mirage.core.slug_tree.search import (hit_lines, search_scope,
+                                          target_entries, validate_query)
 from mirage.types import PathSpec
-from mirage.utils.glob_walk import make_resolve_glob
-from mirage.utils.key_prefix import mount_prefix_of, rekey
+from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.score import score_from_distance
 from mirage.vfs.search import int_option, validate_options
 from mirage.vfs.types import SearchQuery
@@ -21,7 +20,7 @@ async def search_segments(
     top_k: int = 10,
     mount_prefix: str = "",
 ) -> bytes:
-    validate_args(query, top_k)
+    validate_query(query, top_k)
     if not mount_prefix and paths:
         mount_prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     kwargs: dict[str, Any] = {
@@ -31,7 +30,7 @@ async def search_segments(
     }
     scoped_slugs: set[str] | None = None
     if paths:
-        scoped_slugs = set((await target_entries(accessor, paths,
+        scoped_slugs = set((await target_entries(CHROMA_TREE, accessor, paths,
                                                  index)).keys())
         if not scoped_slugs:
             return b""
@@ -44,43 +43,6 @@ async def search_segments(
     response = await collection.query(**kwargs)
     return query_result_to_bytes(response, accessor.config.slug_field,
                                  mount_prefix, scoped_slugs)
-
-
-def validate_args(query: str, top_k: int) -> None:
-    if not query:
-        raise ValueError("search: query is required")
-    if len(query) > 250:
-        raise ValueError("search: query cannot exceed 250 characters")
-    if top_k <= 0:
-        raise ValueError("search: top-k must be positive")
-
-
-async def target_entries(
-    accessor: ChromaAccessor,
-    paths: list[PathSpec],
-    index: IndexCacheStore = NULL_INDEX,
-) -> dict[str, IndexEntry]:
-    targets: dict[str, IndexEntry] = {}
-    for path in paths:
-        resolved = await resolve_path(accessor, path, index)
-        if not resolved.is_dir:
-            targets[str(resolved.entry.extra["slug"])] = resolved.entry
-            continue
-        if resolved.is_dir:
-            children = await walk(accessor,
-                                  path,
-                                  index,
-                                  include_root=False,
-                                  strip_prefix=False)
-            for child in children:
-                child_spec = PathSpec.from_str_path(
-                    child, rekey(path.virtual, path.vfs_path, child))
-                child_resolved = await resolve_path(accessor, child_spec,
-                                                    index)
-                if not child_resolved.is_dir:
-                    targets[str(child_resolved.entry.extra["slug"]
-                                )] = child_resolved.entry
-    return targets
 
 
 def query_result_to_bytes(
@@ -130,19 +92,13 @@ async def search_many(accessor: ChromaAccessor,
                       index: IndexCacheStore = NULL_INDEX) -> list[str]:
     validate_options(query, {'top_k'})
     top_k = int_option(query, "top_k", 10)
-    if not paths:
-        raise ValueError("search: at least one scope is required")
-    prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
-    targets = [] if any(not p.vfs_path.strip("/")
-                        for p in paths) else await make_resolve_glob(readdir)(
-                            accessor, paths, index)
-    output = await search_segments(accessor,
-                                   query.query,
-                                   targets,
-                                   index,
-                                   top_k=top_k,
-                                   mount_prefix=prefix)
-    return output.decode().removesuffix("\n").split("\n") if output else []
+    targets, prefix = await search_scope(CHROMA_TREE, accessor, paths, index)
+    return hit_lines(await search_segments(accessor,
+                                           query.query,
+                                           targets,
+                                           index,
+                                           top_k=top_k,
+                                           mount_prefix=prefix))
 
 
 async def search_resource(accessor: ChromaAccessor,

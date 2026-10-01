@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.s3 import S3Accessor, S3Config
 from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.s3.watch import build_delta_hook
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.s3 import OPS as S3_OPS

@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
-import { basename, norm } from './utils.ts'
+import { gnuBasename, norm } from '../../utils/path.ts'
 import { lookupError } from './dest.ts'
 
 export function stat(accessor: RAMAccessor, path: PathSpec): Promise<FileStat> {
@@ -24,7 +24,7 @@ export function stat(accessor: RAMAccessor, path: PathSpec): Promise<FileStat> {
   if (accessor.store.dirs.has(p)) {
     return Promise.resolve(
       new FileStat({
-        name: basename(p),
+        name: gnuBasename(p),
         modified: accessor.store.modified.get(p) ?? null,
         type: FileType.DIRECTORY,
         mode: attrs.mode ?? null,
@@ -40,7 +40,7 @@ export function stat(accessor: RAMAccessor, path: PathSpec): Promise<FileStat> {
   }
   return Promise.resolve(
     new FileStat({
-      name: basename(p),
+      name: gnuBasename(p),
       size: data.byteLength,
       modified: accessor.store.modified.get(p) ?? null,
       type: FileType.FILE,

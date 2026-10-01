@@ -16,7 +16,7 @@ import type { PathSpec } from '../../../types.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import type { RedisAccessor } from '../../../accessor/redis.ts'
-import { norm } from '../utils.ts'
+import { norm } from '../../../utils/path.ts'
 
 export async function entries(
   accessor: RedisAccessor,

@@ -25,8 +25,7 @@ from mirage.commands.builtin.generic_bind.builders.du import (WalkBudget,
                                                               walk_size)
 from mirage.commands.builtin.github._provision import metadata_provision
 from mirage.commands.builtin.github.io import IO, resolve_glob
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.github.tree import ensure_tree
 from mirage.io.types import ByteSource, IOResult

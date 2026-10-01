@@ -41,9 +41,9 @@ from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
 from mirage.utils.path import norm, parent
 from mirage.utils.remnants import remove_remnants, visible_below
-from mirage.vfs.types import (IsMountedOp, NativeReadOps, OperationFn, ReadOps,
-                              ReadStreamOp, ResolveGlobOp, SearchOps, StatOp,
-                              WriteOps)
+from mirage.vfs.types import (ContentSearchOps, IsMountedOp, NativeReadOps,
+                              OperationFn, ReadOps, ReadStreamOp,
+                              ResolveGlobOp, SearchOps, StatOp, WriteOps)
 
 
 class BuilderFn(Protocol):
@@ -425,11 +425,12 @@ class CommandIO(ReadOps, NativeReadOps, WriteOps):
     local: bool = True
     max_glob_matches: int | None = DEFAULT_MAX_GLOB_MATCHES
     max_du_entries: int | None = DEFAULT_MAX_DU_ENTRIES
+    search: SearchOps | None = None
+    content_search: ContentSearchOps | None = None
     # Child names the namespace owes a directory (nested mount roots and
     # symlinks). Stamped per invocation from opts.ns.child_mounts by the
     # factory, because it is session-scoped state and the adapter itself
     # is built once per backend.
-    search: SearchOps | None = None
     glob_children: ChildMounts | None = None
     # What an owed name points at, the namespace's own stat resolved
     # through the workspace. Stamped beside glob_children from

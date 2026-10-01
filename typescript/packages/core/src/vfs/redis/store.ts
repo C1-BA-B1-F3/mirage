@@ -12,6 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+/** Quote a literal for a redis MATCH pattern, so a prefix holding `*?[]\` matches itself. */
+export function escapeGlob(literal: string): string {
+  return literal.replace(/[\\*?[\]]/g, '\\$&')
+}
+
 /**
  * The keyspace a redis mount is built on, as the ops see it.
  *

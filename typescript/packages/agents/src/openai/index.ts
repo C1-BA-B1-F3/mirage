@@ -15,7 +15,7 @@
 export { MirageCapability } from './capability.ts'
 export { MirageEditor } from './editor.ts'
 export { mirageExecuteTool } from './execute.ts'
-export { mirageReadFileTool, type MirageReadFileOutput } from './read-file.ts'
+export { mirageReadFileTool, type MirageReadFileOutput } from './read_file.ts'
 export { MirageSandboxClient, MirageSandboxSession } from './sandbox.ts'
 export type { MirageSandboxSessionState } from './sandbox.ts'
 export { MirageShell } from './shell.ts'

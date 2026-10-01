@@ -14,7 +14,7 @@
 
 import type { RAMAccessor } from '../../../accessor/ram.ts'
 import type { PathSpec } from '../../../types.ts'
-import { norm } from '../utils.ts'
+import { norm } from '../../../utils/path.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 
 export function size(accessor: RAMAccessor, path: PathSpec): Promise<number> {

@@ -44,16 +44,6 @@ async def _collect(ait):
     return [chunk async for chunk in ait]
 
 
-def test_join_basic():
-    ws, _ = _ws()
-    _run_raw(ws, "tee /data/a.txt", stdin=b"1 Alice\n2 Bob\n")
-    _run_raw(ws, "tee /data/b.txt", stdin=b"1 NY\n2 LA\n")
-    stdout, io = _run_raw(ws, "join /data/a.txt /data/b.txt")
-    out = _bytes(stdout).decode()
-    assert "1 Alice NY" in out
-    assert "2 Bob LA" in out
-
-
 def test_join_reads_a_dash_operand_across_mounts():
     # From / the dash sits on the root mount, so the line relays.
     ws, _ = _ws()

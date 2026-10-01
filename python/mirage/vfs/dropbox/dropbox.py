@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.dropbox import DropboxAccessor
 from mirage.commands.builtin.dropbox import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.dropbox.client import DropboxTokenManager
 from mirage.core.dropbox.watch import build_delta_hook
 from mirage.ops.dropbox import OPS as DROPBOX_VFS_OPS

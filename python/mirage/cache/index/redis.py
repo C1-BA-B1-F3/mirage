@@ -33,7 +33,7 @@ from mirage.cache.index.constants import (CHILDREN_PREFIX, ENTRY_PREFIX,
                                           GENERATION_KEY, PATHS_KEY,
                                           TOMBSTONE_PREFIX)
 from mirage.cache.index.store import IndexCacheStore
-from mirage.core.timeutil import to_iso_z
+from mirage.utils.dates import to_iso_z
 from mirage.utils.ids import uuid7
 
 

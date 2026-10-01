@@ -4,8 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.commands.builtin.nextcloud import COMMANDS as NEXTCLOUD_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.nextcloud.watch import build_delta_hook
 from mirage.ops.nextcloud import OPS as NEXTCLOUD_OPS
 from mirage.ops.registry import RegisteredOp

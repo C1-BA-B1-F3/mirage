@@ -26,9 +26,9 @@ from deepagents.backends.protocol import (EditResult, ExecuteResponse,
                                           WriteResult)
 
 from mirage.agents.io_text import replace_text, with_refusal
-from mirage.agents.langchain._convert import (io_to_execute_response,
-                                              io_to_file_infos,
-                                              io_to_grep_matches)
+from mirage.agents.langchain.convert import (io_to_execute_response,
+                                             io_to_file_infos,
+                                             io_to_grep_matches)
 from mirage.bridge.sync import run_async_from_sync
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace

@@ -42,16 +42,16 @@ def test_search_options_reject_non_integer_limits(value):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("backend,operation", [
-    ("chroma", "search_segments"),
-    ("dify", "search_segments"),
-    ("qdrant", "search_rows_output"),
-    ("lancedb", "search_rows_output"),
-    ("mem0", "search_memories_rendered"),
+@pytest.mark.parametrize("backend,core,operation", [
+    ("chroma", "chroma", "search_segments"),
+    ("dify", "dify", "search_segments"),
+    ("qdrant", "vector", "search_rows_output"),
+    ("lancedb", "vector", "search_rows_output"),
+    ("mem0", "mem0", "search_memories_rendered"),
 ])
 async def test_builtin_semantic_adapters_delegate_one_batch(
-        monkeypatch, backend, operation):
-    module = importlib.import_module(f"mirage.core.{backend}.search")
+        monkeypatch, backend, core, operation):
+    module = importlib.import_module(f"mirage.core.{core}.search")
     table = importlib.import_module(f"mirage.commands.builtin.{backend}.io").IO
     raw = AsyncMock(return_value=b"ranked record\n")
     monkeypatch.setattr(module, operation, raw)

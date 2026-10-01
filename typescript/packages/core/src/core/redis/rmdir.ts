@@ -18,7 +18,7 @@ import { enotempty } from '../../utils/errors.ts'
 import { lookupError } from './dest.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 /**
  * Remove an empty directory, mirroring the python backend.

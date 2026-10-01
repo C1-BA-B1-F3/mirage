@@ -33,7 +33,4 @@ def render_card(row: dict[str, Any], config: LanceDBConfig) -> bytes:
         lines.append(f"{key}: {value}")
     if config.blob_column and config.id_column in row:
         lines.append(f"blob: {row[config.id_column]}.{config.blob_ext}")
-    distance = row.get("_distance")
-    if distance is not None:
-        lines.append(f"score: {float(distance):.4f}")
     return ("\n".join(lines) + "\n").encode()

@@ -1,24 +1,44 @@
-from unittest.mock import MagicMock
-
-import pytest
+import asyncio
+from types import SimpleNamespace
 
 from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.vfs.lancedb.config import LanceDBConfig
 
 
-@pytest.mark.asyncio
-async def test_close_releases_all_connections_and_caches():
+class _Db:
+
+    def __init__(self) -> None:
+        self.opened: list[str] = []
+        self.closed = False
+
+    async def open_table(self, name: str) -> str:
+        self.opened.append(name)
+        return f"table:{name}"
+
+    def close(self) -> None:
+        self.closed = True
+
+
+async def _connect(uri: str, **kwargs) -> _Db:
+    return _Db()
+
+
+def test_each_loop_opens_its_own_db_and_close_releases_it(monkeypatch):
+    # Keyed by the loop object, not id(loop): a second asyncio.run must
+    # not reach the db or tables the first run's closed loop opened.
+    monkeypatch.setattr("mirage.accessor.lancedb.lancedb",
+                        SimpleNamespace(connect_async=_connect))
     accessor = LanceDBAccessor(LanceDBConfig(uri="/tmp/test-lancedb"))
-    first = MagicMock()
-    second = MagicMock()
-    accessor._dbs = {1: first, 2: second}
-    accessor._tables = {(1, "items"): MagicMock()}
-    accessor._search_cache = {("items", "query", 10): [{"id": 1}]}
 
-    await accessor.close()
+    async def open_items() -> _Db:
+        assert await accessor.table("items") == "table:items"
+        assert await accessor.table("items") == "table:items"
+        return await accessor.db()
 
-    first.close.assert_called_once_with()
-    second.close.assert_called_once_with()
-    assert accessor._dbs == {}
-    assert accessor._tables == {}
-    assert accessor._search_cache == {}
+    first = asyncio.run(open_items())
+    second = asyncio.run(open_items())
+    assert second is not first and first.closed
+    assert first.opened == second.opened == ["items"]
+    accessor.search_cache[("items", "q", 1)] = []
+    asyncio.run(accessor.close())
+    assert second.closed and accessor.search_cache == {}

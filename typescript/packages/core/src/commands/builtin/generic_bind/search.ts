@@ -18,8 +18,8 @@ import type { IndexCacheStore } from '../../../cache/index/store.ts'
 
 import type { SearchQuery } from '../../../vfs/types.ts'
 import { IOResult } from '../../../io/types.ts'
-import { isEfbig } from '../../../utils/errors.ts'
-import type { FileStat, PathSpec } from '../../../types.ts'
+import { isEfbig, isFsError } from '../../../utils/errors.ts'
+import { FileType, type FileStat, type PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -28,9 +28,11 @@ import { grepGeneric } from '../generic/grep.ts'
 import { foldsCase, parseFlags as parseRgFlags, rgGeneric, rgSyntax } from '../generic/rg.ts'
 import {
   grepSearchMeta,
+  textCandidates,
   textSearchResults,
   literalPushdownOperand,
   pushdownOperand,
+  wholeWordLiteral,
 } from '../grep_pushdown.ts'
 import { PATTERN_KEYS, matcherSyntax, patternArg } from '../grep_pattern.ts'
 import { formatRecords } from '../utils/output.ts'
@@ -162,4 +164,75 @@ export async function runSearch<A extends Accessor>(
   const generic = GENERICS[name]
   if (generic === undefined) throw new Error(`runSearch: no generic for ${name}`)
   return generic(resolved, texts, opts, stat, readdir, stream)
+}
+
+export interface NarrowResult {
+  resolved: PathSpec[]
+  usedSearch: boolean
+}
+
+// Whether every scope operand stats as a directory: file operands keep the
+// exact single-file output shape and missing operands must surface the
+// walk's error message, so both fall back to the generic scan.
+async function allDirectories<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
+  paths: readonly PathSpec[],
+  index: IndexCacheStore | undefined,
+): Promise<boolean> {
+  for (const path of paths) {
+    let info: FileStat
+    try {
+      info = await ops.stat(accessor, path, index)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      return false
+    }
+    if (info.type !== FileType.DIRECTORY) return false
+  }
+  return true
+}
+
+/**
+ * Resolve grep/rg scope paths, narrowing through the content index.
+ *
+ * Push-down needs every gate to hold: the mount opted in, the scan is
+ * recursive, a whole-word literal can be pushed down (which is what makes a
+ * word-based search complete), the output mode tolerates a narrowed superset
+ * (`exactFileSet` covers flags such as -v that must see every file), and
+ * every scope operand is a directory. There is no scope-size gate: one
+ * search call plus targeted reads beats a full walk at every size.
+ * Binary-extension candidates are dropped, since the walk they replace skips
+ * them, so a narrowed set may be empty, which is not a stdin run. Mirrors
+ * Python's `narrow_scope`.
+ */
+export async function narrowScope<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
+  paths: PathSpec[],
+  pattern: string | null,
+  opts: {
+    fixedString: boolean
+    recursive: boolean
+    wholeWord: boolean
+    exactFileSet: boolean
+    index: IndexCacheStore | undefined
+  },
+): Promise<NarrowResult> {
+  const search = ops.contentSearch
+  const query = wholeWordLiteral(pattern, opts.fixedString, opts.wholeWord)
+  if (
+    search !== undefined &&
+    query !== null &&
+    opts.recursive &&
+    !opts.exactFileSet &&
+    search.enabled(accessor) &&
+    (await allDirectories(ops, accessor, paths, opts.index))
+  ) {
+    const narrowed = await search.narrowPaths(accessor, query, paths)
+    if (narrowed !== null && narrowed.length > 0) {
+      return { resolved: textCandidates(narrowed), usedSearch: true }
+    }
+  }
+  return { resolved: await resolveGlobOf(ops)(accessor, paths, opts.index), usedSearch: false }
 }

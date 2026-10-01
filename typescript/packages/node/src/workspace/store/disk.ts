@@ -23,7 +23,7 @@ import type {
   WorkspaceStateStoreOverrides,
 } from '@struktoai/mirage-core/workspace/store/base'
 import { DiskObserverStore } from '../../observe/disk_store.ts'
-import { DiskNamespaceStore } from '../namespace/disk.ts'
+import { DiskNamespaceStore } from '../mount/namespace/disk.ts'
 import { DiskRecordClient } from '../record/disk.ts'
 import { DiskSessionStore } from '../session/disk.ts'
 

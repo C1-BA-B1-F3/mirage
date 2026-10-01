@@ -17,7 +17,8 @@ import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { DropboxAccessor } from '../../../accessor/dropbox.ts'
 import { copy as dropboxCopy } from '../../../core/dropbox/copy.ts'
 import { create as dropboxCreate } from '../../../core/dropbox/create.ts'
-import { size as dropboxDu, entries as dropboxDuAll } from '../../../core/dropbox/du/index.ts'
+import { makeWalkedDu } from '../../../core/generic/du.ts'
+import { narrowPaths as dropboxNarrowPaths } from '../../../core/dropbox/search.ts'
 import { exists as dropboxExists } from '../../../core/dropbox/exists.ts'
 import { mkdir as dropboxMkdir } from '../../../core/dropbox/mkdir.ts'
 import { read as dropboxRead, stream as dropboxStream } from '../../../core/dropbox/read.ts'
@@ -35,7 +36,7 @@ export const DROPBOX_IO: CommandIO<DropboxAccessor> = new VFSAdapter<DropboxAcce
   native: {
     readRange: rangeOf(dropboxRead),
     readStream: dropboxStream,
-    du: { size: dropboxDu, entries: dropboxDuAll },
+    du: makeWalkedDu(dropboxStat, dropboxReaddir),
     exists: dropboxExists,
   },
   writes: {
@@ -48,6 +49,7 @@ export const DROPBOX_IO: CommandIO<DropboxAccessor> = new VFSAdapter<DropboxAcce
     copy: dropboxCopy,
     create: dropboxCreate,
   },
+  contentSearch: { narrowPaths: dropboxNarrowPaths, enabled: (accessor) => accessor.contentSearch },
   isMounted: () => true,
   local: false,
 }).toCommandIO()

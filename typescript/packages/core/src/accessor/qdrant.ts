@@ -15,23 +15,8 @@
 import type { QdrantClient } from '@qdrant/js-client-rest'
 import { Accessor } from './base.ts'
 import { loadOptionalPeer } from '../utils/optional_peer.ts'
-import {
-  buildFilter,
-  candidateIds,
-  exactNameTest,
-  idPrefixTest,
-  pointToRow,
-  SCROLL_BATCH,
-  valuePrefixTest,
-  type PointTest,
-  type QdrantPoint,
-  type QdrantRow,
-} from '../core/qdrant/client.ts'
-import { valueText } from '../core/render/json.ts'
+import type { QdrantRow } from '../core/qdrant/query.ts'
 import type { QdrantConfigResolved } from '../vfs/qdrant/config.ts'
-import { compareCodePoints } from '../utils/sort.ts'
-import { rowStem } from '../core/qdrant/naming.ts'
-import { fieldValue } from '../core/qdrant/payload.ts'
 
 type QdrantClientCtor = new (opts: {
   url?: string
@@ -43,205 +28,29 @@ type QdrantClientCtor = new (opts: {
 
 export class QdrantAccessor extends Accessor {
   readonly config: QdrantConfigResolved
-  private client: QdrantClient | null = null
-  private readonly indexesEnsured = new Set<string>()
-  private readonly searchCache = new Map<string, QdrantRow[]>()
+  readonly indexesEnsured = new Set<string>()
+  readonly searchCache = new Map<string, QdrantRow[]>()
+  private opened: QdrantClient | null = null
 
   constructor(config: QdrantConfigResolved) {
     super()
     this.config = config
   }
 
-  private async getClient(): Promise<QdrantClient> {
-    if (this.client === null) {
+  /** The mount's client, opened on first use. */
+  async client(): Promise<QdrantClient> {
+    if (this.opened === null) {
       const mod = (await loadOptionalPeer(
         () => import(/* @vite-ignore */ '@qdrant/js-client-rest'),
         { feature: 'QdrantVFS', packageName: '@qdrant/js-client-rest' },
       )) as { QdrantClient: QdrantClientCtor }
       const auth = this.config.apiKey !== null ? { apiKey: this.config.apiKey } : {}
-      this.client = new mod.QdrantClient(
+      this.opened = new mod.QdrantClient(
         this.config.url !== null
           ? { url: this.config.url, ...auth }
           : { host: this.config.host, port: this.config.port, https: this.config.https, ...auth },
       )
     }
-    return this.client
-  }
-
-  private async scrollRaw(
-    collection: string,
-    filter: Record<string, unknown> | undefined,
-    limit: number,
-    keep?: PointTest,
-  ): Promise<QdrantPoint[]> {
-    // Without a test the limit bounds the scroll, which is the ordinary capped
-    // listing. With one it bounds the MATCHES, because qdrant has no prefix
-    // condition for a point id or a keyword field: the only way to answer a
-    // glob for a row past the cap is to keep scrolling and test each page
-    // here. A glob is a targeted request, so it pays a scan of the collection
-    // where the plain listing pays one page.
-    const client = await this.getClient()
-    const points: QdrantPoint[] = []
-    let offset: string | number | null = null
-    while (points.length < limit) {
-      const res = (await client.scroll(collection, {
-        ...(filter !== undefined ? { filter } : {}),
-        limit: keep !== undefined ? SCROLL_BATCH : Math.min(SCROLL_BATCH, limit - points.length),
-        offset,
-        with_payload: true,
-        with_vector: false,
-      })) as { points: QdrantPoint[]; next_page_offset?: string | number | null }
-      points.push(...(keep === undefined ? res.points : res.points.filter(keep)))
-      const next = res.next_page_offset
-      if (next === null || next === undefined) break
-      offset = next
-    }
-    return points.slice(0, limit)
-  }
-
-  private async ensureIndexes(collection: string): Promise<void> {
-    if (this.indexesEnsured.has(collection)) return
-    const client = await this.getClient()
-    for (const field of this.config.groupBy) {
-      await (
-        client as unknown as { createPayloadIndex: (c: string, o: object) => Promise<void> }
-      ).createPayloadIndex(collection, { field_name: field, field_schema: 'keyword' })
-    }
-    this.indexesEnsured.add(collection)
-  }
-
-  private isIndexRequired(err: unknown): boolean {
-    if (typeof err !== 'object' || err === null) return false
-    const e = err as { status?: number; data?: unknown; message?: string }
-    if (e.status !== 400) return false
-    const text = `${JSON.stringify(e.data ?? '')} ${e.message ?? ''}`.toLowerCase()
-    return text.includes('index required')
-  }
-
-  private async scrollFiltered(
-    collection: string,
-    filters: Record<string, string>,
-    limit: number,
-    keep?: PointTest,
-  ): Promise<QdrantPoint[]> {
-    if (Object.keys(filters).length === 0) return this.scrollRaw(collection, undefined, limit, keep)
-    const filter = buildFilter(filters)
-    try {
-      return await this.scrollRaw(collection, filter, limit, keep)
-    } catch (err) {
-      if (!this.isIndexRequired(err)) throw err
-    }
-    await this.ensureIndexes(collection)
-    return this.scrollRaw(collection, filter, limit, keep)
-  }
-
-  async listTables(): Promise<string[]> {
-    const client = await this.getClient()
-    const res = (await client.getCollections()) as { collections: { name: string }[] }
-    return res.collections.map((c) => c.name).sort(compareCodePoints)
-  }
-
-  async tableExists(name: string): Promise<boolean> {
-    const client = await this.getClient()
-    const res = (await client.collectionExists(name)) as { exists: boolean }
-    return res.exists
-  }
-
-  async distinct(
-    table: string,
-    column: string,
-    filters: Record<string, string>,
-    limit: number,
-    prefix = '',
-    basename = false,
-  ): Promise<string[]> {
-    const keep = prefix === '' ? undefined : valuePrefixTest(column, prefix, basename)
-    const points = await this.scrollFiltered(table, filters, limit, keep)
-    const values = new Set<string>()
-    for (const point of points) {
-      const value = fieldValue(point.payload ?? {}, column)
-      if (value !== null && value !== undefined) values.add(valueText(value))
-    }
-    return [...values].sort(compareCodePoints)
-  }
-
-  /**
-   * The raw payload values one rendered group segment stands for.
-   *
-   * A basename drops the value's parents, so two sources can render as the
-   * same directory. Telling them apart is a question about every point under
-   * the parent group, not about the first `maxRows`: the scroll runs until it
-   * is exhausted or a second distinct value has rendered as `name`, whichever
-   * comes first. One value is the answer; two is a collision for the caller
-   * to refuse.
-   */
-  async resolveGroup(
-    table: string,
-    column: string,
-    filters: Record<string, string>,
-    name: string,
-    basename = false,
-  ): Promise<string[]> {
-    const seen = new Set<string>()
-    const keep = exactNameTest(column, name, basename, seen)
-    const points = await this.scrollFiltered(table, filters, 2, keep)
-    return points
-      .map((point) => valueText(fieldValue(point.payload ?? {}, column)))
-      .sort(compareCodePoints)
-  }
-
-  async rowsMatching(
-    table: string,
-    filters: Record<string, string>,
-    _columns: string[],
-    limit: number,
-    prefix = '',
-  ): Promise<QdrantRow[]> {
-    const keep =
-      prefix === ''
-        ? undefined
-        : this.config.nameField !== null
-          ? (point: QdrantPoint) =>
-              rowStem(pointToRow(point, this.config.idField), this.config).startsWith(prefix)
-          : idPrefixTest(prefix)
-    const points = await this.scrollFiltered(table, filters, limit, keep)
-    return points.map((point) => pointToRow(point, this.config.idField))
-  }
-
-  async rowRecord(table: string, idField: string, rowId: string): Promise<QdrantRow | null> {
-    const ids = candidateIds(rowId)
-    if (ids.length === 0) return null
-    const client = await this.getClient()
-    const found = (await client.retrieve(table, {
-      ids,
-      with_payload: true,
-      with_vector: false,
-    })) as QdrantPoint[]
-    return found[0] !== undefined ? pointToRow(found[0], idField) : null
-  }
-
-  async searchRows(table: string, query: string, limit: number): Promise<QdrantRow[]> {
-    const key = JSON.stringify([table, query, limit])
-    const hit = this.searchCache.get(key)
-    if (hit !== undefined) return hit
-    const client = await this.getClient()
-    // A caller-supplied `embed` vectorizes the query here; without one the
-    // text goes to the server, which only a cluster with inference answers.
-    const vector =
-      this.config.embed !== null
-        ? await this.config.embed(query)
-        : { text: query, model: this.config.embeddingModel }
-    const res = (await client.query(table, {
-      query: vector,
-      limit,
-      with_payload: true,
-    })) as { points: QdrantPoint[] }
-    const rows = res.points.map((point) => {
-      const row = pointToRow(point, this.config.idField)
-      row._score = point.score
-      return row
-    })
-    this.searchCache.set(key, rows)
-    return rows
+    return this.opened
   }
 }

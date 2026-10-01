@@ -16,11 +16,11 @@ import { rstripSlash } from '../../utils/slash.ts'
 import { type ByteWindow } from '../../utils/ranges.ts'
 import { apiRequest } from '../api/client.ts'
 import { TokenManager as OAuthTokenManager } from '../api/oauth.ts'
-import { BOX_API_BASE, BOX_TOKEN_URL, TOKEN_BUFFER_SECONDS } from './constants.ts'
+import { BOX_API_BASE, BOX_TOKEN_URL, BOX_UPLOAD_BASE, TOKEN_BUFFER_SECONDS } from './constants.ts'
 
 export interface BoxConfig {
-  // API origin override (e.g. an integ fake: http://127.0.0.1:5096). Token
-  // and API URLs derive from it; defaults to the real api.box.com endpoints.
+  // API origin override (e.g. an integ fake: http://127.0.0.1:5096). Token,
+  // API and upload URLs derive from it; defaults to the real Box hosts.
   endpoint?: string
   clientId?: string
   clientSecret?: string
@@ -54,6 +54,12 @@ function apiBaseOf(config: BoxConfig): string {
   return config.endpoint !== undefined && config.endpoint !== ''
     ? `${rstripSlash(config.endpoint)}/2.0`
     : BOX_API_BASE
+}
+
+function uploadBaseOf(config: BoxConfig): string {
+  return config.endpoint !== undefined && config.endpoint !== ''
+    ? apiBaseOf(config)
+    : BOX_UPLOAD_BASE
 }
 
 export class BoxApiError extends Error {
@@ -122,9 +128,8 @@ async function fetchCcgToken(
 }
 
 export class BoxTokenManager extends OAuthTokenManager {
-  // API base for all non-token calls; api.ts reads this instead of the
-  // BOX_API_BASE const so a config endpoint override reaches every request.
   readonly apiBase: string
+  readonly uploadBase: string
   private readonly config: BoxConfig
   private readonly devTokenMode: boolean
   private readonly ccgMode: boolean
@@ -133,7 +138,10 @@ export class BoxTokenManager extends OAuthTokenManager {
   constructor(config: BoxConfig) {
     super(TOKEN_BUFFER_SECONDS)
     this.config = config
+    // API and upload bases for every non-token call; api.ts reads these instead
+    // of the constants so a config endpoint override reaches every request.
     this.apiBase = apiBaseOf(config)
+    this.uploadBase = uploadBaseOf(config)
     this.devTokenMode = config.accessToken !== undefined && config.accessToken !== ''
     this.ccgMode =
       !this.devTokenMode && config.enterpriseId !== undefined && config.enterpriseId !== ''

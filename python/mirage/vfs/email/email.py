@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.builtin.email import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.email.config import EmailConfig
 from mirage.ops.email import OPS
 from mirage.ops.registry import RegisteredOp

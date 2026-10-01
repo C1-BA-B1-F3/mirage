@@ -15,7 +15,7 @@
 import pytest
 
 from mirage.commands.spec import SPECS
-from mirage.commands.spec.builtin_specs import registered_spec
+from mirage.commands.spec.builtins import registered_spec
 from mirage.commands.spec.compile import compile_spec
 from mirage.commands.spec.parser import parse_command, parse_to_kwargs
 from mirage.commands.spec.types import CommandSpec, Operand, Option

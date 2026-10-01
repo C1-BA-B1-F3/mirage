@@ -21,10 +21,10 @@
         "box",
         "dropbox"
       ],
-      "command": "grep -rlw wombat /search",
+      "command": "grep -rlw wombat /search; grep -rLw wombat /search; grep -rlw -e wombat -f /search/gamma.txt /search",
       "expect": {
         "exit": 0,
-        "stdout": "/search/alpha.txt\n/search/beta.txt\n",
+        "stdout": "/search/alpha.txt\n/search/beta.txt\n/search/gamma.txt\n/search/alpha.txt\n/search/beta.txt\n/search/gamma.txt\n",
         "stderr": ""
       }
     },

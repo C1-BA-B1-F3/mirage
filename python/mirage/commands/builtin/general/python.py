@@ -19,8 +19,7 @@ from mirage.commands.builtin.general.interpreter import (CPYTHON_ARGV0,
                                                          resolve_source,
                                                          run_code,
                                                          runtime_version)
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import CommandOutput

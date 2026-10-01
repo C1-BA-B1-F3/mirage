@@ -15,12 +15,14 @@
 import asyncio
 from collections.abc import AsyncIterator
 
-from mirage.commands import COMMANDS as _CMDS
+from mirage.commands.builtin.ram import COMMANDS
+from mirage.commands.config import CommandCatalog
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
-ram_cat = _CMDS["cat"]
+_CMDS = CommandCatalog(COMMANDS)
+ram_cat = _CMDS.require("cat").fn
 
 
 def _cat_ops():

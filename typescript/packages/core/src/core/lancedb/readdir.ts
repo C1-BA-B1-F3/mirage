@@ -14,25 +14,16 @@
 
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
-import type { LanceRow, ValueTest } from './_driver.ts'
-import { PathSpec } from '../../types.ts'
-import { perAccessor } from '../hierarchy/bind.ts'
-import { PATH_SAFE } from '../hierarchy/codec.ts'
-import type { ReaddirFn } from '../hierarchy/probe.ts'
-import { makeReaddir, type DirListing, type Listed, type Lister } from '../hierarchy/readdir.ts'
-import { ROOT, type ScopeMatch } from '../hierarchy/scope.ts'
-import { renderCard } from './render.ts'
-import { detectFor, filtersOf, tableOf } from './scope.ts'
-import { globPrefix, globStemPrefix, hasGlobPrefix } from '../../utils/glob_walk.ts'
+import { globPrefix, globStemPrefix } from '../../utils/glob_walk.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
-
-const GROUP_TYPE = 'lancedb/group'
-
-function dirEntry(name: string): IndexEntry {
-  return new IndexEntry({ id: name, name, resourceType: GROUP_TYPE, vfsName: name })
-}
+import { PATH_SAFE } from '../hierarchy/codec.ts'
+import type { DirListing, Listed } from '../hierarchy/readdir.ts'
+import type { ScopeMatch } from '../hierarchy/scope.ts'
+import { dirEntry } from '../vector/readdir.ts'
+import { filtersOf, tableOf } from '../vector/scope.ts'
+import { tableExists, type LanceRow, type ValueTest } from './query.ts'
+import { renderCard } from './render.ts'
 
 function rowEntries(rows: LanceRow[], config: LanceDBConfigResolved): [string, IndexEntry][] {
   // The widened select carries every rendered column, so each card's exact
@@ -84,13 +75,16 @@ function rowPrefix(pattern: string | null, config: LanceDBConfigResolved): strin
   return globStemPrefix(pattern, suffixes)
 }
 
-async function children(accessor: LanceDBAccessor, match: ScopeMatch): Promise<Listed | null> {
+/** The entries under a table or a group. */
+export async function children(
+  accessor: LanceDBAccessor,
+  match: ScopeMatch,
+): Promise<Listed | null> {
   const config = accessor.config
-  const table = tableOf(config, match)
-  const filters = filtersOf(config, match)
+  const table = tableOf(config.table, match)
+  const filters = filtersOf(config.groupBy, match)
   const pattern = match.pattern
-  const tables = await accessor.driver.listTables()
-  if (!tables.includes(table)) return null
+  if (!(await tableExists(accessor, table))) return null
   const depth = Object.keys(filters).length
   if (depth < config.groupBy.length) {
     const displayPrefix = globPrefix(pattern)
@@ -109,7 +103,7 @@ async function children(accessor: LanceDBAccessor, match: ScopeMatch): Promise<L
     )
     const names = values.map((value) => PATH_SAFE.encode(value)).sort(compareCodePoints)
     const listing: DirListing = {
-      entries: names.map((name): [string, IndexEntry] => [name, dirEntry(name)]),
+      entries: names.map((name): [string, IndexEntry] => [name, dirEntry('lancedb', name)]),
       seeds: {},
       partial: displayPrefix !== '',
       window: true,
@@ -139,41 +133,4 @@ async function children(accessor: LanceDBAccessor, match: ScopeMatch): Promise<L
     window: true,
   }
   return listing
-}
-
-async function listRoot(accessor: LanceDBAccessor, match: ScopeMatch): Promise<Listed | null> {
-  const config = accessor.config
-  if (config.table === null) {
-    // Table names come from the catalog, not from a capped query, so a glob
-    // here has nothing to narrow.
-    const tables = await accessor.driver.listTables()
-    return tables.map((name): [string, IndexEntry] => [name, dirEntry(name)])
-  }
-  return children(accessor, match)
-}
-
-async function listGroup(accessor: LanceDBAccessor, match: ScopeMatch): Promise<Listed | null> {
-  return children(accessor, match)
-}
-
-const LISTERS: Record<string, Lister<LanceDBAccessor>> = {
-  [ROOT]: listRoot,
-  group: listGroup,
-}
-
-const PATTERN_KINDS = { [ROOT]: hasGlobPrefix, group: hasGlobPrefix }
-
-function buildReaddir(accessor: LanceDBAccessor): ReaddirFn<LanceDBAccessor> {
-  return makeReaddir(detectFor(accessor), { listers: LISTERS, patternKinds: PATTERN_KINDS })
-}
-
-export const readdirFor = perAccessor(buildReaddir)
-
-export async function readdir(
-  accessor: LanceDBAccessor,
-  path: PathSpec | string,
-  index?: IndexCacheStore,
-): Promise<string[]> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  return readdirFor(accessor)(accessor, spec, index)
 }

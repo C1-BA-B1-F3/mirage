@@ -18,7 +18,7 @@ import { VFSName } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
 import { lookupError } from './dest.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function* stream(
   accessor: RedisAccessor,

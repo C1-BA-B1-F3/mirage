@@ -39,9 +39,3 @@ def test_render_card_basic():
     assert "blob: 3.png" in out
     assert "vector" not in out
     assert "PNG-3" not in out
-
-
-def test_render_card_includes_score():
-    row = {"id": 3, "name": "x", "_distance": 0.25}
-    out = render_card(row, _cfg()).decode()
-    assert "score: 0.2500" in out

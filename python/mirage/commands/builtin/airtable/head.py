@@ -19,8 +19,7 @@ from mirage.commands.builtin.airtable.io import IO
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
 from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.airtable.read import read as airtable_read
 from mirage.io.types import ByteSource, IOResult

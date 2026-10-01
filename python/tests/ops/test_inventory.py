@@ -29,10 +29,8 @@ OPTIONAL_FILETYPE_DEPS = {}
 OPS_INVENTORY = {
     "chroma": [
         ("glob", "chroma", "", False),
-        ("grep", "chroma", "", False),
         ("read", "chroma", "", False),
         ("readdir", "chroma", "", False),
-        ("search", "chroma", "", False),
         ("stat", "chroma", "", False),
     ],
     "databricks_volume": [
@@ -50,10 +48,8 @@ OPS_INVENTORY = {
     ],
     "dify": [
         ("glob", "dify", "", False),
-        ("grep", "dify", "", False),
         ("read", "dify", "", False),
         ("readdir", "dify", "", False),
-        ("search", "dify", "", False),
         ("stat", "dify", "", False),
     ],
     "discord": [

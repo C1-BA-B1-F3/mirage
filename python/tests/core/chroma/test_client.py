@@ -14,9 +14,8 @@
 
 import pytest
 
-from mirage.core.chroma.client import (PAGE_CHUNK_BATCH_SIZE,
-                                       fetch_page_chunks, fetch_path_tree,
-                                       page_chunks, query_contains)
+from mirage.core.chroma import client
+from mirage.core.chroma.client import fetch_path_tree, page_chunks
 
 
 @pytest.mark.asyncio
@@ -39,42 +38,17 @@ async def _empty_get(**kwargs):
 
 
 @pytest.mark.asyncio
-async def test_page_chunks_sorted_by_chunk_index(chroma_accessor):
+async def test_page_chunks_reads_in_batches(monkeypatch, chroma_accessor,
+                                            chroma_collection):
+    monkeypatch.setattr(client, "PAGE_CHUNK_BATCH_SIZE", 1)
+
     chunks = await page_chunks(chroma_accessor, "guides/quickstart")
-    assert [c["document"] for c in chunks] == ["first", "second"]
 
-
-@pytest.mark.asyncio
-async def test_fetch_page_chunks_joins_with_newline(chroma_accessor):
-    text = await fetch_page_chunks(chroma_accessor, "guides/quickstart")
-    assert text == "first\nsecond"
-
-
-@pytest.mark.asyncio
-async def test_page_chunks_paginates(chroma_accessor, chroma_collection):
-    chroma_collection.chunks["big/page"] = [{
-        "document": f"chunk-{i}",
-        "metadata": {
-            "page_slug": "big/page",
-            "chunk_index": i
-        },
-    } for i in range(PAGE_CHUNK_BATCH_SIZE + 5)]
-    chunks = await page_chunks(chroma_accessor, "big/page")
-    assert len(chunks) == PAGE_CHUNK_BATCH_SIZE + 5
-    assert chunks[0]["document"] == "chunk-0"
-    assert chunks[-1]["document"] == f"chunk-{PAGE_CHUNK_BATCH_SIZE + 4}"
-
-
-@pytest.mark.asyncio
-async def test_query_contains_scopes_to_candidates(chroma_accessor):
-    matched = await query_contains(chroma_accessor, "first",
-                                   ["guides/quickstart", "api/reference"])
-    assert matched == ["guides/quickstart"]
-
-
-@pytest.mark.asyncio
-async def test_query_contains_empty_candidates_short_circuits(
-        chroma_accessor, chroma_collection):
-    matched = await query_contains(chroma_accessor, "first", [])
-    assert matched == []
-    assert not chroma_collection.contains_queries
+    assert [chunk["document"] for chunk in chunks] == ["first", "second"]
+    page_calls = [
+        call for call in chroma_collection.get_calls if call.get("where") == {
+            "page_slug": "guides/quickstart"
+        }
+    ]
+    assert [call["limit"] for call in page_calls] == [1, 1, 1]
+    assert [call["offset"] for call in page_calls] == [0, 1, 2]

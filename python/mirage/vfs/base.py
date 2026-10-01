@@ -20,8 +20,7 @@ from pydantic import BaseModel
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind import (CommandIO,
                                                   make_generic_commands)
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.generic import make_generic_ops
 from mirage.ops.registry import RegisteredOp
 from mirage.types import CapacityResult, CapacityState

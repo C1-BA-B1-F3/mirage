@@ -21,8 +21,8 @@ from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.ssh.client import _abs
 from mirage.core.ssh.constants import SCOPE_ERROR
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import PathSpec
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.errors import eacces, listing_error
 from mirage.utils.key_prefix import mount_prefix_of
 

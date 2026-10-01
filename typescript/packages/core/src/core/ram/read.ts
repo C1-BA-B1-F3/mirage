@@ -15,7 +15,7 @@
 import { record, startOp } from '../../observe/context.ts'
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import { VFSName, type PathSpec } from '../../types.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 import { lookupError } from './dest.ts'
 import { sliceWindow } from '../../utils/ranges.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'

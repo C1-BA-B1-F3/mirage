@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.langchain._messages import extract_text
+from mirage.agents.langchain.messages import extract_text
 
 
 def test_extract_text_from_string():

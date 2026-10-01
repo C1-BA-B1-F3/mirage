@@ -26,7 +26,7 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     AllWithPathsError, GitError, MissingMessageError, NothingToCommitError,
     NoWorkspaceError, PartialCommitError, UnknownSwitchError,
     UnmergedIndexError)
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.reflog import record
 from mirage.commands.cli.builtin.git.refs import (HEAD_REF, detach_head,

@@ -72,7 +72,7 @@ async def main():
                         provision=True)
     print(f"gdrive single file: network_read={dr.network_read}")
 
-    dr = await ws.shell("rg import /github/mirage/commands/registry.py",
+    dr = await ws.shell("rg import /github/mirage/commands/config.py",
                         provision=True)
     print(f"github single file: network_read={dr.network_read}")
 
@@ -119,8 +119,8 @@ async def main():
         files = (await r.stdout_str()).strip().splitlines()
         print(f"rg -l import (large dir): {len(files)} files")
 
-    r = await ws.shell("grep -c def /github/mirage/commands/registry.py")
-    print(f"grep -c def registry.py: {(await r.stdout_str()).strip()}")
+    r = await ws.shell("grep -c def /github/mirage/commands/config.py")
+    print(f"grep -c def config.py: {(await r.stdout_str()).strip()}")
 
     print(f"Stats: {ops_summary()}")
 

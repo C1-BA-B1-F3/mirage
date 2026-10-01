@@ -18,7 +18,7 @@ import { fitIdName, parseIdName } from '../../utils/naming.ts'
 import { NAME_MAX_BYTES, byteLength, pathSafeName } from '../../utils/sanitize.ts'
 import { PATH_SAFE } from '../hierarchy/codec.ts'
 import { valueText } from '../render/json.ts'
-import type { QdrantRow } from './client.ts'
+import type { QdrantRow } from './query.ts'
 import { fieldValue } from './payload.ts'
 
 const UTF8 = new TextEncoder()

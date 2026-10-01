@@ -27,7 +27,8 @@ from mirage.commands.cli.builtin.git.errors import (GitError,
                                                     InvalidOptionError,
                                                     NoMergeBaseError,
                                                     NoWorkspaceError)
-from mirage.commands.cli.builtin.git.index import read_index, refuse_unresolved
+from mirage.commands.cli.builtin.git.index_file import (read_index,
+                                                        refuse_unresolved)
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import (merge_bases,
                                                       range_commits,

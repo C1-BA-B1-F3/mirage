@@ -18,6 +18,7 @@ import { PathSpec } from '../../types.ts'
 import { respellRaw } from '../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { searchFiles } from './api.ts'
+import { DropboxApiError } from './client.ts'
 import { dropboxPathOf } from './paths.ts'
 
 function compareComponents(a: string, b: string): number {
@@ -64,8 +65,11 @@ export async function narrowPaths(
       const out = await searchFiles(accessor.tokenManager, query, { path: scopeApi })
       if (out.truncated) return null
       results = out.paths
-    } catch {
-      // Search is best-effort; an API failure falls back to the full scan.
+    } catch (err) {
+      if (!(err instanceof DropboxApiError)) throw err
+      console.warn(
+        `dropbox search push-down failed (${String(err)}); falling back to per-file scan`,
+      )
       return null
     }
     const scopeLower = scopeApi.toLowerCase()

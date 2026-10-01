@@ -16,8 +16,7 @@ from functools import partial
 
 from mirage.accessor.history import HistoryAccessor
 from mirage.commands.builtin.generic.tree import tree_generic
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.history.readdir import readdir
 from mirage.core.history.stat import stat

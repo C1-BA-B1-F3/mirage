@@ -15,10 +15,12 @@
 import { expect, it } from 'vitest'
 
 import { LanceDBAccessor } from '../../accessor/lancedb.ts'
+import { LANCEDB_COMMANDS } from '../../commands/builtin/lancedb/index.ts'
 import { resolveLanceDBConfig } from '../../vfs/lancedb/config.ts'
 import { PathSpec } from '../../types.ts'
-import type { LanceDriver } from './_driver.ts'
-import { searchRowsOutput } from './search.ts'
+import { searchRowsOutput } from '../vector/search.ts'
+import type { LanceDriver } from './query.ts'
+import { TREE } from './tree.ts'
 
 it('spells a group value in the canonical path the way the listing does', async () => {
   // A path the listing never shows is one `cat` cannot open: the group
@@ -41,7 +43,7 @@ it('spells a group value in the canonical path the way the listing does', async 
   const accessor = new LanceDBAccessor(driver, config)
   const path = new PathSpec({ virtual: '/db/docs', directory: '/db/docs', vfsPath: 'docs' })
   const output = new TextDecoder().decode(
-    await searchRowsOutput(accessor, 'one', [path], 3, 0, '/db'),
+    await searchRowsOutput(TREE, accessor, 'one', [path], 3, 0, '/db'),
   )
   const headers = output.split('\n').filter((line) => line.startsWith('/db/'))
   expect(headers).toEqual([
@@ -49,4 +51,16 @@ it('spells a group value in the canonical path the way the listing does', async 
     '/db/docs/⁄/2.md:0.2000',
     '/db/docs/⁄.env/3.md:0.3000',
   ])
+})
+
+it.each([
+  [[], {}, 'search: query is required'],
+  [[''], {}, 'search: query is required'],
+  [['dog'], { method: 'hybrid' }, "search: only the 'semantic' method is supported"],
+])('refuses %j %j as a usage error', async (texts, flags, message) => {
+  const cmd = LANCEDB_COMMANDS.find((c) => c.name === 'search')
+  if (cmd === undefined) throw new Error('search not registered')
+  const accessor = new LanceDBAccessor({} as LanceDriver, resolveLanceDBConfig({ uri: '/tmp/db' }))
+  const opts = { stdin: null, flags, filetypeFns: null, cwd: '/' }
+  await expect(cmd.fn(accessor, [], texts, opts)).rejects.toMatchObject({ exitCode: 2, message })
 })

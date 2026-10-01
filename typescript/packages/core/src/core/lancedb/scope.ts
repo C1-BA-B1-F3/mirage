@@ -15,56 +15,30 @@
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
 import { ContentType } from '../../types.ts'
-import { contentTypeForExtension } from '../../utils/filetype.ts'
 import { perAccessor } from '../hierarchy/bind.ts'
 import { Codec, PATH_SAFE } from '../hierarchy/codec.ts'
-import { Scope, Slot, makeDetectScope, type DetectFn, type ScopeMatch } from '../hierarchy/scope.ts'
+import { makeDetectScope, type DetectFn, type Scope } from '../hierarchy/scope.ts'
+import { blobLeaf, rowScopes } from '../vector/scope.ts'
+import type { Leaf } from '../vector/types.ts'
 
 const CARD = new Codec({ suffix: '.md' })
 
 /**
  * The mount's scope table, shaped by its config.
  *
- * The tree is a function of the mount config, not of the backend: a pinned
- * `table` removes the leading table segment, every `groupBy` column adds one
- * directory level, and `blobColumn` adds a second leaf suffix beside the
- * `.md` card. Group slots are named positionally (`g0`, `g1`, ...) so a
- * column named `table` cannot collide with the table slot; `filtersOf` maps
- * them back to column names. A group slot decodes through `PATH_SAFE`, so a
- * value holding `/` keeps its own directory and the WHERE clause holds the
- * exact value. Every partial depth shares the one `group`
- * kind, and its lister derives the depth from the slots, so the lister table
- * stays static while the scope table varies per mount.
+ * A pinned `table` removes the leading table segment, and `blobColumn` adds a
+ * second leaf suffix beside the `.md` card. A group slot decodes through
+ * `PATH_SAFE`, so a value holding `/` keeps its own directory and the WHERE
+ * clause holds the exact value.
  */
 export function scopesFor(config: LanceDBConfigResolved): Scope[] {
-  const prefix: Slot[] = config.table !== null ? [] : [new Slot('table')]
-  const groups = config.groupBy.map((_, i) => new Slot(`g${String(i)}`, PATH_SAFE))
-  const scopes: Scope[] = []
-  for (let depth = 0; depth <= groups.length; depth++) {
-    if (depth === 0 && prefix.length === 0) continue
-    scopes.push(new Scope({ kind: 'group', segments: [...prefix, ...groups.slice(0, depth)] }))
-  }
-  const full = [...prefix, ...groups]
-  scopes.push(
-    new Scope({
-      kind: 'row_card',
-      segments: [...full, new Slot('row_id', CARD)],
-      leaf: true,
-      filetype: ContentType.TEXT,
-    }),
+  const leaves: Leaf[] = [['row_card', CARD, ContentType.TEXT]]
+  if (config.blobColumn !== null) leaves.push(blobLeaf(config.blobExt))
+  return rowScopes(
+    config.table !== null,
+    config.groupBy.map(() => PATH_SAFE),
+    leaves,
   )
-  if (config.blobColumn !== null) {
-    const blob = new Codec({ suffix: `.${config.blobExt}` })
-    scopes.push(
-      new Scope({
-        kind: 'row_blob',
-        segments: [...full, new Slot('row_id', blob)],
-        leaf: true,
-        filetype: contentTypeForExtension(config.blobExt),
-      }),
-    )
-  }
-  return scopes
 }
 
 function buildDetect(accessor: LanceDBAccessor): DetectFn {
@@ -72,24 +46,3 @@ function buildDetect(accessor: LanceDBAccessor): DetectFn {
 }
 
 export const detectFor = perAccessor(buildDetect)
-
-/** The table a match addresses: pinned, or the path's first slot. */
-export function tableOf(config: LanceDBConfigResolved, match: ScopeMatch): string {
-  if (config.table !== null) return config.table
-  return match.slots.table ?? ''
-}
-
-/** The match's group filters, keyed back to column names. */
-export function filtersOf(
-  config: LanceDBConfigResolved,
-  match: ScopeMatch,
-): Record<string, string> {
-  const filters: Record<string, string> = {}
-  for (let i = 0; i < config.groupBy.length; i++) {
-    const value = match.slots[`g${String(i)}`]
-    const column = config.groupBy[i]
-    if (value === undefined || column === undefined) break
-    filters[column] = value
-  }
-  return filters
-}

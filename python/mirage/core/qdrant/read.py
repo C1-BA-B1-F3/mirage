@@ -12,19 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mirage.accessor.qdrant import QdrantAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.hierarchy.bind import per_accessor
-from mirage.core.hierarchy.read import Reader, make_read
+from mirage.cache.index import IndexCacheStore
+from mirage.core.hierarchy.read import Reader
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.qdrant.naming import point_id_from_stem, row_stem
 from mirage.core.qdrant.payload import field_value
 from mirage.core.qdrant.query import row_record
-from mirage.core.qdrant.render import blob_bytes, render_json, render_text
-from mirage.core.qdrant.scope import detect_for, table_of
+from mirage.core.qdrant.render import render_json, render_text
+from mirage.core.vector.read import blob_bytes
+from mirage.core.vector.scope import table_of
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -36,8 +35,8 @@ async def _row_of(accessor: QdrantAccessor, match: ScopeMatch,
     # names it, so an alias reads as absent rather than as the file.
     config = accessor.config
     stem = match.slots["row_id"]
-    row = await row_record(accessor, table_of(config, match), config.id_field,
-                           point_id_from_stem(stem, config))
+    row = await row_record(accessor, table_of(config.collection, match),
+                           config.id_field, point_id_from_stem(stem, config))
     if row is None or row_stem(row, config) != stem:
         raise enoent(virtual)
     return row
@@ -75,18 +74,3 @@ READERS: dict[str, Reader[QdrantAccessor]] = {
     "row_text": _read_text,
     "row_blob": _read_blob,
 }
-
-
-def _build(accessor: QdrantAccessor) -> Callable[..., Awaitable[bytes]]:
-    return make_read(detect_for(accessor), READERS)
-
-
-read_for = per_accessor(_build)
-
-
-async def read(
-    accessor: QdrantAccessor,
-    path: PathSpec,
-    index: IndexCacheStore = NULL_INDEX,
-) -> bytes:
-    return await read_for(accessor)(accessor, path, index)

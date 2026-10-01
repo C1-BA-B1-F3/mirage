@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type {
+  ContentSearchOps,
   ReadOps,
   NativeReadOps,
   WriteOps,
@@ -89,11 +90,12 @@ export interface CommandIO<A extends Accessor = Accessor>
   local?: boolean
   maxGlobMatches?: number
   maxDuEntries?: number | null
+  search?: SearchOps<A>
+  contentSearch?: ContentSearchOps<A>
   // Child names the namespace owes a directory (nested mount roots and
   // symlinks). Stamped per invocation from opts.childMounts by the
   // factory, because it is session-scoped state while the adapter itself
   // is built once per backend.
-  search?: SearchOps<A>
   globChildren?: ChildMounts
   // What an owed name points at, the namespace's own stat resolved
   // through the workspace. Stamped beside globChildren from opts.ns.links,

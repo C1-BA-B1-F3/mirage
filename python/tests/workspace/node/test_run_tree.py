@@ -22,7 +22,8 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
-from mirage.workspace.node import run_command_tree as _run_command_tree
+from mirage.workspace.node.run_tree import \
+    run_command_tree as _run_command_tree
 from mirage.workspace.session import SessionState
 from mirage.workspace.workspace import Workspace
 

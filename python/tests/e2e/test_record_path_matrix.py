@@ -241,7 +241,7 @@ SWEEP = SCRIPT + [
     "touch /m/k3.txt",
     "gzip -k /m/k2.txt",
     "cd /m && printf 'a\\nb\\n' | split -l 1",
-    "cd /m && printf 'a\\nb\\n' | csplit",
+    "cd /m && printf 'a\\nb\\n' | csplit - 2",
 ]
 
 

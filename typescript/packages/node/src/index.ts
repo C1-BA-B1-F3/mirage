@@ -21,11 +21,11 @@ export { DISK_OPS } from './ops/disk/index.ts'
 export { DiskObserverStore } from './observe/disk_store.ts'
 export { RedisObserverStore, type RedisObserverStoreOptions } from './observe/redis_store.ts'
 export { RedisConsoleStore, type RedisConsoleStoreOptions } from './shell/console/redis/index.ts'
-export { DiskNamespaceStore } from './workspace/namespace/disk.ts'
+export { DiskNamespaceStore } from './workspace/mount/namespace/disk.ts'
 export {
   RedisNamespaceStore,
   type RedisNamespaceStoreOptions,
-} from './workspace/namespace/redis.ts'
+} from './workspace/mount/namespace/redis.ts'
 export { DiskRecordClient } from './workspace/record/disk.ts'
 export { parseSessionProfile, type SessionProfile } from '@struktoai/mirage-core/policy/profile'
 export { DiskSessionStore } from './workspace/session/disk.ts'

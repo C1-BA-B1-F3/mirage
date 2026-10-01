@@ -16,8 +16,7 @@ from collections.abc import Callable
 
 from mirage.accessor.bin import BinAccessor
 from mirage.commands.builtin.bin import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.bin import OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.vfs.base import BaseVFS

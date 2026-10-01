@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +21,8 @@ from lancedb.query import AsyncQuery
 from mirage.accessor.lancedb import LanceDBAccessor
 
 ValueTest = Callable[[str], bool]
+
+_INTEGER = re.compile(r"-?[0-9]+")
 
 
 def _quote(value: str) -> str:
@@ -43,7 +46,7 @@ def _column(name: str) -> str:
 
 def _eq(column: str, value: str) -> str:
     text = str(value)
-    if text.lstrip("-").isdigit():
+    if _INTEGER.fullmatch(text):
         return f"{_column(column)} = {text}"
     return f"{_column(column)} = '{_quote(text)}'"
 
@@ -195,11 +198,11 @@ async def row_record(accessor: LanceDBAccessor, table: str, id_column: str,
 async def search_rows(accessor: LanceDBAccessor, table: str, query_text: str,
                       limit: int) -> list[dict[str, Any]]:
     key = (table, query_text, limit)
-    cached = accessor.cached_search(key)
+    cached = accessor.search_cache.get(key)
     if cached is not None:
         return cached
     tbl = await accessor.table(table)
     builder = await tbl.search(query_text)
     rows = await builder.limit(limit).to_list()
-    accessor.store_search(key, rows)
+    accessor.search_cache[key] = rows
     return rows

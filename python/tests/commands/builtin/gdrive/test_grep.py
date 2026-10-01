@@ -6,8 +6,7 @@ from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index.config import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.gdrive import COMMANDS
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import CommandCatalog
+from mirage.commands.config import CommandCatalog, CommandOpts
 from mirage.core.google.client import TokenManager
 from mirage.core.google.config import GoogleConfig
 from mirage.io.types import materialize

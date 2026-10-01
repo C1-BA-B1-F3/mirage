@@ -27,7 +27,7 @@ from mirage.core.msgraph.client import (GraphError, graph_delete, graph_get,
 # yapf: enable
 from mirage.core.msgraph.config import graph_api
 from mirage.core.msgraph.constants import MAX_BACKOFF, RETRY_STATUSES
-from mirage.core.msgraph.drive_ops import DriveLoc
+from mirage.core.msgraph.drive import DriveLoc
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 

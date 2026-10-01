@@ -26,6 +26,10 @@ export function toIsoZ(date: Date): string {
     .replace(/\.(\d{3})Z$/, (_, ms: string) => (ms === '000' ? 'Z' : `.${ms}000Z`))
 }
 
+export function nowIso(): string {
+  return toIsoZ(new Date())
+}
+
 // Truncated to whole seconds, matching Python epoch_to_iso.
 export function epochToIso(seconds: number): string {
   return new Date(Math.floor(seconds) * 1000).toISOString().replace('.000Z', 'Z')

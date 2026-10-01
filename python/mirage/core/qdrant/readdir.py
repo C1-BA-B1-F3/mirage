@@ -16,34 +16,22 @@ import logging
 from typing import Any
 
 from mirage.accessor.qdrant import QdrantAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.hierarchy.bind import per_accessor
-from mirage.core.hierarchy.probe import ReaddirFn
-from mirage.core.hierarchy.readdir import (DirListing, Listed, Lister,
-                                           make_readdir)
-from mirage.core.hierarchy.scope import ROOT, ScopeMatch
+from mirage.cache.index import IndexEntry
+from mirage.core.hierarchy.readdir import DirListing, Listed
+from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.qdrant.naming import group_name, row_stem
 from mirage.core.qdrant.payload import field_value
-from mirage.core.qdrant.query import (distinct_values, list_tables,
-                                      resolve_group, rows_matching,
-                                      table_exists)
-from mirage.core.qdrant.render import blob_bytes, render_json, render_text
-from mirage.core.qdrant.scope import detect_for, filters_of, table_of
-from mirage.types import JsonValue, PathSpec
-from mirage.utils.glob_walk import (glob_prefix, glob_stem_prefix,
-                                    has_glob_prefix)
+from mirage.core.qdrant.query import (distinct_values, resolve_group,
+                                      rows_matching, table_exists)
+from mirage.core.qdrant.render import render_json, render_text
+from mirage.core.vector.read import blob_bytes
+from mirage.core.vector.readdir import dir_entry
+from mirage.core.vector.scope import filters_of, table_of
+from mirage.types import JsonValue
+from mirage.utils.glob_walk import glob_prefix, glob_stem_prefix
 from mirage.vfs.qdrant.config import QdrantConfig
 
 logger = logging.getLogger(__name__)
-
-GROUP_TYPE = "qdrant/group"
-
-
-def _dir_entry(name: str) -> IndexEntry:
-    return IndexEntry(id=name,
-                      name=name,
-                      resource_type=GROUP_TYPE,
-                      vfs_name=name)
 
 
 def _blob_size(value: JsonValue) -> int | None:
@@ -137,15 +125,21 @@ async def _resolved_filters(accessor: QdrantAccessor, table: str,
     return resolved
 
 
-async def _children(accessor: QdrantAccessor,
-                    match: ScopeMatch) -> Listed | None:
+async def children(accessor: QdrantAccessor,
+                   match: ScopeMatch) -> Listed | None:
+    """The entries under a collection or a group.
+
+    Args:
+        accessor (QdrantAccessor): the mount's accessor.
+        match (ScopeMatch): the directory's match.
+    """
     config = accessor.config
-    table = table_of(config, match)
+    table = table_of(config.collection, match)
     pattern = match.pattern
     if not await table_exists(accessor, table):
         return None
     filters = await _resolved_filters(accessor, table,
-                                      filters_of(config, match))
+                                      filters_of(config.group_by, match))
     if filters is None:
         return None
     depth = len(filters)
@@ -163,7 +157,7 @@ async def _children(accessor: QdrantAccessor,
         if len(rendered) != len(set(rendered)):
             raise ValueError(
                 "qdrant: basename_fields produced a path collision")
-        return DirListing(entries=[(name, _dir_entry(name))
+        return DirListing(entries=[(name, dir_entry("qdrant", name))
                                    for name in rendered],
                           partial=bool(display_prefix),
                           window=True)
@@ -175,44 +169,3 @@ async def _children(accessor: QdrantAccessor,
     return DirListing(entries=_row_entries(rows, config),
                       partial=bool(prefix),
                       window=True)
-
-
-async def _list_root(accessor: QdrantAccessor,
-                     match: ScopeMatch) -> Listed | None:
-    config = accessor.config
-    if not config.collection:
-        # Collection names come from the catalog, not from a capped
-        # scroll, so a glob here has nothing to narrow.
-        return [(name, _dir_entry(name))
-                for name in await list_tables(accessor)]
-    return await _children(accessor, match)
-
-
-async def _list_group(accessor: QdrantAccessor,
-                      match: ScopeMatch) -> Listed | None:
-    return await _children(accessor, match)
-
-
-LISTERS: dict[str, Lister[QdrantAccessor]] = {
-    ROOT: _list_root,
-    "group": _list_group,
-}
-
-PATTERN_KINDS = {ROOT: has_glob_prefix, "group": has_glob_prefix}
-
-
-def _build(accessor: QdrantAccessor) -> ReaddirFn[QdrantAccessor]:
-    return make_readdir(detect_for(accessor),
-                        listers=LISTERS,
-                        pattern_kinds=PATTERN_KINDS)
-
-
-readdir_for = per_accessor(_build)
-
-
-async def readdir(
-    accessor: QdrantAccessor,
-    path: PathSpec,
-    index: IndexCacheStore = NULL_INDEX,
-) -> list[str]:
-    return await readdir_for(accessor)(accessor, path, index)

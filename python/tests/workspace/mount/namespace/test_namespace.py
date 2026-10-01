@@ -14,8 +14,8 @@
 
 import pytest
 
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import FileType
+from mirage.utils.dates import epoch_to_iso
 from mirage.workspace.mount.namespace import Namespace, NodeMeta
 from mirage.workspace.mount.namespace.ram import RAMNamespaceStore
 

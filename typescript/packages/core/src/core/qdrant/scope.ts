@@ -15,71 +15,32 @@
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
 import type { QdrantConfigResolved } from '../../vfs/qdrant/config.ts'
 import { ContentType } from '../../types.ts'
-import { contentTypeForExtension } from '../../utils/filetype.ts'
 import { perAccessor } from '../hierarchy/bind.ts'
 import { Codec, JSON_NAME, PATH_SAFE, RAW } from '../hierarchy/codec.ts'
-import { Scope, Slot, makeDetectScope, type DetectFn, type ScopeMatch } from '../hierarchy/scope.ts'
+import { makeDetectScope, type DetectFn, type Scope } from '../hierarchy/scope.ts'
+import { blobLeaf, rowScopes } from '../vector/scope.ts'
+import type { Leaf } from '../vector/types.ts'
 
 const TXT = new Codec({ suffix: '.txt' })
 
 /**
  * The mount's scope table, shaped by its config.
  *
- * The tree is a function of the mount config, not of the backend: a pinned
- * `collection` removes the leading collection segment, every `groupBy` column
- * adds one directory level, and `textField` / `blobField` each add a leaf
- * suffix beside the `.json` row. Group slots are named positionally (`g0`,
- * `g1`, ...) so a column named `table` cannot collide with the collection
- * slot; `filtersOf` maps them back to column names. A group slot decodes
- * through `PATH_SAFE`, so its filter holds the exact value the directory was
- * rendered from; a `basenameFields` slot stays `RAW` because its rendering
- * drops the value's parents and the lister resolves it against the payload
- * instead. Every partial depth shares the one `group` kind, and its lister
- * derives the depth from the slots, so the lister table stays static while
- * the scope table varies per mount.
+ * A pinned `collection` removes the leading collection segment, and
+ * `textField` / `blobField` each add a leaf suffix beside the `.json` row. A
+ * group slot decodes through `PATH_SAFE`, so its filter holds the exact value
+ * the directory was rendered from; a `basenameFields` slot stays `RAW`
+ * because its rendering drops the value's parents and the lister resolves it
+ * against the payload instead.
  */
 export function scopesFor(config: QdrantConfigResolved): Scope[] {
-  const prefix: Slot[] = config.collection !== null ? [] : [new Slot('table')]
-  const groups = config.groupBy.map(
-    (column, i) =>
-      new Slot(`g${String(i)}`, config.basenameFields.includes(column) ? RAW : PATH_SAFE),
+  const leaves: Leaf[] = [['row_json', JSON_NAME, ContentType.TEXT]]
+  if (config.textField !== null) leaves.push(['row_text', TXT, ContentType.TEXT])
+  if (config.blobField !== null) leaves.push(blobLeaf(config.blobExt))
+  const groups = config.groupBy.map((column) =>
+    config.basenameFields.includes(column) ? RAW : PATH_SAFE,
   )
-  const scopes: Scope[] = []
-  for (let depth = 0; depth <= groups.length; depth++) {
-    if (depth === 0 && prefix.length === 0) continue
-    scopes.push(new Scope({ kind: 'group', segments: [...prefix, ...groups.slice(0, depth)] }))
-  }
-  const full = [...prefix, ...groups]
-  scopes.push(
-    new Scope({
-      kind: 'row_json',
-      segments: [...full, new Slot('row_id', JSON_NAME)],
-      leaf: true,
-      filetype: ContentType.TEXT,
-    }),
-  )
-  if (config.textField !== null) {
-    scopes.push(
-      new Scope({
-        kind: 'row_text',
-        segments: [...full, new Slot('row_id', TXT)],
-        leaf: true,
-        filetype: ContentType.TEXT,
-      }),
-    )
-  }
-  if (config.blobField !== null) {
-    const blob = new Codec({ suffix: `.${config.blobExt}` })
-    scopes.push(
-      new Scope({
-        kind: 'row_blob',
-        segments: [...full, new Slot('row_id', blob)],
-        leaf: true,
-        filetype: contentTypeForExtension(config.blobExt),
-      }),
-    )
-  }
-  return scopes
+  return rowScopes(config.collection !== null, groups, leaves)
 }
 
 function buildDetect(accessor: QdrantAccessor): DetectFn {
@@ -87,21 +48,3 @@ function buildDetect(accessor: QdrantAccessor): DetectFn {
 }
 
 export const detectFor = perAccessor(buildDetect)
-
-/** The collection a match addresses: pinned, or the path's first slot. */
-export function tableOf(config: QdrantConfigResolved, match: ScopeMatch): string {
-  if (config.collection !== null) return config.collection
-  return match.slots.table ?? ''
-}
-
-/** The match's group filters, keyed back to column names. */
-export function filtersOf(config: QdrantConfigResolved, match: ScopeMatch): Record<string, string> {
-  const filters: Record<string, string> = {}
-  for (let i = 0; i < config.groupBy.length; i++) {
-    const value = match.slots[`g${String(i)}`]
-    const column = config.groupBy[i]
-    if (value === undefined || column === undefined) break
-    filters[column] = value
-  }
-  return filters
-}

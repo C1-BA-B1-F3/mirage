@@ -23,7 +23,7 @@ from mirage.commands.cli.builtin.git.changes import (conflict_codes,
                                                      head_entries, merge,
                                                      stage_changes,
                                                      work_changes)
-from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.types import RepoLocation, WorkTree
 from mirage.types import ContentType, FileStat, FileType

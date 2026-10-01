@@ -14,7 +14,7 @@
 
 import pytest
 
-from mirage.commands.registry import command
+from mirage.commands.config import command
 from mirage.commands.spec import SPECS
 from mirage.core.disk.constants import SCOPE_ERROR
 from mirage.core.disk.read import read_bytes

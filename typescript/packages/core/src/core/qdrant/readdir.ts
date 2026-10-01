@@ -14,25 +14,17 @@
 
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { QdrantConfigResolved } from '../../vfs/qdrant/config.ts'
-import type { QdrantRow } from './client.ts'
-import { PathSpec } from '../../types.ts'
-import { perAccessor } from '../hierarchy/bind.ts'
-import type { ReaddirFn } from '../hierarchy/probe.ts'
-import { makeReaddir, type DirListing, type Listed, type Lister } from '../hierarchy/readdir.ts'
-import { ROOT, type ScopeMatch } from '../hierarchy/scope.ts'
-import { blobBytes, renderJson, renderText } from './render.ts'
-import { detectFor, filtersOf, tableOf } from './scope.ts'
-import { globPrefix, globStemPrefix, hasGlobPrefix } from '../../utils/glob_walk.ts'
+import { globPrefix, globStemPrefix } from '../../utils/glob_walk.ts'
+import type { DirListing, Listed } from '../hierarchy/readdir.ts'
+import type { ScopeMatch } from '../hierarchy/scope.ts'
+import { blobBytes } from '../vector/read.ts'
+import { dirEntry } from '../vector/readdir.ts'
+import { filtersOf, tableOf } from '../vector/scope.ts'
 import { groupName, rowStem } from './naming.ts'
 import { fieldValue } from './payload.ts'
-
-const GROUP_TYPE = 'qdrant/group'
-
-function dirEntry(name: string): IndexEntry {
-  return new IndexEntry({ id: name, name, resourceType: GROUP_TYPE, vfsName: name })
-}
+import { distinctValues, resolveGroup, rowsMatching, tableExists, type QdrantRow } from './query.ts'
+import { renderJson, renderText } from './render.ts'
 
 function blobSize(value: unknown): number | null {
   // A payload whose blob column holds something undecodable must not take
@@ -40,7 +32,8 @@ function blobSize(value: unknown): number | null {
   // throw the same error it always did.
   try {
     return blobBytes(value).byteLength
-  } catch {
+  } catch (err) {
+    console.warn(`qdrant: unsizeable blob value (${String(err)}); size stays unknown`)
     return null
   }
 }
@@ -124,7 +117,7 @@ async function resolvedFilters(
       resolved[column] = value
       continue
     }
-    const sources = await accessor.resolveGroup(table, column, resolved, value, true)
+    const sources = await resolveGroup(accessor, table, column, resolved, value, true)
     if (sources.length === 0) return null
     if (sources.length > 1) {
       throw new Error(
@@ -136,18 +129,23 @@ async function resolvedFilters(
   return resolved
 }
 
-async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Listed | null> {
+/** The entries under a collection or a group. */
+export async function children(
+  accessor: QdrantAccessor,
+  match: ScopeMatch,
+): Promise<Listed | null> {
   const config = accessor.config
-  const table = tableOf(config, match)
+  const table = tableOf(config.collection, match)
   const pattern = match.pattern
-  if (!(await accessor.tableExists(table))) return null
-  const filters = await resolvedFilters(accessor, table, filtersOf(config, match))
+  if (!(await tableExists(accessor, table))) return null
+  const filters = await resolvedFilters(accessor, table, filtersOf(config.groupBy, match))
   if (filters === null) return null
   const depth = Object.keys(filters).length
   if (depth < config.groupBy.length) {
     const displayPrefix = globPrefix(pattern)
     const basename = config.basenameFields.includes(config.groupBy[depth] ?? '')
-    const names = await accessor.distinct(
+    const names = await distinctValues(
+      accessor,
       table,
       config.groupBy[depth] ?? '',
       filters,
@@ -160,7 +158,7 @@ async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Li
         .map((name) => groupName(name, basename))
         .filter((name) => name.startsWith(displayPrefix))
         .map((rendered): [string, IndexEntry] => {
-          return [rendered, dirEntry(rendered)]
+          return [rendered, dirEntry('qdrant', rendered)]
         }),
       seeds: {},
       partial: displayPrefix !== '',
@@ -172,7 +170,7 @@ async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Li
     return listing
   }
   const prefix = rowPrefix(pattern, config)
-  const rows = await accessor.rowsMatching(table, filters, [config.idField], config.maxRows, prefix)
+  const rows = await rowsMatching(accessor, table, filters, config.maxRows, prefix)
   const listing: DirListing = {
     entries: rowEntries(rows, config),
     seeds: {},
@@ -180,41 +178,4 @@ async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Li
     window: true,
   }
   return listing
-}
-
-async function listRoot(accessor: QdrantAccessor, match: ScopeMatch): Promise<Listed | null> {
-  const config = accessor.config
-  if (config.collection === null) {
-    // Collection names come from the catalog, not from a capped scroll, so a
-    // glob here has nothing to narrow.
-    const tables = await accessor.listTables()
-    return tables.map((name): [string, IndexEntry] => [name, dirEntry(name)])
-  }
-  return children(accessor, match)
-}
-
-async function listGroup(accessor: QdrantAccessor, match: ScopeMatch): Promise<Listed | null> {
-  return children(accessor, match)
-}
-
-const LISTERS: Record<string, Lister<QdrantAccessor>> = {
-  [ROOT]: listRoot,
-  group: listGroup,
-}
-
-const PATTERN_KINDS = { [ROOT]: hasGlobPrefix, group: hasGlobPrefix }
-
-function buildReaddir(accessor: QdrantAccessor): ReaddirFn<QdrantAccessor> {
-  return makeReaddir(detectFor(accessor), { listers: LISTERS, patternKinds: PATTERN_KINDS })
-}
-
-export const readdirFor = perAccessor(buildReaddir)
-
-export async function readdir(
-  accessor: QdrantAccessor,
-  path: PathSpec | string,
-  index?: IndexCacheStore,
-): Promise<string[]> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  return readdirFor(accessor)(accessor, spec, index)
 }

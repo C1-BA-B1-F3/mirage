@@ -16,7 +16,7 @@ import { TRUNCATE_SCRIPT } from '@struktoai/mirage-core/vfs/redis/constants'
 import type { RedisRestore, RedisStoreLike } from '@struktoai/mirage-core/vfs/redis/store'
 import type { JsonValue } from '@struktoai/mirage-core/types'
 import { decodeBase64 } from '@struktoai/mirage-core/utils/base64'
-import { escapeGlob } from '@struktoai/mirage-core/core/redis/utils'
+import { escapeGlob } from '@struktoai/mirage-core/vfs/redis/store'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 

@@ -19,7 +19,8 @@ from typing import Any
 from mirage.commands.spec import constants
 from mirage.commands.spec.argmatch import (ArgmatchChoices, ArgmatchMatch,
                                            argmatch, value_classes)
-from mirage.commands.spec.builtin_specs import SPECS, is_builtin_grammar
+from mirage.commands.spec.builtin_specs import SPECS
+from mirage.commands.spec.builtins import is_builtin_grammar
 from mirage.commands.spec.compile import (CompiledSpec, compile_spec,
                                           expand_git_long, expand_long,
                                           expand_table_long)
@@ -65,7 +66,7 @@ def _argmatch_dests(spec: CommandSpec) -> frozenset[str]:
     """Which of this spec's choice sets are gnulib ARGMATCH tables.
 
     Decided by ``Option`` identity, not by the command's name: a mount
-    may register its own `tee` (commands/registry.py), and a name is not
+    may register its own `tee` (commands/config.py), and a name is not
     an identity. Identity is also the only signal that survives
     registration, which parses an enriched COPY of the spec (config.py
     appends --help/--version, once per backend), while every declared

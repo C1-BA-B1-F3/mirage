@@ -116,7 +116,8 @@ async function rootVersion(
   } catch (err) {
     // A Hub that refuses the head gives no answer about the version; a
     // transport failure or anything else propagates.
-    if (err instanceof HfHubError) return null
-    throw err
+    if (!(err instanceof HfHubError)) throw err
+    console.warn(`head of ${accessor.repoId} not answered: ${String(err)}`)
+    return null
   }
 }

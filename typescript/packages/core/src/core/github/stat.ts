@@ -88,7 +88,8 @@ async function rootVersion(
   } catch (err) {
     // An answer that refuses the head is no answer about the version, the
     // way pointRow reads a refusal; anything else propagates.
-    if (err instanceof GitHubApiError) return null
-    throw err
+    if (!(err instanceof GitHubApiError)) throw err
+    console.warn(`head of ${accessor.owner}/${accessor.repo} not answered: ${String(err)}`)
+    return null
   }
 }

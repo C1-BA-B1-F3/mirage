@@ -387,7 +387,9 @@ export class Namespace {
   // the emptiness check passed (a link synthesizes its parents, so one
   // there now is younger than the rmdir). `mkdir -p` instead stamps each
   // directory of the chain that holds no time yet, as a store keeping its
-  // own times does, leaving the ones that have one alone.
+  // own times does, leaving the ones that have one alone. A native directory
+  // copy may have replaced any file under its destination, so it drops every
+  // time there and keeps the modes, as `cp` over a file does.
   async settleWrite(
     op: string,
     path: string,
@@ -397,6 +399,12 @@ export class Namespace {
     const key = rstripSlash(path) || '/'
     if (op === 'mkdir' && parents && observed !== null) {
       await this.stampChain(key, observed)
+      return
+    }
+    if (op === 'dir_copy') {
+      const base = key === '/' ? '/' : `${key}/`
+      const under = [...this.nodeTable.keys()].filter((n) => n === key || n.startsWith(base))
+      for (const node of under) await this.clearTimes(node, null)
       return
     }
     await this.clearTimes(key, observed)

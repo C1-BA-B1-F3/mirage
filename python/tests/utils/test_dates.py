@@ -290,6 +290,11 @@ def test_epoch_to_iso_z_keeps_the_fraction():
     assert epoch_to_iso_z(1609459200.5) == "2021-01-01T00:00:00.500000Z"
 
 
+def test_epoch_to_iso_z_keeps_microseconds():
+    assert epoch_to_iso_z(1704067200.123456) == "2024-01-01T00:00:00.123456Z"
+    assert epoch_to_iso_z(-0.5) == "1969-12-31T23:59:59.500000Z"
+
+
 def test_iso_to_epoch_inverts_epoch_to_iso():
     assert iso_to_epoch("2021-01-01T00:00:00Z") == 1609459200
     assert iso_to_epoch("2026-01-02T15:30:45Z") == 1767367845

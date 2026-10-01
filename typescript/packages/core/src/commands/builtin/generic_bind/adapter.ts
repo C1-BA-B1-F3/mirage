@@ -745,6 +745,7 @@ const SETTLED: readonly (readonly [MutationSlot, string, number])[] = [
   ['rmdir', 'rmdir', 1],
   ['rmR', 'rmdir', 1],
   ['copy', 'write', 2],
+  ['dirCopy', 'dir_copy', 2],
 ]
 
 /**

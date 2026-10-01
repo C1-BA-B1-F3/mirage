@@ -471,11 +471,13 @@ class Namespace:
         synthesizes its parents, so one there now is younger than the
         rmdir). ``mkdir -p`` instead stamps each directory of the chain
         that holds no time yet, as a store keeping its own times does,
-        leaving the ones that have one alone.
+        leaving the ones that have one alone. A native directory copy may
+        have replaced any file under its destination, so it drops every
+        time there and keeps the modes, as ``cp`` over a file does.
 
         Args:
             op (str): the op that wrote (``write``, ``mkdir``, ``unlink``,
-                ``rmdir``, ...).
+                ``rmdir``, ``dir_copy``, ...).
             path (str): absolute virtual path it wrote.
             observed (float | None): epoch seconds of a content write to
                 record; None for a removal.
@@ -484,6 +486,12 @@ class Namespace:
         key = path.rstrip("/") or "/"
         if op == "mkdir" and parents and observed is not None:
             await self._stamp_chain(key, observed)
+            return
+        if op == "dir_copy":
+            base = key.rstrip("/") + "/"
+            under = [n for n in self._nodes if n == key or n.startswith(base)]
+            for node in under:
+                await self.clear_times(node, observed=None)
             return
         await self.clear_times(key, observed=observed)
         if op not in ("unlink", "rmdir"):

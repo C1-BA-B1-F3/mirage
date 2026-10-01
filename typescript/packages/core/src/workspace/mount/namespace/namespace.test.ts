@@ -271,6 +271,19 @@ describe('Namespace node metadata overlay', () => {
     await ws.close()
   })
 
+  it('settleWrite drops every time under a native directory copy, modes kept', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() })
+    await ws.namespace.setAttrs('/data/d/f.txt', { mode: 0o600, mtime: 1 })
+    await ws.namespace.setAttrs('/data/d/g.txt', { mtime: 1 })
+    await ws.namespace.setAttrs('/data/dd', { mtime: 1 })
+    await ws.namespace.settleWrite('dir_copy', '/data/d', null)
+    expect(ws.namespace.metaFor('/data/d/f.txt')?.mode).toBe(0o600)
+    expect(ws.namespace.metaFor('/data/d/f.txt')?.mtime).toBeUndefined()
+    expect(ws.namespace.metaFor('/data/d/g.txt')).toBeNull()
+    expect(ws.namespace.metaFor('/data/dd')?.mtime).toBe(1)
+    await ws.close()
+  })
+
   it('dropAttrs removes applied fields and deletes emptied nodes', async () => {
     const ws = new Workspace({ '/data': new RAMVFS() })
     await ws.namespace.setAttrs('/data/f.txt', { mode: 0o601, uid: 500 })

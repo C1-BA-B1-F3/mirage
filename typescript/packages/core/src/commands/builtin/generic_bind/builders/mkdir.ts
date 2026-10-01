@@ -109,13 +109,16 @@ async function makeWalked<A extends Accessor>(
 }
 
 /**
- * Make one mkdir operand, or the line GNU reports when it cannot.
+ * Make one mkdir operand: whether it was made, and the line GNU reports when
+ * it cannot be.
  *
  * One unusable operand is not an aborted command: GNU reports it and still
  * makes the remaining directories. The error names the path to quote:
  * usually the operand, but `mkdir -p` blames the component of the chain it
- * tripped on. Every mkdir makes its operands here, a keyed store's override
- * included, so they report alike. Mirrors Python's make_directory.
+ * tripped on. `mkdir -p` leaves a directory already there alone, so it gets
+ * no new time, no `-m` mode and no `-v` line (GNU). Every mkdir makes its
+ * operands here, a keyed store's override included, so they report alike.
+ * Mirrors Python's make_directory.
  */
 export async function makeDirectory<A extends Accessor>(
   mkdir: MkdirOp<A>,
@@ -123,14 +126,14 @@ export async function makeDirectory<A extends Accessor>(
   path: PathSpec,
   parents: boolean,
   links: LinkView | null = null,
-): Promise<string | null> {
+): Promise<[boolean, string | null]> {
   let target = path
   // -p enters the names in front of the operand one at a time, so a dot
   // among them, or a link loop the walk refused the operand for, is met at
   // that name and GNU quotes it rather than the operand.
   if (parents && (path.dotted !== null || path.walkError === 'ELOOP')) {
     const failed = await makeWalked(mkdir, accessor, path, path.dotted ?? path.virtual, links)
-    if (failed !== null) return failed
+    if (failed !== null) return [false, failed]
     // The walk has entered every name the spelling passes through, so the
     // operand is made by its resolved path alone: walking it again would ask
     // a store that shows no empty directory (hf) for one the walk just made.
@@ -144,14 +147,19 @@ export async function makeDirectory<A extends Accessor>(
       walkError: path.walkError,
     })
   }
+  const probe = parents && path.walkError === null ? walkProbeFor(path.virtual) : null
+  if (probe !== null) {
+    const { exists, isDir } = await entryKind(probe.stat, PathSpec.fromStrPath(path.virtual))
+    if (exists && isDir) return [false, null]
+  }
   try {
     await mkdir(accessor, target, parents)
   } catch (err) {
     if (!isFsError(err)) throw err
     const named = operandSpelling(errorVirtualPath(err), path)
-    return `mkdir: cannot create directory '${named}': ${String(fsStrerror(err))}`
+    return [false, `mkdir: cannot create directory '${named}': ${String(fsStrerror(err))}`]
   }
-  return null
+  return [true, null]
 }
 
 /** How a mkdir sets the mode of a directory it made. */
@@ -232,11 +240,9 @@ export const MKDIR_BUILDER: Builder = {
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      const failed = await makeDirectory(mkdir, accessor, p, parents, links)
-      if (failed !== null) {
-        errors.push(failed)
-        continue
-      }
+      const [made, failed] = await makeDirectory(mkdir, accessor, p, parents, links)
+      if (failed !== null) errors.push(failed)
+      if (!made) continue
       // -m applies to the named directory only; any parents made by -p keep
       // the default mode (GNU).
       if (mode !== null && applyMode !== undefined) await applyMode(p, mode)

@@ -105,6 +105,33 @@
         "stdout": "drwx------\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "ometa_mkdir_p_leaves_an_existing_directory_alone",
+      "seq": 201026,
+      "targets": [
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "box"
+      ],
+      "command": "mkdir /data/metao/pe && echo f > /data/metao/pe/f && mkdir -pv -m 700 /data/metao/pe && stat -c %a /data/metao/pe",
+      "expect": {
+        "exit": 0,
+        "stdout": "755\n",
+        "stderr": ""
+      }
     }
   ]
 }

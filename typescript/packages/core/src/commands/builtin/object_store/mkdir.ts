@@ -59,11 +59,9 @@ export function makeMkdir<A extends Accessor>(
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      const failed = await makeDirectory(mkdirImpl, accessor, path, parents, links)
-      if (failed !== null) {
-        errors.push(failed)
-        continue
-      }
+      const [made, failed] = await makeDirectory(mkdirImpl, accessor, path, parents, links)
+      if (failed !== null) errors.push(failed)
+      if (!made) continue
       writes[path.mountPath] = new Uint8Array()
       // -m applies to the named directory only; any parents made by -p keep
       // the default mode (GNU).

@@ -69,9 +69,12 @@ async def mkdir(
             if refusal is not None:
                 errors.append(refusal)
             continue
-        failed = await make_directory(mkdir_fn, accessor, path, parents, links)
+        made, failed = await make_directory(
+            mkdir_fn, accessor, path, parents, links
+        )
         if failed is not None:
             errors.append(failed)
+        if not made:
             continue
         if mode is not None:
             # -m applies to the named directory only; any parents made by
@@ -160,14 +163,17 @@ async def make_directory(
     path: PathSpec,
     parents: bool,
     links: LinkView | None = None,
-) -> str | None:
-    """Make one mkdir operand, or the line GNU reports when it cannot.
+) -> tuple[bool, str | None]:
+    """Make one mkdir operand: whether it was made, and the line GNU
+    reports when it cannot be.
 
     One unusable operand is not an aborted command: GNU reports it and
     still makes the remaining directories. The error names the path to
     quote: usually the operand, but ``mkdir -p`` blames the component of
-    the chain it tripped on. Every mkdir makes its operands here, a keyed
-    store's override included, so they report alike.
+    the chain it tripped on. ``mkdir -p`` leaves a directory already
+    there alone, so it gets no new time, no ``-m`` mode and no ``-v``
+    line (GNU). Every mkdir makes its operands here, a keyed store's
+    override included, so they report alike.
 
     Args:
         mkdir_fn (OperationFn): the guarded backend mkdir.
@@ -184,18 +190,27 @@ async def make_directory(
             mkdir_fn, accessor, path, path.dotted or path.virtual, links
         )
         if failed is not None:
-            return failed
+            return False, failed
         # The walk has entered every name the spelling passes through, so
         # the operand is made by its resolved path alone: walking it again
         # would ask a store that shows no empty directory (hf) for one the
         # walk just made.
         path = replace(path, dotted=None)
+    probe = get_walk_probe() if parents and path.walk_error is None else None
+    if probe is not None:
+        exists, is_dir = await entry_kind(
+            probe.stat, PathSpec.from_str_path(path.virtual)
+        )
+        if exists and is_dir:
+            return False, None
     try:
         await mkdir_fn(accessor, path, parents=parents)
     except FS_ERRORS as exc:
         named = operand_spelling(error_path(exc), path)
-        return f"mkdir: cannot create directory '{named}': {fs_strerror(exc)}"
-    return None
+        return False, (
+            f"mkdir: cannot create directory '{named}': {fs_strerror(exc)}"
+        )
+    return True, None
 
 
 async def _make_walked(

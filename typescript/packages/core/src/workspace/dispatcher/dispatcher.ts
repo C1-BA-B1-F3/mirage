@@ -40,6 +40,7 @@ import {
 } from '../../utils/errors.ts'
 import { Policies, PolicyDenied, postOpsGate, preOpsGate } from '../../policy/index.ts'
 import { PolicyError } from '../../policy/errors.ts'
+import { isoToEpochMicros } from '../../utils/dates.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
 import { CycleError, norm, parent } from '../../utils/path.ts'
@@ -1321,7 +1322,7 @@ export class Dispatcher {
     await this.namespace.setAttrs(virtual, {
       ...rest,
       ...(mtime !== undefined
-        ? { mtime: typeof mtime === 'string' ? new Date(mtime).getTime() / 1000 : mtime }
+        ? { mtime: typeof mtime === 'string' ? isoToEpochMicros(mtime) : mtime }
         : {}),
     })
   }

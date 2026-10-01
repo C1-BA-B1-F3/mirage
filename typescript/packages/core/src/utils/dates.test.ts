@@ -18,6 +18,7 @@ import {
   epochToIsoZ,
   inMtimeWindow,
   isoToEpoch,
+  isoToEpochMicros,
   parseDateExpr,
   parsePosixTime,
   toIsoZ,
@@ -57,6 +58,22 @@ describe('epochToIsoZ', () => {
   })
   it('keeps the fraction (parity with the Python converter)', () => {
     expect(epochToIsoZ(1609459200.5)).toBe('2021-01-01T00:00:00.500000Z')
+  })
+  it('keeps microseconds a Date would round away', () => {
+    expect(epochToIsoZ(1704067200.123456)).toBe('2024-01-01T00:00:00.123456Z')
+    expect(epochToIsoZ(-0.5)).toBe('1969-12-31T23:59:59.500000Z')
+  })
+})
+
+describe('isoToEpochMicros', () => {
+  it('keeps the digits past the millisecond, as Python fromisoformat does', () => {
+    expect(epochToIsoZ(isoToEpochMicros('2024-01-01T00:00:00.123456+00:00'))).toBe(
+      '2024-01-01T00:00:00.123456Z',
+    )
+    expect(epochToIsoZ(isoToEpochMicros('1969-12-31T23:59:59.123456Z'))).toBe(
+      '1969-12-31T23:59:59.123456Z',
+    )
+    expect(isoToEpochMicros('2024-01-01T01:00:00+01:00')).toBe(1704067200)
   })
 })
 

@@ -70,11 +70,12 @@ def make_mkdir(
                 if refusal is not None:
                     errors.append(refusal)
                 continue
-            failed = await make_directory(
+            made, failed = await make_directory(
                 mkdir_impl, accessor, path, parents, links
             )
             if failed is not None:
                 errors.append(failed)
+            if not made:
                 continue
             writes[path.mount_path] = b""
             if mode is not None:

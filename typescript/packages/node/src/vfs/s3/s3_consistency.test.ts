@@ -388,6 +388,34 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
+  // s3 and gridfs register their own stat rather than the generic's, so they
+  // get the probe answer only if the override's adapter carries it: one HEAD,
+  // the routing reconcile, where it cost two. The answer is served below every
+  // guard: a trailing slash still refuses, and `nope/..` -- a directory only
+  // the walk guard proves missing -- still answers ENOENT, as GNU does.
+  for (const [line, code, out, err] of [
+    ['stat -c %s /s3/c.txt', 0, '2\n', ''],
+    ['stat /s3/c.txt/', 1, '', 'Not a directory'],
+    ['stat -c %s /s3/nope/../c.txt', 1, '', 'No such file or directory'],
+  ] as const) {
+    it(`a warm keyed-store stat reuses the probe: ${line}`, async () => {
+      const ws = new Workspace(
+        { '/s3/': new S3VFS(makeConfig()) },
+        { mode: MountMode.WRITE, read: FRESH },
+      )
+      try {
+        await ws.shell('cat /s3/c.txt')
+        mock.resetCalls()
+        const result = await ws.shell(line)
+        expect([result.exitCode, DEC.decode(result.stdout)]).toEqual([code, out])
+        expect(DEC.decode(result.stderr)).toContain(err)
+        if (code === 0) expect(mock.commandCalls(HeadObjectCommand)).toBe(1)
+      } finally {
+        await ws.close()
+      }
+    })
+  }
+
   it('bounded keeps serving the cached bytes after an out-of-band change', async () => {
     const ws = new Workspace(
       { '/s3/': new S3VFS(makeConfig()) },

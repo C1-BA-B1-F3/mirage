@@ -18,7 +18,8 @@ from typing import Any
 from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
                                                           with_path_guards,
                                                           with_policy_guard)
-from mirage.commands.builtin.generic_bind.factory import with_slash_guard
+from mirage.commands.builtin.generic_bind.factory import (with_probe_answers,
+                                                          with_slash_guard)
 from mirage.commands.builtin.object_store.mkdir import make_mkdir
 from mirage.commands.builtin.object_store.rm import make_rm
 from mirage.commands.builtin.object_store.stat import make_stat
@@ -41,18 +42,22 @@ def make_object_store_commands(vfs: str,
     coded op policies exactly like the generic it replaces. The slash
     guard rides along for the same reason: ``tee missing/`` on a keyed
     store must refuse as the generic does instead of writing a key
-    called ``missing``.
+    called ``missing``. ``stat`` also reuses the running command's probe
+    answer (``with_probe_answers``), applied to the raw table below every
+    guard, as the factory applies it.
 
     Args:
         vfs (str): VFS name the commands register under.
         io (CommandIO): the backend's op table; must wire the write-side
             slots the overrides consume.
     """
-    io = with_policy_guard(with_slash_guard(with_path_guards(io)))
+    guarded = with_policy_guard(with_slash_guard(with_path_guards(io)))
+    answered = with_policy_guard(
+        with_slash_guard(with_path_guards(with_probe_answers(io))))
     return [
-        make_mkdir(vfs, io),
-        make_rm(vfs, io),
-        make_stat(vfs, io),
-        make_tee(vfs, io),
-        make_touch(vfs, io),
+        make_mkdir(vfs, guarded),
+        make_rm(vfs, guarded),
+        make_stat(vfs, answered),
+        make_tee(vfs, guarded),
+        make_touch(vfs, guarded),
     ]

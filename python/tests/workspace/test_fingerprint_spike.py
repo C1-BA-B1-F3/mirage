@@ -19,8 +19,8 @@ import time
 import pytest
 
 from mirage.io import IOResult
-from mirage.types import (DEFAULT_READ_TTL, CacheFacts, MountMode, ReadPolicy,
-                          ReadSpec)
+from mirage.types import (DEFAULT_READ_TTL, CacheFacts, HiddenPaths, MountMode,
+                          ReadPolicy, ReadSpec)
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
@@ -310,6 +310,65 @@ def test_always_warm_read_costs_one_probe():
         "the routing reconcile, reused by cat's stat and the gate")
     assert client.calls["get_object"] == 0, (
         "an unchanged object must still be served from cache")
+
+
+def _warm_stat(line: str, session_id: str | None = None):
+    objects = {"a.txt": b"name,age\n"}
+    session, ws = _always_mount(objects)
+    client = session._client
+    if session_id is not None:
+        ws.create_session(session_id).hidden_paths = HiddenPaths(
+            paths=("/s3/a.txt", ))
+
+    async def run() -> tuple[int, bytes, str]:
+        with patch_s3_session(session):
+            await ws.shell("cat /s3/a.txt")
+            client.calls.clear()
+            result = (await ws.shell(line) if session_id is None else await
+                      ws.shell(line, session_id=session_id))
+            out = await result.materialize_stdout()
+            err = await result.stderr_str()
+            await ws.close()
+            return result.exit_code, out, err
+
+    return asyncio.run(run()), client
+
+
+def test_always_warm_stat_costs_one_probe():
+    """The keyed-store ``stat`` override reuses the routing probe too.
+
+    s3 and gridfs register their own ``stat`` rather than the generic's,
+    so they get the probe answer only if the override's adapter carries
+    it: one HEAD, the routing reconcile, where it cost two.
+    """
+    (code, out, _), client = _warm_stat("stat -c %s /s3/a.txt")
+    assert (code, out) == (0, b"9\n")
+    assert client.calls["head_object"] == 1
+
+
+def test_a_warm_stat_still_refuses_a_trailing_slash():
+    # The probe answer is keyed without the slash; the slash guard above it
+    # must still turn `a.txt/` into ENOTDIR.
+    (code, out, err), _ = _warm_stat("stat /s3/a.txt/")
+    assert (code, out) == (1, b"")
+    assert "Not a directory" in err
+
+
+def test_a_warm_stat_probe_does_not_reveal_a_hidden_path():
+    # Another session warmed the file; in a session that hides it, the
+    # stat override must still answer ENOENT.
+    (code, out, err), _ = _warm_stat("stat -c %s /s3/a.txt", "hidden")
+    assert (code, out) == (1, b"")
+    assert "No such file or directory" in err
+
+
+def test_a_warm_stat_probe_does_not_skip_the_dots_walk():
+    # The probe answer is keyed by the normalized path; `nope/..` names a
+    # directory that does not exist, which only the walk guard proves, so
+    # the answer must be served below it: GNU answers ENOENT here.
+    (code, out, err), _ = _warm_stat("stat -c %s /s3/nope/../a.txt")
+    assert (code, out) == (1, b"")
+    assert "No such file or directory" in err
 
 
 class _SnapshotFalseS3(S3VFS):

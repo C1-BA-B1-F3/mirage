@@ -61,6 +61,18 @@ def char_width(ch: str) -> int:
     return 2 if _in_ranges(cp, WIDE) else 1
 
 
+def text_width(text: str) -> int:
+    """How many terminal columns *text* occupies, one ``char_width`` each.
+
+    Args:
+        text (str): A run of characters with no newline.
+
+    Returns:
+        int: The summed column width.
+    """
+    return sum(char_width(ch) for ch in text)
+
+
 def is_space(ch: str) -> bool:
     """Whether *ch* separates words for ``wc -w``.
 

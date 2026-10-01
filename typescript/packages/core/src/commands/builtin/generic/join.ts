@@ -30,6 +30,12 @@ function splitFields(line: string, delimiter: string | null): string[] {
   return line.split(/\s+/).filter((s) => s !== '')
 }
 
+// A short or blank line is legal input: the missing join field reads as an
+// empty key, so two blank lines join (GNU).
+function fieldAt(fields: readonly string[], index: number): string {
+  return index >= 0 && index < fields.length ? (fields[index] ?? '') : ''
+}
+
 function buildJoinMap(
   lines: readonly string[],
   fieldIdx: number,
@@ -39,13 +45,11 @@ function buildJoinMap(
   const result = new Map<string, string[][]>()
   for (const line of lines) {
     const parts = splitFields(line, delimiter)
-    if (fieldIdx < parts.length) {
-      const rawKey = parts[fieldIdx] ?? ''
-      const key = ignoreCase ? rawKey.toLocaleLowerCase() : rawKey
-      const list = result.get(key)
-      if (list === undefined) result.set(key, [parts])
-      else list.push(parts)
-    }
+    const rawKey = fieldAt(parts, fieldIdx)
+    const key = ignoreCase ? rawKey.toLocaleLowerCase() : rawKey
+    const list = result.get(key)
+    if (list === undefined) result.set(key, [parts])
+    else list.push(parts)
   }
   return result
 }
@@ -104,8 +108,7 @@ function joinLines(
 
   for (const line of lines1) {
     const parts = splitFields(line, sep)
-    if (field1 >= parts.length) continue
-    const key = parts[field1] ?? ''
+    const key = fieldAt(parts, field1)
     const lookupKey = ignoreCase ? key.toLocaleLowerCase() : key
     const hit = map2.get(lookupKey)
     if (hit !== undefined) {
@@ -123,8 +126,7 @@ function joinLines(
   if (aFlag === '2' || vFlag === '2') {
     for (const line of lines2) {
       const parts = splitFields(line, sep)
-      if (field2 >= parts.length) continue
-      const key = parts[field2] ?? ''
+      const key = fieldAt(parts, field2)
       const lookupKey = ignoreCase ? key.toLocaleLowerCase() : key
       if (!matchedKeys2.has(lookupKey)) {
         outLines.push(formatRow(key, [], field1, parts, field2, oFlag, outSep, eFlag))

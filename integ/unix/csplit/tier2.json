@@ -12,9 +12,13 @@
       "id": "csplit_tier2_silent_keep",
       "seq": 910032,
       "targets": ["ram", "disk"],
-      "command": "mkdir -p /data/t2csplit2 && printf 'a\nb\n' > /data/t2csplit2/in && csplit --silent --keep-files --prefix /data/t2csplit2/p /data/t2csplit2/in 2 && cat /data/t2csplit2/p00 && cat /data/t2csplit2/p01",
-      "expect": { "exit": 0, "stdout": "a\nb\n", "stderr": "" },
-      "flags": ["silent", "keep-files", "prefix"]
+      "command": "mkdir -p /data/t2csplit2 && printf 'a\\nb\\n' > /data/t2csplit2/in && csplit --silent --keep-files --prefix /data/t2csplit2/p /data/t2csplit2/in 2 && cat /data/t2csplit2/p00 && cat /data/t2csplit2/p01; csplit -f /data/t2csplit2/z /data/t2csplit2/in 1; csplit -z -f /data/t2csplit2/y /data/t2csplit2/in 1 2; csplit -f /data/t2csplit2/w /data/t2csplit2/in 2 2; csplit -f /data/t2csplit2/v /data/t2csplit2/in 5; echo rc=$?; csplit -k -f /data/t2csplit2/u /data/t2csplit2/in 5; csplit -f /data/t2csplit2/t /data/t2csplit2/in 2 1; echo rc=$?; ls /data/t2csplit2",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n0\n4\n2\n2\n2\n0\n2\n4\nrc=1\n4\nrc=1\nin\np00\np01\nu00\nw00\nw01\nw02\ny00\ny01\nz00\nz01\n",
+        "stderr": "csplit: warning: line number '2' is the same as preceding line number\ncsplit: '5': line number out of range\ncsplit: '5': line number out of range\ncsplit: line number '1' is smaller than preceding line number, 2\n"
+      },
+      "flags": ["silent", "keep-files", "prefix", "f", "z", "k"]
     }
   ]
 }

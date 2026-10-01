@@ -49,7 +49,12 @@ describe('onedrive written bytes', () => {
     const graph = new FakeGraph()
     graphs.push(graph)
     await serveGraph(graph)
-    expect((await wsOf(graph)).mount('/m/').vfs.keepsWrittenBytes).toBe(false)
+    const ws = await wsOf(graph)
+    try {
+      expect(ws.mount('/m/').vfs.keepsWrittenBytes).toBe(false)
+    } finally {
+      await ws.close()
+    }
   })
 
   // Property promotion rewrites Office files on upload, so the bytes tee

@@ -577,8 +577,8 @@ class MountEntry:
     def register_vfs_ops(self, ops: Iterable[Any]) -> None:
         """Register the VFS's own op table and remember it as the VFS's.
 
-        Ops registered later through ``register_fns`` are the mount's
-        extension point, which ``renders_user_read`` tells apart.
+        Ops registered later (``register_fns``, ``register_op``) are the
+        mount's extension point, which ``renders_user_read`` tells apart.
 
         Args:
             ops (iterable): the VFS's ``ops()`` table.

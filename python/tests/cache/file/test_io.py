@@ -703,9 +703,9 @@ async def test_apply_io_skips_a_path_its_mount_does_not_cache():
 
 @pytest.mark.asyncio
 async def test_apply_io_drops_written_bytes_its_mount_does_not_keep():
-    """A backend that rewrites uploads, or a path a filetype op renders,
-    stores something other than what the command wrote, so the stale
-    entry goes and the next read fetches what the backend holds."""
+    """A backend that rewrites uploads stores something other than what
+    the command wrote, so the stale entry goes and the next read fetches
+    what the backend holds."""
     cache = RAMFileCacheStore()
     await cache.set("/sp/a.docx", b"before")
     io = IOResult(writes={"/sp/a.docx": b"written"}, cache=["/sp/a.docx"])

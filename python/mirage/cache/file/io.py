@@ -164,6 +164,12 @@ async def apply_io(
     for path in io.cache:
         if cache_facts is not None and not cache_facts(path).cacheable:
             continue
+        if (path in io.writes and cache_facts is not None
+                and not cache_facts(path).keeps_writes):
+            # Neither side's bytes are what the backend stored, including a
+            # read the same line took before writing (`cat a | tee a`).
+            await cache.remove(path)
+            continue
         data = io.reads.get(path)
         # The token has to describe the bytes actually stored, so the
         # lookup asks about the side this branch took.
@@ -171,10 +177,6 @@ async def apply_io(
         if data is None:
             data = io.writes.get(path)
             ops = WRITE_FINGERPRINT_OPS
-            if (data is not None and cache_facts is not None
-                    and not cache_facts(path).keeps_writes):
-                await cache.remove(path)
-                continue
         if data is None:
             continue
         if isinstance(data, bytes):

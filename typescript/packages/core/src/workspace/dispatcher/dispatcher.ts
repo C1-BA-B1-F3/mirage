@@ -441,7 +441,15 @@ export class Dispatcher {
     // the probe is the whole fix. Mirrors Python's Dispatcher.dispatch.
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
-    const renders = this.opsRegistry.rendersUserRead(vfs, getExtension(p.virtual))
+    const requested = kwargs?.filetype
+    const renders = this.opsRegistry.rendersUserRead(
+      vfs,
+      requested === undefined
+        ? getExtension(p.virtual)
+        : typeof requested === 'string'
+          ? requested
+          : null,
+    )
     if (caches && !raw && !renders && DISPATCH_READ_OPS.has(opName)) {
       const cached = await this.cache.get(p.virtual)
       if (

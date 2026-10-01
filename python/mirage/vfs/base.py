@@ -80,11 +80,7 @@ class BaseVFS:
     # like are never masked by a cached snapshot.
     caches_reads: bool = False
 
-    # Whether the bytes a write sent are the bytes the backend stores, so
-    # the file cache may keep them as the path's content. False on a
-    # backend that rewrites uploads (SharePoint property promotion writes
-    # library metadata into an Office file), where the next read has to
-    # fetch what the backend holds.
+    # Whether the file cache may keep the bytes a write sent.
     keeps_written_bytes: bool = True
 
     # Whether this VFS carries enough version information for

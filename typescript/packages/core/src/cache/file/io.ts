@@ -143,6 +143,12 @@ export async function applyIo(
   const cacheSet = new Set(io.cache)
   for (const path of io.cache) {
     if (cacheFacts !== undefined && !cacheFacts(path).cacheable) continue
+    if (path in io.writes && cacheFacts !== undefined && !cacheFacts(path).keepsWrites) {
+      // Neither side's bytes are what the backend stored, including a read
+      // the same line took before writing (`cat a | tee a`).
+      await cache.remove(path)
+      continue
+    }
     // The token has to describe the bytes actually stored, so the lookup
     // asks about the side this branch took. Set in the branch rather
     // than recovered from the result, so the two cannot disagree.
@@ -151,10 +157,6 @@ export async function applyIo(
     if (source === undefined) {
       source = io.writes[path]
       ops = WRITE_FINGERPRINT_OPS
-      if (source !== undefined && cacheFacts !== undefined && !cacheFacts(path).keepsWrites) {
-        await cache.remove(path)
-        continue
-      }
     }
     if (source === undefined) continue
     if (source instanceof Uint8Array) {

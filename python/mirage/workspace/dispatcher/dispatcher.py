@@ -25,6 +25,7 @@ from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
 from mirage.commands.builtin.utils.paths import dot_refusal
+from mirage.commands.resolve import get_extension
 from mirage.context import (get_current_session, hidden_paths_intersect,
                             hidden_refusal, path_allowed)
 from mirage.errors import POSIX, FsCondition
@@ -415,7 +416,9 @@ class Dispatcher:
         # not be served from that cache; nothing populates it from here,
         # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
-        renders = mount.renders_user_read(path.virtual)
+        renders = mount.renders_user_read(
+            kwargs["filetype"] if "filetype" in
+            kwargs else get_extension(path.virtual))
 
         if (caches_reads and not raw and not renders
                 and op in DISPATCH_READ_OPS):

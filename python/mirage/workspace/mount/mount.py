@@ -586,9 +586,9 @@ class MountEntry:
         self.register_fns(ops)
         self._vfs_ops = dict(self._ops)
 
-    def renders_user_read(self, path: str) -> bool:
-        """Whether a read of ``path`` resolves a filetype op the VFS does
-        not ship.
+    def renders_user_read(self, filetype: str | None) -> bool:
+        """Whether a read with ``filetype`` resolves a filetype op the VFS
+        does not ship.
 
         Commands read through the VFS's own IO, so the file cache holds
         what those reads return. A VFS that ships a renderer (gdocs) makes
@@ -596,9 +596,9 @@ class MountEntry:
         the mount is never seen by them, so its cached entry is raw.
 
         Args:
-            path (str): virtual path (its extension picks the op).
+            filetype (str | None): the filetype the read resolves by: the
+                caller's explicit one, else the path's extension.
         """
-        filetype = get_extension(path)
         if filetype is None:
             return False
         op = self._ops.get(("read", filetype))

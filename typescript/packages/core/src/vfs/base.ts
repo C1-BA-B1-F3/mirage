@@ -205,13 +205,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * are not masked by a cached snapshot.
    */
   readonly cachesReads: boolean = false
-  /**
-   * Whether the bytes a write sent are the bytes the backend stores, so the
-   * file cache may keep them as the path's content. False on a backend that
-   * rewrites uploads (SharePoint property promotion writes library metadata
-   * into an Office file), where the next read has to fetch what the backend
-   * holds.
-   */
+  /** Whether the file cache may keep the bytes a write sent. */
   readonly keepsWrittenBytes: boolean = true
   /**
    * Whether this VFS carries enough version information for

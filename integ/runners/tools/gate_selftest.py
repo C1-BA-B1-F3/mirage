@@ -267,6 +267,67 @@ def selftest_mount_read() -> None:
     )
 
 
+def selftest_delete_refused() -> None:
+    """A delete step on a target with no delete mutator fails, loudly.
+
+    A plain mutate falls back to a write through the shadow, which is right
+    for a writable mount. A delete has no such fallback: writing instead
+    would leave the file there and let the case pass on what it never did.
+    The shadow is asked afterwards, so a write that happened anyway shows.
+    Disk, because it has a shadow on both hosts and no service to start.
+    """
+    target = {"id": "t", "mounts": [{"path": "/data", "vfs": "disk"}]}
+
+    async def probe() -> tuple[str, bool]:
+        (
+            read_ws,
+            mutate,
+            remove,
+            mutate_line,
+            cleanup,
+        ) = await runner_main.adapters.open_consistency(target, ReadSpec(), {})
+        try:
+            try:
+                await harness.run_scenario(
+                    read_ws,
+                    mutate,
+                    remove,
+                    mutate_line,
+                    [{"mutate": {"path": "/data/x.txt", "delete": True}}],
+                )
+            except RuntimeError as exc:
+                refused = str(exc)
+            else:
+                refused = ""
+            try:
+                await mutate_line("test ! -e /data/x.txt")
+            except RuntimeError:
+                return refused, False
+            return refused, True
+        finally:
+            await cleanup()
+
+    try:
+        refused, absent = asyncio.run(probe())
+    except Exception as exc:
+        check(
+            "consistency: a delete with no delete mutator is refused",
+            False,
+            f"{type(exc).__name__}: {exc}",
+        )
+        return
+    check(
+        "consistency: a delete with no delete mutator is refused",
+        "t: no delete mutator" in refused and "/data/x.txt" in refused,
+        repr(refused),
+    )
+    check(
+        "consistency: a refused delete writes nothing",
+        absent,
+        "the shadow has /data/x.txt",
+    )
+
+
 def selftest_case_target_defaults(typescript: bool = False) -> None:
     """Both loaders preserve explicit overrides and reject untested cases.
 
@@ -1181,6 +1242,65 @@ def selftest_mount_read_typescript() -> None:
     )
 
 
+# selftest_delete_refused on the typescript host. A delete step used to reach
+# the write fallback as an empty `content`, so it wrote a zero-byte file.
+DELETE_PROBE = (
+    "Promise.all([import('./runners/typescript/harness.ts'),\n"
+    "  import('./runners/typescript/adapters/index.ts')])"
+    ".then(async ([h, a]) => {\n"
+    "  const t = { id: 't', hosts: [],\n"
+    "    mounts: [{ path: '/data', vfs: 'disk' }] }\n"
+    "  const read = { policy: 'bounded', ttl: 45 }\n"
+    "  const o = await a.openConsistency(t, read, {})\n"
+    "  if (o === null) {\n"
+    "    const out = { refused: 'no shadow', absent: false }\n"
+    "    console.log(JSON.stringify(out))\n"
+    "    return\n"
+    "  }\n"
+    "  let refused = ''\n"
+    "  try {\n"
+    "    await h.runScenario(o.ws, o.mutate, o.remove, o.mutateLine,\n"
+    "      [{ mutate: { path: '/data/x.txt', delete: true } }])\n"
+    "  } catch (e) { refused = String(e.message) }\n"
+    "  let absent = true\n"
+    "  try { await o.mutateLine('test ! -e /data/x.txt') }\n"
+    "  catch { absent = false }\n"
+    "  await o.cleanup()\n"
+    "  console.log(JSON.stringify({ refused, absent }))\n"
+    "})\n"
+)
+
+
+def selftest_delete_refused_typescript() -> None:
+    """selftest_delete_refused's claims on the typescript host."""
+    proc = subprocess.run(
+        [str(TSX), "--eval", DELETE_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    try:
+        out = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError) as exc:
+        check(
+            "consistency (ts): the delete probe ran",
+            False,
+            f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}",
+        )
+        return
+    check(
+        "consistency (ts): a delete with no delete mutator is refused",
+        "t: no delete mutator" in out["refused"]
+        and "/data/x.txt" in out["refused"],
+        repr(out["refused"]),
+    )
+    check(
+        "consistency (ts): a refused delete writes nothing",
+        out["absent"] is True,
+        "the shadow has /data/x.txt",
+    )
+
+
 def selftest_typescript_gates(require: bool) -> None:
     """The same two exits on the typescript host, so the gate is symmetric.
 
@@ -1232,6 +1352,7 @@ def selftest_typescript_gates(require: bool) -> None:
     selftest_plan_run()
     selftest_no_shadow_fails()
     selftest_mount_read_typescript()
+    selftest_delete_refused_typescript()
 
     code, err = run_typescript(["--target", "ram", "--target-jobs=0"], {})
     check("--target-jobs=0 is refused (ts)", code == 2, f"exit {code}: {err}")
@@ -1331,6 +1452,7 @@ def main() -> None:
     selftest_services_table()
     selftest_case_validation()
     selftest_mount_read()
+    selftest_delete_refused()
     selftest_case_target_defaults()
     selftest_strict_exit()
     selftest_fake_ports()

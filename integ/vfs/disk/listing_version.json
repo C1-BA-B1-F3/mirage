@@ -1,0 +1,80 @@
+{
+  "cases": [
+    {
+      "id": "disk_listing_version_add_rename_delete",
+      "seq": 310066,
+      "targets": [
+        "disk"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lvd"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lvd/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "command": "ls /data/lvd"
+        },
+        {
+          "mutate": {
+            "path": "/data/lvd/b.txt",
+            "content": "b\n"
+          }
+        },
+        {
+          "command": "ls /data/lvd"
+        },
+        {
+          "mutate": {
+            "command": "mv /data/lvd/b.txt /data/lvd/c.txt"
+          }
+        },
+        {
+          "command": "ls /data/lvd"
+        },
+        {
+          "mutate": {
+            "command": "rm /data/lvd/a.txt"
+          }
+        },
+        {
+          "command": "ls /data/lvd"
+        },
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lvd/sub"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lvd/sub/deep.txt",
+            "content": "deep\n"
+          }
+        },
+        {
+          "command": "ls /data/lvd"
+        },
+        {
+          "command": "find /data/lvd | sort"
+        },
+        {
+          "command": "cat /data/lvd/c.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\na.txt\nb.txt\na.txt\nc.txt\nc.txt\nc.txt\nsub\n/data/lvd\n/data/lvd/c.txt\n/data/lvd/sub\n/data/lvd/sub/deep.txt\nb\n",
+        "stderr": ""
+      },
+      "note": "The shadow workspace writes into the same folder the read workspace mounts, the way another process would. Each change lands inside the folder's change-time window, so the version is not trusted and the folder re-lists; a later version match would serve it. The racy guard itself is pinned by unit tests."
+    }
+  ]
+}

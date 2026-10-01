@@ -52,10 +52,7 @@ jobs:
             pre-commit-py3.12-
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm

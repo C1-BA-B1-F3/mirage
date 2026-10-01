@@ -1,0 +1,42 @@
+name: Set up uv
+description: >-
+  uv at the version the repo pins, with a download cache that keeps the
+  wheels it fetched, so a job installs them from the GitHub cache rather
+  than from PyPI.
+inputs:
+  save-cache:
+    description: >-
+      Save the cache when the job ends. The shared entry is written once per
+      key, by whichever saving job finishes first, so only a job that syncs
+      exactly the full set (`uv sync --all-extras --no-extra camel`) saves
+      it; a job that installs a subset restores it and saves nothing.
+    default: "true"
+  cache-suffix:
+    description: >-
+      Name an entry of the job's own. A job that installs wheels the full
+      set does not (camel's fork, a second Python, requirements outside the
+      lock) saves them under its own key rather than racing for the shared
+      one, which would then lack them or lack the full set.
+    default: ""
+  cache-dependency-glob:
+    description: >-
+      The files whose hash keys the entry. The lock alone decides what a
+      sync installs, so an integ fixture's pyproject does not move the key;
+      a job that installs from requirements files adds them.
+    default: python/uv.lock
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v7
+      with:
+        version: "0.12.9"
+        enable-cache: true
+        cache-suffix: ${{ inputs.cache-suffix }}
+        cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
+        # setup-uv runs `uv cache prune --ci` before saving by default. That
+        # drops every downloaded wheel and keeps only those built from source
+        # (27 MB), so each job fetched all ~530 packages from PyPI again:
+        # seconds on most runners, two minutes on one in ten, a quarter of
+        # an hour on the worst, while the GitHub cache restored at 120 MB/s.
+        prune-cache: false
+        save-cache: ${{ inputs.save-cache }}

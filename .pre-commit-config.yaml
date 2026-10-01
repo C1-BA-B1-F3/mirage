@@ -130,9 +130,11 @@ repos:
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs)$
         pass_filenames: true
+        # One batch at a time: precommit-run.sh splits a large one in two.
+        require_serial: true
       - id: ts-knip
         name: Knip (typescript dead code)
-        entry: bash -c 'cd typescript && pnpm exec knip'
+        entry: bash -c 'cd typescript && node_modules/.bin/knip'
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs|json)$
         pass_filenames: false
@@ -148,9 +150,12 @@ repos:
         language: system
         files: ^integ/.*\.(ts|mts|js|mjs|cjs)$
         pass_filenames: true
+        # One process: 2.4 s and 0.9 GB over every file, against 3.5 s and
+        # 6.4 GB split one batch per CPU.
+        require_serial: true
       - id: integ-typecheck
         name: Type check (integ mock servers)
-        entry: bash -c 'cd integ && pnpm exec tsc -p tsconfig.check.json'
+        entry: bash -c 'cd integ && node_modules/.bin/tsc -p tsconfig.check.json'
         language: system
         # Every server directory, not a hand-kept list: the list had already
         # fallen five fakes behind tsconfig.check.json, so editing one of those

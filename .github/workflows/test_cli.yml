@@ -34,6 +34,7 @@ permissions:
       - .github/workflows/test_cli.yml
       - .github/actions/cli-battery-setup/action.yml
       - .github/actions/setup-node-pnpm/action.yml
+      - .github/actions/setup-uv/action.yml
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -86,6 +87,7 @@ jobs:
               - '.github/workflows/test_cli.yml'
               - '.github/actions/cli-battery-setup/action.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
 
   typescript-build:
     needs: changes
@@ -133,10 +135,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python

@@ -52,10 +52,7 @@ jobs:
             pre-commit-py3.12-
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -75,6 +72,11 @@ jobs:
       - name: SKIP hook ids
         run: ./python/.venv/bin/python scripts/check_skip_hooks.py
 
+      # The hook's own lint run only proves the split on a clean tree; a
+      # failure in the background half would pass it unnoticed.
+      - name: ESLint batch split
+        run: typescript/scripts/precommit-run.sh --selftest
+
       - name: Install TypeScript dependencies
         working-directory: typescript
         run: pnpm install --frozen-lockfile
@@ -82,6 +84,19 @@ jobs:
       - name: Build TypeScript packages
         working-directory: typescript
         run: pnpm -r build
+
+      # The PathSpec discipline hook runs mypy over python/tests, which
+      # imports all of mirage; from an empty store that is 73-140 s of this
+      # job. Test (Python) saves the store for mirage, so read it under the
+      # same key and check only the tests from scratch (51 s -> 12 s locally).
+      - name: Restore the mypy incremental store
+        uses: actions/cache/restore@v6
+        with:
+          path: python/.mypy_cache
+          key: mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-${{ hashFiles('python/mirage/**/*.py', 'scripts/**/*.py') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-
+            mypy-${{ runner.os }}-py3.12-
 
       # Plain `git`, not a paths-filter action: an action reads the API
       # and can disagree with the three-dot diff pre-commit itself uses,

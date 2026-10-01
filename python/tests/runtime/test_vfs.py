@@ -444,16 +444,18 @@ async def test_an_unregistered_op_surfaces_as_not_implemented():
 @pytest.mark.asyncio
 async def test_readdir_is_one_hop_that_stats_at_most_the_cap_at_once():
     # On a mount that keeps no listing index every classifying stat is a
-    # backend request, so a large directory must not fire them together.
+    # backend request, so a large directory must not fire them together,
+    # nor hold a task per entry while it waits for a slot.
     names = [f"/ram/{i}.json" for i in range(100)]
-    in_flight = peak = 0
+    in_flight = peak = tasks = 0
 
     async def dispatch(op, path, **kwargs):
-        nonlocal in_flight, peak
+        nonlocal in_flight, peak, tasks
         if op == "readdir":
             return names, None
         in_flight += 1
         peak = max(peak, in_flight)
+        tasks = max(tasks, len(asyncio.all_tasks()))
         await asyncio.sleep(0.001)
         in_flight -= 1
         return FileStat(name=path.virtual, size=1, type=FileType.FILE), None
@@ -462,3 +464,4 @@ async def test_readdir_is_one_hop_that_stats_at_most_the_cap_at_once():
     entries = await asyncio.to_thread(vfs.readdir, "/ram/")
     assert [entry.path for entry in entries] == names
     assert peak == LISTING_ENTRY_CONCURRENCY
+    assert tasks <= 2 * LISTING_ENTRY_CONCURRENCY + 4

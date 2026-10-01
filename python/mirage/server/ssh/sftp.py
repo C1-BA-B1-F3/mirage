@@ -18,8 +18,9 @@ import logging
 import os
 import posixpath
 import stat
+from collections import deque
 from collections.abc import AsyncIterator, Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, TypeVar
@@ -122,13 +123,22 @@ def exists(core: MountCore, path: str) -> bool:
     return True
 
 
+# One pool for every listing in the process, so channels that list at
+# once share its threads rather than each bringing a pool of its own.
+_STATS = ThreadPoolExecutor(LISTING_CONCURRENCY,
+                            thread_name_prefix="sftp-stat")
+
+
 def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
     """A directory's entries with their attributes, in one pass.
 
-    The entries are stat'd together, at most ``LISTING_CONCURRENCY`` at
-    once, rather than one after another. An entry that vanishes between
-    the listing and its stat is left out, as ``ls`` leaves out a file
-    deleted mid-listing.
+    The entries are stat'd together on the shared pool rather than one
+    after another, with at most ``LISTING_CONCURRENCY`` of this listing's
+    queued at once, so a wide directory is never queued whole. A stat that
+    fails ends the listing once the ones already running finish: the core
+    takes one caller at a time, so the next op must not overlap them. An
+    entry that vanishes between the listing and its stat is left out, as
+    ``ls`` leaves out a file deleted mid-listing.
 
     Args:
         core (MountCore): the mount core.
@@ -138,9 +148,19 @@ def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
         list[tuple[str, dict[str, Any]]]: (name, ``st_*`` dict) pairs,
             ``.`` and ``..`` first.
     """
-    with ThreadPoolExecutor(LISTING_CONCURRENCY) as pool:
-        rows = pool.map(partial(_entry, core, path), core.readdir(path))
-        return [row for row in rows if row is not None]
+    stat = partial(_entry, core, path)
+    window: deque[Future[tuple[str, dict[str, Any]] | None]] = deque()
+    rows = []
+    try:
+        for name in core.readdir(path):
+            if len(window) == LISTING_CONCURRENCY:
+                rows.append(window.popleft().result())
+            window.append(_STATS.submit(stat, name))
+        while window:
+            rows.append(window.popleft().result())
+    finally:
+        wait(window)
+    return [row for row in rows if row is not None]
 
 
 def _entry(core: MountCore, path: str,

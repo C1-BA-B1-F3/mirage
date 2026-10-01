@@ -14,7 +14,7 @@
 
 import asyncio
 import logging
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Iterator
 from typing import Any, TypeVar
 
 from mirage.concurrency.limiter import ConcurrencyLimiter
@@ -33,6 +33,21 @@ from mirage.utils.stat_view import (content_size, device_rdev, is_dir, is_link,
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def _listed(raw: str, links: set[str]) -> VFSEntry:
+    """One listing row before any stat: its slash mark and its link mark.
+
+    The link mark is compared by final segment: backends disagree on
+    entry shape (bare names, trailing-slash names, full paths) and the
+    name is the part they agree on, the normalization merge_readdir uses.
+
+    Args:
+        raw (str): the entry as the listing spelled it.
+        links (set[str]): the link names the namespace owes the directory.
+    """
+    linked = raw.rstrip("/").rsplit("/", 1)[-1] in links
+    return VFSEntry(path=raw, size=0, is_dir=raw.endswith("/"), is_link=linked)
 
 
 class RuntimeVFS:
@@ -247,34 +262,40 @@ class RuntimeVFS:
         # must fail as readdir, not as the mark read.
         links = (self._resolver.link_children(path)
                  if self._resolver is not None else set())
-        rows = (self._entry(path, raw, links, classify) for raw in listing)
-        return list(await asyncio.gather(*rows))
+        rows = [_listed(raw, links) for raw in listing]
+        if classify:
+            # A fixed set of workers, not a task per entry, so a wide
+            # directory costs the cap's worth of tasks, never its width.
+            pending = [(i, row) for i, row in enumerate(rows)
+                       if not row.is_dir]
+            queue = iter(pending)
+            workers = min(LISTING_ENTRY_CONCURRENCY, len(pending))
+            await asyncio.gather(*(self._classify(path, rows, queue)
+                                   for _ in range(workers)))
+        return rows
 
-    async def _entry(self, directory: str, raw: str, links: set[str],
-                     classify: bool) -> VFSEntry:
-        # Compared by final segment: backends disagree on entry shape
-        # (bare names, trailing-slash names, full paths) and the name is
-        # the part they agree on, the normalization merge_readdir uses.
-        linked = raw.rstrip("/").rsplit("/", 1)[-1] in links
-        if raw.endswith("/"):
-            return VFSEntry(path=raw, size=0, is_dir=True, is_link=linked)
-        unclassified = VFSEntry(path=raw, size=0, is_dir=False, is_link=linked)
-        if not classify:
-            return unclassified
+    async def _classify(self, directory: str, rows: list[VFSEntry],
+                        queue: Iterator[tuple[int, VFSEntry]]) -> None:
+        for index, row in queue:
+            rows[index] = await self._classified(directory, row)
+
+    async def _classified(self, directory: str, row: VFSEntry) -> VFSEntry:
         try:
-            st = self._row(await self._op("stat", raw, nofollow=linked))
+            st = self._row(await self._op("stat",
+                                          row.path,
+                                          nofollow=row.is_link))
         except (FileNotFoundError, NotADirectoryError) as exc:
             logger.debug("runtime vfs: readdir %s: stat %s: %s", directory,
-                         raw, exc)
-            return unclassified
+                         row.path, exc)
+            return row
         except Exception as exc:
             logger.warning("runtime vfs: readdir %s: stat %s: %s", directory,
-                           raw, exc)
-            return unclassified
-        return VFSEntry(path=raw,
+                           row.path, exc)
+            return row
+        return VFSEntry(path=row.path,
                         size=st.size,
                         is_dir=st.is_dir,
-                        is_link=linked,
+                        is_link=row.is_link,
                         mode=st.mode,
                         mtime_ns=st.mtime_ns,
                         rdev=st.rdev)

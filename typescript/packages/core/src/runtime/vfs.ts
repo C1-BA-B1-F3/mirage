@@ -279,28 +279,38 @@ export class RuntimeVFS {
     // (ENOENT, or a link cycle the namespace refuses to resolve) must
     // fail as readdir, not as the mark read.
     const links = this.resolver.linkChildren(path)
-    return await Promise.all(
-      out.map(async (raw): Promise<VFSEntry> => {
-        if (typeof raw !== 'string') {
-          throw new TypeError(`runtime vfs: readdir ${path} bad entry shape`)
-        }
-        const linked = links.has(baseName(raw))
-        const mark = linked ? { isLink: true } : {}
-        // Backends that mark directories with a trailing slash skip the
-        // stat; unmarked entries (e.g. RAM) need one to learn dir-ness.
-        if (raw.endsWith('/')) return { path: raw, size: 0, isDir: true, ...mark }
-        const unclassified: VFSEntry = { path: raw, size: 0, isDir: false, ...mark }
-        if (!classify) return unclassified
-        try {
-          return { path: raw, ...(await this.stat(raw, linked)), ...mark }
-        } catch (err) {
-          if (!isMissingPath(err)) {
-            console.warn(`runtime vfs: readdir ${path}: stat ${raw}: ${String(err)}`)
-          }
-          return unclassified
-        }
-      }),
-    )
+    const rows = out.map((raw): VFSEntry => {
+      if (typeof raw !== 'string') {
+        throw new TypeError(`runtime vfs: readdir ${path} bad entry shape`)
+      }
+      // Backends that mark directories with a trailing slash skip the
+      // stat; unmarked entries (e.g. RAM) need one to learn dir-ness.
+      const mark = links.has(baseName(raw)) ? { isLink: true } : {}
+      return { path: raw, size: 0, isDir: raw.endsWith('/'), ...mark }
+    })
+    if (!classify) return rows
+    // A fixed set of workers, not a promise per entry, so a wide directory
+    // costs the cap's worth of pending work, never its width.
+    const pending = rows.flatMap((row, index) => (row.isDir ? [] : [[index, row] as const]))
+    const queue = pending.values()
+    const work = async (): Promise<void> => {
+      for (const [index, row] of queue) rows[index] = await this.classified(path, row)
+    }
+    const workers = Math.min(LISTING_ENTRY_CONCURRENCY, pending.length)
+    await Promise.all(Array.from({ length: workers }, work))
+    return rows
+  }
+
+  private async classified(directory: string, row: VFSEntry): Promise<VFSEntry> {
+    const mark = row.isLink === true ? { isLink: true } : {}
+    try {
+      return { path: row.path, ...(await this.stat(row.path, row.isLink === true)), ...mark }
+    } catch (err) {
+      if (!isMissingPath(err)) {
+        console.warn(`runtime vfs: readdir ${directory}: stat ${row.path}: ${String(err)}`)
+      }
+      return row
+    }
   }
 
   /**

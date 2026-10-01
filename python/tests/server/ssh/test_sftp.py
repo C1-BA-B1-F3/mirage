@@ -317,17 +317,20 @@ async def test_sftp_runs_under_the_key_profile(tmp_path):
 class ListingCore:
     """MountCore double: a wide directory whose stats each take a while."""
 
-    def __init__(self, names):
+    def __init__(self, names, refuse=None):
         self.names = names
+        self.refuse = refuse
         self.lock = threading.Lock()
         self.now = 0
         self.peak = 0
+        self.calls = 0
 
     def readdir(self, path):
         return [".", ".."] + self.names
 
     def getattr(self, path):
         with self.lock:
+            self.calls += 1
             self.now += 1
             self.peak = max(self.peak, self.now)
         time.sleep(0.005)
@@ -335,6 +338,8 @@ class ListingCore:
             self.now -= 1
         if path.endswith("gone"):
             raise FileNotFoundError(path)
+        if self.refuse is not None and path.endswith(self.refuse):
+            raise PermissionError(path)
         return {"st_size": len(path)}
 
 
@@ -348,3 +353,25 @@ def test_listing_stats_entries_together_under_the_cap():
     assert [name for name, _ in rows] == [".", ".."] + names[:-1]
     assert rows[2] == ("f0", {"st_size": len("/d/f0")})
     assert core.peak == LISTING_CONCURRENCY
+
+
+def test_listings_at_once_share_one_cap():
+    # Two channels listing together share the pool: their stats stay
+    # under one cap rather than each bringing threads of its own.
+    core = ListingCore([f"f{i}" for i in range(40)])
+    threads = [
+        threading.Thread(target=listing, args=(core, "/d")) for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert core.peak == LISTING_CONCURRENCY
+
+
+def test_a_refused_stat_ends_the_listing_without_statting_the_rest():
+    core = ListingCore([f"f{i}" for i in range(100)], refuse="/d/f2")
+    with pytest.raises(PermissionError):
+        listing(core, "/d")
+    assert core.now == 0
+    assert core.calls <= LISTING_CONCURRENCY + 5

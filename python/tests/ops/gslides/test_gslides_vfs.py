@@ -34,16 +34,21 @@ def _make_gslides_ops() -> tuple[Ops, IndexCacheStore]:
 @pytest.mark.asyncio
 async def test_readdir():
     ops, index = _make_gslides_ops()
-    await index.set_dir("/gslides/owned", [(
-        "Deck__slide1.gslide.json",
-        IndexEntry(
-            id="slide1",
-            name="Deck",
-            resource_type="gslides/slide",
-            remote_time="2026-04-01T00:00:00Z",
-            vfs_name="Deck__slide1.gslide.json",
-        ),
-    )])
+    await index.set_dir(
+        "/gslides/owned",
+        [
+            (
+                "Deck__slide1.gslide.json",
+                IndexEntry(
+                    id="slide1",
+                    name="Deck",
+                    resource_type="gslides/slide",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="Deck__slide1.gslide.json",
+                ),
+            )
+        ],
+    )
     result = await ops.readdir("/gslides/owned")
     assert "/gslides/owned/Deck__slide1.gslide.json" in result
 
@@ -53,9 +58,9 @@ async def test_read_presentation():
     ops, _ = _make_gslides_ops()
     pres_json = json.dumps({"presentationId": "slide1"}).encode()
     with patch(
-            "mirage.ops.gslides.read.core_read",
-            new_callable=AsyncMock,
-            return_value=pres_json,
+        "mirage.ops.gslides.read.core_read",
+        new_callable=AsyncMock,
+        return_value=pres_json,
     ):
         result = await ops.read("/gslides/owned/Deck__slide1.gslide.json")
         parsed = json.loads(result)

@@ -19,11 +19,11 @@ async def test_a_plain_result_carries_no_refusal():
 
 @pytest.mark.asyncio
 async def test_a_refused_result_carries_the_record():
-    io = IOResult(exit_code=126,
-                  stderr=b"rm: Permission denied\n",
-                  refusal=Refusal(kind="pending",
-                                  reason="sign-off",
-                                  ask_id="abc123"))
+    io = IOResult(
+        exit_code=126,
+        stderr=b"rm: Permission denied\n",
+        refusal=Refusal(kind="pending", reason="sign-off", ask_id="abc123"),
+    )
     body = await io_result_to_dict(io)
     assert body["refusal"] == {
         "kind": "pending",

@@ -33,9 +33,11 @@ read = _op("read")
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -50,23 +52,30 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_gsheet_renders_spreadsheet_json(accessor, index):
-    await index.set_dir('/sheets', [('budget.gsheet.json',
-                                     IndexEntry(
-                                         id="sheet123",
-                                         name="Budget",
-                                         resource_type="gdrive/gsheet",
-                                         remote_time="2026-04-01T00:00:00Z",
-                                         vfs_name="budget.gsheet.json",
-                                     ))])
+    await index.set_dir(
+        "/sheets",
+        [
+            (
+                "budget.gsheet.json",
+                IndexEntry(
+                    id="sheet123",
+                    name="Budget",
+                    resource_type="gdrive/gsheet",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="budget.gsheet.json",
+                ),
+            )
+        ],
+    )
     sheet_json = json.dumps({"spreadsheetId": "sheet123"}).encode()
     with patch(
-            "mirage.core.gdrive.read.read_spreadsheet",
-            new_callable=AsyncMock,
-            return_value=sheet_json,
+        "mirage.core.gdrive.read.read_spreadsheet",
+        new_callable=AsyncMock,
+        return_value=sheet_json,
     ) as mock:
-        result = await read(accessor,
-                            _scope("/sheets/budget.gsheet.json"),
-                            index=index)
+        result = await read(
+            accessor, _scope("/sheets/budget.gsheet.json"), index=index
+        )
         mock.assert_called_once_with(accessor.token_manager, "sheet123")
         assert json.loads(result)["spreadsheetId"] == "sheet123"
 

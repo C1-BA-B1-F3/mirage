@@ -43,8 +43,8 @@ async def tally_cat(accessor, paths, *texts, **kwargs):
     raw = await read_bytes(accessor, path)
     if not raw.startswith(MAGIC):
         return None, IOResult(exit_code=1, stderr=b"cat: not a tally file\n")
-    size = struct.unpack("<I", raw[len(MAGIC):len(MAGIC) + 4])[0]
-    body = json.loads(raw[len(MAGIC) + 4:len(MAGIC) + 4 + size])
+    size = struct.unpack("<I", raw[len(MAGIC) : len(MAGIC) + 4])[0]
+    body = json.loads(raw[len(MAGIC) + 4 : len(MAGIC) + 4 + size])
     out = "".join(f"{k} {v}\n" for k, v in body.items())
     return out.encode(), IOResult(cache=[path.mount_path])
 
@@ -57,11 +57,14 @@ async def main() -> None:
 
     mount = ws.mount("/data/")
     mount.register(
-        RegisteredCommand("cat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".tally",
-                          fn=tally_cat))
+        RegisteredCommand(
+            "cat",
+            spec=SPECS["cat"],
+            vfs="ram",
+            filetype=".tally",
+            fn=tally_cat,
+        )
+    )
 
     # .tally routes to the renderer above; .txt falls back to the generic cat.
     print((await ws.shell("cat /data/hits.tally")).stdout.decode(), end="")

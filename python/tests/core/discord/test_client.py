@@ -17,8 +17,12 @@ import pytest
 from aioresponses import aioresponses
 from yarl import URL
 
-from mirage.core.discord.client import (discord_delete, discord_get,
-                                        discord_post, discord_put)
+from mirage.core.discord.client import (
+    discord_delete,
+    discord_get,
+    discord_post,
+    discord_put,
+)
 from mirage.core.discord.config import DiscordConfig
 
 BASE = "https://discord.com/api/v10"
@@ -58,9 +62,9 @@ async def test_discord_post_success(config):
     url = f"{BASE}/channels/C001/messages"
     with aioresponses() as m:
         m.post(url, payload={"id": "msg1", "content": "hello"})
-        result = await discord_post(config,
-                                    "/channels/C001/messages",
-                                    body={"content": "hello"})
+        result = await discord_post(
+            config, "/channels/C001/messages", body={"content": "hello"}
+        )
         sent = m.requests[("POST", URL(url))]
     assert result["id"] == "msg1"
     assert sent[0].kwargs["json"] == {"content": "hello"}
@@ -95,8 +99,12 @@ async def test_discord_put_and_delete_return_nothing(config):
     with aioresponses() as m:
         m.put(put_url, status=204)
         m.delete(delete_url, status=200, payload={"id": "m1"})
-        assert await discord_put(
-            config,
-            "/channels/C001/messages/m1/reactions/%F0%9F%91%8D/@me") is None
-        assert await discord_delete(config,
-                                    "/channels/C001/messages/m1") is None
+        assert (
+            await discord_put(
+                config, "/channels/C001/messages/m1/reactions/%F0%9F%91%8D/@me"
+            )
+            is None
+        )
+        assert (
+            await discord_delete(config, "/channels/C001/messages/m1") is None
+        )

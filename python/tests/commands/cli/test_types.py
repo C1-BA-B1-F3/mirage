@@ -32,23 +32,33 @@ def _tree() -> CLISpec:
         description="Google Workspace",
         config_model=_Config,
         subcommands=(
-            CLISpec(name="gmail",
-                    description="Gmail messages",
-                    subcommands=(
-                        CLISpec(name="send",
-                                fn=_verb,
-                                write=True,
-                                options=(Option(short="-t",
-                                                long="--to",
-                                                type="str",
-                                                multiple=True,
-                                                required=True), ),
-                                rest=Operand(type="str")),
-                        CLISpec(name="list", fn=_verb),
-                    )),
-            CLISpec(name="docs",
-                    description="Google Docs",
-                    subcommands=(CLISpec(name="cat", fn=_verb), )),
+            CLISpec(
+                name="gmail",
+                description="Gmail messages",
+                subcommands=(
+                    CLISpec(
+                        name="send",
+                        fn=_verb,
+                        write=True,
+                        options=(
+                            Option(
+                                short="-t",
+                                long="--to",
+                                type="str",
+                                multiple=True,
+                                required=True,
+                            ),
+                        ),
+                        rest=Operand(type="str"),
+                    ),
+                    CLISpec(name="list", fn=_verb),
+                ),
+            ),
+            CLISpec(
+                name="docs",
+                description="Google Docs",
+                subcommands=(CLISpec(name="cat", fn=_verb),),
+            ),
         ),
     )
 
@@ -76,7 +86,7 @@ def test_single_verb_cli_is_a_leaf_root():
 def test_group_may_carry_its_own_options():
     tree = CLISpec(
         name="git",
-        options=(Option(short="-C", type="path"), ),
-        subcommands=(CLISpec(name="status", fn=_verb), ),
+        options=(Option(short="-C", type="path"),),
+        subcommands=(CLISpec(name="status", fn=_verb),),
     )
     assert tree.options[0].short == "-C"

@@ -12,9 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.discord.entry import (channel_dirname, channel_entry,
-                                       guild_dirname, guild_entry,
-                                       member_entry, member_filename)
+from mirage.core.discord.entry import (
+    channel_dirname,
+    channel_entry,
+    guild_dirname,
+    guild_entry,
+    member_entry,
+    member_filename,
+)
 
 
 def test_guild_dirname_basic():
@@ -22,10 +27,10 @@ def test_guild_dirname_basic():
 
 
 def test_guild_dirname_apostrophe_is_preserved():
-    assert guild_dirname({
-        "id": "G1",
-        "name": "Zecheng's Server"
-    }) == "Zecheng's Server__G1"
+    assert (
+        guild_dirname({"id": "G1", "name": "Zecheng's Server"})
+        == "Zecheng's Server__G1"
+    )
 
 
 def test_guild_dirname_slash_in_name_is_replaced():

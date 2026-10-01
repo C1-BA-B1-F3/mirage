@@ -14,12 +14,13 @@
 
 from typing import Callable
 
-from mirage.commands.builtin.generic.cp import TransferLinks
+from mirage.commands.builtin.generic.cp import TransferLinks, parse_flags
 from mirage.commands.builtin.generic.cp import cp as generic_cp
-from mirage.commands.builtin.generic.cp import parse_flags
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import (
-    flat_scopes, transfer_primitives)
+    flat_scopes,
+    transfer_primitives,
+)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
@@ -28,12 +29,14 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec, PrimitiveCopy
 
 
-async def run_cp(scopes: list[PathSpec],
-                 flag_kwargs: dict[str, FlagValue],
-                 dispatch: DispatchFn,
-                 storage_key: Callable[[PathSpec], str] | None = None,
-                 ns: NamespaceView | None = None,
-                 cwd: str = "/") -> CrossResult:
+async def run_cp(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    storage_key: Callable[[PathSpec], str] | None = None,
+    ns: NamespaceView | None = None,
+    cwd: str = "/",
+) -> CrossResult:
     """Copy operands that span mounts via the shared generic cp.
 
     Pure wiring: the generic runs in its primitive mode (no native copy),
@@ -53,19 +56,27 @@ async def run_cp(scopes: list[PathSpec],
     """
     fl = FlagView(flag_kwargs, spec=SPECS["cp"])
     primitives = transfer_primitives(dispatch)
-    strategy = PrimitiveCopy(read_bytes=primitives["read_bytes"],
-                             write=primitives["write"],
-                             mkdir=primitives["mkdir"],
-                             readdir=primitives["readdir"])
+    strategy = PrimitiveCopy(
+        read_bytes=primitives["read_bytes"],
+        write=primitives["write"],
+        mkdir=primitives["mkdir"],
+        readdir=primitives["readdir"],
+    )
     return await generic_cp(
         flat_scopes(scopes),
         stat=primitives["stat"],
         strategy=strategy,
         flags=parse_flags(fl),
         backend_key=storage_key,
-        copies=(TransferLinks(links=ns.links,
-                              dispatch=dispatch,
-                              cwd=cwd,
-                              relay=strategy,
-                              relay_stat=primitives["stat"])
-                if ns is not None and ns.links is not None else None))
+        copies=(
+            TransferLinks(
+                links=ns.links,
+                dispatch=dispatch,
+                cwd=cwd,
+                relay=strategy,
+                relay_stat=primitives["stat"],
+            )
+            if ns is not None and ns.links is not None
+            else None
+        ),
+    )

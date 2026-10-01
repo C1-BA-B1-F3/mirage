@@ -30,8 +30,16 @@ if TYPE_CHECKING:
 # The value contract of eval: never richer than JSON plus bytes, so any
 # evaluator (in-process or remote over a serialized transport) can carry
 # it, in either direction (inputs in, verdict out).
-EvalValue: TypeAlias = (None | bool | int | float | str | bytes
-                        | list["EvalValue"] | dict[str, "EvalValue"])
+EvalValue: TypeAlias = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | bytes
+    | list["EvalValue"]
+    | dict[str, "EvalValue"]
+)
 
 # "incomplete" is console semantics: the source needs a continuation
 # line (session mode only). "exit" is an explicit exit() call.
@@ -73,13 +81,14 @@ class DispatchFn(Protocol):
     ran even when a later step throws the result away; runtimes never
     pass it."""
 
-    def __call__(self,
-                 op: str,
-                 path: PathSpec,
-                 *,
-                 report: OpReport | None = None,
-                 **kwargs: Any) -> Awaitable[tuple[Any, IOResult]]:
-        ...
+    def __call__(
+        self,
+        op: str,
+        path: PathSpec,
+        *,
+        report: OpReport | None = None,
+        **kwargs: Any,
+    ) -> Awaitable[tuple[Any, IOResult]]: ...
 
 
 # Whether code may be loaded from one virtual path: the per-script exec
@@ -303,8 +312,9 @@ ExecutionRequest: TypeAlias = CodeExecution | ShellExecution | ProcessExecution
 
 # Guest APIs that can operate on workspace files. Policy and backend support
 # still decide whether an individual operation is allowed.
-FilesystemOperation: TypeAlias = Literal["read", "write", "list", "stat",
-                                         "glob"]
+FilesystemOperation: TypeAlias = Literal[
+    "read", "write", "list", "stat", "glob"
+]
 
 
 @dataclass(frozen=True, slots=True)

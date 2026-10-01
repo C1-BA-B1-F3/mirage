@@ -21,12 +21,16 @@ from mirage.policy import PolicyDenied
 from mirage.shell.errors import ArithError
 from mirage.utils.errors import BadDescriptorError
 from mirage.workspace.executor.builtins.constants import TARGET_RE
-from mirage.workspace.executor.builtins.read.constants import \
-    READ_VALUE_LETTERS
-from mirage.workspace.executor.builtins.shared import (arith_refusal,
-                                                       is_valid_name,
-                                                       readonly_refusal,
-                                                       refusal, require_view)
+from mirage.workspace.executor.builtins.read.constants import (
+    READ_VALUE_LETTERS,
+)
+from mirage.workspace.executor.builtins.shared import (
+    arith_refusal,
+    is_valid_name,
+    readonly_refusal,
+    refusal,
+    require_view,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.elements import assign_element
@@ -79,26 +83,30 @@ async def _read_store(
         return readonly_refusal("read", base)
     if status == "denied":
         err = f"bash: {base}: permission denied\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="read",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="read", exit_code=1, stderr=err),
+        )
     if status != "ok":
         err = f"bash: read: {var}: bad array subscript\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="read",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="read", exit_code=1, stderr=err),
+        )
     return None
 
 
 def _read_refusal(
-        msg: str) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    msg: str,
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     err = msg.encode()
-    return None, IOResult(exit_code=1,
-                          stderr=err), ExecutionNode(command="read",
-                                                     exit_code=1,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command="read", exit_code=1, stderr=err),
+    )
 
 
 def _read_count(text: str) -> int | None:
@@ -237,16 +245,24 @@ async def _read_raw(
     if nchars is not None:
         data, complete = await buffer.read_chars(nchars, delim)
         text = data.decode(errors="replace")
-        while (not raw and complete and text.endswith("\\")
-               and (len(text) - len(text.rstrip("\\"))) % 2 == 1
-               and len(text) < nchars):
+        while (
+            not raw
+            and complete
+            and text.endswith("\\")
+            and (len(text) - len(text.rstrip("\\"))) % 2 == 1
+            and len(text) < nchars
+        ):
             more, complete = await buffer.read_chars(nchars - len(text), delim)
             text += more.decode(errors="replace")
         return text, complete
     data, complete = await buffer.read_until(delim)
     text = data.decode(errors="replace")
-    while (not raw and complete and delim == b"\n"
-           and (len(text) - len(text.rstrip("\\"))) % 2 == 1):
+    while (
+        not raw
+        and complete
+        and delim == b"\n"
+        and (len(text) - len(text.rstrip("\\"))) % 2 == 1
+    ):
         more, complete = await buffer.read_until(delim)
         text += "\n" + more.decode(errors="replace")
     return text, complete
@@ -282,18 +298,26 @@ async def handle_read(
     """
     parse = parse_shell_options(SHELL_SPECS["read"], args)
     if parse.invalid is not None:
-        token = (parse.invalid
-                 if parse.invalid.startswith("--") else f"-{parse.invalid}")
+        token = (
+            parse.invalid
+            if parse.invalid.startswith("--")
+            else f"-{parse.invalid}"
+        )
         err = f"read: {token}: invalid option\n".encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="read",
-                                                         exit_code=2)
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="read", exit_code=2),
+        )
     if parse.needs_value is not None:
-        missing = (f"read: -{parse.needs_value}: option requires an "
-                   "argument\n").encode()
-        return None, IOResult(exit_code=2,
-                              stderr=missing), ExecutionNode(command="read",
-                                                             exit_code=2)
+        missing = (
+            f"read: -{parse.needs_value}: option requires an argument\n"
+        ).encode()
+        return (
+            None,
+            IOResult(exit_code=2, stderr=missing),
+            ExecutionNode(command="read", exit_code=2),
+        )
     flags = parse.flags
     raw = bool(flags.get("r"))
     delim = b"\n"
@@ -319,14 +343,18 @@ async def handle_read(
         timeout = _read_timeout(str(flags["t"]))
         if timeout is None:
             return _read_refusal(
-                f"bash: read: {flags['t']}: invalid timeout specification\n")
+                f"bash: read: {flags['t']}: invalid timeout specification\n"
+            )
     if "u" in flags and str(flags["u"]) != "0":
-        return _read_refusal(f"bash: read: {flags['u']}: invalid file "
-                             "descriptor: Bad file descriptor\n")
+        return _read_refusal(
+            f"bash: read: {flags['u']}: invalid file "
+            "descriptor: Bad file descriptor\n"
+        )
     array_name = str(flags["a"]) if "a" in flags else None
     if array_name is not None and not is_valid_name(array_name):
         return _read_refusal(
-            f"bash: read: `{array_name}': not a valid identifier\n")
+            f"bash: read: `{array_name}': not a valid identifier\n"
+        )
     variables = parse.operands or ["REPLY"]
     view = require_view(state)
     buffer = line_buffer(stdin) if stdin is not None else None
@@ -336,8 +364,11 @@ async def handle_read(
         # readable too, so any source at all answers yes and only the
         # absence of one (no pipe, no redirect, no here-string) is no.
         code = 0 if buffer is not None else 1
-        return None, IOResult(exit_code=code), ExecutionNode(command="read",
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code),
+            ExecutionNode(command="read", exit_code=code),
+        )
     complete = False
     line = ""
     if buffer is not None:
@@ -346,7 +377,8 @@ async def handle_read(
         except BadDescriptorError:
             # stdin is closed or write-only (`read x <&-`, `read x 0<&1`).
             return _read_refusal(
-                "bash: read: read error: 0: Bad file descriptor\n")
+                "bash: read: read error: 0: Bad file descriptor\n"
+            )
     if not raw:
         line = _unescape_read(line)
     ifs = visible_env(session).get("IFS", " \t\n")
@@ -361,20 +393,27 @@ async def handle_read(
         except PolicyDenied as exc:
             return refusal("read", exc)
         code = 0 if complete else 1
-        return None, IOResult(exit_code=code), ExecutionNode(command="read",
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code),
+            ExecutionNode(command="read", exit_code=code),
+        )
     if exact is not None:
         parts = [line]
     else:
         parts = _split_read_line(line, ifs, len(variables))
     for i, var in enumerate(variables):
-        refused = await _read_store(session, view, var,
-                                    parts[i] if i < len(parts) else "")
+        refused = await _read_store(
+            session, view, var, parts[i] if i < len(parts) else ""
+        )
         if refused is not None:
             return refused
     code = 0 if complete else 1
-    return None, IOResult(exit_code=code), ExecutionNode(command="read",
-                                                         exit_code=code)
+    return (
+        None,
+        IOResult(exit_code=code),
+        ExecutionNode(command="read", exit_code=code),
+    )
 
 
 async def read_builtin(call: BuiltinCall) -> Result:
@@ -384,5 +423,8 @@ async def read_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_read(
-        list(call.argv.args), call.session, call.stdin,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        call.stdin,
+        session_view(call.session, call.namespace.registry.policies),
+    )

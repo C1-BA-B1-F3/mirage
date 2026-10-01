@@ -31,9 +31,9 @@ def _accessor() -> SharePointAccessor:
 
 def _spec(rel: str) -> PathSpec:
     virtual = f"/sp/Engineering/Documents/{rel}"
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
@@ -48,8 +48,10 @@ async def test_rmdir_deletes_an_empty_folder():
 @pytest.mark.asyncio
 async def test_rmdir_refuses_a_folder_holding_a_file():
     with aioresponses() as m:
-        m.get(_DRIVE + "/root:/dir:/children" + _PROBE,
-              payload={"value": [_FILE]})
+        m.get(
+            _DRIVE + "/root:/dir:/children" + _PROBE,
+            payload={"value": [_FILE]},
+        )
         with pytest.raises(OSError) as excinfo:
             await rmdir(_accessor(), _spec("dir"))
         sent = [key[0] for key in m.requests]
@@ -60,8 +62,10 @@ async def test_rmdir_refuses_a_folder_holding_a_file():
 @pytest.mark.asyncio
 async def test_rmdir_refuses_a_folder_holding_a_subfolder():
     with aioresponses() as m:
-        m.get(_DRIVE + "/root:/dir:/children" + _PROBE,
-              payload={"value": [_FOLDER]})
+        m.get(
+            _DRIVE + "/root:/dir:/children" + _PROBE,
+            payload={"value": [_FOLDER]},
+        )
         with pytest.raises(OSError) as excinfo:
             await rmdir(_accessor(), _spec("dir"))
     assert excinfo.value.errno == errno.ENOTEMPTY

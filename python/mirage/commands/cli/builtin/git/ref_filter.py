@@ -19,13 +19,18 @@ from dulwich.objects import Commit, ObjectID, ShaFile, Tag
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    MalformedMergeFilterError,
-                                                    MalformedObjectError,
-                                                    NotACommitError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    MalformedMergeFilterError,
+    MalformedObjectError,
+    NotACommitError,
+)
 from mirage.commands.cli.builtin.git.history import peel_to_commit
-from mirage.commands.cli.builtin.git.revparse import (resolve_object,
-                                                      tag_object, unwrapped)
+from mirage.commands.cli.builtin.git.revparse import (
+    resolve_object,
+    tag_object,
+    unwrapped,
+)
 from mirage.commands.cli.constants import GIT_LONG_OPTIONS
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.compile import compile_spec, expand_git_long
@@ -53,6 +58,7 @@ class FilterWord:
             operands, which is where a detached value of an
             optional-value option lands.
     """
+
     option: str
     value: str
     operand: bool
@@ -71,6 +77,7 @@ class RefFilter:
             a ``--no-merged`` commit, None without one.
         points_at (tuple[bytes, ...]): the ``--points-at`` objects.
     """
+
     contains: tuple[bytes, ...]
     no_contains: tuple[bytes, ...]
     merged: frozenset[bytes] | None
@@ -107,8 +114,9 @@ def filter_words(inv: CLIInvocation[None]) -> list[FilterWord]:
             break
         if token.startswith("--"):
             typed, eq, attached = token.partition("=")
-            expanded = expand_git_long(GIT_LONG_OPTIONS.get(inv.spec.name, ()),
-                                       typed)
+            expanded = expand_git_long(
+                GIT_LONG_OPTIONS.get(inv.spec.name, ()), typed
+            )
             spelling = expanded if isinstance(expanded, str) else typed
             if spelling in LIST_MODE_ORDER:
                 if eq:
@@ -117,7 +125,8 @@ def filter_words(inv: CLIInvocation[None]) -> list[FilterWord]:
                     i += 1
                     value = argv[i]
                     operand = spelling != POINTS_AT and (
-                        value == "-" or not value.startswith("-"))
+                        value == "-" or not value.startswith("-")
+                    )
                     words.append(FilterWord(spelling, value, operand))
                 else:
                     words.append(FilterWord(spelling, HEAD, False))
@@ -136,8 +145,9 @@ def filter_words(inv: CLIInvocation[None]) -> list[FilterWord]:
     return words
 
 
-def without_filter_values(texts: tuple[str, ...],
-                          words: list[FilterWord]) -> tuple[str, ...]:
+def without_filter_values(
+    texts: tuple[str, ...], words: list[FilterWord]
+) -> tuple[str, ...]:
     """The operands left once the filter values the parser kept are out.
 
     Only a listing reads what is left, as name patterns, and patterns
@@ -176,14 +186,16 @@ def _object_for(repo: BaseRepo, word: FilterWord) -> ShaFile:
     try:
         if word.option == POINTS_AT:
             held = tag_object(repo, word.value)
-            return held if held is not None else resolve_object(
-                repo, word.value)
+            return (
+                held if held is not None else resolve_object(repo, word.value)
+            )
         return resolve_object(repo, word.value)
     except GitError as exc:
         if word.option in (MERGED, NO_MERGED):
             raise MalformedMergeFilterError(word.value) from exc
-        raise MalformedObjectError(word.value,
-                                   word.option == POINTS_AT) from exc
+        raise MalformedObjectError(
+            word.value, word.option == POINTS_AT
+        ) from exc
 
 
 def _commit_for(repo: BaseRepo, word: FilterWord) -> bytes:
@@ -196,9 +208,11 @@ def _commit_for(repo: BaseRepo, word: FilterWord) -> bytes:
     found = unwrapped(repo, _object_for(repo, word), word.value)
     if isinstance(found, Commit):
         return found.id
-    reason = (f"option `{word.option[2:]}' must point to a commit" if
-              word.option in (MERGED,
-                              NO_MERGED) else f"no such commit {word.value}")
+    reason = (
+        f"option `{word.option[2:]}' must point to a commit"
+        if word.option in (MERGED, NO_MERGED)
+        else f"no such commit {word.value}"
+    )
     raise NotACommitError(found.id.decode(), found.type_name.decode(), reason)
 
 
@@ -238,8 +252,11 @@ def ref_filter(repo: BaseRepo, words: list[FilterWord]) -> RefFilter | None:
         return None
     lists: dict[str, list[bytes]] = {option: [] for option in LIST_MODE_ORDER}
     for word in words:
-        sha = (_object_for(repo, word).id
-               if word.option == POINTS_AT else _commit_for(repo, word))
+        sha = (
+            _object_for(repo, word).id
+            if word.option == POINTS_AT
+            else _commit_for(repo, word)
+        )
         lists[word.option].append(sha)
     merged, no_merged = lists[MERGED], lists[NO_MERGED]
     return RefFilter(
@@ -251,8 +268,12 @@ def ref_filter(repo: BaseRepo, words: list[FilterWord]) -> RefFilter | None:
     )
 
 
-def _reaches(repo: BaseRepo, tip: bytes, targets: frozenset[bytes],
-             memo: dict[bytes, bool]) -> bool:
+def _reaches(
+    repo: BaseRepo,
+    tip: bytes,
+    targets: frozenset[bytes],
+    memo: dict[bytes, bool],
+) -> bool:
     """Whether a commit reaches any of the targets, memoised across calls.
 
     One memo per target set turns a listing of many refs into one walk
@@ -280,7 +301,8 @@ def _reaches(repo: BaseRepo, tip: bytes, targets: frozenset[bytes],
             continue
         stack.append((sha, True))
         stack.extend(
-            (parent, False) for parent in parents if parent not in memo)
+            (parent, False) for parent in parents if parent not in memo
+        )
     return memo.get(tip, False)
 
 
@@ -299,8 +321,9 @@ def _points_at(repo: BaseRepo, sha: bytes, objects: tuple[bytes, ...]) -> bool:
     return isinstance(obj, Tag) and obj.object[1] in objects
 
 
-def kept_refs(repo: BaseRepo, filt: RefFilter,
-              refs: Sequence[tuple[str, bytes]]) -> set[str]:
+def kept_refs(
+    repo: BaseRepo, filt: RefFilter, refs: Sequence[tuple[str, bytes]]
+) -> set[str]:
     """The names of the refs a filter keeps, from ``(name, object)``
     pairs.
 
@@ -316,12 +339,18 @@ def kept_refs(repo: BaseRepo, filt: RefFilter,
             and the object it points at.
     """
     kept: set[str] = set()
-    contains, no_contains = frozenset(filt.contains), frozenset(
-        filt.no_contains)
+    contains, no_contains = (
+        frozenset(filt.contains),
+        frozenset(filt.no_contains),
+    )
     contains_memo: dict[bytes, bool] = {}
     no_contains_memo: dict[bytes, bool] = {}
-    by_commit = bool(contains or no_contains or filt.merged is not None
-                     or filt.no_merged is not None)
+    by_commit = bool(
+        contains
+        or no_contains
+        or filt.merged is not None
+        or filt.no_merged is not None
+    )
     for name, sha in refs:
         if filt.points_at and not _points_at(repo, sha, filt.points_at):
             continue
@@ -329,11 +358,13 @@ def kept_refs(repo: BaseRepo, filt: RefFilter,
             commit = peel_to_commit(repo, sha)
             if commit is None:
                 continue
-            if contains and not _reaches(repo, commit.id, contains,
-                                         contains_memo):
+            if contains and not _reaches(
+                repo, commit.id, contains, contains_memo
+            ):
                 continue
-            if no_contains and _reaches(repo, commit.id, no_contains,
-                                        no_contains_memo):
+            if no_contains and _reaches(
+                repo, commit.id, no_contains, no_contains_memo
+            ):
                 continue
             if filt.merged is not None and commit.id not in filt.merged:
                 continue

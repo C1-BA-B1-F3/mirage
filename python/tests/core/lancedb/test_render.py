@@ -21,12 +21,14 @@ from mirage.vfs.lancedb.config import LanceDBConfig
 
 
 def _cfg() -> LanceDBConfig:
-    return LanceDBConfig(uri="/tmp/db",
-                         id_column="id",
-                         title_column="name",
-                         blob_column="image_bytes",
-                         blob_ext="png",
-                         vector_column="vector")
+    return LanceDBConfig(
+        uri="/tmp/db",
+        id_column="id",
+        title_column="name",
+        blob_column="image_bytes",
+        blob_ext="png",
+        vector_column="vector",
+    )
 
 
 def test_render_card_basic():
@@ -45,17 +47,18 @@ def test_render_card_basic():
     assert "PNG-3" not in out
 
 
-@pytest.mark.parametrize("value, text", [
-    ("dog", "dog"),
-    (True, "true"),
-    (None, "null"),
-    (3, "3"),
-    (1.0, "1"),
-    (1e-7, "1e-7"),
-    ({
-        "tags": ["a", 2.5]
-    }, '{"tags":["a",2.5]}'),
-    (datetime.date(2024, 5, 21), "2024-05-21"),
-])
+@pytest.mark.parametrize(
+    "value, text",
+    [
+        ("dog", "dog"),
+        (True, "true"),
+        (None, "null"),
+        (3, "3"),
+        (1.0, "1"),
+        (1e-7, "1e-7"),
+        ({"tags": ["a", 2.5]}, '{"tags":["a",2.5]}'),
+        (datetime.date(2024, 5, 21), "2024-05-21"),
+    ],
+)
 def test_cell_text_spells_json_values_as_typescript_does(value, text):
     assert cell_text(value) == text

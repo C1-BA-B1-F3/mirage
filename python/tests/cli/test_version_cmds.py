@@ -37,7 +37,8 @@ def _run(env: dict, *args: str, expect_exit: int = 0) -> dict | list:
     if proc.returncode != expect_exit:
         raise AssertionError(
             f"exit={proc.returncode} (expected {expect_exit})\n"
-            f"stdout: {proc.stdout.decode()}\nstderr: {proc.stderr.decode()}")
+            f"stdout: {proc.stdout.decode()}\nstderr: {proc.stderr.decode()}"
+        )
     if expect_exit != 0 or not proc.stdout.strip():
         return {}
     return json.loads(proc.stdout)
@@ -110,15 +111,17 @@ def test_branch_diverges_and_guards_commit(daemon, tmp_path):
     assert [e["message"] for e in exp_log] == ["on exp", "first"]
     assert [e["message"] for e in main_log] == ["first"]
 
-    _run(env,
-         "workspace",
-         "commit",
-         wid,
-         "-b",
-         "ghost",
-         "-m",
-         "x",
-         expect_exit=2)
+    _run(
+        env,
+        "workspace",
+        "commit",
+        wid,
+        "-b",
+        "ghost",
+        "-m",
+        "x",
+        expect_exit=2,
+    )
 
 
 def test_diff_includes_deleted(daemon, tmp_path):

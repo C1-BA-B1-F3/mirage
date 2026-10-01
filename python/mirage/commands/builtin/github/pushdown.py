@@ -15,12 +15,18 @@
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.github.io import resolve_glob
-from mirage.commands.builtin.grep_pushdown import (text_candidates,
-                                                   whole_word_literal)
+from mirage.commands.builtin.grep_pushdown import (
+    text_candidates,
+    whole_word_literal,
+)
 from mirage.core.github.constants import SCOPE_WARN
-from mirage.core.github.pushdown import (count_scope_files, is_directory_key,
-                                         scope_relative_key, search_safe,
-                                         should_use_search)
+from mirage.core.github.pushdown import (
+    count_scope_files,
+    is_directory_key,
+    scope_relative_key,
+    search_safe,
+    should_use_search,
+)
 from mirage.core.github.repo import ensure_default_branch, ensure_ref
 from mirage.core.github.search import narrow_paths
 from mirage.core.github.tree import ensure_tree
@@ -44,10 +50,14 @@ def scope_refusal(command: str, file_count: int, whole_word: bool) -> str:
         str: the stderr line.
     """
     if whole_word:
-        return (f"{command}: {file_count} files in scope and code search "
-                "could not narrow them; narrow the path\n")
-    return (f"{command}: {file_count} files in scope, "
-            "narrow the path, or use -w to enable code search\n")
+        return (
+            f"{command}: {file_count} files in scope and code search "
+            "could not narrow them; narrow the path\n"
+        )
+    return (
+        f"{command}: {file_count} files in scope, "
+        "narrow the path, or use -w to enable code search\n"
+    )
 
 
 async def narrow_scope(
@@ -96,21 +106,32 @@ async def narrow_scope(
     # Both facts below are hydrated on first use, not at construction:
     # the scope count reads the git tree, and the push-down is only
     # offered on the default branch.
-    await ensure_tree(accessor, index,
-                      mount_prefix_of(paths[0].virtual, paths[0].vfs_path))
+    await ensure_tree(
+        accessor, index, mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
+    )
     file_count = count_scope_files(accessor.tree, key)
     query = whole_word_literal(pattern, fixed_string, whole_word)
     # The scope size sits ahead of should_use_search: it is free, and
     # resolving the default branch is the one term here that can cost a
     # request.
-    if (query is not None and not exact_file_set and file_count > SCOPE_WARN
-            and not accessor.truncated and all(
-                is_directory_key(accessor.tree, scope_relative_key(p))
-                for p in paths) and search_safe(query) and should_use_search(
-                    recursive=recursive,
-                    on_default_branch=(await ensure_ref(accessor) == await
-                                       ensure_default_branch(accessor)),
-                )):
+    if (
+        query is not None
+        and not exact_file_set
+        and file_count > SCOPE_WARN
+        and not accessor.truncated
+        and all(
+            is_directory_key(accessor.tree, scope_relative_key(p))
+            for p in paths
+        )
+        and search_safe(query)
+        and should_use_search(
+            recursive=recursive,
+            on_default_branch=(
+                await ensure_ref(accessor)
+                == await ensure_default_branch(accessor)
+            ),
+        )
+    ):
         narrowed = await narrow_paths(accessor, query, paths)
         if narrowed:
             kept = text_candidates(narrowed)

@@ -1,34 +1,56 @@
-# yapf: disable
-from mirage.commands.builtin.find_eval import (Action, And, Empty, FindArgs,
-                                               FindEntry, Mtime, Name, Not, Or,
-                                               Path, PendingPrune, Prune,
-                                               TrueNode, Type, args_to_tree,
-                                               bind_tree, build_tree,
-                                               compute_nonempty_dirs,
-                                               display_path, drop_pruned,
-                                               emit_start_path, eval_predicate,
-                                               keep, pending_prunes,
-                                               pruned_keys, settle_prunes,
-                                               tree_has_action, tree_has_prune,
-                                               tree_has_type, unrespell_raw,
-                                               without_prune)
-# yapf: enable
+from mirage.commands.builtin.find_eval import (
+    Action,
+    And,
+    Empty,
+    FindArgs,
+    FindEntry,
+    Mtime,
+    Name,
+    Not,
+    Or,
+    Path,
+    PendingPrune,
+    Prune,
+    TrueNode,
+    Type,
+    args_to_tree,
+    bind_tree,
+    build_tree,
+    compute_nonempty_dirs,
+    display_path,
+    drop_pruned,
+    emit_start_path,
+    eval_predicate,
+    keep,
+    pending_prunes,
+    pruned_keys,
+    settle_prunes,
+    tree_has_action,
+    tree_has_prune,
+    tree_has_type,
+    unrespell_raw,
+    without_prune,
+)
 from mirage.types import FindType
 from mirage.utils.stat_view import DIR_SIZE
 
 
-def _entry(key="/data/a.txt",
-           name="a.txt",
-           kind="f",
-           depth=1,
-           is_empty=None,
-           mtime=None):
-    return FindEntry(key=key,
-                     name=name,
-                     kind=kind,
-                     depth=depth,
-                     is_empty=is_empty,
-                     mtime=mtime)
+def _entry(
+    key="/data/a.txt",
+    name="a.txt",
+    kind="f",
+    depth=1,
+    is_empty=None,
+    mtime=None,
+):
+    return FindEntry(
+        key=key,
+        name=name,
+        kind=kind,
+        depth=depth,
+        is_empty=is_empty,
+        mtime=mtime,
+    )
 
 
 def test_empty_node():
@@ -52,8 +74,11 @@ def test_build_tree_empty_combined_with_type():
 
 def test_compute_nonempty_dirs():
     keys = [
-        "/data", "/data/a.txt", "/data/sub", "/data/sub/nested.txt",
-        "/data/emptydir"
+        "/data",
+        "/data/a.txt",
+        "/data/sub",
+        "/data/sub/nested.txt",
+        "/data/emptydir",
     ]
     nonempty = compute_nonempty_dirs(keys)
     assert "/data" in nonempty
@@ -157,8 +182,9 @@ def test_build_tree_findtype_enum():
 def test_build_tree_file_directory_string_aliases():
     assert eval_predicate(build_tree(type="file"), _entry(kind="f")) is True
     assert eval_predicate(build_tree(type="file"), _entry(kind="d")) is False
-    assert eval_predicate(build_tree(type="directory"),
-                          _entry(kind="d")) is True
+    assert (
+        eval_predicate(build_tree(type="directory"), _entry(kind="d")) is True
+    )
 
 
 def test_tree_has_type():
@@ -175,8 +201,9 @@ def test_path_matches_display_path():
     # pattern naming the mount segment matches once the tree is stamped
     # with the prefix (#396).
     tree = bind_tree(Path("*data/sub*"), "/data")
-    assert eval_predicate(tree, _entry(key="/sub", name="sub",
-                                       kind="d")) is True
+    assert (
+        eval_predicate(tree, _entry(key="/sub", name="sub", kind="d")) is True
+    )
     assert eval_predicate(tree, _entry(key="/other")) is False
     exact = bind_tree(Path("/data/sub"), "/data")
     assert eval_predicate(exact, _entry(key="/sub", kind="d")) is True
@@ -186,8 +213,10 @@ def test_path_matches_the_row_as_typed():
     # `find . -path ./skip` prints and matches `./skip`: the row is the
     # display path respelled under the operand as typed (#1147).
     tree = bind_tree(Path("./skip"), "/w", "/w", ".")
-    assert eval_predicate(tree, _entry(key="/skip", name="skip",
-                                       kind="d")) is True
+    assert (
+        eval_predicate(tree, _entry(key="/skip", name="skip", kind="d"))
+        is True
+    )
     assert eval_predicate(tree, _entry(key="/skip/a", name="a")) is False
     absolute = bind_tree(Path("./skip"), "/w", "/w", "/w")
     assert eval_predicate(absolute, _entry(key="/skip", kind="d")) is False
@@ -212,36 +241,63 @@ def test_action_marks_the_entry_and_keep_reports_only_reached_actions():
     # `-path ./skip -prune -o -type f -print` holds for ./skip yet never
     # reaches the print, so the directory is not a row.
     tree = bind_tree(
-        Or([And([Path("./skip"), Prune()]),
-            And([Type("f"), Action("print")])]), "/w", "/w", ".")
+        Or(
+            [And([Path("./skip"), Prune()]), And([Type("f"), Action("print")])]
+        ),
+        "/w",
+        "/w",
+        ".",
+    )
     assert eval_predicate(tree, _entry(key="/skip", kind="d")) is True
-    assert keep(_entry(key="/skip", name="skip", kind="d"), tree,
-                None) is False
+    assert (
+        keep(_entry(key="/skip", name="skip", kind="d"), tree, None) is False
+    )
     assert keep(_entry(key="/keep/f", name="f"), tree, None) is True
-    assert keep(_entry(key="/keep", name="keep", kind="d"), tree,
-                None) is False
+    assert (
+        keep(_entry(key="/keep", name="keep", kind="d"), tree, None) is False
+    )
     # Without an action the rows are what the whole expression holds for.
-    plain = bind_tree(Or([And([Path("./skip"), Prune()]),
-                          Type("f")]), "/w", "/w", ".")
-    assert keep(_entry(key="/skip", name="skip", kind="d"), plain,
-                None) is True
+    plain = bind_tree(
+        Or([And([Path("./skip"), Prune()]), Type("f")]), "/w", "/w", "."
+    )
+    assert (
+        keep(_entry(key="/skip", name="skip", kind="d"), plain, None) is True
+    )
 
 
 def test_prune_records_directories_and_drop_pruned_keeps_the_directory():
     tree = bind_tree(Or([And([Name("skip"), Prune()]), Action("print")]), "")
     rows = [
-        "/", "/keep", "/keep/f", "/skip", "/skip/inner", "/skip/inner/d",
-        "/skipped"
+        "/",
+        "/keep",
+        "/keep/f",
+        "/skip",
+        "/skip/inner",
+        "/skip/inner/d",
+        "/skipped",
     ]
     kept = [
-        r for r in rows if keep(
-            _entry(key=r,
-                   name=r.rsplit("/", 1)[-1],
-                   kind="d" if r in ("/", "/keep", "/skip",
-                                     "/skip/inner") else "f"), tree, None)
+        r
+        for r in rows
+        if keep(
+            _entry(
+                key=r,
+                name=r.rsplit("/", 1)[-1],
+                kind="d"
+                if r in ("/", "/keep", "/skip", "/skip/inner")
+                else "f",
+            ),
+            tree,
+            None,
+        )
     ]
     assert kept == [
-        "/", "/keep", "/keep/f", "/skip/inner", "/skip/inner/d", "/skipped"
+        "/",
+        "/keep",
+        "/keep/f",
+        "/skip/inner",
+        "/skip/inner/d",
+        "/skipped",
     ]
     assert pruned_keys(tree) == ["/skip"]
     assert drop_pruned(kept, tree) == ["/", "/keep", "/keep/f", "/skipped"]
@@ -253,8 +309,10 @@ def test_prune_records_directories_and_drop_pruned_keeps_the_directory():
     # Rows under a mount prefix compare as display paths.
     under = bind_tree(Prune(), "/m")
     keep(_entry(key="/skip", name="skip", kind="d"), under, None)
-    assert drop_pruned(["/m/skip", "/m/skip/a", "/m/other"], under,
-                       "/m") == ["/m/skip", "/m/other"]
+    assert drop_pruned(["/m/skip", "/m/skip/a", "/m/other"], under, "/m") == [
+        "/m/skip",
+        "/m/other",
+    ]
     # The pruned root itself stays, though every row starts with its stem.
     root = bind_tree(Prune(), "")
     keep(_entry(key="/", name="", kind="d", depth=0), root, None)
@@ -288,7 +346,8 @@ def test_prune_past_an_undecided_time_test_is_pending_until_settled():
     assert drop_pruned(rows, tree) == ["/old", "/old/f", "/new"]
     # bind_tree hands out a fresh pending ledger too.
     bound = bind_tree(
-        Prune(pending=[PendingPrune(_entry(key="/y", kind="d"))]), "")
+        Prune(pending=[PendingPrune(_entry(key="/y", kind="d"))]), ""
+    )
     assert bound == Prune()
 
 
@@ -301,10 +360,12 @@ def test_prune_before_a_time_test_is_firm():
 
 def test_prune_with_a_known_mtime_needs_no_settling():
     tree = bind_tree(And([Mtime(100.0, None), Prune()]), "")
-    assert not keep(_entry(key="/old", name="old", kind="d", mtime=50.0), tree,
-                    None)
-    assert keep(_entry(key="/new", name="new", kind="d", mtime=150.0), tree,
-                None)
+    assert not keep(
+        _entry(key="/old", name="old", kind="d", mtime=50.0), tree, None
+    )
+    assert keep(
+        _entry(key="/new", name="new", kind="d", mtime=150.0), tree, None
+    )
     assert pruned_keys(tree) == ["/new"]
     assert pending_prunes(tree) == []
 
@@ -313,9 +374,8 @@ def test_settling_needs_every_deferred_test_to_hold():
 
     def two() -> And:
         return bind_tree(
-            And([Mtime(100.0, None),
-                 Mtime(None, 200.0),
-                 Prune()]), "")
+            And([Mtime(100.0, None), Mtime(None, 200.0), Prune()]), ""
+        )
 
     tree = two()
     keep(_entry(key="/d", name="d", kind="d"), tree, None)
@@ -338,25 +398,29 @@ def test_deferred_tests_stay_with_the_branch_that_needs_them():
     # -type f whatever the mtime, so the prune on the second is firm and
     # no stat is owed (GNU prunes every directory here).
     tree = bind_tree(
-        Or([
-            And([Mtime(100.0, None), Type("f")]),
-            And([Type("d"), Prune()]),
-        ]), "")
+        Or(
+            [
+                And([Mtime(100.0, None), Type("f")]),
+                And([Type("d"), Prune()]),
+            ]
+        ),
+        "",
+    )
     assert keep(_entry(key="/d", name="d", kind="d"), tree, None)
     assert pending_prunes(tree) == []
     assert pruned_keys(tree) == ["/d"]
     # `( ! -mtime +N -type d ) -o -prune`: the failing factor's own test
     # is the one that may flip, so the prune waits on it.
-    tree = bind_tree(Or([And([Not(Mtime(None, 100.0)),
-                              Type("d")]),
-                         Prune()]), "")
+    tree = bind_tree(
+        Or([And([Not(Mtime(None, 100.0)), Type("d")]), Prune()]), ""
+    )
     assert keep(_entry(key="/d", name="d", kind="d"), tree, None)
     assert [p.entry.key for p in pending_prunes(tree)] == ["/d"]
     settle_prunes(tree, {"/d": 150.0})
     assert pruned_keys(tree) == []
-    tree = bind_tree(Or([And([Not(Mtime(None, 100.0)),
-                              Type("d")]),
-                         Prune()]), "")
+    tree = bind_tree(
+        Or([And([Not(Mtime(None, 100.0)), Type("d")]), Prune()]), ""
+    )
     keep(_entry(key="/d", name="d", kind="d"), tree, None)
     settle_prunes(tree, {"/d": 50.0})
     assert pruned_keys(tree) == ["/d"]
@@ -414,8 +478,10 @@ def test_a_time_test_steering_past_every_prune_leaves_the_directory_pending():
 
 def test_mindepth_prunes_nothing_above_its_level():
     tree = bind_tree(Or([And([Name("skip"), Prune()]), Action("print")]), "")
-    assert keep(_entry(key="/skip", name="skip", kind="d", depth=1), tree,
-                2) is False
+    assert (
+        keep(_entry(key="/skip", name="skip", kind="d", depth=1), tree, 2)
+        is False
+    )
     assert pruned_keys(tree) == []
 
 
@@ -423,8 +489,8 @@ def test_without_prune_and_tree_has_helpers():
     tree = Or([And([Path("./skip"), Prune()]), Not(Action("print"))])
     assert tree_has_prune(tree) and tree_has_action(tree)
     assert without_prune(tree) == Or(
-        [And([Path("./skip"), TrueNode()]),
-         Not(Action("print"))])
+        [And([Path("./skip"), TrueNode()]), Not(Action("print"))]
+    )
     assert not tree_has_prune(without_prune(tree))
     assert not tree_has_action(Or([Path("x"), Prune()]))
 
@@ -439,17 +505,19 @@ def test_emit_start_path_counts_a_directory_as_dir_size():
 
     def emit(min_size: int | None, max_size: int | None) -> list[str]:
         results: list[str] = []
-        emit_start_path(results,
-                        "/data",
-                        "data",
-                        kind="d",
-                        is_empty=None,
-                        exists=True,
-                        tree=TrueNode(),
-                        maxdepth=None,
-                        mindepth=None,
-                        min_size=min_size,
-                        max_size=max_size)
+        emit_start_path(
+            results,
+            "/data",
+            "data",
+            kind="d",
+            is_empty=None,
+            exists=True,
+            tree=TrueNode(),
+            maxdepth=None,
+            mindepth=None,
+            min_size=min_size,
+            max_size=max_size,
+        )
         return results
 
     assert emit(5, None) == ["/data"]

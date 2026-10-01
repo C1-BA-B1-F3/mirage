@@ -35,29 +35,31 @@ class PatternType(str, Enum):
 # list (it sniffs the bytes it has already read off local disk), so this
 # is a deliberate divergence that only costs a network fetch, and `-a`
 # turns it off exactly as GNU's own binary handling does.
-BINARY_EXTENSIONS = frozenset({
-    ".parquet",
-    ".orc",
-    ".feather",
-    ".arrow",
-    ".ipc",
-    ".hdf5",
-    ".h5",
-    ".safetensors",
-    ".gguf",
-    ".ggml",
-    ".bin",
-    ".pt",
-    ".pth",
-    ".ckpt",
-    ".onnx",
-    ".npy",
-    ".npz",
-    ".msgpack",
-    ".tflite",
-    ".pb",
-    ".model",
-})
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".parquet",
+        ".orc",
+        ".feather",
+        ".arrow",
+        ".ipc",
+        ".hdf5",
+        ".h5",
+        ".safetensors",
+        ".gguf",
+        ".ggml",
+        ".bin",
+        ".pt",
+        ".pth",
+        ".ckpt",
+        ".onnx",
+        ".npy",
+        ".npz",
+        ".msgpack",
+        ".tflite",
+        ".pb",
+        ".model",
+    }
+)
 
 FILE_MIME_MAP: dict[str, str] = {
     "text": "text/plain; charset=us-ascii",
@@ -101,7 +103,8 @@ C_SPACE = r"[ \t\n\v\f\r]*"
 # stays outside group 1 so the radix is picked from the digits alone
 # (`-N +0x10` is hex, `-N +010` is octal).
 XSTRTOUMAX_PATTERN = re.compile(
-    rf"^{C_SPACE}\+?(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)(.*)$")
+    rf"^{C_SPACE}\+?(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)(.*)$"
+)
 
 # GNU cmp (diffutils 3.10) shares od's grammar above but not its letter set:
 # no b/c/w, lowercase only up to k, and its gnulib predates Q/R, so `0Q`
@@ -154,48 +157,57 @@ EXEC_PLACEHOLDER = "{}"
 EXEC_END = ";"
 EXEC_BATCH_END = "+"
 
-FIND_VALUE_PREDICATES = frozenset({
-    "-name",
-    "-iname",
-    "-path",
-    "-type",
-    "-size",
-    "-mtime",
-    "-maxdepth",
-    "-mindepth",
-    "-printf",
-    "-newer",
-    "-newermt",
-})
+FIND_VALUE_PREDICATES = frozenset(
+    {
+        "-name",
+        "-iname",
+        "-path",
+        "-type",
+        "-size",
+        "-mtime",
+        "-maxdepth",
+        "-mindepth",
+        "-printf",
+        "-newer",
+        "-newermt",
+    }
+)
 
 # `-exec` takes every word up to its terminator, so it is neither a
 # value predicate nor a bare one.
 FIND_EXEC_PREDICATES = frozenset({"-exec"})
 
-FIND_BARE_PREDICATES = frozenset({
-    "-empty",
-    "-print",
-    "-print0",
-    "-delete",
-    "-ls",
-    "-depth",
-    "-prune",
-})
+FIND_BARE_PREDICATES = frozenset(
+    {
+        "-empty",
+        "-print",
+        "-print0",
+        "-delete",
+        "-ls",
+        "-depth",
+        "-prune",
+    }
+)
 
-FIND_OPERATORS = frozenset({
-    "-not",
-    "!",
-    "-o",
-    "-or",
-    "-a",
-    "-and",
-    "(",
-    ")",
-})
+FIND_OPERATORS = frozenset(
+    {
+        "-not",
+        "!",
+        "-o",
+        "-or",
+        "-a",
+        "-and",
+        "(",
+        ")",
+    }
+)
 
-FIND_EXPRESSION_TOKENS = (FIND_VALUE_PREDICATES | FIND_BARE_PREDICATES
-                          | FIND_OPERATORS
-                          | FIND_EXEC_PREDICATES)
+FIND_EXPRESSION_TOKENS = (
+    FIND_VALUE_PREDICATES
+    | FIND_BARE_PREDICATES
+    | FIND_OPERATORS
+    | FIND_EXEC_PREDICATES
+)
 
 FIND_VALID_TYPES = frozenset({"b", "c", "d", "p", "f", "l", "s"})
 

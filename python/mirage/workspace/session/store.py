@@ -48,8 +48,9 @@ class SessionStore(ABC):
         """Insert or update one session's fields."""
 
     @abstractmethod
-    async def cas_set(self, session_id: str, fields: SessionFields,
-                      expected_generation: int) -> bool:
+    async def cas_set(
+        self, session_id: str, fields: SessionFields, expected_generation: int
+    ) -> bool:
         """Write one session iff its stored generation matches.
 
         Optimistic concurrency for the flush path: the write succeeds

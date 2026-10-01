@@ -46,7 +46,7 @@ class DiskEventHook:
 
     def __init__(self, accessor: DiskAccessor) -> None:
         """Args:
-            accessor (DiskAccessor): Backend handle, read for its root.
+        accessor (DiskAccessor): Backend handle, read for its root.
         """
         self._accessor = accessor
 
@@ -60,16 +60,18 @@ class DiskEventHook:
             host_path (str): Absolute path on the local filesystem.
         """
         try:
-            relative = Path(host_path).relative_to(
-                self._accessor.root).as_posix()
+            relative = (
+                Path(host_path).relative_to(self._accessor.root).as_posix()
+            )
         except ValueError:
             return None
         # `relative_to` spells "the root itself" as ".", which would
         # render as a fabricated "<mount>/." entry.
         return "/" if relative == "." else "/" + relative
 
-    async def to_events(self, root: PathSpec, event_type: str,
-                        payload: JsonValue) -> Sequence[FileEvent]:
+    async def to_events(
+        self, root: PathSpec, event_type: str, payload: JsonValue
+    ) -> Sequence[FileEvent]:
         """Map one filesystem notification to the change it implies.
 
         A directory's own ``modified`` stays an UPDATE rather than
@@ -97,10 +99,11 @@ class DiskEventHook:
         kind = DISK_KINDS.get(event_type)
         if kind is None:
             return ()
-        return (event_at(root, relative, kind), )
+        return (event_at(root, relative, kind),)
 
-    def _moved(self, root: PathSpec, source: str | None,
-               target: str | None) -> Sequence[FileEvent]:
+    def _moved(
+        self, root: PathSpec, source: str | None, target: str | None
+    ) -> Sequence[FileEvent]:
         """Map a rename, which may cross the mount boundary either way.
 
         A watcher rooted above the mount sees renames that only half
@@ -120,7 +123,7 @@ class DiskEventHook:
         if moved_to is None:
             if moved_from is None:
                 return ()
-            return (event_at(root, moved_from, FileChangeKind.DELETE), )
+            return (event_at(root, moved_from, FileChangeKind.DELETE),)
         if moved_from is None:
-            return (event_at(root, moved_to, FileChangeKind.CREATE), )
-        return (event_at(root, moved_to, FileChangeKind.MOVE, moved_from), )
+            return (event_at(root, moved_to, FileChangeKind.CREATE),)
+        return (event_at(root, moved_to, FileChangeKind.MOVE, moved_from),)

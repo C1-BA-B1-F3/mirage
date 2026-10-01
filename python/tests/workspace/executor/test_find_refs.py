@@ -22,9 +22,11 @@ from mirage.workspace.mount import MountRegistry
 
 async def _stat(virtual: str) -> FileStat | None:
     if virtual == "/w/ref":
-        return FileStat(name="ref",
-                        type=FileType.FILE,
-                        modified="2020-01-01T00:00:00+00:00")
+        return FileStat(
+            name="ref",
+            type=FileType.FILE,
+            modified="2020-01-01T00:00:00+00:00",
+        )
     return None
 
 
@@ -36,20 +38,26 @@ def _registry() -> MountRegistry:
 @pytest.mark.asyncio
 async def test_newer_is_rewritten_to_newermt():
     tokens = ["-newer", "ref", "-name", "x", "-newer", "/w/ref"]
-    rewritten, err = await resolve_newer_refs(tokens, ["ref", "/w/ref"],
-                                              _registry(), "/w", _stat)
+    rewritten, err = await resolve_newer_refs(
+        tokens, ["ref", "/w/ref"], _registry(), "/w", _stat
+    )
     assert err is None
     assert rewritten == [
-        "-newermt", "2020-01-01T00:00:00+00:00", "-name", "x", "-newermt",
-        "2020-01-01T00:00:00+00:00"
+        "-newermt",
+        "2020-01-01T00:00:00+00:00",
+        "-name",
+        "x",
+        "-newermt",
+        "2020-01-01T00:00:00+00:00",
     ]
 
 
 @pytest.mark.asyncio
 async def test_missing_reference_is_gnu_error():
     tokens = ["-newer", "nope"]
-    rewritten, err = await resolve_newer_refs(tokens, ["nope"], _registry(),
-                                              "/w", _stat)
+    rewritten, err = await resolve_newer_refs(
+        tokens, ["nope"], _registry(), "/w", _stat
+    )
     assert rewritten == tokens
     assert err == b"find: 'nope': No such file or directory\n"
 
@@ -67,25 +75,30 @@ async def test_newer_and_newermt_in_the_shell():
         "mkdir -p /w/d/sub; printf a > /w/d/a.txt; printf bb > /w/d/b.txt; "
         "printf x > /w/d/sub/c.txt; touch -d '2020-01-01 00:00:00' "
         "/w/d/a.txt; cd /w",
-        session_id="s")
-    assert await _out(
-        ws,
-        "find d -newer d/a.txt | sort") == ("d\nd/b.txt\nd/sub\nd/sub/c.txt\n",
-                                            "", 0)
-    assert await _out(
-        ws,
-        "find d -newer nope") == ("",
-                                  "find: 'nope': No such file or directory\n",
-                                  1)
+        session_id="s",
+    )
+    assert await _out(ws, "find d -newer d/a.txt | sort") == (
+        "d\nd/b.txt\nd/sub\nd/sub/c.txt\n",
+        "",
+        0,
+    )
+    assert await _out(ws, "find d -newer nope") == (
+        "",
+        "find: 'nope': No such file or directory\n",
+        1,
+    )
     assert await _out(ws, "find d -newermt 2099-01-01") == ("", "", 0)
-    assert await _out(ws,
-                      'find d -newermt 2020-01-01 -name "*.txt" | sort') == (
-                          "d/b.txt\nd/sub/c.txt\n", "", 0)
     assert await _out(
-        ws, r'find d -newer d/a.txt -name "*.txt" -exec cat {} \;') == ("bbx",
-                                                                        "", 0)
+        ws, 'find d -newermt 2020-01-01 -name "*.txt" | sort'
+    ) == ("d/b.txt\nd/sub/c.txt\n", "", 0)
+    assert await _out(
+        ws, r'find d -newer d/a.txt -name "*.txt" -exec cat {} \;'
+    ) == ("bbx", "", 0)
     assert await _out(ws, "find -newer d/a.txt | sort") == (
-        ".\n./d\n./d/b.txt\n./d/sub\n./d/sub/c.txt\n", "", 0)
+        ".\n./d\n./d/b.txt\n./d/sub\n./d/sub/c.txt\n",
+        "",
+        0,
+    )
 
 
 @pytest.mark.asyncio
@@ -105,7 +118,8 @@ async def test_a_link_reference_is_read_by_the_link_policy():
         "ln -s nowhere dangling; touch -h -d '2020-06-01 00:00:00' dangling; "
         "ln -s loop1 loop2; ln -s loop2 loop1; "
         "touch -h -d '2022-01-01 00:00:00' loop1",
-        session_id="s")
+        session_id="s",
+    )
     assert await _out(ws, "find d -newer link") == ("", "", 0)
     assert await _out(ws, "find -L d -newer link") == ("d/cand\n", "", 0)
     assert await _out(ws, "find -H d -newer link") == ("d/cand\n", "", 0)
@@ -114,7 +128,10 @@ async def test_a_link_reference_is_read_by_the_link_policy():
     assert await _out(ws, "find -L d -newer dangling") == ("d/cand\n", "", 0)
     assert await _out(ws, "find d -newer loop1") == ("", "", 0)
     assert await _out(ws, "find -L d -newer loop1") == (
-        "", "find: 'loop1': Too many levels of symbolic links\n", 1)
+        "",
+        "find: 'loop1': Too many levels of symbolic links\n",
+        1,
+    )
 
 
 @pytest.mark.asyncio
@@ -128,9 +145,11 @@ async def test_repeated_newer_references_intersect():
         "touch -d '2020-01-01 00:00:00' old; "
         "touch -d '2021-01-01 00:00:00' cand; "
         "touch -d '2022-01-01 00:00:00' new",
-        session_id="s")
+        session_id="s",
+    )
     assert await _out(ws, "find cand -newer old -newer new") == ("", "", 0)
     assert await _out(ws, "find cand -newer new -newer old") == ("", "", 0)
     assert await _out(ws, "find cand -newer old") == ("cand\n", "", 0)
     assert await _out(
-        ws, "find cand -newermt 2020-06-01 -newermt 2021-06-01") == ("", "", 0)
+        ws, "find cand -newermt 2020-06-01 -newermt 2021-06-01"
+    ) == ("", "", 0)

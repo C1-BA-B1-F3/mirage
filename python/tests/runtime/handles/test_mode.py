@@ -51,17 +51,20 @@ def test_wx_is_c_fopen_exclusive_create():
     assert mode.writable and not mode.readable
 
 
-@pytest.mark.parametrize("bad", [
-    "",
-    "q",
-    "rw",
-    "rr",
-    "r++",
-    "rbb",
-    "rbt",
-    "wq",
-    "b",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "q",
+        "rw",
+        "rr",
+        "r++",
+        "rbb",
+        "rbt",
+        "wq",
+        "b",
+    ],
+)
 def test_garbage_modes_raise_the_cpython_refusal(bad: str):
     # One parser, the stricter half's rule: exactly one of rwax, at
     # most one each of +, b, t, and never b with t. The message is

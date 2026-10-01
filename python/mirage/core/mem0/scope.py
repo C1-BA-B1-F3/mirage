@@ -18,9 +18,13 @@ from mirage.types import ContentType
 
 # The mount is one flat directory of memory files; which memories exist
 # is a function of the configured scope filter, not of the path.
-SCOPES = (Scope(kind="memory",
-                segments=(Slot("memory_id", JSON_NAME), ),
-                leaf=True,
-                filetype=ContentType.JSON), )
+SCOPES = (
+    Scope(
+        kind="memory",
+        segments=(Slot("memory_id", JSON_NAME),),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+)
 
 detect_scope = make_detect_scope(SCOPES)

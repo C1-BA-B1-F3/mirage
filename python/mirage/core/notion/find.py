@@ -48,27 +48,32 @@ async def find(
     async def read_dir(spec: PathSpec, _: IndexCacheStore | None) -> list[str]:
         return await readdir(accessor, spec, walk_index)
 
-    async def stat_entry(spec: PathSpec,
-                         _: IndexCacheStore | None) -> FileStat:
+    async def stat_entry(
+        spec: PathSpec, _: IndexCacheStore | None
+    ) -> FileStat:
         return await stat(accessor, spec, walk_index)
 
-    paths = await walk_find(path,
-                            readdir=read_dir,
-                            stat=stat_entry,
-                            index=walk_index,
-                            args=FindArgs(name=name,
-                                          type=type,
-                                          min_size=min_size,
-                                          max_size=max_size,
-                                          maxdepth=maxdepth,
-                                          name_exclude=name_exclude,
-                                          or_names=or_names,
-                                          mtime_min=mtime_min,
-                                          mtime_max=mtime_max,
-                                          iname=iname,
-                                          path_pattern=path_pattern,
-                                          mindepth=mindepth,
-                                          empty=empty,
-                                          tree=tree))
+    paths = await walk_find(
+        path,
+        readdir=read_dir,
+        stat=stat_entry,
+        index=walk_index,
+        args=FindArgs(
+            name=name,
+            type=type,
+            min_size=min_size,
+            max_size=max_size,
+            maxdepth=maxdepth,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            mtime_min=mtime_min,
+            mtime_max=mtime_max,
+            iname=iname,
+            path_pattern=path_pattern,
+            mindepth=mindepth,
+            empty=empty,
+            tree=tree,
+        ),
+    )
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     return [p.removeprefix(prefix) or "/" for p in paths]

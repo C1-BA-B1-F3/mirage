@@ -30,8 +30,8 @@ config = LangfuseConfig(
 vfs = LangfuseVFS(config=config)
 
 with Workspace(
-    {"/langfuse/": Mount(vfs, mode=MountMode.READ,
-                         backend=MountBackend.FUSE)}) as ws:
+    {"/langfuse/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
@@ -87,5 +87,4 @@ with Workspace(
 
     records = ws.vfs.records
     total = sum(r.bytes for r in records)
-    print(f"\nStats: {len(records)} ops, "
-          f"{total} bytes transferred")
+    print(f"\nStats: {len(records)} ops, {total} bytes transferred")

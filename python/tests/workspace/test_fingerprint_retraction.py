@@ -22,17 +22,22 @@ from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.workspace import Workspace
 from mirage.workspace.snapshot.drift import ContentDriftError
 from mirage.workspace.snapshot.state import to_state_dict
-from tests.e2e.s3_mock import (MultiBucketS3Client, MultiBucketSession,
-                               patch_s3_session)
+from tests.e2e.s3_mock import (
+    MultiBucketS3Client,
+    MultiBucketSession,
+    patch_s3_session,
+)
 
 BUCKET = "test-bucket"
 
 
 def _config() -> S3Config:
-    return S3Config(bucket=BUCKET,
-                    region="us-east-1",
-                    aws_access_key_id="fake",
-                    aws_secret_access_key="fake")
+    return S3Config(
+        bucket=BUCKET,
+        region="us-east-1",
+        aws_access_key_id="fake",
+        aws_secret_access_key="fake",
+    )
 
 
 @contextmanager
@@ -49,8 +54,9 @@ def _mounted(store: dict[str, bytes]):
 
 
 def _ws() -> Workspace:
-    return Workspace({"/s3": (S3VFS(_config()), MountMode.WRITE)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/s3": (S3VFS(_config()), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
 
 
 def test_a_written_path_is_captured_for_drift():
@@ -62,8 +68,9 @@ def test_a_written_path_is_captured_for_drift():
         async def run() -> list[str]:
             ws = _ws()
             try:
-                await (await ws.shell("tee /s3/x.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/x.txt", stdin=b"v1\n")
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
                 return [f["path"] for f in state["fingerprints"]]
             finally:
@@ -79,14 +86,16 @@ def test_a_written_path_raises_on_a_strict_load_after_an_out_of_band_change():
         async def run() -> None:
             ws = _ws()
             try:
-                await (await ws.shell("tee /s3/x.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/x.txt", stdin=b"v1\n")
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
             finally:
                 await ws.close()
             store["x.txt"] = b"v2\n"
             loaded = await Workspace.from_state(
-                state, mounts={"/s3": S3VFS(_config())})
+                state, mounts={"/s3": S3VFS(_config())}
+            )
             try:
                 await loaded.shell("cat /s3/x.txt")
             finally:
@@ -103,8 +112,9 @@ def test_a_written_path_serves_current_state_under_drift_policy_off():
         async def run() -> bytes:
             ws = _ws()
             try:
-                await (await ws.shell("tee /s3/x.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/x.txt", stdin=b"v1\n")
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
             finally:
                 await ws.close()
@@ -112,7 +122,8 @@ def test_a_written_path_serves_current_state_under_drift_policy_off():
             loaded = await Workspace.from_state(
                 state,
                 mounts={"/s3": S3VFS(_config())},
-                drift_policy=DriftPolicy.OFF)
+                drift_policy=DriftPolicy.OFF,
+            )
             try:
                 io = await loaded.shell("cat /s3/x.txt")
                 return await io.materialize_stdout()
@@ -123,7 +134,8 @@ def test_a_written_path_serves_current_state_under_drift_policy_off():
 
 
 def test_a_refused_removal_leaves_no_stale_bytes_for_a_strict_load(
-        monkeypatch):
+    monkeypatch,
+):
     """A delete the store refused before touching anything still retracts
     the pin, so the cached body has to go with it: left behind, a
     restored snapshot would serve the pre-change bytes with nothing left
@@ -141,19 +153,23 @@ def test_a_refused_removal_leaves_no_stale_bytes_for_a_strict_load(
             try:
                 await (await ws.shell("cat /s3/x.txt")).materialize_stdout()
                 rm = await (
-                    await
-                    ws.shell("rm /s3/x.txt; echo rm=$?")).materialize_stdout()
+                    await ws.shell("rm /s3/x.txt; echo rm=$?")
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
             finally:
                 await ws.close()
             assert store["x.txt"] == b"v1\n"
             store["x.txt"] = b"v2\n"
             loaded = await Workspace.from_state(
-                state, mounts={"/s3": S3VFS(_config())})
+                state, mounts={"/s3": S3VFS(_config())}
+            )
             try:
                 io = await loaded.shell("cat /s3/x.txt")
-                return rm, [f["path"] for f in state["fingerprints"]
-                            ], (await io.materialize_stdout())
+                return (
+                    rm,
+                    [f["path"] for f in state["fingerprints"]],
+                    (await io.materialize_stdout()),
+                )
             finally:
                 await loaded.close()
 
@@ -174,18 +190,24 @@ def test_write_then_move_leaves_no_pin_to_fail_the_load():
         async def run() -> tuple[list[str], bytes]:
             ws = _ws()
             try:
-                await (await ws.shell(
-                    "tee /s3/tmp.txt && mv /s3/tmp.txt /s3/final.txt",
-                    stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell(
+                        "tee /s3/tmp.txt && mv /s3/tmp.txt /s3/final.txt",
+                        stdin=b"v1\n",
+                    )
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
             finally:
                 await ws.close()
             loaded = await Workspace.from_state(
-                state, mounts={"/s3": S3VFS(_config())})
+                state, mounts={"/s3": S3VFS(_config())}
+            )
             try:
                 io = await loaded.shell("cat /s3/final.txt")
-                return ([f["path"] for f in state["fingerprints"]], await
-                        io.materialize_stdout())
+                return (
+                    [f["path"] for f in state["fingerprints"]],
+                    await io.materialize_stdout(),
+                )
             finally:
                 await loaded.close()
 
@@ -206,13 +228,15 @@ def test_a_strict_load_succeeds_when_the_written_object_is_unchanged():
         async def run() -> bytes:
             ws = _ws()
             try:
-                await (await ws.shell("tee /s3/x.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/x.txt", stdin=b"v1\n")
+                ).materialize_stdout()
                 state = await to_state_dict(ws)
             finally:
                 await ws.close()
             loaded = await Workspace.from_state(
-                state, mounts={"/s3": S3VFS(_config())})
+                state, mounts={"/s3": S3VFS(_config())}
+            )
             try:
                 io = await loaded.shell("cat /s3/x.txt")
                 return await io.materialize_stdout()
@@ -226,10 +250,12 @@ INNER = "inner-bucket"
 
 
 def _inner_config() -> S3Config:
-    return S3Config(bucket=INNER,
-                    region="us-east-1",
-                    aws_access_key_id="fake",
-                    aws_secret_access_key="fake")
+    return S3Config(
+        bucket=INNER,
+        region="us-east-1",
+        aws_access_key_id="fake",
+        aws_secret_access_key="fake",
+    )
 
 
 def test_a_subtree_retraction_spares_a_nested_mount():
@@ -241,11 +267,9 @@ def test_a_subtree_retraction_spares_a_nested_mount():
     """
     outer: dict[str, bytes] = {}
     inner: dict[str, bytes] = {}
-    session = MultiBucketSession({
-        BUCKET: outer,
-        INNER: inner
-    },
-                                 etag_suffix="-2")
+    session = MultiBucketSession(
+        {BUCKET: outer, INNER: inner}, etag_suffix="-2"
+    )
     with patch_s3_session(session):
 
         async def run() -> list[str]:
@@ -254,12 +278,15 @@ def test_a_subtree_retraction_spares_a_nested_mount():
                     "/s3": (S3VFS(_config()), MountMode.WRITE),
                     "/s3/d/inner": (S3VFS(_inner_config()), MountMode.WRITE),
                 },
-                mode=MountMode.WRITE)
+                mode=MountMode.WRITE,
+            )
             try:
-                await (await ws.shell("tee /s3/d/x.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
-                await (await ws.shell("tee /s3/d/inner/y.txt",
-                                      stdin=b"v1\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/d/x.txt", stdin=b"v1\n")
+                ).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/d/inner/y.txt", stdin=b"v1\n")
+                ).materialize_stdout()
                 await ws.shell("rm -r /s3/d")
                 state = await to_state_dict(ws)
                 return sorted(f["path"] for f in state["fingerprints"])
@@ -284,14 +311,17 @@ def test_moving_one_object_spares_an_independent_descendant_pin():
         async def run() -> tuple[list[str], list[str]]:
             ws = _ws()
             try:
-                await (await ws.shell("tee /s3/a",
-                                      stdin=b"A\n")).materialize_stdout()
-                await (await ws.shell("tee /s3/a/child",
-                                      stdin=b"C\n")).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/a", stdin=b"A\n")
+                ).materialize_stdout()
+                await (
+                    await ws.shell("tee /s3/a/child", stdin=b"C\n")
+                ).materialize_stdout()
                 await ws.shell("mv /s3/a /s3/b")
                 state = await to_state_dict(ws)
-                return sorted(store), sorted(f["path"]
-                                             for f in state["fingerprints"])
+                return sorted(store), sorted(
+                    f["path"] for f in state["fingerprints"]
+                )
             finally:
                 await ws.close()
 

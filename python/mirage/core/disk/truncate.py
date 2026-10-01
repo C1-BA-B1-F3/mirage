@@ -24,10 +24,12 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def truncate(accessor: DiskAccessor,
-                   path_spec: PathSpec,
-                   length: int,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    length: int,
+    no_create: bool = False,
+) -> None:
     timer = start_op()
     p = await resolve_inside(accessor.root, path_spec)
     flags = os.O_WRONLY | (0 if no_create else os.O_CREAT)

@@ -3,8 +3,12 @@ from typing import Any
 from mirage.accessor.chroma import ChromaAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.chroma.tree import CHROMA_TREE
-from mirage.core.slug_tree.search import (hit_lines, search_scope,
-                                          target_entries, validate_query)
+from mirage.core.slug_tree.search import (
+    hit_lines,
+    search_scope,
+    target_entries,
+    validate_query,
+)
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.score import score_from_distance
@@ -30,19 +34,19 @@ async def search_segments(
     }
     scoped_slugs: set[str] | None = None
     if paths:
-        scoped_slugs = set((await target_entries(CHROMA_TREE, accessor, paths,
-                                                 index)).keys())
+        scoped_slugs = set(
+            (await target_entries(CHROMA_TREE, accessor, paths, index)).keys()
+        )
         if not scoped_slugs:
             return b""
         kwargs["where"] = {
-            accessor.config.slug_field: {
-                "$in": sorted(scoped_slugs)
-            }
+            accessor.config.slug_field: {"$in": sorted(scoped_slugs)}
         }
     collection = await accessor.get_collection()
     response = await collection.query(**kwargs)
-    return query_result_to_bytes(response, accessor.config.slug_field,
-                                 mount_prefix, scoped_slugs)
+    return query_result_to_bytes(
+        response, accessor.config.slug_field, mount_prefix, scoped_slugs
+    )
 
 
 def query_result_to_bytes(
@@ -65,8 +69,9 @@ def query_result_to_bytes(
         slug_value = str(slug).strip("/")
         if scoped_slugs is not None and slug_value not in scoped_slugs:
             continue
-        score = score_from_distance(distances[index] if index <
-                                    len(distances) else None)
+        score = score_from_distance(
+            distances[index] if index < len(distances) else None
+        )
         path = "/" + slug_value
         prefix = mount_prefix.rstrip("/")
         if prefix:
@@ -86,23 +91,31 @@ def first_result_list(value: Any) -> list[Any]:
     return value
 
 
-async def search_many(accessor: ChromaAccessor,
-                      paths: list[PathSpec],
-                      query: SearchQuery,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
-    validate_options(query, {'top_k'})
+async def search_many(
+    accessor: ChromaAccessor,
+    paths: list[PathSpec],
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
+    validate_options(query, {"top_k"})
     top_k = int_option(query, "top_k", 10)
     targets, prefix = await search_scope(CHROMA_TREE, accessor, paths, index)
-    return hit_lines(await search_segments(accessor,
-                                           query.query,
-                                           targets,
-                                           index,
-                                           top_k=top_k,
-                                           mount_prefix=prefix))
+    return hit_lines(
+        await search_segments(
+            accessor,
+            query.query,
+            targets,
+            index,
+            top_k=top_k,
+            mount_prefix=prefix,
+        )
+    )
 
 
-async def search_resource(accessor: ChromaAccessor,
-                          path: PathSpec,
-                          query: SearchQuery,
-                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def search_resource(
+    accessor: ChromaAccessor,
+    path: PathSpec,
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     return await search_many(accessor, [path], query, index)

@@ -46,12 +46,14 @@ async def append_text(
     if tab_id:
         location["tabId"] = tab_id
     payload = {
-        "requests": [{
-            "insertText": {
-                "text": text,
-                "endOfSegmentLocation": location,
+        "requests": [
+            {
+                "insertText": {
+                    "text": text,
+                    "endOfSegmentLocation": location,
+                }
             }
-        }]
+        ]
     }
     url = f"{docs_base(token_manager)}/documents/{doc_id}:batchUpdate"
     return await google_post(token_manager, url, payload)

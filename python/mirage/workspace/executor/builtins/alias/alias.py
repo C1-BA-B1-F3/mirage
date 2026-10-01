@@ -16,10 +16,12 @@ from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.shell.constants import SHOPT_DEFAULTS
 from mirage.utils.quote import single_quote
-from mirage.workspace.executor.builtins.alias.constants import (ALIAS_USAGE,
-                                                                BAD_NAME_CHARS,
-                                                                FIRST_WORD,
-                                                                UNALIAS_USAGE)
+from mirage.workspace.executor.builtins.alias.constants import (
+    ALIAS_USAGE,
+    BAD_NAME_CHARS,
+    FIRST_WORD,
+    UNALIAS_USAGE,
+)
 from mirage.workspace.executor.builtins.alias.types import AliasMark
 from mirage.workspace.executor.builtins.getopt import scan_options
 from mirage.workspace.executor.builtins.shared import fail
@@ -53,13 +55,17 @@ async def handle_alias(
     if scan.bad is not None:
         return fail(
             "alias",
-            f"bash: alias: {scan.bad}: invalid option\n{ALIAS_USAGE}\n", 2)
+            f"bash: alias: {scan.bad}: invalid option\n{ALIAS_USAGE}\n",
+            2,
+        )
     operands = scan.operands
     lines: list[str] = []
     errors: list[str] = []
     if not operands or "p" in scan.letters:
-        lines.extend(f"alias {name}={single_quote(session.aliases[name])}"
-                     for name in sorted(session.aliases))
+        lines.extend(
+            f"alias {name}={single_quote(session.aliases[name])}"
+            for name in sorted(session.aliases)
+        )
     for word in operands:
         name, eq, value = word.partition("=")
         if eq:
@@ -84,10 +90,11 @@ async def handle_alias(
     out = ("\n".join(lines) + "\n").encode() if lines else None
     err = ("\n".join(errors) + "\n").encode() if errors else None
     code = 1 if errors else 0
-    return out, IOResult(exit_code=code,
-                         stderr=err), ExecutionNode(command="alias",
-                                                    exit_code=code,
-                                                    stderr=err or b"")
+    return (
+        out,
+        IOResult(exit_code=code, stderr=err),
+        ExecutionNode(command="alias", exit_code=code, stderr=err or b""),
+    )
 
 
 async def handle_unalias(
@@ -107,7 +114,9 @@ async def handle_unalias(
     if scan.bad is not None:
         return fail(
             "unalias",
-            f"bash: unalias: {scan.bad}: invalid option\n{UNALIAS_USAGE}\n", 2)
+            f"bash: unalias: {scan.bad}: invalid option\n{UNALIAS_USAGE}\n",
+            2,
+        )
     operands = scan.operands
     if "a" in scan.letters:
         session.aliases.clear()
@@ -124,14 +133,16 @@ async def handle_unalias(
             errors.append(f"bash: unalias: {name}: not found")
     err = ("\n".join(errors) + "\n").encode() if errors else None
     code = 1 if errors else 0
-    return None, IOResult(exit_code=code, stderr=err
-                          or b""), ExecutionNode(command="unalias",
-                                                 exit_code=code,
-                                                 stderr=err or b"")
+    return (
+        None,
+        IOResult(exit_code=code, stderr=err or b""),
+        ExecutionNode(command="unalias", exit_code=code, stderr=err or b""),
+    )
 
 
-def alias_value(session: SessionState, name: str,
-                mark: AliasMark) -> str | None:
+def alias_value(
+    session: SessionState, name: str, mark: AliasMark
+) -> str | None:
     """The alias text a command word expands to, or None.
 
     None when aliases are not being expanded (`shopt -s expand_aliases`
@@ -145,8 +156,9 @@ def alias_value(session: SessionState, name: str,
         name (str): the command word.
         mark (AliasMark): the parse and row of the use.
     """
-    if not session.shopts.get("expand_aliases",
-                              SHOPT_DEFAULTS["expand_aliases"]):
+    if not session.shopts.get(
+        "expand_aliases", SHOPT_DEFAULTS["expand_aliases"]
+    ):
         return None
     value = session.aliases.get(name)
     if value is None or name in session._alias_stack:
@@ -156,8 +168,9 @@ def alias_value(session: SessionState, name: str,
     return value
 
 
-def alias_command_text(session: SessionState, name: str, rest: str,
-                       mark: AliasMark) -> str | None:
+def alias_command_text(
+    session: SessionState, name: str, rest: str, mark: AliasMark
+) -> str | None:
     """The command line an aliased head word rewrites to, or None.
 
     The alias text replaces the word; a value ending in a blank asks for
@@ -187,7 +200,7 @@ def alias_command_text(session: SessionState, name: str, rest: str,
             break
         seen.add(match.group(0))
         out += nxt
-        rest = stripped[match.end():]
+        rest = stripped[match.end() :]
     tail = rest.strip()
     return f"{out} {tail}" if tail else out
 
@@ -199,8 +212,11 @@ async def alias_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation; its row marks where the
             definition was made.
     """
-    return await handle_alias(list(call.argv.args), call.session,
-                              (call.session._parse_current, call.row))
+    return await handle_alias(
+        list(call.argv.args),
+        call.session,
+        (call.session._parse_current, call.row),
+    )
 
 
 async def unalias_builtin(call: BuiltinCall) -> Result:

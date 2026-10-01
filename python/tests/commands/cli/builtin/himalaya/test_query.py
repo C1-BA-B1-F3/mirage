@@ -14,11 +14,14 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.himalaya.query import (QueryError, Sorter,
-                                                        page_slice,
-                                                        parse_query,
-                                                        sort_headers,
-                                                        uid_budget)
+from mirage.commands.cli.builtin.himalaya.query import (
+    QueryError,
+    Sorter,
+    page_slice,
+    parse_query,
+    sort_headers,
+    uid_budget,
+)
 
 
 def criteria(source: str) -> str:
@@ -45,12 +48,14 @@ def test_and_is_implicit_juxtaposition_and_or_is_prefix():
 
 def test_and_binds_tighter_than_or():
     assert criteria("from a and to b or subject c") == (
-        'OR (FROM "a" TO "b") SUBJECT "c"')
+        'OR (FROM "a" TO "b") SUBJECT "c"'
+    )
 
 
 def test_parentheses_regroup():
     assert criteria("from a and (to b or subject c)") == (
-        '(FROM "a" OR TO "b" SUBJECT "c")')
+        '(FROM "a" OR TO "b" SUBJECT "c")'
+    )
 
 
 def test_not_negates_the_next_condition():
@@ -114,7 +119,7 @@ def test_sorters_parse_with_asc_default():
 def test_filter_and_sort_combine():
     query = parse_query("from alice order by date desc")
     assert query.criteria == 'FROM "alice"'
-    assert query.sorters == (Sorter("date", True), )
+    assert query.sorters == (Sorter("date", True),)
 
 
 def test_order_by_without_a_key_is_a_query_error():
@@ -137,17 +142,13 @@ HEADERS = [
         "uid": "1",
         "subject": "b",
         "date": "Mon, 02 Feb 2026 10:00:00 +0000",
-        "from": {
-            "email": "z@x"
-        },
+        "from": {"email": "z@x"},
     },
     {
         "uid": "2",
         "subject": "a",
         "date": "Tue, 03 Feb 2026 10:00:00 +0000",
-        "from": {
-            "email": "a@x"
-        },
+        "from": {"email": "a@x"},
     },
 ]
 
@@ -157,9 +158,9 @@ def test_no_sorters_orders_by_date_descending():
 
 
 def test_first_sorter_is_the_primary_key():
-    ordered = sort_headers(HEADERS, (Sorter("subject", False), ))
+    ordered = sort_headers(HEADERS, (Sorter("subject", False),))
     assert [h["uid"] for h in ordered] == ["2", "1"]
-    ordered = sort_headers(HEADERS, (Sorter("from", True), ))
+    ordered = sort_headers(HEADERS, (Sorter("from", True),))
     assert [h["uid"] for h in ordered] == ["1", "2"]
 
 
@@ -185,7 +186,7 @@ def test_the_account_window_caps_deep_paging():
 
 
 def test_an_explicit_sort_has_to_consider_the_whole_window():
-    assert uid_budget(1, 25, (Sorter("subject", False), ), 200) == 200
+    assert uid_budget(1, 25, (Sorter("subject", False),), 200) == 200
 
 
 def test_page_zero_still_costs_one_page():

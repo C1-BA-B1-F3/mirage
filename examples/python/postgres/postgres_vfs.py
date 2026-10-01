@@ -44,9 +44,11 @@ async def main():
             db_json = json.loads(f.read())
         print(f"  database: {db_json['database']}")
         print(f"  schemas: {db_json['schemas']}")
-        print(f"  tables: {len(db_json['tables'])} | "
-              f"views: {len(db_json['views'])} | "
-              f"relationships: {len(db_json['relationships'])}")
+        print(
+            f"  tables: {len(db_json['tables'])} | "
+            f"views: {len(db_json['views'])} | "
+            f"relationships: {len(db_json['relationships'])}"
+        )
 
         if "public" not in db_json["schemas"]:
             print("\nno public schema")
@@ -79,8 +81,10 @@ async def main():
         with open(sch_path) as f:
             sch = json.loads(f.read())
         print(f"  name={sch['name']} kind={sch['kind']}")
-        print(f"  columns: {[c['name'] for c in sch['columns'][:6]]}" +
-              (" ..." if len(sch["columns"]) > 6 else ""))
+        print(
+            f"  columns: {[c['name'] for c in sch['columns'][:6]]}"
+            + (" ..." if len(sch["columns"]) > 6 else "")
+        )
         print(f"  primary_key: {sch['primary_key']}")
         print(f"  foreign_keys: {len(sch['foreign_keys'])}")
         print(f"  row_count_estimate: {sch['row_count_estimate']}")

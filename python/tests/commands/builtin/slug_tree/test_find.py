@@ -6,8 +6,12 @@ from mirage.cache.index import RAMIndexCacheStore
 from mirage.commands.builtin.chroma import COMMANDS as CHROMA_COMMANDS
 from mirage.commands.builtin.dify import COMMANDS
 from mirage.commands.builtin.find_parse import parse_find_expression
-from mirage.commands.builtin.slug_tree.find import (_default_name, _expr_texts,
-                                                    reads_sizes, reads_times)
+from mirage.commands.builtin.slug_tree.find import (
+    _default_name,
+    _expr_texts,
+    reads_sizes,
+    reads_times,
+)
 from mirage.commands.config import CommandOpts
 from mirage.context import reset_current_session, set_current_session
 from mirage.core.dify import tree
@@ -18,10 +22,14 @@ from mirage.workspace.session import SessionState
 from tests.commands.builtin.dify.conftest import document
 from tests.core.chroma.conftest import accessor_for, seeded_collection
 
-find = next(cmd for cmd in COMMANDS
-            if cmd._registered_commands[0].name == "find")
-chroma_find = next(cmd for cmd in CHROMA_COMMANDS
-                   if cmd._registered_commands[0].name == "find")
+find = next(
+    cmd for cmd in COMMANDS if cmd._registered_commands[0].name == "find"
+)
+chroma_find = next(
+    cmd
+    for cmd in CHROMA_COMMANDS
+    if cmd._registered_commands[0].name == "find"
+)
 
 
 def spec(virtual: str) -> PathSpec:
@@ -41,12 +49,15 @@ def documents(monkeypatch):
     monkeypatch.setattr(tree, "list_all_documents", list_documents)
 
 
-async def run(paths: list[PathSpec], texts: list[str],
-              **opts) -> tuple[bytes, IOResult]:
-    accessor = SimpleNamespace(config=SimpleNamespace(
-        slug_metadata_name="slug"))
-    stdout, io = await find(accessor, paths, texts,
-                            CommandOpts(index=RAMIndexCacheStore(), **opts))
+async def run(
+    paths: list[PathSpec], texts: list[str], **opts
+) -> tuple[bytes, IOResult]:
+    accessor = SimpleNamespace(
+        config=SimpleNamespace(slug_metadata_name="slug")
+    )
+    stdout, io = await find(
+        accessor, paths, texts, CommandOpts(index=RAMIndexCacheStore(), **opts)
+    )
     return await materialize(stdout), io
 
 
@@ -62,8 +73,9 @@ async def test_a_bare_word_is_the_name_filter():
 async def test_find_handles_file_missing_and_maxdepth():
     guide = spec("/knowledge/guides/quickstart.md")
     assert (await run([guide], []))[0] == b"/knowledge/guides/quickstart.md\n"
-    assert (await run([spec("/knowledge")], [],
-                      flags={"maxdepth": "0"}))[0] == b"/knowledge\n"
+    assert (await run([spec("/knowledge")], [], flags={"maxdepth": "0"}))[
+        0
+    ] == b"/knowledge\n"
 
     stdout, io = await run([spec("/knowledge/missing.md")], [])
     assert stdout == b""
@@ -74,9 +86,11 @@ async def test_find_handles_file_missing_and_maxdepth():
 
 @pytest.mark.asyncio
 async def test_find_uses_cwd_when_path_missing():
-    guides = PathSpec(vfs_path=mount_key("/knowledge/guides", "/knowledge"),
-                      virtual="/knowledge/guides",
-                      directory="/knowledge/guides")
+    guides = PathSpec(
+        vfs_path=mount_key("/knowledge/guides", "/knowledge"),
+        virtual="/knowledge/guides",
+        directory="/knowledge/guides",
+    )
 
     stdout, _ = await run([], ["quick*.md"], cwd=guides)
 
@@ -85,48 +99,56 @@ async def test_find_uses_cwd_when_path_missing():
 
 @pytest.mark.asyncio
 async def test_find_resolves_glob_patterns():
-    path = PathSpec(vfs_path=mount_key("/knowledge/guides/*.md", "/knowledge"),
-                    virtual="/knowledge/guides/*.md",
-                    directory="/knowledge/guides",
-                    pattern="*.md",
-                    resolved=False)
+    path = PathSpec(
+        vfs_path=mount_key("/knowledge/guides/*.md", "/knowledge"),
+        virtual="/knowledge/guides/*.md",
+        directory="/knowledge/guides",
+        pattern="*.md",
+        resolved=False,
+    )
 
     assert (await run([path], []))[0] == b"/knowledge/guides/quickstart.md\n"
 
 
-@pytest.mark.parametrize("texts", [
-    ["!", "-name", "x"],
-    ["(", "-name", "a", "-o", "-name", "b", ")"],
-    ["-name", "x"],
-    ["-not", "-name", "x"],
-])
+@pytest.mark.parametrize(
+    "texts",
+    [
+        ["!", "-name", "x"],
+        ["(", "-name", "a", "-o", "-name", "b", ")"],
+        ["-name", "x"],
+        ["-not", "-name", "x"],
+    ],
+)
 def test_expr_texts_preserves_expression(texts):
     assert _expr_texts(texts) == texts
 
 
 def test_expr_texts_strips_bare_leading_name():
-    assert _expr_texts(['foo']) == []
+    assert _expr_texts(["foo"]) == []
     assert _expr_texts([]) == []
 
 
 def test_default_name_only_for_bare_word():
-    assert _default_name(None, ['foo']) == "foo"
-    assert _default_name(None, ['!', '-name', 'x']) is None
-    assert _default_name(None, ['(', '-name', 'a']) is None
-    assert _default_name('given', ['foo']) == "given"
+    assert _default_name(None, ["foo"]) == "foo"
+    assert _default_name(None, ["!", "-name", "x"]) is None
+    assert _default_name(None, ["(", "-name", "a"]) is None
+    assert _default_name("given", ["foo"]) == "given"
 
 
-@pytest.mark.parametrize("texts, times, sizes", [
-    (["-name", "*.md"], False, False),
-    (["-name", "-size"], False, False),
-    (["-mtime", "-1"], True, False),
-    (["-mtime", "+0", "-o", "-mtime", "-1"], True, False),
-    (["-newer", "/knowledge/README.md"], True, False),
-    (["-newermt", "2024-01-01"], True, False),
-    (["-size", "+1k"], False, True),
-    (["!", "-empty"], False, True),
-    (["-printf", "%TY %s\n"], False, False),
-])
+@pytest.mark.parametrize(
+    "texts, times, sizes",
+    [
+        (["-name", "*.md"], False, False),
+        (["-name", "-size"], False, False),
+        (["-mtime", "-1"], True, False),
+        (["-mtime", "+0", "-o", "-mtime", "-1"], True, False),
+        (["-newer", "/knowledge/README.md"], True, False),
+        (["-newermt", "2024-01-01"], True, False),
+        (["-size", "+1k"], False, True),
+        (["!", "-empty"], False, True),
+        (["-printf", "%TY %s\n"], False, False),
+    ],
+)
 def test_which_fields_an_expression_tests(texts, times, sizes):
     expr = parse_find_expression(texts)
     assert (reads_times(expr), reads_sizes(expr)) == (times, sizes)
@@ -140,24 +162,32 @@ _REFERENCE = "/knowledge/api/reference"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("hidden, texts, flags, rows, scans", [
-    (_QUICKSTART, _SIZED, {}, [_REFERENCE], True),
-    (None, _SIZED, {}, [_REFERENCE, _QUICKSTART], True),
-    (_QUICKSTART, [], _SIZED_FLAGS, [_REFERENCE], True),
-    (_REFERENCE, _NEWER, {}, [_QUICKSTART], False),
-    (None, _NEWER, {}, [_QUICKSTART], False),
-])
+@pytest.mark.parametrize(
+    "hidden, texts, flags, rows, scans",
+    [
+        (_QUICKSTART, _SIZED, {}, [_REFERENCE], True),
+        (None, _SIZED, {}, [_REFERENCE, _QUICKSTART], True),
+        (_QUICKSTART, [], _SIZED_FLAGS, [_REFERENCE], True),
+        (_REFERENCE, _NEWER, {}, [_QUICKSTART], False),
+        (None, _NEWER, {}, [_QUICKSTART], False),
+    ],
+)
 async def test_chroma_scans_chunks_only_for_a_size_test(
-        hidden, texts, flags, rows, scans):
+    hidden, texts, flags, rows, scans
+):
     collection = seeded_collection()
     session = SessionState(
         session_id="veiled",
-        hidden_paths=HiddenPaths(paths=(hidden, ) if hidden else ()))
+        hidden_paths=HiddenPaths(paths=(hidden,) if hidden else ()),
+    )
     token = set_current_session(session)
     try:
         stdout, io = await chroma_find(
-            accessor_for(collection), [spec("/knowledge")], texts,
-            CommandOpts(index=RAMIndexCacheStore(), flags=flags))
+            accessor_for(collection),
+            [spec("/knowledge")],
+            texts,
+            CommandOpts(index=RAMIndexCacheStore(), flags=flags),
+        )
         stdout = await materialize(stdout)
     finally:
         reset_current_session(token)
@@ -171,7 +201,8 @@ async def test_chroma_scans_chunks_only_for_a_size_test(
 async def test_a_hidden_child_leaves_its_directory_empty():
     session = SessionState(
         session_id="veiled",
-        hidden_paths=HiddenPaths(paths=("/knowledge/guides/deep/note.md", )))
+        hidden_paths=HiddenPaths(paths=("/knowledge/guides/deep/note.md",)),
+    )
     token = set_current_session(session)
     try:
         stdout, io = await run([spec("/knowledge/guides")], ["-empty"])

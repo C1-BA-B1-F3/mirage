@@ -26,15 +26,13 @@ class WatchDelegate(Protocol):
     ``mirage.watch.Watcher`` satisfies this structurally.
     """
 
-    def watch(self,
-              path: PathSpec | Sequence[PathSpec]) -> AsyncIterator[FileEvent]:
-        ...
+    def watch(
+        self, path: PathSpec | Sequence[PathSpec]
+    ) -> AsyncIterator[FileEvent]: ...
 
-    async def notify(self, change: FileEvent) -> None:
-        ...
+    async def notify(self, change: FileEvent) -> None: ...
 
-    async def close(self) -> None:
-        ...
+    async def close(self) -> None: ...
 
 
 class WatchManager:
@@ -69,7 +67,8 @@ class WatchManager:
         if self._runtime is not None:
             raise RuntimeError(
                 "watch runtime already attached: detach_watch_runtime "
-                "first, or attach before the first watch()/notify()")
+                "first, or attach before the first watch()/notify()"
+            )
         self._runtime = runtime
 
     async def detach(self) -> None:

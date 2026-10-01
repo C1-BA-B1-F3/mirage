@@ -20,7 +20,9 @@ from mirage.shell.options import parse_option_word
 from mirage.utils.quote import single_quote
 from mirage.workspace.executor.builtins.constants import SET_QUOTED_CHARS
 from mirage.workspace.executor.builtins.declare.declare import (
-    bash_declare_quote, is_control)
+    bash_declare_quote,
+    is_control,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import set_positional_params, visible_env
@@ -43,7 +45,7 @@ async def handle_set(
     while i < len(args):
         tok = args[i]
         if tok == "--":
-            set_positional_params(session, call_stack, args[i + 1:])
+            set_positional_params(session, call_stack, args[i + 1 :])
             return None, IOResult(), ExecutionNode(command="set", exit_code=0)
         # `-o` and `+o` with nothing after them print the option table
         # instead of setting anything, in two different spellings: `-o`
@@ -53,8 +55,9 @@ async def handle_set(
         if tok in ("-o", "+o") and i + 1 >= len(args):
             out = _option_listing(session, plus=tok == "+o")
             return out, IOResult(), ExecutionNode(command="set", exit_code=0)
-        word = parse_option_word(tok,
-                                 args[i + 1] if i + 1 < len(args) else None)
+        word = parse_option_word(
+            tok, args[i + 1] if i + 1 < len(args) else None
+        )
         if word is None:
             set_positional_params(session, call_stack, args[i:])
             break
@@ -66,10 +69,11 @@ async def handle_set(
             # has yet to wire, as `physical` once was -- reads as success.
             if option not in SET_OPTION_NAMES:
                 err = f"set: {option}: invalid option name\n".encode()
-                return None, IOResult(exit_code=2,
-                                      stderr=err), ExecutionNode(command="set",
-                                                                 exit_code=2,
-                                                                 stderr=err)
+                return (
+                    None,
+                    IOResult(exit_code=2, stderr=err),
+                    ExecutionNode(command="set", exit_code=2, stderr=err),
+                )
             session.shell_options[option] = enable
         # A letter naming no option is ignored rather than refused: bash
         # has options mirage does not implement (`-a`, `-B`, `-H`), and
@@ -93,10 +97,15 @@ def _listed_value(value: str) -> str:
     """
     if any(is_control(ch) for ch in value):
         return bash_declare_quote(value)
-    tilde = any(ch == "~" and (i == 0 or value[i - 1] in "=:")
-                for i, ch in enumerate(value))
-    if tilde or value.startswith("#") or any(ch in SET_QUOTED_CHARS
-                                             for ch in value):
+    tilde = any(
+        ch == "~" and (i == 0 or value[i - 1] in "=:")
+        for i, ch in enumerate(value)
+    )
+    if (
+        tilde
+        or value.startswith("#")
+        or any(ch in SET_QUOTED_CHARS for ch in value)
+    ):
         return single_quote(value)
     return value
 
@@ -131,6 +140,6 @@ async def set_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_set(list(call.argv.args),
-                            call.session,
-                            call_stack=call.call_stack)
+    return await handle_set(
+        list(call.argv.args), call.session, call_stack=call.call_stack
+    )

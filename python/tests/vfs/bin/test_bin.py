@@ -29,8 +29,17 @@ def test_view_registers_reads_and_refuses_every_write_op():
     assert {"cat", "ls", "stat", "gzip", "rm", "cp"} <= names
     ops = {op.name: op for op in vfs.ops()}
     assert {"read", "readdir", "stat"} <= set(ops)
-    for name in ("write", "append", "create", "mkdir", "unlink", "rmdir",
-                 "rename", "truncate", "setattr"):
+    for name in (
+        "write",
+        "append",
+        "create",
+        "mkdir",
+        "unlink",
+        "rmdir",
+        "rename",
+        "truncate",
+        "setattr",
+    ):
         assert ops[name].write and ops[name].fn is refuse
 
 
@@ -41,10 +50,12 @@ async def test_a_write_into_the_view_is_refused_as_read_only():
     assert io.exit_code == 1
     assert await io.stderr_str() == "/usr/bin/ls: Read-only file system\n"
     io = await ws.shell("chmod 644 /usr/bin/ls; stat -c %a /usr/bin/ls")
-    assert await io.stderr_str() == ("chmod: changing permissions of "
-                                     "'/usr/bin/ls': Read-only file system\n")
+    assert await io.stderr_str() == (
+        "chmod: changing permissions of '/usr/bin/ls': Read-only file system\n"
+    )
     assert await io.stdout_str() == "755\n"
     io = await ws.shell("rm /usr/bin/ls; gzip -c /usr/bin/ls | gunzip | wc -l")
-    assert await io.stderr_str() == ("rm: cannot remove '/usr/bin/ls': "
-                                     "Read-only file system\n")
+    assert await io.stderr_str() == (
+        "rm: cannot remove '/usr/bin/ls': Read-only file system\n"
+    )
     assert await io.stdout_str() != "0\n"

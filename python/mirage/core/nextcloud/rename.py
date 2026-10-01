@@ -6,8 +6,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def rename(accessor: NextcloudAccessor, src: PathSpec,
-                 dst: PathSpec) -> None:
+async def rename(
+    accessor: NextcloudAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     src_key = src.mount_path.lstrip("/")
     dst_key = dst.mount_path.lstrip("/")
     op = accessor.operator()

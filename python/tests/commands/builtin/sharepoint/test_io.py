@@ -8,32 +8,14 @@ from mirage.types import PathSpec
 
 _API = "https://graph.microsoft.com/v1.0"
 _GRAPH = {
-    f"{_API}/sites": {
-        "value": [{
-            "id": "site-id",
-            "displayName": "Team"
-        }]
-    },
+    f"{_API}/sites": {"value": [{"id": "site-id", "displayName": "Team"}]},
     f"{_API}/sites/site-id/drives": {
-        "value": [{
-            "id": "drive-id",
-            "name": "Documents"
-        }]
+        "value": [{"id": "drive-id", "name": "Documents"}]
     },
     f"{_API}/drives/drive-id/root/children": {
         "value": [
-            {
-                "id": "1",
-                "name": "a.txt",
-                "size": 3,
-                "file": {}
-            },
-            {
-                "id": "2",
-                "name": "b.txt",
-                "size": 4,
-                "file": {}
-            },
+            {"id": "1", "name": "a.txt", "size": 3, "file": {}},
+            {"id": "2", "name": "b.txt", "size": 4, "file": {}},
         ]
     },
 }

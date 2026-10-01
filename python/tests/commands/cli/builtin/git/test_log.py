@@ -91,8 +91,9 @@ async def test_a_revision_operand_starts_the_walk_there(git_ws):
 
 @pytest.mark.asyncio
 async def test_pickaxe_finds_the_commit_that_introduced_a_string(git_ws):
-    result = await git_ws.shell("git -C /repo log -S changed "
-                                "--oneline --reverse")
+    result = await git_ws.shell(
+        "git -C /repo log -S changed --oneline --reverse"
+    )
     assert subjects_of(result.stdout) == ["third"]
 
 
@@ -123,8 +124,9 @@ async def test_a_window_that_excludes_everything_prints_nothing(git_ws):
     assert result.stdout == b""
 
 
-def _branch_with_commit(repo_path, name: str, filename: str,
-                        subject: str) -> None:
+def _branch_with_commit(
+    repo_path, name: str, filename: str, subject: str
+) -> None:
     """A commit on a new branch, leaving HEAD back on main.
 
     Args:
@@ -152,9 +154,11 @@ async def test_all_includes_commits_from_other_branches(git_ws, repo_path):
 @pytest.mark.asyncio
 async def test_format_placeholders_render_the_commit_fields(git_ws):
     result = await git_ws.shell(
-        "git -C /repo log -n 1 --format='%H|%h|%an|%ae|%s'")
+        "git -C /repo log -n 1 --format='%H|%h|%an|%ae|%s'"
+    )
     full, abbrev, name, email, subject = (
-        result.stdout.decode().rstrip("\n").split("|"))
+        result.stdout.decode().rstrip("\n").split("|")
+    )
     assert len(full) == 40
     assert full.startswith(abbrev) and len(abbrev) == 7
     assert name == "Test Author"

@@ -30,5 +30,6 @@ class ManEntry:
         name (str): the word as the manual lists it.
         spec (CommandSpec): the spec the page renders from.
     """
+
     name: str
     spec: CommandSpec

@@ -33,15 +33,13 @@ from mirage.vfs.ram import RAMVFS
 JS_POLICY = ScriptSource(
     "ctx.commands.some((c) => c.paths.some((p) => p.startsWith('/prod/')))"
     " ? {deny: 'writes under /prod are blocked'}"
-    " : null")
+    " : null"
+)
 
 
 async def main() -> None:
     ws = Workspace(
-        {
-            "/data": RAMVFS(),
-            "/prod": RAMVFS()
-        },
+        {"/data": RAMVFS(), "/prod": RAMVFS()},
         mode=MountMode.EXEC,
         runtimes=["quickjs", "workspace"],
         route_policy=JS_POLICY,
@@ -52,8 +50,11 @@ async def main() -> None:
         served = await ws.shell('node -e "console.log(6 * 7)"')
         print("node -e ->", (await served.stdout_str()).strip())
         denied = await ws.shell("cat /prod/secret.txt")
-        print("touch /prod ->", denied.exit_code,
-              (await denied.stderr_str()).strip())
+        print(
+            "touch /prod ->",
+            denied.exit_code,
+            (await denied.stderr_str()).strip(),
+        )
     finally:
         await ws.close()
 

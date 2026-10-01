@@ -44,17 +44,22 @@ def s3_config() -> S3Config:
 def main():
     wasmer = shutil.which("wasmer")
     if wasmer is None:
-        print("wasmer CLI not found on PATH; install from https://wasmer.io",
-              file=sys.stderr)
+        print(
+            "wasmer CLI not found on PATH; install from https://wasmer.io",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print("=== Mirage FUSE-mounting S3 on the host ===")
-    with Workspace({
-            "/s3/":
-            Mount(S3VFS(s3_config()),
-                  mode=MountMode.READ,
-                  backend=MountBackend.FUSE)
-    }) as ws:
+    with Workspace(
+        {
+            "/s3/": Mount(
+                S3VFS(s3_config()),
+                mode=MountMode.READ,
+                backend=MountBackend.FUSE,
+            )
+        }
+    ) as ws:
         host_s3 = ws.fuse_mountpoint
         print(f"  host mountpoint: {host_s3}")
 

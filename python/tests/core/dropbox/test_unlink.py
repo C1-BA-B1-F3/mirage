@@ -30,28 +30,28 @@ def make_accessor() -> DropboxAccessor:
 
 @pytest.mark.asyncio
 async def test_unlink_deletes_file():
-    with patch("mirage.core.dropbox.unlink.get_metadata",
-               new_callable=AsyncMock,
-               return_value={
-                   ".tag": "file",
-                   "name": "a.txt"
-               }):
-        with patch("mirage.core.dropbox.unlink.delete_path",
-                   new_callable=AsyncMock) as deleted:
+    with patch(
+        "mirage.core.dropbox.unlink.get_metadata",
+        new_callable=AsyncMock,
+        return_value={".tag": "file", "name": "a.txt"},
+    ):
+        with patch(
+            "mirage.core.dropbox.unlink.delete_path", new_callable=AsyncMock
+        ) as deleted:
             await unlink(make_accessor(), PathSpec.from_str_path("/a.txt"))
     assert deleted.await_args.args[1] == "/a.txt"
 
 
 @pytest.mark.asyncio
 async def test_unlink_folder_raises_eisdir():
-    with patch("mirage.core.dropbox.unlink.get_metadata",
-               new_callable=AsyncMock,
-               return_value={
-                   ".tag": "folder",
-                   "name": "docs"
-               }):
-        with patch("mirage.core.dropbox.unlink.delete_path",
-                   new_callable=AsyncMock) as deleted:
+    with patch(
+        "mirage.core.dropbox.unlink.get_metadata",
+        new_callable=AsyncMock,
+        return_value={".tag": "folder", "name": "docs"},
+    ):
+        with patch(
+            "mirage.core.dropbox.unlink.delete_path", new_callable=AsyncMock
+        ) as deleted:
             with pytest.raises(IsADirectoryError):
                 await unlink(make_accessor(), PathSpec.from_str_path("/docs"))
     deleted.assert_not_awaited()
@@ -59,8 +59,10 @@ async def test_unlink_folder_raises_eisdir():
 
 @pytest.mark.asyncio
 async def test_unlink_missing_raises_enoent():
-    with patch("mirage.core.dropbox.unlink.get_metadata",
-               new_callable=AsyncMock,
-               side_effect=DropboxApiError("nf", 409, "path/not_found/...")):
+    with patch(
+        "mirage.core.dropbox.unlink.get_metadata",
+        new_callable=AsyncMock,
+        side_effect=DropboxApiError("nf", 409, "path/not_found/..."),
+    ):
         with pytest.raises(FileNotFoundError):
             await unlink(make_accessor(), PathSpec.from_str_path("/ghost"))

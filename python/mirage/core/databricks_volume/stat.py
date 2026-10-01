@@ -57,14 +57,16 @@ async def _directory_stat_or_raise(
     path: PathSpec,
 ) -> FileStat:
     try:
-        await asyncio.to_thread(accessor.files.get_directory_metadata,
-                                remote_path)
+        await asyncio.to_thread(
+            accessor.files.get_directory_metadata, remote_path
+        )
     except Exception as exc:
         if is_not_found(exc):
             raise enoent(path) from exc
         raise
-    return FileStat(name=_name_from_backend_path(remote_path),
-                    type=FileType.DIRECTORY)
+    return FileStat(
+        name=_name_from_backend_path(remote_path), type=FileType.DIRECTORY
+    )
 
 
 async def stat(
@@ -76,26 +78,30 @@ async def stat(
     if not stripped:
         return FileStat(name="/", type=FileType.DIRECTORY)
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    virtual_key = (prefix.rstrip("/") + "/" + stripped if prefix else "/" +
-                   stripped)
+    virtual_key = (
+        prefix.rstrip("/") + "/" + stripped if prefix else "/" + stripped
+    )
     lookup = await index.get(virtual_key)
     if lookup.entry is not None:
         entry = lookup.entry
         if entry.resource_type == "folder":
             return FileStat(name=entry.name, type=FileType.DIRECTORY)
-        return FileStat(name=entry.name,
-                        size=entry.size,
-                        modified=entry.remote_time or None,
-                        type=FileType.FILE,
-                        content=content_type_for_path(entry.name))
+        return FileStat(
+            name=entry.name,
+            size=entry.size,
+            modified=entry.remote_time or None,
+            type=FileType.FILE,
+            content=content_type_for_path(entry.name),
+        )
     parent = virtual_key.rsplit("/", 1)[0] or "/"
     parent_listing = await index.list_dir(parent)
     if parent_listing.entries is not None:
         raise enoent(path)
     remote_path = backend_path(accessor.config, path)
     try:
-        metadata = await asyncio.to_thread(accessor.files.get_metadata,
-                                           remote_path)
+        metadata = await asyncio.to_thread(
+            accessor.files.get_metadata, remote_path
+        )
     except Exception as exc:
         if is_not_found(exc):
             return await _directory_stat_or_raise(accessor, remote_path, path)
@@ -105,8 +111,10 @@ async def stat(
         return FileStat(name=name, type=FileType.DIRECTORY)
     size = getattr(metadata, "content_length", None)
     modified = modified_to_iso(getattr(metadata, "last_modified", None))
-    return FileStat(name=name,
-                    size=size,
-                    modified=modified,
-                    type=FileType.FILE,
-                    content=content_type_for_path(name))
+    return FileStat(
+        name=name,
+        size=size,
+        modified=modified,
+        type=FileType.FILE,
+        content=content_type_for_path(name),
+    )

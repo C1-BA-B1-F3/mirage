@@ -29,9 +29,9 @@ CHANNEL = f"{GUILD_DIR}/channels/general__C001"
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_readdir_root(api, accessor, index):
@@ -39,8 +39,9 @@ async def test_readdir_root(api, accessor, index):
     assert result == [f"/{GUILD_DIR}"]
 
 
-async def test_readdir_root_with_slash_in_name(api, accessor, index,
-                                               monkeypatch):
+async def test_readdir_root_with_slash_in_name(
+    api, accessor, index, monkeypatch
+):
 
     async def guilds(config, session=None):
         return [{"id": "G001", "name": "A/B Test Server"}]
@@ -112,7 +113,8 @@ async def test_readdir_leaf_raises_enotdir(api, accessor, index):
 
 
 async def test_readdir_files_skips_tombstoned_attachments(
-        api, accessor, index):
+    api, accessor, index
+):
     # Tombstoned and access-restricted attachments carry an id but no
     # download URL and no byte size; listing them would surface phantom
     # files that ENOENT on read.

@@ -17,12 +17,19 @@ import pytest
 from mirage import MountMode, Workspace
 from mirage.cache.index import RAMIndexCacheStore
 from mirage.types import PathSpec
-from tests.core.databricks_volume.conftest import (accessor, databricks_config,
-                                                   files, index, remote_root)
-from tests.vfs.databricks_volume.test_databricks_volume import (FakeFiles,
-                                                                make_vfs,
-                                                                seed_directory,
-                                                                seed_file)
+from tests.core.databricks_volume.conftest import (
+    accessor,
+    databricks_config,
+    files,
+    index,
+    remote_root,
+)
+from tests.vfs.databricks_volume.test_databricks_volume import (
+    FakeFiles,
+    make_vfs,
+    seed_directory,
+    seed_file,
+)
 
 __all__ = [
     "accessor",
@@ -58,16 +65,12 @@ async def materialize(source) -> bytes:
 
 
 class IndexTrackingReader:
-
     def __init__(self) -> None:
         self.seen_indexes: list[RAMIndexCacheStore | None] = []
 
-    async def read_bytes(self,
-                         accessor,
-                         path,
-                         index=None,
-                         *args,
-                         **kwargs) -> bytes:
+    async def read_bytes(
+        self, accessor, path, index=None, *args, **kwargs
+    ) -> bytes:
         self.seen_indexes.append(index)
         original = path.virtual if isinstance(path, PathSpec) else path
         if str(original).endswith(".json"):
@@ -92,8 +95,9 @@ def databricks_text_files() -> FakeFiles:
 def databricks_text_workspace(databricks_text_files: FakeFiles) -> Workspace:
     # WRITE, because sed -i writes back through the command-tier write
     # slot, which now answers the mount mode like every other write.
-    return Workspace({"/dbx/": make_vfs(databricks_text_files)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/dbx/": make_vfs(databricks_text_files)}, mode=MountMode.WRITE
+    )
 
 
 @pytest.fixture

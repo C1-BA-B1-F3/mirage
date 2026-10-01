@@ -20,8 +20,9 @@ from mirage.commands.cli.builtin.gws.gmail.reply import reply
 from mirage.commands.cli.builtin.gws.gmail.reply_all import reply_all
 from mirage.commands.cli.builtin.gws.gmail.send import send
 from mirage.commands.cli.builtin.gws.gmail.triage import triage
-from mirage.commands.cli.builtin.gws.sheets.append import \
-    append as sheets_append
+from mirage.commands.cli.builtin.gws.sheets.append import (
+    append as sheets_append,
+)
 from mirage.commands.cli.builtin.gws.sheets.read import read as sheets_read
 from mirage.commands.cli.builtin.gws.sheets.write import write as sheets_write
 from mirage.commands.cli.types import CLISpec
@@ -47,14 +48,16 @@ GWS = CLISpec(
         CLISpec(
             name="sheets",
             description="Google sheets API commands",
-            subcommands=api_groups("sheets") + (
+            subcommands=api_groups("sheets")
+            + (
                 CLISpec(
                     name="read",
                     description="Read a cell range",
                     fn=sheets_read,
                     options=(
-                        Option(long="--spreadsheet", type="str",
-                               required=True),
+                        Option(
+                            long="--spreadsheet", type="str", required=True
+                        ),
                         Option(long="--range", type="str", required=True),
                     ),
                 ),
@@ -64,8 +67,9 @@ GWS = CLISpec(
                     fn=sheets_write,
                     write=True,
                     options=(
-                        Option(long="--spreadsheet", type="str",
-                               required=True),
+                        Option(
+                            long="--spreadsheet", type="str", required=True
+                        ),
                         Option(long="--range", type="str", required=True),
                         Option(long="--values", type="str"),
                         Option(long="--json-values", type="str"),
@@ -77,8 +81,9 @@ GWS = CLISpec(
                     fn=sheets_append,
                     write=True,
                     options=(
-                        Option(long="--spreadsheet", type="str",
-                               required=True),
+                        Option(
+                            long="--spreadsheet", type="str", required=True
+                        ),
                         Option(long="--range", type="str"),
                         Option(long="--values", type="str"),
                         Option(long="--json-values", type="str"),
@@ -89,21 +94,28 @@ GWS = CLISpec(
         CLISpec(
             name="docs",
             description="Google docs API commands",
-            subcommands=api_groups("docs") + (CLISpec(
-                name="write",
-                description="Append text to a document",
-                fn=docs_write,
-                write=True,
-                options=(
-                    Option(long="--document", type="str", required=True),
-                    Option(long="--text", type="str", required=True),
-                    Option(long="--tab",
-                           type="str",
-                           description=("Tab to append to, from "
-                                        "tabs[].tabProperties.tabId; "
-                                        "the first tab when omitted")),
+            subcommands=api_groups("docs")
+            + (
+                CLISpec(
+                    name="write",
+                    description="Append text to a document",
+                    fn=docs_write,
+                    write=True,
+                    options=(
+                        Option(long="--document", type="str", required=True),
+                        Option(long="--text", type="str", required=True),
+                        Option(
+                            long="--tab",
+                            type="str",
+                            description=(
+                                "Tab to append to, from "
+                                "tabs[].tabProperties.tabId; "
+                                "the first tab when omitted"
+                            ),
+                        ),
+                    ),
                 ),
-            ), ),
+            ),
         ),
         CLISpec(
             name="slides",
@@ -123,7 +135,8 @@ GWS = CLISpec(
         CLISpec(
             name="gmail",
             description="Google gmail API commands",
-            subcommands=api_groups("gmail") + (
+            subcommands=api_groups("gmail")
+            + (
                 CLISpec(
                     name="send",
                     description="Send a new email via Gmail",
@@ -137,15 +150,18 @@ GWS = CLISpec(
                 ),
                 CLISpec(
                     name="read",
-                    description=("Fetch one Gmail message as processed JSON "
-                                 "(same shape as cat <path>.gmail.json)"),
+                    description=(
+                        "Fetch one Gmail message as processed JSON "
+                        "(same shape as cat <path>.gmail.json)"
+                    ),
                     fn=read,
-                    options=(Option(long="--id", type="str", required=True), ),
+                    options=(Option(long="--id", type="str", required=True),),
                 ),
                 CLISpec(
                     name="reply",
-                    description=("Reply to the sender of a Gmail message "
-                                 "(excludes CC)"),
+                    description=(
+                        "Reply to the sender of a Gmail message (excludes CC)"
+                    ),
                     fn=reply,
                     write=True,
                     options=(
@@ -155,8 +171,10 @@ GWS = CLISpec(
                 ),
                 CLISpec(
                     name="reply-all",
-                    description=("Reply to a Gmail message including all "
-                                 "recipients (To+CC)"),
+                    description=(
+                        "Reply to a Gmail message including all "
+                        "recipients (To+CC)"
+                    ),
                     fn=reply_all,
                     write=True,
                     options=(
@@ -176,17 +194,24 @@ GWS = CLISpec(
                 ),
                 CLISpec(
                     name="triage",
-                    description=("List message summaries (id, from, subject, "
-                                 "date, snippet) for a Gmail search query"),
+                    description=(
+                        "List message summaries (id, from, subject, "
+                        "date, snippet) for a Gmail search query"
+                    ),
                     fn=triage,
                     options=(
-                        Option(long="--query",
-                               type="str",
-                               description=("Gmail search query "
-                                            '(default: "is:unread")')),
-                        Option(long="--max",
-                               type="int",
-                               description="Max results (default: 20)"),
+                        Option(
+                            long="--query",
+                            type="str",
+                            description=(
+                                'Gmail search query (default: "is:unread")'
+                            ),
+                        ),
+                        Option(
+                            long="--max",
+                            type="int",
+                            description="Max results (default: 20)",
+                        ),
                     ),
                 ),
             ),

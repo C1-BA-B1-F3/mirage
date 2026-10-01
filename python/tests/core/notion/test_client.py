@@ -19,9 +19,14 @@ from aioresponses import aioresponses
 from yarl import URL
 
 from mirage.core.api.client import SessionArg, SessionPool
-from mirage.core.notion.client import (NotionAPIError, notion_get,
-                                       notion_headers, notion_post,
-                                       paginate_list, paginate_post)
+from mirage.core.notion.client import (
+    NotionAPIError,
+    notion_get,
+    notion_headers,
+    notion_post,
+    paginate_list,
+    paginate_post,
+)
 from mirage.core.notion.config import NotionConfig
 
 BASE = "https://api.notion.com/v1"
@@ -49,11 +54,7 @@ async def test_paginate_post_stops_at_max_results():
     async def fake_notion_post(config, path, body, session=None):
         calls.append(dict(body))
         return {
-            "results": [{
-                "n": len(calls) * 2 - 1
-            }, {
-                "n": len(calls) * 2
-            }],
+            "results": [{"n": len(calls) * 2 - 1}, {"n": len(calls) * 2}],
             "has_more": True,
             "next_cursor": f"c{len(calls)}",
         }
@@ -83,9 +84,7 @@ async def test_paginate_list_rides_one_session_across_pages():
         seen.append(session)
         more = len(seen) == 1
         return {
-            "results": [{
-                "n": len(seen)
-            }],
+            "results": [{"n": len(seen)}],
             "has_more": more,
             "next_cursor": "c1" if more else None,
         }
@@ -115,13 +114,15 @@ async def test_notion_get_returns_the_body_and_sends_the_headers():
 async def test_notion_get_maps_an_error_body():
     config = NotionConfig(api_key="ntn_test123")
     with aioresponses() as m:
-        m.get(f"{BASE}/pages/p1",
-              status=404,
-              payload={
-                  "object": "error",
-                  "message": "Could not find page",
-                  "code": "object_not_found",
-              })
+        m.get(
+            f"{BASE}/pages/p1",
+            status=404,
+            payload={
+                "object": "error",
+                "message": "Could not find page",
+                "code": "object_not_found",
+            },
+        )
         with pytest.raises(NotionAPIError) as exc:
             await notion_get(config, "/pages/p1")
     assert str(exc.value) == "Could not find page"
@@ -152,54 +153,60 @@ async def test_notion_post_sends_an_empty_object_for_no_body():
 
 @pytest.mark.asyncio
 async def test_truncated_query_is_not_successful_partial_listing():
-    pages = iter([
-        {
-            "results": [{
-                "id": "first"
-            }],
-            "has_more": True,
-            "next_cursor": "next"
-        },
-        {
-            "results": [{
-                "id": "last"
-            }],
-            "has_more": False,
-            "request_status": {
-                "type": "incomplete",
-                "incomplete_reason": "query_result_limit_reached"
-            }
-        },
-    ])
+    pages = iter(
+        [
+            {
+                "results": [{"id": "first"}],
+                "has_more": True,
+                "next_cursor": "next",
+            },
+            {
+                "results": [{"id": "last"}],
+                "has_more": False,
+                "request_status": {
+                    "type": "incomplete",
+                    "incomplete_reason": "query_result_limit_reached",
+                },
+            },
+        ]
+    )
 
     async def post(*args, **kwargs):
         return next(pages)
 
     with patch("mirage.core.notion.client.notion_post", new=post):
         with pytest.raises(NotionAPIError, match="query_result_limit_reached"):
-            await paginate_post(NotionConfig(api_key="key"),
-                                "/data_sources/ds/query")
+            await paginate_post(
+                NotionConfig(api_key="key"), "/data_sources/ds/query"
+            )
 
 
 @pytest.mark.asyncio
 async def test_rate_limit_honors_retry_after_and_stops_after_three_retries():
     from unittest.mock import AsyncMock
+
     sleep = AsyncMock()
     url = BASE + "/pages/p"
-    with aioresponses() as http, patch("mirage.core.api.client.asyncio.sleep",
-                                       sleep):
-        http.get(url,
-                 status=429,
-                 headers={"Retry-After": "2"},
-                 payload={"message": "slow"})
+    with (
+        aioresponses() as http,
+        patch("mirage.core.api.client.asyncio.sleep", sleep),
+    ):
+        http.get(
+            url,
+            status=429,
+            headers={"Retry-After": "2"},
+            payload={"message": "slow"},
+        )
         http.get(url, payload={"id": "p"})
         assert await notion_get(NotionConfig(api_key="key"), "/pages/p") == {
             "id": "p"
         }
         sleep.assert_awaited_once_with(2.0)
     sleep.reset_mock()
-    with aioresponses() as http, patch("mirage.core.api.client.asyncio.sleep",
-                                       sleep):
+    with (
+        aioresponses() as http,
+        patch("mirage.core.api.client.asyncio.sleep", sleep),
+    ):
         http.get(url, status=429, repeat=True, payload={"message": "slow"})
         with pytest.raises(NotionAPIError, match="slow"):
             await notion_get(NotionConfig(api_key="key"), "/pages/p")

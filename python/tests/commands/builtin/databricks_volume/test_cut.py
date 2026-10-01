@@ -17,7 +17,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_cut(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("cut -d , -f 2 /dbx/table.csv")
 
     assert io.exit_code == 0

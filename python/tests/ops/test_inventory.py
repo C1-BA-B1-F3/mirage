@@ -325,8 +325,9 @@ def test_ops_inventory(backend):
     mod = importlib.import_module(f"mirage.ops.{backend}")
     actual = set()
     for fn in mod.OPS:
-        registered = ([fn]
-                      if isinstance(fn, RegisteredOp) else fn._registered_ops)
+        registered = (
+            [fn] if isinstance(fn, RegisteredOp) else fn._registered_ops
+        )
         for ro in registered:
             actual.add((ro.name, ro.vfs, ro.filetype or "", ro.write))
     expected = {row for row in OPS_INVENTORY[backend] if _available(row[2])}

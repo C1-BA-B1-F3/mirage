@@ -32,15 +32,15 @@ def _hub() -> FakeHub:
 
 
 def _vfs(hub: FakeHub):
-    return build_vfs("hf_models", {
-        "repo_id": "acme/widget",
-        "endpoint": hub.url
-    })
+    return build_vfs(
+        "hf_models", {"repo_id": "acme/widget", "endpoint": hub.url}
+    )
 
 
 def _ws(vfs, ttl: int = 600) -> Workspace:
     return Workspace(
-        {"/m": Mount(vfs=vfs, mode=MountMode.READ, read=ReadSpec(ttl=ttl))})
+        {"/m": Mount(vfs=vfs, mode=MountMode.READ, read=ReadSpec(ttl=ttl))}
+    )
 
 
 async def _out(ws: Workspace, line: str, session_id: str | None = None):
@@ -88,8 +88,10 @@ async def test_a_reader_arriving_mid_refill_waits_for_it(monkeypatch):
             assert waited
         finally:
             release.set()
-            await asyncio.gather(*(task for task in (first, second) if task),
-                                 return_exceptions=True)
+            await asyncio.gather(
+                *(task for task in (first, second) if task),
+                return_exceptions=True,
+            )
             await ws.close()
 
 

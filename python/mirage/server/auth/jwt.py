@@ -64,10 +64,12 @@ def verify_jwt(token: str, cfg: JWTConfig) -> dict[str, Any]:
     typ = header.get("typ")
     if typ is not None and typ != "JWT":
         raise JWTVerificationError(
-            f"JWT typ header must be 'JWT' when present, got {typ!r}")
+            f"JWT typ header must be 'JWT' when present, got {typ!r}"
+        )
     if cfg.authorized_parties:
         azp = claims.get("azp")
         if azp not in cfg.authorized_parties:
             raise JWTVerificationError(
-                f"JWT azp {azp!r} not in authorized_parties")
+                f"JWT azp {azp!r} not in authorized_parties"
+            )
     return claims

@@ -29,9 +29,13 @@ async def test_read_file(tmp_path):
     index = RAMIndexCacheStore(ttl=0)
     result = await read_bytes(
         accessor,
-        PathSpec(vfs_path=mount_key("/hello.txt", "/disk"),
-                 virtual="/hello.txt",
-                 directory="/hello.txt"), index)
+        PathSpec(
+            vfs_path=mount_key("/hello.txt", "/disk"),
+            virtual="/hello.txt",
+            directory="/hello.txt",
+        ),
+        index,
+    )
     assert result == b"hello world"
 
 
@@ -42,9 +46,13 @@ async def test_read_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
         await read_bytes(
             accessor,
-            PathSpec(vfs_path="missing.txt",
-                     virtual="/missing.txt",
-                     directory="/missing.txt"), index)
+            PathSpec(
+                vfs_path="missing.txt",
+                virtual="/missing.txt",
+                directory="/missing.txt",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -52,9 +60,11 @@ async def test_read_with_glob_scope_and_prefix(tmp_path):
     (tmp_path / "data.bin").write_bytes(b"\x00\x01\x02")
     accessor = DiskAccessor(tmp_path)
     index = RAMIndexCacheStore(ttl=0)
-    scope = PathSpec(vfs_path=mount_key("/disk/data.bin", "/disk"),
-                     virtual="/disk/data.bin",
-                     directory="/disk/")
+    scope = PathSpec(
+        vfs_path=mount_key("/disk/data.bin", "/disk"),
+        virtual="/disk/data.bin",
+        directory="/disk/",
+    )
     result = await read_bytes(accessor, scope, index)
     assert result == b"\x00\x01\x02"
 
@@ -65,9 +75,15 @@ async def test_read_range_seeks_instead_of_reading_the_whole_file(tmp_path):
     accessor = DiskAccessor(tmp_path)
     result = await read_range(
         accessor,
-        PathSpec(vfs_path=mount_key("/big.bin", "/disk"),
-                 virtual="/big.bin",
-                 directory="/big.bin"), RAMIndexCacheStore(ttl=0), 10, 5)
+        PathSpec(
+            vfs_path=mount_key("/big.bin", "/disk"),
+            virtual="/big.bin",
+            directory="/big.bin",
+        ),
+        RAMIndexCacheStore(ttl=0),
+        10,
+        5,
+    )
     assert result == bytes(range(10, 15))
 
 
@@ -77,9 +93,14 @@ async def test_read_range_without_a_size_runs_to_the_end(tmp_path):
     accessor = DiskAccessor(tmp_path)
     result = await read_range(
         accessor,
-        PathSpec(vfs_path=mount_key("/big.bin", "/disk"),
-                 virtual="/big.bin",
-                 directory="/big.bin"), RAMIndexCacheStore(ttl=0), 250)
+        PathSpec(
+            vfs_path=mount_key("/big.bin", "/disk"),
+            virtual="/big.bin",
+            directory="/big.bin",
+        ),
+        RAMIndexCacheStore(ttl=0),
+        250,
+    )
     assert result == bytes(range(250, 256))
 
 
@@ -89,9 +110,15 @@ async def test_read_range_past_the_end_is_empty(tmp_path):
     accessor = DiskAccessor(tmp_path)
     result = await read_range(
         accessor,
-        PathSpec(vfs_path=mount_key("/small.bin", "/disk"),
-                 virtual="/small.bin",
-                 directory="/small.bin"), RAMIndexCacheStore(ttl=0), 99, 5)
+        PathSpec(
+            vfs_path=mount_key("/small.bin", "/disk"),
+            virtual="/small.bin",
+            directory="/small.bin",
+        ),
+        RAMIndexCacheStore(ttl=0),
+        99,
+        5,
+    )
     assert result == b""
 
 
@@ -101,10 +128,15 @@ async def test_read_range_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         await read_range(
             accessor,
-            PathSpec(vfs_path="missing.bin",
-                     virtual="/missing.bin",
-                     directory="/missing.bin"), RAMIndexCacheStore(ttl=0), 0,
-            5)
+            PathSpec(
+                vfs_path="missing.bin",
+                virtual="/missing.bin",
+                directory="/missing.bin",
+            ),
+            RAMIndexCacheStore(ttl=0),
+            0,
+            5,
+        )
 
 
 @pytest.mark.asyncio
@@ -112,9 +144,9 @@ async def test_read_range_records_the_virtual_path(tmp_path):
     # A directory named like its mount keeps /m/k.txt off the virtual path.
     (tmp_path / "m").mkdir()
     (tmp_path / "m" / "k.txt").write_bytes(b"hello")
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         data = await read_range(DiskAccessor(tmp_path), spec, offset=1, size=3)
@@ -129,9 +161,9 @@ async def test_read_range_records_the_virtual_path(tmp_path):
 @pytest.mark.asyncio
 async def test_read_bytes_under_a_plain_file_is_not_a_directory(tmp_path):
     (tmp_path / "a.txt").write_text("a")
-    spec = PathSpec(vfs_path="a.txt/x",
-                    virtual="/a.txt/x",
-                    directory="/a.txt/")
+    spec = PathSpec(
+        vfs_path="a.txt/x", virtual="/a.txt/x", directory="/a.txt/"
+    )
     with pytest.raises(NotADirectoryError) as exc:
         await read_bytes(DiskAccessor(tmp_path), spec)
     assert exc.value.filename == "/a.txt/x"

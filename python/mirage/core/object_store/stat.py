@@ -29,15 +29,16 @@ def make_stat(driver: ObjectStoreDriver[A, C]) -> StatFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def stat(accessor: A,
-                   path_spec: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> FileStat:
+    async def stat(
+        accessor: A, path_spec: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> FileStat:
         virtual = path_spec.virtual
-        original_prefix = mount_prefix_of(path_spec.virtual,
-                                          path_spec.vfs_path)
+        original_prefix = mount_prefix_of(
+            path_spec.virtual, path_spec.vfs_path
+        )
         path = path_spec.virtual
         if original_prefix and path.startswith(original_prefix):
-            path = path[len(original_prefix):] or "/"
+            path = path[len(original_prefix) :] or "/"
 
         # A trailing slash signals the caller treats the path as a
         # directory. These stores allow an object at key "csv" AND deeper
@@ -54,8 +55,11 @@ def make_stat(driver: ObjectStoreDriver[A, C]) -> StatFn[A]:
         # Fast path: check the index cache populated by readdir().
         # readdir() stores entries with resource_type="folder" or "file"
         # and file sizes, so stat can return instantly for known paths.
-        virtual_key = (original_prefix + "/" +
-                       stripped if original_prefix else "/" + stripped)
+        virtual_key = (
+            original_prefix + "/" + stripped
+            if original_prefix
+            else "/" + stripped
+        )
         entry = await cached_entry(index, virtual_key)
         if entry is not None:
             # Store "folders" are synthetic prefixes with no object,
@@ -77,8 +81,10 @@ def make_stat(driver: ObjectStoreDriver[A, C]) -> StatFn[A]:
         # probe speculatively (e.g. .git, HEAD, .hg during cd).
         parent = virtual_key.rsplit("/", 1)[0] or "/"
         parent_listing = await index.list_dir(parent)
-        if (parent_listing.entries is not None
-                and virtual_key not in parent_listing.entries):
+        if (
+            parent_listing.entries is not None
+            and virtual_key not in parent_listing.entries
+        ):
             raise enoent(virtual)
 
         # A listed child can lose its metadata to independent eviction.

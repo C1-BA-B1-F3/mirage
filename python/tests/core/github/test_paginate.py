@@ -21,17 +21,8 @@ from mirage.core.github.paginate import github_pages
 @pytest.mark.asyncio
 async def test_limit_counts_only_included_rows(monkeypatch):
     pages = {
-        "1": [{
-            "number": 1,
-            "pull_request": {}
-        }, {
-            "number": 2
-        }, {
-            "number": 3
-        }],
-        "2": [{
-            "number": 4
-        }],
+        "1": [{"number": 1, "pull_request": {}}, {"number": 2}, {"number": 3}],
+        "2": [{"number": 4}],
     }
     seen = []
 
@@ -41,10 +32,12 @@ async def test_limit_counts_only_included_rows(monkeypatch):
 
     monkeypatch.setitem(github_pages.__globals__, "github_request", request)
 
-    rows = await github_pages(GhConfig(token="t"),
-                              "/repos/o/r/issues",
-                              limit=3,
-                              include=lambda row: "pull_request" not in row)
+    rows = await github_pages(
+        GhConfig(token="t"),
+        "/repos/o/r/issues",
+        limit=3,
+        include=lambda row: "pull_request" not in row,
+    )
 
     assert rows == [{"number": 2}, {"number": 3}, {"number": 4}]
     assert [params["page"] for params in seen] == ["1", "2"]

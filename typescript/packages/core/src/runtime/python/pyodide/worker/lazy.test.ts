@@ -181,6 +181,44 @@ describe('Pyodide lazy VFS', { timeout: 60_000 }, () => {
     }
   })
 
+  it('classifies a directory once and stats only the names a later listing adds', async () => {
+    const stats: string[] = []
+    let listings = 0
+    const dispatch: BridgeDispatchFn = async (op, path) => {
+      await Promise.resolve()
+      if (op === 'readdir' && path === '/data/') {
+        listings += 1
+        return listings === 1
+          ? ['/data/a.txt', '/data/b.txt']
+          : ['/data/a.txt', '/data/b.txt', '/data/late']
+      }
+      if (op === 'stat') {
+        stats.push(path)
+        if (path === '/data/late') return new FileStat({ name: path, type: FileType.DIRECTORY })
+        if (path === '/data/a.txt' || path === '/data/b.txt')
+          return new FileStat({ name: path, type: FileType.FILE, size: 1 })
+      }
+      throw Object.assign(new Error(path), { code: 'ENOENT' })
+    }
+    const rt = new PyodideRuntime()
+    rt.bind(new WorkspaceBinding(dispatch, new PrefixResolver(() => ['/data/'])))
+    try {
+      const result = await rt.run(
+        runArgs(
+          "import os\nfirst = sorted(os.listdir('/data'))\nsecond = sorted(os.listdir('/data'))\n" +
+            "print(first, second, [e.is_dir() for e in os.scandir('/data') if e.name == 'late'])",
+        ),
+      )
+      expect(DEC.decode(result.stderr ?? new Uint8Array())).toBe('')
+      expect(DEC.decode(result.stdout)).toBe(
+        "['a.txt', 'b.txt'] ['a.txt', 'b.txt', 'late'] [True]\n",
+      )
+      expect(stats.sort()).toEqual(['/data/a.txt', '/data/b.txt', '/data/late'])
+    } finally {
+      await rt.close()
+    }
+  })
+
   it('keeps real files at standard stream paths on a /dev mount', async () => {
     const dispatch: BridgeDispatchFn = async (op, path) => {
       await Promise.resolve()

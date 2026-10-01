@@ -39,10 +39,16 @@ def classify_parts(
         return []
     result: list[str | PathSpec] = [parts[0]]
     for i, w in enumerate(parts[1:]):
-        kind = (word_kinds[i]
-                if word_kinds is not None and i < len(word_kinds) else None)
-        base = (word_bases[i]
-                if word_bases is not None and i < len(word_bases) else None)
+        kind = (
+            word_kinds[i]
+            if word_kinds is not None and i < len(word_kinds)
+            else None
+        )
+        base = (
+            word_bases[i]
+            if word_bases is not None and i < len(word_bases)
+            else None
+        )
         here = base if base is not None else cwd
         if kind is not None and kind != "path":
             result.append(w)

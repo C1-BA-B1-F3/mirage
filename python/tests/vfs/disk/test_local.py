@@ -82,13 +82,17 @@ async def test_stat_missing_raises(ws):
 @pytest.mark.asyncio
 async def test_path_traversal_raises(local_backend):
     from mirage.core.disk.stat import stat as core_stat
-    from mirage.types import PathSpec  # noqa: F811
+    from mirage.types import PathSpec
+
     with pytest.raises(ValueError):
         await core_stat(
             local_backend.accessor,
-            PathSpec(vfs_path="../etc/passwd",
-                     virtual="/../etc/passwd",
-                     directory="/../etc/passwd"))
+            PathSpec(
+                vfs_path="../etc/passwd",
+                virtual="/../etc/passwd",
+                directory="/../etc/passwd",
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -115,8 +119,12 @@ def test_get_state_leaves_host_symlinks_out(tmp_path):
 
 @pytest.fixture
 def host_tree(tmp_path):
-    fixture = json.loads((Path(__file__).resolve().parents[4] /
-                          "integ/fixtures/disk/host-links.json").read_text())
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[4]
+            / "integ/fixtures/disk/host-links.json"
+        ).read_text()
+    )
     for relative, text in fixture["files"].items():
         p = tmp_path / relative
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -151,28 +159,31 @@ async def test_host_link_contract(host_tree):
 async def test_copy_requires_an_exact_destination(host_tree):
     vfs, _ = host_tree
     with pytest.raises(IsADirectoryError):
-        await IO.copy(vfs.accessor, PathSpec.from_str_path("/plain.txt"),
-                      PathSpec.from_str_path("/destination"))
+        await IO.copy(
+            vfs.accessor,
+            PathSpec.from_str_path("/plain.txt"),
+            PathSpec.from_str_path("/destination"),
+        )
     assert (vfs.root.parent / "outside/secret.txt").read_text() == "outside\n"
 
 
-@pytest.mark.parametrize("relative", [
-    "escape", "escape-dir/secret.txt", "destination/plain.txt",
-    "../outside/secret.txt"
-])
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "escape",
+        "escape-dir/secret.txt",
+        "destination/plain.txt",
+        "../outside/secret.txt",
+    ],
+)
 def test_restore_refuses_host_links_and_escape_keys(host_tree, relative):
     vfs, _ = host_tree
     outside = vfs.root.parent / "outside/secret.txt"
     before = outside.stat().st_mode
     with pytest.raises((FileNotFoundError, ValueError)):
-        vfs.load_state({
-            "files": {
-                relative: b"changed"
-            },
-            "modes": {
-                relative: 0o600
-            }
-        })
+        vfs.load_state(
+            {"files": {relative: b"changed"}, "modes": {relative: 0o600}}
+        )
     assert outside.stat().st_mode == before
     assert outside.read_text() == "outside\n"
 
@@ -201,8 +212,12 @@ async def test_unreadable_tree_is_not_absent_or_empty(host_tree):
     directory = vfs.root / "lib"
     directory.chmod(0)
     try:
-        operations = ((IO.exists, "lib/a.txt"), (IO.find, "lib"),
-                      (IO.du.size, "lib"), (IO.readdir, "lib"))
+        operations = (
+            (IO.exists, "lib/a.txt"),
+            (IO.find, "lib"),
+            (IO.du.size, "lib"),
+            (IO.readdir, "lib"),
+        )
         for operation, key in operations:
             operand = PathSpec.from_str_path("/data/" + key, key)
             with pytest.raises(PermissionError) as caught:
@@ -214,14 +229,12 @@ async def test_unreadable_tree_is_not_absent_or_empty(host_tree):
 
 def test_restore_creates_missing_parents_and_applies_modes(host_tree):
     vfs, _ = host_tree
-    vfs.load_state({
-        "files": {
-            "new/deep/file": b"restored"
-        },
-        "modes": {
-            "new/deep/file": 0o640
+    vfs.load_state(
+        {
+            "files": {"new/deep/file": b"restored"},
+            "modes": {"new/deep/file": 0o640},
         }
-    })
+    )
     target = vfs.root / "new/deep/file"
     assert target.read_bytes() == b"restored"
     assert target.stat().st_mode & 0o777 == 0o640
@@ -233,6 +246,7 @@ async def test_root_alias_keeps_the_same_visible_tree(host_tree):
     alias = vfs.root.parent / "alias"
     alias.symlink_to(vfs.root)
     mounted = DiskVFS(str(alias))
-    assert await IO.du.size(mounted.accessor,
-                            PathSpec.from_str_path("/")) == 13
+    assert (
+        await IO.du.size(mounted.accessor, PathSpec.from_str_path("/")) == 13
+    )
     assert sorted(mounted.get_state()["files"]) == fixture["visible_files"]

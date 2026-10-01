@@ -26,16 +26,21 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-SPEC = CommandSpec(options=(
-    Option(long="--card_id", type="str"),
-    Option(long="--member_id", type="str"),
-), )
+SPEC = CommandSpec(
+    options=(
+        Option(long="--card_id", type="str"),
+        Option(long="--member_id", type="str"),
+    ),
+)
 
 
 @command("trello card assign", vfs="trello", spec=SPEC, write=True)
 async def trello_card_assign(
-        accessor: TrelloAccessor, paths: list[PathSpec], texts: list[str],
-        opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPEC)
     config = accessor.config
     card_id = fl.as_str("card_id")
@@ -48,11 +53,11 @@ async def trello_card_assign(
     # grant can admit it (a write-granting carve-out names no card).
     require_mount_writable()
     await require_card(accessor, card_id)
-    card = await card_assign(config,
-                             card_id=card_id,
-                             member_id=member_id,
-                             session=accessor.pool)
+    card = await card_assign(
+        config, card_id=card_id, member_id=member_id, session=accessor.pool
+    )
     return yield_bytes(
-        json.dumps(normalize_card(card),
-                   ensure_ascii=False,
-                   separators=(",", ":")).encode()), IOResult()
+        json.dumps(
+            normalize_card(card), ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    ), IOResult()

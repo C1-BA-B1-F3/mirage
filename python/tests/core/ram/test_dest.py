@@ -15,9 +15,9 @@ from mirage.vfs.ram.store import RAMStore
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.lstrip("/"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=virtual.lstrip("/"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.fixture
@@ -32,15 +32,18 @@ def accessor() -> RAMAccessor:
 # GNU resolves a path one component at a time and stops at the first that
 # is not a directory; measured against coreutils 9.7 (`cat a.txt/x` is
 # "Not a directory", `cat nope/x` is "No such file or directory").
-@pytest.mark.parametrize("key,kind", [
-    ("/a.txt/x", NotADirectoryError),
-    ("/a.txt/x/y", NotADirectoryError),
-    ("/d/a.txt/x", FileNotFoundError),
-    ("/d/x", FileNotFoundError),
-    ("/nope/x", FileNotFoundError),
-    ("/nope", FileNotFoundError),
-    ("/orphan/b.txt", FileNotFoundError),
-])
+@pytest.mark.parametrize(
+    "key,kind",
+    [
+        ("/a.txt/x", NotADirectoryError),
+        ("/a.txt/x/y", NotADirectoryError),
+        ("/d/a.txt/x", FileNotFoundError),
+        ("/d/x", FileNotFoundError),
+        ("/nope/x", FileNotFoundError),
+        ("/nope", FileNotFoundError),
+        ("/orphan/b.txt", FileNotFoundError),
+    ],
+)
 def test_lookup_error_stops_at_the_first_non_directory(accessor, key, kind):
     error = lookup_error(accessor.store, _spec(key), key)
     assert type(error) is kind

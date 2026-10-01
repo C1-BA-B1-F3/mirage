@@ -71,8 +71,9 @@ def _copy_tree_sync(
         if getattr(entry, "is_directory", False):
             _copy_tree_sync(accessor, entry.path, child_dst)
         else:
-            _upload_sync(accessor, child_dst,
-                         _download_sync(accessor, entry.path))
+            _upload_sync(
+                accessor, child_dst, _download_sync(accessor, entry.path)
+            )
 
 
 async def copy(
@@ -85,8 +86,9 @@ async def copy(
     src_stat = await stat(accessor, src, index)
     # Same-path guard runs after stat (and the non-recursive directory check)
     # so a missing source or `cp` of a directory still raises.
-    same_path = backend_path(accessor.config,
-                             src) == backend_path(accessor.config, dst)
+    same_path = backend_path(accessor.config, src) == backend_path(
+        accessor.config, dst
+    )
     if src_stat.type == FileType.DIRECTORY:
         if not recursive:
             raise IsADirectoryError(src.virtual)
@@ -98,10 +100,13 @@ async def copy(
             # Copying a directory into its own subtree creates the destination
             # inside the source, so the walk would descend into the fresh copy
             # forever. Refuse before any create_directory/upload.
-            raise ValueError(f"cannot copy a directory, '{src.virtual}', "
-                             f"into itself, '{dst.virtual}'")
-        await asyncio.to_thread(_copy_tree_sync, accessor, remote_src,
-                                remote_dst)
+            raise ValueError(
+                f"cannot copy a directory, '{src.virtual}', "
+                f"into itself, '{dst.virtual}'"
+            )
+        await asyncio.to_thread(
+            _copy_tree_sync, accessor, remote_src, remote_dst
+        )
         # create_directory materializes missing ancestors and the walk can
         # merge into a pre-existing destination directory (mv onto an empty
         # dir), so evict the destination's own listing and every ancestor

@@ -68,10 +68,12 @@ def test_build_app_accepts_valid_config(monkeypatch, tmp_path):
 def _ssh_config(tmp_path, key: asyncssh.SSHKey) -> SSHConfig:
     authorized = tmp_path / "authorized_keys"
     authorized.write_bytes(key.export_public_key())
-    return SSHConfig(port=0,
-                     host="127.0.0.1",
-                     host_key_file=tmp_path / "host_key",
-                     authorized_keys_file=authorized)
+    return SSHConfig(
+        port=0,
+        host="127.0.0.1",
+        host_key_file=tmp_path / "host_key",
+        authorized_keys_file=authorized,
+    )
 
 
 def test_build_app_keeps_the_ssh_door_shut_by_default(tmp_path):
@@ -82,48 +84,54 @@ def test_build_app_keeps_the_ssh_door_shut_by_default(tmp_path):
 @pytest.mark.asyncio
 async def test_lifespan_serves_http_workspaces_over_ssh(tmp_path):
     key = asyncssh.generate_private_key("ssh-ed25519")
-    app = build_app(pid_file=tmp_path / "daemon.pid",
-                    ssh_config=_ssh_config(tmp_path, key))
+    app = build_app(
+        pid_file=tmp_path / "daemon.pid", ssh_config=_ssh_config(tmp_path, key)
+    )
     async with app.router.lifespan_context(app):
         port = app.state.ssh.get_port()
-        async with AsyncClient(transport=ASGITransport(app=app),
-                               base_url="http://test") as client:
-            r = await client.post("/v1/workspaces",
-                                  json={
-                                      "config": {
-                                          "mounts": {
-                                              "/": {
-                                                  "vfs": "ram",
-                                                  "mode": "WRITE"
-                                              }
-                                          }
-                                      }
-                                  })
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            r = await client.post(
+                "/v1/workspaces",
+                json={
+                    "config": {
+                        "mounts": {"/": {"vfs": "ram", "mode": "WRITE"}}
+                    }
+                },
+            )
             wid = r.json()["id"]
-            async with asyncssh.connect("127.0.0.1",
-                                        port,
-                                        username=wid,
-                                        client_keys=[key],
-                                        known_hosts=None) as conn:
+            async with asyncssh.connect(
+                "127.0.0.1",
+                port,
+                username=wid,
+                client_keys=[key],
+                known_hosts=None,
+            ) as conn:
                 result = await conn.run("echo over-ssh > /f && cat /f")
-            r = await client.post(f"/v1/workspaces/{wid}/execute",
-                                  json={"command": "cat /f"})
+            r = await client.post(
+                f"/v1/workspaces/{wid}/execute", json={"command": "cat /f"}
+            )
     assert result.stdout == "over-ssh\n"
     assert r.json()["stdout"] == "over-ssh\n"
     with pytest.raises(OSError):
-        await asyncssh.connect("127.0.0.1",
-                               port,
-                               username=wid,
-                               client_keys=[key],
-                               known_hosts=None)
+        await asyncssh.connect(
+            "127.0.0.1",
+            port,
+            username=wid,
+            client_keys=[key],
+            known_hosts=None,
+        )
 
 
 @pytest.mark.asyncio
 async def test_a_configured_door_without_asyncssh_fails_the_start(
-        monkeypatch, tmp_path):
+    monkeypatch, tmp_path
+):
     key = asyncssh.generate_private_key("ssh-ed25519")
-    app = build_app(pid_file=tmp_path / "daemon.pid",
-                    ssh_config=_ssh_config(tmp_path, key))
+    app = build_app(
+        pid_file=tmp_path / "daemon.pid", ssh_config=_ssh_config(tmp_path, key)
+    )
 
     def missing(name: str) -> None:
         raise ModuleNotFoundError(f"No module named {name!r}")

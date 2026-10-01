@@ -27,8 +27,11 @@ accepts a namespace at all, and the shape of a key. One persistence
 client, three stores.
 """
 
-from mirage.workspace.record.types import (CAS_MAX_RETRIES, RecordFields,
-                                           generation_of)
+from mirage.workspace.record.types import (
+    CAS_MAX_RETRIES,
+    RecordFields,
+    generation_of,
+)
 
 __all__ = [
     "CAS_MAX_RETRIES",

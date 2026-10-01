@@ -83,8 +83,9 @@ def test_prompts_version_file():
 def test_prompts_version_must_be_an_integer():
     # int("abc") used to crash the read path; a non-numeric version now
     # fails the scope match and reads as ENOENT, matching typescript.
-    assert detect_scope(
-        _spec("/prompts/summarize/abc.json")).kind == ("invalid")
+    assert detect_scope(_spec("/prompts/summarize/abc.json")).kind == (
+        "invalid"
+    )
 
 
 def test_datasets_dir():
@@ -143,6 +144,10 @@ def test_unrecognized_path_is_not_root():
 def test_leaves_fall_through_the_search_pushdown():
     # A leaf path must reach the generic per-file scan, never a
     # whole-container search.
-    for path in ("/traces/abc.json", "/datasets/qa/items.jsonl",
-                 "/datasets/qa/runs", "/datasets/qa/runs/r1.jsonl"):
+    for path in (
+        "/traces/abc.json",
+        "/datasets/qa/items.jsonl",
+        "/datasets/qa/runs",
+        "/datasets/qa/runs/r1.jsonl",
+    ):
         assert detect_scope(_spec(path)).kind not in SEARCH_KINDS

@@ -36,8 +36,12 @@ def _dataset_extra(match: ScopeMatch) -> dict[str, str]:
     return {"dataset_name": match.slots["dataset_name"]}
 
 
-async def _stat_trace(accessor: LangfuseAccessor, match: ScopeMatch,
-                      path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _stat_trace(
+    accessor: LangfuseAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     # A trace listing stops at default_trace_limit and
     # default_from_timestamp while read fetches any trace by id, so a
     # trace the listing left out is probed the way read reaches it; the
@@ -48,10 +52,9 @@ async def _stat_trace(accessor: LangfuseAccessor, match: ScopeMatch,
         size = await listed_size(index, path)
     else:
         size = len(json_bytes(await fetch_trace_file(accessor, match, path)))
-    return FileStat(name=name,
-                    type=FileType.FILE,
-                    content=ContentType.JSON,
-                    size=size)
+    return FileStat(
+        name=name, type=FileType.FILE, content=ContentType.JSON, size=size
+    )
 
 
 stat = make_stat(

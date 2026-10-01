@@ -20,7 +20,6 @@ from mirage.vfs.secrets import reveal_secret
 
 
 class Mem0Accessor(Accessor):
-
     def __init__(self, config: Mem0Config) -> None:
         self.config = config
         self._client: AsyncMemoryClient | None = None

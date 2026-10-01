@@ -14,9 +14,12 @@
 
 from mirage.commands.constants import ROOT_CWD
 from mirage.commands.spec.builtins import is_builtin_grammar, registered_spec
-from mirage.commands.spec.constants import (HELP_OPTION, STANDARD_AFTER_SCAN,
-                                            STANDARD_BEFORE_SCAN,
-                                            VERSION_OPTION)
+from mirage.commands.spec.constants import (
+    HELP_OPTION,
+    STANDARD_AFTER_SCAN,
+    STANDARD_BEFORE_SCAN,
+    VERSION_OPTION,
+)
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.parser import ParsedArgs, parse_command
 from mirage.commands.spec.synopsis import SYNOPSES
@@ -46,8 +49,9 @@ def help_page(name: str, spec: CommandSpec) -> bytes:
             registered.
     """
     synopsis = SYNOPSES.get(name) if is_builtin_grammar(name, spec) else None
-    return render_help(name, registered_spec(name, spec),
-                       synopsis=synopsis).encode()
+    return render_help(
+        name, registered_spec(name, spec), synopsis=synopsis
+    ).encode()
 
 
 def has_injected_help(spec: CommandSpec | None) -> bool:
@@ -73,12 +77,14 @@ def _parse(name: str, spec: CommandSpec, words: list[str]) -> ParsedArgs:
 
 
 def _has_option_error(parsed: ParsedArgs) -> bool:
-    return bool(parsed.option_error_kinds
-                or parsed.old_option_needs_value is not None)
+    return bool(
+        parsed.option_error_kinds or parsed.old_option_needs_value is not None
+    )
 
 
-def _position(name: str, spec: CommandSpec, argv: list[str],
-              option: str) -> int | None:
+def _position(
+    name: str, spec: CommandSpec, argv: list[str], option: str
+) -> int | None:
     """The index of the first word the parser reads as *option*.
 
     Parsing growing prefixes of the line, instead of looking for the
@@ -93,13 +99,14 @@ def _position(name: str, spec: CommandSpec, argv: list[str],
         option (str): ``--help`` or ``--version``.
     """
     for index in range(len(argv)):
-        if option in _parse(name, spec, argv[:index + 1]).typed_dests:
+        if option in _parse(name, spec, argv[: index + 1]).typed_dests:
             return index
     return None
 
 
-def standard_request(name: str, spec: CommandSpec | None,
-                     argv: list[str]) -> bytes | None:
+def standard_request(
+    name: str, spec: CommandSpec | None, argv: list[str]
+) -> bytes | None:
     """The ``--help`` page or version line that *argv* asks for.
 
     The executor asks before routing, since neither answer belongs to
@@ -150,8 +157,11 @@ def standard_request(name: str, spec: CommandSpec | None,
     if not (builtin and name in STANDARD_BEFORE_SCAN):
         if _has_option_error(_parse(name, spec, argv[:position])):
             return None
-        if builtin and name in STANDARD_AFTER_SCAN and _has_option_error(
-                whole):
+        if (
+            builtin
+            and name in STANDARD_AFTER_SCAN
+            and _has_option_error(whole)
+        ):
             return None
     return help_page(name, spec) if option == "--help" else version_line(name)
 

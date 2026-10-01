@@ -18,8 +18,11 @@ from typing import Any
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.stat import stat_generic
-from mirage.commands.builtin.generic_bind.adapter import (CommandIO, bound_op,
-                                                          overlaid_stat)
+from mirage.commands.builtin.generic_bind.adapter import (
+    CommandIO,
+    bound_op,
+    overlaid_stat,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
@@ -56,12 +59,15 @@ def make_stat(vfs: str, io: CommandIO) -> Callable[..., Any]:
         stat_fn = bound_op(stat_core, accessor, opts.index)
         overlay = opts.ns.stat_overlay if opts.ns is not None else None
         if overlay is not None:
-            stat_fn = partial(overlaid_stat,
-                              partial(stat_core, accessor),
-                              overlay,
-                              index=opts.index)
+            stat_fn = partial(
+                overlaid_stat,
+                partial(stat_core, accessor),
+                overlay,
+                index=opts.index,
+            )
         return await stat_generic(resolved, list(texts), opts, stat_fn)
 
-    wrapped: Callable[..., Any] = command("stat", vfs=vfs,
-                                          spec=SPECS["stat"])(stat)
+    wrapped: Callable[..., Any] = command("stat", vfs=vfs, spec=SPECS["stat"])(
+        stat
+    )
     return wrapped

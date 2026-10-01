@@ -34,8 +34,11 @@ def symbolic_umask(mask: int) -> str:
     parts = []
     for who, shift in (("u", 6), ("g", 3), ("o", 0)):
         bits = (perms >> shift) & 0o7
-        letters = ("r" if bits & 4 else "") + ("w" if bits & 2 else
-                                               "") + ("x" if bits & 1 else "")
+        letters = (
+            ("r" if bits & 4 else "")
+            + ("w" if bits & 2 else "")
+            + ("x" if bits & 1 else "")
+        )
         parts.append(f"{who}={letters}")
     return ",".join(parts)
 
@@ -72,12 +75,12 @@ def parse_umask(text: str, current: int) -> int | str:
             i += 1
         if i >= len(clause) or clause[i] not in "+-=":
             bad = clause[i] if i < len(clause) else ""
-            return (f"bash: umask: `{bad}': invalid symbolic mode "
-                    "operator\n")
-        for ch in clause[i + 1:]:
+            return f"bash: umask: `{bad}': invalid symbolic mode operator\n"
+        for ch in clause[i + 1 :]:
             if ch not in "+-=rwx":
-                return (f"bash: umask: `{ch}': invalid symbolic mode "
-                        "character\n")
+                return (
+                    f"bash: umask: `{ch}': invalid symbolic mode character\n"
+                )
     parsed = parse_chmod(text, perms)
     if parsed is None:
         return f"bash: umask: `{text}': invalid symbolic mode character\n"
@@ -104,18 +107,25 @@ async def handle_umask(
     """
     scan = scan_options(args, "Sp")
     if scan.bad is not None:
-        return fail("umask",
-                    f"bash: umask: {scan.bad}: invalid option\n{_USAGE}\n", 2)
+        return fail(
+            "umask", f"bash: umask: {scan.bad}: invalid option\n{_USAGE}\n", 2
+        )
     symbolic = "S" in scan.letters
     reusable = "p" in scan.letters
     operands = scan.operands
     if not operands:
-        body = (symbolic_umask(session.umask)
-                if symbolic else f"{session.umask:04o}")
+        body = (
+            symbolic_umask(session.umask)
+            if symbolic
+            else f"{session.umask:04o}"
+        )
         if reusable:
             body = f"umask {'-S ' if symbolic else ''}{body}"
-        return (body + "\n").encode(), IOResult(), ExecutionNode(
-            command="umask", exit_code=0)
+        return (
+            (body + "\n").encode(),
+            IOResult(),
+            ExecutionNode(command="umask", exit_code=0),
+        )
     parsed = parse_umask(operands[0], session.umask)
     if isinstance(parsed, str):
         return fail("umask", parsed, 1)

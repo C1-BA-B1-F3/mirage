@@ -19,8 +19,11 @@ from functools import partial
 from mirage.accessor.dropbox import DropboxAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.cache.index.warm import entry_or_warm
-from mirage.core.dropbox.client import (DropboxApiError, dropbox_download,
-                                        dropbox_download_stream)
+from mirage.core.dropbox.client import (
+    DropboxApiError,
+    dropbox_download,
+    dropbox_download_stream,
+)
 from mirage.core.dropbox.readdir import readdir
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -31,7 +34,7 @@ from mirage.utils.ranges import window_for
 def dropbox_path_from_virtual(root: str, virtual_key: str, prefix: str) -> str:
     key = virtual_key
     if prefix and key.startswith(prefix):
-        key = key[len(prefix):]
+        key = key[len(prefix) :]
     key = key.strip("/")
     return root if not key else f"{root}/{key}"
 
@@ -44,19 +47,23 @@ async def _resolve_entry(
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     p = path.virtual
     if prefix and p.startswith(prefix):
-        p = p[len(prefix):] or "/"
+        p = p[len(prefix) :] or "/"
     key = p.strip("/")
     if not key:
         raise IsADirectoryError(path.virtual)
     virtual_key = prefix + "/" + key if prefix else "/" + key
 
     parent_key = posixpath.dirname(virtual_key) or "/"
-    parent_path = PathSpec.from_str_path(parent_key,
-                                         mount_key(parent_key, prefix))
+    parent_path = PathSpec.from_str_path(
+        parent_key, mount_key(parent_key, prefix)
+    )
     # readdir already turns the API's 409 for a missing path into ENOENT,
     # so the only thing swallowed here is a genuinely absent parent.
-    warm = (partial(readdir, accessor, parent_path, index)
-            if parent_key != virtual_key else None)
+    warm = (
+        partial(readdir, accessor, parent_path, index)
+        if parent_key != virtual_key
+        else None
+    )
     entry = await entry_or_warm(index, virtual_key, warm)
     if entry is None:
         raise enoent(path.virtual)
@@ -86,18 +93,21 @@ async def read(
         # Index-less callers (the ops factory's emulated truncate)
         # download directly; the API 409s on missing paths and folders.
         prefix = mount_prefix_of(path.virtual, path.vfs_path)
-        dropbox_path = dropbox_path_from_virtual(accessor.root_path,
-                                                 path.virtual, prefix)
+        dropbox_path = dropbox_path_from_virtual(
+            accessor.root_path, path.virtual, prefix
+        )
         try:
-            return await dropbox_download(accessor.token_manager, dropbox_path,
-                                          window)
+            return await dropbox_download(
+                accessor.token_manager, dropbox_path, window
+            )
         except DropboxApiError as exc:
             if exc.status == 409:
                 raise enoent(path.virtual) from exc
             raise
     _, virtual_key, prefix = await _resolve_entry(accessor, path, index)
-    dropbox_path = dropbox_path_from_virtual(accessor.root_path, virtual_key,
-                                             prefix)
+    dropbox_path = dropbox_path_from_virtual(
+        accessor.root_path, virtual_key, prefix
+    )
     return await dropbox_download(accessor.token_manager, dropbox_path, window)
 
 
@@ -107,8 +117,10 @@ async def stream(
     index: IndexCacheStore = NULL_INDEX,
 ) -> AsyncIterator[bytes]:
     _, virtual_key, prefix = await _resolve_entry(accessor, path, index)
-    dropbox_path = dropbox_path_from_virtual(accessor.root_path, virtual_key,
-                                             prefix)
-    async for chunk in dropbox_download_stream(accessor.token_manager,
-                                               dropbox_path):
+    dropbox_path = dropbox_path_from_virtual(
+        accessor.root_path, virtual_key, prefix
+    )
+    async for chunk in dropbox_download_stream(
+        accessor.token_manager, dropbox_path
+    ):
         yield chunk

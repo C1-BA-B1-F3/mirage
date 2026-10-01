@@ -26,6 +26,7 @@ class NameKind(StrEnum):
     Members are ordered as ``type -a`` prints them, which is also the
     order the layers resolve in.
     """
+
     ALIAS = "alias"
     KEYWORD = "keyword"
     FUNCTION = "function"

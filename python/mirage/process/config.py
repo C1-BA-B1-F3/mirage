@@ -43,8 +43,12 @@ class ProcessPermissions(BaseModel):
 
     def restrict(self, other: "ProcessPermissions") -> "ProcessPermissions":
         caps = [cap for cap in (self.max, other.max) if cap is not None]
-        return ProcessPermissions(list=_SCOPES[min(_SCOPES.index(self.list),
-                                                   _SCOPES.index(other.list))],
-                                  kill=_SCOPES[min(_SCOPES.index(self.kill),
-                                                   _SCOPES.index(other.kill))],
-                                  max=min(caps) if caps else None)
+        return ProcessPermissions(
+            list=_SCOPES[
+                min(_SCOPES.index(self.list), _SCOPES.index(other.list))
+            ],
+            kill=_SCOPES[
+                min(_SCOPES.index(self.kill), _SCOPES.index(other.kill))
+            ],
+            max=min(caps) if caps else None,
+        )

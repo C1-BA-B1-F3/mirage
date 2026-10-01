@@ -34,9 +34,9 @@ class SheetEntry:
     filename: str
 
 
-sanitize_title = partial(sanitize_label,
-                         fallback="Untitled",
-                         max_len=TITLE_MAX_CHARS)
+sanitize_title = partial(
+    sanitize_label, fallback="Untitled", max_len=TITLE_MAX_CHARS
+)
 
 
 def make_filename(title: str, doc_id: str, modified_time: str = "") -> str:
@@ -56,8 +56,11 @@ def make_filename(title: str, doc_id: str, modified_time: str = "") -> str:
     Returns:
         str: filename in format "YYYY-MM-DD_Sanitized_Title__docid.json".
     """
-    lead = (f"{modified_time[:DATE_LEN]}_"
-            if len(modified_time) >= DATE_LEN else "")
+    lead = (
+        f"{modified_time[:DATE_LEN]}_"
+        if len(modified_time) >= DATE_LEN
+        else ""
+    )
     fixed = byte_len(lead) + len("__") + byte_len(doc_id) + len(SUFFIX)
     label = sanitize_title(title, max_bytes=NAME_MAX_BYTES - fixed)
     return f"{lead}{label}__{doc_id}{SUFFIX}"

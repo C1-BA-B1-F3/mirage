@@ -24,8 +24,12 @@ from mirage.core.render.json import json_bytes
 from mirage.types import PathSpec
 
 
-async def _read_memory(accessor: Mem0Accessor, match: ScopeMatch,
-                       path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_memory(
+    accessor: Mem0Accessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     return json_bytes(await listed_memory(accessor, path, index))
 
 

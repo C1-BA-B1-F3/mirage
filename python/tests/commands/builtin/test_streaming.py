@@ -46,8 +46,9 @@ async def _chunks(parts: list[bytes]):
 @pytest.mark.asyncio
 async def test_cat_file_returns_async_iterator(backend):
     await ops(backend).write(_ps("/tmp/f.txt"), data=b"hello world")
-    stdout, io = await cat(backend.accessor, [_ps('/tmp/f.txt')], [],
-                           CommandOpts())
+    stdout, io = await cat(
+        backend.accessor, [_ps("/tmp/f.txt")], [], CommandOpts()
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"hello world"
@@ -64,7 +65,7 @@ async def test_cat_stdin_returns_async_iterator():
 
 @pytest.mark.asyncio
 async def test_cat_bytes_stdin():
-    stdout, io = await cat(_NOOP, [], [], CommandOpts(stdin=b'hello'))
+    stdout, io = await cat(_NOOP, [], [], CommandOpts(stdin=b"hello"))
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"hello"
@@ -73,8 +74,12 @@ async def test_cat_bytes_stdin():
 @pytest.mark.asyncio
 async def test_cat_number_lines(backend):
     await ops(backend).write(_ps("/tmp/f.txt"), data=b"aaa\nbbb\n")
-    stdout, io = await cat(backend.accessor, [_ps('/tmp/f.txt')], [],
-                           CommandOpts(flags={'number': True}))
+    stdout, io = await cat(
+        backend.accessor,
+        [_ps("/tmp/f.txt")],
+        [],
+        CommandOpts(flags={"number": True}),
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert b"1" in collected
@@ -88,10 +93,12 @@ async def test_cat_number_lines(backend):
 
 @pytest.mark.asyncio
 async def test_grep_file_returns_async_iterator(backend):
-    await ops(backend).write(_ps("/tmp/f.txt"),
-                             data=b"apple\nbanana\napricot\ncherry\n")
-    stdout, io = await grep(backend.accessor, [_ps('/tmp/f.txt')], ['ap'],
-                            CommandOpts())
+    await ops(backend).write(
+        _ps("/tmp/f.txt"), data=b"apple\nbanana\napricot\ncherry\n"
+    )
+    stdout, io = await grep(
+        backend.accessor, [_ps("/tmp/f.txt")], ["ap"], CommandOpts()
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert b"apple" in collected
@@ -102,7 +109,7 @@ async def test_grep_file_returns_async_iterator(backend):
 @pytest.mark.asyncio
 async def test_grep_stdin_streaming():
     source = _chunks([b"apple\nban", b"ana\napricot\ncherry\n"])
-    stdout, io = await grep(_NOOP, [], ['ap'], CommandOpts(stdin=source))
+    stdout, io = await grep(_NOOP, [], ["ap"], CommandOpts(stdin=source))
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert b"apple" in collected
@@ -120,8 +127,9 @@ async def test_grep_max_count_stops_early():
             pull_count += 1
             yield f"match_line_{i}\n".encode()
 
-    stdout, io = await grep(_NOOP, [], ['match'],
-                            CommandOpts(stdin=_counting(), flags={'m': '3'}))
+    stdout, io = await grep(
+        _NOOP, [], ["match"], CommandOpts(stdin=_counting(), flags={"m": "3"})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     lines = collected.strip().split(b"\n")
     assert len(lines) == 3
@@ -131,7 +139,7 @@ async def test_grep_max_count_stops_early():
 @pytest.mark.asyncio
 async def test_grep_no_match_exit_code():
     source = _chunks([b"apple\nbanana\n"])
-    stdout, io = await grep(_NOOP, [], ['zzz'], CommandOpts(stdin=source))
+    stdout, io = await grep(_NOOP, [], ["zzz"], CommandOpts(stdin=source))
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b""
 
@@ -139,8 +147,9 @@ async def test_grep_no_match_exit_code():
 @pytest.mark.asyncio
 async def test_grep_ignore_case():
     source = _chunks([b"Apple\nBANANA\napricot\n"])
-    stdout, io = await grep(_NOOP, [], ['ap'],
-                            CommandOpts(stdin=source, flags={'i': True}))
+    stdout, io = await grep(
+        _NOOP, [], ["ap"], CommandOpts(stdin=source, flags={"i": True})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     assert b"Apple" in collected
     assert b"apricot" in collected
@@ -150,8 +159,9 @@ async def test_grep_ignore_case():
 @pytest.mark.asyncio
 async def test_grep_invert():
     source = _chunks([b"apple\nbanana\ncherry\n"])
-    stdout, io = await grep(_NOOP, [], ['banana'],
-                            CommandOpts(stdin=source, flags={'v': True}))
+    stdout, io = await grep(
+        _NOOP, [], ["banana"], CommandOpts(stdin=source, flags={"v": True})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     assert b"apple" in collected
     assert b"cherry" in collected
@@ -161,8 +171,9 @@ async def test_grep_invert():
 @pytest.mark.asyncio
 async def test_grep_count_only():
     source = _chunks([b"apple\nbanana\napricot\n"])
-    stdout, io = await grep(_NOOP, [], ['ap'],
-                            CommandOpts(stdin=source, flags={'c': True}))
+    stdout, io = await grep(
+        _NOOP, [], ["ap"], CommandOpts(stdin=source, flags={"c": True})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     assert collected.strip() == b"2"
 
@@ -174,8 +185,12 @@ async def test_grep_count_only():
 async def test_head_file_returns_async_iterator(backend):
     lines = b"\n".join(f"line{i}".encode() for i in range(20))
     await ops(backend).write(_ps("/tmp/f.txt"), data=lines)
-    stdout, io = await head(backend.accessor, [_ps('/tmp/f.txt')], [],
-                            CommandOpts(flags={'lines': '3'}))
+    stdout, io = await head(
+        backend.accessor,
+        [_ps("/tmp/f.txt")],
+        [],
+        CommandOpts(flags={"lines": "3"}),
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"line0\nline1\nline2\n"
@@ -184,8 +199,9 @@ async def test_head_file_returns_async_iterator(backend):
 @pytest.mark.asyncio
 async def test_head_stdin_streaming():
     source = _chunks([b"a\nb\nc\nd\ne\n"])
-    stdout, io = await head(_NOOP, [], [],
-                            CommandOpts(stdin=source, flags={'lines': '2'}))
+    stdout, io = await head(
+        _NOOP, [], [], CommandOpts(stdin=source, flags={"lines": "2"})
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"a\nb\n"
@@ -202,7 +218,8 @@ async def test_head_early_termination():
             yield f"line{i}\n".encode()
 
     stdout, io = await head(
-        _NOOP, [], [], CommandOpts(stdin=_infinite(), flags={'lines': '3'}))
+        _NOOP, [], [], CommandOpts(stdin=_infinite(), flags={"lines": "3"})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     lines = collected.strip().split(b"\n")
     assert len(lines) == 3
@@ -221,8 +238,9 @@ async def test_head_default_10_lines():
 @pytest.mark.asyncio
 async def test_head_bytes_mode():
     source = _chunks([b"hello world, this is a long string"])
-    stdout, io = await head(_NOOP, [], [],
-                            CommandOpts(stdin=source, flags={'bytes': '5'}))
+    stdout, io = await head(
+        _NOOP, [], [], CommandOpts(stdin=source, flags={"bytes": "5"})
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"hello"
@@ -235,11 +253,11 @@ async def test_head_bytes_mode():
 async def test_cut_stdin_streaming():
     source = _chunks([b"a,b,c\nd,e,f\n"])
     stdout, io = await cut(
-        _NOOP, [], [],
-        CommandOpts(stdin=source, flags={
-            'delimiter': ',',
-            'fields': '2'
-        }))
+        _NOOP,
+        [],
+        [],
+        CommandOpts(stdin=source, flags={"delimiter": ",", "fields": "2"}),
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"b\ne\n"
@@ -249,11 +267,11 @@ async def test_cut_stdin_streaming():
 async def test_cut_file_returns_async_iterator(backend):
     await ops(backend).write(_ps("/tmp/f.txt"), data=b"a,b,c\nd,e,f\n")
     stdout, io = await cut(
-        backend.accessor, [_ps('/tmp/f.txt')], [],
-        CommandOpts(flags={
-            'delimiter': ',',
-            'fields': '2'
-        }))
+        backend.accessor,
+        [_ps("/tmp/f.txt")],
+        [],
+        CommandOpts(flags={"delimiter": ",", "fields": "2"}),
+    )
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"b\ne\n"
@@ -274,8 +292,9 @@ async def test_uniq_stdin_streaming():
 @pytest.mark.asyncio
 async def test_uniq_count():
     source = _chunks([b"a\na\nb\n"])
-    stdout, io = await uniq(_NOOP, [], [],
-                            CommandOpts(stdin=source, flags={'count': True}))
+    stdout, io = await uniq(
+        _NOOP, [], [], CommandOpts(stdin=source, flags={"count": True})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     assert b"2" in collected
     assert b"a" in collected
@@ -300,7 +319,7 @@ async def test_nl_stdin_streaming():
 @pytest.mark.asyncio
 async def test_tr_stdin_streaming():
     source = _chunks([b"hello world"])
-    stdout, io = await tr(_NOOP, [], ['o', '0'], CommandOpts(stdin=source))
+    stdout, io = await tr(_NOOP, [], ["o", "0"], CommandOpts(stdin=source))
     assert hasattr(stdout, "__aiter__")
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"hell0 w0rld"
@@ -309,8 +328,9 @@ async def test_tr_stdin_streaming():
 @pytest.mark.asyncio
 async def test_tr_delete():
     source = _chunks([b"hello world"])
-    stdout, io = await tr(_NOOP, [], ['lo'],
-                          CommandOpts(stdin=source, flags={'delete': True}))
+    stdout, io = await tr(
+        _NOOP, [], ["lo"], CommandOpts(stdin=source, flags={"delete": True})
+    )
     collected = b"".join([chunk async for chunk in stdout])
     assert collected == b"he wrd"
 
@@ -321,10 +341,14 @@ async def test_tr_delete():
 @pytest.mark.asyncio
 async def test_wc_lines_streaming():
     source = _chunks([b"a\nb\nc\n"])
-    stdout, io = await wc(_NOOP, [], [],
-                          CommandOpts(stdin=source, flags={'args_l': True}))
-    collected = b"".join([chunk async for chunk in stdout]) if hasattr(
-        stdout, "__aiter__") else stdout
+    stdout, io = await wc(
+        _NOOP, [], [], CommandOpts(stdin=source, flags={"args_l": True})
+    )
+    collected = (
+        b"".join([chunk async for chunk in stdout])
+        if hasattr(stdout, "__aiter__")
+        else stdout
+    )
     assert b"3" in collected
 
 
@@ -332,7 +356,10 @@ async def test_wc_lines_streaming():
 async def test_wc_full_streaming():
     source = _chunks([b"one two\nthree\n"])
     stdout, io = await wc(_NOOP, [], [], CommandOpts(stdin=source))
-    collected = b"".join([chunk async for chunk in stdout]) if hasattr(
-        stdout, "__aiter__") else stdout
+    collected = (
+        b"".join([chunk async for chunk in stdout])
+        if hasattr(stdout, "__aiter__")
+        else stdout
+    )
     assert b"2" in collected  # lines
     assert b"3" in collected  # words

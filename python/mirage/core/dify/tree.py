@@ -4,8 +4,11 @@ from typing import Any
 from mirage.accessor.dify import DifyAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.dify.client import list_all_documents
-from mirage.core.slug_tree.rows import (dir_rows, drop_collisions,
-                                        normalize_slug)
+from mirage.core.slug_tree.rows import (
+    dir_rows,
+    drop_collisions,
+    normalize_slug,
+)
 from mirage.core.slug_tree.tree import SlugTree
 from mirage.core.slug_tree.types import DirRows
 from mirage.types import JsonValue
@@ -19,8 +22,11 @@ SLUG_NOUN = "Dify document slug"
 
 async def load_tree(accessor: DifyAccessor, prefix: str) -> DirRows:
     # list_all_documents already filters to visible documents.
-    return build_dir_entries(await list_all_documents(accessor), prefix,
-                             accessor.config.slug_metadata_name)
+    return build_dir_entries(
+        await list_all_documents(accessor),
+        prefix,
+        accessor.config.slug_metadata_name,
+    )
 
 
 def build_dir_entries(
@@ -39,8 +45,11 @@ def build_dir_entries(
             slug, has_slug = extract_slug(document, slug_metadata_name)
             path = normalize_slug(slug, SLUG_NOUN)
         except ValueError as exc:
-            logger.warning("Skipping invalid Dify document %r: %s",
-                           document.get("id"), exc)
+            logger.warning(
+                "Skipping invalid Dify document %r: %s",
+                document.get("id"),
+                exc,
+            )
             continue
         if path in files:
             logger.warning(
@@ -88,18 +97,23 @@ def build_dir_entries(
     return dir_rows(drop_collisions(files, skip_collision), prefix, file_entry)
 
 
-def extract_slug(document: dict[str, Any],
-                 slug_metadata_name: str = "slug") -> tuple[str, bool]:
+def extract_slug(
+    document: dict[str, Any], slug_metadata_name: str = "slug"
+) -> tuple[str, bool]:
     metadata = document.get("doc_metadata")
     if isinstance(metadata, list):
         for item in metadata:
-            if (isinstance(item, dict)
-                    and item.get("name") == slug_metadata_name):
+            if (
+                isinstance(item, dict)
+                and item.get("name") == slug_metadata_name
+            ):
                 value = item.get("value")
                 if value is not None:
                     return str(value), True
-    if (isinstance(metadata, dict)
-            and metadata.get(slug_metadata_name) is not None):
+    if (
+        isinstance(metadata, dict)
+        and metadata.get(slug_metadata_name) is not None
+    ):
         return str(metadata[slug_metadata_name]), True
     name = document.get("name")
     if name is None:

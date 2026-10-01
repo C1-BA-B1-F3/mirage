@@ -1,8 +1,13 @@
 import pytest
 
-from mirage.commands.builtin.generic.wc import (WCCounts, format_multi,
-                                                format_wc_lines, number_width,
-                                                parse_flags, wc)
+from mirage.commands.builtin.generic.wc import (
+    WCCounts,
+    format_multi,
+    format_wc_lines,
+    number_width,
+    parse_flags,
+    wc,
+)
 from mirage.commands.errors import UsageError
 from mirage.types import PathSpec
 
@@ -19,11 +24,9 @@ async def test_wc_default_counts_bytes():
 @pytest.mark.asyncio
 async def test_wc_empty_input():
     counts = await wc(b"")
-    assert counts == WCCounts(lines=0,
-                              words=0,
-                              bytes_=0,
-                              chars=0,
-                              max_line_length=0)
+    assert counts == WCCounts(
+        lines=0, words=0, bytes_=0, chars=0, max_line_length=0
+    )
 
 
 @pytest.mark.asyncio
@@ -221,8 +224,10 @@ def test_format_wc_lines_combines_lines_and_max_line_length():
 
 def test_format_wc_lines_combines_selected_counts_in_canonical_order():
     counts = WCCounts(lines=2, words=4, bytes_=20, chars=18)
-    assert _fmt(counts, lines=True, words=True, bytes_=True,
-                chars=True) == "      2       4      18      20"
+    assert (
+        _fmt(counts, lines=True, words=True, bytes_=True, chars=True)
+        == "      2       4      18      20"
+    )
 
 
 def test_wc_counts_merge():
@@ -319,8 +324,10 @@ async def test_format_multi_all_missing_zero_total():
 
     out, err = await format_multi(paths, read=fake_read, lines=True)
     assert out == b"0 total\n"
-    assert err == (b"wc: /m1.txt: No such file or directory\n"
-                   b"wc: /m2.txt: No such file or directory\n")
+    assert err == (
+        b"wc: /m1.txt: No such file or directory\n"
+        b"wc: /m2.txt: No such file or directory\n"
+    )
 
 
 async def _async_byte_read(_path):
@@ -341,30 +348,36 @@ async def test_format_multi_accepts_async_iterator_read():
 # so a byte outside 0x20-0x7e comes back escaped. Rows measured against
 # GNU coreutils 9.4 under `LC_ALL=C` with a raw `bytes` argv
 # (`wc --total=<w>`). Mirrored in wc.test.ts.
-@pytest.mark.parametrize("value,escaped", [
-    ("xé", r"x\303\251"),
-    ("x\r", r"x\r"),
-    ("x\x01", r"x\001"),
-    ("x\x7f", r"x\177"),
-    ("x'", r"x\'"),
-    ("x\\", r"x\\"),
-])
+@pytest.mark.parametrize(
+    "value,escaped",
+    [
+        ("xé", r"x\303\251"),
+        ("x\r", r"x\r"),
+        ("x\x01", r"x\001"),
+        ("x\x7f", r"x\177"),
+        ("x'", r"x\'"),
+        ("x\\", r"x\\"),
+    ],
+)
 def test_total_refusal_quotes_the_word(value, escaped):
     with pytest.raises(UsageError) as exc:
         parse_flags({"total": value})
     assert str(exc.value).startswith(
-        f"wc: invalid argument '{escaped}' for '--total'\n")
+        f"wc: invalid argument '{escaped}' for '--total'\n"
+    )
 
 
 def test_total_refusal_carries_gnus_candidate_block_and_exit_1():
     """Measured, coreutils 9.4: `wc --total=x f` lists all four modes."""
     with pytest.raises(UsageError) as exc:
         parse_flags({"total": "x"})
-    assert str(exc.value) == ("wc: invalid argument 'x' for '--total'\n"
-                              "Valid arguments are:\n"
-                              "  - 'auto'\n  - 'always'\n"
-                              "  - 'only'\n  - 'never'\n"
-                              "Try 'wc --help' for more information.")
+    assert str(exc.value) == (
+        "wc: invalid argument 'x' for '--total'\n"
+        "Valid arguments are:\n"
+        "  - 'auto'\n  - 'always'\n"
+        "  - 'only'\n  - 'never'\n"
+        "Try 'wc --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
@@ -377,8 +390,9 @@ def test_an_empty_total_is_ambiguous_not_the_default():
     """
     with pytest.raises(UsageError) as exc:
         parse_flags({"total": ""})
-    assert str(
-        exc.value).startswith("wc: ambiguous argument '' for '--total'\n")
+    assert str(exc.value).startswith(
+        "wc: ambiguous argument '' for '--total'\n"
+    )
     assert exc.value.exit_code == 1
 
 
@@ -399,24 +413,29 @@ def test_total_accepts_an_unambiguous_prefix():
 def test_total_refuses_a_prefix_spanning_two_values():
     with pytest.raises(UsageError) as exc:
         parse_flags({"total": "a"})
-    assert str(exc.value) == ("wc: ambiguous argument 'a' for '--total'\n"
-                              "Valid arguments are:\n"
-                              "  - 'auto'\n  - 'always'\n"
-                              "  - 'only'\n  - 'never'\n"
-                              "Try 'wc --help' for more information.")
+    assert str(exc.value) == (
+        "wc: ambiguous argument 'a' for '--total'\n"
+        "Valid arguments are:\n"
+        "  - 'auto'\n  - 'always'\n"
+        "  - 'only'\n  - 'never'\n"
+        "Try 'wc --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
-@pytest.mark.parametrize("sizes,operands,counts,width", [
-    ([24], 1, 1, 1),
-    ([24], 1, 3, 2),
-    ([24, 6], 2, 1, 2),
-    ([0, 0], 2, 3, 1),
-    ([None], 1, 3, 7),
-    ([None], 1, 1, 1),
-    ([None, 24], 2, 1, 7),
-    ([123456789], 2, 1, 9),
-])
+@pytest.mark.parametrize(
+    "sizes,operands,counts,width",
+    [
+        ([24], 1, 1, 1),
+        ([24], 1, 3, 2),
+        ([24, 6], 2, 1, 2),
+        ([0, 0], 2, 3, 1),
+        ([None], 1, 3, 7),
+        ([None], 1, 1, 1),
+        ([None, 24], 2, 1, 7),
+        ([123456789], 2, 1, 9),
+    ],
+)
 def test_number_width_follows_the_operands(sizes, operands, counts, width):
     # coreutils 9.7: one operand with one count is unpadded; otherwise the
     # regular files' total size, at least 7 beside a stream or directory.
@@ -444,7 +463,9 @@ async def test_format_multi_prints_zeros_for_a_directory_and_pads_to_seven():
         return b"hello\n"
 
     out, err = await format_multi(paths, read=fake_read)
-    assert out == (b"      0       0       0 /sub\n"
-                   b"      1       1       6 /a.txt\n"
-                   b"      1       1       6 total\n")
+    assert out == (
+        b"      0       0       0 /sub\n"
+        b"      1       1       6 /a.txt\n"
+        b"      1       1       6 total\n"
+    )
     assert err == b"wc: /sub: Is a directory\n"

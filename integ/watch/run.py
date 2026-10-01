@@ -36,8 +36,9 @@ from mirage.vfs.nextcloud import NextcloudConfig, NextcloudVFS
 from mirage.watch import DeltaHook, RAMWatchQueue, Watcher
 
 CASE_DIR = Path(__file__).resolve().parent
-DEFAULT_RESULTS_FILE = (Path(tempfile.gettempdir()) /
-                        "watch-battery-results.txt")
+DEFAULT_RESULTS_FILE = (
+    Path(tempfile.gettempdir()) / "watch-battery-results.txt"
+)
 
 ALL_MODES = ("pull", "push", "event")
 EVENT_TIMEOUT = 20.0
@@ -61,20 +62,15 @@ class ExternalWriter(Protocol):
     ``_seed`` need no per-backend branch.
     """
 
-    async def create_dir(self, path: str) -> None:
-        ...
+    async def create_dir(self, path: str) -> None: ...
 
-    async def write(self, path: str, data: bytes) -> None:
-        ...
+    async def write(self, path: str, data: bytes) -> None: ...
 
-    async def delete(self, path: str) -> None:
-        ...
+    async def delete(self, path: str) -> None: ...
 
-    async def rename(self, path: str, to: str) -> None:
-        ...
+    async def rename(self, path: str, to: str) -> None: ...
 
-    async def remove_all(self, path: str) -> None:
-        ...
+    async def remove_all(self, path: str) -> None: ...
 
 
 class BackendStatMetadata(Protocol):
@@ -86,16 +82,13 @@ class BackendStatMetadata(Protocol):
     """
 
     @property
-    def etag(self) -> str | None:
-        ...
+    def etag(self) -> str | None: ...
 
     @property
-    def content_length(self) -> int:
-        ...
+    def content_length(self) -> int: ...
 
     @property
-    def last_modified(self) -> datetime:
-        ...
+    def last_modified(self) -> datetime: ...
 
 
 @runtime_checkable
@@ -109,8 +102,7 @@ class BackendStatSource(Protocol):
     type rather than a fourth method every writer has to grow.
     """
 
-    async def stat(self, path: str) -> BackendStatMetadata:
-        ...
+    async def stat(self, path: str) -> BackendStatMetadata: ...
 
 
 BackendProbe = Callable[[str], Awaitable[str]]
@@ -133,8 +125,10 @@ async def _backend_stat_line(op: BackendStatSource, key: str) -> str:
             block spells it.
     """
     meta = await op.stat(key)
-    return (f"etag={meta.etag} size={meta.content_length} "
-            f"modified={meta.last_modified}")
+    return (
+        f"etag={meta.etag} size={meta.content_length} "
+        f"modified={meta.last_modified}"
+    )
 
 
 def _stat_probe(op: ExternalWriter) -> BackendProbe | None:
@@ -170,7 +164,8 @@ def _nextcloud_config(url: str) -> NextcloudConfig:
 
 
 async def _build_nextcloud(
-        spec: dict) -> tuple[Workspace, ExternalWriter] | None:
+    spec: dict,
+) -> tuple[Workspace, ExternalWriter] | None:
     """Build the watched workspace and a separate external writer.
 
     Returns None when the deployment env is absent, so a local run
@@ -189,7 +184,8 @@ async def _build_nextcloud(
 
 
 async def _build_nextcloud_nested(
-        spec: dict) -> tuple[Workspace, ExternalWriter] | None:
+    spec: dict,
+) -> tuple[Workspace, ExternalWriter] | None:
     """Build the nested-mount battery's workspace: the outer mount at
     the account root plus a second mount, rooted at a subfolder of the
     same account, nested inside the outer mount's subtree.
@@ -208,7 +204,8 @@ async def _build_nextcloud_nested(
             spec["mount"]: NextcloudVFS(outer),
             block["inner_mount"]: NextcloudVFS(_nextcloud_config(inner_url)),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     external = NextcloudAccessor(outer).operator()
     return ws, external
 
@@ -227,7 +224,7 @@ def _watch_rel(spec: dict) -> str:
     Args:
         spec (dict): Parsed case file.
     """
-    return spec["watch_dir"][len(spec["mount"].rstrip("/")):].strip("/")
+    return spec["watch_dir"][len(spec["mount"].rstrip("/")) :].strip("/")
 
 
 def _framed_root(spec: dict) -> PathSpec:
@@ -268,31 +265,22 @@ def _webhook_payload(expect: dict, mount: str) -> dict:
         expect (dict): Case ``expect`` block ({"kind", "path"}).
         mount (str): Mirage mount root.
     """
-    rel = expect["path"][len(mount.rstrip("/")):]
+    rel = expect["path"][len(mount.rstrip("/")) :]
     node_path = _files_prefix() + rel
     if expect["kind"] == "move":
-        prev_rel = expect["previous"][len(mount.rstrip("/")):]
+        prev_rel = expect["previous"][len(mount.rstrip("/")) :]
         return {
             "event": {
                 "class": CLASS_BY_KIND["move"],
-                "source": {
-                    "id": 1,
-                    "path": _files_prefix() + prev_rel
-                },
-                "target": {
-                    "id": 1,
-                    "path": node_path
-                },
+                "source": {"id": 1, "path": _files_prefix() + prev_rel},
+                "target": {"id": 1, "path": node_path},
             },
             "time": 1700000000,
         }
     return {
         "event": {
             "class": CLASS_BY_KIND[expect["kind"]],
-            "node": {
-                "id": 1,
-                "path": node_path
-            },
+            "node": {"id": 1, "path": node_path},
         },
         "time": 1700000000,
     }
@@ -400,8 +388,9 @@ class ConsumerPoller:
         self._root = root
         self._checkpoint: str | None = None
 
-    async def pump(self,
-                   timeout: float | None = None) -> tuple[FileEvent, ...]:
+    async def pump(
+        self, timeout: float | None = None
+    ) -> tuple[FileEvent, ...]:
         """Pull one delta, notify every change, and return them.
 
         Returning the changes (rather than nothing) is what lets a
@@ -494,8 +483,9 @@ class ConsumerPoller:
         if self._checkpoint is None:
             return None
         data = json.loads(self._checkpoint)
-        snapshot: dict[str, str] = (data["s"] if isinstance(
-            data.get("s"), dict) else data)
+        snapshot: dict[str, str] = (
+            data["s"] if isinstance(data.get("s"), dict) else data
+        )
         return snapshot.get(virtual)
 
 
@@ -507,8 +497,9 @@ DISK_EVENT_BY_KIND = {
 }
 
 
-def _disk_notification(expect: dict, mount: str,
-                       host_root: str) -> tuple[str, dict]:
+def _disk_notification(
+    expect: dict, mount: str, host_root: str
+) -> tuple[str, dict]:
     """Build the watchdog event a real filesystem watcher would emit.
 
     Field names are watchdog's own, so what the harness posts is byte
@@ -520,9 +511,9 @@ def _disk_notification(expect: dict, mount: str,
         host_root (str): The disk VFS's root on the host.
     """
     base = host_root.rstrip("/")
-    rel = expect["path"][len(mount.rstrip("/")):]
+    rel = expect["path"][len(mount.rstrip("/")) :]
     if expect["kind"] == "move":
-        prev = expect["previous"][len(mount.rstrip("/")):]
+        prev = expect["previous"][len(mount.rstrip("/")) :]
         return "moved", {
             "src_path": base + prev,
             "dest_path": base + rel,
@@ -560,8 +551,14 @@ def _render_fingerprint(value: str | None) -> str:
     return value
 
 
-def _miss_detail(want: str, observed: tuple[FileEvent, ...], pumps: int,
-                 before: str | None, after: str | None, probed: str) -> str:
+def _miss_detail(
+    want: str,
+    observed: tuple[FileEvent, ...],
+    pumps: int,
+    before: str | None,
+    after: str | None,
+    probed: str,
+) -> str:
     """Describe a re-pump phase that never saw ``want``.
 
     The line names both sides of the comparison that failed: the path
@@ -598,8 +595,10 @@ def _miss_detail(want: str, observed: tuple[FileEvent, ...], pumps: int,
             already rendered by ``_backend_stat_line`` -- or the text
             of whatever it raised, or a note that no probe ran.
     """
-    head = (f"waited for {want!r} over {pumps} pump(s) in "
-            f"{PUMP_WINDOW}s, last delta reported ")
+    head = (
+        f"waited for {want!r} over {pumps} pump(s) in "
+        f"{PUMP_WINDOW}s, last delta reported "
+    )
     if not observed:
         tail = "no paths"
     else:
@@ -607,10 +606,12 @@ def _miss_detail(want: str, observed: tuple[FileEvent, ...], pumps: int,
         tail = f"{paths}"
         if any(_framed(path) == _framed(want) for path in paths):
             tail += " (framed match: raw comparison missed it)"
-    return (f"{head}{tail}; listing fingerprint "
-            f"before={_render_fingerprint(before)} "
-            f"after={_render_fingerprint(after)}; "
-            f"backend stat: {probed}")
+    return (
+        f"{head}{tail}; listing fingerprint "
+        f"before={_render_fingerprint(before)} "
+        f"after={_render_fingerprint(after)}; "
+        f"backend stat: {probed}"
+    )
 
 
 class CaseTrigger:
@@ -698,16 +699,16 @@ class PullTrigger(CaseTrigger):
     then says whether there was a move to see.
     """
 
-    def __init__(self,
-                 poller: ConsumerPoller,
-                 probe: BackendProbe | None = None) -> None:
+    def __init__(
+        self, poller: ConsumerPoller, probe: BackendProbe | None = None
+    ) -> None:
         """Args:
-            poller (ConsumerPoller): The consumer's poll loop, pumped
-                once per attempt and read for its checkpoint.
-            probe (BackendProbe | None): Renders the backend's own
-                record of one backend key, for the give-up line.
-                None when the battery's writer has no stat to bind,
-                which is every backend but Nextcloud.
+        poller (ConsumerPoller): The consumer's poll loop, pumped
+            once per attempt and read for its checkpoint.
+        probe (BackendProbe | None): Renders the backend's own
+            record of one backend key, for the give-up line.
+            None when the battery's writer has no stat to bind,
+            which is every backend but Nextcloud.
         """
         self._poller = poller
         self._probe = probe
@@ -789,9 +790,14 @@ class PullTrigger(CaseTrigger):
                 return
             remaining = deadline - loop.time()
             if remaining <= 0:
-                self._miss = _miss_detail(want, observed, pumps, before,
-                                          self._poller.fingerprint_for(want),
-                                          await self._probed(case))
+                self._miss = _miss_detail(
+                    want,
+                    observed,
+                    pumps,
+                    before,
+                    self._poller.fingerprint_for(want),
+                    await self._probed(case),
+                )
                 return
             await asyncio.sleep(min(PUMP_INTERVAL, remaining))
 
@@ -801,8 +807,9 @@ class PushTrigger(CaseTrigger):
     mutation would have produced. No poller exists, so a delivered
     event can only have come from the webhook."""
 
-    def __init__(self, session: aiohttp.ClientSession, url: str,
-                 mount: str) -> None:
+    def __init__(
+        self, session: aiohttp.ClientSession, url: str, mount: str
+    ) -> None:
         self._session = session
         self._url = url
         self._mount = mount
@@ -823,8 +830,14 @@ class EventTrigger(CaseTrigger):
     that the harness built, where a consumer in production only ever
     has the raw notification its watcher or webhook received."""
 
-    def __init__(self, ws: Workspace, hook: DiskEventHook, root: PathSpec,
-                 mount: str, host_root: str) -> None:
+    def __init__(
+        self,
+        ws: Workspace,
+        hook: DiskEventHook,
+        root: PathSpec,
+        mount: str,
+        host_root: str,
+    ) -> None:
         self._ws = ws
         self._hook = hook
         self._root = root
@@ -832,8 +845,9 @@ class EventTrigger(CaseTrigger):
         self._host_root = host_root
 
     async def __call__(self, case: dict) -> None:
-        kind, payload = _disk_notification(case["expect"], self._mount,
-                                           self._host_root)
+        kind, payload = _disk_notification(
+            case["expect"], self._mount, self._host_root
+        )
         for change in await self._hook.to_events(self._root, kind, payload):
             await self._ws.notify(change)
 
@@ -854,8 +868,13 @@ async def _run_check(ws: Workspace, check: dict) -> tuple[bool, str]:
     return ok, f"{check['cmd']!r} absent {check['absent']!r}"
 
 
-async def _run_case(ws: Workspace, op: ExternalWriter, trigger: CaseTrigger,
-                    stream: EventStream, case: dict) -> tuple[bool, str]:
+async def _run_case(
+    ws: Workspace,
+    op: ExternalWriter,
+    trigger: CaseTrigger,
+    stream: EventStream,
+    case: dict,
+) -> tuple[bool, str]:
     """Run one warm -> mutate -> trigger -> event -> checks case.
 
     ``warm`` reads populate mirage's cache BEFORE the external
@@ -880,13 +899,14 @@ async def _run_case(ws: Workspace, op: ExternalWriter, trigger: CaseTrigger,
     if want.get("delivered", True):
         change = await stream.expect(want["path"])
         if change is None:
-            detail = (f"no change for {want['path']} within "
-                      f"{EVENT_TIMEOUT}s")
+            detail = f"no change for {want['path']} within {EVENT_TIMEOUT}s"
             hint = trigger.diagnostic()
             return False, f"{detail}; {hint}" if hint else detail
         if change.kind.value != want["kind"]:
-            return False, (f"{want['path']} delivered as "
-                           f"{change.kind.value}, expected {want['kind']}")
+            return False, (
+                f"{want['path']} delivered as "
+                f"{change.kind.value}, expected {want['kind']}"
+            )
     else:
         if not await stream.absent(want["path"]):
             return False, f"unexpected delivery for {want['path']}"
@@ -924,10 +944,15 @@ async def _seed(ws: Workspace, op: ExternalWriter, spec: dict) -> None:
         await op.write(f"data/{name}", b"seed")
 
 
-async def _run_battery(ws: Workspace, op: ExternalWriter, trigger: CaseTrigger,
-                       agen: AsyncGenerator[FileEvent,
-                                            None], cases: list[dict],
-                       label: str, mode: str) -> list[tuple[str, bool, str]]:
+async def _run_battery(
+    ws: Workspace,
+    op: ExternalWriter,
+    trigger: CaseTrigger,
+    agen: AsyncGenerator[FileEvent, None],
+    cases: list[dict],
+    label: str,
+    mode: str,
+) -> list[tuple[str, bool, str]]:
     """Run one battery of cases against one armed watch iterator.
 
     Args:
@@ -960,8 +985,14 @@ async def _run_battery(ws: Workspace, op: ExternalWriter, trigger: CaseTrigger,
     return results
 
 
-async def _overflow_core(spec: dict, ws: Workspace, op: ExternalWriter,
-                         trigger, mode: str, results: list) -> None:
+async def _overflow_core(
+    spec: dict,
+    ws: Workspace,
+    op: ExternalWriter,
+    trigger,
+    mode: str,
+    results: list,
+) -> None:
     """Shared body of the overflow battery: many changes against a
     tiny queue must collapse into one UNKNOWN event at the watch root.
 
@@ -984,22 +1015,33 @@ async def _overflow_core(spec: dict, ws: Workspace, op: ExternalWriter,
     try:
         for path in block["paths"]:
             await _mutate(op, {"op": "write", "path": path, "body": "burst\n"})
-            await trigger({
-                "expect": {
-                    "kind": "create",
-                    "path": spec["mount"] + "/" + path,
+            await trigger(
+                {
+                    "expect": {
+                        "kind": "create",
+                        "path": spec["mount"] + "/" + path,
+                    }
                 }
-            })
+            )
         change = await stream.expect(spec["watch_dir"])
         if change is None:
-            results.append((f"{mode}:overflow:collapse", False,
-                            "no event at watch root within "
-                            f"{EVENT_TIMEOUT}s"))
+            results.append(
+                (
+                    f"{mode}:overflow:collapse",
+                    False,
+                    f"no event at watch root within {EVENT_TIMEOUT}s",
+                )
+            )
             return
         if change.kind.value != "unknown":
-            results.append((f"{mode}:overflow:collapse", False,
-                            f"{spec['watch_dir']} delivered as "
-                            f"{change.kind.value}, expected unknown"))
+            results.append(
+                (
+                    f"{mode}:overflow:collapse",
+                    False,
+                    f"{spec['watch_dir']} delivered as "
+                    f"{change.kind.value}, expected unknown",
+                )
+            )
             return
         ok = True
         detail = "unknown collapse + fresh reads"
@@ -1024,10 +1066,13 @@ async def _overflow_workspace(spec: dict) -> tuple[Workspace, ExternalWriter]:
     """
     ws, op = await BUILDERS[spec["vfs"]](spec)
     ws.attach_watch_runtime(
-        Watcher(ws.registry,
-                queue_factory=partial(
-                    RAMWatchQueue,
-                    max_pending=spec["overflow"]["max_pending"])))
+        Watcher(
+            ws.registry,
+            queue_factory=partial(
+                RAMWatchQueue, max_pending=spec["overflow"]["max_pending"]
+            ),
+        )
+    )
     return ws, op
 
 
@@ -1046,9 +1091,9 @@ async def _run_overflow_pull(spec: dict, results: list) -> None:
         vfs = ws.registry.mount_for(spec["mount"]).vfs
         poller = ConsumerPoller(vfs.delta_hook(), ws, _framed_root(spec))
         await poller.pump()
-        await _overflow_core(spec, ws, op, PullTrigger(poller,
-                                                       _stat_probe(op)),
-                             "pull", results)
+        await _overflow_core(
+            spec, ws, op, PullTrigger(poller, _stat_probe(op)), "pull", results
+        )
     finally:
         await ws.close()
 
@@ -1074,9 +1119,14 @@ async def _run_overflow_push(spec: dict, results: list) -> None:
         url = f"http://127.0.0.1:{port}/nextcloud/webhook"
         async with aiohttp.ClientSession() as session:
             try:
-                await _overflow_core(spec, ws, op,
-                                     PushTrigger(session, url, spec["mount"]),
-                                     "push", results)
+                await _overflow_core(
+                    spec,
+                    ws,
+                    op,
+                    PushTrigger(session, url, spec["mount"]),
+                    "push",
+                    results,
+                )
             finally:
                 await runner.cleanup()
     finally:
@@ -1103,8 +1153,14 @@ async def _seed_nested(op: ExternalWriter, block: dict) -> None:
         await op.write(rel, body.encode())
 
 
-async def _nested_core(spec: dict, ws: Workspace, op: ExternalWriter,
-                       trigger: CaseTrigger, mode: str, results: list) -> None:
+async def _nested_core(
+    spec: dict,
+    ws: Workspace,
+    op: ExternalWriter,
+    trigger: CaseTrigger,
+    mode: str,
+    results: list,
+) -> None:
     """Shared body of the nested-mount battery: one watch on the shared
     ancestor spans both mounts, and each event must invalidate the
     mount that owns its path (longest prefix), so post-event reads
@@ -1153,8 +1209,9 @@ async def _run_nested_pull(spec: dict, results: list) -> None:
         root = PathSpec.from_str_path(block["watch"], vfs_path=block["root"])
         poller = ConsumerPoller(vfs.delta_hook(), ws, root)
         await poller.pump()
-        await _nested_core(spec, ws, op, PullTrigger(poller, _stat_probe(op)),
-                           "pull", results)
+        await _nested_core(
+            spec, ws, op, PullTrigger(poller, _stat_probe(op)), "pull", results
+        )
     finally:
         await ws.close()
 
@@ -1184,17 +1241,23 @@ async def _run_nested_push(spec: dict, results: list) -> None:
         url = f"http://127.0.0.1:{port}/nextcloud/webhook"
         async with aiohttp.ClientSession() as session:
             try:
-                await _nested_core(spec, ws, op,
-                                   PushTrigger(session, url, spec["mount"]),
-                                   "push", results)
+                await _nested_core(
+                    spec,
+                    ws,
+                    op,
+                    PushTrigger(session, url, spec["mount"]),
+                    "push",
+                    results,
+                )
             finally:
                 await runner.cleanup()
     finally:
         await ws.close()
 
 
-async def _run_pull(spec: dict, ws: Workspace,
-                    op: ExternalWriter) -> list[tuple[str, bool, str]]:
+async def _run_pull(
+    spec: dict, ws: Workspace, op: ExternalWriter
+) -> list[tuple[str, bool, str]]:
     """Run all batteries in pull mode (consumer-owned poll loop).
 
     The poller always pulls the full watch_dir; scope filtering
@@ -1214,9 +1277,17 @@ async def _run_pull(spec: dict, ws: Workspace,
     agen = ws.watch(spec["watch_dir"])
     poller = ConsumerPoller(vfs.delta_hook(), ws, hook_root)
     await poller.pump()
-    results.extend(await _run_battery(ws, op,
-                                      PullTrigger(poller, _stat_probe(op)),
-                                      agen, spec["cases"], "pull", "pull"))
+    results.extend(
+        await _run_battery(
+            ws,
+            op,
+            PullTrigger(poller, _stat_probe(op)),
+            agen,
+            spec["cases"],
+            "pull",
+            "pull",
+        )
+    )
 
     for scope in spec.get("scopes", []):
         # A scope whose mutation the backend has no op for (hf has no
@@ -1227,17 +1298,25 @@ async def _run_pull(spec: dict, ws: Workspace,
         agen = ws.watch(scope["watch"])
         poller = ConsumerPoller(vfs.delta_hook(), ws, hook_root)
         await poller.pump()
-        results.extend(await _run_battery(ws, op,
-                                          PullTrigger(poller, _stat_probe(op)),
-                                          agen, scope["cases"],
-                                          f"pull:{scope['id']}", "pull"))
+        results.extend(
+            await _run_battery(
+                ws,
+                op,
+                PullTrigger(poller, _stat_probe(op)),
+                agen,
+                scope["cases"],
+                f"pull:{scope['id']}",
+                "pull",
+            )
+        )
     await _run_overflow_pull(spec, results)
     await _run_nested_pull(spec, results)
     return results
 
 
-async def _run_event(spec: dict, ws: Workspace,
-                     op: ExternalWriter) -> list[tuple[str, bool, str]]:
+async def _run_event(
+    spec: dict, ws: Workspace, op: ExternalWriter
+) -> list[tuple[str, bool, str]]:
     """Run all batteries in event mode (raw notification -> hook -> notify).
 
     Args:
@@ -1252,28 +1331,41 @@ async def _run_event(spec: dict, ws: Workspace,
     vfs = ws.registry.mount_for(spec["mount"]).vfs
     hook = DiskEventHook(vfs.accessor)
     host_root = str(vfs.accessor.root)
-    trigger = EventTrigger(ws, hook, _framed_root(spec), spec["mount"],
-                           host_root)
+    trigger = EventTrigger(
+        ws, hook, _framed_root(spec), spec["mount"], host_root
+    )
     results: list[tuple[str, bool, str]] = []
 
     await _seed(ws, op, spec)
     agen = ws.watch(spec["watch_dir"])
-    results.extend(await _run_battery(ws, op, trigger, agen, spec["cases"],
-                                      "event", "event"))
+    results.extend(
+        await _run_battery(
+            ws, op, trigger, agen, spec["cases"], "event", "event"
+        )
+    )
 
     for scope in spec.get("scopes", []):
         if spec["vfs"] in scope.get("skip_vfs", []):
             continue
         await _seed(ws, op, spec)
         agen = ws.watch(scope["watch"])
-        results.extend(await
-                       _run_battery(ws, op, trigger, agen, scope["cases"],
-                                    f"event:{scope['id']}", "event"))
+        results.extend(
+            await _run_battery(
+                ws,
+                op,
+                trigger,
+                agen,
+                scope["cases"],
+                f"event:{scope['id']}",
+                "event",
+            )
+        )
     return results
 
 
-async def _run_push(spec: dict, ws: Workspace,
-                    op: ExternalWriter) -> list[tuple[str, bool, str]]:
+async def _run_push(
+    spec: dict, ws: Workspace, op: ExternalWriter
+) -> list[tuple[str, bool, str]]:
     """Run all batteries in push mode (webhook -> notify).
 
     Starts the sample webhook receiver a consumer would host, POSTs the
@@ -1300,15 +1392,25 @@ async def _run_push(spec: dict, ws: Workspace,
         try:
             await _seed(ws, op, spec)
             agen = ws.watch(spec["watch_dir"])
-            results.extend(await _run_battery(ws, op, trigger, agen,
-                                              spec["cases"], "push", "push"))
+            results.extend(
+                await _run_battery(
+                    ws, op, trigger, agen, spec["cases"], "push", "push"
+                )
+            )
             for scope in spec.get("scopes", []):
                 await _seed(ws, op, spec)
                 agen = ws.watch(scope["watch"])
-                results.extend(await
-                               _run_battery(ws, op, trigger, agen,
-                                            scope["cases"],
-                                            f"push:{scope['id']}", "push"))
+                results.extend(
+                    await _run_battery(
+                        ws,
+                        op,
+                        trigger,
+                        agen,
+                        scope["cases"],
+                        f"push:{scope['id']}",
+                        "push",
+                    )
+                )
         finally:
             await runner.cleanup()
     await _run_overflow_push(spec, results)
@@ -1333,8 +1435,9 @@ async def _run_file(spec: dict) -> list[tuple[str, bool, str]]:
     for name in wanted:
         built = await builder(spec)
         if built is None:
-            print(f"skip [{spec['vfs']}]: deployment env absent",
-                  file=sys.stderr)
+            print(
+                f"skip [{spec['vfs']}]: deployment env absent", file=sys.stderr
+            )
             return []
         ws, op = built
         try:
@@ -1466,8 +1569,9 @@ def _escape_annotation(message: str) -> str:
             runner's own escaping applies them -- ``%`` first, so the
             escapes it writes are not re-escaped.
     """
-    return message.replace("%", "%25").replace("\r",
-                                               "%0D").replace("\n", "%0A")
+    return (
+        message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    )
 
 
 class Annotations:

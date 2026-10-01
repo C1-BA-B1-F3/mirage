@@ -32,9 +32,11 @@ async def test_an_unknown_option_letter_refuses_before_any_operand():
     ws = _ws()
     out, err, code = await _run(ws, "declare -q NAME")
     assert out == ""
-    assert err == ("bash: declare: -q: invalid option\n"
-                   "declare: usage: declare [-aAfFgiIlnrtux] [name[=value] "
-                   "...] or declare -p [-aAfFilnrtux] [name ...]\n")
+    assert err == (
+        "bash: declare: -q: invalid option\n"
+        "declare: usage: declare [-aAfFgiIlnrtux] [name[=value] "
+        "...] or declare -p [-aAfFilnrtux] [name ...]\n"
+    )
     assert code == 2
 
 
@@ -58,7 +60,8 @@ async def test_lower_and_upper_in_one_cluster_set_neither():
 async def test_a_shaping_letter_applies_to_later_writes_not_the_held_value():
     ws = _ws()
     out, _, _ = await _run(
-        ws, "v=MiXeD; declare -l v; declare -p v; v=ABC; declare -p v")
+        ws, "v=MiXeD; declare -l v; declare -p v; v=ABC; declare -p v"
+    )
     assert out == 'declare -l v="MiXeD"\ndeclare -l v="abc"\n'
 
 
@@ -66,8 +69,9 @@ async def test_a_shaping_letter_applies_to_later_writes_not_the_held_value():
 async def test_the_two_array_kinds_refuse_to_convert():
     ws = _ws()
     _, err, code = await _run(ws, "declare -a a; declare -A a")
-    assert err == ("bash: declare: a: cannot convert indexed to "
-                   "associative array\n")
+    assert err == (
+        "bash: declare: a: cannot convert indexed to associative array\n"
+    )
     assert code == 1
 
 
@@ -83,8 +87,9 @@ async def test_plus_r_on_a_readonly_name_refuses_and_keeps_it_frozen():
 async def test_plus_a_cannot_destroy_an_indexed_array():
     ws = _ws()
     _, err, code = await _run(ws, "a=(x); declare +a a")
-    assert err == ("bash: declare: a: cannot destroy array variables "
-                   "in this way\n")
+    assert err == (
+        "bash: declare: a: cannot destroy array variables in this way\n"
+    )
     assert code == 1
 
 
@@ -118,8 +123,8 @@ async def test_a_staged_array_literal_leaves_the_old_value_intact():
     # that line never runs -- the value is read back on the next one.
     ws = _ws()
     _, err, code = await _run(
-        ws, "readonly -a a=(x); readonly -a a=(y); "
-        "echo REACHED")
+        ws, "readonly -a a=(x); readonly -a a=(y); echo REACHED"
+    )
     assert err == "bash: a: readonly variable\n"
     assert code == 1
     out, _, _ = await _run(ws, "declare -p a")

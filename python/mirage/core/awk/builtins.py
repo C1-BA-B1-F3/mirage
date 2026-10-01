@@ -49,11 +49,11 @@ def substr(subject: str, start: float, length: float | None) -> str:
     """
     begin = max(to_int(start), 1)
     if length is None:
-        return subject[begin - 1:]
+        return subject[begin - 1 :]
     span = to_int(length)
     if span <= 0:
         return ""
-    return subject[begin - 1:begin - 1 + span]
+    return subject[begin - 1 : begin - 1 + span]
 
 
 def expand_replacement(template: str, matched: str) -> str:
@@ -93,8 +93,9 @@ def expand_replacement(template: str, matched: str) -> str:
     return "".join(out)
 
 
-def substitute(pattern: str, template: str, subject: str,
-               globally: bool) -> tuple[int, str]:
+def substitute(
+    pattern: str, template: str, subject: str, globally: bool
+) -> tuple[int, str]:
     """Perform awk sub/gsub, returning the count and the new string.
 
     Args:
@@ -115,7 +116,7 @@ def substitute(pattern: str, template: str, subject: str,
         found = compiled.search(subject, pos)
         if found is None:
             break
-        out.append(subject[pos:found.start()])
+        out.append(subject[pos : found.start()])
         empty = found.end() == found.start()
         # An empty match touching the previous match is not a match:
         # gsub(/l*/, "-") turns "hello" into "-h-e-o-", not "-h-e--o-".
@@ -209,8 +210,12 @@ def safe_pow(base: float, exponent: float) -> float:
         base (float): the base.
         exponent (float): the exponent.
     """
-    negative = (math.copysign(1.0, base) < 0 and math.isfinite(exponent)
-                and exponent == int(exponent) and int(exponent) % 2 == 1)
+    negative = (
+        math.copysign(1.0, base) < 0
+        and math.isfinite(exponent)
+        and exponent == int(exponent)
+        and int(exponent) % 2 == 1
+    )
     try:
         return math.pow(base, exponent)
     except OverflowError:
@@ -248,7 +253,7 @@ def next_random(state: int) -> tuple[int, float]:
     state = (state + 0x6D2B79F5) & RAND_MASK
     mixed = state
     mixed = ((mixed ^ (mixed >> 15)) * (mixed | 1)) & RAND_MASK
-    mixed ^= (mixed + (((mixed ^ (mixed >> 7)) * (mixed | 61)) & RAND_MASK))
+    mixed ^= mixed + (((mixed ^ (mixed >> 7)) * (mixed | 61)) & RAND_MASK)
     mixed &= RAND_MASK
     return state, ((mixed ^ (mixed >> 14)) & RAND_MASK) / RAND_SCALE
 
@@ -366,7 +371,8 @@ def take_arg(pending: list[Value], fmt: str) -> Value:
     """
     if not pending:
         raise AwkRuntimeError(
-            f"awk: not enough arguments to satisfy format string '{fmt}'")
+            f"awk: not enough arguments to satisfy format string '{fmt}'"
+        )
     return pending.pop(0)
 
 
@@ -391,8 +397,9 @@ def pad(prefix: str, body: str, flags: str, width: str, zero: bool) -> str:
     return " " * gap + joined
 
 
-def render_int(flags: str, width: str, precision: str, conv: str,
-               value: int) -> str:
+def render_int(
+    flags: str, width: str, precision: str, conv: str, value: int
+) -> str:
     """Render one integer conversion with C's flag rules.
 
     ``%d`` keeps the exact integer; ``%o %u %x %X`` read a negative
@@ -441,8 +448,9 @@ def render_int(flags: str, width: str, precision: str, conv: str,
     return pad(prefix, digits, flags, width, not precision)
 
 
-def render_one(flags: str, width: str, precision: str, conv: str, arg: Value,
-               convfmt: str) -> str:
+def render_one(
+    flags: str, width: str, precision: str, conv: str, arg: Value, convfmt: str
+) -> str:
     """Render a single printf conversion.
 
     Args:
@@ -454,10 +462,11 @@ def render_one(flags: str, width: str, precision: str, conv: str, arg: Value,
         convfmt (str): CONVFMT for number to string conversion.
     """
     if conv in "cs":
-        body = (render_char(arg, convfmt) if conv == "c" else to_str(
-            arg, convfmt))
+        body = (
+            render_char(arg, convfmt) if conv == "c" else to_str(arg, convfmt)
+        )
         if conv == "s" and precision:
-            body = body[:int(precision[1:] or "0")]
+            body = body[: int(precision[1:] or "0")]
         return pad("", body, flags, width, False)
     if conv in INT_CONVS:
         return render_int(flags, width, precision, conv, to_int(to_num(arg)))
@@ -489,16 +498,16 @@ def split_fields(record: str, pattern: re.Pattern[str] | None) -> list[str]:
             # A separator that matches nothing separates nothing.
             pos = found.start() + 1
             continue
-        fields.append(record[start:found.start()])
+        fields.append(record[start : found.start()])
         start = found.end()
         pos = start
     fields.append(record[start:])
     return fields
 
 
-def split_record(record: str,
-                 separator: str,
-                 paragraph: bool = False) -> list[str]:
+def split_record(
+    record: str, separator: str, paragraph: bool = False
+) -> list[str]:
     """Split a record using an FS value.
 
     An empty FS makes every character its own field; gawk, mawk and
@@ -515,8 +524,9 @@ def split_record(record: str,
     if separator == "":
         return list(record)
     if paragraph and len(separator) == 1:
-        return split_fields(record.replace("\n", separator),
-                            split_pattern(separator))
+        return split_fields(
+            record.replace("\n", separator), split_pattern(separator)
+        )
     return split_fields(record, split_pattern(separator))
 
 
@@ -533,8 +543,9 @@ def take_tail(buffer: str, start: int, final: bool) -> tuple[str | None, int]:
     return None, start
 
 
-def take_paragraph(buffer: str, start: int,
-                   final: bool) -> tuple[str | None, int]:
+def take_paragraph(
+    buffer: str, start: int, final: bool
+) -> tuple[str | None, int]:
     """Cut the next record in paragraph mode, where RS is empty.
 
     Records are separated by blank lines, and leading or trailing
@@ -563,8 +574,9 @@ def take_paragraph(buffer: str, start: int,
     return buffer[start:end], len(buffer)
 
 
-def take_record(buffer: str, start: int, separator: str,
-                final: bool) -> tuple[str | None, int]:
+def take_record(
+    buffer: str, start: int, separator: str, final: bool
+) -> tuple[str | None, int]:
     """Cut the next record out of ``buffer`` with an RS value.
 
     A single character RS separates records literally and an empty RS
@@ -601,7 +613,7 @@ def take_record(buffer: str, start: int, separator: str,
             continue
         if found.end() == len(buffer) and not final:
             return None, start
-        return buffer[start:found.start()], found.end()
+        return buffer[start : found.start()], found.end()
     return take_tail(buffer, start, final)
 
 
@@ -640,7 +652,7 @@ def split_assignment(operand: str) -> tuple[str, str] | None:
     found = ASSIGNMENT.match(operand)
     if found is None:
         return None
-    return operand[:found.end() - 1], unescape(operand[found.end():])
+    return operand[: found.end() - 1], unescape(operand[found.end() :])
 
 
 __all__ = [

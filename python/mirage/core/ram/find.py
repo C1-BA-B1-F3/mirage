@@ -14,10 +14,15 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               compute_nonempty_dirs,
-                                               emit_start_path, keep,
-                                               start_basename)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    compute_nonempty_dirs,
+    emit_start_path,
+    keep,
+    start_basename,
+)
 from mirage.types import PathSpec
 from mirage.utils.path import norm
 from mirage.utils.stat_view import DIR_SIZE
@@ -50,16 +55,22 @@ async def find(
     base_depth = p.count("/")
     results: list[str] = []
     if tree is None:
-        tree = build_tree(name=name,
-                          iname=iname,
-                          path_pattern=path_pattern,
-                          type=type,
-                          name_exclude=name_exclude,
-                          or_names=or_names,
-                          empty=empty)
-    nonempty = compute_nonempty_dirs([
-        *store.files, *(k for k in store.dirs if k != "/")
-    ]) if empty else set()
+        tree = build_tree(
+            name=name,
+            iname=iname,
+            path_pattern=path_pattern,
+            type=type,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            empty=empty,
+        )
+    nonempty = (
+        compute_nonempty_dirs(
+            [*store.files, *(k for k in store.dirs if k != "/")]
+        )
+        if empty
+        else set()
+    )
 
     device_of = getattr(store.files, "device_of", None)
 
@@ -111,11 +122,13 @@ async def find(
         is_empty: bool | None = None
         if empty:
             is_empty = empty_of(key, kind)
-        entry = FindEntry(key=key,
-                          name=key.rsplit("/", 1)[-1],
-                          kind=kind,
-                          depth=depth,
-                          is_empty=is_empty)
+        entry = FindEntry(
+            key=key,
+            name=key.rsplit("/", 1)[-1],
+            kind=kind,
+            depth=depth,
+            is_empty=is_empty,
+        )
         if not keep(entry, tree, mindepth):
             continue
 
@@ -129,17 +142,19 @@ async def find(
         results.append(key)
 
     if root_kind is not None:
-        emit_start_path(results,
-                        p,
-                        start_name,
-                        kind=root_kind,
-                        is_empty=root_is_empty,
-                        exists=True,
-                        tree=tree,
-                        maxdepth=maxdepth,
-                        mindepth=mindepth,
-                        size=root_size,
-                        min_size=min_size,
-                        max_size=max_size)
+        emit_start_path(
+            results,
+            p,
+            start_name,
+            kind=root_kind,
+            is_empty=root_is_empty,
+            exists=True,
+            tree=tree,
+            maxdepth=maxdepth,
+            mindepth=mindepth,
+            size=root_size,
+            min_size=min_size,
+            max_size=max_size,
+        )
 
     return sorted(results)

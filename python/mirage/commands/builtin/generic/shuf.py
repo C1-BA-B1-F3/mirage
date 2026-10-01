@@ -177,7 +177,7 @@ def parse_input_range(raw: str) -> tuple[int, int] | RangeRefusal:
     if dash < 0:
         return RangeRefusal.INVALID
     low_raw = raw[:dash]
-    high_raw = raw[dash + 1:]
+    high_raw = raw[dash + 1 :]
     if _UNSIGNED.fullmatch(low_raw) is None:
         return RangeRefusal.INVALID
     low = int(low_raw)
@@ -193,8 +193,9 @@ def parse_input_range(raw: str) -> tuple[int, int] | RangeRefusal:
     return low, high
 
 
-def emit_count(available: int, count: int | None,
-               with_replacement: bool) -> int:
+def emit_count(
+    available: int, count: int | None, with_replacement: bool
+) -> int:
     """How many lines shuf will emit, before any of them are built.
 
     Computed rather than discovered, because ``-i`` can name 2**64
@@ -241,7 +242,8 @@ def _typed_values(fl: FlagView) -> list[tuple[str, str]]:
     for dest in fl.typed_order("head_count", "input_range", "output"):
         if dest == "output":
             pairs.extend(
-                (dest, p.raw_path or p.virtual) for p in fl.as_paths(dest))
+                (dest, p.raw_path or p.virtual) for p in fl.as_paths(dest)
+            )
         else:
             pairs.extend((dest, raw) for raw in fl.as_list(dest))
     return pairs
@@ -295,7 +297,8 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> ShufFlags:
         if dest == "head_count":
             if _UNSIGNED.fullmatch(raw) is None:
                 raise ValueError(
-                    f"shuf: invalid line count: '{quote_text(raw)}'")
+                    f"shuf: invalid line count: '{quote_text(raw)}'"
+                )
         elif dest == "input_range":
             if input_range_raw is not None:
                 raise ValueError(MULTIPLE_RANGES)
@@ -358,8 +361,9 @@ def _need(available: int, count: int | None, with_replacement: bool) -> int:
     return need
 
 
-def _sample(items: list[str], count: int | None,
-            with_replacement: bool) -> list[str]:
+def _sample(
+    items: list[str], count: int | None, with_replacement: bool
+) -> list[str]:
     need = _need(len(items), count, with_replacement)
     if with_replacement:
         return random.choices(items, k=need) if items else []
@@ -368,8 +372,9 @@ def _sample(items: list[str], count: int | None,
     return out[:need]
 
 
-def _range_lines(low: int, high: int, need: int,
-                 with_replacement: bool) -> list[str]:
+def _range_lines(
+    low: int, high: int, need: int, with_replacement: bool
+) -> list[str]:
     """Emit `need` values from the inclusive range, never enumerating it.
 
     GNU is lazy exactly here: with a ``-n`` below the element count it
@@ -432,8 +437,9 @@ async def shuf(
         if paths:
             # GNU: -i names the input, so a file operand is one too many.
             word = paths[0].raw_path or paths[0].virtual
-            raise ValueError(f"shuf: extra operand '{quote_text(word)}'" +
-                             _TRY_HELP)
+            raise ValueError(
+                f"shuf: extra operand '{quote_text(word)}'" + _TRY_HELP
+            )
         bounds = parse_input_range(input_range)
         if isinstance(bounds, RangeRefusal):
             raise ValueError(range_error(input_range, bounds))
@@ -472,15 +478,27 @@ async def shuf(
         except FS_ERRORS as exc:
             return None, IOResult(
                 exit_code=1,
-                stderr=f"shuf: {output.raw_path}: {fs_strerror(exc)}\n".encode(
-                ))
+                stderr=f"shuf: {output.raw_path}: {fs_strerror(exc)}\n".encode(),
+            )
         return None, IOResult(writes={output.mount_path: rendered})
     return rendered, IOResult()
 
 
 __all__ = [
-    "ECHO_WITH_RANGE", "MAX_OUTPUT_LINES", "MEMORY_EXHAUSTED",
-    "MULTIPLE_OUTPUTS", "MULTIPLE_RANGES", "NO_WRITE_OP", "OVERFLOW_CLAUSE",
-    "SIZE_MAX", "UINTMAX_MAX", "RangeRefusal", "ShufFlags", "emit_count",
-    "parse_flags", "parse_input_range", "range_error", "shuf"
+    "ECHO_WITH_RANGE",
+    "MAX_OUTPUT_LINES",
+    "MEMORY_EXHAUSTED",
+    "MULTIPLE_OUTPUTS",
+    "MULTIPLE_RANGES",
+    "NO_WRITE_OP",
+    "OVERFLOW_CLAUSE",
+    "SIZE_MAX",
+    "UINTMAX_MAX",
+    "RangeRefusal",
+    "ShufFlags",
+    "emit_count",
+    "parse_flags",
+    "parse_input_range",
+    "range_error",
+    "shuf",
 ]

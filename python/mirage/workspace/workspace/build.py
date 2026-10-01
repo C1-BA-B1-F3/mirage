@@ -41,9 +41,13 @@ class ControlStores:
 
 
 def resolve_control_stores(
-        workspace_id: str, store: WorkspaceStateStore | None, owns_store: bool,
-        observe: ObserverStore | None, namespace_store: NamespaceStore | None,
-        session_store: SessionStore | None) -> ControlStores:
+    workspace_id: str,
+    store: WorkspaceStateStore | None,
+    owns_store: bool,
+    observe: ObserverStore | None,
+    namespace_store: NamespaceStore | None,
+    session_store: SessionStore | None,
+) -> ControlStores:
     """Resolve the state-store provider and its three planes.
 
     A caller-passed provider may be shared with sibling workspaces, so
@@ -67,16 +71,20 @@ def resolve_control_stores(
         namespace_store = state_store.namespace(workspace_id)
     if session_store is None:
         session_store = state_store.sessions(workspace_id)
-    return ControlStores(state_store=state_store,
-                         owned=owned,
-                         observe=observe,
-                         namespace=namespace_store,
-                         sessions=session_store)
+    return ControlStores(
+        state_store=state_store,
+        owned=owned,
+        observe=observe,
+        namespace=namespace_store,
+        sessions=session_store,
+    )
 
 
 def wire_runtime_world(
-        registry: MountRegistry, binding: WorkspaceBinding,
-        entries: list[Runtime | str] | None) -> tuple[Runtimes, Router]:
+    registry: MountRegistry,
+    binding: WorkspaceBinding,
+    entries: list[Runtime | str] | None,
+) -> tuple[Runtimes, Router]:
     """Build the ordered runtime world and its route-policy router.
 
     Instances and the workspace marker; the first capturer binds each

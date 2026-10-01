@@ -34,9 +34,11 @@ stat = _op("stat")
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -59,15 +61,22 @@ async def test_stat_root_is_directory(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_indexed_file(accessor, index):
-    await index.set_dir('/docs', [('readme.txt',
-                                   IndexEntry(
-                                       id="file123",
-                                       name="readme",
-                                       resource_type="gdrive/file",
-                                       remote_time="2026-04-01T00:00:00Z",
-                                       vfs_name="readme.txt",
-                                       size=7,
-                                   ))])
+    await index.set_dir(
+        "/docs",
+        [
+            (
+                "readme.txt",
+                IndexEntry(
+                    id="file123",
+                    name="readme",
+                    resource_type="gdrive/file",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="readme.txt",
+                    size=7,
+                ),
+            )
+        ],
+    )
     result = await stat(accessor, _scope("/docs/readme.txt"), index=index)
     assert result.name == "readme.txt"
     assert result.size == 7
@@ -77,14 +86,17 @@ async def test_stat_indexed_file(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_not_found(accessor, index):
     await index.set_dir("/", [])
-    with patch(
+    with (
+        patch(
             "mirage.core.gdrive.resolve.list_files",
             new_callable=AsyncMock,
             return_value=[],
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.resolve.list_shared_drives",
             new_callable=AsyncMock,
             return_value=[],
+        ),
     ):
         with pytest.raises(FileNotFoundError):
             await stat(accessor, _scope("/nonexistent.txt"), index=index)

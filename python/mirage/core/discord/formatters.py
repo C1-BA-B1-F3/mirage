@@ -47,8 +47,10 @@ def format_grep_results(
         ch_name = names.get(ch_id, ch_id)
         author = msg.get("author", {}).get("username", "?")
         content = msg.get("content", "").replace("\n", " ")
-        path = (f"{prefix}/{guild_dirname}/channels/{ch_name}/"
-                f"{ts}/chat.jsonl"
-                if ts else f"{prefix}/{guild_dirname}/channels/{ch_name}")
+        path = (
+            f"{prefix}/{guild_dirname}/channels/{ch_name}/{ts}/chat.jsonl"
+            if ts
+            else f"{prefix}/{guild_dirname}/channels/{ch_name}"
+        )
         lines.append(f"{path}:[{author}] {content}")
     return lines

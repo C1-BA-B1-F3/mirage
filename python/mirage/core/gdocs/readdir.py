@@ -19,6 +19,6 @@ from mirage.core.google.readdir import make_app_readdir
 from mirage.core.hierarchy.probe import ReaddirFn
 from mirage.vfs.gdocs.doc_entry import make_filename
 
-readdir: ReaddirFn[GDocsAccessor] = make_app_readdir(MIME, detect_scope,
-                                                     make_filename,
-                                                     "gdocs/file")
+readdir: ReaddirFn[GDocsAccessor] = make_app_readdir(
+    MIME, detect_scope, make_filename, "gdocs/file"
+)

@@ -31,6 +31,7 @@ class HistoryViewVFS(BaseVFS):
     Args:
         observer (Observer): The workspace's hidden recorder.
     """
+
     accessor: HistoryAccessor
 
     name = "history"

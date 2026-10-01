@@ -24,10 +24,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_diff(scopes: list[PathSpec],
-                   flag_kwargs: dict[str, FlagValue],
-                   dispatch: DispatchFn,
-                   stdin: ByteSource | None = None) -> CrossResult:
+async def run_diff(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Diff two files on different mounts via the shared generic diff.
 
     Pure wiring: both sides are read through dispatch-relayed primitives.
@@ -41,16 +43,18 @@ async def run_diff(scopes: list[PathSpec],
     """
     p = functools.partial
     parsed = parse_flags(flag_kwargs)
-    return await generic_diff(flat_scopes(scopes),
-                              stdin=stdin,
-                              read_bytes=p(relay, dispatch, "read"),
-                              readdir_fn=p(relay, dispatch, "readdir"),
-                              stat_fn=p(relay, dispatch, "stat"),
-                              i=parsed.ignore_case,
-                              w=parsed.ignore_all_space,
-                              b=parsed.ignore_space_change,
-                              e=parsed.ed,
-                              u=parsed.unified,
-                              q=parsed.brief,
-                              r=parsed.recursive,
-                              context=parsed.context)
+    return await generic_diff(
+        flat_scopes(scopes),
+        stdin=stdin,
+        read_bytes=p(relay, dispatch, "read"),
+        readdir_fn=p(relay, dispatch, "readdir"),
+        stat_fn=p(relay, dispatch, "stat"),
+        i=parsed.ignore_case,
+        w=parsed.ignore_all_space,
+        b=parsed.ignore_space_change,
+        e=parsed.ed,
+        u=parsed.unified,
+        q=parsed.brief,
+        r=parsed.recursive,
+        context=parsed.context,
+    )

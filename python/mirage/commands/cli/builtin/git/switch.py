@@ -16,28 +16,54 @@ from dataclasses import dataclass
 
 from dulwich.refs import Ref
 
-from mirage.commands.cli.builtin.git.branch import (remote_branch,
-                                                    set_up_tracking,
-                                                    track_mode)
-from mirage.commands.cli.builtin.git.checkout import (move_head,
-                                                      previous_position,
-                                                      tracking_report)
+from mirage.commands.cli.builtin.git.branch import (
+    remote_branch,
+    set_up_tracking,
+    track_mode,
+)
+from mirage.commands.cli.builtin.git.checkout import (
+    move_head,
+    previous_position,
+    tracking_report,
+)
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BranchExistsError, BranchExpectedError, DetachWithCreateError, GitError,
-    InvalidBranchNameError, InvalidReferenceError, MissingBranchArgumentError,
-    NoWorkspaceError, OneReferenceError, RefLockError, UnknownSwitchError)
+from mirage.commands.cli.builtin.git.errors import (
+    BranchExistsError,
+    BranchExpectedError,
+    DetachWithCreateError,
+    GitError,
+    InvalidBranchNameError,
+    InvalidReferenceError,
+    MissingBranchArgumentError,
+    NoWorkspaceError,
+    OneReferenceError,
+    RefLockError,
+    UnknownSwitchError,
+)
 from mirage.commands.cli.builtin.git.format import short, subject
-from mirage.commands.cli.builtin.git.index_file import (read_index,
-                                                        refuse_unresolved)
+from mirage.commands.cli.builtin.git.index_file import (
+    read_index,
+    refuse_unresolved,
+)
 from mirage.commands.cli.builtin.git.objects import abbrev_for
-from mirage.commands.cli.builtin.git.refs import (BRANCH_PREFIX, TAG_PREFIX,
-                                                  blocking_ref, read_head,
-                                                  set_head, valid_ref_name)
+from mirage.commands.cli.builtin.git.refs import (
+    BRANCH_PREFIX,
+    TAG_PREFIX,
+    blocking_ref,
+    read_head,
+    set_head,
+    valid_ref_name,
+)
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, mounts_of, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    mounts_of,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -57,6 +83,7 @@ class SwitchFlags:
         create (str | None): ``-c``, the branch to create and switch to.
         detach (bool): ``--detach``, leave HEAD on the commit itself.
     """
+
     create: str | None
     detach: bool
 
@@ -89,7 +116,8 @@ def expected_kind(known: set[Ref], name: str) -> str:
 
 
 async def switch(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Switch to a branch, creating it under ``-c``.
 
     The same move ``checkout`` makes, with a narrower grammar: only a
@@ -113,8 +141,9 @@ async def switch(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         flags = parse_flags(fl)
         creating = flags.create is not None
         if creating and flags.detach:
@@ -143,8 +172,11 @@ async def switch(
             # stays unresolvable (``fatal: invalid reference: main``),
             # so this reads the shape of the line rather than probing
             # HEAD. Pinned against git 2.50.1.
-            unborn = (start is None and head.ref is not None
-                      and Ref(head.ref.encode()) not in known)
+            unborn = (
+                start is None
+                and head.ref is not None
+                and Ref(head.ref.encode()) not in known
+            )
             if not unborn:
                 try:
                     commit = resolve_commit(repo, start or HEAD)
@@ -167,8 +199,10 @@ async def switch(
             if unborn:
                 await set_head(dispatch, location.gitdir, ref.decode())
                 return yield_bytes(b""), IOResult(
-                    stderr=b"" if fl.as_bool("quiet") else
-                    f"Switched to a new branch '{target}'\n".encode())
+                    stderr=b""
+                    if fl.as_bool("quiet")
+                    else f"Switched to a new branch '{target}'\n".encode()
+                )
         else:
             start = None
             target = texts[0] if texts else HEAD
@@ -180,18 +214,24 @@ async def switch(
             # commit to be on. git resolves it first and dies, which is
             # what leaves ``switch -c`` as the only line an unborn HEAD
             # accepts. Pinned against git 2.50.1.
-            if (not flags.detach and target == head.branch and ref in known):
+            if not flags.detach and target == head.branch and ref in known:
                 # Moving nothing is not the same as having nothing to
                 # check: git dies on an unresolved index here too, so
                 # the shortcut reads it before it answers. Every ref
                 # check above comes first, which is git's own order.
                 refuse_unresolved(await read_index(dispatch, location.gitdir))
-                return None, IOResult(stderr=b"" if fl.as_bool("quiet") else
-                                      f"Already on '{target}'\n".encode())
+                return None, IOResult(
+                    stderr=b""
+                    if fl.as_bool("quiet")
+                    else f"Already on '{target}'\n".encode()
+                )
             # git's --guess, on by default: no such branch here but one
             # remote has it, so the switch creates it tracking that one.
-            start = None if flags.detach or ref in known else remote_branch(
-                repo, target)
+            start = (
+                None
+                if flags.detach or ref in known
+                else remote_branch(repo, target)
+            )
             creating = start is not None
             try:
                 commit = resolve_commit(repo, start or target)
@@ -200,17 +240,32 @@ async def switch(
             attached = creating or (not flags.detach and ref in known)
             if not flags.detach and not attached:
                 raise BranchExpectedError(expected_kind(known, target), target)
-        moved = await move_head(dispatch, stat_path, links_of(doors),
-                                mounts_of(doors), repo, location, head, commit,
-                                target, ref if attached else None, creating,
-                                creating and start is None)
-        tracking, warning = await set_up_tracking(
-            dispatch, repo, location, target, start, mode,
-            head) if creating else ("", "")
+        moved = await move_head(
+            dispatch,
+            stat_path,
+            links_of(doors),
+            mounts_of(doors),
+            repo,
+            location,
+            head,
+            commit,
+            target,
+            ref if attached else None,
+            creating,
+            creating and start is None,
+        )
+        tracking, warning = (
+            await set_up_tracking(
+                dispatch, repo, location, target, start, mode, head
+            )
+            if creating
+            else ("", "")
+        )
     except GitError as exc:
         return fatal(exc)
-    carried = "".join(f"{letter}\t{path}\n"
-                      for path, letter in sorted(moved.carried.items()))
+    carried = "".join(
+        f"{letter}\t{path}\n" for path, letter in sorted(moved.carried.items())
+    )
     carried += tracking
     # Above everything the move says about itself, which is where git
     # puts it: what could not be removed is a fact about the working
@@ -222,8 +277,10 @@ async def switch(
         if not creating:
             carried += await tracking_report(dispatch, location, target)
     else:
-        note += (f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
-                 f"{subject(commit)}\n")
+        note += (
+            f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
+            f"{subject(commit)}\n"
+        )
     if fl.as_bool("quiet"):
         return None, IOResult(stderr=(moved.warnings + warning).encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

@@ -59,9 +59,13 @@ DOOR_FLAG_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
-def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
-                        registry: MountRegistry, cwd: str,
-                        stdin: ByteSource | None) -> PathSpec | None:
+def default_cwd_operand(
+    parts: list[str | PathSpec],
+    cmd_name: str,
+    registry: MountRegistry,
+    cwd: str,
+    stdin: ByteSource | None,
+) -> PathSpec | None:
     """The synthetic cwd operand for a CWD_DEFAULT_RAW command typed bare.
 
     Injected before routing, so mount resolution, fan-out across
@@ -80,25 +84,33 @@ def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
         return None
     # A typed `-` goes back to the parser as itself, as it does from
     # `parse_flags`, so `rg -f -` reads as stdin rather than a file `/-`.
-    argv = [("-" if p.raw_path == "-" else p.virtual) if isinstance(
-        p, PathSpec) else p for p in parts[1:]]
+    argv = [
+        ("-" if p.raw_path == "-" else p.virtual)
+        if isinstance(p, PathSpec)
+        else p
+        for p in parts[1:]
+    ]
     if cmd_name == "find":
         # Only the words before the expression can be start points: an
         # `-exec` command word or a `-newer` reference is the parser's.
-        argv = argv[:len(argv) - len(find_expr_tail(argv))]
+        argv = argv[: len(argv) - len(find_expr_tail(argv))]
     parsed = parse_command(spec, argv, cwd, cmd_name)
     if parsed.paths():
         return None
-    if cmd_name == "rg" and FlagView(parse_to_kwargs(parsed),
-                                     spec=spec).as_bool("type_list"):
+    if cmd_name == "rg" and FlagView(
+        parse_to_kwargs(parsed), spec=spec
+    ).as_bool("type_list"):
         # --type-list reads no path, so there is no cwd to walk.
         return None
     if cmd_name == "grep":
         kwargs = parse_to_kwargs(parsed)
         if kwargs.get("r") is not True and kwargs.get("R") is not True:
             return None
-    elif (cmd_name == "rg" and stdin is not None
-          and not isinstance(stdin, DeviceInput)):
+    elif (
+        cmd_name == "rg"
+        and stdin is not None
+        and not isinstance(stdin, DeviceInput)
+    ):
         fl = FlagView(parse_to_kwargs(parsed), spec=spec)
         # `-f -` reads the attached stdin for patterns first, and --files
         # lists rather than searches, and either leaves ripgrep nothing to
@@ -113,8 +125,9 @@ def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
     return dataclasses.replace(operand, raw_path=CWD_DEFAULT_RAW[cmd_name])
 
 
-def path_flag_scopes(cmd_name: str, argv: list[str],
-                     cwd: str) -> list[PathSpec]:
+def path_flag_scopes(
+    cmd_name: str, argv: list[str], cwd: str
+) -> list[PathSpec]:
     spec = SPECS.get(cmd_name)
     if spec is None:
         return []
@@ -137,8 +150,9 @@ def path_flag_scopes(cmd_name: str, argv: list[str],
     ]
 
 
-def positional_scopes(cmd_name: str, argv: list[str], cwd: str,
-                      words: list[str | PathSpec]) -> list[PathSpec]:
+def positional_scopes(
+    cmd_name: str, argv: list[str], cwd: str, words: list[str | PathSpec]
+) -> list[PathSpec]:
     """The path operands a line names positionally, flag values left out.
 
     Classification turns every path-shaped word into a PathSpec,
@@ -163,15 +177,17 @@ def positional_scopes(cmd_name: str, argv: list[str], cwd: str,
     return [
         by_virtual.get(
             value,
-            PathSpec(virtual=value,
-                     directory=value,
-                     vfs_path="",
-                     raw_path=value)) for value in parsed.paths()
+            PathSpec(
+                virtual=value, directory=value, vfs_path="", raw_path=value
+            ),
+        )
+        for value in parsed.paths()
     ]
 
 
-def option_loop_exits(cmd_name: str, spec: CommandSpec | None, argv: list[str],
-                      cwd: str) -> bool:
+def option_loop_exits(
+    cmd_name: str, spec: CommandSpec | None, argv: list[str], cwd: str
+) -> bool:
     """Whether a handler's option loop must exit before reading operands.
 
     Help, version and deferred refusals leave no input files to route.
@@ -183,17 +199,24 @@ def option_loop_exits(cmd_name: str, spec: CommandSpec | None, argv: list[str],
         argv (list[str]): words after the command name.
         cwd (str): working directory.
     """
-    if (spec is None or cmd_name not in OWN_OPTION_LOOP
-            or not is_builtin_grammar(cmd_name, spec)):
+    if (
+        spec is None
+        or cmd_name not in OWN_OPTION_LOOP
+        or not is_builtin_grammar(cmd_name, spec)
+    ):
         return False
     parsed = parse_command(spec, argv, cwd, cmd_name)
     fl = FlagView(parse_to_kwargs(parsed), spec=spec)
     return bool(fl.occurrences("help", "version", REFUSED))
 
 
-def routed_operands(cmd_name: str, argv: list[str], cwd: str,
-                    words: list[str | PathSpec],
-                    path_scopes: list[PathSpec]) -> list[PathSpec]:
+def routed_operands(
+    cmd_name: str,
+    argv: list[str],
+    cwd: str,
+    words: list[str | PathSpec],
+    path_scopes: list[PathSpec],
+) -> list[PathSpec]:
     """The classified path words that route a line.
 
     Classification makes a door option's file a path word like any
@@ -228,8 +251,9 @@ def routable_scopes(cmd_name: str, scopes: list[PathSpec]) -> list[PathSpec]:
     return [s for s in scopes if split_assignment(s.raw_path) is None]
 
 
-def merge_scopes(positional: list[PathSpec],
-                 flag_scopes: list[PathSpec]) -> list[PathSpec]:
+def merge_scopes(
+    positional: list[PathSpec], flag_scopes: list[PathSpec]
+) -> list[PathSpec]:
     """Combine positional and path-flag scopes, keeping operand order.
 
     Args:
@@ -245,8 +269,9 @@ def merge_scopes(positional: list[PathSpec],
     return merged
 
 
-def program_tokens(registry: MountRegistry, name: str, argv: Sequence[str],
-                   cwd: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def program_tokens(
+    registry: MountRegistry, name: str, argv: Sequence[str], cwd: str
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The line as an admission pattern reads it, and the program it runs.
 
     For an installed CLI head the spec walk names the verb path (global
@@ -270,4 +295,4 @@ def program_tokens(registry: MountRegistry, name: str, argv: Sequence[str],
         if result.leaf is not None:
             program = (name, *result.path)
             return (*program, *result.argv), program
-    return (name, *argv), (name, )
+    return (name, *argv), (name,)

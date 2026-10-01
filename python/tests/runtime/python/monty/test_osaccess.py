@@ -26,14 +26,16 @@ from mirage.utils.errors import OperationNotSupportedError
 class FakeDispatch:
     """Async dispatch stub backed by a dict of virtual files."""
 
-    def __init__(self,
-                 files: dict[str, bytes],
-                 supports_append: bool = True,
-                 links: dict[str, str] | None = None,
-                 stat_mode: int | None = None,
-                 stat_modified: str | None = None,
-                 devices: set[str] | None = None,
-                 refuse_readdir: bool = False) -> None:
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        supports_append: bool = True,
+        links: dict[str, str] | None = None,
+        stat_mode: int | None = None,
+        stat_modified: str | None = None,
+        devices: set[str] | None = None,
+        refuse_readdir: bool = False,
+    ) -> None:
         self.files = files
         self.supports_append = supports_append
         self.links = dict(links or {})
@@ -57,7 +59,8 @@ class FakeDispatch:
         if op == "read":
             if virtual in self.devices:
                 raise ValueError(
-                    "cannot read an endless device without a size")
+                    "cannot read an endless device without a size"
+                )
             if virtual not in self.files:
                 raise FileNotFoundError(virtual)
             return self.files[virtual], None
@@ -65,12 +68,14 @@ class FakeDispatch:
             if virtual in self.devices:
                 return FileStat(name=virtual, type=FileType.CHAR_DEVICE), None
             if virtual in self.files:
-                return FileStat(name=virtual,
-                                size=len(self.files[virtual]),
-                                type=FileType.FILE,
-                                content=ContentType.TEXT,
-                                mode=self.stat_mode,
-                                modified=self.stat_modified), None
+                return FileStat(
+                    name=virtual,
+                    size=len(self.files[virtual]),
+                    type=FileType.FILE,
+                    content=ContentType.TEXT,
+                    mode=self.stat_mode,
+                    modified=self.stat_modified,
+                ), None
             raise FileNotFoundError(virtual)
         if op == "readdir":
             if self.refuse_readdir:
@@ -80,7 +85,7 @@ class FakeDispatch:
             names = set()
             for p in [*self.files, *self.devices]:
                 if p.startswith(prefix):
-                    names.add(prefix + p[len(prefix):].split("/")[0])
+                    names.add(prefix + p[len(prefix) :].split("/")[0])
             if not names and virtual.rstrip("/") not in ("", "/"):
                 raise FileNotFoundError(virtual)
             return sorted(names), None
@@ -93,8 +98,9 @@ class FakeDispatch:
             if not self.supports_append:
                 # What a backend without the op really raises (S3
                 # registers write but not append).
-                raise OperationNotSupportedError(errno.ENOTSUP,
-                                                 "no op 'append'", virtual)
+                raise OperationNotSupportedError(
+                    errno.ENOTSUP, "no op 'append'", virtual
+                )
             data = kwargs["data"]
             self.files[virtual] = self.files.get(virtual, b"") + data
             self.appends.append((virtual, data))
@@ -135,7 +141,8 @@ class FakeDispatch:
 def test_monty_host_filesystem_invisible():
     runtime = MontyRuntime()
     result = asyncio.run(
-        runtime.run(RunArgs(code="print(open('/etc/passwd').read())")))
+        runtime.run(RunArgs(code="print(open('/etc/passwd').read())"))
+    )
     assert result.exit_code == 1
     assert b"FileNotFoundError" in result.stderr
 
@@ -145,7 +152,8 @@ def test_monty_reads_virtual_file_via_dispatch():
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
-        runtime.run(RunArgs(code="print(open('/s3/a.txt').read().upper())")))
+        runtime.run(RunArgs(code="print(open('/s3/a.txt').read().upper())"))
+    )
     assert result.exit_code == 0
     assert result.stdout == b"VIRTUAL\n"
 
@@ -155,16 +163,22 @@ def test_monty_stat_answers_from_the_mounts_own_row():
     # is a MemoryFile with 0o644 and the moment it was fetched. So a
     # chmod the shell made was invisible and every mounted file read as
     # modified just now; the door's row holds both facts.
-    dispatch = FakeDispatch({"/s3/a.txt": b"hello"},
-                            stat_mode=0o600,
-                            stat_modified="2026-07-15T00:00:00Z")
+    dispatch = FakeDispatch(
+        {"/s3/a.txt": b"hello"},
+        stat_mode=0o600,
+        stat_modified="2026-07-15T00:00:00Z",
+    )
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "st = Path('/s3/a.txt').stat()\n"
-                    "print(oct(st.st_mode), int(st.st_mtime), st.st_size)")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "st = Path('/s3/a.txt').stat()\n"
+                "print(oct(st.st_mode), int(st.st_mtime), st.st_size)"
+            )
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"0o100600 1784073600 5\n"
 
@@ -178,8 +192,12 @@ def test_monty_stat_reports_an_unknown_stamp_as_epoch_zero():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "print(int(Path('/s3/a.txt').stat().st_mtime))")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "print(int(Path('/s3/a.txt').stat().st_mtime))"
+            )
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"0\n"
 
@@ -190,9 +208,13 @@ def test_monty_reports_a_character_device_without_reading_it():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "p = Path('/dev/zero')\n"
-                    "print(p.exists(), p.is_file(), oct(p.stat().st_mode))")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "p = Path('/dev/zero')\n"
+                "print(p.exists(), p.is_file(), oct(p.stat().st_mode))"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert result.stdout == b"True False 0o20666\n"
 
@@ -210,9 +232,13 @@ def test_monty_predicates_answer_from_the_row_not_a_listing():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "p = Path('/s3/d/f.txt')\n"
-                    "print(p.exists(), p.is_file(), p.is_dir())")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "p = Path('/s3/d/f.txt')\n"
+                "print(p.exists(), p.is_file(), p.is_dir())"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert result.stdout == b"True True False\n"
 
@@ -236,7 +262,8 @@ def test_monty_open_w_creates_a_missing_file_at_open():
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
-        runtime.run(RunArgs(code="open('/s3/new.txt', 'w').close()")))
+        runtime.run(RunArgs(code="open('/s3/new.txt', 'w').close()"))
+    )
     assert result.exit_code == 0
     assert dispatch.created == ["/s3/new.txt"]
     assert dispatch.files["/s3/new.txt"] == b""
@@ -247,7 +274,8 @@ def test_monty_open_w_truncates_an_existing_file_at_open():
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
-        runtime.run(RunArgs(code="open('/s3/keep.txt', 'w').close()")))
+        runtime.run(RunArgs(code="open('/s3/keep.txt', 'w').close()"))
+    )
     assert result.exit_code == 0
     assert dispatch.truncated == ["/s3/keep.txt"]
     assert dispatch.files["/s3/keep.txt"] == b""
@@ -258,7 +286,8 @@ def test_monty_open_a_creates_a_missing_file_at_open():
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
-        runtime.run(RunArgs(code="open('/s3/log.txt', 'a').close()")))
+        runtime.run(RunArgs(code="open('/s3/log.txt', 'a').close()"))
+    )
     assert result.exit_code == 0
     assert dispatch.created == ["/s3/log.txt"]
 
@@ -267,8 +296,9 @@ def test_monty_open_r_establishes_nothing():
     dispatch = FakeDispatch({"/s3/a.txt": b"x"})
     runtime = MontyRuntime()
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
-    result = asyncio.run(runtime.run(
-        RunArgs(code="open('/s3/a.txt').close()")))
+    result = asyncio.run(
+        runtime.run(RunArgs(code="open('/s3/a.txt').close()"))
+    )
     assert result.exit_code == 0
     assert dispatch.created == []
     assert dispatch.truncated == []
@@ -280,8 +310,12 @@ def test_monty_write_flushes_through_dispatch():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/out.txt').write_text('data')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/out.txt').write_text('data')"
+            )
+        )
+    )
     assert result.exit_code == 0
     assert ("/s3/out.txt", b"data") in dispatch.writes
     assert dispatch.files["/s3/out.txt"] == b"data"
@@ -299,13 +333,20 @@ def test_monty_append_sends_only_the_new_bytes():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="for part in ['b', 'c', 'd']:\n"
-                    "    with open('/s3/log.txt', 'a') as f:\n"
-                    "        f.write(part)")))
+            RunArgs(
+                code="for part in ['b', 'c', 'd']:\n"
+                "    with open('/s3/log.txt', 'a') as f:\n"
+                "        f.write(part)"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert dispatch.files["/s3/log.txt"] == b"abcd"
-    assert dispatch.appends == [("/s3/log.txt", b"b"), ("/s3/log.txt", b"c"),
-                                ("/s3/log.txt", b"d")]
+    assert dispatch.appends == [
+        ("/s3/log.txt", b"b"),
+        ("/s3/log.txt", b"c"),
+        ("/s3/log.txt", b"d"),
+    ]
     assert dispatch.writes == []
 
 
@@ -315,9 +356,13 @@ def test_monty_iterdir_lists_virtual_dir():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "print(sorted(str(p) "
-                    "for p in Path('/s3').iterdir()))")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "print(sorted(str(p) "
+                "for p in Path('/s3').iterdir()))"
+            )
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"['/s3/a.txt', '/s3/b.txt']\n"
 
@@ -328,8 +373,11 @@ def test_monty_unlink_routes_to_dispatch():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/a.txt').unlink()")))
+            RunArgs(
+                code="from pathlib import Path\nPath('/s3/a.txt').unlink()"
+            )
+        )
+    )
     assert result.exit_code == 0
     assert dispatch.unlinked == ["/s3/a.txt"]
 
@@ -340,9 +388,13 @@ def test_monty_mkdir_routes_to_dispatch():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/sub').mkdir()\n"
-                    "Path('/s3/sub/n.txt').write_text('deep')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/sub').mkdir()\n"
+                "Path('/s3/sub/n.txt').write_text('deep')"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert "/s3/sub" in dispatch.dirs
     assert dispatch.files["/s3/sub/n.txt"] == b"deep"
@@ -354,8 +406,12 @@ def test_monty_rename_routes_to_dispatch():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/a.txt').rename('/s3/b.txt')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/a.txt').rename('/s3/b.txt')"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert dispatch.renamed == [("/s3/a.txt", "/s3/b.txt")]
     assert dispatch.files["/s3/b.txt"] == b"one"
@@ -370,9 +426,13 @@ def test_monty_unlink_after_rename_reaches_the_mount():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/a.txt').rename('/s3/b.txt')\n"
-                    "Path('/s3/b.txt').unlink()")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/a.txt').rename('/s3/b.txt')\n"
+                "Path('/s3/b.txt').unlink()"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert dispatch.unlinked == ["/s3/b.txt"]
     assert "/s3/b.txt" not in dispatch.files
@@ -384,8 +444,9 @@ def test_monty_rmdir_routes_to_dispatch():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/dir').rmdir()")))
+            RunArgs(code="from pathlib import Path\nPath('/s3/dir').rmdir()")
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert "/s3/dir" not in dispatch.dirs
 
@@ -402,9 +463,13 @@ def test_monty_append_falls_back_when_the_mount_has_no_append_op():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="for part in ['b', 'c']:\n"
-                    "    with open('/s3/log.txt', 'a') as f:\n"
-                    "        f.write(part)")))
+            RunArgs(
+                code="for part in ['b', 'c']:\n"
+                "    with open('/s3/log.txt', 'a') as f:\n"
+                "        f.write(part)"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert dispatch.appends == []
     assert dispatch.files["/s3/log.txt"] == b"abc"
@@ -418,10 +483,14 @@ def test_monty_mkdir_forwards_parents_and_honors_exist_ok():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/x/y').mkdir(parents=True)\n"
-                    "Path('/s3/x/y').mkdir(exist_ok=True)\n"
-                    "print('ok')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/x/y').mkdir(parents=True)\n"
+                "Path('/s3/x/y').mkdir(exist_ok=True)\n"
+                "print('ok')"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert result.stdout == b"ok\n"
     assert dispatch.dirs == ["/s3/x/y"]
@@ -434,8 +503,9 @@ def test_monty_mkdir_without_exist_ok_raises_on_an_existing_dir():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/sub').mkdir()")))
+            RunArgs(code="from pathlib import Path\nPath('/s3/sub').mkdir()")
+        )
+    )
     assert result.exit_code == 1
     assert b"FileExistsError" in result.stderr
     assert dispatch.dirs == []
@@ -453,9 +523,13 @@ def test_monty_mkdir_on_a_file_raises_even_under_exist_ok():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/a.txt').read_text()\n"
-                    "Path('/s3/a.txt').mkdir(exist_ok=True)")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/a.txt').read_text()\n"
+                "Path('/s3/a.txt').mkdir(exist_ok=True)"
+            )
+        )
+    )
     assert result.exit_code == 1
     assert b"FileExistsError" in result.stderr
     assert dispatch.dirs == []
@@ -468,8 +542,12 @@ def test_monty_mkdir_on_an_unread_mount_file_still_raises():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/s3/a.txt').mkdir(exist_ok=True)")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/s3/a.txt').mkdir(exist_ok=True)"
+            )
+        )
+    )
     assert result.exit_code == 1
     assert b"FileExistsError" in result.stderr
     assert dispatch.dirs == []
@@ -485,11 +563,16 @@ def test_monty_rename_across_mounts_raises_exdev():
     dispatch = FakeDispatch({"/a/f.txt": b"data"})
     runtime = MontyRuntime()
     runtime.bind(
-        WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/a/", "/b/"])))
+        WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/a/", "/b/"]))
+    )
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/a/f.txt').rename('/b/f.txt')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/a/f.txt').rename('/b/f.txt')"
+            )
+        )
+    )
     assert result.exit_code == 1
     assert dispatch.renamed == []
     assert dispatch.files["/a/f.txt"] == b"data"
@@ -499,11 +582,16 @@ def test_monty_rename_within_one_mount_still_dispatches():
     dispatch = FakeDispatch({"/a/f.txt": b"data"})
     runtime = MontyRuntime()
     runtime.bind(
-        WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/a/", "/b/"])))
+        WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/a/", "/b/"]))
+    )
     result = asyncio.run(
         runtime.run(
-            RunArgs(code="from pathlib import Path\n"
-                    "Path('/a/f.txt').rename('/a/g.txt')")))
+            RunArgs(
+                code="from pathlib import Path\n"
+                "Path('/a/f.txt').rename('/a/g.txt')"
+            )
+        )
+    )
     assert result.exit_code == 0, result.stderr
     assert dispatch.renamed == [("/a/f.txt", "/a/g.txt")]
 
@@ -516,7 +604,8 @@ def test_monty_is_symlink_reads_the_name_plane():
     runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: [])))
     code = (
         "from pathlib import Path\n"
-        "print(Path('/s3/l').is_symlink(), Path('/s3/t.txt').is_symlink())")
+        "print(Path('/s3/l').is_symlink(), Path('/s3/t.txt').is_symlink())"
+    )
     result = asyncio.run(runtime.run(RunArgs(code=code)))
     assert result.exit_code == 0, result.stderr
     assert result.stdout == b"True False\n"

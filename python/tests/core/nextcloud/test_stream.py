@@ -23,9 +23,9 @@ from mirage.types import PathSpec
 async def test_stream_records_the_virtual_path(make_acc):
     # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
     acc = make_acc({"m/k.txt": b"hello"})
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         chunks = [c async for c in read_stream(acc, spec)]

@@ -25,5 +25,6 @@ __all__ = ["GmailConfig", "GmailVFS"]
 def __getattr__(name: str) -> "type[GmailVFS]":
     if name == "GmailVFS":
         from mirage.vfs.gmail.gmail import GmailVFS
+
         return GmailVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

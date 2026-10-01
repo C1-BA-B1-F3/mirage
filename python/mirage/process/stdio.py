@@ -6,7 +6,6 @@ from mirage.shell.errors import PipeClosed
 
 
 class ProcessInput:
-
     def __init__(self) -> None:
         self.pipe = PipeConsole()
         self.closed = False
@@ -18,7 +17,7 @@ class ProcessInput:
         if self.closed:
             raise PipeClosed()
         for start in range(0, len(data), 65536):
-            await self.pipe.emit(Channel.STDOUT, data[start:start + 65536])
+            await self.pipe.emit(Channel.STDOUT, data[start : start + 65536])
 
     def close(self) -> None:
         self.closed = True
@@ -35,7 +34,6 @@ class ProcessInput:
 
 
 class ProcessOutput(JobConsole):
-
     def __init__(self, merge_stderr: bool = False) -> None:
         super().__init__()
         self.merge_stderr = merge_stderr
@@ -43,8 +41,11 @@ class ProcessOutput(JobConsole):
         self.stderr = ProcessInput()
 
     async def emit(self, channel: Channel, data: bytes) -> None:
-        target = (self.stderr if channel == Channel.STDERR
-                  and not self.merge_stderr else self.stdout)
+        target = (
+            self.stderr
+            if channel == Channel.STDERR and not self.merge_stderr
+            else self.stdout
+        )
         await target.write(data)
 
     def end(self) -> None:

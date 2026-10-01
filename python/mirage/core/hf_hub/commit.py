@@ -18,10 +18,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.core.hf_hub.client import (api_url, hub_post, hub_post_ndjson,
-                                       rev_segment)
-from mirage.core.hf_hub.constants import (COMMIT_CHUNK, DEFAULT_COMMIT_MESSAGE,
-                                          PREUPLOAD_SAMPLE_BYTES)
+from mirage.core.hf_hub.client import (
+    api_url,
+    hub_post,
+    hub_post_ndjson,
+    rev_segment,
+)
+from mirage.core.hf_hub.constants import (
+    COMMIT_CHUNK,
+    DEFAULT_COMMIT_MESSAGE,
+    PREUPLOAD_SAMPLE_BYTES,
+)
 from mirage.types import JsonValue
 
 # The upload modes the Hub's preupload endpoint answers with. "regular"
@@ -66,8 +73,12 @@ def commit_url(accessor: HfHubAccessor, revision: str | None = None) -> str:
         str: the absolute URL.
     """
     rev = revision or accessor.revision
-    return api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                   f"/commit/{rev_segment(rev)}")
+    return api_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        f"/commit/{rev_segment(rev)}",
+    )
 
 
 async def upload_modes(
@@ -93,27 +104,34 @@ async def upload_modes(
     if not additions:
         return {}
     rev = revision or accessor.revision
-    url = api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                  f"/preupload/{rev_segment(rev)}")
+    url = api_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        f"/preupload/{rev_segment(rev)}",
+    )
     modes: dict[str, str] = {}
     for start in range(0, len(additions), COMMIT_CHUNK):
-        chunk = additions[start:start + COMMIT_CHUNK]
+        chunk = additions[start : start + COMMIT_CHUNK]
         body: JsonValue = {
-            "files": [{
-                "path":
-                add.path,
-                "sample":
-                base64.b64encode(add.data[:PREUPLOAD_SAMPLE_BYTES]).decode(),
-                "size":
-                len(add.data),
-            } for add in chunk]
+            "files": [
+                {
+                    "path": add.path,
+                    "sample": base64.b64encode(
+                        add.data[:PREUPLOAD_SAMPLE_BYTES]
+                    ).decode(),
+                    "size": len(add.data),
+                }
+                for add in chunk
+            ]
         }
         data = await hub_post(accessor.token, url, body, session=accessor.pool)
         rows = data.get("files") if isinstance(data, dict) else None
         for row in rows if isinstance(rows, list) else []:
             if isinstance(row, dict):
-                modes[str(row.get("path",
-                                  ""))] = str(row.get("uploadMode", REGULAR))
+                modes[str(row.get("path", ""))] = str(
+                    row.get("uploadMode", REGULAR)
+                )
     return modes
 
 
@@ -149,14 +167,16 @@ def payload(
         header["parentCommit"] = parent
     lines: list[dict[str, Any]] = [{"key": "header", "value": header}]
     for add in additions:
-        lines.append({
-            "key": "file",
-            "value": {
-                "content": base64.b64encode(add.data).decode(),
-                "path": add.path,
-                "encoding": "base64",
-            },
-        })
+        lines.append(
+            {
+                "key": "file",
+                "value": {
+                    "content": base64.b64encode(add.data).decode(),
+                    "path": add.path,
+                    "encoding": "base64",
+                },
+            }
+        )
     for path in deletions:
         lines.append({"key": "deletedFile", "value": {"path": path}})
     for path in folders:
@@ -198,17 +218,21 @@ async def commit(
     """
     adds = additions or []
     modes = await upload_modes(accessor, adds, revision)
-    heavy = sorted(add.path for add in adds
-                   if modes.get(add.path, REGULAR) != REGULAR)
+    heavy = sorted(
+        add.path for add in adds if modes.get(add.path, REGULAR) != REGULAR
+    )
     if heavy:
         raise LfsRequiredError(
             f"{accessor.repo_id}: the Hub requires an LFS upload for "
-            f"{', '.join(heavy)}; write it with `hf upload` instead")
+            f"{', '.join(heavy)}; write it with `hf upload` instead"
+        )
     body = payload(adds, deletions or [], folders or [], message, description)
     params = {"create_pr": "1"} if create_pr else None
-    data = await hub_post_ndjson(accessor.token,
-                                 commit_url(accessor, revision),
-                                 body,
-                                 params,
-                                 session=accessor.pool)
+    data = await hub_post_ndjson(
+        accessor.token,
+        commit_url(accessor, revision),
+        body,
+        params,
+        session=accessor.pool,
+    )
     return data if isinstance(data, dict) else {}

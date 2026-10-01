@@ -20,16 +20,23 @@ import pytest
 from mirage import Action, CommandContext, Deny, Policy, Workspace
 from mirage.commands.errors import LimitExceededError
 from mirage.io import IOResult
-from mirage.policy import (CommandRule, ExecuteResultContext, OpsContext,
-                           OpsResultContext, PolicyError)
-from mirage.policy.profile import ProfilePolicy, SessionProfile
+from mirage.policy import (
+    CommandRule,
+    ExecuteResultContext,
+    OpsContext,
+    OpsResultContext,
+    PolicyError,
+)
+from mirage.policy.profile import (
+    CommandsBlock,
+    PathsBlock,
+    ProfilePolicy,
+    SessionProfile,
+)
 from mirage.runtime.types import ScriptSource
 from mirage.types import Limit, MountMode, OnExceed, Refusal
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Session
-
-from mirage.policy.profile import (  # isort: skip
-    CommandsBlock, PathsBlock)
 
 
 def _profile(**blocks) -> dict[str, SessionProfile]:
@@ -43,7 +50,6 @@ def _profile(**blocks) -> dict[str, SessionProfile]:
 
 
 class NoInterpreters(Policy):
-
     async def pre_command(self, ctx: CommandContext) -> Action | None:
         if ctx.command == "python3":
             return Deny("interpreters are off")
@@ -55,22 +61,31 @@ async def test_workspace_guards_refuse_before_backend_io():
     ws = Workspace(
         {"/data/": RAMVFS()},
         mode=MountMode.WRITE,
-        profiles=_profile(commands=CommandsBlock(
-            deny=(CommandRule(reason="production data is protected",
-                              commands=("rm", ),
-                              paths=("/data/prod/*", )), ))),
+        profiles=_profile(
+            commands=CommandsBlock(
+                deny=(
+                    CommandRule(
+                        reason="production data is protected",
+                        commands=("rm",),
+                        paths=("/data/prod/*",),
+                    ),
+                )
+            )
+        ),
     )
     try:
         await ws.shell("mkdir -p /data/prod")
         await ws.vfs.write("/data/prod/x.txt", b"keep\n")
         result = await ws.shell("rm /data/prod/x.txt")
         assert result.exit_code == 1
-        assert result.stderr == (b"rm: /data/prod/x.txt: "
-                                 b"production data is protected\n")
+        assert result.stderr == (
+            b"rm: /data/prod/x.txt: production data is protected\n"
+        )
         out = await ws.shell("cat /data/prod/x.txt")
         assert out.stdout == b"keep\n"
-        ok = await ws.shell("rm -f /data/prod/../other.txt 2>/dev/null; "
-                            "echo done")
+        ok = await ws.shell(
+            "rm -f /data/prod/../other.txt 2>/dev/null; echo done"
+        )
         assert b"done" in ok.stdout
     finally:
         await ws.close()
@@ -88,18 +103,18 @@ async def test_policies_add_wins_over_runtime_placement():
         assert result.exit_code == 126
         assert result.stderr == b"python3: Permission denied\n"
         # The reason rides beside the GNU line, not inside it.
-        assert result.refusal == Refusal(kind="deny",
-                                         reason="interpreters are off",
-                                         policy="NoInterpreters")
+        assert result.refusal == Refusal(
+            kind="deny", reason="interpreters are off", policy="NoInterpreters"
+        )
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
 async def test_policies_constructor_param_accepts_instances():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   policies=[NoInterpreters()])
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, policies=[NoInterpreters()]
+    )
     try:
         result = await ws.shell("python3 -c 'print(1)'")
         assert result.exit_code == 126
@@ -116,20 +131,26 @@ async def test_guards_cover_shell_builtins_and_namespace_routes():
     ws = Workspace(
         {"/data/": RAMVFS()},
         mode=MountMode.WRITE,
-        profiles=_profile(commands=CommandsBlock(deny=(
-            CommandRule(reason="disabled", commands=("source", )),
-            CommandRule(reason="frozen",
-                        commands=("touch", ),
-                        paths=("/data/prod/*", )),
-        ))),
+        profiles=_profile(
+            commands=CommandsBlock(
+                deny=(
+                    CommandRule(reason="disabled", commands=("source",)),
+                    CommandRule(
+                        reason="frozen",
+                        commands=("touch",),
+                        paths=("/data/prod/*",),
+                    ),
+                )
+            )
+        ),
     )
     try:
         result = await ws.shell("source /data/setup.sh")
         assert result.exit_code == 126
         assert result.stderr == b"source: Permission denied\n"
-        assert result.refusal == Refusal(kind="deny",
-                                         reason="disabled",
-                                         policy="PermissionsPolicy")
+        assert result.refusal == Refusal(
+            kind="deny", reason="disabled", policy="PermissionsPolicy"
+        )
         result = await ws.shell("touch /data/prod/x")
         assert result.exit_code == 1
         assert b"frozen" in result.stderr
@@ -146,10 +167,17 @@ async def test_guards_cover_path_valued_flags():
     ws = Workspace(
         {"/data/": RAMVFS()},
         mode=MountMode.WRITE,
-        profiles=_profile(commands=CommandsBlock(
-            deny=(CommandRule(reason="prod is protected",
-                              commands=("shuf", ),
-                              paths=("/data/prod/*", )), ))),
+        profiles=_profile(
+            commands=CommandsBlock(
+                deny=(
+                    CommandRule(
+                        reason="prod is protected",
+                        commands=("shuf",),
+                        paths=("/data/prod/*",),
+                    ),
+                )
+            )
+        ),
     )
     try:
         await ws.shell("mkdir -p /data/prod")
@@ -163,7 +191,6 @@ async def test_guards_cover_path_valued_flags():
 
 
 class ReadOnlyProd(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.write and ctx.path.virtual.startswith("/data/prod/"):
             return Deny("prod is read-only")
@@ -177,9 +204,15 @@ async def test_path_guards_hold_at_the_programmatic_door():
     ws = Workspace(
         {"/data/": RAMVFS()},
         mode=MountMode.WRITE,
-        profiles=_profile(commands=CommandsBlock(deny=(
-            CommandRule(reason="prod is protected", paths=(
-                "/data/prod/*", )), ))),
+        profiles=_profile(
+            commands=CommandsBlock(
+                deny=(
+                    CommandRule(
+                        reason="prod is protected", paths=("/data/prod/*",)
+                    ),
+                )
+            )
+        ),
     )
     try:
         await ws.shell("mkdir -p /data/other")
@@ -195,7 +228,6 @@ async def test_path_guards_hold_at_the_programmatic_door():
 
 
 class SuppressProdWrites(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if ctx.write and ctx.path.virtual.startswith("/data/prod/"):
             return Deny("write suppressed")
@@ -235,7 +267,6 @@ async def test_post_ops_deny_still_records_the_completed_write():
 
 
 class SuppressProdReads(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if not ctx.write and ctx.path.virtual.startswith("/data/prod/"):
             return Deny("no reads")
@@ -263,7 +294,6 @@ async def test_post_ops_deny_records_the_bytes_a_denied_read_moved():
 
 
 class CapProdReads(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if not ctx.write and ctx.path.virtual.startswith("/data/prod/"):
             return Limit(max_bytes=3)
@@ -309,8 +339,11 @@ async def test_a_denied_warm_read_is_not_counted_as_network_traffic():
         await ws.shell("mkdir -p /data/prod")
         await ws.vfs.write("/data/prod/x.txt", b"0123456789")
         await ws.apply_io(
-            IOResult(reads={"/data/prod/x.txt": b"0123456789"},
-                     cache=["/data/prod/x.txt"]))
+            IOResult(
+                reads={"/data/prod/x.txt": b"0123456789"},
+                cache=["/data/prod/x.txt"],
+            )
+        )
         ws.vfs.records.clear()
         ws.policies.add(SuppressProdReads())
         with pytest.raises(PermissionError):
@@ -324,7 +357,6 @@ async def test_a_denied_warm_read_is_not_counted_as_network_traffic():
 
 
 class HardCapProdReads(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if not ctx.write and ctx.path.virtual.startswith("/data/prod/"):
             return Limit(max_bytes=3, on_exceed=OnExceed.ERROR)
@@ -371,8 +403,11 @@ async def test_a_hard_capped_warm_read_is_not_network_traffic():
         await ws.shell("mkdir -p /data/prod")
         await ws.vfs.write("/data/prod/x.txt", b"0123456789")
         await ws.apply_io(
-            IOResult(reads={"/data/prod/x.txt": b"0123456789"},
-                     cache=["/data/prod/x.txt"]))
+            IOResult(
+                reads={"/data/prod/x.txt": b"0123456789"},
+                cache=["/data/prod/x.txt"],
+            )
+        )
         ws.vfs.records.clear()
         ws.policies.add(HardCapProdReads())
         with pytest.raises(LimitExceededError):
@@ -386,7 +421,6 @@ async def test_a_hard_capped_warm_read_is_not_network_traffic():
 
 
 class BrokenPostOps(Policy):
-
     async def post_ops(self, ctx: OpsResultContext):
         if ctx.write and ctx.path.virtual == "/data/prod/x.txt":
             return 42
@@ -433,15 +467,16 @@ async def test_pre_ops_policy_holds_on_the_dispatcher_door():
 
 
 class SealedPaths(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if not ctx.write and ctx.path.virtual == "/data/secret.txt":
             return Deny("secret is sealed")
         # The subtree spelling covers the root too: a native tree op
         # (rm_r) admits as one op on the root, per the pre_ops
         # docstring.
-        if ctx.write and (ctx.path.virtual == "/data/prod"
-                          or ctx.path.virtual.startswith("/data/prod/")):
+        if ctx.write and (
+            ctx.path.virtual == "/data/prod"
+            or ctx.path.virtual.startswith("/data/prod/")
+        ):
             return Deny("prod is read-only")
         return None
 
@@ -498,13 +533,16 @@ async def test_pre_ops_holds_walks_and_lazy_readers():
         assert walked.exit_code == 2
         assert b"/data/ok.txt:has sealed word" in walked.stdout
         assert b"sealed\n" not in walked.stdout.replace(
-            b"has sealed word\n", b"")
+            b"has sealed word\n", b""
+        )
         assert b"grep: /data/secret.txt: Permission denied" in walked.stderr
 
         lazy = await ws.shell("head -c 3 /data/secret.txt")
         assert lazy.exit_code != 0
-        assert (b"head: cannot open '/data/secret.txt' for reading: "
-                b"Permission denied") in lazy.stderr
+        assert (
+            b"head: cannot open '/data/secret.txt' for reading: "
+            b"Permission denied"
+        ) in lazy.stderr
         fine = await ws.shell("head -c 3 /data/ok.txt")
         assert fine.exit_code == 0
         assert fine.stdout == b"has"
@@ -532,7 +570,6 @@ async def test_pre_ops_denied_entries_still_list_and_stat():
 
 
 class OpRecorder(Policy):
-
     def __init__(self) -> None:
         self.asked: list[tuple[str, str, bool]] = []
 
@@ -608,8 +645,9 @@ async def test_pre_ops_sees_the_session_on_the_command_tier():
         ws.policies.add(rec)
         assert (await ws.shell("cat /data/ok.txt")).exit_code == 0
         assert (await ws.shell("head -c 3 /data/ok.txt")).exit_code == 0
-        reads = [(op, sid) for op, path, sid in rec.asked
-                 if path == "/data/ok.txt"]
+        reads = [
+            (op, sid) for op, path, sid in rec.asked if path == "/data/ok.txt"
+        ]
         assert reads
         assert all(sid == ws.default_session_id for _, sid in reads)
     finally:
@@ -617,7 +655,6 @@ async def test_pre_ops_sees_the_session_on_the_command_tier():
 
 
 class SessionRecorder(Policy):
-
     def __init__(self) -> None:
         self.asked: list[tuple[str, str, str]] = []
 
@@ -627,13 +664,11 @@ class SessionRecorder(Policy):
 
 
 class CapLines(Policy):
-
     async def post_execute(self, ctx: ExecuteResultContext) -> Action | None:
         return Limit(max_lines=2)
 
 
 class CapReadBytes(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if ctx.op == "read":
             return Limit(max_bytes=4)
@@ -669,19 +704,16 @@ async def test_user_limit_policy_caps_op_reads():
 
 
 class CapBytesHard(Policy):
-
     async def post_execute(self, ctx: ExecuteResultContext) -> Action | None:
         return Limit(max_bytes=4, on_exceed=OnExceed.ERROR)
 
 
 class Boom(Policy):
-
     async def post_execute(self, ctx: ExecuteResultContext) -> Action | None:
         raise RuntimeError("boom")
 
 
 class DenyReads(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if ctx.op == "read":
             return Deny("reads are suppressed")
@@ -689,7 +721,6 @@ class DenyReads(Policy):
 
 
 class SeeProducer(Policy):
-
     def __init__(self) -> None:
         self.seen: list[str] = []
 
@@ -713,7 +744,6 @@ async def test_two_limit_policies_merge_to_the_tightest_end_to_end():
 
 
 class SuppressNothingCapThree(Policy):
-
     async def post_execute(self, ctx: ExecuteResultContext) -> Action | None:
         return Limit(max_lines=3)
 
@@ -761,9 +791,9 @@ async def test_a_raising_post_execute_policy_fails_the_line_closed():
         assert r.exit_code == 126
         err = await r.stderr_str()
         assert err == "echo: Permission denied\n"
-        assert r.refusal == Refusal(kind="failed",
-                                    reason="Boom failed",
-                                    policy="Boom")
+        assert r.refusal == Refusal(
+            kind="failed", reason="Boom failed", policy="Boom"
+        )
         assert r.stdout is None or await r.stdout_str() == ""
     finally:
         await ws.close()
@@ -792,10 +822,11 @@ async def test_post_execute_sees_the_rightmost_producer():
 @pytest.mark.asyncio
 async def test_profile_hides_bind_every_session_including_the_default():
     ram = RAMVFS()
-    ws = Workspace({"/data/": ram},
-                   mode=MountMode.WRITE,
-                   profiles=_profile(paths=PathsBlock(hide=("/data/finance",
-                                                            "*.key"))))
+    ws = Workspace(
+        {"/data/": ram},
+        mode=MountMode.WRITE,
+        profiles=_profile(paths=PathsBlock(hide=("/data/finance", "*.key"))),
+    )
     # The facade runs as the default session too, so the seed goes
     # through a session with an explicit empty profile, the host's door.
     host = Session(ws, ws.create_session("host", profile={}).session_id).vfs
@@ -833,14 +864,11 @@ async def test_a_mount_sections_hides_are_written_in_full():
         profiles={
             "default": {
                 "mounts": {
-                    "/repo": {
-                        "paths": {
-                            "hide": ["/repo/.env", "/repo/*.pem"]
-                        }
-                    }
+                    "/repo": {"paths": {"hide": ["/repo/.env", "/repo/*.pem"]}}
                 }
             }
-        })
+        },
+    )
     host = Session(ws, ws.create_session("host", profile={}).session_id).vfs
     try:
         await ws.shell("mkdir -p /repo/certs /other")
@@ -871,9 +899,11 @@ async def test_a_mount_sections_hides_are_written_in_full():
 async def test_a_bare_name_under_deny_refuses_with_the_default_reason():
     # The document's deny rules compile at construction; a bare string
     # is one command name with the default reason.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_profile(commands=CommandsBlock(deny=("shred", ))))
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=_profile(commands=CommandsBlock(deny=("shred",))),
+    )
     try:
         result = await ws.shell("shred /data/x")
         assert result.exit_code == 126
@@ -911,8 +941,9 @@ def pre_command(ctx):
 """
 
 
-def _scripted(source: str = JUDGE,
-              runtime: str = "monty") -> dict[str, dict[str, object]]:
+def _scripted(
+    source: str = JUDGE, runtime: str = "monty"
+) -> dict[str, dict[str, object]]:
     """One profile named release with a policy and nothing else, so
     what runs is purely the policy's decision.
 
@@ -932,9 +963,9 @@ def _scripted(source: str = JUDGE,
 
 @pytest.mark.asyncio
 async def test_a_profile_script_judges_each_command():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted()
+    )
     try:
         await ws.shell("mkdir -p /data/sealed && echo k > /data/sealed/k")
         ws.create_session("s", profile="release")
@@ -950,9 +981,9 @@ async def test_a_profile_script_judges_each_command():
 async def test_the_script_reads_resolved_paths_not_typed_words():
     # `cd /data && cat sealed/k` names no /data/sealed word; the gate
     # hands the script the resolved operand, so the deny still lands.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted()
+    )
     try:
         ws.create_session("s", profile="release")
         denied = await ws.shell("cd /data && cat sealed/k", session_id="s")
@@ -966,9 +997,9 @@ async def test_the_script_reads_resolved_paths_not_typed_words():
 async def test_a_script_only_profile_installs_everything():
     # No allow list, so nothing is hidden: a command no document names
     # runs whenever the script stays silent on it.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted()
+    )
     try:
         await ws.shell("echo x > /data/x")
         ws.create_session("s", profile="release")
@@ -983,9 +1014,9 @@ async def test_a_document_may_ride_beside_the_script():
     # list's hiding, and the script adds its verdicts beside it.
     profiles = _scripted()
     profiles["release"]["commands"] = {"allow": ["ls", "cat", "echo"]}
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=profiles)
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=profiles
+    )
     try:
         ws.create_session("s", profile="release")
         hidden = await ws.shell("rm /data/x", session_id="s")
@@ -999,9 +1030,9 @@ async def test_a_document_may_ride_beside_the_script():
 
 @pytest.mark.asyncio
 async def test_an_ask_it_computed_takes_the_approval_door():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted()
+    )
     try:
         ws.create_session("s", profile="release")
         held = await ws.shell("shred /data/x", session_id="s")
@@ -1009,8 +1040,10 @@ async def test_an_ask_it_computed_takes_the_approval_door():
         assert held.stderr is not None
         assert held.stderr == b"shred: Permission denied\n"
         assert held.refusal is not None
-        assert (held.refusal.kind, held.refusal.reason) == ("pending",
-                                                            "sign-off")
+        assert (held.refusal.kind, held.refusal.reason) == (
+            "pending",
+            "sign-off",
+        )
         assert held.refusal.ask_id
     finally:
         await ws.close()
@@ -1022,20 +1055,24 @@ async def test_a_profile_script_reads_what_the_line_names():
     # same door an agent's program would, so it can ask about what a
     # file holds. A directory operand is not its business, and a file
     # without the marker runs.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(READER))
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted(READER)
+    )
     try:
-        await ws.shell("mkdir -p /data/in && "
-                       "printf 'subject: invoice\\n\\na payload\\n' "
-                       "> /data/in/mail.txt && "
-                       "echo plain > /data/in/note.txt")
+        await ws.shell(
+            "mkdir -p /data/in && "
+            "printf 'subject: invoice\\n\\na payload\\n' "
+            "> /data/in/mail.txt && "
+            "echo plain > /data/in/note.txt"
+        )
         ws.create_session("s", profile="release")
         held = await ws.shell("cat /data/in/mail.txt", session_id="s")
         assert held.exit_code == 126
         assert held.refusal is not None
-        assert (held.refusal.kind,
-                held.refusal.reason) == ("pending", "sign-off on payload")
+        assert (held.refusal.kind, held.refusal.reason) == (
+            "pending",
+            "sign-off on payload",
+        )
         plain = await ws.shell("cat /data/in/note.txt", session_id="s")
         assert plain.exit_code == 0
         assert (await ws.shell("ls /data/in", session_id="s")).exit_code == 0
@@ -1045,9 +1082,9 @@ async def test_a_profile_script_reads_what_the_line_names():
 
 @pytest.mark.asyncio
 async def test_a_scripted_profile_leaves_other_sessions_alone():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted()
+    )
     try:
         await ws.shell("mkdir -p /data/sealed && echo k > /data/sealed/k")
         ws.create_session("s", profile="release")
@@ -1060,10 +1097,12 @@ async def test_a_scripted_profile_leaves_other_sessions_alone():
 
 @pytest.mark.asyncio
 async def test_a_scripted_default_profile_shapes_the_default_session():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(),
-                   profile="release")
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=_scripted(),
+        profile="release",
+    )
     try:
         assert (await ws.shell("echo hi")).exit_code == 0
         denied = await ws.shell("cat /data/sealed/k")
@@ -1081,10 +1120,12 @@ async def test_a_profile_script_runs_in_a_world_with_no_evaluator():
     # drops entries silently when an optional dependency is missing, so
     # an engine resolved out of it would stop working for reasons that
     # have nothing to do with the profile.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   runtimes=["workspace"],
-                   profiles=_scripted())
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        runtimes=["workspace"],
+        profiles=_scripted(),
+    )
     try:
         ws.create_session("s", profile="release")
         denied = await ws.shell("cat /data/sealed/k", session_id="s")
@@ -1102,7 +1143,9 @@ async def test_a_broken_script_fails_closed_per_command():
         {"/data/": RAMVFS()},
         mode=MountMode.WRITE,
         profiles=_scripted(
-            source="def pre_command(ctx):\n    raise ValueError('boom')"))
+            source="def pre_command(ctx):\n    raise ValueError('boom')"
+        ),
+    )
     try:
         ws.create_session("s", profile="release")
         refused = await ws.shell("echo hi", session_id="s")
@@ -1117,9 +1160,11 @@ async def test_a_broken_script_fails_closed_per_command():
 
 @pytest.mark.asyncio
 async def test_an_engine_that_cannot_evaluate_fails_closed():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(runtime="local"))
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=_scripted(runtime="local"),
+    )
     try:
         ws.create_session("s", profile="release")
         refused = await ws.shell("echo hi", session_id="s")
@@ -1137,11 +1182,8 @@ async def test_a_profile_policy_states_its_runtime():
         Workspace(
             {"/data/": RAMVFS()},
             mode=MountMode.WRITE,
-            profiles={"release": {
-                "policy": {
-                    "script": ScriptSource(JUDGE)
-                }
-            }})
+            profiles={"release": {"policy": {"script": ScriptSource(JUDGE)}}},
+        )
 
 
 def test_the_old_script_and_runtime_keys_are_told_the_new_block():
@@ -1149,14 +1191,16 @@ def test_the_old_script_and_runtime_keys_are_told_the_new_block():
     # what the file is rather than what it does and an engine that read
     # as the profile's own; the refusal says where they went.
     with pytest.raises(ValueError, match="now one policy block"):
-        Workspace({"/data/": RAMVFS()},
-                  mode=MountMode.WRITE,
-                  profiles={
-                      "release": {
-                          "script": ScriptSource(JUDGE),
-                          "runtime": "monty",
-                      }
-                  })
+        Workspace(
+            {"/data/": RAMVFS()},
+            mode=MountMode.WRITE,
+            profiles={
+                "release": {
+                    "script": ScriptSource(JUDGE),
+                    "runtime": "monty",
+                }
+            },
+        )
 
 
 @pytest.mark.asyncio
@@ -1164,9 +1208,11 @@ async def test_a_policy_defining_no_hook_fails_closed():
     # A verdict as a bare last expression was the old contract; a policy
     # defines the hooks it answers at, and a program defining none is
     # refused at every door rather than read for a value it never meant.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(source="None"))
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=_scripted(source="None"),
+    )
     try:
         ws.create_session("s", profile="release")
         refused = await ws.shell("echo hi", session_id="s")
@@ -1174,7 +1220,8 @@ async def test_a_policy_defining_no_hook_fails_closed():
         assert refused.refusal is not None
         assert refused.refusal.reason == (
             "profile 'release' policy defines no hook: pre_command, pre_ops "
-            "or pre_session")
+            "or pre_session"
+        )
     finally:
         await ws.close()
 
@@ -1186,8 +1233,12 @@ async def test_an_inline_document_may_not_add_a_policy():
         with pytest.raises(PolicyError, match="not a policy"):
             ws.create_session(
                 "s",
-                permissions=SessionProfile(policy=ProfilePolicy(
-                    script=ScriptSource(JUDGE), runtime="monty")))
+                permissions=SessionProfile(
+                    policy=ProfilePolicy(
+                        script=ScriptSource(JUDGE), runtime="monty"
+                    )
+                ),
+            )
     finally:
         await ws.close()
 
@@ -1210,20 +1261,23 @@ def pre_session(ctx):
 
 # The content judge with an op hook beside it: its own reads have to
 # pass the door its pre_ops guards.
-READER_AND_GATE = READER + """
+READER_AND_GATE = (
+    READER
+    + """
 def pre_ops(ctx):
     op = ctx['op']
     if op['write'] and op['path'].startswith('/data/frozen/'):
         return {'deny': 'frozen'}
     return None
 """
+)
 
 
 @pytest.mark.asyncio
 async def test_a_profile_policy_judges_the_op_door():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(GATES))
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted(GATES)
+    )
     try:
         await ws.shell("mkdir -p /data/frozen && echo keep > /data/frozen/k")
         ws.create_session("s", profile="release")
@@ -1247,9 +1301,9 @@ async def test_a_profile_policy_judges_the_op_door():
 
 @pytest.mark.asyncio
 async def test_a_profile_policy_judges_the_session_door():
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(GATES))
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles=_scripted(GATES)
+    )
     try:
         ws.create_session("s", profile="release")
         refused = await ws.shell("export AWS_SECRET=x", session_id="s")
@@ -1268,21 +1322,26 @@ async def test_a_policys_own_read_passes_the_door_its_op_hook_guards():
     # pre_ops stands at it: the read is the policy's own and is let
     # through rather than re-entering the evaluation waiting on it, so
     # the content verdict lands and the op hook still refuses a write.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=_scripted(READER_AND_GATE))
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=_scripted(READER_AND_GATE),
+    )
     try:
-        await ws.shell("mkdir -p /data/in && printf 'subject: invoice\\n\\n"
-                       "a payload\\n' > /data/in/mail.txt && "
-                       "echo plain > /data/in/note.txt")
+        await ws.shell(
+            "mkdir -p /data/in && printf 'subject: invoice\\n\\n"
+            "a payload\\n' > /data/in/mail.txt && "
+            "echo plain > /data/in/note.txt"
+        )
         ws.create_session("s", profile="release")
         held = await ws.shell("cat /data/in/mail.txt", session_id="s")
         assert held.exit_code == 126
         assert held.refusal is not None
         assert held.refusal.kind == "pending"
         assert held.refusal.reason == "sign-off on payload"
-        assert (await ws.shell("cat /data/in/note.txt",
-                               session_id="s")).exit_code == 0
+        assert (
+            await ws.shell("cat /data/in/note.txt", session_id="s")
+        ).exit_code == 0
         refused = await ws.shell("echo x > /data/frozen/f", session_id="s")
         assert refused.exit_code == 1
         assert b"Permission denied" in refused.stderr

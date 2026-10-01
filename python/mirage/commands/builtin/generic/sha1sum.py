@@ -13,14 +13,16 @@ async def sha1sum_generic(
     stat: StatFn,
     stream: PolymorphicReadFn,
 ) -> tuple[ByteSource | None, IOResult]:
-    return await checksum_generic(paths,
-                                  texts,
-                                  opts,
-                                  stat,
-                                  stream,
-                                  factory=hashlib.sha1,
-                                  algorithm="sha1",
-                                  name="sha1sum")
+    return await checksum_generic(
+        paths,
+        texts,
+        opts,
+        stat,
+        stream,
+        factory=hashlib.sha1,
+        algorithm="sha1",
+        name="sha1sum",
+    )
 
 
 __all__ = ["sha1sum_generic"]

@@ -15,11 +15,15 @@
 import pytest
 
 from mirage.commands.cli.builtin.git.errors import MountInWayError
-from mirage.commands.cli.builtin.git.io import (blocking_ancestor, read_file,
-                                                read_names, read_optional,
-                                                refuse_mount,
-                                                remove_empty_parents,
-                                                remove_tree)
+from mirage.commands.cli.builtin.git.io import (
+    blocking_ancestor,
+    read_file,
+    read_names,
+    read_optional,
+    refuse_mount,
+    remove_empty_parents,
+    remove_tree,
+)
 from mirage.ops.types import MountView
 from mirage.types import FileStat, FileType
 
@@ -45,8 +49,10 @@ async def test_read_optional_answers_none_for_a_miss(workspace):
 
 @pytest.mark.asyncio
 async def test_read_optional_returns_content_when_present(workspace):
-    assert await read_optional(workspace.dispatch,
-                               "/repo/a.txt") == b"one changed\n"
+    assert (
+        await read_optional(workspace.dispatch, "/repo/a.txt")
+        == b"one changed\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -100,8 +106,10 @@ async def test_a_link_above_the_entry_is_found():
     # The component itself is not an ancestor of itself, and a path with
     # nothing but directories above it has none.
     assert await blocking_ancestor(only_dirs, "/repo", "slot", Links()) is None
-    assert await blocking_ancestor(only_dirs, "/repo", "other/child",
-                                   Links()) is None
+    assert (
+        await blocking_ancestor(only_dirs, "/repo", "other/child", Links())
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -110,16 +118,18 @@ async def test_a_regular_file_above_the_entry_is_found_too():
     # only the data plane can report.
     found = await blocking_ancestor(file_at_slot, "/repo", "slot/child", None)
     assert found == "/repo/slot"
-    assert await blocking_ancestor(only_dirs, "/repo", "slot/child",
-                                   None) is None
+    assert (
+        await blocking_ancestor(only_dirs, "/repo", "slot/child", None) is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_the_namespace_is_asked_before_the_data_plane():
     # stat_path dereferences, so a link to a directory stats as a
     # directory: asking it first would walk straight through the link.
-    found = await blocking_ancestor(only_dirs, "/repo", "slot/deep/child",
-                                    Links())
+    found = await blocking_ancestor(
+        only_dirs, "/repo", "slot/deep/child", Links()
+    )
     assert found == "/repo/slot"
 
 
@@ -178,7 +188,8 @@ async def test_removing_a_tree_unlinks_a_link_without_descending():
     # is the walk stepping outside the directory being replaced.
     assert ("readdir", "/repo/slot/link") not in calls.ops
     assert not any(
-        where.startswith("/repo/outside") for _op, where in calls.ops)
+        where.startswith("/repo/outside") for _op, where in calls.ops
+    )
 
 
 @pytest.mark.asyncio
@@ -199,28 +210,34 @@ def mounts(roots: list[str], hidden: list[str] | None = None) -> MountView:
             told about, a subset of ``roots``.
     """
     unseen = set(hidden or [])
-    return MountView(descendants=lambda path:
-                     [root for root in roots if root.startswith(f"{path}/")],
-                     visible_descendants=lambda path: [
-                         root for root in roots
-                         if root.startswith(f"{path}/") and root not in unseen
-                     ],
-                     is_root=lambda path: path in roots,
-                     root_of=lambda path: None)
+    return MountView(
+        descendants=lambda path: [
+            root for root in roots if root.startswith(f"{path}/")
+        ],
+        visible_descendants=lambda path: [
+            root
+            for root in roots
+            if root.startswith(f"{path}/") and root not in unseen
+        ],
+        is_root=lambda path: path in roots,
+        root_of=lambda path: None,
+    )
 
 
 def test_a_mount_root_is_refused_as_itself():
     with pytest.raises(MountInWayError) as caught:
         refuse_mount(mounts(["/repo/slot"]), "/repo/slot")
-    assert str(caught.value) == ("cannot remove '/repo/slot': it is a "
-                                 "mount root")
+    assert str(caught.value) == (
+        "cannot remove '/repo/slot': it is a mount root"
+    )
 
 
 def test_a_nested_mount_is_named():
     with pytest.raises(MountInWayError) as caught:
         refuse_mount(mounts(["/repo/slot/data"]), "/repo/slot")
-    assert str(caught.value) == ("cannot remove '/repo/slot': "
-                                 "'/repo/slot/data' is a mount root")
+    assert str(caught.value) == (
+        "cannot remove '/repo/slot': '/repo/slot/data' is a mount root"
+    )
 
 
 def test_the_first_nested_mount_in_order_is_the_one_named():
@@ -235,8 +252,9 @@ def test_a_hidden_mount_blocks_the_removal_without_being_named():
     view = mounts(["/repo/slot/data"], hidden=["/repo/slot/data"])
     with pytest.raises(MountInWayError) as caught:
         refuse_mount(view, "/repo/slot")
-    assert str(caught.value) == ("cannot remove '/repo/slot': it holds a "
-                                 "mount root")
+    assert str(caught.value) == (
+        "cannot remove '/repo/slot': it holds a mount root"
+    )
 
 
 def test_nothing_in_the_way_is_no_refusal():
@@ -248,8 +266,9 @@ def test_nothing_in_the_way_is_no_refusal():
 async def test_a_tree_holding_a_mount_is_refused_before_anything_is_deleted():
     calls = Recorder()
     with pytest.raises(MountInWayError):
-        await remove_tree(calls, "/repo/slot", TreeLinks(),
-                          mounts(["/repo/slot/data"]))
+        await remove_tree(
+            calls, "/repo/slot", TreeLinks(), mounts(["/repo/slot/data"])
+        )
     # Nothing at all: the refusal is the first thing the walk does, so
     # the directory is still whole when the caller hears about it.
     assert calls.ops == []
@@ -278,8 +297,9 @@ class Parents:
 @pytest.mark.asyncio
 async def test_pruning_empty_parents_stops_at_a_mount_root():
     calls = Parents()
-    await remove_empty_parents(calls, "/repo/slot/data/x.txt", "/repo",
-                               mounts(["/repo/slot/data"]))
+    await remove_empty_parents(
+        calls, "/repo/slot/data/x.txt", "/repo", mounts(["/repo/slot/data"])
+    )
     assert ("rmdir", "/repo/slot/data") not in calls.ops
     # And it stops rather than skipping: the directories above the
     # mount are the mount's parents, not git's to tidy either.
@@ -289,6 +309,7 @@ async def test_pruning_empty_parents_stops_at_a_mount_root():
 @pytest.mark.asyncio
 async def test_pruning_empty_parents_takes_an_ordinary_directory():
     calls = Parents()
-    await remove_empty_parents(calls, "/repo/docs/x.txt", "/repo",
-                               mounts(["/repo/slot/data"]))
+    await remove_empty_parents(
+        calls, "/repo/docs/x.txt", "/repo", mounts(["/repo/slot/data"])
+    )
     assert ("rmdir", "/repo/docs") in calls.ops

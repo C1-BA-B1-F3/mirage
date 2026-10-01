@@ -19,187 +19,248 @@ from mirage.commands.spec.constants import HELP_OPTION, VERSION_OPTION
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SHELL_SPECS: dict[str, CommandSpec] = {
-    "xargs":
-    CommandSpec(
+    "xargs": CommandSpec(
         description="Build and run command lines from standard input.",
         options=(
-            Option(short="-0",
-                   long="--null",
-                   description="Input items are terminated by NUL."),
+            Option(
+                short="-0",
+                long="--null",
+                description="Input items are terminated by NUL.",
+            ),
             Option(
                 short="-a",
                 long="--arg-file",
                 type="str",
-                description="Read items from this file, not standard input."),
-            Option(short="-d",
-                   long="--delimiter",
-                   type="str",
-                   description="Input items are separated by this character."),
-            Option(short="-E",
-                   type="str",
-                   description="Stop reading at this logical end-of-file "
-                   "string."),
-            Option(short="-e",
-                   long="--eof",
-                   type="str",
-                   value_optional=True,
-                   description="Same as -E; no string turns it off."),
-            Option(short="-I",
-                   type="str",
-                   description="Replace this string in the initial "
-                   "arguments with each input line."),
-            Option(short="-i",
-                   long="--replace",
-                   type="str",
-                   value_optional=True,
-                   description="Same as -I, with {} when no string is "
-                   "attached."),
-            Option(short="-L",
-                   type="str",
-                   description="Use at most N non-blank input lines per "
-                   "command line."),
-            Option(short="-l",
-                   long="--max-lines",
-                   type="str",
-                   value_optional=True,
-                   description="Same as -L, with 1 when no count is "
-                   "attached."),
-            Option(short="-n",
-                   long="--max-args",
-                   type="str",
-                   description="Use at most N arguments per command line."),
-            Option(short="-o",
-                   long="--open-tty",
-                   description="Reopen stdin as the terminal in each "
-                   "command (there is no terminal, so this fails)."),
-            Option(short="-p",
-                   long="--interactive",
-                   description="Prompt before running each command "
-                   "(there is no terminal, so this fails)."),
-            Option(short="-r",
-                   long="--no-run-if-empty",
-                   description="Do not run the command on empty input."),
-            Option(short="-s",
-                   long="--max-chars",
-                   type="str",
-                   description="Limit a command line to N bytes."),
-            Option(short="-t",
-                   long="--verbose",
-                   description="Print each command on stderr before "
-                   "running it."),
-            Option(long="--show-limits",
-                   description="Show the command-line length limits."),
-            Option(short="-x",
-                   long="--exit",
-                   description="Exit if a command line exceeds the size "
-                   "limit."),
-            Option(short="-P",
-                   long="--max-procs",
-                   type="str",
-                   description="Run up to N commands at a time; 0 runs "
-                   "them all at once."),
-            Option(long="--process-slot-var",
-                   type="str",
-                   description="Set this variable to each command's slot "
-                   "number."),
+                description="Read items from this file, not standard input.",
+            ),
+            Option(
+                short="-d",
+                long="--delimiter",
+                type="str",
+                description="Input items are separated by this character.",
+            ),
+            Option(
+                short="-E",
+                type="str",
+                description="Stop reading at this logical end-of-file string.",
+            ),
+            Option(
+                short="-e",
+                long="--eof",
+                type="str",
+                value_optional=True,
+                description="Same as -E; no string turns it off.",
+            ),
+            Option(
+                short="-I",
+                type="str",
+                description="Replace this string in the initial "
+                "arguments with each input line.",
+            ),
+            Option(
+                short="-i",
+                long="--replace",
+                type="str",
+                value_optional=True,
+                description="Same as -I, with {} when no string is attached.",
+            ),
+            Option(
+                short="-L",
+                type="str",
+                description="Use at most N non-blank input lines per "
+                "command line.",
+            ),
+            Option(
+                short="-l",
+                long="--max-lines",
+                type="str",
+                value_optional=True,
+                description="Same as -L, with 1 when no count is attached.",
+            ),
+            Option(
+                short="-n",
+                long="--max-args",
+                type="str",
+                description="Use at most N arguments per command line.",
+            ),
+            Option(
+                short="-o",
+                long="--open-tty",
+                description="Reopen stdin as the terminal in each "
+                "command (there is no terminal, so this fails).",
+            ),
+            Option(
+                short="-p",
+                long="--interactive",
+                description="Prompt before running each command "
+                "(there is no terminal, so this fails).",
+            ),
+            Option(
+                short="-r",
+                long="--no-run-if-empty",
+                description="Do not run the command on empty input.",
+            ),
+            Option(
+                short="-s",
+                long="--max-chars",
+                type="str",
+                description="Limit a command line to N bytes.",
+            ),
+            Option(
+                short="-t",
+                long="--verbose",
+                description="Print each command on stderr before running it.",
+            ),
+            Option(
+                long="--show-limits",
+                description="Show the command-line length limits.",
+            ),
+            Option(
+                short="-x",
+                long="--exit",
+                description="Exit if a command line exceeds the size limit.",
+            ),
+            Option(
+                short="-P",
+                long="--max-procs",
+                type="str",
+                description="Run up to N commands at a time; 0 runs "
+                "them all at once.",
+            ),
+            Option(
+                long="--process-slot-var",
+                type="str",
+                description="Set this variable to each command's slot number.",
+            ),
             VERSION_OPTION,
             HELP_OPTION,
         ),
         rest=Operand(type="str"),
     ),
-    "timeout":
-    CommandSpec(
+    "timeout": CommandSpec(
         description="Run a command with a time limit.",
         options=(
-            Option(short="-f",
-                   long="--foreground",
-                   description="Signal only the command, not its process "
-                   "group."),
-            Option(short="-k",
-                   long="--kill-after",
-                   type="str",
-                   description="Also send KILL this long after the first "
-                   "signal."),
-            Option(short="-p",
-                   long="--preserve-status",
-                   description="Exit with the command's status even when it "
-                   "times out."),
-            Option(short="-s",
-                   long="--signal",
-                   type="str",
-                   description="Signal to send on timeout (default TERM)."),
-            Option(short="-v",
-                   long="--verbose",
-                   description="Report each signal sent on stderr."),
+            Option(
+                short="-f",
+                long="--foreground",
+                description="Signal only the command, not its process group.",
+            ),
+            Option(
+                short="-k",
+                long="--kill-after",
+                type="str",
+                description="Also send KILL this long after the first signal.",
+            ),
+            Option(
+                short="-p",
+                long="--preserve-status",
+                description="Exit with the command's status even when it "
+                "times out.",
+            ),
+            Option(
+                short="-s",
+                long="--signal",
+                type="str",
+                description="Signal to send on timeout (default TERM).",
+            ),
+            Option(
+                short="-v",
+                long="--verbose",
+                description="Report each signal sent on stderr.",
+            ),
             HELP_OPTION,
             VERSION_OPTION,
         ),
         rest=Operand(type="str"),
     ),
-    "read":
-    CommandSpec(
+    "read": CommandSpec(
         description="Read a line from standard input into variables.",
         options=(
-            Option(short="-r",
-                   description="Raw mode: backslash is not an escape "
-                   "character."),
-            Option(short="-a",
-                   type="str",
-                   description="Store the words in the named array."),
-            Option(short="-d",
-                   type="str",
-                   description="Read up to this character instead of "
-                   "newline."),
-            Option(short="-n",
-                   type="str",
-                   description="Return after at most N characters."),
-            Option(short="-N",
-                   type="str",
-                   description="Return after exactly N characters, "
-                   "delimiters included."),
-            Option(short="-t",
-                   type="str",
-                   description="Time out after N seconds."),
-            Option(short="-p",
-                   type="str",
-                   description="Prompt (shown only on a terminal)."),
+            Option(
+                short="-r",
+                description="Raw mode: backslash is not an escape character.",
+            ),
+            Option(
+                short="-a",
+                type="str",
+                description="Store the words in the named array.",
+            ),
+            Option(
+                short="-d",
+                type="str",
+                description="Read up to this character instead of newline.",
+            ),
+            Option(
+                short="-n",
+                type="str",
+                description="Return after at most N characters.",
+            ),
+            Option(
+                short="-N",
+                type="str",
+                description="Return after exactly N characters, "
+                "delimiters included.",
+            ),
+            Option(
+                short="-t", type="str", description="Time out after N seconds."
+            ),
+            Option(
+                short="-p",
+                type="str",
+                description="Prompt (shown only on a terminal).",
+            ),
             Option(short="-s", description="Do not echo (terminal only)."),
             Option(short="-e", description="Use readline (terminal only)."),
-            Option(short="-i",
-                   type="str",
-                   description="Initial text for readline (terminal "
-                   "only)."),
-            Option(short="-u",
-                   type="str",
-                   description="Read from this descriptor."),
+            Option(
+                short="-i",
+                type="str",
+                description="Initial text for readline (terminal only).",
+            ),
+            Option(
+                short="-u",
+                type="str",
+                description="Read from this descriptor.",
+            ),
         ),
         rest=Operand(type="str"),
     ),
-    "mapfile":
-    CommandSpec(
+    "mapfile": CommandSpec(
         description="Read lines from standard input into an array.",
         options=(
-            Option(short="-d",
-                   type="str",
-                   description="Line delimiter instead of newline."),
-            Option(short="-n", type="str",
-                   description="Copy at most N lines."),
-            Option(short="-O",
-                   type="str",
-                   description="Start storing at this index."),
-            Option(short="-s",
-                   type="str",
-                   description="Discard the first N lines."),
+            Option(
+                short="-d",
+                type="str",
+                description="Line delimiter instead of newline.",
+            ),
+            Option(
+                short="-n", type="str", description="Copy at most N lines."
+            ),
+            Option(
+                short="-O",
+                type="str",
+                description="Start storing at this index.",
+            ),
+            Option(
+                short="-s",
+                type="str",
+                description="Discard the first N lines.",
+            ),
             Option(short="-t", description="Strip the delimiter."),
-            Option(short="-u",
-                   type="str",
-                   description="Read from this descriptor."),
-            Option(short="-C",
-                   type="str",
-                   description="Call this every quantum lines."),
-            Option(short="-c",
-                   type="str",
-                   description="Lines between callback calls."),
+            Option(
+                short="-u",
+                type="str",
+                description="Read from this descriptor.",
+            ),
+            Option(
+                short="-C",
+                type="str",
+                description="Call this every quantum lines.",
+            ),
+            Option(
+                short="-c",
+                type="str",
+                description="Lines between callback calls.",
+            ),
         ),
         rest=Operand(type="str"),
     ),
@@ -234,6 +295,7 @@ class ShellParse:
         unexpected_value (str | None): a no-argument long option given a
             value, as its full spelling and the value (``--null=x``).
     """
+
     flags: dict[str, str | bool] = field(default_factory=dict)
     given: list[tuple[str, str | bool]] = field(default_factory=list)
     operands: list[str] = field(default_factory=list)
@@ -267,12 +329,22 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
         long = opt.long.lstrip("-") if opt.long else None
         name = short or long or ""
         if short is not None:
-            (short_bool if opt.type == "bool" else
-             short_optional if opt.value_optional else short_value).add(short)
+            (
+                short_bool
+                if opt.type == "bool"
+                else short_optional
+                if opt.value_optional
+                else short_value
+            ).add(short)
             alias[short] = name
         if long is not None:
-            (long_bool if opt.type == "bool" else
-             long_optional if opt.value_optional else long_value).add(long)
+            (
+                long_bool
+                if opt.type == "bool"
+                else long_optional
+                if opt.value_optional
+                else long_value
+            ).add(long)
             alias[long] = name
     compiled = compile_spec(spec)
     flags: dict[str, str | bool] = {}
@@ -290,21 +362,28 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             break
         if tok.startswith("--") and len(tok) > 2:
             typed, eq, value = tok.partition("=")
-            matches = (compiled.long_spellings
-                       if typed == "--" else expand_long(compiled, typed))
+            matches = (
+                compiled.long_spellings
+                if typed == "--"
+                else expand_long(compiled, typed)
+            )
             if len(matches) != 1:
-                return ShellParse(flags=flags,
-                                  given=given,
-                                  operands=list(argv[i + 1:]),
-                                  invalid=tok,
-                                  candidates=tuple(matches))
+                return ShellParse(
+                    flags=flags,
+                    given=given,
+                    operands=list(argv[i + 1 :]),
+                    invalid=tok,
+                    candidates=tuple(matches),
+                )
             name = matches[0][2:]
             if name in long_bool:
                 if eq:
-                    return ShellParse(flags=flags,
-                                      given=given,
-                                      operands=list(argv[i + 1:]),
-                                      unexpected_value=f"--{name}={value}")
+                    return ShellParse(
+                        flags=flags,
+                        given=given,
+                        operands=list(argv[i + 1 :]),
+                        unexpected_value=f"--{name}={value}",
+                    )
                 record(alias[name], True)
             elif name in long_optional:
                 record(alias[name], value if eq else True)
@@ -315,10 +394,12 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                     i += 1
                     record(alias[name], argv[i])
                 else:
-                    return ShellParse(flags=flags,
-                                      given=given,
-                                      operands=list(argv[i + 1:]),
-                                      needs_value=f"--{name}")
+                    return ShellParse(
+                        flags=flags,
+                        given=given,
+                        operands=list(argv[i + 1 :]),
+                        needs_value=f"--{name}",
+                    )
             i += 1
             continue
         if tok.startswith("-") and len(tok) > 1:
@@ -331,25 +412,29 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                     j += 1
                     continue
                 if ch in short_optional:
-                    record(alias[ch], chars[j + 1:] or True)
+                    record(alias[ch], chars[j + 1 :] or True)
                     break
                 if ch in short_value:
-                    rest = chars[j + 1:]
+                    rest = chars[j + 1 :]
                     if rest:
                         record(alias[ch], rest)
                     elif i + 1 < len(argv):
                         i += 1
                         record(alias[ch], argv[i])
                     else:
-                        return ShellParse(flags=flags,
-                                          given=given,
-                                          operands=list(argv[i + 1:]),
-                                          needs_value=ch)
+                        return ShellParse(
+                            flags=flags,
+                            given=given,
+                            operands=list(argv[i + 1 :]),
+                            needs_value=ch,
+                        )
                     break
-                return ShellParse(flags=flags,
-                                  given=given,
-                                  operands=list(argv[i + 1:]),
-                                  invalid=ch)
+                return ShellParse(
+                    flags=flags,
+                    given=given,
+                    operands=list(argv[i + 1 :]),
+                    invalid=ch,
+                )
             i += 1
             continue
         break

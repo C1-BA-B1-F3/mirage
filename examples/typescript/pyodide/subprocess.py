@@ -3,22 +3,22 @@ import subprocess
 
 print("which grep ->", shutil.which("grep"))
 
-r = subprocess.run(["grep", "-c", "ERROR", "/data/app.log"],
-                   capture_output=True,
-                   text=True)
+r = subprocess.run(
+    ["grep", "-c", "ERROR", "/data/app.log"], capture_output=True, text=True
+)
 print("run grep -c ->", r.stdout.strip(), "exit", r.returncode)
 
 out = subprocess.check_output(
     "cut -d' ' -f2 /data/app.log | sort | uniq -c | sort -rn",
     shell=True,
-    text=True)
+    text=True,
+)
 print("check_output(shell=True) ->")
 print(out, end="")
 
-p = subprocess.Popen(["sort", "-r"],
-                     stdin=subprocess.PIPE,
-                     stdout=subprocess.PIPE,
-                     text=True)
+p = subprocess.Popen(
+    ["sort", "-r"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+)
 sorted_out, _ = p.communicate("b\na\nc\n")
 print("Popen sort -r ->", sorted_out.split())
 

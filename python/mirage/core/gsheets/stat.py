@@ -24,10 +24,21 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.vfs.gsheets.sheet_entry import make_filename
 
 
-async def _file_stat(accessor: GSheetsAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> FileStat:
-    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
-                                    MIME, "gsheets/file", make_filename)
+async def _file_stat(
+    accessor: GSheetsAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
+    entry = await resolve_app_entry(
+        accessor.token_manager,
+        match,
+        path,
+        index,
+        MIME,
+        "gsheets/file",
+        make_filename,
+    )
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,

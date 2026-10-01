@@ -30,8 +30,10 @@ def test_disk_errors_replaces_the_host_path_with_the_virtual_one():
     with pytest.raises(NotADirectoryError) as caught:
         with disk_errors("/data/plain/x.txt"):
             raise NotADirectoryError(
-                errno.ENOTDIR, "Not a directory",
-                "/private/var/folders/tmpabc/plain/x.txt")
+                errno.ENOTDIR,
+                "Not a directory",
+                "/private/var/folders/tmpabc/plain/x.txt",
+            )
     assert caught.value.filename == "/data/plain/x.txt"
     assert "/private/var" not in str(caught.value)
 

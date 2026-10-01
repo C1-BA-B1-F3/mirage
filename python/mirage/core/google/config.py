@@ -64,4 +64,5 @@ class GoogleConfig(BaseModel):
             return self
         raise ValueError(
             "GoogleConfig needs either access_token (a token or a provider "
-            "callable) or both client_id and refresh_token")
+            "callable) or both client_id and refresh_token"
+        )

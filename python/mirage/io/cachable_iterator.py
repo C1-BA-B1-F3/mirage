@@ -63,7 +63,8 @@ class CachableAsyncIterator:
         """
         if self._buffer or self._exhausted:
             raise RuntimeError(
-                "cannot replace a started cache iterator source")
+                "cannot replace a started cache iterator source"
+            )
         self._source = source
 
     def __aiter__(self) -> "CachableAsyncIterator":

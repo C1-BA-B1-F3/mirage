@@ -12,8 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.history.render import (render_bash_history,
-                                        render_history_listing)
+from mirage.core.history.render import (
+    render_bash_history,
+    render_history_listing,
+)
 
 
 def test_render_bash_history_gnu_format():
@@ -37,27 +39,21 @@ def test_render_bash_history_gnu_format():
 
 def test_render_bash_history_ignores_non_command_events():
     events = [
-        {
-            "type": "clear",
-            "session": "s1",
-            "timestamp": 1000
-        },
-        {
-            "type": "op",
-            "session": "s1",
-            "timestamp": 2000,
-            "op": "read"
-        },
+        {"type": "clear", "session": "s1", "timestamp": 1000},
+        {"type": "op", "session": "s1", "timestamp": 2000, "op": "read"},
     ]
     assert render_bash_history(events) == ""
 
 
 def test_render_history_listing_numbers_and_width():
-    events = [{
-        "type": "command",
-        "command": f"cmd {i}",
-        "timestamp": i,
-    } for i in range(12)]
+    events = [
+        {
+            "type": "command",
+            "command": f"cmd {i}",
+            "timestamp": i,
+        }
+        for i in range(12)
+    ]
     lines = render_history_listing(events).splitlines()
     assert lines[0] == " 1  cmd 0"
     assert lines[-1] == "12  cmd 11"

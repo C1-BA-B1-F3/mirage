@@ -33,4 +33,5 @@ def reject_config_script(kind: str, value: object) -> None:
         raise TypeError(
             f"{kind} must be a callable taking the RouteContext; config "
             f"scripts reference a .py file (script:/route_policy: in "
-            f"the workspace yaml)")
+            f"the workspace yaml)"
+        )

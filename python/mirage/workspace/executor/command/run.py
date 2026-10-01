@@ -28,8 +28,11 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.utils.errors import format_fs_error
 from mirage.workspace.executor.command.flags import parse_flags
-from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
-                                    MountRegistry)
+from mirage.workspace.mount import (
+    MountCommandUnsupported,
+    MountEntry,
+    MountRegistry,
+)
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.probe import path_readdir, path_stat
 from mirage.workspace.mount.namespace.view import namespace_view_of
@@ -37,8 +40,9 @@ from mirage.workspace.session import SessionState, env_snapshot, session_view
 from mirage.workspace.types import ExecuteLine, ExecutionNode
 
 
-async def exec_node(cmd_str: str, io: IOResult,
-                    paths: list[PathSpec]) -> ExecutionNode:
+async def exec_node(
+    cmd_str: str, io: IOResult, paths: list[PathSpec]
+) -> ExecutionNode:
     """Build the recorded execution node, materializing any streamed stderr.
 
     Args:
@@ -50,10 +54,12 @@ async def exec_node(cmd_str: str, io: IOResult,
     # The node is a recorded artifact (compared by value, serialized via a
     # sync to_dict, sometimes read twice), so the live lazy io.stderr is
     # materialized to concrete bytes here. On the cross-mount path it is bytes.
-    return ExecutionNode(command=cmd_str,
-                         stderr=await materialize(io.stderr),
-                         exit_code=io.exit_code,
-                         paths=paths)
+    return ExecutionNode(
+        command=cmd_str,
+        stderr=await materialize(io.stderr),
+        exit_code=io.exit_code,
+        paths=paths,
+    )
 
 
 def admission_denial(cmd_name: str) -> IOResult:
@@ -67,7 +73,7 @@ def admission_denial(cmd_name: str) -> IOResult:
 
 
 def line_runtime_for(
-        cmd_name: str, registry: MountRegistry, routing: RouteDecision | None
+    cmd_name: str, registry: MountRegistry, routing: RouteDecision | None
 ) -> tuple[Runtime | None, IOResult | None]:
     """Resolve a command against the line's routing decision.
 
@@ -86,8 +92,9 @@ def line_runtime_for(
     """
     if routing is None:
         fallback = registry.workspace_runtime
-        restricted = isinstance(fallback,
-                                WorkspaceRuntime) and fallback.restricted
+        restricted = (
+            isinstance(fallback, WorkspaceRuntime) and fallback.restricted
+        )
         runtime = registry.runtime_bindings.get(cmd_name)
         if runtime is fallback and fallback is not None:
             return None, None
@@ -102,8 +109,12 @@ def line_runtime_for(
     return runtime, None
 
 
-def find_start_points(argv: list[str | PathSpec], expr_tokens: list[str],
-                      spec: CommandSpec | None, cwd: str) -> list[PathSpec]:
+def find_start_points(
+    argv: list[str | PathSpec],
+    expr_tokens: list[str],
+    spec: CommandSpec | None,
+    cwd: str,
+) -> list[PathSpec]:
     """find's start points: the path operands typed before its expression.
 
     The expression tail is the parser's, so a word inside it (an
@@ -119,12 +130,13 @@ def find_start_points(argv: list[str | PathSpec], expr_tokens: list[str],
         spec (CommandSpec | None): find's spec on the mount.
         cwd (str): the session's working directory.
     """
-    head = argv[:len(argv) - len(expr_tokens)]
+    head = argv[: len(argv) - len(expr_tokens)]
     return parse_flags(head, spec, "find", cwd).paths
 
 
 def scalar_find_flags(
-        flag_kwargs: dict[str, FlagValue]) -> dict[str, FlagValue]:
+    flag_kwargs: dict[str, FlagValue],
+) -> dict[str, FlagValue]:
     # `multiple=True` on find value-flags makes parse_to_kwargs emit
     # lists; bespoke backend wrappers read these as scalars. Migrated
     # backends read the expression from `texts` and ignore flag_kwargs.
@@ -169,8 +181,12 @@ async def drop_mount_caches(registry: MountRegistry) -> None:
             await mount.cache_manager.drop_prefix()
 
 
-async def run_nested_line(execute_fn: ExecuteLine, session_id: str, line: str,
-                          stdin: ByteSource | None) -> IOResult:
+async def run_nested_line(
+    execute_fn: ExecuteLine,
+    session_id: str,
+    line: str,
+    stdin: ByteSource | None,
+) -> IOResult:
     """Run a line a command handler asked for, in the handler's session.
 
     Args:
@@ -232,14 +248,15 @@ async def run_on_mount(
     if mount is None:
         resolve_paths = [resolve_hint] if resolve_hint else paths
         try:
-            mount = await registry.resolve_mount(cmd_name, resolve_paths,
-                                                 session.cwd)
+            mount = await registry.resolve_mount(
+                cmd_name, resolve_paths, session.cwd
+            )
         except MountCommandUnsupported as exc:
             return None, IOResult(exit_code=1, stderr=f"{exc}\n".encode())
         if mount is None:
             return None, IOResult(
-                exit_code=127,
-                stderr=f"{cmd_name}: command not found".encode())
+                exit_code=127, stderr=f"{cmd_name}: command not found".encode()
+            )
     if cmd_name == "find":
         flag_kwargs = scalar_find_flags(flag_kwargs)
 
@@ -255,13 +272,20 @@ async def run_on_mount(
     # so a start point under another mount answers (`find -L` follows a
     # link across mounts before the command ever runs).
     ns = namespace_view_of(registry, namespace, dispatch)
-    stat_path = (functools.partial(path_stat, dispatch)
-                 if dispatch is not None else None)
-    readdir_path = (functools.partial(path_readdir, dispatch)
-                    if dispatch is not None else None)
+    stat_path = (
+        functools.partial(path_stat, dispatch)
+        if dispatch is not None
+        else None
+    )
+    readdir_path = (
+        functools.partial(path_readdir, dispatch)
+        if dispatch is not None
+        else None
+    )
 
-    line_runtime, denial = line_runtime_for(cmd_name, registry,
-                                            routing_decision)
+    line_runtime, denial = line_runtime_for(
+        cmd_name, registry, routing_decision
+    )
     if denial is not None:
         return None, denial
 
@@ -272,9 +296,11 @@ async def run_on_mount(
             texts,
             flag_kwargs,
             ExecContext(
-                limit_override=(session.command_limits.get(cmd_name)
-                                or mount.command_limits.get(cmd_name)
-                                or registry.command_limits.get(cmd_name)),
+                limit_override=(
+                    session.command_limits.get(cmd_name)
+                    or mount.command_limits.get(cmd_name)
+                    or registry.command_limits.get(cmd_name)
+                ),
                 stdin=stdin,
                 cwd=session.cwd,
                 dispatch=dispatch,
@@ -282,7 +308,8 @@ async def run_on_mount(
                 env=env_snapshot(session),
                 session_view=session_view(session, registry.policies),
                 processes=registry.process_view(session)
-                if registry.process_view is not None else None,
+                if registry.process_view is not None
+                else None,
                 exec_allowed=registry.is_exec_allowed(),
                 exec_path_allowed=registry.exec_allowed_at,
                 runtime=line_runtime,
@@ -290,9 +317,13 @@ async def run_on_mount(
                 ns=ns,
                 stat_path=stat_path,
                 readdir_path=readdir_path,
-                shell=(functools.partial(run_nested_line, execute_fn,
-                                         session.session_id)
-                       if execute_fn is not None else None),
+                shell=(
+                    functools.partial(
+                        run_nested_line, execute_fn, session.session_id
+                    )
+                    if execute_fn is not None
+                    else None
+                ),
                 argv=argv,
             ),
         )
@@ -300,8 +331,9 @@ async def run_on_mount(
         # Command-owned usage errors (extra operands, missing patterns)
         # become this command's IOResult so the rest of the line keeps
         # running, like a real shell (#452).
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=f"{exc}\n".encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=f"{exc}\n".encode()
+        )
     except CommandTimeoutError:
         # A limit timeout is answered by the workspace-level handler
         # (exit 124), not here.
@@ -311,8 +343,10 @@ async def run_on_mount(
         # ValueError, or a filesystem OSError) becomes this command's
         # IOResult, prefixed with the command name like GNU (prog: message)
         # and the TypeScript executor.
-        return None, IOResult(exit_code=read_fail_exit(cmd_name, exc),
-                              stderr=format_fs_error(cmd_name, exc, paths))
+        return None, IOResult(
+            exit_code=read_fail_exit(cmd_name, exc),
+            stderr=format_fs_error(cmd_name, exc, paths),
+        )
 
     prefix = mount.prefix.rstrip("/")
     if prefix:

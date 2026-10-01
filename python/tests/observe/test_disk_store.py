@@ -76,8 +76,9 @@ def test_missing_root_reads_as_no_history(tmp_path):
     assert asyncio.run(store.read_all()) == {}
 
 
-@pytest.mark.skipif(os.geteuid() == 0,
-                    reason="root ignores the permission bits under test")
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root ignores the permission bits under test"
+)
 def test_an_unreadable_root_raises_instead_of_reading_empty(tmp_path):
     # A partial recording that reports success is worse than a failure:
     # /.bash_history and the history builtin would show a truncated

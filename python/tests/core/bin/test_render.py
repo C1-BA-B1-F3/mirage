@@ -17,7 +17,8 @@ from mirage.core.bin.render import render_stub
 
 def test_stub_says_its_note_and_runs_the_command_by_name():
     assert render_stub("ls", "ls is built into mirage.") == (
-        b'#!/bin/sh\n# ls is built into mirage.\ncommand ls "$@"\n')
+        b'#!/bin/sh\n# ls is built into mirage.\ncommand ls "$@"\n'
+    )
 
 
 def test_stub_quotes_a_name_the_shell_would_split():

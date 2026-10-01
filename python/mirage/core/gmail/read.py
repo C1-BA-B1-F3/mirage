@@ -14,8 +14,11 @@
 
 from mirage.accessor.gmail import GmailAccessor
 from mirage.cache.index import IndexCacheStore
-from mirage.core.gmail.messages import (get_attachment, get_message_raw,
-                                        message_json_bytes)
+from mirage.core.gmail.messages import (
+    get_attachment,
+    get_message_raw,
+    message_json_bytes,
+)
 from mirage.core.gmail.readdir import readdir
 from mirage.core.gmail.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
@@ -25,8 +28,12 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _read_message(accessor: GmailAccessor, match: ScopeMatch,
-                        path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_message(
+    accessor: GmailAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
@@ -34,16 +41,21 @@ async def _read_message(accessor: GmailAccessor, match: ScopeMatch,
     return message_json_bytes(raw)
 
 
-async def _read_attachment(accessor: GmailAccessor, match: ScopeMatch,
-                           path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_attachment(
+    accessor: GmailAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     # The message id decodes from the attachment dir's `subject__id`
     # segment; the attachment id only exists in the listing, so the
     # entry stays the proof of existence AND the id source.
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
-    return await get_attachment(accessor.token_manager,
-                                match.slots["message_id"], entry.id)
+    return await get_attachment(
+        accessor.token_manager, match.slots["message_id"], entry.id
+    )
 
 
 read = make_read(

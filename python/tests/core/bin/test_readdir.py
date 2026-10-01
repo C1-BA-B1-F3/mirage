@@ -21,20 +21,23 @@ from mirage.types import PathSpec
 
 def _accessor() -> BinAccessor:
     return BinAccessor(
-        lambda: ["cat", "ls"], lambda n: f"{n} is built into mirage."
-        if n in ("cat", "ls") else None)
+        lambda: ["cat", "ls"],
+        lambda n: f"{n} is built into mirage." if n in ("cat", "ls") else None,
+    )
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=path.removeprefix("/usr/bin"))
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=path.removeprefix("/usr/bin")
+    )
 
 
 @pytest.mark.asyncio
 async def test_readdir_lists_one_path_per_program():
-    assert await readdir(_accessor(),
-                         _spec("/usr/bin")) == ["/usr/bin/cat", "/usr/bin/ls"]
+    assert await readdir(_accessor(), _spec("/usr/bin")) == [
+        "/usr/bin/cat",
+        "/usr/bin/ls",
+    ]
 
 
 @pytest.mark.asyncio

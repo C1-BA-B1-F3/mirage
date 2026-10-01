@@ -69,7 +69,8 @@ async def test_observer_over_redis_round_trip(store):
 def test_redis_store_satisfies_protocol(redis_prefix):
     assert isinstance(
         RedisObserverStore(url=REDIS_URL, key_prefix=redis_prefix),
-        ObserverStore)
+        ObserverStore,
+    )
 
 
 @pytest.mark.asyncio

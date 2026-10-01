@@ -32,10 +32,12 @@ async def main() -> None:
     print("=== tee (create files) ===")
     await ws.shell('echo "hello world" | tee /data/hello.txt')
     await ws.shell(
-        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json')
+        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json'
+    )
     await ws.shell("mkdir /data/reports")
-    await ws.shell('echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
-                   )
+    await ws.shell(
+        'echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
+    )
 
     print("=== ls /data/ ===")
     result = await ws.shell("ls /data/")
@@ -75,12 +77,16 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
-                "stat /data/missing.txt"):
+    for cmd in (
+        "cat /data/missing.txt",
+        "head /data/missing.txt",
+        "stat /data/missing.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== nl /data/reports/q1.csv ===")
     result = await ws.shell("nl /data/reports/q1.csv")
@@ -183,24 +189,27 @@ async def main() -> None:
             await Workspace.load(snap)
             print("  ✗ load() should have raised without mounts=")
         except ValueError as e:
-            print(f"  ✓ load() w/o mounts raises: "
-                  f"{str(e).splitlines()[0][:70]}…")
+            print(
+                f"  ✓ load() w/o mounts raises: {str(e).splitlines()[0][:70]}…"
+            )
 
         # Load into a fresh Redis prefix (same instance, isolated namespace)
         loaded = await Workspace.load(
             snap,
-            mounts={"/data": RedisVFS(url=REDIS_URL, key_prefix=dst_prefix)})
+            mounts={"/data": RedisVFS(url=REDIS_URL, key_prefix=dst_prefix)},
+        )
         r = await loaded.shell("ls /data/")
-        print(f"  loaded ws ls /data: "
-              f"{(await r.stdout_str()).strip()[:60]}…")
+        print(f"  loaded ws ls /data: {(await r.stdout_str()).strip()[:60]}…")
 
         # copy(): in-process, reuses same RedisVFS, both copies
         # see the same Redis state
         cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")
@@ -212,6 +221,7 @@ async def main() -> None:
         # namespaces outlive the process, so leaving either behind makes
         # the next run open on this run's `ls`.
         import redis as sync_redis
+
         sc = sync_redis.Redis.from_url(REDIS_URL)
         for prefix in (dst_prefix, KEY_PREFIX):
             for key in sc.scan_iter(f"{prefix}*"):

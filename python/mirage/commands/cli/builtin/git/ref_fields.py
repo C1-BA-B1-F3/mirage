@@ -18,13 +18,21 @@ from dataclasses import replace
 
 from mirage.commands.cli.builtin.git.constants import DWIM_RULES
 from mirage.commands.cli.builtin.git.dates import parse_date_mode, show_date
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    UnsupportedFieldError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    UnsupportedFieldError,
+)
 from mirage.commands.cli.builtin.git.mailmap import mapped_identity
-from mirage.commands.cli.builtin.git.types import (FieldCompare, FieldSource,
-                                                   FieldValue, RefContext,
-                                                   RefField, RefItem, RefKind,
-                                                   RefObject)
+from mirage.commands.cli.builtin.git.types import (
+    FieldCompare,
+    FieldSource,
+    FieldValue,
+    RefContext,
+    RefField,
+    RefItem,
+    RefKind,
+    RefObject,
+)
 
 TEXT = FieldCompare.TEXT
 NUMBER = FieldCompare.NUMBER
@@ -88,27 +96,40 @@ FIELDS: dict[str, tuple[FieldSource, FieldCompare]] = {
 # Real git fields this build does not render: a GPG check, a trailer
 # parser, a describe walk, pack internals, push destinations, colors,
 # reachability counts and the packed/symref flag word.
-UNSUPPORTED = frozenset({
-    "deltabase", "describe", "trailers", "signature", "push", "color", "flag",
-    "ahead-behind", "is-base"
-})
+UNSUPPORTED = frozenset(
+    {
+        "deltabase",
+        "describe",
+        "trailers",
+        "signature",
+        "push",
+        "color",
+        "flag",
+        "ahead-behind",
+        "is-base",
+    }
+)
 
 PEOPLE = ("author", "committer", "tagger")
 DATE_FIELDS = frozenset(
-    {"authordate", "committerdate", "taggerdate", "creatordate"})
+    {"authordate", "committerdate", "taggerdate", "creatordate"}
+)
 ALIGN_POSITIONS = ("left", "middle", "right")
 # parse_signed_buffer's markers: a line starting with one begins the
 # signature a tag message carries.
-SIGNATURE_MARKERS = ("-----BEGIN PGP SIGNATURE-----",
-                     "-----BEGIN PGP MESSAGE-----",
-                     "-----BEGIN SIGNED MESSAGE-----",
-                     "-----BEGIN SSH SIGNATURE-----")
+SIGNATURE_MARKERS = (
+    "-----BEGIN PGP SIGNATURE-----",
+    "-----BEGIN PGP MESSAGE-----",
+    "-----BEGIN SIGNED MESSAGE-----",
+    "-----BEGIN SSH SIGNATURE-----",
+)
 MINIMUM_ABBREV = 4
 C_INTEGER = re.compile(r"[ \t\n\v\f\r]*([+-]?)([0-9]+)")
 INT_MAX = 2**31 - 1
 UINT_MAX = 2**32 - 1
 TITLE_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._")
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._"
+)
 
 
 def c_int(text: str) -> int | None:
@@ -179,16 +200,20 @@ def refname_option(arg: str | None, name: str) -> tuple[str, int]:
         return "short", 0
     for prefix in ("lstrip=", "strip="):
         if arg.startswith(prefix):
-            count = c_int(arg[len(prefix):])
+            count = c_int(arg[len(prefix) :])
             if count is None:
-                raise GitError("Integer value expected refname:lstrip="
-                               f"{arg[len(prefix):]}")
+                raise GitError(
+                    "Integer value expected refname:lstrip="
+                    f"{arg[len(prefix) :]}"
+                )
             return "lstrip", count
     if arg.startswith("rstrip="):
-        count = c_int(arg[len("rstrip="):])
+        count = c_int(arg[len("rstrip=") :])
         if count is None:
-            raise GitError("Integer value expected refname:rstrip="
-                           f"{arg[len('rstrip='):]}")
+            raise GitError(
+                "Integer value expected refname:rstrip="
+                f"{arg[len('rstrip=') :]}"
+            )
         return "rstrip", count
     raise _bad_arg(name, arg)
 
@@ -220,11 +245,9 @@ def _upstream(field: RefField) -> RefField:
         else:
             option = "ref"
             how, count = refname_option(field.arg, field.name)
-    return replace(field,
-                   option=option,
-                   text=how,
-                   number=count,
-                   words=frozenset(words))
+    return replace(
+        field, option=option, text=how, number=count, words=frozenset(words)
+    )
 
 
 def _no_argument(word: str) -> Callable[[RefField], RefField]:
@@ -269,7 +292,7 @@ def _contents_arg(field: RefField) -> RefField:
     if arg == "trailers" or arg.startswith("trailers:"):
         raise UnsupportedFieldError(field.name)
     if arg.startswith("lines="):
-        count = c_uint(arg[len("lines="):])
+        count = c_uint(arg[len("lines=") :])
         if count is None:
             raise GitError(f"positive value expected contents:lines={arg[6:]}")
         return replace(field, option="lines", number=count)
@@ -296,13 +319,14 @@ def _oid(field: RefField) -> RefField:
     if arg == "short":
         return replace(field, option="short")
     if arg.startswith("short="):
-        count = c_uint(arg[len("short="):])
+        count = c_uint(arg[len("short=") :])
         if not count:
-            raise GitError(f"positive value expected '{arg[6:]}' in "
-                           f"%({field.name})")
-        return replace(field,
-                       option="length",
-                       number=max(count, MINIMUM_ABBREV))
+            raise GitError(
+                f"positive value expected '{arg[6:]}' in %({field.name})"
+            )
+        return replace(
+            field, option="length", number=max(count, MINIMUM_ABBREV)
+        )
     raise _bad_arg(field.name, arg)
 
 
@@ -325,13 +349,17 @@ def _person_email(field: RefField) -> RefField:
     rest = field.arg
     while rest is not None:
         word = next(
-            (w
-             for w in ("trim", "localpart", "mailmap") if rest.startswith(w)),
-            None)
+            (
+                w
+                for w in ("trim", "localpart", "mailmap")
+                if rest.startswith(w)
+            ),
+            None,
+        )
         if word is None:
             raise _bad_arg(field.name, rest)
         words.add(word)
-        rest = rest[len(word):]
+        rest = rest[len(word) :]
         if not rest:
             break
         if not rest.startswith(","):
@@ -351,14 +379,15 @@ def _align(field: RefField) -> RefField:
     position, width = "left", None
     for word in field.arg.split(","):
         if word.startswith("position="):
-            if word[len("position="):] not in ALIGN_POSITIONS:
+            if word[len("position=") :] not in ALIGN_POSITIONS:
                 raise GitError(
-                    f"unrecognized position:{word[len('position='):]}")
-            position = word[len("position="):]
+                    f"unrecognized position:{word[len('position=') :]}"
+                )
+            position = word[len("position=") :]
         elif word.startswith("width="):
-            width = c_uint(word[len("width="):])
+            width = c_uint(word[len("width=") :])
             if width is None:
-                raise GitError(f"unrecognized width:{word[len('width='):]}")
+                raise GitError(f"unrecognized width:{word[len('width=') :]}")
         elif c_uint(word) is not None:
             width = c_uint(word)
         elif word in ALIGN_POSITIONS:
@@ -376,7 +405,7 @@ def _if(field: RefField) -> RefField:
         return field
     for word in ("equals=", "notequals="):
         if arg.startswith(word):
-            return replace(field, option=word[:-1], text=arg[len(word):])
+            return replace(field, option=word[:-1], text=arg[len(word) :])
     raise _bad_arg("if", arg)
 
 
@@ -397,14 +426,8 @@ PARSERS: dict[str, Callable[[RefField], RefField]] = {
     "align": _align,
     "if": _if,
     "rest": _no_argument("rest"),
-    **{
-        f"{who}name": _person_name
-        for who in PEOPLE
-    },
-    **{
-        f"{who}email": _person_email
-        for who in PEOPLE
-    },
+    **{f"{who}name": _person_name for who in PEOPLE},
+    **{f"{who}email": _person_email for who in PEOPLE},
 }
 
 
@@ -432,12 +455,14 @@ def parse_field(name: str) -> RefField:
     source, compare = FIELDS[head]
     if head in DATE_FIELDS and ":" in body:
         compare = TEXT
-    field = RefField(name=name,
-                     field=head,
-                     deref=deref,
-                     arg=arg or None,
-                     compare=compare,
-                     source=source)
+    field = RefField(
+        name=name,
+        field=head,
+        deref=deref,
+        arg=arg or None,
+        compare=compare,
+        source=source,
+    )
     parser = PARSERS.get(head)
     return parser(field) if parser is not None else field
 
@@ -448,8 +473,11 @@ def needs_object(field: RefField) -> bool:
     Args:
         field (RefField): the parsed field.
     """
-    return (field.deref or field.source is OBJECT
-            or field.field in ("objecttype", "objectsize"))
+    return (
+        field.deref
+        or field.source is OBJECT
+        or field.field in ("objecttype", "objectsize")
+    )
 
 
 def shorten_ref(name: str, known: frozenset[str], strict: bool = True) -> str:
@@ -469,13 +497,17 @@ def shorten_ref(name: str, known: frozenset[str], strict: bool = True) -> str:
     """
     for i in range(len(DWIM_RULES) - 1, 0, -1):
         prefix, _, suffix = DWIM_RULES[i].partition("{}")
-        if (not name.startswith(prefix) or not name.endswith(suffix)
-                or len(name) < len(prefix) + len(suffix)):
+        if (
+            not name.startswith(prefix)
+            or not name.endswith(suffix)
+            or len(name) < len(prefix) + len(suffix)
+        ):
             continue
-        short = name[len(prefix):len(name) - len(suffix)]
+        short = name[len(prefix) : len(name) - len(suffix)]
         tried = range(len(DWIM_RULES)) if strict else range(i)
-        if not any(j != i and DWIM_RULES[j].format(short) in known
-                   for j in tried):
+        if not any(
+            j != i and DWIM_RULES[j].format(short) in known for j in tried
+        ):
             return short
     return name
 
@@ -517,8 +549,11 @@ def rstrip_ref(name: str, count: int) -> str:
     parts = name.split("/")
     if remaining <= 0:
         return name
-    return ("" if remaining >= len(parts) else "/".join(parts[:len(parts) -
-                                                              remaining]))
+    return (
+        ""
+        if remaining >= len(parts)
+        else "/".join(parts[: len(parts) - remaining])
+    )
 
 
 def show_ref(option: str, count: int, name: str, ctx: RefContext) -> str:
@@ -554,7 +589,7 @@ def header_line(text: str, who: str) -> str:
     start = 0
     while start < len(text):
         if text.startswith(f"{who} ", start):
-            return text[start + len(who) + 1:]
+            return text[start + len(who) + 1 :]
         end = text.find("\n", start)
         if end == -1 or text.startswith("\n", end + 1):
             return ""
@@ -571,7 +606,8 @@ def header_values(text: str, word: str) -> list[str]:
     """
     head = text.split("\n\n", 1)[0]
     return [
-        line[len(word) + 1:] for line in head.split("\n")
+        line[len(word) + 1 :]
+        for line in head.split("\n")
         if line.startswith(f"{word} ")
     ]
 
@@ -633,11 +669,11 @@ def ident_date(line: str) -> tuple[int, int] | None:
     marker = line.find("> ")
     if marker == -1:
         return None
-    rest = line[marker + 2:]
+    rest = line[marker + 2 :]
     stamp = LEADING_DIGITS.match(rest)
     digits = stamp.group(1) if stamp else ""
     timestamp = int(digits) if digits else 0
-    zone = LEADING_ZONE.match(rest[stamp.end() if stamp else 0:])
+    zone = LEADING_ZONE.match(rest[stamp.end() if stamp else 0 :])
     hhmm = int(zone.group(1)) if zone else 0
     sign = -1 if hhmm < 0 else 1
     hours, minutes = divmod(abs(hhmm), 100)
@@ -656,8 +692,8 @@ def _mailmapped(line: str, ctx: RefContext) -> str:
     close = first.rfind(">")
     if close == -1:
         return line
-    identity = mapped_identity(first[:close + 1], ctx.mailmap)
-    return identity + first[close + 1:] + newline + rest
+    identity = mapped_identity(first[: close + 1], ctx.mailmap)
+    return identity + first[close + 1 :] + newline + rest
 
 
 def _date_value(line: str, field: RefField, ctx: RefContext) -> FieldValue:
@@ -704,18 +740,17 @@ def _person(obj: RefObject, field: RefField, ctx: RefContext) -> FieldValue:
             return FieldValue(_first_line(line))
         return _date_value(line, field, ctx)
     who = next(w for w in PEOPLE if head.startswith(w))
-    if who not in {
-            "commit": ("author", "committer"),
-            "tag": ("tagger", )
-    }.get(obj.type, ()):
+    if who not in {"commit": ("author", "committer"), "tag": ("tagger",)}.get(
+        obj.type, ()
+    ):
         return FieldValue("")
-    part = head[len(who):]
+    part = head[len(who) :]
     if part == "" and ":" in field.name:
         return FieldValue("")
     line = header_line(text, who)
-    mapped = (part == "name"
-              and field.option == "mailmap") or (part == "email"
-                                                 and "mailmap" in field.words)
+    mapped = (part == "name" and field.option == "mailmap") or (
+        part == "email" and "mailmap" in field.words
+    )
     if mapped:
         line = _mailmapped(line, ctx)
     if part == "":
@@ -857,11 +892,12 @@ def _abbreviated(field: RefField, oid: str, ctx: RefContext) -> str:
     if field.option not in ("short", "length"):
         return oid
     width = ctx.abbrev if field.option == "short" else field.number
-    return oid[:max(width, ctx.abbreviations.get(oid, 0))]
+    return oid[: max(width, ctx.abbreviations.get(oid, 0))]
 
 
-def abbreviation_requests(fields: Sequence[RefField], items: Sequence[RefItem],
-                          ctx: RefContext) -> dict[str, int]:
+def abbreviation_requests(
+    fields: Sequence[RefField], items: Sequence[RefItem], ctx: RefContext
+) -> dict[str, int]:
     """The smallest requested width per object id, including peeled ids,
     trees and parents, using the same field readers as rendering.
 
@@ -872,8 +908,11 @@ def abbreviation_requests(fields: Sequence[RefField], items: Sequence[RefItem],
     """
     widths: dict[str, int] = {}
     for atom in fields:
-        if atom.field not in ("objectname", "tree", "parent") or \
-                atom.option not in ("short", "length"):
+        if atom.field not in (
+            "objectname",
+            "tree",
+            "parent",
+        ) or atom.option not in ("short", "length"):
             continue
         width = ctx.abbrev if atom.option == "short" else atom.number
         full = replace(atom, option="")
@@ -883,8 +922,9 @@ def abbreviation_requests(fields: Sequence[RefField], items: Sequence[RefItem],
     return widths
 
 
-def _object_value(obj: RefObject, field: RefField,
-                  ctx: RefContext) -> FieldValue:
+def _object_value(
+    obj: RefObject, field: RefField, ctx: RefContext
+) -> FieldValue:
     """A field read off an object's type, size or content.
 
     Args:
@@ -908,11 +948,15 @@ def _object_value(obj: RefObject, field: RefField,
         return FieldValue(_first_line(header_line(text, head)))
     if obj.type == "commit" and head == "tree":
         return FieldValue(
-            _abbreviated(field, _first_line(header_line(text, "tree")), ctx))
+            _abbreviated(field, _first_line(header_line(text, "tree")), ctx)
+        )
     if obj.type == "commit" and head == "parent":
-        return FieldValue(" ".join(
-            _abbreviated(field, parent, ctx)
-            for parent in header_values(text, "parent")))
+        return FieldValue(
+            " ".join(
+                _abbreviated(field, parent, ctx)
+                for parent in header_values(text, "parent")
+            )
+        )
     if obj.type == "commit" and head == "numparent":
         count = len(header_values(text, "parent"))
         return FieldValue(str(count), count)
@@ -935,8 +979,11 @@ def field_value(field: RefField, item: RefItem, ctx: RefContext) -> FieldValue:
     head = field.field
     if head in ("refname", "symref"):
         if head == "symref":
-            name = (show_ref(field.option, field.number, item.symref, ctx)
-                    if item.symref else "")
+            name = (
+                show_ref(field.option, field.number, item.symref, ctx)
+                if item.symref
+                else ""
+            )
         elif item.kind is RefKind.DETACHED:
             name = ctx.head_description
         else:
@@ -948,7 +995,8 @@ def field_value(field: RefField, item: RefItem, ctx: RefContext) -> FieldValue:
         return FieldValue(_upstream_text(field, item, ctx))
     if head == "HEAD":
         return FieldValue(
-            "*" if ctx.head is not None and item.name == ctx.head else " ")
+            "*" if ctx.head is not None and item.name == ctx.head else " "
+        )
     if head == "if":
         body = field.name[1:] if field.deref else field.name
         return FieldValue(body[3:] if body.startswith("if:") else "")
@@ -983,11 +1031,11 @@ def _upstream_text(field: RefField, item: RefItem, ctx: RefContext) -> str:
         if up.gone:
             text = "gone"
         else:
-            parts = ([f"ahead {up.ahead}"] if up.ahead else
-                     []) + ([f"behind {up.behind}"] if up.behind else [])
+            parts = ([f"ahead {up.ahead}"] if up.ahead else []) + (
+                [f"behind {up.behind}"] if up.behind else []
+            )
             text = ", ".join(parts)
-        return (f"[{text}]"
-                if text and "nobracket" not in field.words else text)
+        return f"[{text}]" if text and "nobracket" not in field.words else text
     if field.option == "trackshort":
         if up.gone:
             return ""
@@ -995,7 +1043,7 @@ def _upstream_text(field: RefField, item: RefItem, ctx: RefContext) -> str:
             (False, False): "=",
             (False, True): "<",
             (True, False): ">",
-            (True, True): "<>"
+            (True, True): "<>",
         }[(bool(up.ahead), bool(up.behind))]
     if field.option == "remotename":
         return up.remote

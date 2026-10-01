@@ -28,6 +28,7 @@ class StatusWriter:
     ``LineFrame``, so ``record_status`` can say whose ``$?`` the session
     is holding and a cancelled line puts back only what it overwrote.
     """
+
     __slots__ = ()
 
 
@@ -36,7 +37,8 @@ class StatusWriter:
 # no other line can see it. TypeScript needs its own frame list here
 # because a promise has no task to hang this on.
 _line_writer: ContextVar[StatusWriter | None] = ContextVar(
-    "mirage_line_status_writer", default=None)
+    "mirage_line_status_writer", default=None
+)
 
 
 def set_line_writer(writer: StatusWriter) -> None:
@@ -58,7 +60,6 @@ def line_status_writer() -> StatusWriter | None:
 
 
 class MirageAbortError(RuntimeError):
-
     def __init__(self) -> None:
         super().__init__("execute aborted")
 
@@ -112,18 +113,21 @@ async def _cancel_and_join(task: "asyncio.Task[Any]") -> None:
         task.cancel()
         started = asyncio.get_running_loop().time()
         while not done:
-            done, _ = await asyncio.wait({task},
-                                         timeout=ABORT_STALL_WARN_SECONDS)
+            done, _ = await asyncio.wait(
+                {task}, timeout=ABORT_STALL_WARN_SECONDS
+            )
             if not done:
                 logger.warning(
                     "line still running %.1fs after cancel; a handler or "
                     "store is not letting CancelledError propagate",
-                    asyncio.get_running_loop().time() - started)
+                    asyncio.get_running_loop().time() - started,
+                )
     await asyncio.gather(task, return_exceptions=True)
 
 
-async def run_cancellable(coro: Coroutine[Any, Any, _T],
-                          cancel: asyncio.Event | None) -> _T:
+async def run_cancellable(
+    coro: Coroutine[Any, Any, _T], cancel: asyncio.Event | None
+) -> _T:
     """Run ``coro`` as a task the caller's event can cancel, and join it.
 
     The task is the cancellation seam: a cancelled asyncio task unwinds

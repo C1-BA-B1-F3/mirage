@@ -10,10 +10,9 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -39,10 +38,12 @@ def _make_stat(files: dict[str, bytes]):
         key = path.virtual if isinstance(path, PathSpec) else path
         if key not in files:
             raise FileNotFoundError(key)
-        return FileStat(name=key,
-                        size=len(files[key]),
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=key,
+            size=len(files[key]),
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     return stat
 
@@ -84,8 +85,9 @@ async def test_md5_no_paths_raises():
 async def test_sha256sum_stdin():
     files: dict[str, bytes] = {}
     _, rs = _make_backend(files)
-    output, _ = await sha256sum_generic([], [], CommandOpts(stdin=b"hello\n"),
-                                        _make_stat(files), rs)
+    output, _ = await sha256sum_generic(
+        [], [], CommandOpts(stdin=b"hello\n"), _make_stat(files), rs
+    )
     decoded = (await _drain(output)).decode()
     expected = hashlib.sha256(b"hello\n").hexdigest()
     assert expected in decoded
@@ -97,8 +99,12 @@ async def test_sha256sum_multi_file():
     files = {"/a.txt": b"foo", "/b.txt": b"bar"}
     _, rs = _make_backend(files)
     output, _ = await sha256sum_generic(
-        [_spec("/a.txt"), _spec("/b.txt")], [], CommandOpts(),
-        _make_stat(files), rs)
+        [_spec("/a.txt"), _spec("/b.txt")],
+        [],
+        CommandOpts(),
+        _make_stat(files),
+        rs,
+    )
     decoded = (await _drain(output)).decode().splitlines()
     assert len(decoded) == 2
     assert hashlib.sha256(b"foo").hexdigest() in decoded[0]
@@ -110,8 +116,12 @@ async def test_sha256sum_missing_operand_reports_and_continues():
     files = {"/a.txt": b"foo"}
     _, rs = _make_backend(files)
     output, io = await sha256sum_generic(
-        [_spec("/a.txt"), _spec("/nope")], [], CommandOpts(),
-        _make_stat(files), rs)
+        [_spec("/a.txt"), _spec("/nope")],
+        [],
+        CommandOpts(),
+        _make_stat(files),
+        rs,
+    )
     decoded = (await _drain(output)).decode()
     assert hashlib.sha256(b"foo").hexdigest() in decoded
     assert io.exit_code == 1
@@ -128,9 +138,13 @@ async def test_sha256sum_check_passing():
         "/file.txt": payload,
     }
     _, rs = _make_backend(files)
-    output, io = await sha256sum_generic([_spec("/manifest.sha256")], [],
-                                         CommandOpts(flags={"check": True}),
-                                         _make_stat(files), rs)
+    output, io = await sha256sum_generic(
+        [_spec("/manifest.sha256")],
+        [],
+        CommandOpts(flags={"check": True}),
+        _make_stat(files),
+        rs,
+    )
     assert b"/file.txt: OK" in await _drain(output)
     assert io.exit_code == 0
 
@@ -143,9 +157,13 @@ async def test_sha256sum_check_failing():
         "/file.txt": b"actual content",
     }
     _, rs = _make_backend(files)
-    output, io = await sha256sum_generic([_spec("/manifest.sha256")], [],
-                                         CommandOpts(flags={"check": True}),
-                                         _make_stat(files), rs)
+    output, io = await sha256sum_generic(
+        [_spec("/manifest.sha256")],
+        [],
+        CommandOpts(flags={"check": True}),
+        _make_stat(files),
+        rs,
+    )
     assert b"/file.txt: FAILED" in await _drain(output)
     assert io.exit_code == 1
 
@@ -154,7 +172,8 @@ async def test_sha256sum_check_failing():
 async def test_cmp_identical_returns_nothing():
     rb, _ = _make_backend({"/a.txt": b"same", "/b.txt": b"same"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb
+    )
     assert output is None
     assert io.exit_code == 0
 
@@ -163,7 +182,8 @@ async def test_cmp_identical_returns_nothing():
 async def test_cmp_differing_reports_first_byte():
     rb, _ = _make_backend({"/a.txt": b"hello", "/b.txt": b"hallo"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb
+    )
     assert output == b"/a.txt /b.txt differ: char 2, line 1\n"
     assert io.exit_code == 1
 
@@ -172,7 +192,8 @@ async def test_cmp_differing_reports_first_byte():
 async def test_cmp_silent_mode():
     rb, _ = _make_backend({"/a.txt": b"x", "/b.txt": b"y"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, silent=True)
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, silent=True
+    )
     assert output is None
     assert io.exit_code == 1
 
@@ -181,7 +202,8 @@ async def test_cmp_silent_mode():
 async def test_cmp_verbose_lists_all_diffs():
     rb, _ = _make_backend({"/a.txt": b"abc", "/b.txt": b"axc"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, verbose=True)
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, verbose=True
+    )
     assert b"2 142 170" in output
     assert io.exit_code == 1
 
@@ -190,7 +212,8 @@ async def test_cmp_verbose_lists_all_diffs():
 async def test_cmp_skip_offset():
     rb, _ = _make_backend({"/a.txt": b"xxhello", "/b.txt": b"yyhello"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, skip=(2, 2))
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, skip=(2, 2)
+    )
     assert output is None
     assert io.exit_code == 0
 
@@ -206,7 +229,8 @@ async def test_cmp_requires_an_operand():
 async def test_cmp_eof_on_shorter():
     rb, _ = _make_backend({"/a.txt": b"abc", "/b.txt": b"abcdef"})
     output, io = await cmp_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb
+    )
     # GNU writes this to stderr, not stdout, and names the byte it
     # stopped at plus the line that byte sits in.
     assert output is None

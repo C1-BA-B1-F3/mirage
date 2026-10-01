@@ -44,7 +44,11 @@ class MirageToolkit(Toolkit):
     def __init__(self, workspace: Workspace, **kwargs) -> None:
         self._ws = workspace
         tools: list[Callable[..., Any]] = [
-            self.execute, self.read, self.write, self.ls, self.grep
+            self.execute,
+            self.read,
+            self.write,
+            self.ls,
+            self.grep,
         ]
         async_tools: list[tuple[Callable[..., Any], str]] = [
             (self.aexecute, "execute"),
@@ -53,10 +57,9 @@ class MirageToolkit(Toolkit):
             (self.als, "ls"),
             (self.agrep, "grep"),
         ]
-        super().__init__(name="mirage",
-                         tools=tools,
-                         async_tools=async_tools,
-                         **kwargs)
+        super().__init__(
+            name="mirage", tools=tools, async_tools=async_tools, **kwargs
+        )
 
     def _run(self, coro: Awaitable[T]) -> T:
         return run_async_from_sync(coro)
@@ -107,8 +110,9 @@ class MirageToolkit(Toolkit):
         mkdir = await self._ws.shell(f"mkdir -p {shlex.quote(parent)}")
         if mkdir.exit_code != 0:
             return io_to_str(mkdir)
-        io = await self._ws.shell(f"tee {shlex.quote(path)}",
-                                  stdin=content.encode("utf-8"))
+        io = await self._ws.shell(
+            f"tee {shlex.quote(path)}", stdin=content.encode("utf-8")
+        )
         return io_to_str(io)
 
     # -- ls ------------------------------------------------------------------
@@ -140,5 +144,6 @@ class MirageToolkit(Toolkit):
 
     async def agrep(self, pattern: str, path: str) -> str:
         io = await self._ws.shell(
-            f"grep -r {shlex.quote(pattern)} {shlex.quote(path)}")
+            f"grep -r {shlex.quote(pattern)} {shlex.quote(path)}"
+        )
         return io_to_str(io)

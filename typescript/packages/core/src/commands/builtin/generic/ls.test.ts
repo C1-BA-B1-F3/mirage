@@ -1225,16 +1225,15 @@ describe('dot entries respect mount boundaries', () => {
           })
           const read = (path: PathSpec): Promise<string[]> =>
             Promise.resolve(path.virtual === root ? [`${prefix}/sub`] : [])
-          const statPath = vi.fn(
-            (path: string): Promise<FileStat> =>
-              Promise.resolve(
-                tree.get(path) ??
-                  new FileStat({
-                    name: 'parent',
-                    type: FileType.DIRECTORY,
-                    mode: 0o700,
-                  }),
-              ),
+          const statPath = vi.fn((path: string): Promise<FileStat> =>
+            Promise.resolve(
+              tree.get(path) ??
+                new FileStat({
+                  name: 'parent',
+                  type: FileType.DIRECTORY,
+                  mode: 0o700,
+                }),
+            ),
           )
           const options = opts({ all: true, args_l: true })
           if (namespace) options.statPath = statPath

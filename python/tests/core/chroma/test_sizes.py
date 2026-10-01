@@ -6,8 +6,9 @@ from mirage.core.chroma.tree import CHROMA_TREE
 
 
 @pytest.mark.asyncio
-async def test_stat_size_matches_read(chroma_accessor, chroma_index,
-                                      quickstart_path):
+async def test_stat_size_matches_read(
+    chroma_accessor, chroma_index, quickstart_path
+):
     result = await stat(chroma_accessor, quickstart_path, chroma_index)
     body = await read_bytes(chroma_accessor, quickstart_path, chroma_index)
 
@@ -18,7 +19,8 @@ async def test_stat_size_matches_read(chroma_accessor, chroma_index,
 
 @pytest.mark.asyncio
 async def test_stat_sizes_the_whole_directory_in_one_scan(
-        chroma_accessor, chroma_collection, chroma_index, quickstart_path):
+    chroma_accessor, chroma_collection, chroma_index, quickstart_path
+):
     await CHROMA_TREE.ensure(chroma_accessor, chroma_index, "/knowledge")
     before = len(chroma_collection.get_calls)
 
@@ -32,9 +34,9 @@ async def test_stat_sizes_the_whole_directory_in_one_scan(
 
 
 @pytest.mark.asyncio
-async def test_stat_light_skips_the_size_scan(chroma_accessor,
-                                              chroma_collection, chroma_index,
-                                              quickstart_path):
+async def test_stat_light_skips_the_size_scan(
+    chroma_accessor, chroma_collection, chroma_index, quickstart_path
+):
     await CHROMA_TREE.ensure(chroma_accessor, chroma_index, "/knowledge")
     before = len(chroma_collection.get_calls)
 
@@ -45,10 +47,9 @@ async def test_stat_light_skips_the_size_scan(chroma_accessor,
 
 
 @pytest.mark.asyncio
-async def test_stat_leaves_chunkless_pages_unsized(chroma_accessor,
-                                                   chroma_collection,
-                                                   chroma_index,
-                                                   quickstart_path):
+async def test_stat_leaves_chunkless_pages_unsized(
+    chroma_accessor, chroma_collection, chroma_index, quickstart_path
+):
     chroma_collection.chunks["guides/quickstart"] = []
 
     result = await stat(chroma_accessor, quickstart_path, chroma_index)

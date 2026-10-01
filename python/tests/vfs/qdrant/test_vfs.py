@@ -24,8 +24,17 @@ def test_vfs_registers_ops():
 def test_vfs_registers_commands():
     res = _vfs()
     expected = {
-        "cat", "find", "grep", "head", "ls", "rg", "search", "stat", "tail",
-        "tree", "wc"
+        "cat",
+        "find",
+        "grep",
+        "head",
+        "ls",
+        "rg",
+        "search",
+        "stat",
+        "tail",
+        "tree",
+        "wc",
     }
     assert expected <= {c.name for c in res.commands()}
 

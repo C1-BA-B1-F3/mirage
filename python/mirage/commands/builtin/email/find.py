@@ -16,8 +16,12 @@ from functools import partial
 
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.builtin.email.io import resolve_glob
-from mirage.commands.builtin.generic.find import (is_link, parse_find_args,
-                                                  resolve_start, walk_find)
+from mirage.commands.builtin.generic.find import (
+    is_link,
+    parse_find_args,
+    resolve_start,
+    walk_find,
+)
 from mirage.commands.builtin.grep_pushdown import lone_operand
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
@@ -81,46 +85,60 @@ async def find(
     # A pure -name search at folder level pushes the subject query down to
     # IMAP search instead of walking every message; any other predicate
     # falls through to the local walk so nothing is silently dropped.
-    name_only = not (texts or size or mtime or type or iname or path
-                     or mindepth or maxdepth or empty)
+    name_only = not (
+        texts
+        or size
+        or mtime
+        or type
+        or iname
+        or path
+        or mindepth
+        or maxdepth
+        or empty
+    )
     if name and name_only:
         operand = _folder_operand(paths)
         if operand is not None:
             prefix = mount_prefix_of(operand.virtual, operand.vfs_path)
             return await _find_server_side(accessor, operand, name, prefix)
 
-    args = parse_find_args(tuple(texts),
-                           name=name,
-                           type=type,
-                           size=size,
-                           mtime=mtime,
-                           maxdepth=maxdepth,
-                           iname=iname,
-                           path=path,
-                           mindepth=mindepth,
-                           empty=empty)
-    searches = paths if paths else [
-        PathSpec(virtual="/", directory="/", vfs_path="")
-    ]
+    args = parse_find_args(
+        tuple(texts),
+        name=name,
+        type=type,
+        size=size,
+        mtime=mtime,
+        maxdepth=maxdepth,
+        iname=iname,
+        path=path,
+        mindepth=mindepth,
+        empty=empty,
+    )
+    searches = (
+        paths if paths else [PathSpec(virtual="/", directory="/", vfs_path="")]
+    )
     results: list[str] = []
     links = opts.ns.links if opts.ns is not None else None
     for search in searches:
         # Same start-point rule as every other find path: only a
         # directory has a subtree to walk.
-        start = await resolve_start(search,
-                                    args,
-                                    opts.stat_path,
-                                    is_link=is_link(links, search))
+        start = await resolve_start(
+            search, args, opts.stat_path, is_link=is_link(links, search)
+        )
         if not start.walk:
             results.extend(start.results)
             continue
-        results.extend(await walk_find(search,
-                                       readdir=partial(_readdir, accessor),
-                                       stat=partial(_stat, accessor),
-                                       index=opts.index,
-                                       args=args,
-                                       links=links,
-                                       follow=fl.as_bool("L")))
+        results.extend(
+            await walk_find(
+                search,
+                readdir=partial(_readdir, accessor),
+                stat=partial(_stat, accessor),
+                index=opts.index,
+                args=args,
+                links=links,
+                follow=fl.as_bool("L"),
+            )
+        )
     return format_records(results), IOResult()
 
 
@@ -132,15 +150,22 @@ async def _find_server_side(
 ) -> tuple[ByteSource | None, IOResult]:
     # One non-empty segment, guaranteed by _folder_operand.
     folder = operand.mount_path.strip("/")
-    subject_query = name_pattern.replace("*", "").replace("?", "").replace(
-        ".email.json", "").replace("__", " ").strip("_")
+    subject_query = (
+        name_pattern.replace("*", "")
+        .replace("?", "")
+        .replace(".email.json", "")
+        .replace("__", " ")
+        .strip("_")
+    )
     if not subject_query:
         return b"", IOResult()
 
-    uids = await search_messages(accessor,
-                                 folder,
-                                 subject=subject_query,
-                                 max_results=accessor.config.max_messages)
+    uids = await search_messages(
+        accessor,
+        folder,
+        subject=subject_query,
+        max_results=accessor.config.max_messages,
+    )
     if not uids:
         return b"", IOResult()
 
@@ -155,9 +180,9 @@ async def _find_server_side(
         # path that does not exist once a long subject was trimmed.
         filename = _msg_filename(h.get("subject", "No Subject"), uid)
         if fnmatch(filename, name_pattern):
-            vfs_path = "/".join(p
-                                for p in [prefix, folder, date_str, filename]
-                                if p)
+            vfs_path = "/".join(
+                p for p in [prefix, folder, date_str, filename] if p
+            )
             results.append(vfs_path)
 
     output = format_records(sorted(results))

@@ -21,12 +21,14 @@ from mirage.shell.types import ShellBuiltin
 
 # Bash builtins the parser accepts but the executor cannot honor; they
 # still route to the shell layer so the error names a capability gap.
-UNSUPPORTED_BUILTINS = frozenset({
-    "bg",
-    "complete",
-    "compgen",
-    "ulimit",
-})
+UNSUPPORTED_BUILTINS = frozenset(
+    {
+        "bg",
+        "complete",
+        "compgen",
+        "ulimit",
+    }
+)
 
 NAMESPACE_COMMANDS = frozenset({"getfattr", "ln", "readlink", "setfattr"})
 
@@ -34,29 +36,31 @@ NAMESPACE_COMMANDS = frozenset({"getfattr", "ln", "readlink", "setfattr"})
 # the executor, consumes them, so they never reach route; `type` reports
 # them and the CLI registry refuses them as head words. `coproc` is omitted
 # because its construct is not implemented.
-KEYWORDS = frozenset({
-    "time",
-    "if",
-    "then",
-    "else",
-    "elif",
-    "fi",
-    "case",
-    "esac",
-    "for",
-    "select",
-    "while",
-    "until",
-    "do",
-    "done",
-    "in",
-    "function",
-    "{",
-    "}",
-    "!",
-    "[[",
-    "]]",
-})
+KEYWORDS = frozenset(
+    {
+        "time",
+        "if",
+        "then",
+        "else",
+        "elif",
+        "fi",
+        "case",
+        "esac",
+        "for",
+        "select",
+        "while",
+        "until",
+        "do",
+        "done",
+        "in",
+        "function",
+        "{",
+        "}",
+        "!",
+        "[[",
+        "]]",
+    }
+)
 
 # ShellBuiltin subset handled through the job table in the executor.
 JOB_BUILTINS = frozenset({"wait", "fg", "kill", "jobs", "disown", "ps"})
@@ -74,10 +78,22 @@ JOB_BUILTINS = frozenset({"wait", "fg", "kill", "jobs", "disown", "ps"})
 # so `tar` could not store a symlink member at all and neither archiver
 # could apply its own cross-mount refusal or ELOOP wording. tar's -h and
 # zip's -y are read by the planner instead.
-NO_FOLLOW_COMMANDS = frozenset({
-    "rm", "mv", "ln", "readlink", "rmdir", "unlink", "stat", "file", "du",
-    "find", "tar", "zip"
-})
+NO_FOLLOW_COMMANDS = frozenset(
+    {
+        "rm",
+        "mv",
+        "ln",
+        "readlink",
+        "rmdir",
+        "unlink",
+        "stat",
+        "file",
+        "du",
+        "find",
+        "tar",
+        "zip",
+    }
+)
 
 SHELL_NAMES = frozenset(str(b) for b in ShellBuiltin) | UNSUPPORTED_BUILTINS
 
@@ -91,21 +107,113 @@ SHELL_NAMES = frozenset(str(b) for b in ShellBuiltin) | UNSUPPORTED_BUILTINS
 # calls one of these a shell builtin and `command -v` prints it bare,
 # even where a program of the same name is on PATH too (echo, test,
 # pwd); any other word mirage runs is a program, reported by its path.
-BASH_BUILTINS = frozenset({
-    ".", ":", "[", "alias", "bg", "bind", "break", "builtin", "caller", "cd",
-    "command", "compgen", "complete", "compopt", "continue", "declare", "dirs",
-    "disown", "echo", "enable", "eval", "exec", "exit", "export", "false",
-    "fc", "fg", "getopts", "hash", "help", "history", "jobs", "kill", "let",
-    "local", "logout", "mapfile", "popd", "printf", "pushd", "pwd", "read",
-    "readarray", "readonly", "return", "set", "shift", "shopt", "source",
-    "suspend", "test", "times", "trap", "true", "type", "typeset", "ulimit",
-    "umask", "unalias", "unset", "wait"
-})
+BASH_BUILTINS = frozenset(
+    {
+        ".",
+        ":",
+        "[",
+        "alias",
+        "bg",
+        "bind",
+        "break",
+        "builtin",
+        "caller",
+        "cd",
+        "command",
+        "compgen",
+        "complete",
+        "compopt",
+        "continue",
+        "declare",
+        "dirs",
+        "disown",
+        "echo",
+        "enable",
+        "eval",
+        "exec",
+        "exit",
+        "export",
+        "false",
+        "fc",
+        "fg",
+        "getopts",
+        "hash",
+        "help",
+        "history",
+        "jobs",
+        "kill",
+        "let",
+        "local",
+        "logout",
+        "mapfile",
+        "popd",
+        "printf",
+        "pushd",
+        "pwd",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shift",
+        "shopt",
+        "source",
+        "suspend",
+        "test",
+        "times",
+        "trap",
+        "true",
+        "type",
+        "typeset",
+        "ulimit",
+        "umask",
+        "unalias",
+        "unset",
+        "wait",
+    }
+)
 
-SHELL_ONLY_BUILTINS = frozenset({
-    ".", ":", "alias", "bg", "break", "cd", "command", "compgen", "complete",
-    "continue", "declare", "disown", "eval", "exec", "exit", "export", "fg",
-    "getopts", "history", "jobs", "kill", "let", "local", "mapfile", "read",
-    "readarray", "readonly", "return", "set", "shift", "shopt", "source",
-    "trap", "type", "typeset", "ulimit", "umask", "unalias", "unset", "wait"
-})
+SHELL_ONLY_BUILTINS = frozenset(
+    {
+        ".",
+        ":",
+        "alias",
+        "bg",
+        "break",
+        "cd",
+        "command",
+        "compgen",
+        "complete",
+        "continue",
+        "declare",
+        "disown",
+        "eval",
+        "exec",
+        "exit",
+        "export",
+        "fg",
+        "getopts",
+        "history",
+        "jobs",
+        "kill",
+        "let",
+        "local",
+        "mapfile",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shift",
+        "shopt",
+        "source",
+        "trap",
+        "type",
+        "typeset",
+        "ulimit",
+        "umask",
+        "unalias",
+        "unset",
+        "wait",
+    }
+)

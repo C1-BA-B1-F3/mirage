@@ -50,7 +50,6 @@ async def _execute_with_timeout(
 
 
 class _AsyncBridge:
-
     def __init__(self) -> None:
         self._state: dict[str, Any] = {}
         self._thread: threading.Thread | None = None
@@ -150,11 +149,13 @@ class MirageWorkspace(LocalWorkspace):
             full_command = command
         try:
             io_result = self._bridge.run(
-                _execute_with_timeout(self._ws, full_command, timeout))
+                _execute_with_timeout(self._ws, full_command, timeout)
+            )
             stdout = self._coerce_text(getattr(io_result, "stdout", b""))
             stderr = with_refusal(
                 self._coerce_text(getattr(io_result, "stderr", b"")),
-                io_result.refusal)
+                io_result.refusal,
+            )
             exit_code = int(getattr(io_result, "exit_code", 0) or 0)
             return CommandResult(
                 command=command,
@@ -231,21 +232,25 @@ class MirageWorkspace(LocalWorkspace):
     def git_changes(self, path: str | Path) -> list[GitChange]:
         raise NotImplementedError(
             "Mirage workspaces do not expose git semantics over their "
-            "virtual mounts; query the underlying VFS directly.")
+            "virtual mounts; query the underlying VFS directly."
+        )
 
     def git_diff(self, path: str | Path) -> GitDiff:
         raise NotImplementedError(
             "Mirage workspaces do not expose git semantics over their "
-            "virtual mounts; query the underlying VFS directly.")
+            "virtual mounts; query the underlying VFS directly."
+        )
 
     def _ensure_parent(self, parent: str) -> None:
         result = self._bridge.run(
-            self._ws.shell(f"mkdir -p {shlex.quote(parent)}"))
+            self._ws.shell(f"mkdir -p {shlex.quote(parent)}")
+        )
         exit_code = int(getattr(result, "exit_code", 0) or 0)
         if exit_code != 0:
             stderr = self._coerce_text(getattr(result, "stderr", b""))
             raise RuntimeError(
-                f"mkdir -p {parent!r} failed (exit {exit_code}): {stderr}")
+                f"mkdir -p {parent!r} failed (exit {exit_code}): {stderr}"
+            )
 
     @staticmethod
     def _coerce_text(value: Any) -> str:

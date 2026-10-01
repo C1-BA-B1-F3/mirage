@@ -30,7 +30,8 @@ external = NextcloudAccessor(config).operator()
 # gets a tiny RAM queue (3 pending paths) so a burst overflows and
 # collapses into one UNKNOWN "re-inventory" event.
 ws.attach_watch_runtime(
-    Watcher(ws.registry, queue_factory=partial(RAMWatchQueue, max_pending=3)))
+    Watcher(ws.registry, queue_factory=partial(RAMWatchQueue, max_pending=3))
+)
 
 
 class ConsumerPoller:
@@ -51,7 +52,8 @@ class ConsumerPoller:
 async def main() -> None:
     root = PathSpec.from_str_path(f"{MOUNT}/{FOLDER}", vfs_path=FOLDER)
     poller = ConsumerPoller(
-        ws.registry.mount_for(MOUNT).vfs.delta_hook(), root)
+        ws.registry.mount_for(MOUNT).vfs.delta_hook(), root
+    )
     await external.create_dir(FOLDER + "/")
     await poller.pump()  # baseline: emits nothing
 
@@ -65,14 +67,15 @@ async def main() -> None:
     event = await first
     print(f"  {event.kind.value} {event.path.virtual}")
 
-    print("burst of 5 while the consumer is busy -> queue (cap 3)"
-          " collapses:")
+    print("burst of 5 while the consumer is busy -> queue (cap 3) collapses:")
     for i in range(5):
         await external.write(f"{FOLDER}/bulk-{i}.txt", b"row")
     await poller.pump()
     event = await agen.__anext__()
-    print(f"  {event.kind.value} {event.path.virtual}"
-          "  (precision degraded, dirtiness kept)")
+    print(
+        f"  {event.kind.value} {event.path.virtual}"
+        "  (precision degraded, dirtiness kept)"
+    )
 
     result = await ws.shell(f"ls {MOUNT}/{FOLDER}")
     listing = (await result.stdout_str()).split()

@@ -199,6 +199,7 @@ export class NodeTree {
       this.host.destroyNode?.(node)
     }
     this.root.children?.clear()
+    delete this.root.listed
   }
 
   childNames(node: FSNode): string[] {

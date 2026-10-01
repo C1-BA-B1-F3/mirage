@@ -51,9 +51,9 @@ def test_name_must_be_a_single_word():
 
 def test_node_takes_fn_or_subcommands_not_both():
     with pytest.raises(ValueError, match="not both"):
-        CLISpec(name="gws",
-                fn=_verb,
-                subcommands=(CLISpec(name="send", fn=_verb), ))
+        CLISpec(
+            name="gws", fn=_verb, subcommands=(CLISpec(name="send", fn=_verb),)
+        )
 
 
 def test_node_needs_fn_or_subcommands():
@@ -74,9 +74,11 @@ def test_script_excludes_fn():
 
 def test_script_excludes_subcommands():
     with pytest.raises(ValueError, match="subcommands belong to fn trees"):
-        CLISpec(name="pager",
-                script=ScriptSource("1"),
-                subcommands=(CLISpec(name="send", fn=_verb), ))
+        CLISpec(
+            name="pager",
+            script=ScriptSource("1"),
+            subcommands=(CLISpec(name="send", fn=_verb),),
+        )
 
 
 def test_script_excludes_config_model():
@@ -93,44 +95,57 @@ def test_runtime_takes_script():
 
 def test_script_is_root_only():
     with pytest.raises(ValueError, match="only the root of a tree may"):
-        CLISpec(name="gws",
-                subcommands=(CLISpec(name="pager",
-                                     script=ScriptSource("1")), ))
+        CLISpec(
+            name="gws",
+            subcommands=(CLISpec(name="pager", script=ScriptSource("1")),),
+        )
 
 
 def test_group_declares_no_positional_or_rest():
     with pytest.raises(ValueError, match="belong on leaves"):
-        CLISpec(name="gws",
-                positional=(Operand(type="str"), ),
-                subcommands=(CLISpec(name="send", fn=_verb), ))
+        CLISpec(
+            name="gws",
+            positional=(Operand(type="str"),),
+            subcommands=(CLISpec(name="send", fn=_verb),),
+        )
     with pytest.raises(ValueError, match="belong on leaves"):
-        CLISpec(name="gws",
-                rest=Operand(type="str"),
-                subcommands=(CLISpec(name="send", fn=_verb), ))
+        CLISpec(
+            name="gws",
+            rest=Operand(type="str"),
+            subcommands=(CLISpec(name="send", fn=_verb),),
+        )
 
 
 def test_duplicate_subcommand_names_raise():
     with pytest.raises(ValueError, match="duplicate subcommand 'send'"):
-        CLISpec(name="gws",
-                subcommands=(CLISpec(name="send",
-                                     fn=_verb), CLISpec(name="send",
-                                                        fn=_verb)))
+        CLISpec(
+            name="gws",
+            subcommands=(
+                CLISpec(name="send", fn=_verb),
+                CLISpec(name="send", fn=_verb),
+            ),
+        )
 
 
 def test_config_model_is_root_only():
     with pytest.raises(ValueError, match="only the root of a tree may"):
-        CLISpec(name="gws",
-                subcommands=(CLISpec(name="gmail",
-                                     fn=_verb,
-                                     config_model=_Config), ))
+        CLISpec(
+            name="gws",
+            subcommands=(
+                CLISpec(name="gmail", fn=_verb, config_model=_Config),
+            ),
+        )
 
 
 def test_leaf_option_grammar_is_validated_at_construction():
-    with pytest.raises(ValueError,
-                       match="choices and default require a value flag"):
-        CLISpec(name="mine",
-                fn=_verb,
-                options=(Option(long="--mode", choices=("a", "b")), ))
+    with pytest.raises(
+        ValueError, match="choices and default require a value flag"
+    ):
+        CLISpec(
+            name="mine",
+            fn=_verb,
+            options=(Option(long="--mode", choices=("a", "b")),),
+        )
 
 
 def test_unhashable_callable_handler_is_valid():
@@ -141,39 +156,52 @@ def test_unhashable_callable_handler_is_valid():
 
 def test_spellingless_leaf_option_is_rejected_at_construction():
     with pytest.raises(ValueError, match="requires a short or long spelling"):
-        CLISpec(name="mine", fn=_verb, options=(Option(), ))
+        CLISpec(name="mine", fn=_verb, options=(Option(),))
 
 
 def test_duplicate_leaf_option_spelling_is_rejected_at_construction():
     with pytest.raises(ValueError, match="duplicate option spelling"):
-        CLISpec(name="mine",
-                fn=_verb,
-                options=(Option(long="--mode"),
-                         Option(long="--mode", type="str")))
+        CLISpec(
+            name="mine",
+            fn=_verb,
+            options=(Option(long="--mode"), Option(long="--mode", type="str")),
+        )
 
 
 def test_ancestor_descendant_option_collision_raises():
     with pytest.raises(ValueError, match="collides with subcommand"):
-        CLISpec(name="gws",
-                options=(Option(short="-C", long="--cwd", type="str"), ),
-                subcommands=(CLISpec(
+        CLISpec(
+            name="gws",
+            options=(Option(short="-C", long="--cwd", type="str"),),
+            subcommands=(
+                CLISpec(
                     name="gmail",
-                    subcommands=(CLISpec(
-                        name="send",
-                        fn=_verb,
-                        options=(Option(long="--cwd", type="str"), )), )), ))
+                    subcommands=(
+                        CLISpec(
+                            name="send",
+                            fn=_verb,
+                            options=(Option(long="--cwd", type="str"),),
+                        ),
+                    ),
+                ),
+            ),
+        )
 
 
 def test_sibling_leaves_may_share_option_spellings():
     tree = CLISpec(
         name="gws",
         subcommands=(
-            CLISpec(name="send",
-                    fn=_verb,
-                    options=(Option(long="--to", type="str"), )),
-            CLISpec(name="share",
-                    fn=_verb,
-                    options=(Option(long="--to", type="str"), )),
+            CLISpec(
+                name="send",
+                fn=_verb,
+                options=(Option(long="--to", type="str"),),
+            ),
+            CLISpec(
+                name="share",
+                fn=_verb,
+                options=(Option(long="--to", type="str"),),
+            ),
         ),
     )
     assert len(tree.subcommands) == 2
@@ -181,15 +209,20 @@ def test_sibling_leaves_may_share_option_spellings():
 
 def test_alias_shares_the_sibling_namespace():
     with pytest.raises(ValueError, match="duplicate subcommand 'co'"):
-        CLISpec(name="tool",
-                subcommands=(CLISpec(name="checkout",
-                                     aliases=("co", ),
-                                     fn=_verb), CLISpec(name="co", fn=_verb)))
+        CLISpec(
+            name="tool",
+            subcommands=(
+                CLISpec(name="checkout", aliases=("co",), fn=_verb),
+                CLISpec(name="co", fn=_verb),
+            ),
+        )
 
 
 def test_alias_must_be_a_single_word():
     with pytest.raises(ValueError, match="alias 'c o'"):
-        CLISpec(name="tool",
-                subcommands=(CLISpec(name="checkout",
-                                     aliases=("c o", ),
-                                     fn=_verb), ))
+        CLISpec(
+            name="tool",
+            subcommands=(
+                CLISpec(name="checkout", aliases=("c o",), fn=_verb),
+            ),
+        )

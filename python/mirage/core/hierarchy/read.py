@@ -25,11 +25,13 @@ Reader = Callable[[A, ScopeMatch, PathSpec, IndexCacheStore], Awaitable[bytes]]
 
 WindowedReader = Callable[
     [A, ScopeMatch, PathSpec, IndexCacheStore, int | None, int | None],
-    Awaitable[bytes]]
+    Awaitable[bytes],
+]
 
 RangedReader = Callable[
     [A, ScopeMatch, PathSpec, IndexCacheStore, int, int | None],
-    Awaitable[bytes]]
+    Awaitable[bytes],
+]
 
 ReadFn = Callable[..., Awaitable[bytes]]
 
@@ -67,12 +69,14 @@ def make_read(
 
     windows = windowed if windowed is not None else {}
 
-    async def read(accessor: A,
-                   path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX,
-                   *,
-                   limit: int | None = None,
-                   offset: int | None = None) -> bytes:
+    async def read(
+        accessor: A,
+        path: PathSpec,
+        index: IndexCacheStore = NULL_INDEX,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> bytes:
         match = detect(path)
         window = windows.get(match.kind)
         reader = readers.get(match.kind)
@@ -86,9 +90,11 @@ def make_read(
             # else is reported absent: a matched shape alone is no proof
             # the node exists, and GNU says "No such file" for a missing
             # name, "Is a directory" only for a real one.
-            if match.kind == ROOT or (match.scope is not None
-                                      and not match.scope.leaf
-                                      and not match.scope.probed):
+            if match.kind == ROOT or (
+                match.scope is not None
+                and not match.scope.leaf
+                and not match.scope.probed
+            ):
                 raise IsADirectoryError(path.virtual)
             raise enoent(path.virtual)
         return await reader(accessor, match, path, index)
@@ -118,11 +124,13 @@ def make_read_range(
             the byte window to the source.
     """
 
-    async def read_range(accessor: A,
-                         path: PathSpec,
-                         index: IndexCacheStore = NULL_INDEX,
-                         offset: int = 0,
-                         size: int | None = None) -> bytes:
+    async def read_range(
+        accessor: A,
+        path: PathSpec,
+        index: IndexCacheStore = NULL_INDEX,
+        offset: int = 0,
+        size: int | None = None,
+    ) -> bytes:
         match = detect(path)
         fn = ranged.get(match.kind)
         if fn is not None:

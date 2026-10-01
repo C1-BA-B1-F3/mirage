@@ -57,8 +57,10 @@ async def test_cp_into_missing_parent_refuses(workspace):
     await workspace.vfs.write("/a.txt", b"hi")
     io = await workspace.shell("cp /a.txt /nodir/x.txt")
     assert io.exit_code == 1
-    assert io.stderr == (b"cp: cannot create regular file '/nodir/x.txt': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"cp: cannot create regular file '/nodir/x.txt': "
+        b"No such file or directory\n"
+    )
     listing = await workspace.shell("ls /")
     assert b"nodir" not in listing.stdout
 
@@ -79,7 +81,8 @@ async def test_cp_deep_under_a_file_reports_not_a_directory(workspace):
     io = await workspace.shell("cp /a.txt /plain/s/x.txt")
     assert io.exit_code == 1
     assert io.stderr == (
-        b"cp: cannot stat '/plain/s/x.txt': Not a directory\n")
+        b"cp: cannot stat '/plain/s/x.txt': Not a directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -114,9 +117,11 @@ async def test_cp_recursive_verbose_lists_directories(workspace):
     assert "'/dir' -> '/newdir'" in lines
     assert "'/dir/sub' -> '/newdir/sub'" in lines
     assert lines.index("'/dir' -> '/newdir'") < lines.index(
-        "'/dir/sub' -> '/newdir/sub'")
+        "'/dir/sub' -> '/newdir/sub'"
+    )
     assert lines.index("'/dir/sub' -> '/newdir/sub'") < lines.index(
-        "'/dir/sub/g.txt' -> '/newdir/sub/g.txt'")
+        "'/dir/sub/g.txt' -> '/newdir/sub/g.txt'"
+    )
 
 
 @pytest.mark.asyncio
@@ -128,8 +133,10 @@ async def test_cp_recursive_into_missing_parent_copies_nothing(workspace):
     io = await workspace.shell("cp -r /dir /nodir/sub")
     assert io.exit_code == 1
     # GNU reports the failed directory once and copies nothing.
-    assert io.stderr == (b"cp: cannot create directory '/nodir/sub': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"cp: cannot create directory '/nodir/sub': "
+        b"No such file or directory\n"
+    )
     listing = await workspace.shell("find /nodir")
     assert listing.exit_code != 0
 
@@ -159,5 +166,6 @@ async def test_cp_absent_source_is_still_no_such_file(workspace):
     await workspace.vfs.mkdir("/d")
     io = await workspace.shell("cp /nope /d")
     assert io.exit_code == 1
-    assert io.stderr == (b"cp: cannot stat '/nope': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"cp: cannot stat '/nope': No such file or directory\n"
+    )

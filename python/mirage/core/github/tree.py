@@ -21,8 +21,12 @@ from urllib.parse import quote
 import aiohttp
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
 from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.diff import departed
 from mirage.cache.index.lock import index_lock
@@ -44,8 +48,9 @@ def _parse_tree_response(
 ) -> tuple[dict[str, TreeEntry], bool]:
     truncated = bool(data.get("truncated"))
     if truncated:
-        log.warning("GitHub tree response truncated for %s/%s@%s", owner, repo,
-                    ref)
+        log.warning(
+            "GitHub tree response truncated for %s/%s@%s", owner, repo, ref
+        )
     result: dict[str, TreeEntry] = {}
     for item in data.get("tree", []):
         # Submodule gitlinks (type "commit") have no size and no blob to
@@ -117,7 +122,9 @@ async def fetch_dir_page(
     if "tree" not in data:
         raise GitHubApiError(
             f"GitHub tree response for {owner}/{repo} {tree_sha} carries "
-            "no tree", 0)
+            "no tree",
+            0,
+        )
     result: list[TreeEntry] = []
     for item in data["tree"]:
         if item["type"] == "commit":
@@ -128,7 +135,8 @@ async def fetch_dir_page(
                 type=item["type"],
                 sha=item["sha"],
                 size=item.get("size"),
-            ))
+            )
+        )
     return result, bool(data.get("truncated"))
 
 
@@ -159,17 +167,20 @@ async def fetch_dir_tree(
     Raises:
         GitHubApiError: GitHub truncated the listing, or sent no tree.
     """
-    entries, truncated = await fetch_dir_page(config, owner, repo, tree_sha,
-                                              session)
+    entries, truncated = await fetch_dir_page(
+        config, owner, repo, tree_sha, session
+    )
     if truncated:
         raise GitHubApiError(
-            f"GitHub truncated the tree listing of {owner}/{repo} "
-            f"{tree_sha}", 0)
+            f"GitHub truncated the tree listing of {owner}/{repo} {tree_sha}",
+            0,
+        )
     return entries
 
 
-async def point_row(accessor: GitHubAccessor,
-                    rel: str) -> tuple[TreeEntry | None, bool] | None:
+async def point_row(
+    accessor: GitHubAccessor, rel: str
+) -> tuple[TreeEntry | None, bool] | None:
     """Look one path up in its parent directory's listing, with one request.
 
     Asks ``git/trees/{ref}:{parent}``, whose rows are exactly the recursive
@@ -192,9 +203,13 @@ async def point_row(accessor: GitHubAccessor,
     parent, _, name = rel.strip("/").rpartition("/")
     expression = f"{ref}:{parent}" if parent else ref
     try:
-        rows, truncated = await fetch_dir_page(accessor.config, accessor.owner,
-                                               accessor.repo, expression,
-                                               accessor.pool)
+        rows, truncated = await fetch_dir_page(
+            accessor.config,
+            accessor.owner,
+            accessor.repo,
+            expression,
+            accessor.pool,
+        )
     except aiohttp.ClientResponseError as exc:
         if exc.status not in DEFER_STATUSES:
             raise
@@ -223,8 +238,8 @@ def index_entry(entry: TreeEntry, name: str) -> IndexEntry:
 
 
 def index_rows(
-        tree: dict[str, TreeEntry],
-        prefix: str) -> tuple[dict[str, IndexEntry], dict[str, list[str]]]:
+    tree: dict[str, TreeEntry], prefix: str
+) -> tuple[dict[str, IndexEntry], dict[str, list[str]]]:
     """Turn a git tree into the index's entry and children tables.
 
     Keyed by mount-absolute path, the way every other backend keys its
@@ -290,8 +305,11 @@ def seed_index(
     entries, children = index_rows(accessor.tree, prefix)
     # A truncated response cannot establish that any listing is complete,
     # including an apparently empty directory. Readdir must fill it first.
-    expires_at = (datetime.fromtimestamp(0, timezone.utc) if accessor.truncated
-                  else datetime.now(timezone.utc) + timedelta(days=365))
+    expires_at = (
+        datetime.fromtimestamp(0, timezone.utc)
+        if accessor.truncated
+        else datetime.now(timezone.utc) + timedelta(days=365)
+    )
     index.seed(entries, children, expires_at)
     return IndexSnapshot(entries=entries, children=children)
 
@@ -330,11 +348,15 @@ async def refill_snapshot(
         return None
     # Only a complete tree can say what is gone; a first fetch has nothing
     # to compare with, and a truncated one names only some paths.
-    previous = (dict(accessor.tree)
-                if accessor.tree_loaded and not accessor.truncated else None)
+    previous = (
+        dict(accessor.tree)
+        if accessor.tree_loaded and not accessor.truncated
+        else None
+    )
     ref = await ensure_ref(accessor)
-    tree, truncated = await fetch_tree(accessor.config, accessor.owner,
-                                       accessor.repo, ref, accessor.pool)
+    tree, truncated = await fetch_tree(
+        accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
+    )
     accessor.truncated = truncated
     accessor.tree = tree
     accessor.tree_loaded = True
@@ -343,7 +365,8 @@ async def refill_snapshot(
     snapshot = seed_index(accessor, index, prefix)
     if previous is not None and not truncated:
         await index.report_gone(
-            departed(previous.items(), tree, prefix, _is_folder))
+            departed(previous.items(), tree, prefix, _is_folder)
+        )
     return snapshot
 
 
@@ -407,7 +430,7 @@ async def ensure_live_snapshot(
 async def ensure_tree(
     accessor: GitHubAccessor,
     index: IndexCacheStore = NULL_INDEX,
-    prefix: str = '',
+    prefix: str = "",
 ) -> None:
     """Fetch the recursive tree if this mount has not got one yet.
 
@@ -449,8 +472,9 @@ async def ensure_tree(
                 if accessor.tree_loaded:
                     return
         ref = await ensure_ref(accessor)
-        tree, truncated = await fetch_tree(accessor.config, accessor.owner,
-                                           accessor.repo, ref, accessor.pool)
+        tree, truncated = await fetch_tree(
+            accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
+        )
         accessor.truncated = truncated
         accessor.tree = tree
         accessor.tree_loaded = True

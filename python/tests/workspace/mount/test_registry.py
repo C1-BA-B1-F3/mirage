@@ -89,10 +89,18 @@ def test_match_command_prefix_longest_nested(registry):
     mount = registry.mount_for("/data")
     _register_cmd(mount, "gws docs documents get")
     _register_cmd(mount, "gws docs +write")
-    assert registry.match_command_prefix(
-        ["gws", "docs", "documents", "get", "--params", "{}"]) == 4
-    assert registry.match_command_prefix(
-        ["gws", "docs", "+write", "--text", "hi"]) == 3
+    assert (
+        registry.match_command_prefix(
+            ["gws", "docs", "documents", "get", "--params", "{}"]
+        )
+        == 4
+    )
+    assert (
+        registry.match_command_prefix(
+            ["gws", "docs", "+write", "--text", "hi"]
+        )
+        == 3
+    )
 
 
 def test_match_command_prefix_partial_name_is_not_a_command(registry):
@@ -112,9 +120,11 @@ def test_installed_cli_head_wins_over_multiword_mount_command(registry):
     _register_cmd(registry.mount_for("/data"), "gws docs documents get")
     registry.clis.install(
         "gws",
-        CLISpec(name="gws", subcommands=(CLISpec(name="run", fn=_noop_cli), )))
-    assert registry.match_command_prefix(["gws", "docs", "documents",
-                                          "get"]) == 1
+        CLISpec(name="gws", subcommands=(CLISpec(name="run", fn=_noop_cli),)),
+    )
+    assert (
+        registry.match_command_prefix(["gws", "docs", "documents", "get"]) == 1
+    )
 
 
 def test_match_command_prefix_unknown_and_empty(registry):
@@ -283,7 +293,8 @@ def test_mounts_count(multi_registry):
 
 def test_group_by_mount(multi_registry):
     groups = multi_registry.group_by_mount(
-        ["/s3/a.txt", "/s3/b.txt", "/disk/c.txt"])
+        ["/s3/a.txt", "/s3/b.txt", "/disk/c.txt"]
+    )
     assert len(groups) == 2
     s3_group = [g for g in groups if g[0].prefix == "/s3/"][0]
     assert len(s3_group[1]) == 2
@@ -369,8 +380,11 @@ def test_mount_for_command_grep(multi_registry):
 
 def _remote_registry_with_cache():
     reg = MountRegistry()
-    reg.mount("/ssh/", SSHVFS(SSHConfig(host="example", root="/srv")),
-              MountMode.WRITE)
+    reg.mount(
+        "/ssh/",
+        SSHVFS(SSHConfig(host="example", root="/srv")),
+        MountMode.WRITE,
+    )
     cache = RAMFileCacheStore()
     reg.attach_file_cache(cache)
     return reg, cache
@@ -383,10 +397,12 @@ async def test_resolve_mount_keeps_cached_read_on_real_mount():
     # custom handlers) instead of being redirected to the cache mount.
     reg, cache = _remote_registry_with_cache()
     await cache.set("/ssh/a.txt", b"hi")
-    scope = PathSpec(vfs_path="ssh/a.txt",
-                     virtual="/ssh/a.txt",
-                     directory="/ssh",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="ssh/a.txt",
+        virtual="/ssh/a.txt",
+        directory="/ssh",
+        resolved=True,
+    )
     mount = await reg.resolve_mount("cat", [scope], "/ssh")
     assert mount.prefix == "/ssh/"
 
@@ -395,10 +411,12 @@ async def test_resolve_mount_keeps_cached_read_on_real_mount():
 async def test_resolve_mount_keeps_cached_write_on_remote():
     reg, cache = _remote_registry_with_cache()
     await cache.set("/ssh/a.txt", b"hi")
-    scope = PathSpec(vfs_path="ssh/a.txt",
-                     virtual="/ssh/a.txt",
-                     directory="/ssh",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="ssh/a.txt",
+        virtual="/ssh/a.txt",
+        directory="/ssh",
+        resolved=True,
+    )
     mount = await reg.resolve_mount("rm", [scope], "/ssh")
     assert mount.prefix == "/ssh/"
 
@@ -419,21 +437,25 @@ async def _fallback_only(_store, paths, *texts, **kw):
 def _path_bound_registry_with_default():
     reg = MountRegistry()
     reg.mount("/limited/", _LimitedVFS(), MountMode.WRITE)
-    reg.mount("/", _FallbackVFS(),
-              MountMode.WRITE).register_fns([_fallback_only])
+    reg.mount("/", _FallbackVFS(), MountMode.WRITE).register_fns(
+        [_fallback_only]
+    )
     return reg
 
 
 @pytest.mark.asyncio
 async def test_resolve_mount_rejects_path_bound_unsupported_command():
     reg = _path_bound_registry_with_default()
-    scope = PathSpec(vfs_path="limited/file.txt",
-                     virtual="/limited/file.txt",
-                     directory="/limited",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="limited/file.txt",
+        virtual="/limited/file.txt",
+        directory="/limited",
+        resolved=True,
+    )
     with pytest.raises(
-            MountCommandUnsupported,
-            match="fallback-only: /limited/file.txt: Operation not supported"):
+        MountCommandUnsupported,
+        match="fallback-only: /limited/file.txt: Operation not supported",
+    ):
         await reg.resolve_mount("fallback-only", [scope], "/limited")
 
 

@@ -29,6 +29,7 @@ class OldStyleArgv:
         needs_value (str | None): the cluster letter whose argument ran
             off the end of the line, when one did.
     """
+
     argv: list[str]
     origins: list[int]
     needs_value: str | None = None

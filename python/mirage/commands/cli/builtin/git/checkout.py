@@ -23,37 +23,76 @@ from dulwich.objectspec import parse_commit
 from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.branch import (  # yapf: disable
-    branch_upstream, head_commit, remote_branch, set_up_tracking, track_mode)
-from mirage.commands.cli.builtin.git.changes import (ADDED, DELETED, MODIFIED,
-                                                     head_entries,
-                                                     work_changes)
+from mirage.commands.cli.builtin.git.branch import (
+    branch_upstream,
+    head_commit,
+    remote_branch,
+    set_up_tracking,
+    track_mode,
+)
+from mirage.commands.cli.builtin.git.changes import (
+    ADDED,
+    DELETED,
+    MODIFIED,
+    head_entries,
+    work_changes,
+)
 from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BadStartPointError, BranchExistsError, CheckoutConflictError, GitError,
-    NoWorkspaceError, RefLockError, UnknownPathspecError, UnknownSwitchError)
+from mirage.commands.cli.builtin.git.errors import (
+    BadStartPointError,
+    BranchExistsError,
+    CheckoutConflictError,
+    GitError,
+    NoWorkspaceError,
+    RefLockError,
+    UnknownPathspecError,
+    UnknownSwitchError,
+)
 from mirage.commands.cli.builtin.git.format import short, subject
-from mirage.commands.cli.builtin.git.index_file import (read_index,
-                                                        refuse_unresolved,
-                                                        write_index)
-from mirage.commands.cli.builtin.git.io import (  # yapf: disable
-    blocking_ancestor, drop_gitlink, keep_gitlink, refuse_replaced_mounts,
-    remove_empty_parents, remove_file, remove_tree, restore_entry)
+from mirage.commands.cli.builtin.git.index_file import (
+    read_index,
+    refuse_unresolved,
+    write_index,
+)
+from mirage.commands.cli.builtin.git.io import (
+    blocking_ancestor,
+    drop_gitlink,
+    keep_gitlink,
+    refuse_replaced_mounts,
+    remove_empty_parents,
+    remove_file,
+    remove_tree,
+    restore_entry,
+)
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.pathspec import under
 from mirage.commands.cli.builtin.git.reflog import record
-from mirage.commands.cli.builtin.git.refs import (BRANCH_PREFIX, blocking_ref,
-                                                  detach_head, read_head,
-                                                  set_head, write_ref)
+from mirage.commands.cli.builtin.git.refs import (
+    BRANCH_PREFIX,
+    blocking_ref,
+    detach_head,
+    read_head,
+    set_head,
+    write_ref,
+)
 from mirage.commands.cli.builtin.git.render import tracking_lines
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.reset import restored
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.types import (HeadMove, HeadRef,
-                                                   RepoLocation)
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, mounts_of, switches)
+from mirage.commands.cli.builtin.git.types import (
+    HeadMove,
+    HeadRef,
+    RepoLocation,
+)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    mounts_of,
+    switches,
+)
 from mirage.commands.cli.builtin.git.worktree import UNTRACKED_ALL, scan
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -152,8 +191,11 @@ def _conflicts(before: Tree, after: Tree, dirty: set[str]) -> list[str]:
         dirty (set[str]): paths whose working tree or index differs from
             HEAD.
     """
-    return sorted(path for path in dirty
-                  if before.get(path.encode()) != after.get(path.encode()))
+    return sorted(
+        path
+        for path in dirty
+        if before.get(path.encode()) != after.get(path.encode())
+    )
 
 
 def _tree_names(tree: Tree) -> set[str]:
@@ -184,7 +226,8 @@ def _written(before: Tree, after: Tree) -> Tree:
     """
     return {
         path: entry
-        for path, entry in after.items() if before.get(path) != entry
+        for path, entry in after.items()
+        if before.get(path) != entry
     }
 
 
@@ -207,8 +250,11 @@ def _overwritten(writing: Tree, untracked: list[str]) -> list[str]:
         untracked (list[str]): every untracked path the walk found.
     """
     names = _tree_names(writing)
-    return sorted(path for path in untracked
-                  if path in names or any(under(name, path) for name in names))
+    return sorted(
+        path
+        for path in untracked
+        if path in names or any(under(name, path) for name in names)
+    )
 
 
 def _blocked_ancestors(writing: Tree, dirty: set[str]) -> list[str]:
@@ -237,8 +283,9 @@ def _blocked_ancestors(writing: Tree, dirty: set[str]) -> list[str]:
             HEAD.
     """
     names = _tree_names(writing)
-    return sorted(path for path in dirty if any(
-        under(name, path) for name in names))
+    return sorted(
+        path for path in dirty if any(under(name, path) for name in names)
+    )
 
 
 def _blocked_descendants(writing: Tree, dirty: set[str]) -> list[str]:
@@ -264,8 +311,9 @@ def _blocked_descendants(writing: Tree, dirty: set[str]) -> list[str]:
             HEAD.
     """
     names = _tree_names(writing)
-    return sorted(path for path in dirty if any(
-        under(path, name) for name in names))
+    return sorted(
+        path for path in dirty if any(under(path, name) for name in names)
+    )
 
 
 def _lost_directories(writing: Tree, untracked: list[str]) -> list[str]:
@@ -289,18 +337,26 @@ def _lost_directories(writing: Tree, untracked: list[str]) -> list[str]:
         writing (Tree): the entries the switch writes, from ``_written``.
         untracked (list[str]): every untracked path the walk found.
     """
-    replacing = _tree_names({
-        path: entry
-        for path, entry in writing.items() if entry[0] != GITLINK
-    })
-    return sorted(name for name in replacing if any(
-        under(path, name) for path in untracked))
+    replacing = _tree_names(
+        {path: entry for path, entry in writing.items() if entry[0] != GITLINK}
+    )
+    return sorted(
+        name
+        for name in replacing
+        if any(under(path, name) for path in untracked)
+    )
 
 
-async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
-                    location: RepoLocation, before: Tree, after: Tree,
-                    links: LinkView | None,
-                    mounts: MountView | None) -> list[str]:
+async def switch_to(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    repo: BaseRepo,
+    location: RepoLocation,
+    before: Tree,
+    after: Tree,
+    links: LinkView | None,
+    mounts: MountView | None,
+) -> list[str]:
     """Make the working tree and index match the tree being switched to.
 
     Only paths the two trees disagree about are touched, so a file that
@@ -338,11 +394,15 @@ async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
     # the branch being left, which is the half-switch every other check
     # above exists to prevent.
     await refuse_replaced_mounts(
-        stat_path, location.worktree,
-        [path.decode("utf-8", errors="replace")
-         for path in replacing], links, mounts)
-    blobs = await asyncio.to_thread(contents, repo,
-                                    [after[path][1] for path in replacing])
+        stat_path,
+        location.worktree,
+        [path.decode("utf-8", errors="replace") for path in replacing],
+        links,
+        mounts,
+    )
+    blobs = await asyncio.to_thread(
+        contents, repo, [after[path][1] for path in replacing]
+    )
     # Removals first, and the emptied directories with them, because
     # the two sets name the same place whenever a branch records a file
     # where the other records a directory: writing ``slot/child`` while
@@ -359,8 +419,9 @@ async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
         # still in it, where the unlink here died on it with the
         # removals ahead of it already applied.
         if before[path][0] == GITLINK:
-            warned = await drop_gitlink(dispatch, stat_path, where, name,
-                                        links)
+            warned = await drop_gitlink(
+                dispatch, stat_path, where, name, links
+            )
             if warned is not None:
                 notes.append(warned)
         else:
@@ -370,8 +431,12 @@ async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
         name = path.decode("utf-8", errors="replace")
         mode, sha = after[path]
         if mode == GITLINK:
-            await keep_gitlink(dispatch, stat_path,
-                               posixpath.join(location.worktree, name), links)
+            await keep_gitlink(
+                dispatch,
+                stat_path,
+                posixpath.join(location.worktree, name),
+                links,
+            )
             continue
         # Whatever the removals above did not take, a component above
         # the entry may still not be a directory: an ignored file or
@@ -379,8 +444,9 @@ async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
         # reaches here. git replaces it with the directory the entry
         # needs rather than writing through it, which is what keeps a
         # link's target tree, a path no branch named, out of the way.
-        above = await blocking_ancestor(stat_path, location.worktree, name,
-                                        links)
+        above = await blocking_ancestor(
+            stat_path, location.worktree, name, links
+        )
         if above is not None:
             await remove_file(dispatch, above)
         where = posixpath.join(location.worktree, name)
@@ -429,13 +495,22 @@ def previous_position(repo: BaseRepo, head: HeadRef) -> str:
     commit = repo.object_store[ObjectID(head.commit.encode())]
     if not isinstance(commit, Commit):
         return ""
-    return (f"Previous HEAD position was "
-            f"{short(commit.id, abbrev_for(repo))} {subject(commit)}\n")
+    return (
+        f"Previous HEAD position was "
+        f"{short(commit.id, abbrev_for(repo))} {subject(commit)}\n"
+    )
 
 
-async def _attach(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
-                  head: HeadRef, commit: Commit, target: str, ref: Ref | None,
-                  creating: bool) -> None:
+async def _attach(
+    dispatch: DispatchFn,
+    repo: BaseRepo,
+    location: RepoLocation,
+    head: HeadRef,
+    commit: Commit,
+    target: str,
+    ref: Ref | None,
+    creating: bool,
+) -> None:
     """Point HEAD at a commit and write the reflog line for the move.
 
     The half of a checkout that happens whatever the working tree
@@ -459,17 +534,27 @@ async def _attach(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
         await set_head(dispatch, location.gitdir, ref.decode())
     else:
         await detach_head(dispatch, location.gitdir, commit.id)
-    where = head.branch if head.branch is not None else short(
-        (head.commit or "").encode(), abbrev_for(repo))
-    await record(dispatch, location.gitdir, location.commondir,
-                 ref.decode() if ref is not None else None,
-                 head_commit(repo,
-                             head), commit.id, IDENTITY, int(time.time()),
-                 f"checkout: moving from {where} to {target}")
+    where = (
+        head.branch
+        if head.branch is not None
+        else short((head.commit or "").encode(), abbrev_for(repo))
+    )
+    await record(
+        dispatch,
+        location.gitdir,
+        location.commondir,
+        ref.decode() if ref is not None else None,
+        head_commit(repo, head),
+        commit.id,
+        IDENTITY,
+        int(time.time()),
+        f"checkout: moving from {where} to {target}",
+    )
 
 
-def _stage_letters(before: Tree, entries: dict[bytes,
-                                               IndexEntry]) -> dict[str, str]:
+def _stage_letters(
+    before: Tree, entries: dict[bytes, IndexEntry]
+) -> dict[str, str]:
     """How the index differs from HEAD, one status letter per path.
 
     The same three comparisons ``status`` makes against HEAD, kept
@@ -500,11 +585,20 @@ def _stage_letters(before: Tree, entries: dict[bytes,
     return letters
 
 
-async def move_head(dispatch: DispatchFn, stat_path: StatPath,
-                    links: LinkView | None, mounts: MountView | None,
-                    repo: BaseRepo, location: RepoLocation, head: HeadRef,
-                    commit: Commit, target: str, ref: Ref | None,
-                    creating: bool, in_place: bool) -> HeadMove:
+async def move_head(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    links: LinkView | None,
+    mounts: MountView | None,
+    repo: BaseRepo,
+    location: RepoLocation,
+    head: HeadRef,
+    commit: Commit,
+    target: str,
+    ref: Ref | None,
+    creating: bool,
+    in_place: bool,
+) -> HeadMove:
     """Move HEAD, the index and the working tree to a commit.
 
     The one procedure ``checkout`` and ``switch`` share, since the two
@@ -548,8 +642,9 @@ async def move_head(dispatch: DispatchFn, stat_path: StatPath,
     # rather than a comparison of the two trees. Pinned against git
     # 2.50.1.
     if in_place:
-        await _attach(dispatch, repo, location, head, commit, target, ref,
-                      creating)
+        await _attach(
+            dispatch, repo, location, head, commit, target, ref, creating
+        )
         return HeadMove({}, "")
     before = await asyncio.to_thread(head_entries, repo) or {}
     after = await asyncio.to_thread(tree_of, repo, commit.id)
@@ -561,17 +656,18 @@ async def move_head(dispatch: DispatchFn, stat_path: StatPath,
     # file, throwing away a resolution in progress.
     refuse_unresolved(state)
     tracked = {
-        path.decode("utf-8", errors="replace")
-        for path in state.entries
+        path.decode("utf-8", errors="replace") for path in state.entries
     }
     # UNTRACKED_ALL, not the mode status uses: "normal" collapses a
     # wholly untracked directory to one ``dir/`` entry, and a
     # collision has to be decided per file. git names the file
     # inside such a directory, so the list has to hold it.
-    found = await scan(dispatch, stat_path, location, tracked, UNTRACKED_ALL,
-                       links)
-    unstaged = await work_changes(dispatch, location.worktree, state.entries,
-                                  found)
+    found = await scan(
+        dispatch, stat_path, location, tracked, UNTRACKED_ALL, links
+    )
+    unstaged = await work_changes(
+        dispatch, location.worktree, state.entries, found
+    )
     staged = _stage_letters(before, state.entries)
     # Both kinds of uncommitted change count: an edit in the working
     # tree, and one already staged. Leaving the staged ones out is
@@ -584,20 +680,24 @@ async def move_head(dispatch: DispatchFn, stat_path: StatPath,
     blocked = sorted(
         set(_conflicts(before, after, dirty))
         | set(_blocked_ancestors(writing, dirty))
-        | set(_blocked_descendants(writing, dirty)))
+        | set(_blocked_descendants(writing, dirty))
+    )
     overwritten = _overwritten(writing, found.untracked)
     lost = _lost_directories(writing, found.untracked)
     if blocked or overwritten or lost:
         raise CheckoutConflictError(blocked, overwritten, lost)
-    notes = await switch_to(dispatch, stat_path, repo, location, before, after,
-                            links, mounts)
-    await _attach(dispatch, repo, location, head, commit, target, ref,
-                  creating)
+    notes = await switch_to(
+        dispatch, stat_path, repo, location, before, after, links, mounts
+    )
+    await _attach(
+        dispatch, repo, location, head, commit, target, ref, creating
+    )
     return HeadMove(carried, "".join(notes))
 
 
-async def tracking_report(dispatch: DispatchFn, location: RepoLocation,
-                          branch: str) -> str:
+async def tracking_report(
+    dispatch: DispatchFn, location: RepoLocation, branch: str
+) -> str:
     """What a switch onto a branch prints about its upstream, on stdout.
 
     Read from the repository as it stands after the move, so a branch
@@ -610,15 +710,20 @@ async def tracking_report(dispatch: DispatchFn, location: RepoLocation,
     """
     repo = await open_repo(dispatch, location)
     upstream = await branch_upstream(
-        dispatch, repo, location, HeadRef(branch, f"refs/heads/{branch}",
-                                          None), False)
+        dispatch,
+        repo,
+        location,
+        HeadRef(branch, f"refs/heads/{branch}", None),
+        False,
+    )
     if upstream is None:
         return ""
     return "".join(f"{line}\n" for line in tracking_lines(upstream))
 
 
 async def checkout(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Switch the working tree to another branch or commit.
 
     Refuses rather than overwriting when the switch would destroy work
@@ -640,8 +745,9 @@ async def checkout(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         if not texts:
             raise UnknownPathspecError("")
         target = texts[0]
@@ -691,17 +797,32 @@ async def checkout(
         if held is not None:
             raise RefLockError(ref.decode(), held)
         attached = creating or ref in known
-        moved = await move_head(dispatch, stat_path, links_of(doors),
-                                mounts_of(doors), repo, location, head, commit,
-                                target, ref if attached else None, creating,
-                                creating and start is None)
-        tracking, warning = await set_up_tracking(
-            dispatch, repo, location, target, start, mode,
-            head) if creating else ("", "")
+        moved = await move_head(
+            dispatch,
+            stat_path,
+            links_of(doors),
+            mounts_of(doors),
+            repo,
+            location,
+            head,
+            commit,
+            target,
+            ref if attached else None,
+            creating,
+            creating and start is None,
+        )
+        tracking, warning = (
+            await set_up_tracking(
+                dispatch, repo, location, target, start, mode, head
+            )
+            if creating
+            else ("", "")
+        )
     except GitError as exc:
         return fatal(exc)
-    carried = "".join(f"{letter}\t{path}\n"
-                      for path, letter in sorted(moved.carried.items()))
+    carried = "".join(
+        f"{letter}\t{path}\n" for path, letter in sorted(moved.carried.items())
+    )
     carried += tracking
     # git writes the warning above everything it says about the move,
     # because the directory it could not remove is a fact about the
@@ -713,9 +834,11 @@ async def checkout(
         if not creating:
             carried += await tracking_report(dispatch, location, target)
     else:
-        note += (f"Note: switching to '{target}'.\n\n{DETACHED_ADVICE}\n"
-                 f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
-                 f"{subject(commit)}\n")
+        note += (
+            f"Note: switching to '{target}'.\n\n{DETACHED_ADVICE}\n"
+            f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
+            f"{subject(commit)}\n"
+        )
     if fl.as_bool("quiet"):
         return None, IOResult(stderr=(moved.warnings + warning).encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

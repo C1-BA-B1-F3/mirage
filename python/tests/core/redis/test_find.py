@@ -47,8 +47,9 @@ async def accessor(redis_prefix):
 
 @pytest.mark.asyncio
 async def test_find_all(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"))
+    results = await find(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/")
+    )
     assert "/readme.md" in results
     assert "/src/main.py" in results
     assert "/src/lib/helper.py" in results
@@ -58,9 +59,11 @@ async def test_find_all(accessor):
 
 @pytest.mark.asyncio
 async def test_find_by_name(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         name="*.py")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        name="*.py",
+    )
     assert results == [
         "/src/lib/helper.py",
         "/src/main.py",
@@ -70,20 +73,20 @@ async def test_find_by_name(accessor):
 
 @pytest.mark.asyncio
 async def test_find_by_type_file(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="src",
-                                  virtual="/src",
-                                  directory="/src"),
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="src", virtual="/src", directory="/src"),
+        type="f",
+    )
     assert "/src/main.py" in results
     assert "/src/lib" not in results
 
 
 @pytest.mark.asyncio
 async def test_find_by_type_dir(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         type="d")
+    results = await find(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), type="d"
+    )
     assert "/src" in results
     assert "/src/lib" in results
     assert "/readme.md" not in results
@@ -91,10 +94,12 @@ async def test_find_by_type_dir(accessor):
 
 @pytest.mark.asyncio
 async def test_find_maxdepth(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         maxdepth=1,
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        maxdepth=1,
+        type="f",
+    )
     assert "/readme.md" in results
     assert "/big.bin" in results
     assert "/src/main.py" not in results
@@ -103,10 +108,12 @@ async def test_find_maxdepth(accessor):
 
 @pytest.mark.asyncio
 async def test_find_mindepth(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         mindepth=2,
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        mindepth=2,
+        type="f",
+    )
     assert "/readme.md" not in results
     assert "/src/main.py" in results
     assert "/src/lib/helper.py" in results
@@ -114,19 +121,23 @@ async def test_find_mindepth(accessor):
 
 @pytest.mark.asyncio
 async def test_find_min_size(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         min_size=100,
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        min_size=100,
+        type="f",
+    )
     assert results == ["/big.bin"]
 
 
 @pytest.mark.asyncio
 async def test_find_max_size(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         max_size=10,
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        max_size=10,
+        type="f",
+    )
     assert "/readme.md" in results
     assert "/src/lib/data.json" in results
     assert "/big.bin" not in results
@@ -134,21 +145,23 @@ async def test_find_max_size(accessor):
 
 @pytest.mark.asyncio
 async def test_find_name_exclude(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="src",
-                                  virtual="/src",
-                                  directory="/src"),
-                         name="*.py",
-                         name_exclude="util*")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="src", virtual="/src", directory="/src"),
+        name="*.py",
+        name_exclude="util*",
+    )
     assert "/src/util.py" not in results
     assert "/src/main.py" in results
 
 
 @pytest.mark.asyncio
 async def test_find_or_names(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         or_names=["*.py", "*.json"])
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        or_names=["*.py", "*.json"],
+    )
     assert "/src/main.py" in results
     assert "/src/lib/data.json" in results
     assert "/readme.md" not in results
@@ -156,11 +169,11 @@ async def test_find_or_names(accessor):
 
 @pytest.mark.asyncio
 async def test_find_subdir(accessor):
-    results = await find(accessor,
-                         PathSpec(vfs_path="src/lib",
-                                  virtual="/src/lib",
-                                  directory="/src/lib"),
-                         type="f")
+    results = await find(
+        accessor,
+        PathSpec(vfs_path="src/lib", virtual="/src/lib", directory="/src/lib"),
+        type="f",
+    )
     assert results == [
         "/src/lib/data.json",
         "/src/lib/helper.py",
@@ -173,9 +186,9 @@ async def test_find_empty_result(redis_prefix):
     await s.clear()
     await s.add_dir("/")
     a = RedisAccessor(s)
-    results = await find(a,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         name="*.xyz")
+    results = await find(
+        a, PathSpec(vfs_path="", virtual="/", directory="/"), name="*.xyz"
+    )
     assert results == []
     await s.clear()
     await s.close()

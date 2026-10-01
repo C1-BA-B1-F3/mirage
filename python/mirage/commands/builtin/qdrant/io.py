@@ -16,7 +16,9 @@ from mirage.core.qdrant.tree import SEARCH, read, readdir, stat
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import ReadOps
 
-IO = VFSAdapter(search=SEARCH,
-                read=ReadOps(readdir=readdir, read_bytes=read, stat=stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    search=SEARCH,
+    read=ReadOps(readdir=readdir, read_bytes=read, stat=stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

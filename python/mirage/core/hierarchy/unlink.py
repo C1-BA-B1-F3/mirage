@@ -27,8 +27,11 @@ DeleteFn = Callable[[A, ScopeMatch, IndexEntry], Awaitable[None]]
 
 
 def make_unlink(
-        detect: DetectFn, readdir: ReaddirFn[A], *,
-        deleters: Mapping[str, DeleteFn[A]]) -> Callable[..., Awaitable[None]]:
+    detect: DetectFn,
+    readdir: ReaddirFn[A],
+    *,
+    deleters: Mapping[str, DeleteFn[A]],
+) -> Callable[..., Awaitable[None]]:
     """Build a hierarchy unlink: classify, resolve, delete, invalidate.
 
     A deleter owns only the backend delete call; classification, the
@@ -44,9 +47,9 @@ def make_unlink(
         deleters (Mapping[str, DeleteFn]): one deleter per leaf kind.
     """
 
-    async def unlink(accessor: A,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX) -> None:
+    async def unlink(
+        accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> None:
         if index is NULL_INDEX:
             # Entry resolution reads what its parent-listing warm just
             # wrote, so a caller with no cache still needs one for the
@@ -55,8 +58,9 @@ def make_unlink(
         match = detect(path)
         deleter = deleters.get(match.kind)
         if deleter is None:
-            if match.kind != INVALID and (match.scope is None
-                                          or not match.scope.leaf):
+            if match.kind != INVALID and (
+                match.scope is None or not match.scope.leaf
+            ):
                 raise IsADirectoryError(path.virtual)
             raise enoent(path)
         entry = await resolve_entry(readdir, accessor, path, index)

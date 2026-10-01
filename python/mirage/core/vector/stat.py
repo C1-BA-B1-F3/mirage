@@ -30,8 +30,9 @@ def _name_of(path: PathSpec) -> str:
     return stripped.rsplit("/", 1)[-1] or "/"
 
 
-def make_stat(tree: VectorTree[A], readdir: ReaddirFn[A],
-              read: ReadFn) -> StatFn:
+def make_stat(
+    tree: VectorTree[A], readdir: ReaddirFn[A], read: ReadFn
+) -> StatFn:
     """Build a store's stat: a group proves its table, a row its bytes.
 
     Args:
@@ -40,14 +41,16 @@ def make_stat(tree: VectorTree[A], readdir: ReaddirFn[A],
         read (ReadFn): the store's read, sizing a row the index lacks.
     """
 
-    async def table_guard(accessor: A, match: ScopeMatch,
-                          virtual: str) -> None:
+    async def table_guard(
+        accessor: A, match: ScopeMatch, virtual: str
+    ) -> None:
         table = table_of(tree.pinned(accessor), match)
         if not await tree.table_exists(accessor, table):
             raise enoent(virtual)
 
-    async def stat_row(accessor: A, match: ScopeMatch, path: PathSpec,
-                       index: IndexCacheStore) -> FileStat:
+    async def stat_row(
+        accessor: A, match: ScopeMatch, path: PathSpec, index: IndexCacheStore
+    ) -> FileStat:
         await table_guard(accessor, match, path.virtual)
         # The row-dir readdir seeds exact rendered sizes; an unsized entry
         # or a cold index falls back to rendering the row, so the size is
@@ -60,24 +63,26 @@ def make_stat(tree: VectorTree[A], readdir: ReaddirFn[A],
             name=_name_of(path),
             size=size,
             type=FileType.FILE,
-            content=match.scope.filetype if match.scope is not None else None)
+            content=match.scope.filetype if match.scope is not None else None,
+        )
 
     overrides: dict[str, StatHook[A]] = {
-        kind: stat_row
-        for kind in tree.readers
+        kind: stat_row for kind in tree.readers
     }
 
     def build(accessor: A) -> StatFn:
-        return hierarchy_stat(tree.detect(accessor),
-                              readdir,
-                              guards={"group": table_guard},
-                              overrides=overrides)
+        return hierarchy_stat(
+            tree.detect(accessor),
+            readdir,
+            guards={"group": table_guard},
+            overrides=overrides,
+        )
 
     stat_for = per_accessor(build)
 
-    async def stat(accessor: A,
-                   path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> FileStat:
+    async def stat(
+        accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> FileStat:
         return await stat_for(accessor)(accessor, path, index)
 
     return stat

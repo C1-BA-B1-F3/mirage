@@ -25,5 +25,6 @@ __all__ = ["PostgresConfig", "PostgresVFS"]
 def __getattr__(name: str) -> "type[PostgresVFS]":
     if name == "PostgresVFS":
         from mirage.vfs.postgres.postgres import PostgresVFS
+
         return PostgresVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

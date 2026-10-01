@@ -18,25 +18,27 @@ import pytest
 
 from mirage.cache.index import IndexEntry
 from mirage.core.gdrive.read import read_file_versioned
-from mirage.core.gdrive.versions import (capture_file_metadata,
-                                         download_revision)
+from mirage.core.gdrive.versions import (
+    capture_file_metadata,
+    download_revision,
+)
 from mirage.observe.context import push_revisions, reset_revisions
 
-ENTRY = IndexEntry(id="f1",
-                   name="f.txt",
-                   resource_type="gdrive/file",
-                   vfs_name="f.txt")
+ENTRY = IndexEntry(
+    id="f1", name="f.txt", resource_type="gdrive/file", vfs_name="f.txt"
+)
 
 
 @pytest.mark.asyncio
 async def test_download_revision_hits_revision_url(gdrive_accessor):
     with patch(
-            "mirage.core.gdrive.versions.google_get_bytes",
-            new_callable=AsyncMock,
-            return_value=b"old",
+        "mirage.core.gdrive.versions.google_get_bytes",
+        new_callable=AsyncMock,
+        return_value=b"old",
     ) as get_bytes:
-        data = await download_revision(gdrive_accessor.token_manager, "f1",
-                                       "r1")
+        data = await download_revision(
+            gdrive_accessor.token_manager, "f1", "r1"
+        )
     assert data == b"old"
     assert "/files/f1/revisions/r1?alt=media" in get_bytes.await_args.args[1]
 
@@ -44,27 +46,26 @@ async def test_download_revision_hits_revision_url(gdrive_accessor):
 @pytest.mark.asyncio
 async def test_capture_file_metadata(gdrive_accessor):
     with patch(
-            "mirage.core.gdrive.versions.google_get",
-            new_callable=AsyncMock,
-            return_value={
-                "headRevisionId": "r9",
-                "md5Checksum": "abc"
-            },
+        "mirage.core.gdrive.versions.google_get",
+        new_callable=AsyncMock,
+        return_value={"headRevisionId": "r9", "md5Checksum": "abc"},
     ):
-        captured = await capture_file_metadata(gdrive_accessor.token_manager,
-                                               "f1")
+        captured = await capture_file_metadata(
+            gdrive_accessor.token_manager, "f1"
+        )
     assert captured == ("abc", "r9")
 
 
 @pytest.mark.asyncio
 async def test_capture_falls_back_to_head_revision(gdrive_accessor):
     with patch(
-            "mirage.core.gdrive.versions.google_get",
-            new_callable=AsyncMock,
-            return_value={"headRevisionId": "r9"},
+        "mirage.core.gdrive.versions.google_get",
+        new_callable=AsyncMock,
+        return_value={"headRevisionId": "r9"},
     ):
-        captured = await capture_file_metadata(gdrive_accessor.token_manager,
-                                               "f1")
+        captured = await capture_file_metadata(
+            gdrive_accessor.token_manager, "f1"
+        )
     # Raw, not coalesced: the caller checks the md5 against the bytes.
     assert captured == (None, "r9")
 
@@ -73,36 +74,45 @@ async def test_capture_falls_back_to_head_revision(gdrive_accessor):
 async def test_read_file_versioned_pinned(gdrive_accessor):
     token = push_revisions({"/data/f.txt": "r1"})
     try:
-        with patch(
+        with (
+            patch(
                 "mirage.core.gdrive.read.download_revision",
                 new_callable=AsyncMock,
                 return_value=b"pinned",
-        ) as pinned_read, patch(
+            ) as pinned_read,
+            patch(
                 "mirage.core.gdrive.read.download_file",
                 new_callable=AsyncMock,
-        ) as live_read:
-            data = await read_file_versioned(gdrive_accessor.token_manager,
-                                             "f1", "/data/f.txt", ENTRY)
+            ) as live_read,
+        ):
+            data = await read_file_versioned(
+                gdrive_accessor.token_manager, "f1", "/data/f.txt", ENTRY
+            )
     finally:
         reset_revisions(token)
     assert data == b"pinned"
-    pinned_read.assert_awaited_once_with(gdrive_accessor.token_manager, "f1",
-                                         "r1", None)
+    pinned_read.assert_awaited_once_with(
+        gdrive_accessor.token_manager, "f1", "r1", None
+    )
     live_read.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_read_file_versioned_unpinned_reads_live(gdrive_accessor):
-    with patch(
+    with (
+        patch(
             "mirage.core.gdrive.read.download_file",
             new_callable=AsyncMock,
             return_value=b"live",
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.read.capture_file_metadata",
             new_callable=AsyncMock,
-    ) as capture:
-        data = await read_file_versioned(gdrive_accessor.token_manager, "f1",
-                                         "/data/f.txt", ENTRY)
+        ) as capture,
+    ):
+        data = await read_file_versioned(
+            gdrive_accessor.token_manager, "f1", "/data/f.txt", ENTRY
+        )
     assert data == b"live"
     # No active recorder: the extra metadata call is skipped.
     capture.assert_not_awaited()

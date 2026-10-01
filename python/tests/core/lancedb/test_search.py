@@ -21,15 +21,18 @@ from mirage.utils.key_prefix import mount_key
 
 
 async def _search(accessor, query: str, path: str, top_k: int = 1) -> str:
-    spec = PathSpec(vfs_path=mount_key(path, "/db"),
-                    virtual=path,
-                    directory=path)
-    out = await search_rows_output(TREE,
-                                   accessor,
-                                   query, [spec],
-                                   top_k=top_k,
-                                   threshold=0.0,
-                                   mount_prefix="/db")
+    spec = PathSpec(
+        vfs_path=mount_key(path, "/db"), virtual=path, directory=path
+    )
+    out = await search_rows_output(
+        TREE,
+        accessor,
+        query,
+        [spec],
+        top_k=top_k,
+        threshold=0.0,
+        mount_prefix="/db",
+    )
     return out.decode()
 
 
@@ -51,8 +54,10 @@ async def test_search_body_matches_card(accessor):
 async def test_search_spells_group_values_as_the_listing_does(edged):
     # A path the listing never shows is one ``cat`` cannot open: the group
     # segment renders the way readdir renders it, escape lead and all.
-    for query, head in (("one", "/db/docs/a∕b/1.md:"),
-                        ("two", "/db/docs/⁄/2.md:"), ("three",
-                                                      "/db/docs/⁄.env/3.md:")):
+    for query, head in (
+        ("one", "/db/docs/a∕b/1.md:"),
+        ("two", "/db/docs/⁄/2.md:"),
+        ("three", "/db/docs/⁄.env/3.md:"),
+    ):
         out = await _search(edged, query, "/db/docs")
         assert out.splitlines()[0].startswith(head)

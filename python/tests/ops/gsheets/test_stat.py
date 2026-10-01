@@ -36,9 +36,11 @@ stat = _op("stat")
 
 
 def _scope(path: str, prefix: str = "/gsheets") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -60,18 +62,26 @@ async def test_stat_root_is_directory(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_sheet(accessor, index):
-    await index.set_dir('/gsheets/owned',
-                        [('Budget__sheet1.gsheet.json',
-                          IndexEntry(
-                              id="sheet1",
-                              name="Budget",
-                              resource_type="gsheets/sheet",
-                              remote_time="2026-04-01T00:00:00Z",
-                              vfs_name="Budget__sheet1.gsheet.json",
-                          ))])
-    result = await stat(accessor,
-                        _scope("/gsheets/owned/Budget__sheet1.gsheet.json"),
-                        index=index)
+    await index.set_dir(
+        "/gsheets/owned",
+        [
+            (
+                "Budget__sheet1.gsheet.json",
+                IndexEntry(
+                    id="sheet1",
+                    name="Budget",
+                    resource_type="gsheets/sheet",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="Budget__sheet1.gsheet.json",
+                ),
+            )
+        ],
+    )
+    result = await stat(
+        accessor,
+        _scope("/gsheets/owned/Budget__sheet1.gsheet.json"),
+        index=index,
+    )
     assert result.name == "Budget__sheet1.gsheet.json"
     assert result.extra["doc_id"] == "sheet1"
 
@@ -80,6 +90,8 @@ async def test_stat_sheet(accessor, index):
 async def test_stat_not_found(accessor, index):
     await index.set_dir("/gsheets/owned", [])
     with pytest.raises(FileNotFoundError):
-        await stat(accessor,
-                   _scope("/gsheets/owned/Nonexistent__sheet9.gsheet.json"),
-                   index=index)
+        await stat(
+            accessor,
+            _scope("/gsheets/owned/Nonexistent__sheet9.gsheet.json"),
+            index=index,
+        )

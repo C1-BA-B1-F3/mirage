@@ -26,7 +26,10 @@ _search = partial(run_search, IO, "rg")
 
 
 @command("rg", vfs="mongodb", spec=SPECS["rg"])
-async def rg(accessor: MongoDBAccessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: MongoDBAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     return await _search(accessor, paths, texts, opts)

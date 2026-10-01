@@ -25,5 +25,6 @@ __all__ = ["AirtableConfig", "AirtableVFS"]
 def __getattr__(name: str) -> "type[AirtableVFS]":
     if name == "AirtableVFS":
         from mirage.vfs.airtable.airtable import AirtableVFS
+
         return AirtableVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

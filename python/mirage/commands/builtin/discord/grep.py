@@ -19,8 +19,10 @@ from mirage.commands.builtin.discord.io import resolve_glob
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
-from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
-                                                   text_search_results)
+from mirage.commands.builtin.grep_pushdown import (
+    pushdown_operand,
+    text_search_results,
+)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -51,16 +53,19 @@ logger = logging.getLogger(__name__)
 # returned every day the channel ever had — and a single chat.jsonl operand
 # was widened the same way. Reporting messages the line did not ask for is not
 # a better failure than dropping an operand. One operand or the generic scan.
-SEARCH_HONORED = ("w", )
+SEARCH_HONORED = ("w",)
 # rg spells the same flag by its long name.
-RG_SEARCH_HONORED = ("word_regexp", )
+RG_SEARCH_HONORED = ("word_regexp",)
 SEARCH_MAX_RESULTS = 100
 
 
 @command("grep", vfs="discord", spec=SPECS["grep"])
-async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def grep(
+    accessor: DiscordAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern = pattern_arg(texts, fl)
 
@@ -79,16 +84,19 @@ async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
                     pattern,
                     channel_id=match.slots.get("channel_id"),
                     limit=SEARCH_MAX_RESULTS,
-                    session=accessor.pool)
-                file_prefix = mount_prefix_of(operand.virtual,
-                                              operand.vfs_path) or ""
+                    session=accessor.pool,
+                )
+                file_prefix = (
+                    mount_prefix_of(operand.virtual, operand.vfs_path) or ""
+                )
                 vfs_first = match.vfs_path.strip("/").split("/", 1)[0]
-                channels = await list_channels(accessor.config,
-                                               guild_id,
-                                               session=accessor.pool)
+                channels = await list_channels(
+                    accessor.config, guild_id, session=accessor.pool
+                )
                 channel_map = {c["id"]: channel_dirname(c) for c in channels}
-                lines = format_grep_results(msgs, file_prefix, vfs_first,
-                                            channel_map)
+                lines = format_grep_results(
+                    msgs, file_prefix, vfs_first, channel_map
+                )
                 if not lines:
                     return b"", IOResult(exit_code=1)
                 if text_search_results(lines):
@@ -97,19 +105,27 @@ async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
                 msg = str(exc)
                 pushdown_warnings.append(
                     f"discord: native search push-down failed ({msg}); "
-                    f"falling back to per-file scan")
-                if ("403" in msg or "Forbidden" in msg
-                        or "missing access" in msg.lower()):
+                    f"falling back to per-file scan"
+                )
+                if (
+                    "403" in msg
+                    or "Forbidden" in msg
+                    or "missing access" in msg.lower()
+                ):
                     pushdown_warnings.append(
                         "discord: hint - ensure the bot has the "
                         "READ_MESSAGE_HISTORY permission for this guild "
-                        "and the MESSAGE CONTENT privileged intent enabled")
+                        "and the MESSAGE CONTENT privileged intent enabled"
+                    )
                 logger.warning(
                     "discord search push-down failed (%s); "
-                    "falling back to per-file scan", exc)
+                    "falling back to per-file scan",
+                    exc,
+                )
 
-    resolved = await resolve_glob(accessor, paths,
-                                  index=opts.index) if paths else []
+    resolved = (
+        await resolve_glob(accessor, paths, index=opts.index) if paths else []
+    )
     out, io = await generic_grep(
         resolved,
         texts,

@@ -150,10 +150,12 @@ def test_zgrep_names_stdin_operands_like_gnu():
     # its lines are labelled `(standard input)`; /dev/stdin is as typed.
     ws, _ = _ws()
     data = gzip.compress(b"hello\n")
-    for cmd, want in (("zgrep -H hello -", b"(standard input):hello\n"),
-                      ("zgrep -H hello /dev/stdin",
-                       b"/dev/stdin:hello\n"), ("zgrep -l hello -", b"-\n"),
-                      ("zgrep -l hello /dev/stdin", b"/dev/stdin\n")):
+    for cmd, want in (
+        ("zgrep -H hello -", b"(standard input):hello\n"),
+        ("zgrep -H hello /dev/stdin", b"/dev/stdin:hello\n"),
+        ("zgrep -l hello -", b"-\n"),
+        ("zgrep -l hello /dev/stdin", b"/dev/stdin\n"),
+    ):
         stdout, io = _run_raw(ws, cmd, stdin=data)
         assert (_bytes(stdout), io.exit_code) == (want, 0), cmd
 
@@ -208,45 +210,58 @@ def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     _run_raw(ws, "tee /data/h.gz", stdin=gzip.compress(b"hello\n"))
     stdout, io = _run_raw(ws, "zgrep hello /data/cut.gz /data/h.gz")
     assert _bytes(stdout) == b"/data/h.gz:hello\n"
-    assert _bytes(
-        io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
+    assert (
+        _bytes(io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
+    )
     assert io.exit_code == 2
 
 
 @pytest.mark.parametrize("data", [b"", b"hello\n"])
 @pytest.mark.parametrize("mode", ["", "-l", "-L", "-c", "-o", "-q"])
-@pytest.mark.parametrize("pattern, diagnostic", [
-    ("(", "Unmatched ( or \\("),
-    ("[z-a]", "Invalid range end"),
-    ("a{2,1}", "Invalid content of \\{\\}"),
-    ("\\", "Trailing backslash"),
-])
+@pytest.mark.parametrize(
+    "pattern, diagnostic",
+    [
+        ("(", "Unmatched ( or \\("),
+        ("[z-a]", "Invalid range end"),
+        ("a{2,1}", "Invalid content of \\{\\}"),
+        ("\\", "Trailing backslash"),
+    ],
+)
 def test_zgrep_invalid_ere(data, mode, pattern, diagnostic):
     ws, _ = _ws()
-    stdout, io = _run_raw(ws,
-                          f"zgrep -E {mode} '{pattern}'",
-                          stdin=gzip.compress(data))
-    assert (_bytes(stdout), _bytes(io.stderr),
-            io.exit_code) == (b"", f"grep: {diagnostic}\n".encode(), 2)
+    stdout, io = _run_raw(
+        ws, f"zgrep -E {mode} '{pattern}'", stdin=gzip.compress(data)
+    )
+    assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (
+        b"",
+        f"grep: {diagnostic}\n".encode(),
+        2,
+    )
 
 
 @pytest.mark.parametrize("pattern", ["hello", "("])
-@pytest.mark.parametrize("mode, output", [
-    ("", b""),
-    ("-l", b""),
-    ("-L", b"-\n"),
-    ("-c", b""),
-    ("-o", b""),
-    ("-v", b""),
-    ("-q -L", b"-\n"),
-])
+@pytest.mark.parametrize(
+    "mode, output",
+    [
+        ("", b""),
+        ("-l", b""),
+        ("-L", b"-\n"),
+        ("-c", b""),
+        ("-o", b""),
+        ("-v", b""),
+        ("-q -L", b"-\n"),
+    ],
+)
 def test_zgrep_m0_skips_validation_and_selection(pattern, mode, output):
     ws, _ = _ws()
-    stdout, io = _run_raw(ws,
-                          f"zgrep -E -m0 {mode} '{pattern}'",
-                          stdin=gzip.compress(b"hello\n"))
-    assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (output, b"",
-                                                                 1)
+    stdout, io = _run_raw(
+        ws, f"zgrep -E -m0 {mode} '{pattern}'", stdin=gzip.compress(b"hello\n")
+    )
+    assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (
+        output,
+        b"",
+        1,
+    )
 
 
 def _opens(line):
@@ -254,9 +269,11 @@ def _opens(line):
     directory and a link to x.gz, as zgrep 1.13 was pinned."""
     ws, _ = _ws()
     _run_raw(ws, "printf 'hello\\nworld\\n' > /data/a.txt")
-    _run_raw(ws,
-             "tee /data/x.gz > /dev/null",
-             stdin=gzip.compress(b"hello\nworld\n"))
+    _run_raw(
+        ws,
+        "tee /data/x.gz > /dev/null",
+        stdin=gzip.compress(b"hello\nworld\n"),
+    )
     _run_raw(ws, "mkdir /data/dir && cd /data && ln -s x.gz xl.gz")
     stdout, io = _run_raw(ws, f"cd /data && {line}")
     return _bytes(stdout).decode(), _bytes(io.stderr).decode(), io.exit_code
@@ -269,41 +286,62 @@ def _opens(line):
         ("zgrep hello x", "hello\n", "", 0),
         ("zgrep hello xl", "hello\n", "", 0),
         ("zgrep -l hello x", "x\n", "", 0),
-        ("zgrep hello nope", "", "gzip: nope.gz: No such file or directory\n",
-         2),
+        (
+            "zgrep hello nope",
+            "",
+            "gzip: nope.gz: No such file or directory\n",
+            2,
+        ),
         ("zgrep hello ''", "", "gzip: .gz: No such file or directory\n", 2),
         # A failed open is empty input to grep, and the run goes on.
-        ("zgrep hello nope x a.txt", "x:hello\na.txt:hello\n",
-         "gzip: nope.gz: No such file or directory\n", 2),
-        ("zgrep -c hello nope x", "nope:0\nx:1\n",
-         "gzip: nope.gz: No such file or directory\n", 2),
-        ("zgrep -L hello nope", "nope\n",
-         "gzip: nope.gz: No such file or directory\n", 2),
+        (
+            "zgrep hello nope x a.txt",
+            "x:hello\na.txt:hello\n",
+            "gzip: nope.gz: No such file or directory\n",
+            2,
+        ),
+        (
+            "zgrep -c hello nope x",
+            "nope:0\nx:1\n",
+            "gzip: nope.gz: No such file or directory\n",
+            2,
+        ),
+        (
+            "zgrep -L hello nope",
+            "nope\n",
+            "gzip: nope.gz: No such file or directory\n",
+            2,
+        ),
         # gzip -q keeps a directory's warning to itself.
         ("zgrep hello dir", "", "", 1),
         ("zgrep -c hello dir a.txt", "dir:0\na.txt:1\n", "", 0),
         ("zgrep -L hello dir", "dir\n", "", 1),
         ("zgrep hello a.txt/x", "", "gzip: a.txt/x: Not a directory\n", 2),
         ("zgrep hello x.gz/", "", "gzip: x.gz/: Not a directory\n", 2),
-        ("zgrep -s hello nope", "",
-         "gzip: nope.gz: No such file or directory\n", 2),
-    ])
+        (
+            "zgrep -s hello nope",
+            "",
+            "gzip: nope.gz: No such file or directory\n",
+            2,
+        ),
+    ],
+)
 def test_zgrep_opens_each_operand_as_gzip_cdfq_does(line, out, err, code):
     assert _opens(line) == (out, err, code)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags,out", [
-    ({}, b"/bad:hello\n/good.gz:hello\n"),
-    ({
-        "c": True
-    }, b"/bad:1\n/good.gz:1\n"),
-    ({
-        "files_without_match": True
-    }, b""),
-])
+@pytest.mark.parametrize(
+    "flags,out",
+    [
+        ({}, b"/bad:hello\n/good.gz:hello\n"),
+        ({"c": True}, b"/bad:1\n/good.gz:1\n"),
+        ({"files_without_match": True}, b""),
+    ],
+)
 async def test_zgrep_keeps_partial_matches_and_continues_after_a_read_error(
-        flags, out):
+    flags, out
+):
     reads = []
 
     async def read(path):
@@ -315,10 +353,11 @@ async def test_zgrep_keeps_partial_matches_and_continues_after_a_read_error(
             raise PermissionError(path.virtual)
 
     body, io = await zgrep_generic(
-        [PathSpec.from_str_path("/bad"),
-         PathSpec.from_str_path("/good.gz")], ["hello"],
+        [PathSpec.from_str_path("/bad"), PathSpec.from_str_path("/good.gz")],
+        ["hello"],
         flags,
-        read_bytes=read)
+        read_bytes=read,
+    )
     assert await materialize(body) == out
     assert io.exit_code == 2
     assert io.stderr == b"\ngzip: /bad.gz: Permission denied\n"

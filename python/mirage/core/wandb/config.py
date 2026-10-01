@@ -9,9 +9,11 @@ def entity_name(value: str) -> str:
     return value
 
 
-Name = Annotated[str,
-                 Field(pattern=r"^[^/\\\x00]+$", min_length=1),
-                 AfterValidator(entity_name)]
+Name = Annotated[
+    str,
+    Field(pattern=r"^[^/\\\x00]+$", min_length=1),
+    AfterValidator(entity_name),
+]
 
 
 class WandbConfig(BaseModel):

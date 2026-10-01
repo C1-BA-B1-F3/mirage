@@ -15,11 +15,15 @@
 from collections.abc import Callable
 from typing import Any
 
-from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
-                                                          with_path_guards,
-                                                          with_policy_guard)
-from mirage.commands.builtin.generic_bind.factory import (with_probe_answers,
-                                                          with_slash_guard)
+from mirage.commands.builtin.generic_bind.adapter import (
+    CommandIO,
+    with_path_guards,
+    with_policy_guard,
+)
+from mirage.commands.builtin.generic_bind.factory import (
+    with_probe_answers,
+    with_slash_guard,
+)
 from mirage.commands.builtin.object_store.mkdir import make_mkdir
 from mirage.commands.builtin.object_store.rm import make_rm
 from mirage.commands.builtin.object_store.stat import make_stat
@@ -32,8 +36,9 @@ from mirage.commands.builtin.object_store.touch import make_touch
 OBJECT_STORE_OVERRIDES = {"stat", "rm", "mkdir", "tee", "touch"}
 
 
-def make_object_store_commands(vfs: str,
-                               io: CommandIO) -> list[Callable[..., Any]]:
+def make_object_store_commands(
+    vfs: str, io: CommandIO
+) -> list[Callable[..., Any]]:
     """Build the five keyed-store command overrides for one backend.
 
     The op table is wrapped with the same hidden/rule/mode chain the
@@ -53,7 +58,8 @@ def make_object_store_commands(vfs: str,
     """
     guarded = with_policy_guard(with_slash_guard(with_path_guards(io)))
     answered = with_policy_guard(
-        with_slash_guard(with_path_guards(with_probe_answers(io))))
+        with_slash_guard(with_path_guards(with_probe_answers(io)))
+    )
     return [
         make_mkdir(vfs, guarded),
         make_rm(vfs, guarded),

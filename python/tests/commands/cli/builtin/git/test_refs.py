@@ -15,10 +15,15 @@
 import pytest
 from dulwich.refs import Ref
 
-from mirage.commands.cli.builtin.git.refs import (blocking_ref, load_refs,
-                                                  mapped, parse_refspec,
-                                                  read_head, valid_ref_name,
-                                                  without_packed)
+from mirage.commands.cli.builtin.git.refs import (
+    blocking_ref,
+    load_refs,
+    mapped,
+    parse_refspec,
+    read_head,
+    valid_ref_name,
+    without_packed,
+)
 from mirage.commands.cli.builtin.git.types import Refspec
 from mirage.io import IOResult
 
@@ -44,8 +49,9 @@ def _dispatch_returning(data: bytes):
 
 @pytest.mark.asyncio
 async def test_symbolic_ref_reports_the_short_branch():
-    head = await read_head(_dispatch_returning(b"ref: refs/heads/main\n"),
-                           "/repo/.git")
+    head = await read_head(
+        _dispatch_returning(b"ref: refs/heads/main\n"), "/repo/.git"
+    )
     assert head.branch == "main"
     assert head.ref == "refs/heads/main"
     assert head.commit is None
@@ -54,14 +60,16 @@ async def test_symbolic_ref_reports_the_short_branch():
 @pytest.mark.asyncio
 async def test_branch_name_keeps_its_slashes():
     head = await read_head(
-        _dispatch_returning(b"ref: refs/heads/feat/git-cli\n"), "/repo/.git")
+        _dispatch_returning(b"ref: refs/heads/feat/git-cli\n"), "/repo/.git"
+    )
     assert head.branch == "feat/git-cli"
 
 
 @pytest.mark.asyncio
 async def test_detached_head_reports_the_commit():
-    head = await read_head(_dispatch_returning(DETACHED_SHA.encode()),
-                           "/repo/.git")
+    head = await read_head(
+        _dispatch_returning(DETACHED_SHA.encode()), "/repo/.git"
+    )
     assert head.branch is None
     assert head.ref is None
     assert head.commit == DETACHED_SHA
@@ -70,7 +78,8 @@ async def test_detached_head_reports_the_commit():
 @pytest.mark.asyncio
 async def test_ref_outside_refs_heads_keeps_its_full_name():
     head = await read_head(
-        _dispatch_returning(b"ref: refs/remotes/origin/main\n"), "/repo/.git")
+        _dispatch_returning(b"ref: refs/remotes/origin/main\n"), "/repo/.git"
+    )
     assert head.branch == "refs/remotes/origin/main"
     assert head.ref == "refs/remotes/origin/main"
 
@@ -109,24 +118,46 @@ async def test_head_symref_resolves_through_the_container(workspace):
 
 @pytest.mark.parametrize(
     "name",
-    ["v1.0", "feat/git-cli", "a10", "B", "@", "x-y_z", "release-2026.01"])
+    ["v1.0", "feat/git-cli", "a10", "B", "@", "x-y_z", "release-2026.01"],
+)
 def test_names_git_accepts_are_valid(name: str):
     assert valid_ref_name(name)
 
 
-@pytest.mark.parametrize("name", [
-    "", "bad name", "bad..name", "x.lock", ".x", "x/", "/x", "a//b", "x.",
-    "a@{b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "a\tb"
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        "bad name",
+        "bad..name",
+        "x.lock",
+        ".x",
+        "x/",
+        "/x",
+        "a//b",
+        "x.",
+        "a@{b",
+        "a~b",
+        "a^b",
+        "a:b",
+        "a?b",
+        "a*b",
+        "a[b",
+        "a\\b",
+        "a\tb",
+    ],
+)
 def test_names_git_refuses_are_invalid(name: str):
     assert not valid_ref_name(name)
 
 
-PACKED = ("# pack-refs with: peeled fully-peeled sorted \n"
-          "1111111111111111111111111111111111111111 refs/heads/main\n"
-          "2222222222222222222222222222222222222222 refs/tags/ann\n"
-          "^3333333333333333333333333333333333333333\n"
-          "4444444444444444444444444444444444444444 refs/tags/lw\n")
+PACKED = (
+    "# pack-refs with: peeled fully-peeled sorted \n"
+    "1111111111111111111111111111111111111111 refs/heads/main\n"
+    "2222222222222222222222222222222222222222 refs/tags/ann\n"
+    "^3333333333333333333333333333333333333333\n"
+    "4444444444444444444444444444444444444444 refs/tags/lw\n"
+)
 
 
 def test_dropping_a_packed_tag_drops_its_peeled_line():
@@ -172,23 +203,38 @@ def test_a_ref_with_no_collision_is_free():
     assert blocking_ref(known, "refs/tags/foo") is None
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("main", Refspec("main", None, False)),
-    ("+refs/heads/*:refs/remotes/origin/*",
-     Refspec("refs/heads/*", "refs/remotes/origin/*", True)),
-    ("topic:copy", Refspec("topic", "copy", False)),
-    ("main:", Refspec("main", None, False)),
-])
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("main", Refspec("main", None, False)),
+        (
+            "+refs/heads/*:refs/remotes/origin/*",
+            Refspec("refs/heads/*", "refs/remotes/origin/*", True),
+        ),
+        ("topic:copy", Refspec("topic", "copy", False)),
+        ("main:", Refspec("main", None, False)),
+    ],
+)
 def test_a_refspec_splits_into_source_destination_and_force(text, expected):
     assert parse_refspec(text) == expected
 
 
-@pytest.mark.parametrize("spec,name,expected", [
-    ("+refs/heads/*:refs/remotes/origin/*", "refs/heads/feat/x",
-     "refs/remotes/origin/feat/x"),
-    ("+refs/heads/*:refs/remotes/origin/*", "refs/tags/v1", None),
-    ("refs/heads/main:refs/heads/copy", "refs/heads/main", "refs/heads/copy"),
-    ("refs/heads/main", "refs/heads/main", ""),
-])
+@pytest.mark.parametrize(
+    "spec,name,expected",
+    [
+        (
+            "+refs/heads/*:refs/remotes/origin/*",
+            "refs/heads/feat/x",
+            "refs/remotes/origin/feat/x",
+        ),
+        ("+refs/heads/*:refs/remotes/origin/*", "refs/tags/v1", None),
+        (
+            "refs/heads/main:refs/heads/copy",
+            "refs/heads/main",
+            "refs/heads/copy",
+        ),
+        ("refs/heads/main", "refs/heads/main", ""),
+    ],
+)
 def test_a_refspec_maps_a_remote_ref(spec, name, expected):
     assert mapped(parse_refspec(spec), name) == expected

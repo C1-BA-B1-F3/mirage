@@ -43,15 +43,17 @@ async def accessor(redis_prefix):
 
 @pytest.mark.asyncio
 async def test_size_root(accessor):
-    total = await size(accessor,
-                       PathSpec(vfs_path="", virtual="/", directory="/"))
+    total = await size(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/")
+    )
     assert total == 5 + 6 + 4
 
 
 @pytest.mark.asyncio
 async def test_size_subdir(accessor):
     total = await size(
-        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"))
+        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub")
+    )
     assert total == 6 + 4
 
 
@@ -59,7 +61,8 @@ async def test_size_subdir(accessor):
 async def test_size_single_file(accessor):
     total = await size(
         accessor,
-        PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt"))
+        PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt"),
+    )
     assert total == 5
 
 

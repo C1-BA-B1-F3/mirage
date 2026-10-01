@@ -12,9 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.render.json import (compact_json_bytes, compact_json_text,
-                                     json_bytes, json_text, jsonl_bytes,
-                                     number_text, value_text)
+from mirage.core.render.json import (
+    compact_json_bytes,
+    compact_json_text,
+    json_bytes,
+    json_text,
+    jsonl_bytes,
+    number_text,
+    value_text,
+)
 
 # Byte-for-byte the fixture in the typescript twin
 # (packages/core/src/core/render/json.test.ts). Both languages pin the same
@@ -22,30 +28,30 @@ from mirage.core.render.json import (compact_json_bytes, compact_json_text,
 PAYLOAD = {
     "name": "café 中文",
     "tags": ["a", "b"],
-    "meta": {
-        "n": 1,
-        "ok": True,
-        "none": None
-    },
+    "meta": {"n": 1, "ok": True, "none": None},
     "empty": {},
 }
 
-INDENTED = ('{\n'
-            '  "name": "café 中文",\n'
-            '  "tags": [\n'
-            '    "a",\n'
-            '    "b"\n'
-            '  ],\n'
-            '  "meta": {\n'
-            '    "n": 1,\n'
-            '    "ok": true,\n'
-            '    "none": null\n'
-            '  },\n'
-            '  "empty": {}\n'
-            '}')
+INDENTED = (
+    "{\n"
+    '  "name": "café 中文",\n'
+    '  "tags": [\n'
+    '    "a",\n'
+    '    "b"\n'
+    "  ],\n"
+    '  "meta": {\n'
+    '    "n": 1,\n'
+    '    "ok": true,\n'
+    '    "none": null\n'
+    "  },\n"
+    '  "empty": {}\n'
+    "}"
+)
 
-COMPACT = ('{"name":"café 中文","tags":["a","b"],'
-           '"meta":{"n":1,"ok":true,"none":null},"empty":{}}')
+COMPACT = (
+    '{"name":"café 中文","tags":["a","b"],'
+    '"meta":{"n":1,"ok":true,"none":null},"empty":{}}'
+)
 
 
 def test_json_text_indents_two_and_keeps_non_ascii():
@@ -89,10 +95,9 @@ def test_value_text_spells_a_value_as_its_json_does():
     assert value_text(1.0) == "1"
     assert value_text(1.5) == "1.5"
     assert value_text(None) == "null"
-    assert value_text({
-        "a": 1.0,
-        "b": [True, None]
-    }) == '{"a":1,"b":[true,null]}'
+    assert (
+        value_text({"a": 1.0, "b": [True, None]}) == '{"a":1,"b":[true,null]}'
+    )
 
 
 def test_number_text_lays_a_float_out_as_ecmascript_does():
@@ -123,11 +128,10 @@ def test_value_text_spells_a_float_the_way_typescript_does():
 
 
 def test_jsonl_numbers_match_ecmascript_inside_nested_cells():
-    rows = [{
-        "cells": [1e-5, 1e-7, 1e20, 1e21, 1.0, -0.0, {
-            "number": -1.5e-5
-        }]
-    }]
+    rows = [
+        {"cells": [1e-5, 1e-7, 1e20, 1e21, 1.0, -0.0, {"number": -1.5e-5}]}
+    ]
     assert jsonl_bytes(rows) == (
         b'{"cells":[0.00001,1e-7,100000000000000000000,1e+21,1,0,'
-        b'{"number":-0.000015}]}\n')
+        b'{"number":-0.000015}]}\n'
+    )

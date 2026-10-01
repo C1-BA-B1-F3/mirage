@@ -38,22 +38,14 @@ def token_manager():
 async def test_list_labels(token_manager):
     api_response = {
         "labels": [
-            {
-                "id": "INBOX",
-                "name": "INBOX",
-                "type": "system"
-            },
-            {
-                "id": "Label_1",
-                "name": "Work",
-                "type": "user"
-            },
+            {"id": "INBOX", "name": "INBOX", "type": "system"},
+            {"id": "Label_1", "name": "Work", "type": "user"},
         ]
     }
     with patch(
-            "mirage.core.gmail.labels.google_get",
-            new_callable=AsyncMock,
-            return_value=api_response,
+        "mirage.core.gmail.labels.google_get",
+        new_callable=AsyncMock,
+        return_value=api_response,
     ):
         result = await list_labels(token_manager)
         assert len(result) == 2
@@ -64,9 +56,9 @@ async def test_list_labels(token_manager):
 @pytest.mark.asyncio
 async def test_list_labels_empty(token_manager):
     with patch(
-            "mirage.core.gmail.labels.google_get",
-            new_callable=AsyncMock,
-            return_value={},
+        "mirage.core.gmail.labels.google_get",
+        new_callable=AsyncMock,
+        return_value={},
     ):
         result = await list_labels(token_manager)
         assert result == []

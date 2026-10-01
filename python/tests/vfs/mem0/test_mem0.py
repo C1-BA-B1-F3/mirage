@@ -25,6 +25,14 @@ def test_vfs_uses_generic_read_only_surface():
     cfg = Mem0Config(api_key=SecretStr("secret"), user_id="alex")
     res = Mem0VFS(cfg)
     commands = {command.name for command in res.commands()}
-    assert {"cat", "find", "grep", "jq", "ls", "rg", "search",
-            "stat"} <= commands
+    assert {
+        "cat",
+        "find",
+        "grep",
+        "jq",
+        "ls",
+        "rg",
+        "search",
+        "stat",
+    } <= commands
     assert {op.name for op in res.ops()} == {"glob", "read", "readdir", "stat"}

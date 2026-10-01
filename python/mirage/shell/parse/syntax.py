@@ -15,8 +15,12 @@
 from collections.abc import Iterator
 
 from mirage.io import IOResult
-from mirage.shell.parse.constants import (BASH_KEYWORDS, CASE_TERMINATORS,
-                                          SEPARATOR_TOKENS, STRUCTURAL_TOKENS)
+from mirage.shell.parse.constants import (
+    BASH_KEYWORDS,
+    CASE_TERMINATORS,
+    SEPARATOR_TOKENS,
+    STRUCTURAL_TOKENS,
+)
 from mirage.shell.parse.parse import parse
 from mirage.shell.types import TSNodeLike
 
@@ -124,8 +128,9 @@ def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
         yield from _walk_named(child)
 
 
-def _is_recovered_quoted_heredoc_end(previous: TSNodeLike | None,
-                                     error: TSNodeLike) -> bool:
+def _is_recovered_quoted_heredoc_end(
+    previous: TSNodeLike | None, error: TSNodeLike
+) -> bool:
     if previous is None:
         return False
     error_text = (error.text or b"").decode().strip()
@@ -141,8 +146,12 @@ def _is_recovered_quoted_heredoc_end(previous: TSNodeLike | None,
                 start = (child.text or b"").decode()
             elif child.type == "heredoc_end":
                 end = (child.text or b"").decode()
-        if (start is not None and ("'" in start or '"' in start) and not end
-                and start.replace("'", "").replace('"', "") == error_text):
+        if (
+            start is not None
+            and ("'" in start or '"' in start)
+            and not end
+            and start.replace("'", "").replace('"', "") == error_text
+        ):
             return True
     return False
 
@@ -169,10 +178,16 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     # Parameter syntax is judged during expansion (bad substitution), and
     # `[` is a builtin whose argument grammar is judged by that builtin.
     if node.type == "expansion":
-        return "" if any(c.is_missing and c.type == "}"
-                         for c in node.children) else None
-    if (node.type == "test_command" and node.children
-            and node.children[0].type == "["):
+        return (
+            ""
+            if any(c.is_missing and c.type == "}" for c in node.children)
+            else None
+        )
+    if (
+        node.type == "test_command"
+        and node.children
+        and node.children[0].type == "["
+    ):
         return _missing_quote(node)
     if node.type == "command_substitution":
         source = (node.text or b"").decode()
@@ -190,17 +205,27 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     for child in node.children:
         # Bash permits unquoted spaces in associative subscripts. The
         # grammar recovers their earlier plain words as ERROR children.
-        if (node.type == "subscript" and child.type == "ERROR"
-                and child.children
-                and all(part.type == "word" and not part.has_error
-                        for part in child.children)):
+        if (
+            node.type == "subscript"
+            and child.type == "ERROR"
+            and child.children
+            and all(
+                part.type == "word" and not part.has_error
+                for part in child.children
+            )
+        ):
             continue
         if child.is_missing:
             text = child.text
             return text.decode(errors="replace") if text else ""
-        if (child.type == "ERROR" and _is_structural_error(child)
-                and not (node.type == "for_statement" and
-                         (child.text or b"").strip() == b"in")):
+        if (
+            child.type == "ERROR"
+            and _is_structural_error(child)
+            and not (
+                node.type == "for_statement"
+                and (child.text or b"").strip() == b"in"
+            )
+        ):
             if _is_recovered_quoted_heredoc_end(previous, child):
                 previous = child
                 continue
@@ -247,8 +272,9 @@ def find_unterminated_quote(node: TSNodeLike) -> str | None:
     return None
 
 
-def syntax_error_result(offending: str,
-                        node: TSNodeLike | None = None) -> IOResult:
+def syntax_error_result(
+    offending: str, node: TSNodeLike | None = None
+) -> IOResult:
     """Exit 2 with the bash-style diagnostic for an unparsable line.
 
     Args:
@@ -259,9 +285,15 @@ def syntax_error_result(offending: str,
     if quote is not None:
         return IOResult(
             exit_code=2,
-            stderr=("mirage: unexpected EOF while looking for matching "
-                    f"`{quote}'\n").encode())
+            stderr=(
+                "mirage: unexpected EOF while looking for matching "
+                f"`{quote}'\n"
+            ).encode(),
+        )
     snippet = offending.strip()
-    err = (f"mirage: syntax error near {snippet!r}\n".encode()
-           if snippet else b"mirage: syntax error in command\n")
+    err = (
+        f"mirage: syntax error near {snippet!r}\n".encode()
+        if snippet
+        else b"mirage: syntax error in command\n"
+    )
     return IOResult(exit_code=2, stderr=err)

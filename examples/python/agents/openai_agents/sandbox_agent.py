@@ -36,11 +36,14 @@ s3 = S3VFS(
         region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-    ))
-slack = SlackVFS(config=SlackConfig(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    search_token=os.environ.get("SLACK_USER_TOKEN"),
-))
+    )
+)
+slack = SlackVFS(
+    config=SlackConfig(
+        token=os.environ["SLACK_BOT_TOKEN"],
+        search_token=os.environ.get("SLACK_USER_TOKEN"),
+    )
+)
 
 ws = Workspace(
     {
@@ -56,13 +59,14 @@ client = MirageSandboxClient(ws)
 agent = SandboxAgent(
     name="Mirage Sandbox Agent",
     model="gpt-5.5",
-    capabilities=[*Capabilities.default(),
-                  MirageCapability()],
+    capabilities=[*Capabilities.default(), MirageCapability()],
 )
 
-task = ("1. Find the date of the latest Slack message in the general channel. "
-        "2. Summarize the parquet file in /s3/data/. "
-        "Write your findings to /report.txt.")
+task = (
+    "1. Find the date of the latest Slack message in the general channel. "
+    "2. Summarize the parquet file in /s3/data/. "
+    "Write your findings to /report.txt."
+)
 
 
 async def main():
@@ -94,17 +98,30 @@ async def main():
     fresh_ws = Workspace(
         {
             "/": (RAMVFS(), MountMode.WRITE),
-            "/s3": (S3VFS(
-                S3Config(
-                    bucket=os.environ["AWS_S3_BUCKET"],
-                    region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-                    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-                    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-                )), MountMode.READ),
-            "/slack": (SlackVFS(config=SlackConfig(
-                token=os.environ["SLACK_BOT_TOKEN"],
-                search_token=os.environ.get("SLACK_USER_TOKEN"),
-            )), MountMode.READ),
+            "/s3": (
+                S3VFS(
+                    S3Config(
+                        bucket=os.environ["AWS_S3_BUCKET"],
+                        region=os.environ.get(
+                            "AWS_DEFAULT_REGION", "us-east-1"
+                        ),
+                        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                        aws_secret_access_key=os.environ[
+                            "AWS_SECRET_ACCESS_KEY"
+                        ],
+                    )
+                ),
+                MountMode.READ,
+            ),
+            "/slack": (
+                SlackVFS(
+                    config=SlackConfig(
+                        token=os.environ["SLACK_BOT_TOKEN"],
+                        search_token=os.environ.get("SLACK_USER_TOKEN"),
+                    )
+                ),
+                MountMode.READ,
+            ),
         },
         mode=MountMode.WRITE,
     )
@@ -119,8 +136,10 @@ async def main():
     orig_files = set((find_all.stdout or b"").decode().strip().splitlines())
     fresh_files = set((fresh_find.stdout or b"").decode().strip().splitlines())
     diff = orig_files.symmetric_difference(fresh_files)
-    print(f"--- file list diff: {len(diff)} files differ "
-          f"{'(OK)' if not diff else '(' + str(diff) + ')'} ---")
+    print(
+        f"--- file list diff: {len(diff)} files differ "
+        f"{'(OK)' if not diff else '(' + str(diff) + ')'} ---"
+    )
 
     # Verify content (not just names) for every file the agent created.
     print("\n--- content match per file ---")
@@ -138,10 +157,13 @@ async def main():
             n_match += 1
         else:
             print(f"  ✗ {path}")
-            print(f"      orig  ({len(orig_bytes)} bytes): "
-                  f"{orig_bytes[:120]!r}")
-            print(f"      fresh ({len(fresh_bytes)} bytes): "
-                  f"{fresh_bytes[:120]!r}")
+            print(
+                f"      orig  ({len(orig_bytes)} bytes): {orig_bytes[:120]!r}"
+            )
+            print(
+                f"      fresh ({len(fresh_bytes)} bytes): "
+                f"{fresh_bytes[:120]!r}"
+            )
             n_diff += 1
     print(f"\n--- content summary: {n_match} match, {n_diff} differ ---")
 
@@ -149,8 +171,10 @@ async def main():
     if "/report.txt" in orig_files:
         report = await fresh_ws.shell("cat /report.txt")
         body = (report.stdout or b"").decode()
-        print(f"\n--- /report.txt from hydrated workspace "
-              f"({len(body)} chars) ---")
+        print(
+            f"\n--- /report.txt from hydrated workspace "
+            f"({len(body)} chars) ---"
+        )
         print(body)
 
 

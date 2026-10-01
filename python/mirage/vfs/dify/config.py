@@ -1,5 +1,10 @@
-from pydantic import (BaseModel, ConfigDict, PositiveFloat, PositiveInt,
-                      field_validator)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+)
 
 
 class DifyConfig(BaseModel):

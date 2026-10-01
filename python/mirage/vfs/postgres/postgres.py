@@ -26,7 +26,6 @@ from mirage.vfs.postgres.prompt import PROMPT
 
 
 class PostgresVFS(BaseVFS):
-
     accessor: PostgresAccessor
     name: str = VFSName.POSTGRES
     caches_reads: bool = False

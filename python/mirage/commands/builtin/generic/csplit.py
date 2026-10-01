@@ -37,15 +37,20 @@ def _check_line_numbers(patterns: list[str]) -> tuple[str, bool]:
         number = int(pattern)
         if number <= 0:
             messages.append(
-                f"csplit: {pattern}: line number must be greater than zero\n")
+                f"csplit: {pattern}: line number must be greater than zero\n"
+            )
             return "".join(messages), True
         if number < last:
-            messages.append(f"csplit: line number '{pattern}' is smaller "
-                            f"than preceding line number, {last}\n")
+            messages.append(
+                f"csplit: line number '{pattern}' is smaller "
+                f"than preceding line number, {last}\n"
+            )
             return "".join(messages), True
         if number == last:
-            messages.append(f"csplit: warning: line number '{pattern}' is "
-                            "the same as preceding line number\n")
+            messages.append(
+                f"csplit: warning: line number '{pattern}' is "
+                "the same as preceding line number\n"
+            )
         last = number
     return "".join(messages), False
 
@@ -82,8 +87,14 @@ def _split_by_patterns(
         out_of_range = f"csplit: '{pat}': line number out of range\n"
         if _is_regex(pat):
             regex = re.compile(pat[1:-1])
-            found = next((idx for idx in range(seen, len(lines))
-                          if regex.search(lines[idx])), None)
+            found = next(
+                (
+                    idx
+                    for idx in range(seen, len(lines))
+                    if regex.search(lines[idx])
+                ),
+                None,
+            )
             if found is None:
                 parts.append(lines[head:])
                 return parts, f"csplit: '{pat}': match not found\n"
@@ -133,8 +144,9 @@ async def csplit(
     # one it cannot create, -k or not.
     if not patterns:
         # GNU wants FILE and a PATTERN before it opens anything.
-        raise missing_operand_error(CommandName.CSPLIT,
-                                    paths[-1].raw_path if paths else None)
+        raise missing_operand_error(
+            CommandName.CSPLIT, paths[-1].raw_path if paths else None
+        )
     if isinstance(prefix, PathSpec):
         prefix_virtual, typed_prefix = prefix.virtual, prefix.raw_path
     else:
@@ -163,8 +175,9 @@ async def csplit(
         name = typed_prefix + suffix
         data = ("\n".join(part) + "\n").encode() if part else b""
         virtual = prefix_virtual + suffix
-        spec = PathSpec.from_str_path(virtual,
-                                      mount_key(virtual, mount_prefix))
+        spec = PathSpec.from_str_path(
+            virtual, mount_key(virtual, mount_prefix)
+        )
         try:
             await write_bytes(spec, data)
         except FS_ERRORS as exc:
@@ -188,9 +201,11 @@ async def csplit(
             except FS_ERRORS as exc:
                 diagnostics += f"csplit: {name}: {fs_strerror(exc)}\n"
     output = "" if silent or not sizes else "\n".join(sizes) + "\n"
-    return output.encode(), IOResult(writes=writes,
-                                     stderr=diagnostics.encode() or None,
-                                     exit_code=0 if error is None else 1)
+    return output.encode(), IOResult(
+        writes=writes,
+        stderr=diagnostics.encode() or None,
+        exit_code=0 if error is None else 1,
+    )
 
 
 __all__ = ["csplit"]

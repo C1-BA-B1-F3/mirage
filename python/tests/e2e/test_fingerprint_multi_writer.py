@@ -58,7 +58,8 @@ def test_two_workspaces_always_sees_other_writers_update():
         assert b_first == b"v1"
         assert b_second == b"v2", (
             "Workspace B under `fresh` must see Workspace A's write "
-            "via fingerprint mismatch; got stale cached bytes")
+            "via fingerprint mismatch; got stale cached bytes"
+        )
     finally:
         stack.close()
 
@@ -83,6 +84,7 @@ def test_two_workspaces_lazy_may_serve_stale_after_other_writer():
         b_second = asyncio.run(run())
         assert b_second in (b"v1", b"v2"), (
             "LAZY is allowed to serve cached bytes; this just documents "
-            "the trade-off (cache was populated before A's write)")
+            "the trade-off (cache was populated before A's write)"
+        )
     finally:
         stack.close()

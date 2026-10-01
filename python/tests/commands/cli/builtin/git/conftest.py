@@ -29,8 +29,10 @@ from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
 from mirage.workspace import Workspace
 from mirage.workspace.mount.namespace.probe import path_stat
-from mirage.workspace.mount.namespace.view import (mount_root_of,
-                                                   namespace_view_of)
+from mirage.workspace.mount.namespace.view import (
+    mount_root_of,
+    namespace_view_of,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view
 
@@ -38,8 +40,9 @@ AUTHOR = b"Test Author <test@example.com>"
 MOUNT = "/repo/"
 
 
-def commit_file(repo_path: Path, name: str, content: str,
-                message: str) -> bytes:
+def commit_file(
+    repo_path: Path, name: str, content: str, message: str
+) -> bytes:
     """Write one file and commit it, returning the commit id.
 
     Args:
@@ -50,10 +53,12 @@ def commit_file(repo_path: Path, name: str, content: str,
     """
     (repo_path / name).write_text(content, encoding="utf-8")
     porcelain.add(str(repo_path), paths=[str(repo_path / name)])
-    return porcelain.commit(str(repo_path),
-                            message=message.encode(),
-                            author=AUTHOR,
-                            committer=AUTHOR)
+    return porcelain.commit(
+        str(repo_path),
+        message=message.encode(),
+        author=AUTHOR,
+        committer=AUTHOR,
+    )
 
 
 @pytest.fixture
@@ -120,10 +125,12 @@ def commit_merge(repo_path: Path, other: str, message: str) -> bytes:
     """
     with Repo(str(repo_path)) as repo:
         head = repo.refs[f"refs/heads/{other}".encode()]
-        return repo.get_worktree().commit(message=message.encode(),
-                                          author=AUTHOR,
-                                          committer=AUTHOR,
-                                          merge_heads=[head])
+        return repo.get_worktree().commit(
+            message=message.encode(),
+            author=AUTHOR,
+            committer=AUTHOR,
+            merge_heads=[head],
+        )
 
 
 def make_branch(repo_path: Path, name: str) -> None:
@@ -152,20 +159,21 @@ def commit_gitlink(repo_path: Path, name: str) -> None:
     with Repo(str(repo_path)) as repo:
         head = repo.refs[b"HEAD"]
         index = repo.open_index()
-        index[name.encode()] = IndexEntry(ctime=0,
-                                          mtime=0,
-                                          dev=0,
-                                          ino=0,
-                                          mode=GITLINK,
-                                          uid=0,
-                                          gid=0,
-                                          size=0,
-                                          sha=head)
+        index[name.encode()] = IndexEntry(
+            ctime=0,
+            mtime=0,
+            dev=0,
+            ino=0,
+            mode=GITLINK,
+            uid=0,
+            gid=0,
+            size=0,
+            sha=head,
+        )
         index.write()
-    porcelain.commit(str(repo_path),
-                     message=b"gitlink",
-                     author=AUTHOR,
-                     committer=AUTHOR)
+    porcelain.commit(
+        str(repo_path), message=b"gitlink", author=AUTHOR, committer=AUTHOR
+    )
 
 
 def branch_with_gitlink(repo_path: Path, branch: str, name: str) -> None:
@@ -211,9 +219,9 @@ def conflict_index(repo_path: Path, name: str) -> None:
     index = Index(str(repo_path / ".git" / "index"))
     entry = index[name.encode()]
     assert isinstance(entry, IndexEntry)
-    index[name.encode()] = ConflictedIndexEntry(ancestor=entry,
-                                                this=entry,
-                                                other=entry)
+    index[name.encode()] = ConflictedIndexEntry(
+        ancestor=entry, this=entry, other=entry
+    )
     index.write()
 
 
@@ -242,8 +250,9 @@ def mounted_rw(repo_path: Path):
     Args:
         repo_path (Path): the repository's working tree.
     """
-    with Workspace({MOUNT: DiskVFS(root=str(repo_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {MOUNT: DiskVFS(root=str(repo_path))}, mode=MountMode.WRITE
+    ) as ws:
         ws.register_cli("git", GIT)
         yield ws
 
@@ -285,8 +294,9 @@ def git_rw(repo_path: Path):
     Args:
         repo_path (Path): the repository's working tree.
     """
-    with Workspace({MOUNT: DiskVFS(root=str(repo_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {MOUNT: DiskVFS(root=str(repo_path))}, mode=MountMode.WRITE
+    ) as ws:
         ws.register_cli("git", GIT)
         yield ws
 
@@ -299,8 +309,11 @@ def repo_facts(ws):
     Args:
         ws (Workspace): the workspace under test.
     """
-    return (ws.dispatch, functools.partial(path_stat, ws.dispatch),
-            functools.partial(mount_root_of, ws._registry))
+    return (
+        ws.dispatch,
+        functools.partial(path_stat, ws.dispatch),
+        functools.partial(mount_root_of, ws._registry),
+    )
 
 
 def repo_doors(ws) -> CLIDoors:
@@ -312,11 +325,12 @@ def repo_doors(ws) -> CLIDoors:
     Args:
         ws (Workspace): the workspace under test.
     """
-    return CLIDoors(dispatch=ws.dispatch,
-                    stat_path=functools.partial(path_stat, ws.dispatch),
-                    ns=namespace_view_of(ws._registry, ws._namespace,
-                                         ws.dispatch),
-                    session_view=session_view(SessionState(session_id="test")))
+    return CLIDoors(
+        dispatch=ws.dispatch,
+        stat_path=functools.partial(path_stat, ws.dispatch),
+        ns=namespace_view_of(ws._registry, ws._namespace, ws.dispatch),
+        session_view=session_view(SessionState(session_id="test")),
+    )
 
 
 @pytest.fixture
@@ -343,7 +357,8 @@ def unborn_rw(unborn_path: Path):
     Args:
         unborn_path (Path): the repository's working tree.
     """
-    with Workspace({MOUNT: DiskVFS(root=str(unborn_path))},
-                   mode=MountMode.WRITE) as ws:
+    with Workspace(
+        {MOUNT: DiskVFS(root=str(unborn_path))}, mode=MountMode.WRITE
+    ) as ws:
         ws.register_cli("git", GIT)
         yield ws

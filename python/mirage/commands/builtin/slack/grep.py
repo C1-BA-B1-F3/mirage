@@ -18,21 +18,28 @@ from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
-from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
-                                                   text_search_results)
+from mirage.commands.builtin.grep_pushdown import (
+    pushdown_operand,
+    text_search_results,
+)
 from mirage.commands.builtin.slack.io import resolve_glob
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.slack.formatters import (build_query,
-                                          format_file_grep_results,
-                                          format_grep_results)
+from mirage.core.slack.formatters import (
+    build_query,
+    format_file_grep_results,
+    format_grep_results,
+)
 from mirage.core.slack.read import read as slack_read
 from mirage.core.slack.readdir import readdir as _readdir
 from mirage.core.slack.scope import NATIVE_KINDS, detect_scope, search_target
-from mirage.core.slack.search import (search_available, search_files,
-                                      search_messages)
+from mirage.core.slack.search import (
+    search_available,
+    search_files,
+    search_messages,
+)
 from mirage.core.slack.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -54,16 +61,19 @@ logger = logging.getLogger(__name__)
 # every day the channel ever had. Reporting messages the line did not ask for
 # is not a better failure than dropping an operand. One operand or the
 # generic scan.
-SEARCH_HONORED = ("w", )
+SEARCH_HONORED = ("w",)
 # rg spells the same flag by its long name.
-RG_SEARCH_HONORED = ("word_regexp", )
+RG_SEARCH_HONORED = ("word_regexp",)
 SEARCH_MAX_RESULTS = 100
 
 
 @command("grep", vfs="slack", spec=SPECS["grep"])
-async def grep(accessor: SlackAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def grep(
+    accessor: SlackAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern = pattern_arg(texts, fl)
 
@@ -72,11 +82,15 @@ async def grep(accessor: SlackAccessor, paths: list[PathSpec],
     operand = pushdown_operand(paths, opts.flags, pattern, SEARCH_HONORED)
     if pattern is not None and operand is not None and fl.as_bool("w"):
         match = detect_scope(operand)
-        if (not accessor.time_range.bounded and match.kind in NATIVE_KINDS
-                and search_available(accessor.config)):
+        if (
+            not accessor.time_range.bounded
+            and match.kind in NATIVE_KINDS
+            and search_available(accessor.config)
+        ):
             target = search_target(match)
-            file_prefix = mount_prefix_of(operand.virtual,
-                                          operand.vfs_path) or ""
+            file_prefix = (
+                mount_prefix_of(operand.virtual, operand.vfs_path) or ""
+            )
             query = build_query(pattern, target)
             # Every kind that reaches here searches messages, and each of
             # them (the root, the containers, a channel, a date dir)
@@ -84,18 +98,24 @@ async def grep(accessor: SlackAccessor, paths: list[PathSpec],
             native_lines: list[str] = []
             err: Exception | None = None
             try:
-                raw = await search_messages(accessor.config,
-                                            query,
-                                            count=SEARCH_MAX_RESULTS,
-                                            session=accessor.pool)
+                raw = await search_messages(
+                    accessor.config,
+                    query,
+                    count=SEARCH_MAX_RESULTS,
+                    session=accessor.pool,
+                )
                 native_lines.extend(
-                    format_grep_results(raw, target, file_prefix))
-                raw_f = await search_files(accessor.config,
-                                           query,
-                                           count=SEARCH_MAX_RESULTS,
-                                           session=accessor.pool)
+                    format_grep_results(raw, target, file_prefix)
+                )
+                raw_f = await search_files(
+                    accessor.config,
+                    query,
+                    count=SEARCH_MAX_RESULTS,
+                    session=accessor.pool,
+                )
                 native_lines.extend(
-                    format_file_grep_results(raw_f, target, file_prefix))
+                    format_file_grep_results(raw_f, target, file_prefix)
+                )
             except Exception as exc:
                 err = exc
             if err is None:
@@ -106,7 +126,9 @@ async def grep(accessor: SlackAccessor, paths: list[PathSpec],
             if err is not None:
                 logger.warning(
                     "slack search push-down failed (%s); "
-                    "falling back to per-file scan", err)
+                    "falling back to per-file scan",
+                    err,
+                )
 
     resolved = await resolve_glob(accessor, paths, opts.index) if paths else []
     return await generic_grep(

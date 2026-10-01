@@ -25,8 +25,9 @@ skip_linux = pytest.mark.skipif(
 @skip_linux
 def test_fmt_w(env):
     data = b"this is a long line that should be wrapped\n"
-    assert env.mirage("fmt -w 20", stdin=data) == env.native("fmt -w 20",
-                                                             stdin=data)
+    assert env.mirage("fmt -w 20", stdin=data) == env.native(
+        "fmt -w 20", stdin=data
+    )
 
 
 @skip_linux

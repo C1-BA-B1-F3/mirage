@@ -33,8 +33,9 @@ for fpath in sorted(DATA_DIR.iterdir()):
 
 print(f"Seeded {len(store.files)} files from {DATA_DIR}")
 
-with Workspace({"/data/": Mount(vfs, backend=MountBackend.FUSE)},
-               mode=MountMode.READ) as ws:
+with Workspace(
+    {"/data/": Mount(vfs, backend=MountBackend.FUSE)}, mode=MountMode.READ
+) as ws:
     time.sleep(1)
     mp = ws.fuse_mountpoint
 
@@ -52,7 +53,8 @@ with Workspace({"/data/": Mount(vfs, backend=MountBackend.FUSE)},
     print(f">>>   cat {data_path}/{existing}             # ok")
     print(f">>>   echo hi > {data_path}/new.txt         # EACCES (create)")
     print(
-        f">>>   echo hi > {data_path}/{existing}        # EACCES (overwrite)")
+        f">>>   echo hi > {data_path}/{existing}        # EACCES (overwrite)"
+    )
     print(">>> Press Enter to unmount and exit...")
     input()
 

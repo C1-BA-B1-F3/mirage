@@ -40,8 +40,9 @@ def _names(entries: list[str]) -> list[str]:
 @pytest.fixture
 def disk_ws(tmp_path):
     os.mkdir(tmp_path / "seed")
-    return Workspace({"/d/": DiskVFS(root=str(tmp_path))},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/d/": DiskVFS(root=str(tmp_path))}, mode=MountMode.WRITE
+    )
 
 
 @pytest.mark.asyncio
@@ -57,9 +58,9 @@ async def test_readdir_sees_dir_created_after_listing_cached(disk_ws):
 async def test_readdir_sees_file_written_after_listing_cached(disk_ws):
     before, _ = await disk_ws.dispatch("readdir", _spec("/d/", ""))
     assert _names(before) == ["seed"]
-    await disk_ws.dispatch("write",
-                           _spec("/d/note.txt", "note.txt"),
-                           data=b"hi")
+    await disk_ws.dispatch(
+        "write", _spec("/d/note.txt", "note.txt"), data=b"hi"
+    )
     after, _ = await disk_ws.dispatch("readdir", _spec("/d/", ""))
     assert _names(after) == ["note.txt", "seed"]
 

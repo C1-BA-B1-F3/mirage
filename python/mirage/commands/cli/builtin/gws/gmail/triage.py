@@ -16,8 +16,11 @@ import json
 
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.gmail.messages import (_extract_header, get_message_raw,
-                                        list_messages)
+from mirage.core.gmail.messages import (
+    _extract_header,
+    get_message_raw,
+    list_messages,
+)
 from mirage.core.google.client import TokenManager
 from mirage.core.google.config import GoogleConfig
 from mirage.io.stream import yield_bytes
@@ -25,27 +28,30 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def triage(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     query = fl.as_str("query") or "is:unread"
     max_results = fl.as_int("max") or 20
     summaries = []
     async with TokenManager(inv.config) as token_manager:
-        msgs = await list_messages(token_manager,
-                                   query=query,
-                                   max_results=max_results)
+        msgs = await list_messages(
+            token_manager, query=query, max_results=max_results
+        )
         for m in msgs:
             mid = m["id"]
             raw = await get_message_raw(token_manager, mid)
             headers = raw.get("payload", {}).get("headers", [])
-            summaries.append({
-                "id": mid,
-                "from": _extract_header(headers, "From"),
-                "subject": _extract_header(headers, "Subject"),
-                "date": _extract_header(headers, "Date"),
-                "snippet": raw.get("snippet", ""),
-            })
-    out = json.dumps(summaries, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+            summaries.append(
+                {
+                    "id": mid,
+                    "from": _extract_header(headers, "From"),
+                    "subject": _extract_header(headers, "Subject"),
+                    "date": _extract_header(headers, "Date"),
+                    "snippet": raw.get("snippet", ""),
+                }
+            )
+    out = json.dumps(
+        summaries, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

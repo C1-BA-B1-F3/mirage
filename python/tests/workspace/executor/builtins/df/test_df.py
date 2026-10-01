@@ -18,6 +18,7 @@ provider quota); everything else renders ``-`` rather than a fabricated
 total. Numbers here come from a fixed-quota stub so the output is
 deterministic (real disk free space is machine-specific).
 """
+
 from dataclasses import replace
 
 import pytest
@@ -69,6 +70,7 @@ async def _run(ws: Workspace, cmd: str) -> tuple[int, str]:
 
 def test_capacity_default_state_is_unknown():
     import asyncio
+
     cap = asyncio.run(RAMVFS().capacity())
     assert cap.state == CapacityState.UNKNOWN
     assert cap.total is None
@@ -79,8 +81,10 @@ async def test_df_unknown_backend_renders_dashes():
     ws = _ws()
     code, out = await _run(ws, "df /mem")
     assert code == 0
-    assert out == ("Filesystem     1K-blocks Used Available Use% Mounted on\n"
-                   "ram                    -    -         -    - /mem\n")
+    assert out == (
+        "Filesystem     1K-blocks Used Available Use% Mounted on\n"
+        "ram                    -    -         -    - /mem\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -90,7 +94,13 @@ async def test_df_quota_backend_reports_real_numbers():
     assert code == 0
     lines = out.splitlines()
     assert lines[0].split() == [
-        "Filesystem", "1K-blocks", "Used", "Available", "Use%", "Mounted", "on"
+        "Filesystem",
+        "1K-blocks",
+        "Used",
+        "Available",
+        "Use%",
+        "Mounted",
+        "on",
     ]
     assert lines[1].split() == ["quota", "1000", "400", "600", "40%", "/q"]
 
@@ -104,7 +114,10 @@ async def test_df_human_sizes_match_gnu():
     code, out = await _run(ws, "df -h /q")
     assert code == 0
     assert out.splitlines()[1].split()[:4] == [
-        "quota", "1000K", "400K", "600K"
+        "quota",
+        "1000K",
+        "400K",
+        "600K",
     ]
 
 
@@ -135,10 +148,21 @@ async def test_df_inodes():
     code, out = await _run(ws, "df -i /q")
     assert code == 0
     assert out.splitlines()[0].split() == [
-        "Filesystem", "Inodes", "IUsed", "IFree", "IUse%", "Mounted", "on"
+        "Filesystem",
+        "Inodes",
+        "IUsed",
+        "IFree",
+        "IUse%",
+        "Mounted",
+        "on",
     ]
     assert out.splitlines()[1].split() == [
-        "quota", "1000", "100", "900", "10%", "/q"
+        "quota",
+        "1000",
+        "100",
+        "900",
+        "10%",
+        "/q",
     ]
     # unknown backend: inode columns are dashes too
     _, out2 = await _run(ws, "df -i /mem")
@@ -150,7 +174,12 @@ async def test_df_posix_and_block_size_headers():
     ws = _ws()
     _, posix = await _run(ws, "df -P /q")
     assert posix.splitlines()[0].split()[1:] == [
-        "1024-blocks", "Used", "Available", "Capacity", "Mounted", "on"
+        "1024-blocks",
+        "Used",
+        "Available",
+        "Capacity",
+        "Mounted",
+        "on",
     ]
     _, block = await _run(ws, "df -B 1M /q")
     assert block.splitlines()[0].split()[1] == "1M-blocks"

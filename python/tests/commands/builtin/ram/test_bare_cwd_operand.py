@@ -80,9 +80,10 @@ async def test_du_bare_measures_the_cwd_dot_spelled(workspace):
     programs = int((listed.stdout or b"0").split(b"\t")[0])
     io = await seeded.shell("du", cwd="/")
     assert io.exit_code == 0
-    assert (io.stdout
-            or b"") == (f"0\t./dev\n6\t./sub\n{programs}\t./usr/bin\n"
-                        f"{programs}\t./usr\n{12 + programs}\t.\n").encode()
+    assert (io.stdout or b"") == (
+        f"0\t./dev\n6\t./sub\n{programs}\t./usr/bin\n"
+        f"{programs}\t./usr\n{12 + programs}\t.\n"
+    ).encode()
 
 
 @pytest.mark.asyncio

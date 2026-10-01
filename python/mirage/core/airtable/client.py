@@ -35,8 +35,9 @@ COMMENTS = PageShape(items_key="comments", next_cursor=offset_cursor)
 T = TypeVar("T")
 
 
-def _error_of(resp: aiohttp.ClientResponse, text: str, *,
-              call: str) -> Exception:
+def _error_of(
+    resp: aiohttp.ClientResponse, text: str, *, call: str
+) -> Exception:
     kind, message = error_parts(text)
     detail = ": ".join(part for part in (kind, message) if part)
     return AirtableAPIError(
@@ -77,35 +78,41 @@ def _headers(accessor: AirtableAccessor) -> dict[str, str]:
     }
 
 
-async def _request(accessor: AirtableAccessor,
-                   method: str,
-                   path: str,
-                   *,
-                   pace_key: str,
-                   params: Mapping[str, str | int] | None = None,
-                   query: str = "",
-                   json_body: dict[str, Any] | None = None,
-                   retry: RetryPolicy = RETRY) -> Any:
+async def _request(
+    accessor: AirtableAccessor,
+    method: str,
+    path: str,
+    *,
+    pace_key: str,
+    params: Mapping[str, str | int] | None = None,
+    query: str = "",
+    json_body: dict[str, Any] | None = None,
+    retry: RetryPolicy = RETRY,
+) -> Any:
     await accessor.limiter.acquire(pace_key)
     url = f"{accessor.config.base_url}{path}"
-    return await api_request(method,
-                             f"{url}?{query}" if query else url,
-                             error_of=partial(_error_of,
-                                              call=f"{method} {path}"),
-                             headers=_headers(accessor),
-                             params=params,
-                             json_body=json_body,
-                             retry=retry,
-                             session=accessor.pool)
+    return await api_request(
+        method,
+        f"{url}?{query}" if query else url,
+        error_of=partial(_error_of, call=f"{method} {path}"),
+        headers=_headers(accessor),
+        params=params,
+        json_body=json_body,
+        retry=retry,
+        session=accessor.pool,
+    )
 
 
-async def _get(accessor: AirtableAccessor, path: str, *,
-               params: Mapping[str, str | int] | None, pace_key: str) -> Any:
-    return await _request(accessor,
-                          "GET",
-                          path,
-                          pace_key=pace_key,
-                          params=params)
+async def _get(
+    accessor: AirtableAccessor,
+    path: str,
+    *,
+    params: Mapping[str, str | int] | None,
+    pace_key: str,
+) -> Any:
+    return await _request(
+        accessor, "GET", path, pace_key=pace_key, params=params
+    )
 
 
 def _segment(value: str) -> str:
@@ -122,14 +129,18 @@ def _record_path(base_id: str, table: str, record_id: str) -> str:
 
 def _batches(items: Sequence[T]) -> list[Sequence[T]]:
     return [
-        items[start:start + MAX_BATCH]
+        items[start : start + MAX_BATCH]
         for start in range(0, len(items), MAX_BATCH)
     ]
 
 
-async def _page(accessor: AirtableAccessor, pace_key: str, path: str,
-                params: dict[str,
-                             str | int], cursor: str | None) -> dict[str, Any]:
+async def _page(
+    accessor: AirtableAccessor,
+    pace_key: str,
+    path: str,
+    params: dict[str, str | int],
+    cursor: str | None,
+) -> dict[str, Any]:
     query = {**params, "offset": cursor} if cursor else params
     return as_row(await _get(accessor, path, params=query, pace_key=pace_key))
 
@@ -140,38 +151,44 @@ async def list_bases(accessor: AirtableAccessor) -> list[dict[str, Any]]:
     Args:
         accessor (AirtableAccessor): the account.
     """
-    bases = await cursor_items(partial(_page, accessor, META_KEY,
-                                       "/meta/bases", {}),
-                               shape=BASES)
+    bases = await cursor_items(
+        partial(_page, accessor, META_KEY, "/meta/bases", {}), shape=BASES
+    )
     wanted = accessor.config.base_ids
     return [
-        base for base in as_rows(bases)
+        base
+        for base in as_rows(bases)
         if wanted is None or base.get("id") in wanted
     ]
 
 
-async def list_tables(accessor: AirtableAccessor,
-                      base_id: str) -> list[dict[str, Any]]:
+async def list_tables(
+    accessor: AirtableAccessor, base_id: str
+) -> list[dict[str, Any]]:
     """A base's schema: its tables with their fields and views.
 
     Args:
         accessor (AirtableAccessor): the account.
         base_id (str): the base.
     """
-    data = await _get(accessor,
-                      f"/meta/bases/{_segment(base_id)}/tables",
-                      params=None,
-                      pace_key=base_id)
+    data = await _get(
+        accessor,
+        f"/meta/bases/{_segment(base_id)}/tables",
+        params=None,
+        pace_key=base_id,
+    )
     return as_rows(as_row(data).get("tables"))
 
 
-async def list_records(accessor: AirtableAccessor,
-                       base_id: str,
-                       table_id: str,
-                       *,
-                       view: str | None = None,
-                       formula: str | None = None,
-                       max_records: int | None = None) -> list[dict[str, Any]]:
+async def list_records(
+    accessor: AirtableAccessor,
+    base_id: str,
+    table_id: str,
+    *,
+    view: str | None = None,
+    formula: str | None = None,
+    max_records: int | None = None,
+) -> list[dict[str, Any]]:
     """A table's records in the API's order, or a view's.
 
     Without a view Airtable calls the order arbitrary; it is the order
@@ -196,16 +213,19 @@ async def list_records(accessor: AirtableAccessor,
         params["filterByFormula"] = formula
     if max_records is not None:
         params["maxRecords"] = max_records
-    records = await cursor_items(partial(_page, accessor, base_id,
-                                         _table_path(base_id, table_id),
-                                         params),
-                                 max_results=max_records,
-                                 shape=RECORDS)
+    records = await cursor_items(
+        partial(
+            _page, accessor, base_id, _table_path(base_id, table_id), params
+        ),
+        max_results=max_records,
+        shape=RECORDS,
+    )
     return as_rows(records)
 
 
-async def get_record(accessor: AirtableAccessor, base_id: str, table_id: str,
-                     record_id: str) -> dict[str, Any]:
+async def get_record(
+    accessor: AirtableAccessor, base_id: str, table_id: str, record_id: str
+) -> dict[str, Any]:
     """One record by id.
 
     Args:
@@ -214,37 +234,47 @@ async def get_record(accessor: AirtableAccessor, base_id: str, table_id: str,
         table_id (str): the table, by id or by name.
         record_id (str): the record.
     """
-    data = await _get(accessor,
-                      _record_path(base_id, table_id, record_id),
-                      params=None,
-                      pace_key=base_id)
+    data = await _get(
+        accessor,
+        _record_path(base_id, table_id, record_id),
+        params=None,
+        pace_key=base_id,
+    )
     return as_row(data)
 
 
-async def _write(accessor: AirtableAccessor, method: str, base_id: str,
-                 table_id: str, rows: Sequence[dict[str, Any]],
-                 typecast: bool) -> AsyncIterator[list[dict[str, Any]]]:
+async def _write(
+    accessor: AirtableAccessor,
+    method: str,
+    base_id: str,
+    table_id: str,
+    rows: Sequence[dict[str, Any]],
+    typecast: bool,
+) -> AsyncIterator[list[dict[str, Any]]]:
     path = _table_path(base_id, table_id)
     for batch in _batches(rows):
         body: dict[str, Any] = {"records": list(batch)}
         if typecast:
             body["typecast"] = True
-        data = await _request(accessor,
-                              method,
-                              path,
-                              pace_key=base_id,
-                              json_body=body,
-                              retry=WRITE_RETRY)
+        data = await _request(
+            accessor,
+            method,
+            path,
+            pace_key=base_id,
+            json_body=body,
+            retry=WRITE_RETRY,
+        )
         yield as_rows(as_row(data).get("records"))
 
 
 def create_records(
-        accessor: AirtableAccessor,
-        base_id: str,
-        table_id: str,
-        records: Sequence[dict[str, Any]],
-        *,
-        typecast: bool = False) -> AsyncIterator[list[dict[str, Any]]]:
+    accessor: AirtableAccessor,
+    base_id: str,
+    table_id: str,
+    records: Sequence[dict[str, Any]],
+    *,
+    typecast: bool = False,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Create records ten to a request, yielding each request's records.
 
     A request that fails raises after every earlier one landed, so the
@@ -259,18 +289,24 @@ def create_records(
         typecast (bool): let Airtable convert string values to the
             field types (``typecast``).
     """
-    return _write(accessor, "POST", base_id, table_id, [{
-        "fields": fields
-    } for fields in records], typecast)
+    return _write(
+        accessor,
+        "POST",
+        base_id,
+        table_id,
+        [{"fields": fields} for fields in records],
+        typecast,
+    )
 
 
 def update_records(
-        accessor: AirtableAccessor,
-        base_id: str,
-        table_id: str,
-        updates: Sequence[tuple[str, dict[str, Any]]],
-        *,
-        typecast: bool = False) -> AsyncIterator[list[dict[str, Any]]]:
+    accessor: AirtableAccessor,
+    base_id: str,
+    table_id: str,
+    updates: Sequence[tuple[str, dict[str, Any]]],
+    *,
+    typecast: bool = False,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Patch records ten to a request, yielding each request's records.
 
     A PATCH, never a PUT: a cell the update leaves out keeps its value.
@@ -284,15 +320,22 @@ def update_records(
         typecast (bool): let Airtable convert string values to the
             field types (``typecast``).
     """
-    return _write(accessor, "PATCH", base_id, table_id, [{
-        "id": record_id,
-        "fields": fields
-    } for record_id, fields in updates], typecast)
+    return _write(
+        accessor,
+        "PATCH",
+        base_id,
+        table_id,
+        [{"id": record_id, "fields": fields} for record_id, fields in updates],
+        typecast,
+    )
 
 
 async def delete_records(
-        accessor: AirtableAccessor, base_id: str, table_id: str,
-        record_ids: Sequence[str]) -> AsyncIterator[list[dict[str, Any]]]:
+    accessor: AirtableAccessor,
+    base_id: str,
+    table_id: str,
+    record_ids: Sequence[str],
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Delete records ten to a request, yielding each request's answer.
 
     The ids ride the query string as ``records[]``, which is the only
@@ -306,18 +349,20 @@ async def delete_records(
     """
     path = _table_path(base_id, table_id)
     for batch in _batches(record_ids):
-        data = await _request(accessor,
-                              "DELETE",
-                              path,
-                              pace_key=base_id,
-                              query=urlencode([("records[]", record_id)
-                                               for record_id in batch]),
-                              retry=WRITE_RETRY)
+        data = await _request(
+            accessor,
+            "DELETE",
+            path,
+            pace_key=base_id,
+            query=urlencode([("records[]", record_id) for record_id in batch]),
+            retry=WRITE_RETRY,
+        )
         yield as_rows(as_row(data).get("records"))
 
 
-async def list_comments(accessor: AirtableAccessor, base_id: str,
-                        table_id: str, record_id: str) -> list[dict[str, Any]]:
+async def list_comments(
+    accessor: AirtableAccessor, base_id: str, table_id: str, record_id: str
+) -> list[dict[str, Any]]:
     """A record's comments in the API's order, newest first.
 
     Args:
@@ -327,15 +372,20 @@ async def list_comments(accessor: AirtableAccessor, base_id: str,
         record_id (str): the record.
     """
     path = f"{_record_path(base_id, table_id, record_id)}/comments"
-    comments = await cursor_items(partial(_page, accessor, base_id, path,
-                                          {"pageSize": PAGE_SIZE}),
-                                  shape=COMMENTS)
+    comments = await cursor_items(
+        partial(_page, accessor, base_id, path, {"pageSize": PAGE_SIZE}),
+        shape=COMMENTS,
+    )
     return as_rows(comments)
 
 
-async def create_comment(accessor: AirtableAccessor, base_id: str,
-                         table_id: str, record_id: str,
-                         text: str) -> dict[str, Any]:
+async def create_comment(
+    accessor: AirtableAccessor,
+    base_id: str,
+    table_id: str,
+    record_id: str,
+    text: str,
+) -> dict[str, Any]:
     """Comment on a record as the token's user.
 
     Args:
@@ -351,5 +401,6 @@ async def create_comment(accessor: AirtableAccessor, base_id: str,
         f"{_record_path(base_id, table_id, record_id)}/comments",
         pace_key=base_id,
         json_body={"text": text},
-        retry=WRITE_RETRY)
+        retry=WRITE_RETRY,
+    )
     return as_row(data)

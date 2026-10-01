@@ -20,7 +20,7 @@ from mirage.vfs.secrets import reveal_secret
 
 
 async def token(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     secret = reveal_secret(inv.config.api_key)
     return yield_bytes(f"{secret}\n".encode()), IOResult()

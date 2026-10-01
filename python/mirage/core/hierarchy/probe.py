@@ -28,12 +28,12 @@ A_contra = TypeVar("A_contra", bound=Accessor, contravariant=True)
 
 
 class ReaddirFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str]]:
-        ...
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[str]]: ...
 
 
 def parent_spec(path: PathSpec) -> PathSpec:
@@ -44,13 +44,16 @@ def parent_spec(path: PathSpec) -> PathSpec:
     """
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     parent_virtual = path.virtual.rstrip("/").rsplit("/", 1)[0] or "/"
-    return PathSpec(virtual=parent_virtual,
-                    directory=parent_virtual,
-                    vfs_path=mount_key(parent_virtual, prefix))
+    return PathSpec(
+        virtual=parent_virtual,
+        directory=parent_virtual,
+        vfs_path=mount_key(parent_virtual, prefix),
+    )
 
 
-async def assert_listed(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
-                        index: IndexCacheStore) -> None:
+async def assert_listed(
+    readdir: ReaddirFn[A], accessor: A, path: PathSpec, index: IndexCacheStore
+) -> None:
     """Raise ENOENT unless the path appears in its parent's listing.
 
     Every path shape a fixed hierarchy serves is recognizable from the
@@ -73,8 +76,9 @@ async def assert_listed(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
         raise enoent(path.virtual)
 
 
-async def assert_parent(stat: StatFn, accessor: A, path: PathSpec,
-                        index: IndexCacheStore) -> None:
+async def assert_parent(
+    stat: StatFn, accessor: A, path: PathSpec, index: IndexCacheStore
+) -> None:
     """Raise ENOENT for ``path`` unless its parent directory exists.
 
     The parent is proven the way the backend's own stat proves it (a
@@ -116,8 +120,9 @@ async def listed_size(index: IndexCacheStore, path: PathSpec) -> int | None:
     return lookup.entry.size if lookup.entry is not None else None
 
 
-async def resolve_entry(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
-                        index: IndexCacheStore) -> IndexEntry | None:
+async def resolve_entry(
+    readdir: ReaddirFn[A], accessor: A, path: PathSpec, index: IndexCacheStore
+) -> IndexEntry | None:
     """Resolve the path's index entry, listing its parent when cold.
 
     Id-addressed backends can only turn a path into an id through the
@@ -140,9 +145,11 @@ async def resolve_entry(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
         warm = partial(
             readdir,
             accessor,
-            PathSpec(virtual=parent_virtual,
-                     directory=parent_virtual,
-                     vfs_path=mount_key(parent_virtual, prefix)),
+            PathSpec(
+                virtual=parent_virtual,
+                directory=parent_virtual,
+                vfs_path=mount_key(parent_virtual, prefix),
+            ),
             index=index,
         )
     return await entry_or_warm(index, virtual_key, warm)

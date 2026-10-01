@@ -35,12 +35,15 @@ async def test_send_builds_a_token_manager_from_the_config(monkeypatch):
 
     monkeypatch.setitem(send.__globals__, "send_message", fake_send)
     out, io = await send(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "to": "bob@example.com",
-                          "subject": "Hello",
-                          "body": "Hi Bob!"
-                      }))
+        CLIInvocation(
+            CONFIG,
+            flags={
+                "to": "bob@example.com",
+                "subject": "Hello",
+                "body": "Hi Bob!",
+            },
+        )
+    )
     assert io.exit_code == 0
     assert json.loads(await materialize(out)) == {"id": "sent1"}
     assert calls == [(CONFIG, "bob@example.com", "Hello", "Hi Bob!")]

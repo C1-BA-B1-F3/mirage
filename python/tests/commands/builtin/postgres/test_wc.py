@@ -33,7 +33,8 @@ async def _fake_acquire():
 
 def _accessor(**config) -> PostgresAccessor:
     a = PostgresAccessor(
-        PostgresConfig(dsn="postgres://localhost/db", **config))
+        PostgresConfig(dsn="postgres://localhost/db", **config)
+    )
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
     a.pool = AsyncMock(return_value=pool)
@@ -48,10 +49,14 @@ async def _catalog_schemas(conn, allowlist):
 
 @pytest.fixture
 def catalog(monkeypatch):
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(side_effect=_catalog_schemas))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["users"]))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(side_effect=_catalog_schemas),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["users"]),
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -60,11 +65,15 @@ def _path(s: str) -> PathSpec:
 
 @pytest.mark.asyncio
 async def test_wc_l_counts_a_visible_table_server_side(monkeypatch, catalog):
-    monkeypatch.setattr("mirage.core.postgres.client.count_rows",
-                        AsyncMock(return_value=42))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.count_rows", AsyncMock(return_value=42)
+    )
     out, io = await wc(
-        _accessor(), [_path("/public/tables/users/rows.jsonl")], [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": True}))
+        _accessor(),
+        [_path("/public/tables/users/rows.jsonl")],
+        [],
+        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": True}),
+    )
     assert await materialize(out) == b"42 /public/tables/users/rows.jsonl\n"
     assert io.exit_code == 0
 
@@ -77,8 +86,10 @@ async def test_wc_l_refuses_a_table_outside_schemas(monkeypatch, catalog):
     monkeypatch.setattr("mirage.core.postgres.client.count_rows", count)
     out, io = await wc(
         _accessor(schemas=["public"]),
-        [_path("/secret/tables/users/rows.jsonl")], [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": True}))
+        [_path("/secret/tables/users/rows.jsonl")],
+        [],
+        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": True}),
+    )
     await materialize(out)
     assert io.exit_code == 1
     assert b"No such file or directory" in await materialize(io.stderr)

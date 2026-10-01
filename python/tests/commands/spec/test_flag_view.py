@@ -58,11 +58,13 @@ def test_spec_flag_names_are_canonical_and_ambiguous_mapped():
     # One name per option: the long spelling wins when both exist, so a
     # stale short-name read raises through FlagView instead of silently
     # reading False after dest unification.
-    spec = CommandSpec(options=(
-        Option(short="l"),
-        Option(short="m", long="--max-count", type="str"),
-        Option(long="--hidden"),
-    ))
+    spec = CommandSpec(
+        options=(
+            Option(short="l"),
+            Option(short="m", long="--max-count", type="str"),
+            Option(long="--hidden"),
+        )
+    )
     names = spec_flag_names(spec)
     assert names == frozenset({"args_l", "max_count", "hidden"})
 
@@ -97,35 +99,45 @@ def test_flag_view_typed_order_follows_bag_insertion():
 
 
 def _jq_view(*words: str) -> FlagView:
-    return FlagView(parse_to_kwargs(
-        parse_command(SPECS["jq"], list(words), "/", "jq")),
-                    spec=SPECS["jq"])
+    return FlagView(
+        parse_to_kwargs(parse_command(SPECS["jq"], list(words), "/", "jq")),
+        spec=SPECS["jq"],
+    )
 
 
 def test_occurrences_read_operands_where_they_were_typed():
     fl = _jq_view("-c", ".", "--args", "a", "--jsonargs", "1")
-    assert fl.occurrences("args", "jsonargs", OPERAND) == [(OPERAND, "."),
-                                                           ("args", True),
-                                                           (OPERAND, "a"),
-                                                           ("jsonargs", True),
-                                                           (OPERAND, "1")]
-    assert fl.occurrences(OPERAND) == [(OPERAND, "."), (OPERAND, "a"),
-                                       (OPERAND, "1")]
+    assert fl.occurrences("args", "jsonargs", OPERAND) == [
+        (OPERAND, "."),
+        ("args", True),
+        (OPERAND, "a"),
+        ("jsonargs", True),
+        (OPERAND, "1"),
+    ]
+    assert fl.occurrences(OPERAND) == [
+        (OPERAND, "."),
+        (OPERAND, "a"),
+        (OPERAND, "1"),
+    ]
 
 
 def test_occurrences_read_refusals_where_they_were_typed():
     fl = _jq_view("-n", ".", "--bogus", "--args", "a")
-    assert fl.occurrences("args", OPERAND, REFUSED) == [(OPERAND, "."),
-                                                        (REFUSED, "--bogus"),
-                                                        ("args", True),
-                                                        (OPERAND, "a")]
+    assert fl.occurrences("args", OPERAND, REFUSED) == [
+        (OPERAND, "."),
+        (REFUSED, "--bogus"),
+        ("args", True),
+        (OPERAND, "a"),
+    ]
     assert fl.occurrences("args") == [("args", True)]
 
 
 def test_occurrences_leave_operands_out_unless_asked():
     fl = _jq_view(".", "--args", "a", "-c")
-    assert fl.occurrences("compact_output",
-                          "args") == [("args", True), ("compact_output", True)]
+    assert fl.occurrences("compact_output", "args") == [
+        ("args", True),
+        ("compact_output", True),
+    ]
 
 
 def test_occurrences_of_keyword_flags_have_no_operands():
@@ -135,6 +147,10 @@ def test_occurrences_of_keyword_flags_have_no_operands():
 
 def test_a_copied_bag_keeps_its_operands():
     bag = parse_to_kwargs(
-        parse_command(SPECS["jq"], [".", "--args", "a"], "/", "jq"))
-    assert FlagBag(bag).occurrences == [(OPERAND, "."), ("args", True),
-                                        (OPERAND, "a")]
+        parse_command(SPECS["jq"], [".", "--args", "a"], "/", "jq")
+    )
+    assert FlagBag(bag).occurrences == [
+        (OPERAND, "."),
+        ("args", True),
+        (OPERAND, "a"),
+    ]

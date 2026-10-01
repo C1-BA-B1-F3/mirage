@@ -15,8 +15,9 @@
 import asyncio
 
 
-async def run_cli(executable: str, hint: str, args: list[str],
-                  stdin: bytes | None) -> tuple[bytes, bytes, int]:
+async def run_cli(
+    executable: str, hint: str, args: list[str], stdin: bytes | None
+) -> tuple[bytes, bytes, int]:
     """One sandbox CLI invocation: its output and its exit status.
 
     A cancelled call kills the child before it re-raises, so a line
@@ -35,8 +36,11 @@ async def run_cli(executable: str, hint: str, args: list[str],
         process = await asyncio.create_subprocess_exec(
             executable,
             *args,
-            stdin=(asyncio.subprocess.PIPE
-                   if stdin is not None else asyncio.subprocess.DEVNULL),
+            stdin=(
+                asyncio.subprocess.PIPE
+                if stdin is not None
+                else asyncio.subprocess.DEVNULL
+            ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

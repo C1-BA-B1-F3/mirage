@@ -18,8 +18,12 @@ from typing import Any
 
 from mirage.accessor.s3 import S3Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.s3.client import (_client_kwargs, _key, async_session,
-                                   is_not_found)
+from mirage.core.s3.client import (
+    _client_kwargs,
+    _key,
+    async_session,
+    is_not_found,
+)
 from mirage.core.s3.read import _fp_rev_from_response
 from mirage.observe.context import record_stream, revision_for
 from mirage.types import PathSpec
@@ -49,10 +53,11 @@ async def read_stream(
     # generator, which is what a stream needs: the body is consumed after
     # the call that produced it returns.
     client = await accessor.cached_client(
-        lambda: async_session(config).client(**_client_kwargs(config)))
+        lambda: async_session(config).client(**_client_kwargs(config))
+    )
     kwargs: dict[str, Any] = {
         "Bucket": config.bucket,
-        "Key": _key(path, config)
+        "Key": _key(path, config),
     }
     if pinned_revision is not None:
         kwargs["VersionId"] = pinned_revision

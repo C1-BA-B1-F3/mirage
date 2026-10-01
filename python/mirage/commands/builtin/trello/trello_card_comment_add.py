@@ -15,8 +15,10 @@
 import json
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.trello._input import (file_operand,
-                                                   resolve_text_input)
+from mirage.commands.builtin.trello._input import (
+    file_operand,
+    resolve_text_input,
+)
 from mirage.commands.builtin.trello._scope import require_card
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
@@ -28,17 +30,22 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-SPEC = CommandSpec(options=(
-    Option(long="--card_id", type="str"),
-    Option(long="--text", type="str"),
-    Option(long="--text_file", type="path"),
-), )
+SPEC = CommandSpec(
+    options=(
+        Option(long="--card_id", type="str"),
+        Option(long="--text", type="str"),
+        Option(long="--text_file", type="path"),
+    ),
+)
 
 
 @command("trello card comment", vfs="trello", spec=SPEC, write=True)
 async def trello_card_comment_add(
-        accessor: TrelloAccessor, paths: list[PathSpec], texts: list[str],
-        opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPEC)
     config = accessor.config
     card_id = fl.as_str("card_id")
@@ -55,11 +62,10 @@ async def trello_card_comment_add(
     # grant can admit it (a write-granting carve-out names no card).
     require_mount_writable()
     await require_card(accessor, card_id)
-    comment = await comment_create(config,
-                                   card_id=card_id,
-                                   text=text,
-                                   session=accessor.pool)
+    comment = await comment_create(
+        config, card_id=card_id, text=text, session=accessor.pool
+    )
     payload = normalize_comment(comment, card_id=card_id)
     return yield_bytes(
-        json.dumps(payload, ensure_ascii=False,
-                   separators=(",", ":")).encode()), IOResult()
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    ), IOResult()

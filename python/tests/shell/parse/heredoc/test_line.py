@@ -14,8 +14,11 @@
 
 import pytest
 
-from mirage.shell.parse.heredoc import (operator_line_end, quote_end,
-                                        reserved_word)
+from mirage.shell.parse.heredoc import (
+    operator_line_end,
+    quote_end,
+    reserved_word,
+)
 
 
 def _end(command: str, word: str = "EOF") -> int | None:
@@ -49,8 +52,9 @@ def test_comment_after_a_blank_hides_its_quote():
     assert _end(cmd) == cmd.index("'t\n") + 2
 
 
-@pytest.mark.parametrize("separator",
-                         [";", "|", "&&", "&", "(", ")", "<", ">"])
+@pytest.mark.parametrize(
+    "separator", [";", "|", "&&", "&", "(", ")", "<", ">"]
+)
 def test_comment_after_a_metacharacter_hides_its_quote(separator: str):
     cmd = f"cat <<EOF{separator}# don't\nbody\nEOF\n"
     assert _end(cmd) == cmd.index("'t\n") + 2
@@ -140,8 +144,10 @@ def test_parenthesized_case_pattern_balances_itself():
 
 
 def test_nested_case_statements_close_one_at_a_time():
-    cmd = ("cat <<EOF $(case x in\nx)\n  case y in\n  y) : ;;\n  esac\n"
-           "  ;;\nesac\n)\nbody\nEOF\n")
+    cmd = (
+        "cat <<EOF $(case x in\nx)\n  case y in\n  y) : ;;\n  esac\n"
+        "  ;;\nesac\n)\nbody\nEOF\n"
+    )
     assert _end(cmd) == cmd.index(")\nbody") + 1
 
 
@@ -167,7 +173,7 @@ def test_backtick_inside_double_quotes_keeps_its_own_quotes():
 
 
 def test_apostrophe_inside_double_quotes_is_ordinary():
-    cmd = "cat <<EOF >\"/it's\"\nbody\nEOF\n"
+    cmd = 'cat <<EOF >"/it\'s"\nbody\nEOF\n'
     assert _end(cmd) == cmd.index('"\nbody') + 1
 
 

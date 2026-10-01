@@ -25,5 +25,6 @@ __all__ = ["DiscordConfig", "DiscordVFS"]
 def __getattr__(name: str) -> "type[DiscordVFS]":
     if name == "DiscordVFS":
         from mirage.vfs.discord.discord import DiscordVFS
+
         return DiscordVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

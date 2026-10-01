@@ -12,9 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.secrets.config import (AWSAuth, AWSSMConfig, DotenvConfig,
-                                   EnvConfig, EnvVar, OnePasswordConfig,
-                                   SecretRef, SecretSource)
+from mirage.secrets.config import (
+    AWSAuth,
+    AWSSMConfig,
+    DotenvConfig,
+    EnvConfig,
+    EnvVar,
+    OnePasswordConfig,
+    SecretRef,
+    SecretSource,
+)
 from mirage.secrets.errors import SecretsError
 from mirage.secrets.registry import known_sources, register_secrets, source_for
 from mirage.secrets.sources import resolve_config_secrets, resolve_sources

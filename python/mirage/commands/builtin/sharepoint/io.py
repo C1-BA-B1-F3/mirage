@@ -31,21 +31,27 @@ from mirage.core.sharepoint.write import write_bytes as _write
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import NativeReadOps, ReadOps, WriteOps
 
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read,
-                                     read_stream=_read_stream,
-                                     exists=_exists,
-                                     find=_find,
-                                     du=make_walked_du(_stat, _readdir)),
-                writes=WriteOps(write=_write,
-                                mkdir=_mkdir,
-                                unlink=_unlink,
-                                rmdir=_rmdir,
-                                rm_r=_rm_r,
-                                rename=_rename,
-                                copy=_copy,
-                                dir_copy=_copy,
-                                create=_create,
-                                truncate=_truncate),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(
+        read_range=_read,
+        read_stream=_read_stream,
+        exists=_exists,
+        find=_find,
+        du=make_walked_du(_stat, _readdir),
+    ),
+    writes=WriteOps(
+        write=_write,
+        mkdir=_mkdir,
+        unlink=_unlink,
+        rmdir=_rmdir,
+        rm_r=_rm_r,
+        rename=_rename,
+        copy=_copy,
+        dir_copy=_copy,
+        create=_create,
+        truncate=_truncate,
+    ),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

@@ -14,8 +14,12 @@
 
 from mirage.accessor.box import BoxAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.box.api import (delete_file, delete_folder, update_file,
-                                 update_folder)
+from mirage.core.box.api import (
+    delete_file,
+    delete_folder,
+    update_file,
+    update_folder,
+)
 from mirage.core.box.client import BoxApiError
 from mirage.core.box.resolve import path_parts, resolve_item, resolve_parent_id
 from mirage.types import PathSpec
@@ -57,10 +61,9 @@ async def rename(accessor: BoxAccessor, src: PathSpec, dst: PathSpec) -> None:
                 raise enotdir(dst.virtual)
             await delete_file(tm, existing["id"])
     if item.get("type") == "folder":
-        await update_folder(tm,
-                            item["id"],
-                            name=new_name,
-                            parent_id=dst_parent)
+        await update_folder(
+            tm, item["id"], name=new_name, parent_id=dst_parent
+        )
     else:
         await update_file(tm, item["id"], name=new_name, parent_id=dst_parent)
     await invalidate_subtree(dst)

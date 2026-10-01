@@ -20,8 +20,14 @@ import pytest
 from mirage import Workspace
 from mirage.context import reset_current_session, set_current_session
 from mirage.ops import Ops
-from mirage.policy import (Action, Deny, OpsContext, OpsResultContext, Policy,
-                           PolicyDenied)
+from mirage.policy import (
+    Action,
+    Deny,
+    OpsContext,
+    OpsResultContext,
+    Policy,
+    PolicyDenied,
+)
 from mirage.types import FileType, HiddenPaths, MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Session
@@ -31,7 +37,6 @@ from .conftest import make_ops, run
 
 
 class TestMountPrefixes:
-
     def test_mount_prefixes_returns_prefixes(self):
         ops, _ = make_ops()
         assert "/data/" in ops.mount_prefixes()
@@ -52,7 +57,6 @@ class TestMountPrefixes:
 
 
 class TestReadWrite:
-
     def test_write_and_read(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -71,7 +75,6 @@ class TestReadWrite:
 
 
 class TestStat:
-
     def test_stat_file(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -93,7 +96,6 @@ class TestStat:
 
 
 class TestReaddir:
-
     def test_readdir(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -104,7 +106,6 @@ class TestReaddir:
 
 
 class TestMkdirRmdir:
-
     def test_mkdir_and_rmdir(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/newdir"))
@@ -123,7 +124,6 @@ class TestMkdirRmdir:
 
 
 class TestUnlink:
-
     def test_unlink(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -134,14 +134,12 @@ class TestUnlink:
 
 
 def _two_mount_ops() -> Ops:
-    return Workspace({
-        "/a/": RAMVFS(),
-        "/b/": RAMVFS()
-    }, mode=MountMode.WRITE).vfs
+    return Workspace(
+        {"/a/": RAMVFS(), "/b/": RAMVFS()}, mode=MountMode.WRITE
+    ).vfs
 
 
 class TestRename:
-
     def test_rename(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -185,8 +183,9 @@ class UngrantedRemote(RAMVFS):
 @pytest.fixture
 def deep_only_session():
     """Bind a session whose role hides the parent mount's own content."""
-    session = SessionState(session_id="agent",
-                           hidden_paths=HiddenPaths(patterns=("/m/*.txt", )))
+    session = SessionState(
+        session_id="agent", hidden_paths=HiddenPaths(patterns=("/m/*.txt",))
+    )
     token = set_current_session(session)
     yield session
     reset_current_session(token)
@@ -197,23 +196,22 @@ async def test_a_namespace_answer_is_not_a_backend_op(deep_only_session):
     # /m/inner is served by no backend: the answer exists only because
     # a mount sits below it. Attributing it to the lexical owner invents
     # a network op against that backend for every such lookup.
-    ws = Workspace({
-        "/m/": UngrantedRemote(),
-        "/m/inner/deep/": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/m/": UngrantedRemote(), "/m/inner/deep/": RAMVFS()},
+        mode=MountMode.WRITE,
+    )
     try:
         ws.vfs.records.clear()
         assert await ws.vfs.readdir("/m/inner") == ["/m/inner/deep"]
-        assert [(r.source, r.is_cache)
-                for r in ws.vfs.records] == [("ram", True)]
+        assert [(r.source, r.is_cache) for r in ws.vfs.records] == [
+            ("ram", True)
+        ]
         assert ws.vfs.network_records == []
     finally:
         await ws.close()
 
 
 class DenyInner(Policy):
-
     async def post_ops(self, ctx: OpsResultContext) -> Action | None:
         if ctx.path.virtual == "/m/inner":
             return Deny(message="no")
@@ -222,29 +220,29 @@ class DenyInner(Policy):
 
 @pytest.mark.asyncio
 async def test_a_denied_namespace_answer_is_not_a_backend_op(
-        deep_only_session):
+    deep_only_session,
+):
     # Refusing the synthetic answer does not make the parent backend
     # have served it: a deny suppresses a result nothing was contacted
     # to produce.
-    ws = Workspace({
-        "/m/": UngrantedRemote(),
-        "/m/inner/deep/": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/m/": UngrantedRemote(), "/m/inner/deep/": RAMVFS()},
+        mode=MountMode.WRITE,
+    )
     try:
         ws.policies.add(DenyInner())
         ws.vfs.records.clear()
         with pytest.raises(PermissionError):
             await ws.vfs.readdir("/m/inner")
-        assert [(r.source, r.is_cache)
-                for r in ws.vfs.records] == [("ram", True)]
+        assert [(r.source, r.is_cache) for r in ws.vfs.records] == [
+            ("ram", True)
+        ]
         assert ws.vfs.network_records == []
     finally:
         await ws.close()
 
 
 class TestCreateTruncate:
-
     def test_create(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -260,7 +258,6 @@ class TestCreateTruncate:
 
 
 class TestSetattr:
-
     def test_setattr_lands_where_stat_reads_it(self):
         ops, _ = make_ops()
         run(ops.mkdir("/data/dir"))
@@ -309,7 +306,6 @@ class TestSetattr:
 
 
 class TestIsMounted:
-
     def test_mounted(self):
         ops, _ = make_ops()
         assert ops.is_mounted("/data/file.txt") is True
@@ -320,16 +316,14 @@ class TestIsMounted:
 
 
 class TestMultiMount:
-
     def test_two_mounts(self):
         one = RAMVFS()
         two = RAMVFS()
         store1 = one._store
         store2 = two._store
-        ops = Workspace({
-            "/mem1/": one,
-            "/mem2/": two
-        }, mode=MountMode.WRITE).vfs
+        ops = Workspace(
+            {"/mem1/": one, "/mem2/": two}, mode=MountMode.WRITE
+        ).vfs
         run(ops.mkdir("/mem1/dir"))
         run(ops.mkdir("/mem2/dir"))
         run(ops.write("/mem1/dir/a.txt", b"from store1"))
@@ -341,7 +335,6 @@ class TestMultiMount:
 
 
 class TestOpsAgainstSeededStore:
-
     @pytest.fixture
     def memory_ops(self):
         vfs = RAMVFS()
@@ -368,7 +361,6 @@ class TestOpsAgainstSeededStore:
 
 
 class _SealInner(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         if ctx.path.virtual == "/data/inner":
             return Deny("sealed\n")
@@ -378,15 +370,14 @@ class _SealInner(Policy):
 def _structure_only_ops(policies: list[Policy]) -> Ops:
     """Ops whose only mount sits below the probed path, so no mount
     serves /data/inner and the answer is namespace structure."""
-    return Workspace({
-        "/data/inner/deep/": RAMVFS()
-    },
-                     mode=MountMode.WRITE,
-                     policies=policies).vfs
+    return Workspace(
+        {"/data/inner/deep/": RAMVFS()},
+        mode=MountMode.WRITE,
+        policies=policies,
+    ).vfs
 
 
 class TestStructureFallbackGates:
-
     def test_the_synthetic_answer_still_clears_admission(self):
         # Mirrors the dispatcher door: a policy that bounds readdir or
         # stat by path must cover a structure-only directory too.
@@ -404,29 +395,29 @@ class TestStructureFallbackGates:
 def _granted_child_ops() -> Ops:
     """Ops with a real mount at /data and a nested one at
     /data/inner/deep, for sessions granted only the deep one."""
-    return Workspace({
-        "/data/": RAMVFS(),
-        "/data/inner/deep/": RAMVFS()
-    },
-                     mode=MountMode.WRITE).vfs
+    return Workspace(
+        {"/data/": RAMVFS(), "/data/inner/deep/": RAMVFS()},
+        mode=MountMode.WRITE,
+    ).vfs
 
 
 @pytest.fixture
 def deep_scoped_session():
     """Bind a session whose role hides everything /data holds itself,
     leaving the nested mount below it reachable."""
-    session = SessionState(session_id="agent",
-                           hidden_paths=HiddenPaths(paths=("/data/other",
-                                                           "/data/f.txt")))
+    session = SessionState(
+        session_id="agent",
+        hidden_paths=HiddenPaths(paths=("/data/other", "/data/f.txt")),
+    )
     token = set_current_session(session)
     yield session
     reset_current_session(token)
 
 
 class TestStructureOnlyParent:
-
-    def test_walking_down_to_the_nested_mount_answers(self,
-                                                      deep_scoped_session):
+    def test_walking_down_to_the_nested_mount_answers(
+        self, deep_scoped_session
+    ):
         # /data is real; the mount below it already put "data" in the
         # root listing, so readdir and stat answer with the structure.
         ops = _granted_child_ops()
@@ -435,7 +426,8 @@ class TestStructureOnlyParent:
         assert st.type is FileType.DIRECTORY
 
     def test_paths_the_structure_does_not_owe_still_deny(
-            self, deep_scoped_session):
+        self, deep_scoped_session
+    ):
         # A structure answer for the parent opens nothing below it: a
         # hidden path reads as absent and refuses to be created, which
         # is the one pair of answers a hide gives everywhere.
@@ -447,7 +439,6 @@ class TestStructureOnlyParent:
 
 
 class _CountingPre(Policy):
-
     def __init__(self):
         self.calls = []
 
@@ -457,7 +448,6 @@ class _CountingPre(Policy):
 
 
 class _DenyEverything(Policy):
-
     async def pre_ops(self, ctx: OpsContext) -> Action | None:
         return Deny("sealed\n")
 
@@ -516,11 +506,9 @@ class TestAttachedOpsOneDoor:
 
     @pytest.mark.asyncio
     async def test_attached_rename_stays_inside_a_mount(self):
-        ws = Workspace({
-            "/a/": RAMVFS(),
-            "/b/": RAMVFS()
-        },
-                       mode=MountMode.WRITE)
+        ws = Workspace(
+            {"/a/": RAMVFS(), "/b/": RAMVFS()}, mode=MountMode.WRITE
+        )
         try:
             await ws.vfs.write("/a/x.txt", b"body")
             await ws.vfs.rename("/a/x.txt", "/a/y.txt")
@@ -599,21 +587,25 @@ class TestPerCallSession:
         run(ws.vfs.write("/data/secret.txt", b"classified"))
         run(ws.vfs.write("/data/open.txt", b"public"))
         ws.create_session(
-            "blind", permissions={"paths": {
-                "hide": ["/data/secret.txt"]
-            }})
+            "blind", permissions={"paths": {"hide": ["/data/secret.txt"]}}
+        )
         ws.create_session("seeing", permissions={})
         return ws
 
     def test_an_op_runs_as_the_session_it_names(self):
         ws = self._split_ws()
         try:
-            assert run(ws.vfs.read("/data/secret.txt",
-                                   session_id="seeing")) == b"classified"
-            assert run(ws.vfs.exists("/data/secret.txt",
-                                     session_id="blind")) is False
-            assert run(ws.vfs.readdir(
-                "/data", session_id="blind")) == ["/data/open.txt"]
+            assert (
+                run(ws.vfs.read("/data/secret.txt", session_id="seeing"))
+                == b"classified"
+            )
+            assert (
+                run(ws.vfs.exists("/data/secret.txt", session_id="blind"))
+                is False
+            )
+            assert run(ws.vfs.readdir("/data", session_id="blind")) == [
+                "/data/open.txt"
+            ]
         finally:
             run(ws.close())
 
@@ -631,12 +623,17 @@ class TestPerCallSession:
         # would quietly read as the default.
         ws = self._split_ws()
         try:
-            assert run(ws.vfs.cat("/data/secret.txt",
-                                  session_id="seeing")) == "classified"
-            assert run(ws.vfs.list_files("/data",
-                                         session_id="blind")) == ["open.txt"]
-            assert run(ws.vfs.is_file("/data/secret.txt",
-                                      session_id="blind")) is False
+            assert (
+                run(ws.vfs.cat("/data/secret.txt", session_id="seeing"))
+                == "classified"
+            )
+            assert run(ws.vfs.list_files("/data", session_id="blind")) == [
+                "open.txt"
+            ]
+            assert (
+                run(ws.vfs.is_file("/data/secret.txt", session_id="blind"))
+                is False
+            )
         finally:
             run(ws.close())
 
@@ -646,11 +643,14 @@ class TestPerCallSession:
         ws = self._split_ws()
         session = SessionState(
             session_id="blind",
-            hidden_paths=HiddenPaths(paths=("/data/secret.txt", )))
+            hidden_paths=HiddenPaths(paths=("/data/secret.txt",)),
+        )
         token = set_current_session(session)
         try:
-            assert run(ws.vfs.exists("/data/secret.txt",
-                                     session_id="seeing")) is False
+            assert (
+                run(ws.vfs.exists("/data/secret.txt", session_id="seeing"))
+                is False
+            )
         finally:
             reset_current_session(token)
             run(ws.close())

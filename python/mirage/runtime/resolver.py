@@ -75,9 +75,9 @@ class PrefixResolver:
             directory, read per listing; None answers no links.
     """
 
-    def __init__(self,
-                 source: PrefixSource,
-                 links: LinkChildrenSource | None = None) -> None:
+    def __init__(
+        self, source: PrefixSource, links: LinkChildrenSource | None = None
+    ) -> None:
         self._source = source
         self._links = links
 

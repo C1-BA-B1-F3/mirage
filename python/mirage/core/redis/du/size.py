@@ -18,9 +18,11 @@ from mirage.types import PathSpec
 from mirage.utils.path import norm
 
 
-async def size(accessor: RedisAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> int:
+async def size(
+    accessor: RedisAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> int:
     """Recursive byte size of everything under a path.
 
     Args:

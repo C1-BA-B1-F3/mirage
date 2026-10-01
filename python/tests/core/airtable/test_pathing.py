@@ -12,24 +12,27 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.airtable.pathing import (base_dirname, table_dirname,
-                                          view_filename)
+from mirage.core.airtable.pathing import (
+    base_dirname,
+    table_dirname,
+    view_filename,
+)
 from mirage.utils.naming import parse_id_name
 
 
 def test_names_are_sanitized_labels_joined_to_exact_ids():
-    assert base_dirname({
-        "id": "appOpsFinance0001",
-        "name": "Ops / Finance ✓"
-    }) == "Ops_Finance__appOpsFinance0001"
-    assert table_dirname({
-        "id": "tblBudget00000001",
-        "name": "Q3 / Budget"
-    }) == "Q3_Budget__tblBudget00000001"
-    assert view_filename({
-        "id": "viwDone0000000001",
-        "name": "Done / shipped"
-    }) == "Done_shipped__viwDone0000000001.jsonl"
+    assert (
+        base_dirname({"id": "appOpsFinance0001", "name": "Ops / Finance ✓"})
+        == "Ops_Finance__appOpsFinance0001"
+    )
+    assert (
+        table_dirname({"id": "tblBudget00000001", "name": "Q3 / Budget"})
+        == "Q3_Budget__tblBudget00000001"
+    )
+    assert (
+        view_filename({"id": "viwDone0000000001", "name": "Done / shipped"})
+        == "Done_shipped__viwDone0000000001.jsonl"
+    )
 
 
 def test_a_nameless_entity_falls_back_to_its_id():

@@ -13,8 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 
-def stat_fingerprint(etag: str | None, modified: str | None,
-                     size: int | None) -> str:
+def stat_fingerprint(
+    etag: str | None, modified: str | None, size: int | None
+) -> str:
     """Mirage's default content fingerprint from listing metadata.
 
     The size always, joined to the backend's native version (ETag/rev,

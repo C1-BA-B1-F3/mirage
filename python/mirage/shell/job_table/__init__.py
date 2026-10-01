@@ -14,8 +14,12 @@
 
 from mirage.shell.job_table.constants import KILLED_EXIT_CODE
 from mirage.shell.job_table.table import JobTable, cancel_job
-from mirage.shell.job_table.types import (ConsoleFactory, Job, JobRunner,
-                                          JobStatus)
+from mirage.shell.job_table.types import (
+    ConsoleFactory,
+    Job,
+    JobRunner,
+    JobStatus,
+)
 
 __all__ = [
     "KILLED_EXIT_CODE",

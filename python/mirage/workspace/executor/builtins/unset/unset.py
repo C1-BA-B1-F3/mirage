@@ -22,9 +22,14 @@ from mirage.workspace.executor.builtins.constants import TARGET_RE
 from mirage.workspace.executor.builtins.shared import refusal, require_view
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (deref, env_get, session_view,
-                                            subscript_index, visible_arrays,
-                                            visible_assocs)
+from mirage.workspace.session.state import (
+    deref,
+    env_get,
+    session_view,
+    subscript_index,
+    visible_arrays,
+    visible_assocs,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -43,8 +48,9 @@ def _unset_variable(session: SessionState, name: str) -> None:
         session._getopts_optind = None
 
 
-async def _fatal_index(session: SessionState, subscript: str,
-                       view: SessionView) -> int:
+async def _fatal_index(
+    session: SessionState, subscript: str, view: SessionView
+) -> int:
     """``subscript_index`` whose failure ends the line, in bash's words:
     ``unset 'a[1/0]'`` aborts with ``1/0: division by 0``.
 
@@ -56,12 +62,14 @@ async def _fatal_index(session: SessionState, subscript: str,
     try:
         return await subscript_index(session, subscript, view)
     except ArithError as exc:
-        raise ExitSignal(1, stderr=f"bash: {exc}\n".encode(),
-                         contained_code=1) from exc
+        raise ExitSignal(
+            1, stderr=f"bash: {exc}\n".encode(), contained_code=1
+        ) from exc
 
 
-async def _unset_element(session: SessionState, view: SessionView, base: str,
-                         subscript: str) -> str:
+async def _unset_element(
+    session: SessionState, view: SessionView, base: str, subscript: str
+) -> str:
     """Clear one array element, or a scalar addressed as ``base[0]``.
 
     Clearing an element keeps the indices of the elements after it, as
@@ -162,10 +170,11 @@ async def handle_unset(
             i += 1
             continue
         err = f"bash: unset: {tok}: invalid option\n".encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="unset",
-                                                         exit_code=2,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="unset", exit_code=2, stderr=err),
+        )
     for name in args[i:]:
         if mode == "n":
             # `unset -n` drops the reference itself rather than what it
@@ -178,10 +187,14 @@ async def handle_unset(
             continue
         if mode == "f":
             if name in session.readonly_functions:
-                err = (f"bash: unset: {name}: cannot unset: "
-                       "readonly function\n").encode()
-                return None, IOResult(exit_code=1, stderr=err), ExecutionNode(
-                    command="unset", exit_code=1, stderr=err)
+                err = (
+                    f"bash: unset: {name}: cannot unset: readonly function\n"
+                ).encode()
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command="unset", exit_code=1, stderr=err),
+                )
             session.functions.pop(name, None)
             continue
         target = TARGET_RE.match(name)
@@ -192,22 +205,29 @@ async def handle_unset(
         # the base, not the element, in the error).
         base = target.group(1) if target is not None else name
         if base in session.readonly_vars:
-            err = (f"bash: unset: {base}: cannot unset: "
-                   f"readonly variable\n").encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="unset",
-                                                             exit_code=1,
-                                                             stderr=err)
-        existed = (is_element or name in session.env or name in session.arrays
-                   or name in session.assocs)
+            err = (
+                f"bash: unset: {base}: cannot unset: readonly variable\n"
+            ).encode()
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="unset", exit_code=1, stderr=err),
+            )
+        existed = (
+            is_element
+            or name in session.env
+            or name in session.arrays
+            or name in session.assocs
+        )
         # Both spellings clear the pre_session gate for the base name:
         # the whole-variable unset through the view's env half, an
         # element unset inside _unset_element, so `unset 'X[0]'` cannot
         # sidestep a policy that vetoes `unset X`.
         try:
             if subscript is not None:
-                status = await _unset_element(session, require_view(state),
-                                              base, subscript)
+                status = await _unset_element(
+                    session, require_view(state), base, subscript
+                )
             else:
                 await require_view(state).unset(name)
                 _unset_variable(session, deref(session, name))
@@ -217,20 +237,27 @@ async def handle_unset(
         if status != "ok":
             # bash names the base for "not an array variable" but prints
             # only the bracketed part for a bad subscript.
-            detail = (f"unset: {base}: not an array variable"
-                      if status == "notarray" else
-                      f"unset: {name[len(base):]}: bad array subscript")
+            detail = (
+                f"unset: {base}: not an array variable"
+                if status == "notarray"
+                else f"unset: {name[len(base) :]}: bad array subscript"
+            )
             err = f"bash: {detail}\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="unset",
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="unset", exit_code=1, stderr=err),
+            )
         if mode == "auto" and not existed and name in session.functions:
             if name in session.readonly_functions:
-                err = (f"bash: unset: {name}: cannot unset: "
-                       "readonly function\n").encode()
-                return None, IOResult(exit_code=1, stderr=err), ExecutionNode(
-                    command="unset", exit_code=1, stderr=err)
+                err = (
+                    f"bash: unset: {name}: cannot unset: readonly function\n"
+                ).encode()
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command="unset", exit_code=1, stderr=err),
+                )
             session.functions.pop(name, None)
     return None, IOResult(), ExecutionNode(command="unset", exit_code=0)
 
@@ -242,5 +269,7 @@ async def unset_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_unset(
-        list(call.argv.args), call.session,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        session_view(call.session, call.namespace.registry.policies),
+    )

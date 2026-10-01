@@ -20,8 +20,9 @@ from mirage.runtime.types import DispatchFn
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
 
-CondNode = Union["CondWord", "CondUnary", "CondBinary", "CondNot", "CondAnd",
-                 "CondOr"]
+CondNode = Union[
+    "CondWord", "CondUnary", "CondBinary", "CondNot", "CondAnd", "CondOr"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,10 +78,9 @@ class CondError(Exception):
             ends the line.
     """
 
-    def __init__(self,
-                 message: str,
-                 exit_code: int = 2,
-                 fatal: bool = True) -> None:
+    def __init__(
+        self, message: str, exit_code: int = 2, fatal: bool = True
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.exit_code = exit_code

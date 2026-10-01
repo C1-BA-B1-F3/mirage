@@ -23,7 +23,6 @@ from mirage.workspace import Workspace
 
 
 class _FakeDigest:
-
     def __init__(self):
         self._data = b""
 
@@ -37,10 +36,9 @@ class _FakeDigest:
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=path.lstrip("/"),
-                    raw_path=path)
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=path.lstrip("/"), raw_path=path
+    )
 
 
 def _fs(files: dict[str, str]):
@@ -59,19 +57,23 @@ def _fs(files: dict[str, str]):
     return read_bytes, read_stream
 
 
-async def _run_check(files: dict[str, str],
-                     cwd: str = "/",
-                     paths: list[str] | None = None,
-                     **flags: bool) -> tuple[str, str, int]:
+async def _run_check(
+    files: dict[str, str],
+    cwd: str = "/",
+    paths: list[str] | None = None,
+    **flags: bool,
+) -> tuple[str, str, int]:
     read_bytes, read_stream = _fs(files)
-    out, io = await checksum([_spec(p) for p in (paths or ["/sums.txt"])],
-                             factory=_FakeDigest,
-                             algorithm="md5",
-                             read_bytes=read_bytes,
-                             read_stream=read_stream,
-                             check=True,
-                             cwd=cwd,
-                             **flags)
+    out, io = await checksum(
+        [_spec(p) for p in (paths or ["/sums.txt"])],
+        factory=_FakeDigest,
+        algorithm="md5",
+        read_bytes=read_bytes,
+        read_stream=read_stream,
+        check=True,
+        cwd=cwd,
+        **flags,
+    )
     stdout = out.decode() if isinstance(out, bytes) else ""
     stderr = io.stderr.decode() if io.stderr else ""
     return stdout, stderr, io.exit_code
@@ -84,13 +86,17 @@ async def _run_check(files: dict[str, str],
 
 @pytest.mark.asyncio
 async def test_missing_recorded_file_reports_both_channels():
-    stdout, stderr, code = await _run_check({
-        "/sums.txt": "5aabc  /ok.txt\n5aabc  /miss.txt\n",
-        "/ok.txt": "abc",
-    })
+    stdout, stderr, code = await _run_check(
+        {
+            "/sums.txt": "5aabc  /ok.txt\n5aabc  /miss.txt\n",
+            "/ok.txt": "abc",
+        }
+    )
     assert stdout == "/ok.txt: OK\n/miss.txt: FAILED open or read\n"
-    assert stderr == ("md5sum: /miss.txt: No such file or directory\n"
-                      "md5sum: WARNING: 1 listed file could not be read\n")
+    assert stderr == (
+        "md5sum: /miss.txt: No such file or directory\n"
+        "md5sum: WARNING: 1 listed file could not be read\n"
+    )
     assert code == 1
 
 
@@ -102,7 +108,9 @@ async def test_relative_recorded_name_resolves_against_cwd():
         {
             "/sums.txt": "5aabc  f.txt\n",
             "/data/f.txt": "abc",
-        }, cwd="/data")
+        },
+        cwd="/data",
+    )
     assert stdout == "f.txt: OK\n"
     assert stderr == ""
     assert code == 0
@@ -119,21 +127,25 @@ async def test_non_fs_read_failure_propagates():
         yield b""
 
     with pytest.raises(RuntimeError, match="403 Forbidden"):
-        await checksum([_spec("/sums.txt")],
-                       factory=_FakeDigest,
-                       algorithm="md5",
-                       read_bytes=read_bytes,
-                       read_stream=read_stream,
-                       check=True)
+        await checksum(
+            [_spec("/sums.txt")],
+            factory=_FakeDigest,
+            algorithm="md5",
+            read_bytes=read_bytes,
+            read_stream=read_stream,
+            check=True,
+        )
 
 
 @pytest.mark.asyncio
 async def test_mismatch_counts_into_not_match_warning():
-    stdout, stderr, code = await _run_check({
-        "/sums.txt": "5aface  /a.txt\n5aface  /b.txt\n",
-        "/a.txt": "face",
-        "/b.txt": "cafe",
-    })
+    stdout, stderr, code = await _run_check(
+        {
+            "/sums.txt": "5aface  /a.txt\n5aface  /b.txt\n",
+            "/a.txt": "face",
+            "/b.txt": "cafe",
+        }
+    )
     assert stdout == "/a.txt: OK\n/b.txt: FAILED\n"
     assert stderr == "md5sum: WARNING: 1 computed checksum did NOT match\n"
     assert code == 1
@@ -143,15 +155,17 @@ async def test_mismatch_counts_into_not_match_warning():
 async def test_all_malformed_fails_alone():
     stdout, stderr, code = await _run_check({"/sums.txt": "junk\nmore junk\n"})
     assert stdout == ""
-    assert stderr == ("md5sum: /sums.txt: no properly formatted checksum "
-                      "lines found\n")
+    assert stderr == (
+        "md5sum: /sums.txt: no properly formatted checksum lines found\n"
+    )
     assert code == 1
 
 
 @pytest.mark.asyncio
 async def test_ignore_missing_with_nothing_verified():
-    stdout, stderr, code = await _run_check({"/sums.txt": "5aabc  /gone\n"},
-                                            ignore_missing=True)
+    stdout, stderr, code = await _run_check(
+        {"/sums.txt": "5aabc  /gone\n"}, ignore_missing=True
+    )
     assert stdout == ""
     assert stderr == "md5sum: /sums.txt: no file was verified\n"
     assert code == 1
@@ -159,9 +173,9 @@ async def test_ignore_missing_with_nothing_verified():
 
 @pytest.mark.asyncio
 async def test_status_silences_no_file_verified_but_keeps_exit():
-    stdout, stderr, code = await _run_check({"/sums.txt": "5aabc  /gone\n"},
-                                            ignore_missing=True,
-                                            status=True)
+    stdout, stderr, code = await _run_check(
+        {"/sums.txt": "5aabc  /gone\n"}, ignore_missing=True, status=True
+    )
     assert stdout == ""
     assert stderr == ""
     assert code == 1
@@ -169,11 +183,13 @@ async def test_status_silences_no_file_verified_but_keeps_exit():
 
 @pytest.mark.asyncio
 async def test_status_keeps_the_no_properly_formatted_fatal():
-    stdout, stderr, code = await _run_check({"/sums.txt": "junk\n"},
-                                            status=True)
+    stdout, stderr, code = await _run_check(
+        {"/sums.txt": "junk\n"}, status=True
+    )
     assert stdout == ""
-    assert stderr == ("md5sum: /sums.txt: no properly formatted checksum "
-                      "lines found\n")
+    assert stderr == (
+        "md5sum: /sums.txt: no properly formatted checksum lines found\n"
+    )
     assert code == 1
 
 
@@ -182,10 +198,13 @@ async def test_malformed_plus_ignored_skip_is_no_file_verified():
     # A parsed line whose target --ignore-missing skips must not read as
     # "no properly formatted checksum lines found".
     stdout, stderr, code = await _run_check(
-        {"/sums.txt": "junk\n5aabc  /gone\n"}, ignore_missing=True)
+        {"/sums.txt": "junk\n5aabc  /gone\n"}, ignore_missing=True
+    )
     assert stdout == ""
-    assert stderr == ("md5sum: WARNING: 1 line is improperly formatted\n"
-                      "md5sum: /sums.txt: no file was verified\n")
+    assert stderr == (
+        "md5sum: WARNING: 1 line is improperly formatted\n"
+        "md5sum: /sums.txt: no file was verified\n"
+    )
     assert code == 1
 
 
@@ -198,10 +217,13 @@ async def test_ignore_missing_with_only_a_mismatch_reports_both():
             "/sums.txt": "5aface  /a.txt\n",
             "/a.txt": "cafe",
         },
-        ignore_missing=True)
+        ignore_missing=True,
+    )
     assert stdout == "/a.txt: FAILED\n"
-    assert stderr == ("md5sum: WARNING: 1 computed checksum did NOT match\n"
-                      "md5sum: /sums.txt: no file was verified\n")
+    assert stderr == (
+        "md5sum: WARNING: 1 computed checksum did NOT match\n"
+        "md5sum: /sums.txt: no file was verified\n"
+    )
     assert code == 1
 
 
@@ -212,7 +234,8 @@ async def test_status_keeps_strerror_lines_and_drops_summaries():
             "/sums.txt": "5aabc  /ok.txt\n5aabc  /miss.txt\n",
             "/ok.txt": "abc",
         },
-        status=True)
+        status=True,
+    )
     assert stdout == ""
     assert stderr == "md5sum: /miss.txt: No such file or directory\n"
     assert code == 1
@@ -225,11 +248,14 @@ async def test_warn_adds_per_line_diagnostics():
             "/sums.txt": "bad line\n5aabc  /ok.txt\n",
             "/ok.txt": "abc",
         },
-        warn=True)
+        warn=True,
+    )
     assert stdout == "/ok.txt: OK\n"
-    assert stderr == ("md5sum: /sums.txt: 1: improperly formatted MD5 "
-                      "checksum line\n"
-                      "md5sum: WARNING: 1 line is improperly formatted\n")
+    assert stderr == (
+        "md5sum: /sums.txt: 1: improperly formatted MD5 "
+        "checksum line\n"
+        "md5sum: WARNING: 1 line is improperly formatted\n"
+    )
     assert code == 0
 
 
@@ -242,7 +268,8 @@ async def test_check_verifies_every_list_operand():
             "/a.txt": "abc",
             "/b.txt": "def",
         },
-        paths=["/one.txt", "/two.txt"])
+        paths=["/one.txt", "/two.txt"],
+    )
     assert stdout == "/a.txt: OK\n/b.txt: OK\n"
     assert stderr == ""
     assert code == 0
@@ -255,7 +282,8 @@ async def test_check_missing_list_reports_and_continues():
             "/one.txt": "5aabc  /a.txt\n",
             "/a.txt": "abc",
         },
-        paths=["/one.txt", "/nope.txt"])
+        paths=["/one.txt", "/nope.txt"],
+    )
     assert stdout == "/a.txt: OK\n"
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
@@ -268,7 +296,8 @@ async def test_check_missing_list_first_keeps_operand_order():
             "/one.txt": "5aabc  /a.txt\n",
             "/a.txt": "abc",
         },
-        paths=["/nope.txt", "/one.txt"])
+        paths=["/nope.txt", "/one.txt"],
+    )
     assert stdout == "/a.txt: OK\n"
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
@@ -287,12 +316,14 @@ async def test_check_directory_list_operand_is_a_read_error():
     async def read_stream(p: PathSpec):
         yield b"abc"
 
-    out, io = await checksum([_spec("/d"), _spec("/one.txt")],
-                             factory=_FakeDigest,
-                             algorithm="md5",
-                             read_bytes=read_bytes,
-                             read_stream=read_stream,
-                             check=True)
+    out, io = await checksum(
+        [_spec("/d"), _spec("/one.txt")],
+        factory=_FakeDigest,
+        algorithm="md5",
+        read_bytes=read_bytes,
+        read_stream=read_stream,
+        check=True,
+    )
     assert isinstance(out, bytes) and out.decode() == "/a.txt: OK\n"
     assert io.stderr is not None
     assert io.stderr.decode() == "md5sum: /d: read error\n"
@@ -307,16 +338,19 @@ async def test_check_status_keeps_missing_list_strerror():
             "/a.txt": "abc",
         },
         paths=["/one.txt", "/nope.txt"],
-        status=True)
+        status=True,
+    )
     assert stdout == ""
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
 
 
-async def _shell(line: str,
-                 stdin: bytes | None = None) -> tuple[str, str, int]:
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+async def _shell(
+    line: str, stdin: bytes | None = None
+) -> tuple[str, str, int]:
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/a.txt > /dev/null", stdin=b"hello\n")
     r = await ws.shell(line, stdin=stdin)
     out = await r.materialize_stdout() or b""
@@ -329,19 +363,27 @@ async def test_dash_and_dev_stdin_hash_stdin_under_their_own_names():
     # One stdin: the second operand reads what the first left, nothing.
     first = hashlib.sha256(b"a\nb\n").hexdigest()
     empty = hashlib.sha256(b"").hexdigest()
-    assert await _shell("sha256sum - /dev/stdin",
-                        b"a\nb\n") == (f"{first}  -\n{empty}  /dev/stdin\n",
-                                       "", 0)
+    assert await _shell("sha256sum - /dev/stdin", b"a\nb\n") == (
+        f"{first}  -\n{empty}  /dev/stdin\n",
+        "",
+        0,
+    )
 
 
 @pytest.mark.asyncio
 async def test_check_with_no_operand_reads_the_list_from_stdin():
     assert await _shell("cd /data && sha256sum a.txt | sha256sum -c") == (
-        "a.txt: OK\n", "", 0)
+        "a.txt: OK\n",
+        "",
+        0,
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_stdin_list_is_called_standard_input():
     assert await _shell("sha256sum -c -", b"junk\n") == (
-        "", "sha256sum: 'standard input': no properly formatted checksum "
-        "lines found\n", 1)
+        "",
+        "sha256sum: 'standard input': no properly formatted checksum "
+        "lines found\n",
+        1,
+    )

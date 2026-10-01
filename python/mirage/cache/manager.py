@@ -60,43 +60,44 @@ class CacheManager:
     """
 
     def __init__(
-            self,
-            file_cache: FileCacheMixin | None,
-            index: IndexCacheStore,
-            prefix: str,
-            caches_reads: bool,
-            owns_path: Callable[[str], bool] = lambda _: True,
-            may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
-            read_ttl: int = DEFAULT_READ_TTL,
-            on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
-            may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
-            excluded_prefixes: Callable[[], tuple[str, ...]] = tuple) -> None:
+        self,
+        file_cache: FileCacheMixin | None,
+        index: IndexCacheStore,
+        prefix: str,
+        caches_reads: bool,
+        owns_path: Callable[[str], bool] = lambda _: True,
+        may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
+        read_ttl: int = DEFAULT_READ_TTL,
+        on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
+        may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+        excluded_prefixes: Callable[[], tuple[str, ...]] = tuple,
+    ) -> None:
         """Args:
-            file_cache (FileCacheMixin | None): Workspace file cache
-                store; entries are keyed by mount-absolute path.
-            index (IndexCacheStore): The mount VFS's index cache;
-                listings are keyed by mount-absolute path, which every
-                backend agrees on.
-            prefix (str): Mount prefix (e.g. "/data/").
-            caches_reads (bool): Whether the VFS caches reads; the
-                file cache only holds paths for read-caching backends.
-            owns_path (Callable[[str], bool]): whether this mount still
-                owns a virtual cache key.
-            may_serve_cached (Callable[[str], Awaitable[bool]]): the read
-                gate, injected because this class holds no mount and no
-                dispatcher and ``mirage.cache.context`` documents that
-                dependency as one-way. Answers whether a warm entry may
-                still be served; the default trusts the cache.
-            read_ttl (int): lifetime of complete backend renders, and the
-                cap on every listing this mount's view writes.
-            on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
-                cleanup for children a re-list found gone. This keeps the
-                dependency one-way, like the read gate; None cleans nothing.
-            may_serve_listing (Callable[[str], Awaitable[bool]] | None):
-                the listing gate every view of this mount asks before
-                serving a cached listing; None serves them all.
-            excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
-                mount roots protected from recursive deletion.
+        file_cache (FileCacheMixin | None): Workspace file cache
+            store; entries are keyed by mount-absolute path.
+        index (IndexCacheStore): The mount VFS's index cache;
+            listings are keyed by mount-absolute path, which every
+            backend agrees on.
+        prefix (str): Mount prefix (e.g. "/data/").
+        caches_reads (bool): Whether the VFS caches reads; the
+            file cache only holds paths for read-caching backends.
+        owns_path (Callable[[str], bool]): whether this mount still
+            owns a virtual cache key.
+        may_serve_cached (Callable[[str], Awaitable[bool]]): the read
+            gate, injected because this class holds no mount and no
+            dispatcher and ``mirage.cache.context`` documents that
+            dependency as one-way. Answers whether a warm entry may
+            still be served; the default trusts the cache.
+        read_ttl (int): lifetime of complete backend renders, and the
+            cap on every listing this mount's view writes.
+        on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
+            cleanup for children a re-list found gone. This keeps the
+            dependency one-way, like the read gate; None cleans nothing.
+        may_serve_listing (Callable[[str], Awaitable[bool]] | None):
+            the listing gate every view of this mount asks before
+            serving a cached listing; None serves them all.
+        excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
+            mount roots protected from recursive deletion.
         """
         self._file_cache = file_cache
         self._index = index
@@ -147,21 +148,24 @@ class CacheManager:
             return index
         if self._view is None or self._view.store is not index:
             self._written.clear()
-            self._view = IndexView(index,
-                                   self._file_cache,
-                                   self._prefix,
-                                   self._owns_path,
-                                   read_ttl=self._read_ttl,
-                                   on_gone=self._cleanup,
-                                   excluded_prefixes=self._excluded_prefixes,
-                                   may_serve_listing=self._may_serve_listing,
-                                   note_written=self._note_written)
+            self._view = IndexView(
+                index,
+                self._file_cache,
+                self._prefix,
+                self._owns_path,
+                read_ttl=self._read_ttl,
+                on_gone=self._cleanup,
+                excluded_prefixes=self._excluded_prefixes,
+                may_serve_listing=self._may_serve_listing,
+                note_written=self._note_written,
+            )
         return self._view
 
     async def _cleanup(self, gone: list[Evicted]) -> None:
         async with self.mutation():
             await self._gone_locked(
-                [child for child in gone if self._owns_path(child.path)])
+                [child for child in gone if self._owns_path(child.path)]
+            )
 
     async def _gone_locked(self, gone: list[Evicted]) -> None:
         if not gone:
@@ -237,15 +241,19 @@ class CacheManager:
             # What is left is all the running command's; the next prune
             # waits for the map to double, so one large walk stays linear.
             self._probe_bound = max(PROBED_LIMIT, 2 * len(self._probed))
-        self._probed[self._cache_key(path)] = (started, self._read_generation,
-                                               stat)
+        self._probed[self._cache_key(path)] = (
+            started,
+            self._read_generation,
+            stat,
+        )
 
     def _prune_probes(self, started: int) -> None:
         # Only the probing command is ever served an answer, so the other
         # commands' entries are dead weight here.
         self._probed = {
             key: probed
-            for key, probed in self._probed.items() if probed[0] == started
+            for key, probed in self._probed.items()
+            if probed[0] == started
         }
 
     def probed_stat(self, path: PathSpec) -> FileStat | None:
@@ -288,18 +296,22 @@ class CacheManager:
         if self._file_cache is None:
             return index
         if isinstance(index, IndexView):
-            raise ValueError("scope_index_locked needs a raw store; a view "
-                             "would take the lock again")
-        return IndexView(index,
-                         self._file_cache,
-                         self._prefix,
-                         self._owns_path,
-                         locked=True,
-                         read_ttl=self._read_ttl,
-                         on_gone=self._gone_locked,
-                         excluded_prefixes=self._excluded_prefixes,
-                         may_serve_listing=self._may_serve_listing,
-                         note_written=self._note_written)
+            raise ValueError(
+                "scope_index_locked needs a raw store; a view "
+                "would take the lock again"
+            )
+        return IndexView(
+            index,
+            self._file_cache,
+            self._prefix,
+            self._owns_path,
+            locked=True,
+            read_ttl=self._read_ttl,
+            on_gone=self._gone_locked,
+            excluded_prefixes=self._excluded_prefixes,
+            may_serve_listing=self._may_serve_listing,
+            note_written=self._note_written,
+        )
 
     async def _evict_dir(self, key: str) -> None:
         """Drop one directory's cached listing.
@@ -385,8 +397,9 @@ class CacheManager:
         cached = await cache.get(key)
         return cached if self._owns_path(key) else None
 
-    async def read_through(self, path: PathSpec,
-                           fetch: Callable[[], Awaitable[bytes]]) -> bytes:
+    async def read_through(
+        self, path: PathSpec, fetch: Callable[[], Awaitable[bytes]]
+    ) -> bytes:
         """Cache a complete backend read before a consumer transforms it.
 
         Args:
@@ -404,17 +417,19 @@ class CacheManager:
         cache = self._readable_cache(key)
         if cache is not None:
             async with mutation_lock(cache):
-                if self._owns_path(
-                        key) and generation == self._read_generation:
-                    records = recorder.sink[
-                        start:] if recorder is not None else None
-                    fingerprint = latest_fingerprint(records, key,
-                                                     READ_FINGERPRINT_OPS,
-                                                     len(data))
-                    await cache.set(key,
-                                    data,
-                                    fingerprint=fingerprint,
-                                    ttl=self._read_ttl)
+                if (
+                    self._owns_path(key)
+                    and generation == self._read_generation
+                ):
+                    records = (
+                        recorder.sink[start:] if recorder is not None else None
+                    )
+                    fingerprint = latest_fingerprint(
+                        records, key, READ_FINGERPRINT_OPS, len(data)
+                    )
+                    await cache.set(
+                        key, data, fingerprint=fingerprint, ttl=self._read_ttl
+                    )
         return data
 
     async def cached_size(self, path: PathSpec) -> int | None:

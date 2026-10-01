@@ -26,15 +26,18 @@ from mirage.vfs.ram.store import RAMStore
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.strip("/"),
-                    virtual=virtual,
-                    directory="/",
-                    pattern=None,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=virtual.strip("/"),
+        virtual=virtual,
+        directory="/",
+        pattern=None,
+        resolved=True,
+    )
 
 
-async def _seeded(
-) -> tuple[RAMAccessor, RAMFileCacheStore, RAMIndexCacheStore]:
+async def _seeded() -> tuple[
+    RAMAccessor, RAMFileCacheStore, RAMIndexCacheStore
+]:
     store = RAMStore()
     store.dirs.add("/a")
     store.dirs.add("/a/b")

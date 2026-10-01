@@ -18,8 +18,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from mirage.accessor.dropbox import DropboxAccessor
-from mirage.core.dropbox.api import (continue_folder, list_folder,
-                                     list_folder_state)
+from mirage.core.dropbox.api import (
+    continue_folder,
+    list_folder,
+    list_folder_state,
+)
 from mirage.core.dropbox.client import DropboxApiError
 from mirage.core.dropbox.paths import dropbox_path_of
 from mirage.types import Delta, PathSpec, WalkEntry
@@ -52,7 +55,7 @@ class DropboxWalk:
 
     def __init__(self, accessor: DropboxAccessor) -> None:
         """Args:
-            accessor (DropboxAccessor): Backend handle.
+        accessor (DropboxAccessor): Backend handle.
         """
         self._accessor = accessor
 
@@ -65,9 +68,9 @@ class DropboxWalk:
         accessor = self._accessor
         api_root = dropbox_path_of(accessor, root)
         try:
-            found = await list_folder(accessor.token_manager,
-                                      api_root,
-                                      recursive=True)
+            found = await list_folder(
+                accessor.token_manager, api_root, recursive=True
+            )
         except DropboxApiError as exc:
             # list_folder 409s on a missing path and on a file operand;
             # either way there is nothing under this root to report.
@@ -85,8 +88,9 @@ def _is_reset(exc: DropboxApiError) -> bool:
     return exc.status == 409 and exc.summary.startswith("reset")
 
 
-def _frame(accessor: DropboxAccessor, root: PathSpec,
-           entry: dict[str, Any]) -> tuple[str, WalkEntry] | None:
+def _frame(
+    accessor: DropboxAccessor, root: PathSpec, entry: dict[str, Any]
+) -> tuple[str, WalkEntry] | None:
     """Map one Dropbox listing row onto a watch-root WalkEntry.
 
     Dropbox paths are case-insensitive: ``path_display`` carries the
@@ -103,45 +107,46 @@ def _frame(accessor: DropboxAccessor, root: PathSpec,
         return None
     base = accessor.root_path
     folded = base.lower()
-    relative = display[len(base):] if base and display.lower().startswith(
-        folded) else display
+    relative = (
+        display[len(base) :]
+        if base and display.lower().startswith(folded)
+        else display
+    )
     relative = relative.strip("/")
     if not relative:
         return None
-    virtual = (prefix.rstrip("/") + "/" + relative if prefix else "/" +
-               relative)
+    virtual = prefix.rstrip("/") + "/" + relative if prefix else "/" + relative
     if entry.get(".tag") == "folder":
-        return virtual, WalkEntry(virtual=virtual,
-                                  is_dir=True,
-                                  fingerprint=None)
+        return virtual, WalkEntry(
+            virtual=virtual, is_dir=True, fingerprint=None
+        )
     if entry.get(".tag") == "deleted":
-        return virtual, WalkEntry(virtual=virtual,
-                                  is_dir=False,
-                                  fingerprint=None)
-    modified = entry.get("server_modified") or entry.get(
-        "client_modified") or None
+        return virtual, WalkEntry(
+            virtual=virtual, is_dir=False, fingerprint=None
+        )
+    modified = (
+        entry.get("server_modified") or entry.get("client_modified") or None
+    )
     size = entry.get("size")
     size = size if isinstance(size, int) else None
     version = entry.get("content_hash") or entry.get("rev")
-    return virtual, WalkEntry(virtual=virtual,
-                              is_dir=False,
-                              fingerprint=stat_fingerprint(
-                                  version, modified, size),
-                              size=size,
-                              modified=modified)
+    return virtual, WalkEntry(
+        virtual=virtual,
+        is_dir=False,
+        fingerprint=stat_fingerprint(version, modified, size),
+        size=size,
+        modified=modified,
+    )
 
 
 def _encode(cursor: str, snapshot: dict[str, str]) -> str:
-    return json.dumps({
-        "_dbx": _NATIVE,
-        "c": cursor,
-        "s": snapshot
-    },
-                      sort_keys=True)
+    return json.dumps(
+        {"_dbx": _NATIVE, "c": cursor, "s": snapshot}, sort_keys=True
+    )
 
 
 def _decode(
-        checkpoint: str | None
+    checkpoint: str | None,
 ) -> tuple[str | None, dict[str, str] | None, bool]:
     """Return (cursor, snapshot, native).
 
@@ -181,20 +186,20 @@ class DropboxDeltaHook:
 
     def __init__(self, accessor: DropboxAccessor) -> None:
         """Args:
-            accessor (DropboxAccessor): Backend handle.
+        accessor (DropboxAccessor): Backend handle.
         """
         self._accessor = accessor
         self._listing = ListingDeltaHook(DropboxWalk(accessor))
 
     async def _snapshot(
-            self, root: PathSpec
+        self, root: PathSpec
     ) -> tuple[dict[str, str], dict[str, WalkEntry], str]:
         accessor = self._accessor
         api_root = dropbox_path_of(accessor, root)
         try:
-            found, cursor = await list_folder_state(accessor.token_manager,
-                                                    api_root,
-                                                    recursive=True)
+            found, cursor = await list_folder_state(
+                accessor.token_manager, api_root, recursive=True
+            )
         except DropboxApiError as exc:
             if exc.status == 409:
                 return {}, {}, ""
@@ -207,12 +212,17 @@ class DropboxDeltaHook:
                 continue
             virtual, entry = framed
             entries[virtual] = entry
-            snapshot[virtual] = (DIR_FINGERPRINT
-                                 if entry.is_dir else entry.fingerprint or "")
+            snapshot[virtual] = (
+                DIR_FINGERPRINT if entry.is_dir else entry.fingerprint or ""
+            )
         return snapshot, entries, cursor
 
-    async def _relist(self, root: PathSpec, previous: dict[str, str] | None,
-                      observed: datetime) -> Delta:
+    async def _relist(
+        self,
+        root: PathSpec,
+        previous: dict[str, str] | None,
+        observed: datetime,
+    ) -> Delta:
         """List ``root`` afresh and answer with a new native cursor.
 
         A root Dropbox refuses leaves ``_snapshot`` with no cursor at
@@ -233,10 +243,16 @@ class DropboxDeltaHook:
         snapshot, entries, cursor = await self._snapshot(root)
         if not cursor:
             return await self._listing.pull(
-                root, None if previous is None else json.dumps(previous,
-                                                               sort_keys=True))
-        changes = () if previous is None else diff_snapshots(
-            root, previous, snapshot, entries, observed)
+                root,
+                None
+                if previous is None
+                else json.dumps(previous, sort_keys=True),
+            )
+        changes = (
+            ()
+            if previous is None
+            else diff_snapshots(root, previous, snapshot, entries, observed)
+        )
         return Delta(changes=changes, checkpoint=_encode(cursor, snapshot))
 
     async def pull(self, root: PathSpec, checkpoint: str | None) -> Delta:
@@ -253,7 +269,8 @@ class DropboxDeltaHook:
             return await self._relist(root, previous, observed)
         try:
             found, next_cursor = await continue_folder(
-                self._accessor.token_manager, cursor or "")
+                self._accessor.token_manager, cursor or ""
+            )
         except DropboxApiError as exc:
             if _is_reset(exc):
                 return await self._relist(root, previous, observed)
@@ -269,11 +286,15 @@ class DropboxDeltaHook:
             if raw.get(".tag") == "deleted":
                 _drop_prefix(snapshot, virtual)
                 continue
-            snapshot[virtual] = (DIR_FINGERPRINT
-                                 if entry.is_dir else entry.fingerprint or "")
-        return Delta(changes=diff_snapshots(root, previous or {}, snapshot,
-                                            applied, observed),
-                     checkpoint=_encode(next_cursor, snapshot))
+            snapshot[virtual] = (
+                DIR_FINGERPRINT if entry.is_dir else entry.fingerprint or ""
+            )
+        return Delta(
+            changes=diff_snapshots(
+                root, previous or {}, snapshot, applied, observed
+            ),
+            checkpoint=_encode(next_cursor, snapshot),
+        )
 
 
 def build_delta_hook(accessor: DropboxAccessor) -> DeltaHook:

@@ -70,17 +70,16 @@ def test_canonicalize_row_recurses_into_nested_structures():
     assert client.canonicalize_row(row) == {
         "r": 5,
         "tags": [1, 2.5],
-        "meta": {
-            "n": 3
-        },
+        "meta": {"n": 3},
     }
 
 
 @pytest.mark.asyncio
 async def test_count_rows_quotes_a_malicious_name(mock_conn):
     mock_conn.fetchval.return_value = 0
-    await client.count_rows(mock_conn, "public",
-                            'books" CROSS JOIN secret AS "s')
+    await client.count_rows(
+        mock_conn, "public", 'books" CROSS JOIN secret AS "s'
+    )
     sql = mock_conn.fetchval.call_args.args[0]
     assert '"books"" CROSS JOIN secret AS ""s"' in sql
     assert 'FROM "public"."books" CROSS JOIN secret' not in sql
@@ -89,12 +88,8 @@ async def test_count_rows_quotes_a_malicious_name(mock_conn):
 @pytest.mark.asyncio
 async def test_list_schemas(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "schema_name": "analytics"
-        },
-        {
-            "schema_name": "public"
-        },
+        {"schema_name": "analytics"},
+        {"schema_name": "public"},
     ]
     result = await client.list_schemas(mock_conn, None)
     assert result == ["analytics", "public"]
@@ -103,12 +98,8 @@ async def test_list_schemas(mock_conn):
 @pytest.mark.asyncio
 async def test_list_schemas_allowlist(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "schema_name": "public"
-        },
-        {
-            "schema_name": "analytics"
-        },
+        {"schema_name": "public"},
+        {"schema_name": "analytics"},
     ]
     result = await client.list_schemas(mock_conn, ["public"])
     assert result == ["public"]
@@ -117,12 +108,8 @@ async def test_list_schemas_allowlist(mock_conn):
 @pytest.mark.asyncio
 async def test_list_tables(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "table_name": "v1"
-        },
-        {
-            "table_name": "v2"
-        },
+        {"table_name": "v1"},
+        {"table_name": "v2"},
     ]
     result = await client.list_tables(mock_conn, "public")
     assert result == ["v1", "v2"]
@@ -131,12 +118,8 @@ async def test_list_tables(mock_conn):
 @pytest.mark.asyncio
 async def test_list_views(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "table_name": "v1"
-        },
-        {
-            "table_name": "v2"
-        },
+        {"table_name": "v1"},
+        {"table_name": "v2"},
     ]
     result = await client.list_views(mock_conn, "public")
     assert result == ["v1", "v2"]
@@ -158,12 +141,9 @@ async def test_count_rows(mock_conn):
 
 @pytest.mark.asyncio
 async def test_estimate_size(mock_conn):
-    mock_conn.fetchval.return_value = [{
-        "Plan": {
-            "Plan Rows": 1234,
-            "Plan Width": 80
-        }
-    }]
+    mock_conn.fetchval.return_value = [
+        {"Plan": {"Plan Rows": 1234, "Plan Width": 80}}
+    ]
     result = await client.estimate_size(mock_conn, "public", "users")
     assert result == (1234, 80)
 
@@ -171,7 +151,8 @@ async def test_estimate_size(mock_conn):
 @pytest.mark.asyncio
 async def test_estimate_size_json_string(mock_conn):
     mock_conn.fetchval.return_value = (
-        '[{"Plan": {"Plan Rows": 500, "Plan Width": 64}}]')
+        '[{"Plan": {"Plan Rows": 500, "Plan Width": 64}}]'
+    )
     rows, width = await client.estimate_size(mock_conn, "public", "v1")
     assert rows == 500
     assert width == 64
@@ -201,20 +182,12 @@ async def test_table_size_bytes(mock_conn):
 @pytest.mark.asyncio
 async def test_fetch_rows(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "id": 1,
-            "name": "a"
-        },
-        {
-            "id": 2,
-            "name": "b"
-        },
+        {"id": 1, "name": "a"},
+        {"id": 2, "name": "b"},
     ]
-    result = await client.fetch_rows(mock_conn,
-                                     "public",
-                                     "users",
-                                     limit=10,
-                                     offset=0)
+    result = await client.fetch_rows(
+        mock_conn, "public", "users", limit=10, offset=0
+    )
     assert len(result) == 2
     assert result[0]["name"] == "a"
 
@@ -222,11 +195,7 @@ async def test_fetch_rows(mock_conn):
 @pytest.mark.asyncio
 async def test_fetch_columns(mock_conn):
     mock_conn.fetch.return_value = [
-        {
-            "column_name": "id",
-            "data_type": "uuid",
-            "is_nullable": "NO"
-        },
+        {"column_name": "id", "data_type": "uuid", "is_nullable": "NO"},
         {
             "column_name": "team_id",
             "data_type": "uuid",
@@ -235,16 +204,8 @@ async def test_fetch_columns(mock_conn):
     ]
     result = await client.fetch_columns(mock_conn, "public", "users")
     assert result == [
-        {
-            "name": "id",
-            "type": "uuid",
-            "nullable": False
-        },
-        {
-            "name": "team_id",
-            "type": "uuid",
-            "nullable": True
-        },
+        {"name": "id", "type": "uuid", "nullable": False},
+        {"name": "team_id", "type": "uuid", "nullable": True},
     ]
 
 
@@ -257,23 +218,27 @@ async def test_fetch_primary_key(mock_conn):
 
 @pytest.mark.asyncio
 async def test_fetch_foreign_keys(mock_conn):
-    mock_conn.fetch.return_value = [{
-        "constraint_name": "fk1",
-        "from_column": "team_id",
-        "ordinal_position": 1,
-        "to_schema": "public",
-        "to_table": "teams",
-        "to_column": "id",
-    }]
+    mock_conn.fetch.return_value = [
+        {
+            "constraint_name": "fk1",
+            "from_column": "team_id",
+            "ordinal_position": 1,
+            "to_schema": "public",
+            "to_table": "teams",
+            "to_column": "id",
+        }
+    ]
     result = await client.fetch_foreign_keys(mock_conn, "public", "users")
-    assert result == [{
-        "columns": ["team_id"],
-        "references": {
-            "schema": "public",
-            "table": "teams",
-            "columns": ["id"],
-        },
-    }]
+    assert result == [
+        {
+            "columns": ["team_id"],
+            "references": {
+                "schema": "public",
+                "table": "teams",
+                "columns": ["id"],
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -296,45 +261,54 @@ async def test_fetch_foreign_keys_multi_column(mock_conn):
             "to_table": "accounts",
         },
     ]
-    result = await client.fetch_foreign_keys(mock_conn, "public",
-                                             "memberships")
-    assert result == [{
-        "columns": ["tenant_id", "user_id"],
-        "references": {
-            "schema": "public",
-            "table": "accounts",
-            "columns": ["tenant_id", "id"],
-        },
-    }]
+    result = await client.fetch_foreign_keys(
+        mock_conn, "public", "memberships"
+    )
+    assert result == [
+        {
+            "columns": ["tenant_id", "user_id"],
+            "references": {
+                "schema": "public",
+                "table": "accounts",
+                "columns": ["tenant_id", "id"],
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_fetch_indexes(mock_conn):
-    mock_conn.fetch.return_value = [{
-        "name": "users_email_idx",
-        "unique": True,
-        "columns": ["email"],
-    }]
+    mock_conn.fetch.return_value = [
+        {
+            "name": "users_email_idx",
+            "unique": True,
+            "columns": ["email"],
+        }
+    ]
     result = await client.fetch_indexes(mock_conn, "public", "users")
-    assert result == [{
-        "name": "users_email_idx",
-        "columns": ["email"],
-        "unique": True,
-    }]
+    assert result == [
+        {
+            "name": "users_email_idx",
+            "columns": ["email"],
+            "unique": True,
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_fetch_all_relationships(mock_conn):
-    mock_conn.fetch.return_value = [{
-        "constraint_name": "fk1",
-        "from_schema": "public",
-        "from_table": "users",
-        "from_column": "team_id",
-        "ordinal_position": 1,
-        "to_schema": "public",
-        "to_table": "teams",
-        "to_column": "id",
-    }]
+    mock_conn.fetch.return_value = [
+        {
+            "constraint_name": "fk1",
+            "from_schema": "public",
+            "from_table": "users",
+            "from_column": "team_id",
+            "ordinal_position": 1,
+            "to_schema": "public",
+            "to_table": "teams",
+            "to_column": "id",
+        }
+    ]
     result = await client.fetch_all_relationships(mock_conn, ["public"])
     assert len(result) == 1
     assert result[0]["kind"] == "many_to_one"
@@ -397,27 +371,24 @@ async def test_fetch_all_relationships_empty_schemas(mock_conn):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("size, expected", [(0, []), (101, None),
-                                            (100, [{
-                                                "__mirage_bytes": None
-                                            }])])
+@pytest.mark.parametrize(
+    "size, expected", [(0, []), (101, None), (100, [{"__mirage_bytes": None}])]
+)
 async def test_bounded_rows_preserves_null_rows_and_marker_columns(
-        mock_conn, size, expected):
+    mock_conn, size, expected
+):
     mock_conn.fetch.side_effect = [
-        [{
-            "column_name": "__mirage_bytes",
-            "data_type": "text",
-            "is_nullable": "YES"
-        }],
-        [{
-            "__mirage_bytes": None,
-            "__mirage_bytes_": size
-        }],
+        [
+            {
+                "column_name": "__mirage_bytes",
+                "data_type": "text",
+                "is_nullable": "YES",
+            }
+        ],
+        [{"__mirage_bytes": None, "__mirage_bytes_": size}],
     ]
-    result = await client.fetch_bounded_rows(mock_conn,
-                                             "public",
-                                             "users",
-                                             limit=11,
-                                             max_bytes=100)
+    result = await client.fetch_bounded_rows(
+        mock_conn, "public", "users", limit=11, max_bytes=100
+    )
     assert result == expected
     assert mock_conn.fetch.call_args.args[1:] == (11, 100)

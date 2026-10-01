@@ -18,8 +18,14 @@ import re
 
 import orjson
 
-from mirage.core.jq.types import (DEFAULT_INDENT, RS, JqError, JqHalt,
-                                  JqOptions, JqRun)
+from mirage.core.jq.types import (
+    DEFAULT_INDENT,
+    RS,
+    JqError,
+    JqHalt,
+    JqOptions,
+    JqRun,
+)
 from mirage.utils.errors import fs_strerror
 
 logger = logging.getLogger(__name__)
@@ -101,10 +107,14 @@ def _sorted(text: str) -> str:
             if first == "]":
                 token = f"[{','.join(items)}]"
             else:
-                ordered = sorted(zip(keys, items),
-                                 key=lambda member: _key(member[0]))
-                token = "{" + ",".join(f"{name}:{value}"
-                                       for name, value in ordered) + "}"
+                ordered = sorted(
+                    zip(keys, items), key=lambda member: _key(member[0])
+                )
+                token = (
+                    "{"
+                    + ",".join(f"{name}:{value}" for name, value in ordered)
+                    + "}"
+                )
         if not openers:
             done = token
         elif openers[-1] == "{" and len(names[-1]) == len(values[-1]):
@@ -170,9 +180,9 @@ def _through_orjson(text: str, opts: JqOptions) -> str | None:
     if not opts.compact:
         option |= orjson.OPT_INDENT_2
     try:
-        tree = json.loads(text,
-                          parse_int=orjson.Fragment,
-                          parse_float=orjson.Fragment)
+        tree = json.loads(
+            text, parse_int=orjson.Fragment, parse_float=orjson.Fragment
+        )
         dumped = orjson.dumps(tree, option=option)
     except (RecursionError, orjson.JSONEncodeError) as exc:
         logger.debug("jq: output past orjson, laid out by hand: %s", exc)
@@ -266,8 +276,11 @@ def printable(run: JqRun[str], opts: JqOptions) -> JqRun[str]:
     if not opts.nul_output or opts.ascii_output:
         return run
     for at, text in enumerate(run.outputs):
-        if (text.startswith('"') and "\\u0000" in text
-                and "\0" in orjson.loads(text)):
+        if (
+            text.startswith('"')
+            and "\\u0000" in text
+            and "\0" in orjson.loads(text)
+        ):
             return JqRun(run.outputs[:at], JqError(NUL_REFUSAL, True))
     return run
 

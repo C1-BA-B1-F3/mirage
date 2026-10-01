@@ -46,25 +46,31 @@ notion = NotionVFS(config=NotionConfig(api_key=os.environ["NOTION_API_KEY"]))
 gdrive = GoogleDriveVFS(config=GoogleDriveConfig(**google_kwargs))
 gmail = GmailVFS(config=GmailConfig(**google_kwargs))
 local = DiskVFS(root=tmp + "/files")
-s3 = S3VFS(config=S3Config(
-    bucket=os.environ["AWS_S3_BUCKET"],
-    region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-))
-slack = SlackVFS(config=SlackConfig(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    search_token=os.environ.get("SLACK_USER_TOKEN"),
-))
+s3 = S3VFS(
+    config=S3Config(
+        bucket=os.environ["AWS_S3_BUCKET"],
+        region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+)
+slack = SlackVFS(
+    config=SlackConfig(
+        token=os.environ["SLACK_BOT_TOKEN"],
+        search_token=os.environ.get("SLACK_USER_TOKEN"),
+    )
+)
 
-with Workspace({
+with Workspace(
+    {
         "/notion/": notion,
         "/gdrive/": gdrive,
         "/gmail/": gmail,
         "/local/": local,
         "/s3/": s3,
         "/slack/": slack,
-}) as ws:
+    }
+) as ws:
     # One FUSE mount over the workspace root exposes every backend as a
     # subdirectory of a single real filesystem path.
     mp = ws.add_fuse_mount("/")
@@ -144,8 +150,9 @@ with Workspace({
             if texted:
                 msg = texted[-1]
                 print(f"  latest message in {ch} ({d}):")
-                print(f"    [{msg.get('user', '?')}] "
-                      f"{msg.get('text', '')[:80]}")
+                print(
+                    f"    [{msg.get('user', '?')}] {msg.get('text', '')[:80]}"
+                )
                 break
 
     print(f"\n>>> FUSE mounted at: {mp}")

@@ -26,9 +26,11 @@ from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3.s3 import S3VFS, S3Config
 from mirage.workspace import Workspace
 
-CREDS = dict(aws_access_key_id="testing",
-             aws_secret_access_key="testing",
-             region_name="us-east-1")
+CREDS = dict(
+    aws_access_key_id="testing",
+    aws_secret_access_key="testing",
+    region_name="us-east-1",
+)
 
 
 @pytest.fixture()
@@ -41,15 +43,19 @@ def s3_endpoint() -> Iterator[str]:
 
 
 def _s3_workspace(endpoint: str, bucket: str) -> Workspace:
-    boto3.client("s3", endpoint_url=endpoint,
-                 **CREDS).create_bucket(Bucket=bucket)
+    boto3.client("s3", endpoint_url=endpoint, **CREDS).create_bucket(
+        Bucket=bucket
+    )
     s3 = S3VFS(
-        S3Config(bucket=bucket,
-                 region="us-east-1",
-                 endpoint_url=endpoint,
-                 aws_access_key_id="testing",
-                 aws_secret_access_key="testing",
-                 path_style=True))
+        S3Config(
+            bucket=bucket,
+            region="us-east-1",
+            endpoint_url=endpoint,
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            path_style=True,
+        )
+    )
     return Workspace({"/data": s3}, mode=MountMode.WRITE)
 
 
@@ -74,7 +80,7 @@ def _capture_io(ws: Workspace) -> list:
 
 def _assert_single_prefix(captured: list) -> None:
     for result in captured:
-        keys = (list(result.writes) + list(result.reads) + list(result.cache))
+        keys = list(result.writes) + list(result.reads) + list(result.cache)
         for key in keys:
             if key.startswith("/dev/"):
                 continue
@@ -82,21 +88,27 @@ def _assert_single_prefix(captured: list) -> None:
             assert not key.startswith("/data/data/"), key
 
 
-@pytest.mark.parametrize("cmd,stdin", [
-    ("tee /data/t.txt > /dev/null", b"x\ny\n"),
-    ("csplit -f /data/cs_ /data/seed.txt 2", None),
-    ("csplit /data/seed.txt 2", None),
-    ("split -l 1 /data/seed.txt", None),
-    ("cd /data && split -l 1", b"x\ny\n"),
-    ("cd /data && csplit - 2", b"x\ny\n"),
-    ("unzip /data/a.zip -d /data/exout", None),
-    ("cp /data/seed.txt /data/copy.txt", None),
-    ("grep x /data/seed.txt > /data/red.txt", None),
-    ("cat /data/seed.txt >> /data/app.txt", None),
-    ("cat /data/seed.txt | tee /data/piped.txt > /dev/null", None),
-    ("sed s/x/z/ /data/seed.txt > /data/s1.txt && cat /data/s1.txt"
-     " > /data/s2.txt", None),
-])
+@pytest.mark.parametrize(
+    "cmd,stdin",
+    [
+        ("tee /data/t.txt > /dev/null", b"x\ny\n"),
+        ("csplit -f /data/cs_ /data/seed.txt 2", None),
+        ("csplit /data/seed.txt 2", None),
+        ("split -l 1 /data/seed.txt", None),
+        ("cd /data && split -l 1", b"x\ny\n"),
+        ("cd /data && csplit - 2", b"x\ny\n"),
+        ("unzip /data/a.zip -d /data/exout", None),
+        ("cp /data/seed.txt /data/copy.txt", None),
+        ("grep x /data/seed.txt > /data/red.txt", None),
+        ("cat /data/seed.txt >> /data/app.txt", None),
+        ("cat /data/seed.txt | tee /data/piped.txt > /dev/null", None),
+        (
+            "sed s/x/z/ /data/seed.txt > /data/s1.txt && cat /data/s1.txt"
+            " > /data/s2.txt",
+            None,
+        ),
+    ],
+)
 def test_ram_io_keys_single_prefixed(cmd, stdin):
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
 
@@ -164,9 +176,9 @@ def test_s3_io_keys_single_prefixed(s3_endpoint):
         captured = _capture_io(ws)
         await ws.shell("tee /data/t.txt > /dev/null", stdin=b"x\ny\n")
         for cmd in (
-                "touch /data/new.txt",
-                "mkdir -p /data/newdir",
-                "csplit -f /data/cs_ /data/t.txt 2",
+            "touch /data/new.txt",
+            "mkdir -p /data/newdir",
+            "csplit -f /data/cs_ /data/t.txt 2",
         ):
             result = await ws.shell(cmd)
             assert result.exit_code == 0, await result.stderr_str()

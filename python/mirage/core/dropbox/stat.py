@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 def _stat_from_entry(entry: dict[str, Any]) -> FileStat:
-    modified = entry.get("server_modified") or entry.get(
-        "client_modified") or ""
+    modified = (
+        entry.get("server_modified") or entry.get("client_modified") or ""
+    )
     name = entry.get("name", "")
     entry_id = entry.get("id") or entry.get("path_display") or name
     if entry.get(".tag") == "folder":
@@ -56,13 +57,15 @@ def _stat_from_entry(entry: dict[str, Any]) -> FileStat:
     )
 
 
-async def _stat_from_api(accessor: DropboxAccessor,
-                         path: PathSpec) -> FileStat:
+async def _stat_from_api(
+    accessor: DropboxAccessor, path: PathSpec
+) -> FileStat:
     # API-truthful stat for index-less callers (unlink/rmdir
     # classification, walk fallbacks): get_metadata resolves directly.
     try:
-        entry = await get_metadata(accessor.token_manager,
-                                   dropbox_path_of(accessor, path))
+        entry = await get_metadata(
+            accessor.token_manager, dropbox_path_of(accessor, path)
+        )
     except DropboxApiError as exc:
         if exc.status == 409:
             raise enoent(path.virtual) from exc
@@ -90,9 +93,11 @@ async def stat(
         try:
             await readdir(
                 accessor,
-                PathSpec(virtual=parent_virtual,
-                         directory=parent_virtual,
-                         vfs_path=mount_key(parent_virtual, prefix)),
+                PathSpec(
+                    virtual=parent_virtual,
+                    directory=parent_virtual,
+                    vfs_path=mount_key(parent_virtual, prefix),
+                ),
                 index=index,
             )
         except FileNotFoundError as exc:
@@ -102,8 +107,9 @@ async def stat(
             # re-answered as a destructively actionable false ENOENT; it now
             # surfaces. NotADirectoryError (a path under a file) was never in
             # this catch and already propagated.
-            logger.debug("stat found no parent listing for %s: %s", virtual,
-                         exc)
+            logger.debug(
+                "stat found no parent listing for %s: %s", virtual, exc
+            )
         result = await index.get(virtual_key)
         if result.entry is None:
             raise enoent(virtual)

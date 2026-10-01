@@ -17,8 +17,10 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.call_stack import CallStack
-from mirage.workspace.executor.builtins.shared import (is_valid_name,
-                                                       require_view)
+from mirage.workspace.executor.builtins.shared import (
+    is_valid_name,
+    require_view,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.errors import ReadonlyVariableError
@@ -44,8 +46,9 @@ async def _getopts_finish(
     # OPTIND refuses here too.
     try:
         if not is_valid_name(name):
-            stderr = (f"bash: getopts: `{name}': "
-                      f"not a valid identifier\n").encode()
+            stderr = (
+                f"bash: getopts: `{name}': not a valid identifier\n"
+            ).encode()
             exit_code = 1
         elif name in session.readonly_vars:
             stderr = f"bash: {name}: readonly variable\n".encode()
@@ -66,9 +69,11 @@ async def _getopts_finish(
     session._getopts_pos = new_pos
     session._getopts_optind = new_optind
     io = IOResult(exit_code=exit_code, stderr=stderr)
-    return None, io, ExecutionNode(command="getopts",
-                                   exit_code=exit_code,
-                                   stderr=stderr)
+    return (
+        None,
+        io,
+        ExecutionNode(command="getopts", exit_code=exit_code, stderr=stderr),
+    )
 
 
 async def handle_getopts(
@@ -92,15 +97,17 @@ async def handle_getopts(
     """
     if len(args) < 2:
         err = b"getopts: usage: getopts optstring name [arg]\n"
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="getopts",
-                                                         exit_code=2,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="getopts", exit_code=2, stderr=err),
+        )
     view = require_view(state)
     optstring = args[0]
     name = args[1]
-    params = args[2:] if len(args) > 2 else positional_params(
-        session, call_stack)
+    params = (
+        args[2:] if len(args) > 2 else positional_params(session, call_stack)
+    )
     silent = optstring.startswith(":")
     verbose = not silent and session.env.get("OPTERR", "1") != "0"
     try:
@@ -116,8 +123,9 @@ async def handle_getopts(
     pos = session._getopts_pos
 
     if optind > len(params):
-        return await _getopts_finish(session, view, name, "?", None, optind, 0,
-                                     1)
+        return await _getopts_finish(
+            session, view, name, "?", None, optind, 0, 1
+        )
     word = params[optind - 1]
     # A stale cursor left past the end of the current word (a shorter or
     # reused argument) restarts the scan rather than indexing out of range.
@@ -125,19 +133,22 @@ async def handle_getopts(
         pos = 0
     if pos == 0:
         if not word.startswith("-") or word == "-":
-            return await _getopts_finish(session, view, name, "?", None,
-                                         optind, 0, 1)
+            return await _getopts_finish(
+                session, view, name, "?", None, optind, 0, 1
+            )
         if word == "--":
-            return await _getopts_finish(session, view, name, "?", None,
-                                         optind + 1, 0, 1)
+            return await _getopts_finish(
+                session, view, name, "?", None, optind + 1, 0, 1
+            )
         pos = 1
 
     letter = word[pos]
-    rest = word[pos + 1:]
+    rest = word[pos + 1 :]
     idx = optstring.find(letter)
     is_valid = letter != ":" and idx != -1
-    takes_arg = (is_valid and idx + 1 < len(optstring)
-                 and optstring[idx + 1] == ":")
+    takes_arg = (
+        is_valid and idx + 1 < len(optstring) and optstring[idx + 1] == ":"
+    )
 
     if not is_valid:
         if rest:
@@ -145,34 +156,45 @@ async def handle_getopts(
         else:
             after_optind, after_pos = optind + 1, 0
         if silent:
-            return await _getopts_finish(session, view, name, "?", letter,
-                                         after_optind, after_pos, 0)
-        err = (f"bash: illegal option -- {letter}\n".encode()
-               if verbose else b"")
-        return await _getopts_finish(session, view, name, "?", None,
-                                     after_optind, after_pos, 0, err)
+            return await _getopts_finish(
+                session, view, name, "?", letter, after_optind, after_pos, 0
+            )
+        err = (
+            f"bash: illegal option -- {letter}\n".encode() if verbose else b""
+        )
+        return await _getopts_finish(
+            session, view, name, "?", None, after_optind, after_pos, 0, err
+        )
 
     if not takes_arg:
         if rest:
             after_optind, after_pos = optind, pos + 1
         else:
             after_optind, after_pos = optind + 1, 0
-        return await _getopts_finish(session, view, name, letter, None,
-                                     after_optind, after_pos, 0)
+        return await _getopts_finish(
+            session, view, name, letter, None, after_optind, after_pos, 0
+        )
 
     if rest:
-        return await _getopts_finish(session, view, name, letter, rest,
-                                     optind + 1, 0, 0)
+        return await _getopts_finish(
+            session, view, name, letter, rest, optind + 1, 0, 0
+        )
     if optind < len(params):
-        return await _getopts_finish(session, view, name, letter,
-                                     params[optind], optind + 2, 0, 0)
+        return await _getopts_finish(
+            session, view, name, letter, params[optind], optind + 2, 0, 0
+        )
     if silent:
-        return await _getopts_finish(session, view, name, ":", letter,
-                                     optind + 1, 0, 0)
-    err = (f"bash: option requires an argument -- {letter}\n".encode()
-           if verbose else b"")
-    return await _getopts_finish(session, view, name, "?", None, optind + 1, 0,
-                                 0, err)
+        return await _getopts_finish(
+            session, view, name, ":", letter, optind + 1, 0, 0
+        )
+    err = (
+        f"bash: option requires an argument -- {letter}\n".encode()
+        if verbose
+        else b""
+    )
+    return await _getopts_finish(
+        session, view, name, "?", None, optind + 1, 0, 0, err
+    )
 
 
 async def getopts_builtin(call: BuiltinCall) -> Result:
@@ -182,5 +204,8 @@ async def getopts_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_getopts(
-        list(call.argv.args), call.session, call.call_stack,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        call.call_stack,
+        session_view(call.session, call.namespace.registry.policies),
+    )

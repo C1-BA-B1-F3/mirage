@@ -49,8 +49,9 @@ async def test_fetch_dotenv_missing_file_names_the_path(tmp_path):
 async def test_fetch_dotenv_never_interpolates(tmp_path, monkeypatch):
     monkeypatch.setenv("HOST_TOKEN", "host-secret")
     file = tmp_path / "creds.env"
-    file.write_text("API_TOKEN=${HOST_TOKEN}\nA=x\nB=${A}-y\nC=$A\n",
-                    encoding="utf-8")
+    file.write_text(
+        "API_TOKEN=${HOST_TOKEN}\nA=x\nB=${A}-y\nC=$A\n", encoding="utf-8"
+    )
     secret = await fetch_dotenv(DotenvConfig(), str(file))
     assert secret.fields == {
         "API_TOKEN": "${HOST_TOKEN}",

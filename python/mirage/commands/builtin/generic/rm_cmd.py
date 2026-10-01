@@ -41,7 +41,8 @@ def rm_without_operands(force: bool) -> tuple[ByteSource | None, IOResult]:
     if force:
         return None, IOResult()
     raise UsageError(
-        "rm: missing operand\nTry 'rm --help' for more information.", 1)
+        "rm: missing operand\nTry 'rm --help' for more information.", 1
+    )
 
 
 def make_rm(
@@ -87,26 +88,30 @@ def make_rm(
             try:
                 await unlink(accessor, p, opts.index)
             except FS_ERRORS as exc:
-                if f and isinstance(exc,
-                                    (FileNotFoundError, NotADirectoryError)):
+                if f and isinstance(
+                    exc, (FileNotFoundError, NotADirectoryError)
+                ):
                     continue
                 # GNU rm reports the operand and keeps removing the rest.
                 errors.append(
-                    f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
+                    f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}"
+                )
                 continue
             except ValueError:
                 if f:
                     continue
-                errors.append(f"rm: cannot remove '{p.raw_path}': "
-                              "No such file or directory")
+                errors.append(
+                    f"rm: cannot remove '{p.raw_path}': "
+                    "No such file or directory"
+                )
                 continue
             removed[p.mount_path] = b""
             if v:
                 verbose_parts.append(f"removed '{p.virtual}'")
         output = format_optional_records(verbose_parts) if v else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
-        return output, IOResult(writes=removed,
-                                stderr=stderr,
-                                exit_code=1 if errors else 0)
+        return output, IOResult(
+            writes=removed, stderr=stderr, exit_code=1 if errors else 0
+        )
 
     return rm

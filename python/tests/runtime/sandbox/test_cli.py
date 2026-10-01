@@ -22,8 +22,9 @@ from mirage.runtime.sandbox.cli import run_cli
 
 @pytest.mark.asyncio
 async def test_run_cli_returns_both_streams_and_the_status():
-    out, err, code = await run_cli("sh", "no sh",
-                                   ["-c", "cat; echo e >&2; exit 3"], b"in")
+    out, err, code = await run_cli(
+        "sh", "no sh", ["-c", "cat; echo e >&2; exit 3"], b"in"
+    )
     assert (out, err, code) == (b"in", b"e\n", 3)
 
 
@@ -37,8 +38,10 @@ async def test_a_missing_cli_raises_its_hint():
 async def test_cancelling_a_call_kills_the_child(tmp_path):
     pid_file = tmp_path / "pid"
     task = asyncio.create_task(
-        run_cli("sh", "no sh", ["-c", f"echo $$ > {pid_file}; exec sleep 30"],
-                None))
+        run_cli(
+            "sh", "no sh", ["-c", f"echo $$ > {pid_file}; exec sleep 30"], None
+        )
+    )
     for _ in range(200):
         if pid_file.exists() and pid_file.read_text().strip():
             break

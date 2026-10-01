@@ -28,27 +28,38 @@ async def get_segments(config, document_id):
 
 
 @pytest.mark.asyncio
-async def test_sed_transforms_dify_document(monkeypatch, dify_accessor,
-                                            dify_index, guide_path):
+async def test_sed_transforms_dify_document(
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(tree, "list_all_documents", list_documents)
     monkeypatch.setattr(read, "get_document_segments", get_segments)
 
-    stdout, io = await sed(dify_accessor, [guide_path], ['s/alpha/gamma/'],
-                           CommandOpts(index=dify_index))
+    stdout, io = await sed(
+        dify_accessor,
+        [guide_path],
+        ["s/alpha/gamma/"],
+        CommandOpts(index=dify_index),
+    )
 
     assert await materialize(stdout) == b"gamma beta"
     assert io.exit_code == 0
 
 
 @pytest.mark.asyncio
-async def test_sed_rejects_in_place(monkeypatch, dify_accessor, dify_index,
-                                    guide_path):
+async def test_sed_rejects_in_place(
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(tree, "list_all_documents", list_documents)
 
-    stdout, io = await sed(dify_accessor, [guide_path], ['s/alpha/gamma/'],
-                           CommandOpts(index=dify_index, flags={'i': True}))
+    stdout, io = await sed(
+        dify_accessor,
+        [guide_path],
+        ["s/alpha/gamma/"],
+        CommandOpts(index=dify_index, flags={"i": True}),
+    )
 
     assert stdout is None
     assert io.exit_code == 1
-    assert io.stderr == (b"sed: -i not supported on this backend: "
-                         b"Permission denied\n")
+    assert io.stderr == (
+        b"sed: -i not supported on this backend: Permission denied\n"
+    )

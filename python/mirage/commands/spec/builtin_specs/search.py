@@ -15,8 +15,7 @@
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SPECS: dict[str, CommandSpec] = {
-    'grep':
-    CommandSpec(
+    "grep": CommandSpec(
         options=(
             Option(short="-r"),
             Option(short="-R"),
@@ -61,21 +60,19 @@ SPECS: dict[str, CommandSpec] = {
             Option(long="--colour", type="str", value_optional=True),
             Option(long="--line-buffered"),
         ),
-        positional=(Operand(type="str", provided_by=("-e", "-f")), ),
+        positional=(Operand(type="str", provided_by=("-e", "-f")),),
         rest=Operand(type="path"),
     ),
-    'search':
-    CommandSpec(
+    "search": CommandSpec(
         options=(
             Option(long="--method", type="str"),
             Option(long="--top-k", type="str"),
             Option(long="--threshold", type="str"),
         ),
-        positional=(Operand(type="str"), ),
+        positional=(Operand(type="str"),),
         rest=Operand(type="path"),
     ),
-    'rg':
-    CommandSpec(
+    "rg": CommandSpec(
         options=(
             Option(short="-e", long="--regexp", type="str", multiple=True),
             Option(short="-f", long="--file", type="path", multiple=True),
@@ -218,15 +215,16 @@ SPECS: dict[str, CommandSpec] = {
         ),
         # --files and --type-list search nothing, so the first operand is
         # a path rather than the pattern.
-        positional=(Operand(type="str",
-                            provided_by=("-e", "-f", "--files",
-                                         "--type-list")), ),
+        positional=(
+            Operand(
+                type="str", provided_by=("-e", "-f", "--files", "--type-list")
+            ),
+        ),
         rest=Operand(type="path"),
         # ripgrep's parser (lexopt) takes a long flag only as spelled.
         allow_abbrev=False,
     ),
-    'sed':
-    CommandSpec(
+    "sed": CommandSpec(
         options=(
             Option(short="-i"),
             # -e takes a script and may repeat; the pieces compile in order.
@@ -253,96 +251,140 @@ SPECS: dict[str, CommandSpec] = {
         #   sed -f prog.sed f.txt     -> prog.sed is the script; f.txt a file
         # Without provided_by, the -e/-f forms would mislabel f.txt as the
         # script (TEXT) and never read it as a file.
-        positional=(Operand(type="str", provided_by=("-e", "-f")), ),
+        positional=(Operand(type="str", provided_by=("-e", "-f")),),
         rest=Operand(type="path"),
     ),
-    'jq':
-    CommandSpec(
+    "jq": CommandSpec(
         options=(
-            Option(short="-n",
-                   long="--null-input",
-                   description="Use null as the single input value"),
-            Option(short="-R",
-                   long="--raw-input",
-                   description="Read each line as a string instead of JSON"),
-            Option(short="-s",
-                   long="--slurp",
-                   description="Read all inputs into one array"),
-            Option(short="-c",
-                   long="--compact-output",
-                   description="Compact instead of pretty-printed output"),
-            Option(short="-r",
-                   long="--raw-output",
-                   description="Output strings without quotes or escapes"),
-            Option(long="--raw-output0",
-                   description="Implies -r and writes NUL after each output"),
-            Option(short="-j",
-                   long="--join-output",
-                   description="Implies -r and writes no trailing newline"),
-            Option(short="-a",
-                   long="--ascii-output",
-                   description="Escape non-ASCII characters in output"),
-            Option(short="-S",
-                   long="--sort-keys",
-                   description="Sort object keys on output"),
-            Option(short="-e",
-                   long="--exit-status",
-                   description="Set the exit status from the last output"),
+            Option(
+                short="-n",
+                long="--null-input",
+                description="Use null as the single input value",
+            ),
+            Option(
+                short="-R",
+                long="--raw-input",
+                description="Read each line as a string instead of JSON",
+            ),
+            Option(
+                short="-s",
+                long="--slurp",
+                description="Read all inputs into one array",
+            ),
+            Option(
+                short="-c",
+                long="--compact-output",
+                description="Compact instead of pretty-printed output",
+            ),
+            Option(
+                short="-r",
+                long="--raw-output",
+                description="Output strings without quotes or escapes",
+            ),
+            Option(
+                long="--raw-output0",
+                description="Implies -r and writes NUL after each output",
+            ),
+            Option(
+                short="-j",
+                long="--join-output",
+                description="Implies -r and writes no trailing newline",
+            ),
+            Option(
+                short="-a",
+                long="--ascii-output",
+                description="Escape non-ASCII characters in output",
+            ),
+            Option(
+                short="-S",
+                long="--sort-keys",
+                description="Sort object keys on output",
+            ),
+            Option(
+                short="-e",
+                long="--exit-status",
+                description="Set the exit status from the last output",
+            ),
             Option(long="--tab", description="Indent with tabs"),
             # jq words its own refusal of a width it cannot read.
-            Option(long="--indent",
-                   type="str",
-                   description="Indent with n spaces (max 7)"),
-            Option(short="-M",
-                   long="--monochrome-output",
-                   description="Disable colored output (already the default)"),
-            Option(long="--unbuffered",
-                   description="Accepted for compatibility; output is one "
-                   "buffer"),
-            Option(short="-f",
-                   long="--from-file",
-                   type="path",
-                   description="Read the filter from a file"),
-            Option(long="--stream",
-                   description="Read each input as its [path, leaf] events"),
-            Option(long="--seq",
-                   description="Read and write RS-delimited JSON text "
-                   "sequences"),
-            Option(long="--arg",
-                   type="str",
-                   pair=True,
-                   description="Set $name to a string value"),
-            Option(long="--argjson",
-                   type="str",
-                   pair=True,
-                   description="Set $name to a JSON value"),
-            Option(long="--rawfile",
-                   type="path",
-                   pair=True,
-                   description="Set $name to a file's contents"),
-            Option(long="--slurpfile",
-                   type="path",
-                   pair=True,
-                   description="Set $name to a file's documents, as an "
-                   "array"),
-            Option(long="--args",
-                   description="Read the remaining operands as positional "
-                   "string values"),
-            Option(long="--jsonargs",
-                   description="Read the remaining operands as positional "
-                   "JSON values"),
-            Option(short="-h",
-                   long="--help",
-                   description="Show this help and exit"),
+            Option(
+                long="--indent",
+                type="str",
+                description="Indent with n spaces (max 7)",
+            ),
+            Option(
+                short="-M",
+                long="--monochrome-output",
+                description="Disable colored output (already the default)",
+            ),
+            Option(
+                long="--unbuffered",
+                description="Accepted for compatibility; output is one buffer",
+            ),
+            Option(
+                short="-f",
+                long="--from-file",
+                type="path",
+                description="Read the filter from a file",
+            ),
+            Option(
+                long="--stream",
+                description="Read each input as its [path, leaf] events",
+            ),
+            Option(
+                long="--seq",
+                description="Read and write RS-delimited JSON text sequences",
+            ),
+            Option(
+                long="--arg",
+                type="str",
+                pair=True,
+                description="Set $name to a string value",
+            ),
+            Option(
+                long="--argjson",
+                type="str",
+                pair=True,
+                description="Set $name to a JSON value",
+            ),
+            Option(
+                long="--rawfile",
+                type="path",
+                pair=True,
+                description="Set $name to a file's contents",
+            ),
+            Option(
+                long="--slurpfile",
+                type="path",
+                pair=True,
+                description="Set $name to a file's documents, as an array",
+            ),
+            Option(
+                long="--args",
+                description="Read the remaining operands as positional "
+                "string values",
+            ),
+            Option(
+                long="--jsonargs",
+                description="Read the remaining operands as positional "
+                "JSON values",
+            ),
+            Option(
+                short="-h",
+                long="--help",
+                description="Show this help and exit",
+            ),
             # jq answers -h and -V inside its option loop, where they are
             # typed (OWN_OPTION_LOOP), so it declares both.
-            Option(short="-V",
-                   long="--version",
-                   description="Show version information and exit"),
+            Option(
+                short="-V",
+                long="--version",
+                description="Show version information and exit",
+            ),
         ),
         # Without provided_by, `jq -f prog.jq data.json` would take
         # data.json as the filter and never read it as a file.
-        positional=(Operand(type="str", provided_by=("-f", )), ),
+        positional=(Operand(type="str", provided_by=("-f",)),),
         # --args and --jsonargs turn the operands typed after them into
         # $ARGS.positional, so those stop being input files
         # (IN_ORDER_OPERANDS).
@@ -351,23 +393,20 @@ SPECS: dict[str, CommandSpec] = {
         # no --null-input (jq 1.8.2: `jq: Unknown option --nul`).
         allow_abbrev=False,
     ),
-    'awk':
-    CommandSpec(
+    "awk": CommandSpec(
         options=(
             Option(short="-F", type="str"),
             Option(short="-v", type="str", multiple=True),
             Option(short="-f", type="path", multiple=True),
         ),
-        positional=(Operand(type="str", provided_by=("-f", )), ),
+        positional=(Operand(type="str", provided_by=("-f",)),),
         rest=Operand(type="path"),
     ),
-    'strings':
-    CommandSpec(
-        options=(Option(short="-n", type="str"), ),
+    "strings": CommandSpec(
+        options=(Option(short="-n", type="str"),),
         rest=Operand(type="path"),
     ),
-    'zgrep':
-    CommandSpec(
+    "zgrep": CommandSpec(
         options=(
             Option(short="-i"),
             Option(short="-b", long="--byte-offset"),
@@ -393,7 +432,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-s"),
             Option(short="-w"),
         ),
-        positional=(Operand(type="str", provided_by=("-e", "-f")), ),
+        positional=(Operand(type="str", provided_by=("-e", "-f")),),
         rest=Operand(type="path"),
     ),
 }

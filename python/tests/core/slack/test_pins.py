@@ -24,53 +24,65 @@ CONFIG = SlackConfig(token="xoxb-test")
 
 @pytest.mark.asyncio
 async def test_pin_message_posts_pins_add():
-    with patch("mirage.core.slack.pins.slack_post",
-               new_callable=AsyncMock,
-               return_value={"ok": True}) as post:
+    with patch(
+        "mirage.core.slack.pins.slack_post",
+        new_callable=AsyncMock,
+        return_value={"ok": True},
+    ) as post:
         result = await pin_message(CONFIG, "C001", "111.222")
-    post.assert_awaited_once_with(CONFIG,
-                                  "pins.add", {
-                                      "channel": "C001",
-                                      "timestamp": "111.222",
-                                  },
-                                  session=None)
+    post.assert_awaited_once_with(
+        CONFIG,
+        "pins.add",
+        {
+            "channel": "C001",
+            "timestamp": "111.222",
+        },
+        session=None,
+    )
     assert result == {"ok": True}
 
 
 @pytest.mark.asyncio
 async def test_unpin_message_posts_pins_remove():
-    with patch("mirage.core.slack.pins.slack_post",
-               new_callable=AsyncMock,
-               return_value={"ok": True}) as post:
+    with patch(
+        "mirage.core.slack.pins.slack_post",
+        new_callable=AsyncMock,
+        return_value={"ok": True},
+    ) as post:
         await unpin_message(CONFIG, "C001", "111.222")
-    post.assert_awaited_once_with(CONFIG,
-                                  "pins.remove", {
-                                      "channel": "C001",
-                                      "timestamp": "111.222",
-                                  },
-                                  session=None)
+    post.assert_awaited_once_with(
+        CONFIG,
+        "pins.remove",
+        {
+            "channel": "C001",
+            "timestamp": "111.222",
+        },
+        session=None,
+    )
 
 
 @pytest.mark.asyncio
 async def test_list_pins_returns_items():
-    with patch("mirage.core.slack.pins.slack_get",
-               new_callable=AsyncMock,
-               return_value={
-                   "ok": True,
-                   "items": [{
-                       "type": "message"
-                   }],
-               }) as get:
+    with patch(
+        "mirage.core.slack.pins.slack_get",
+        new_callable=AsyncMock,
+        return_value={
+            "ok": True,
+            "items": [{"type": "message"}],
+        },
+    ) as get:
         items = await list_pins(CONFIG, "C001")
-    get.assert_awaited_once_with(CONFIG,
-                                 "pins.list", {"channel": "C001"},
-                                 session=None)
+    get.assert_awaited_once_with(
+        CONFIG, "pins.list", {"channel": "C001"}, session=None
+    )
     assert items == [{"type": "message"}]
 
 
 @pytest.mark.asyncio
 async def test_list_pins_tolerates_missing_items():
-    with patch("mirage.core.slack.pins.slack_get",
-               new_callable=AsyncMock,
-               return_value={"ok": True}):
+    with patch(
+        "mirage.core.slack.pins.slack_get",
+        new_callable=AsyncMock,
+        return_value={"ok": True},
+    ):
         assert await list_pins(CONFIG, "C001") == []

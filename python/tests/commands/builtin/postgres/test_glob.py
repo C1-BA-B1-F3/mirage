@@ -36,25 +36,33 @@ def accessor():
 
 @pytest.mark.asyncio
 async def test_resolve_glob_resolved_pathspec(accessor, index):
-    p = PathSpec(vfs_path="public/tables/users",
-                 virtual="/public/tables/users",
-                 directory="/public/tables",
-                 resolved=True)
+    p = PathSpec(
+        vfs_path="public/tables/users",
+        virtual="/public/tables/users",
+        directory="/public/tables",
+        resolved=True,
+    )
     result = await resolve_glob(accessor, [p], index)
     assert result == [p]
 
 
 @pytest.mark.asyncio
 async def test_resolve_glob_pattern_match(accessor, index):
-    fake_readdir = AsyncMock(return_value=[
-        "/public/tables/users", "/public/tables/orders", "/public/tables/teams"
-    ])
+    fake_readdir = AsyncMock(
+        return_value=[
+            "/public/tables/users",
+            "/public/tables/orders",
+            "/public/tables/teams",
+        ]
+    )
     resolve = make_resolve_glob(fake_readdir)
-    p = PathSpec(vfs_path="public/tables/u*",
-                 virtual="/public/tables/u*",
-                 directory="/public/tables",
-                 pattern="u*",
-                 resolved=False)
+    p = PathSpec(
+        vfs_path="public/tables/u*",
+        virtual="/public/tables/u*",
+        directory="/public/tables",
+        pattern="u*",
+        resolved=False,
+    )
     result = await resolve(accessor, [p], index)
     assert len(result) == 1
     assert result[0].virtual == "/public/tables/users"
@@ -62,10 +70,12 @@ async def test_resolve_glob_pattern_match(accessor, index):
 
 @pytest.mark.asyncio
 async def test_resolve_glob_unresolved_no_pattern(accessor, index):
-    p = PathSpec(vfs_path="public/tables",
-                 virtual="/public/tables",
-                 directory="/public",
-                 resolved=False,
-                 pattern=None)
+    p = PathSpec(
+        vfs_path="public/tables",
+        virtual="/public/tables",
+        directory="/public",
+        resolved=False,
+        pattern=None,
+    )
     result = await resolve_glob(accessor, [p], index)
     assert result == [p]

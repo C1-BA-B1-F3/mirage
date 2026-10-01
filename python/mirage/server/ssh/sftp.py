@@ -18,18 +18,29 @@ import logging
 import os
 import posixpath
 import stat
+from collections import deque
 from collections.abc import AsyncIterator, Callable
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, TypeVar
 
 import asyncssh
-from asyncssh.constants import (FILEXFER_TYPE_DIRECTORY, FILEXFER_TYPE_REGULAR,
-                                FILEXFER_TYPE_SYMLINK, FILEXFER_TYPE_UNKNOWN,
-                                FXF_APPEND, FXF_CREAT, FXF_EXCL, FXF_TRUNC)
+from asyncssh.constants import (
+    FILEXFER_TYPE_DIRECTORY,
+    FILEXFER_TYPE_REGULAR,
+    FILEXFER_TYPE_SYMLINK,
+    FILEXFER_TYPE_UNKNOWN,
+    FXF_APPEND,
+    FXF_CREAT,
+    FXF_EXCL,
+    FXF_TRUNC,
+)
 
 from mirage.fuse.core import MountCore
 from mirage.fuse.errors import classify_error
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
+from mirage.server.ssh.constants import LISTING_CONCURRENCY
 from mirage.server.ssh.session import key_profile, new_session_id, open_session
 from mirage.server.ssh.stream import ENCODING, ERRORS
 from mirage.utils.errors import NoMountError
@@ -99,16 +110,18 @@ def to_attrs(st: dict[str, Any]) -> asyncssh.SFTPAttrs:
     mode = st["st_mode"]
     atime, atime_ns = divmod(st["st_atime"], NS_PER_SECOND)
     mtime, mtime_ns = divmod(st["st_mtime"], NS_PER_SECOND)
-    return asyncssh.SFTPAttrs(type=filetype(mode),
-                              size=st["st_size"],
-                              uid=st["st_uid"],
-                              gid=st["st_gid"],
-                              permissions=mode,
-                              atime=atime,
-                              atime_ns=atime_ns,
-                              mtime=mtime,
-                              mtime_ns=mtime_ns,
-                              nlink=st["st_nlink"])
+    return asyncssh.SFTPAttrs(
+        type=filetype(mode),
+        size=st["st_size"],
+        uid=st["st_uid"],
+        gid=st["st_gid"],
+        permissions=mode,
+        atime=atime,
+        atime_ns=atime_ns,
+        mtime=mtime,
+        mtime_ns=mtime_ns,
+        nlink=st["st_nlink"],
+    )
 
 
 def exists(core: MountCore, path: str) -> bool:
@@ -119,11 +132,23 @@ def exists(core: MountCore, path: str) -> bool:
     return True
 
 
+# One pool for every listing in the process, so channels that list at
+# once share its threads rather than each bringing a pool of its own.
+_STATS = ThreadPoolExecutor(
+    LISTING_CONCURRENCY, thread_name_prefix="sftp-stat"
+)
+
+
 def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
     """A directory's entries with their attributes, in one pass.
 
-    An entry that vanishes between the listing and its stat is left out,
-    as ``ls`` leaves out a file deleted mid-listing.
+    The entries are stat'd together on the shared pool rather than one
+    after another, with at most ``LISTING_CONCURRENCY`` of this listing's
+    queued at once, so a wide directory is never queued whole. A stat that
+    fails ends the listing once the ones already running finish: the core
+    takes one caller at a time, so the next op must not overlap them. An
+    entry that vanishes between the listing and its stat is left out, as
+    ``ls`` leaves out a file deleted mid-listing.
 
     Args:
         core (MountCore): the mount core.
@@ -133,19 +158,35 @@ def listing(core: MountCore, path: str) -> list[tuple[str, dict[str, Any]]]:
         list[tuple[str, dict[str, Any]]]: (name, ``st_*`` dict) pairs,
             ``.`` and ``..`` first.
     """
-    entries = []
-    for name in core.readdir(path):
-        if name == ".":
-            child = path
-        elif name == "..":
-            child = posixpath.dirname(path)
-        else:
-            child = posixpath.join(path, name)
-        try:
-            entries.append((name, core.getattr(child)))
-        except (FileNotFoundError, NotADirectoryError) as exc:
-            logger.debug("sftp: %s vanished while listing: %r", child, exc)
-    return entries
+    stat = partial(_entry, core, path)
+    window: deque[Future[tuple[str, dict[str, Any]] | None]] = deque()
+    rows = []
+    try:
+        for name in core.readdir(path):
+            if len(window) == LISTING_CONCURRENCY:
+                rows.append(window.popleft().result())
+            window.append(_STATS.submit(stat, name))
+        while window:
+            rows.append(window.popleft().result())
+    finally:
+        wait(window)
+    return [row for row in rows if row is not None]
+
+
+def _entry(
+    core: MountCore, path: str, name: str
+) -> tuple[str, dict[str, Any]] | None:
+    if name == ".":
+        child = path
+    elif name == "..":
+        child = posixpath.dirname(path)
+    else:
+        child = posixpath.join(path, name)
+    try:
+        return name, core.getattr(child)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        logger.debug("sftp: %s vanished while listing: %r", child, exc)
+        return None
 
 
 def open_file(core: MountCore, path: str, pflags: int) -> OpenFile:
@@ -169,13 +210,15 @@ def open_file(core: MountCore, path: str, pflags: int) -> OpenFile:
         raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), path)
     if not found:
         if not pflags & FXF_CREAT:
-            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
-                                    path)
+            raise FileNotFoundError(
+                errno.ENOENT, os.strerror(errno.ENOENT), path
+            )
         fh = core.create(path)
     else:
         if stat.S_ISDIR(core.getattr(path)["st_mode"]):
-            raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR),
-                                    path)
+            raise IsADirectoryError(
+                errno.EISDIR, os.strerror(errno.EISDIR), path
+            )
         fh = core.open(path, os.O_TRUNC if pflags & FXF_TRUNC else 0)
     append_at = None
     if pflags & FXF_APPEND:
@@ -214,17 +257,19 @@ def rename_new(core: MountCore, old: str, new: str) -> None:
 
 def vfs_attrs(core: MountCore) -> asyncssh.SFTPVFSAttrs:
     st = core.statfs()
-    return asyncssh.SFTPVFSAttrs(bsize=st["f_bsize"],
-                                 frsize=st["f_frsize"],
-                                 blocks=st["f_blocks"],
-                                 bfree=st["f_bfree"],
-                                 bavail=st["f_bavail"],
-                                 files=st["f_files"],
-                                 ffree=st["f_ffree"],
-                                 favail=st["f_favail"],
-                                 fsid=0,
-                                 flag=0,
-                                 namemax=st["f_namemax"])
+    return asyncssh.SFTPVFSAttrs(
+        bsize=st["f_bsize"],
+        frsize=st["f_frsize"],
+        blocks=st["f_blocks"],
+        bfree=st["f_bfree"],
+        bavail=st["f_bavail"],
+        files=st["f_files"],
+        ffree=st["f_ffree"],
+        favail=st["f_favail"],
+        fsid=0,
+        flag=0,
+        namemax=st["f_namemax"],
+    )
 
 
 def as_os_error(err: Exception) -> OSError:
@@ -262,8 +307,11 @@ class MirageSFTPServer(asyncssh.SFTPServer):
         chan (asyncssh.SSHServerChannel): the SFTP channel.
     """
 
-    def __init__(self, registry: WorkspaceRegistry,
-                 chan: asyncssh.SSHServerChannel[bytes]) -> None:
+    def __init__(
+        self,
+        registry: WorkspaceRegistry,
+        chan: asyncssh.SSHServerChannel[bytes],
+    ) -> None:
         super().__init__(chan)
         self._registry = registry
         self._workspace_id: str = chan.get_extra_info("username")
@@ -278,16 +326,20 @@ class MirageSFTPServer(asyncssh.SFTPServer):
             return self._core
         if self._workspace_id not in self._registry:
             raise asyncssh.SFTPNoSuchFile(
-                f"no such workspace: {self._workspace_id}")
+                f"no such workspace: {self._workspace_id}"
+            )
         entry = self._registry.get(self._workspace_id)
         ws = entry.runner.ws
         profile = key_profile(self._conn)
         await entry.runner.call(
-            open_session(ws, self._session_id, profile=profile))
+            open_session(ws, self._session_id, profile=profile)
+        )
         self._entry = entry
-        self._core = MountCore(ws.vfs,
-                               session=ws.get_session(self._session_id),
-                               loop=entry.runner.loop)
+        self._core = MountCore(
+            ws.vfs,
+            session=ws.get_session(self._session_id),
+            loop=entry.runner.loop,
+        )
         return self._core
 
     async def _call(self, op: Callable[[MountCore], T]) -> T:
@@ -317,7 +369,8 @@ class MirageSFTPServer(asyncssh.SFTPServer):
     async def stat(self, path: bytes) -> asyncssh.SFTPAttrs:
         p = self._path(path)
         return to_attrs(
-            await self._call(lambda core: core.getattr(core.identity(p))))
+            await self._call(lambda core: core.getattr(core.identity(p)))
+        )
 
     async def lstat(self, path: bytes) -> asyncssh.SFTPAttrs:
         p = self._path(path)
@@ -325,8 +378,9 @@ class MirageSFTPServer(asyncssh.SFTPServer):
 
     async def fstat(self, file_obj: Any) -> asyncssh.SFTPAttrs:
         f = opened(file_obj)
-        return to_attrs(await
-                        self._call(lambda core: core.getattr(f.path, f.fh)))
+        return to_attrs(
+            await self._call(lambda core: core.getattr(f.path, f.fh))
+        )
 
     async def setstat(self, path: bytes, attrs: asyncssh.SFTPAttrs) -> None:
         p = self._path(path)
@@ -351,19 +405,26 @@ class MirageSFTPServer(asyncssh.SFTPServer):
         for name, st in await self._call(lambda core: listing(core, p)):
             yield asyncssh.SFTPName(self._encode(name), attrs=to_attrs(st))
 
-    async def open(self, path: bytes, pflags: int,
-                   attrs: asyncssh.SFTPAttrs) -> OpenFile:
+    async def open(
+        self, path: bytes, pflags: int, attrs: asyncssh.SFTPAttrs
+    ) -> OpenFile:
         p = self._path(path)
         return await self._call(lambda core: open_file(core, p, pflags))
 
-    async def open56(self, path: bytes, desired_access: int, flags: int,
-                     attrs: asyncssh.SFTPAttrs) -> OpenFile:
+    async def open56(
+        self,
+        path: bytes,
+        desired_access: int,
+        flags: int,
+        attrs: asyncssh.SFTPAttrs,
+    ) -> OpenFile:
         raise asyncssh.SFTPOpUnsupported("SFTP v5+ open is not supported")
 
     async def read(self, file_obj: Any, offset: int, size: int) -> bytes:
         f = opened(file_obj)
         return await self._call(
-            lambda core: core.read(f.path, size, offset, f.fh))
+            lambda core: core.read(f.path, size, offset, f.fh)
+        )
 
     async def write(self, file_obj: Any, offset: int, data: bytes) -> int:
         f = opened(file_obj)
@@ -371,7 +432,8 @@ class MirageSFTPServer(asyncssh.SFTPServer):
             offset = f.append_at
             f.append_at += len(data)
         return await self._call(
-            lambda core: core.write(f.path, data, offset, f.fh))
+            lambda core: core.write(f.path, data, offset, f.fh)
+        )
 
     async def fsync(self, file_obj: Any) -> None:
         f = opened(file_obj)
@@ -413,8 +475,9 @@ class MirageSFTPServer(asyncssh.SFTPServer):
     async def link(self, oldpath: bytes, newpath: bytes) -> None:
         raise asyncssh.SFTPOpUnsupported("hard links are not supported")
 
-    async def lock(self, file_obj: Any, offset: int, length: int,
-                   flags: int) -> None:
+    async def lock(
+        self, file_obj: Any, offset: int, length: int, flags: int
+    ) -> None:
         raise asyncssh.SFTPOpUnsupported("byte-range locks are not supported")
 
     async def unlock(self, file_obj: Any, offset: int, length: int) -> None:
@@ -429,10 +492,14 @@ class MirageSFTPServer(asyncssh.SFTPServer):
     async def exit(self) -> None:
         entry = self._entry
         try:
-            if entry is not None and entry.id in self._registry and (
-                    self._registry.get(entry.id) is entry):
+            if (
+                entry is not None
+                and entry.id in self._registry
+                and (self._registry.get(entry.id) is entry)
+            ):
                 await entry.runner.call(
-                    entry.runner.ws.close_session(self._session_id))
+                    entry.runner.ws.close_session(self._session_id)
+                )
         finally:
             # asyncssh ends an SFTP channel with no exit status, which
             # OpenSSH's ssh reports as 255 and scp (in its default SFTP

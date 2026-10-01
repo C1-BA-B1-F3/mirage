@@ -135,8 +135,7 @@ class RAMObserverStore(ObserverStoreBase):
             dict[str, bytes]: Mapping of matching key to content.
         """
         return {
-            k: bytes(v)
-            for k, v in self.files.items() if k.endswith(suffix)
+            k: bytes(v) for k, v in self.files.items() if k.endswith(suffix)
         }
 
     async def clear(self) -> None:

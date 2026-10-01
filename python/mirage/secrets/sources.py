@@ -25,10 +25,11 @@ from mirage.secrets.types import ResolvedSecret, ResolvedSource
 
 
 async def config_value(
-        label: str,
-        ref: SecretRef,
-        fetched: dict[tuple[str, str], ResolvedSecret],
-        sources: Mapping[str, ResolvedSource] | None = None) -> str:
+    label: str,
+    ref: SecretRef,
+    fetched: dict[tuple[str, str], ResolvedSecret],
+    sources: Mapping[str, ResolvedSource] | None = None,
+) -> str:
     """Read one configured value from the source it points at.
 
     Every plane that reads a pointer comes through here: a source's own
@@ -68,13 +69,18 @@ async def config_value(
         secret = await fetch_secret(ref.provider, ref.ref, sources)
     except Exception as exc:
         raise SecretsError(
-            f"{label}: cannot fetch from {ref.provider}") from exc
+            f"{label}: cannot fetch from {ref.provider}"
+        ) from exc
     fetched[(ref.provider, ref.ref)] = secret
     return _field(label, ref, secret, sources)
 
 
-def _field(label: str, ref: SecretRef, secret: ResolvedSecret,
-           sources: Mapping[str, ResolvedSource] | None) -> str:
+def _field(
+    label: str,
+    ref: SecretRef,
+    secret: ResolvedSecret,
+    sources: Mapping[str, ResolvedSource] | None,
+) -> str:
     value = secret.fields.get(ref.key)
     if value is None:
         # A declared instance is named by the deployment, so the
@@ -82,14 +88,16 @@ def _field(label: str, ref: SecretRef, secret: ResolvedSecret,
         # must redact like `env`, not like an unknown name.
         declared = sources.get(ref.provider) if sources else None
         provider = declared.source if declared is not None else ref.provider
-        raise SecretsError(f"{label}: wanted field {ref.key!r}, the "
-                           f"{ref.provider} secret has "
-                           f"{field_summary(secret.fields, provider)}")
+        raise SecretsError(
+            f"{label}: wanted field {ref.key!r}, the "
+            f"{ref.provider} secret has "
+            f"{field_summary(secret.fields, provider)}"
+        )
     return value
 
 
 async def resolve_sources(
-    declared: Mapping[str, "SecretSource | Mapping[str, Any]"]
+    declared: Mapping[str, "SecretSource | Mapping[str, Any]"],
 ) -> dict[str, ResolvedSource]:
     """Build every declared instance, reading its pointers.
 
@@ -126,9 +134,13 @@ async def resolve_sources(
         config_model, fetch = source_for(block.source)
         values: dict[str, Any] = {}
         for field, value in block.config.items():
-            values[field] = (await config_value(
-                f"secrets.{name}.config.{field}", value, fetched)
-                             if isinstance(value, SecretRef) else value)
+            values[field] = (
+                await config_value(
+                    f"secrets.{name}.config.{field}", value, fetched
+                )
+                if isinstance(value, SecretRef)
+                else value
+            )
         try:
             config = config_model.model_validate(values)
         except ValidationError as exc:
@@ -137,7 +149,8 @@ async def resolve_sources(
             # names the field and the type only, and the chain is cut:
             # `__cause__` would carry the value into a logged traceback.
             raise SecretsError(
-                f"secrets.{name}: {error_summary(exc)}") from None
+                f"secrets.{name}: {error_summary(exc)}"
+            ) from None
         except Exception as exc:
             # A validator that RAISES rather than returning a
             # validation error never becomes an issue list, and
@@ -234,18 +247,23 @@ async def resolve_sources_for(
     return await resolve_sources(declared)
 
 
-async def _resolve_value(value: Any, label: str, fetched: dict[tuple[str, str],
-                                                               ResolvedSecret],
-                         sources: Mapping[str, ResolvedSource] | None) -> Any:
+async def _resolve_value(
+    value: Any,
+    label: str,
+    fetched: dict[tuple[str, str], ResolvedSecret],
+    sources: Mapping[str, ResolvedSource] | None,
+) -> Any:
     if isinstance(value, SecretRef):
         return await config_value(label, value, fetched, sources)
     if is_config_pointer(value):
-        return await config_value(label, SecretRef.model_validate(value),
-                                  fetched, sources)
+        return await config_value(
+            label, SecretRef.model_validate(value), fetched, sources
+        )
     if isinstance(value, Mapping):
         return {
-            key: await _resolve_value(child, f"{label}.{key}", fetched,
-                                      sources)
+            key: await _resolve_value(
+                child, f"{label}.{key}", fetched, sources
+            )
             for key, child in value.items()
         }
     if isinstance(value, (list, tuple)):
@@ -260,10 +278,11 @@ async def _resolve_value(value: Any, label: str, fetched: dict[tuple[str, str],
     return value
 
 
-async def resolve_config_secrets(config: Mapping[str, Any],
-                                 sources: Mapping[str, ResolvedSource]
-                                 | None = None,
-                                 label: str = "config") -> dict[str, Any]:
+async def resolve_config_secrets(
+    config: Mapping[str, Any],
+    sources: Mapping[str, ResolvedSource] | None = None,
+    label: str = "config",
+) -> dict[str, Any]:
     """A raw mount or CLI config with every pointer read from its source.
 
     The same `config_value` a source's own config goes through, over

@@ -22,15 +22,34 @@ from mirage.ops.types import SessionView
 from mirage.policy import Policies, PolicyDenied, pre_session_gate
 from mirage.policy.types import SessionContext
 from mirage.shell.arith import evaluate_arith
-from mirage.shell.array import (ShellArray, array_extent, array_get, array_has,
-                                array_values, array_with, make_array)
+from mirage.shell.array import (
+    ShellArray,
+    array_extent,
+    array_get,
+    array_has,
+    array_values,
+    array_with,
+    make_array,
+)
 from mirage.shell.call_stack import CallStack
-from mirage.shell.constants import (PIPESTATUS, RANDOM, RANDOM_MODULUS,
-                                    RANDOM_UNSET)
+from mirage.shell.constants import (
+    PIPESTATUS,
+    RANDOM,
+    RANDOM_MODULUS,
+    RANDOM_UNSET,
+)
 from mirage.shell.errors import ArithError
 from mirage.shell.types import ArithWrite, ElementOps
-from mirage.shell.variable import (ShellValue, ShellVar, TempEnv, VarAttr,
-                                   coerce_value, detach, with_attr, with_value)
+from mirage.shell.variable import (
+    ShellValue,
+    ShellVar,
+    TempEnv,
+    VarAttr,
+    coerce_value,
+    detach,
+    with_attr,
+    with_value,
+)
 from mirage.utils.hidden import var_hidden
 from mirage.workspace.session.errors import ReadonlyVariableError
 from mirage.workspace.session.rng import draw
@@ -60,7 +79,8 @@ def env_snapshot(session: SessionState) -> dict[str, str]:
     return {
         name: var.value
         for name, var in session.vars.items()
-        if isinstance(var.value, str) and VarAttr.EXPORT in var.attrs
+        if isinstance(var.value, str)
+        and VarAttr.EXPORT in var.attrs
         and not var_hidden(session.hidden_vars, name)
     }
 
@@ -77,9 +97,12 @@ def exported_names(session: SessionState) -> list[str]:
     Args:
         session (SessionState): the session to read.
     """
-    return sorted(name for name, var in session.vars.items()
-                  if VarAttr.EXPORT in var.attrs
-                  and not var_hidden(session.hidden_vars, name))
+    return sorted(
+        name
+        for name, var in session.vars.items()
+        if VarAttr.EXPORT in var.attrs
+        and not var_hidden(session.hidden_vars, name)
+    )
 
 
 def nameref_target(session: SessionState, name: str) -> str | None:
@@ -142,8 +165,9 @@ def env_get(session: SessionState, name: str) -> str | None:
     if var_hidden(session.hidden_vars, name):
         return None
     var = session.vars.get(name)
-    return var.value if var is not None and isinstance(var.value,
-                                                       str) else None
+    return (
+        var.value if var is not None and isinstance(var.value, str) else None
+    )
 
 
 def env_is_readonly(session: SessionState, name: str) -> bool:
@@ -172,7 +196,7 @@ class _VisibleEnv(Mapping[str, str]):
     the session show through without rebuilding anything.
     """
 
-    __slots__ = ("_session", )
+    __slots__ = ("_session",)
 
     def __init__(self, session: SessionState) -> None:
         self._session = session
@@ -220,7 +244,7 @@ class _VisibleArrays(Mapping[str, ShellArray]):
     array and array reads need the same filter env reads get.
     """
 
-    __slots__ = ("_session", )
+    __slots__ = ("_session",)
 
     def __init__(self, session: SessionState) -> None:
         self._session = session
@@ -268,7 +292,7 @@ class _VisibleAssocs(Mapping[str, dict[str, str]]):
     with any value shape, so every reader tier filters the same way.
     """
 
-    __slots__ = ("_session", )
+    __slots__ = ("_session",)
 
     def __init__(self, session: SessionState) -> None:
         self._session = session
@@ -317,11 +341,13 @@ def strip_key_quotes(text: str) -> str:
     return text
 
 
-def element_index(subscript: str,
-                  env: Mapping[str, str],
-                  elements: ElementOps | None = None,
-                  read_var: Callable[[str], str | None] | None = None,
-                  wrote_var: Callable[[str, str], None] | None = None) -> int:
+def element_index(
+    subscript: str,
+    env: Mapping[str, str],
+    elements: ElementOps | None = None,
+    read_var: Callable[[str], str | None] | None = None,
+    wrote_var: Callable[[str, str], None] | None = None,
+) -> int:
     """Resolve an indexed subscript in arithmetic context.
 
     bash evaluates indexed subscripts as arithmetic (``a[i+1]``); an
@@ -344,11 +370,13 @@ def element_index(subscript: str,
     except ValueError:
         pass
     try:
-        return evaluate_arith(subscript,
-                              env,
-                              elements=elements,
-                              read_var=read_var,
-                              wrote_var=wrote_var).value
+        return evaluate_arith(
+            subscript,
+            env,
+            elements=elements,
+            read_var=read_var,
+            wrote_var=wrote_var,
+        ).value
     except ArithError:
         return 0
 
@@ -370,13 +398,14 @@ def _written_value(session: SessionState, write: ArithWrite) -> ShellValue:
     if assoc is not None:
         return {**assoc, write.key: write.value}
     arr = visible_arrays(session).get(write.name)
-    return array_with(arr if arr is not None else make_array([]),
-                      int(write.key), write.value)
+    return array_with(
+        arr if arr is not None else make_array([]), int(write.key), write.value
+    )
 
 
-async def subscript_index(session: SessionState,
-                          subscript: str,
-                          view: SessionView | None = None) -> int:
+async def subscript_index(
+    session: SessionState, subscript: str, view: SessionView | None = None
+) -> int:
     """An indexed subscript resolved outside an arithmetic expression:
     ``${a[i]}``, ``a[i]=v``, ``unset 'a[i]'``, ``[[ -v a[i] ]]``.
 
@@ -409,13 +438,14 @@ async def subscript_index(session: SessionState,
     error: ArithError | None = None
     idx = 0
     try:
-        result = evaluate_arith(subscript,
-                                visible_env(session),
-                                elements=session_elements(session, reader),
-                                read_var=reader.read,
-                                wrote_var=reader.wrote,
-                                nounset=bool(
-                                    session.shell_options.get("nounset")))
+        result = evaluate_arith(
+            subscript,
+            visible_env(session),
+            elements=session_elements(session, reader),
+            read_var=reader.read,
+            wrote_var=reader.wrote,
+            nounset=bool(session.shell_options.get("nounset")),
+        )
         idx, writes = result.value, result.writes
     except ArithError as exc:
         error, writes = exc, exc.writes
@@ -445,14 +475,15 @@ class _SessionElements:
 
     __slots__ = ("_session", "_reader")
 
-    def __init__(self,
-                 session: SessionState,
-                 reader: "RandomReader | None" = None) -> None:
+    def __init__(
+        self, session: SessionState, reader: "RandomReader | None" = None
+    ) -> None:
         self._session = session
         self._reader = reader
 
-    def resolve(self, name: str, subscript: str, env: Mapping[str,
-                                                              str]) -> str:
+    def resolve(
+        self, name: str, subscript: str, env: Mapping[str, str]
+    ) -> str:
         """Canonical key for one reference.
 
         Args:
@@ -464,10 +495,13 @@ class _SessionElements:
         if name in visible_assocs(self._session):
             return strip_key_quotes(subscript)
         reader = self._reader
-        idx = element_index(subscript, env,
-                            session_elements(self._session, reader),
-                            reader.read if reader is not None else None,
-                            reader.wrote if reader is not None else None)
+        idx = element_index(
+            subscript,
+            env,
+            session_elements(self._session, reader),
+            reader.read if reader is not None else None,
+            reader.wrote if reader is not None else None,
+        )
         if idx < 0:
             arr = visible_arrays(self._session).get(name)
             if arr is not None:
@@ -492,8 +526,9 @@ class _SessionElements:
         Args:
             name (str): the variable's name.
         """
-        return (name in visible_assocs(self._session)
-                or name in visible_arrays(self._session))
+        return name in visible_assocs(self._session) or name in visible_arrays(
+            self._session
+        )
 
     def read(self, name: str, key: str) -> str | None:
         """The element's stored text, None when unset.
@@ -516,8 +551,9 @@ class _SessionElements:
         return array_get(arr, idx) if array_has(arr, idx) else None
 
 
-def session_elements(session: SessionState,
-                     reader: "RandomReader | None" = None) -> ElementOps:
+def session_elements(
+    session: SessionState, reader: "RandomReader | None" = None
+) -> ElementOps:
     """Element callbacks bound to one session, for ``evaluate_arith``.
 
     Args:
@@ -527,10 +563,12 @@ def session_elements(session: SessionState,
             expression around it; None where nothing draws.
     """
     bound = _SessionElements(session, reader)
-    return ElementOps(resolve=bound.resolve,
-                      read=bound.read,
-                      is_assoc=bound.is_assoc,
-                      holds_array=bound.holds_array)
+    return ElementOps(
+        resolve=bound.resolve,
+        read=bound.read,
+        is_assoc=bound.is_assoc,
+        holds_array=bound.holds_array,
+    )
 
 
 def seed_from(word: str, session: SessionState) -> int:
@@ -543,9 +581,9 @@ def seed_from(word: str, session: SessionState) -> int:
         word (str): the seed expression.
         session (SessionState): the session the expression reads.
     """
-    value = evaluate_arith(word,
-                           visible_env(session),
-                           elements=session_elements(session)).value
+    value = evaluate_arith(
+        word, visible_env(session), elements=session_elements(session)
+    ).value
     return value % RANDOM_MODULUS
 
 
@@ -561,10 +599,14 @@ def next_random(session: SessionState, stored: str | None) -> int | None:
         stored (str | None): the visible RANDOM value.
     """
     if session._random_seed == RANDOM_UNSET or (
-            stored is None and session._random_seed is not None):
+        stored is None and session._random_seed is not None
+    ):
         return None
-    seed = (seed_from(stored, session)
-            if stored is not None and stored != session._random_seed else None)
+    seed = (
+        seed_from(stored, session)
+        if stored is not None and stored != session._random_seed
+        else None
+    )
     if seed is not None:
         state = seed
         last = 0
@@ -579,14 +621,18 @@ def next_random(session: SessionState, stored: str | None) -> int | None:
     session._random_last = value
     word = str(value)
     existing = session.vars.get(RANDOM)
-    session.vars[RANDOM] = (replace(existing, value=word)
-                            if existing is not None else ShellVar(word))
+    session.vars[RANDOM] = (
+        replace(existing, value=word)
+        if existing is not None
+        else ShellVar(word)
+    )
     session._random_seed = word
     return value
 
 
-def note_random_kind(session: SessionState, name: str,
-                     value: ShellValue) -> None:
+def note_random_kind(
+    session: SessionState, name: str, value: ShellValue
+) -> None:
     """End ``RANDOM``'s special meaning when a non-string lands on it.
 
     bash's ``convert_var_to_array`` drops the dynamic value and the
@@ -661,8 +707,11 @@ class RandomReader:
 
     def _special(self, name: str) -> bool:
         session = self.session
-        return (name == RANDOM and not var_hidden(session.hidden_vars, name)
-                and session._random_seed != RANDOM_UNSET)
+        return (
+            name == RANDOM
+            and not var_hidden(session.hidden_vars, name)
+            and session._random_seed != RANDOM_UNSET
+        )
 
     def read(self, name: str) -> str | None:
         """The dynamic value of a name, None for a name that has none.
@@ -673,8 +722,9 @@ class RandomReader:
         if not self._special(name):
             return None
         if self.seeded is None:
-            value = next_random(self.session,
-                                visible_env(self.session).get(name))
+            value = next_random(
+                self.session, visible_env(self.session).get(name)
+            )
             return None if value is None else str(value)
         self.state, value = draw(self.state, self.last)
         self.last = value
@@ -741,12 +791,13 @@ class _IntegerCoercion:
     def __call__(self, text: str) -> str:
         session = self.session
         try:
-            result = evaluate_arith(text,
-                                    visible_env(session),
-                                    elements=session_elements(
-                                        session, self.reader),
-                                    read_var=self.reader.read,
-                                    wrote_var=self.reader.wrote)
+            result = evaluate_arith(
+                text,
+                visible_env(session),
+                elements=session_elements(session, self.reader),
+                read_var=self.reader.read,
+                wrote_var=self.reader.wrote,
+            )
         except ArithError as exc:
             self.writes.extend(exc.writes)
             raise ArithError(f"{text}: {exc}") from exc
@@ -754,8 +805,11 @@ class _IntegerCoercion:
         return str(result.value)
 
 
-async def _land_coercion(session: SessionState, policies: Policies | None,
-                         coercion: _IntegerCoercion) -> None:
+async def _land_coercion(
+    session: SessionState,
+    policies: Policies | None,
+    coercion: _IntegerCoercion,
+) -> None:
     """Land the assignments a coercion made, each through the door, then
     settle its ``RANDOM`` draws.
 
@@ -765,8 +819,9 @@ async def _land_coercion(session: SessionState, policies: Policies | None,
         coercion (_IntegerCoercion): the evaluation that made the writes.
     """
     for write in coercion.writes:
-        await set_var(session, policies, write.name,
-                      _written_value(session, write))
+        await set_var(
+            session, policies, write.name, _written_value(session, write)
+        )
     coercion.reader.settle()
 
 
@@ -817,8 +872,9 @@ def gate_rendering(value: ShellValue | None) -> str | None:
     return " ".join(array_values(value))
 
 
-async def gate_restored_vars(policies: Policies | None, session_id: str,
-                             table: Mapping[str, ShellVar]) -> None:
+async def gate_restored_vars(
+    policies: Policies | None, session_id: str, table: Mapping[str, ShellVar]
+) -> None:
     """Vet a variable table a snapshot restores through the session gate.
 
     A snapshot is the one env input the deployment did not author, so
@@ -841,18 +897,23 @@ async def gate_restored_vars(policies: Policies | None, session_id: str,
             continue
         await pre_session_gate(
             policies,
-            SessionContext(plane="env",
-                           verb="set",
-                           key=name,
-                           value=gate_rendering(var.value),
-                           session_id=session_id))
+            SessionContext(
+                plane="env",
+                verb="set",
+                key=name,
+                value=gate_rendering(var.value),
+                session_id=session_id,
+            ),
+        )
 
 
-async def set_var(session: SessionState,
-                  policies: Policies | None,
-                  name: str,
-                  value: ShellValue,
-                  follow_ref: bool = True) -> None:
+async def set_var(
+    session: SessionState,
+    policies: Policies | None,
+    name: str,
+    value: ShellValue,
+    follow_ref: bool = True,
+) -> None:
     """Write one variable through the session plane's gate.
 
     General over variable shapes: a string stores a scalar, a
@@ -918,13 +979,19 @@ async def set_var(session: SessionState,
             raise
     await pre_session_gate(
         policies,
-        SessionContext(plane="env",
-                       verb="set",
-                       key=name,
-                       value=gate_rendering(value),
-                       session_id=session.session_id))
-    if name == RANDOM and session._random_seed != RANDOM_UNSET and isinstance(
-            value, str):
+        SessionContext(
+            plane="env",
+            verb="set",
+            key=name,
+            value=gate_rendering(value),
+            session_id=session.session_id,
+        ),
+    )
+    if (
+        name == RANDOM
+        and session._random_seed != RANDOM_UNSET
+        and isinstance(value, str)
+    ):
         try:
             seed = int(coercion(value)) % RANDOM_MODULUS
         except ArithError as exc:
@@ -938,8 +1005,9 @@ async def set_var(session: SessionState,
     # The assignments the coercion or the seed made land now, gated
     # each, before the name they were made for.
     await _land_coercion(session, policies, coercion)
-    stored = ShellVar(value) if existing is None else with_value(
-        existing, value)
+    stored = (
+        ShellVar(value) if existing is None else with_value(existing, value)
+    )
     # An agent write to a managed name shadows session-locally: the
     # pointer drops and the record becomes a plain variable for this
     # session only. Only the host-tier fill step writes pointer-keeping
@@ -955,10 +1023,12 @@ async def set_var(session: SessionState,
     session.vars[name] = stored
 
 
-async def unset_var(session: SessionState,
-                    policies: Policies | None,
-                    name: str,
-                    follow_ref: bool = True) -> None:
+async def unset_var(
+    session: SessionState,
+    policies: Policies | None,
+    name: str,
+    follow_ref: bool = True,
+) -> None:
     """Drop one variable through the session plane's gate; a missing
     name is quiet.
 
@@ -987,27 +1057,32 @@ async def unset_var(session: SessionState,
         raise ReadonlyVariableError(name)
     await pre_session_gate(
         policies,
-        SessionContext(plane="env",
-                       verb="unset",
-                       key=name,
-                       value=None,
-                       session_id=session.session_id))
+        SessionContext(
+            plane="env",
+            verb="unset",
+            key=name,
+            value=None,
+            session_id=session.session_id,
+        ),
+    )
     _drop(session, name)
     if name == RANDOM:
         # bash: unsetting RANDOM strips its special meaning for good.
         session._random_seed = RANDOM_UNSET
 
 
-def _shadowing_frame(session: SessionState,
-                     name: str) -> dict[str, ShellVar | None] | None:
+def _shadowing_frame(
+    session: SessionState, name: str
+) -> dict[str, ShellVar | None] | None:
     """The innermost scope on the call path that saved ``name``.
 
     Args:
         session (SessionState): the session.
         name (str): variable name.
     """
-    return next((f for f in reversed(session._local_frames) if name in f),
-                None)
+    return next(
+        (f for f in reversed(session._local_frames) if name in f), None
+    )
 
 
 def _drop(session: SessionState, name: str) -> None:
@@ -1062,12 +1137,16 @@ def in_call_env(session: SessionState, name: str) -> bool:
         name (str): variable name.
     """
     frames = session._local_frames
-    return (len(frames) > 1 and isinstance(frames[-2], TempEnv)
-            and name in frames[-2])
+    return (
+        len(frames) > 1
+        and isinstance(frames[-2], TempEnv)
+        and name in frames[-2]
+    )
 
 
-def positional_params(session: SessionState,
-                      call_stack: CallStack | None) -> list[str]:
+def positional_params(
+    session: SessionState, call_stack: CallStack | None
+) -> list[str]:
     """The positional parameters in scope.
 
     Inside a function they are the function's own, even when it was
@@ -1083,8 +1162,9 @@ def positional_params(session: SessionState,
     return session.positional_args
 
 
-def set_positional_params(session: SessionState, call_stack: CallStack | None,
-                          values: list[str]) -> None:
+def set_positional_params(
+    session: SessionState, call_stack: CallStack | None, values: list[str]
+) -> None:
     """Replace the positional parameters in scope.
 
     ``set --`` and ``shift`` inside a function change the function's
@@ -1101,8 +1181,9 @@ def set_positional_params(session: SessionState, call_stack: CallStack | None,
         session.positional_args = values
 
 
-def shadow_local(session: SessionState, local_vars: dict[str, ShellVar | None],
-                 name: str) -> None:
+def shadow_local(
+    session: SessionState, local_vars: dict[str, ShellVar | None], name: str
+) -> None:
     """Record the caller's record before a ``local`` shadows it, once
     per frame.
 
@@ -1124,8 +1205,9 @@ def shadow_local(session: SessionState, local_vars: dict[str, ShellVar | None],
         session._random_seed = RANDOM_UNSET
 
 
-def restore_locals(session: SessionState,
-                   local_vars: dict[str, ShellVar | None]) -> None:
+def restore_locals(
+    session: SessionState, local_vars: dict[str, ShellVar | None]
+) -> None:
     """Put a returning function's shadowed records back.
 
     Deliberate divergence: bash reseeds the global generator when a
@@ -1178,15 +1260,15 @@ def seed_var(session: SessionState, name: str, value: ShellValue) -> None:
         value (ShellValue): the value to store.
     """
     existing = session.vars.get(name)
-    session.vars[name] = (ShellVar(value) if existing is None else with_value(
-        existing, value))
+    session.vars[name] = (
+        ShellVar(value) if existing is None else with_value(existing, value)
+    )
     note_random_kind(session, name, value)
 
 
-def set_attr(session: SessionState,
-             name: str,
-             attr: VarAttr | None,
-             on: bool = True) -> None:
+def set_attr(
+    session: SessionState, name: str, attr: VarAttr | None, on: bool = True
+) -> None:
     """Turn one attribute on or off, creating the name if needed.
 
     bash's `readonly NAME` / `export NAME` on a name that does not exist
@@ -1208,15 +1290,18 @@ def set_attr(session: SessionState,
         on (bool): set it, or clear it.
     """
     existing = session.vars.get(name, ShellVar())
-    session.vars[name] = (existing if attr is None else with_attr(
-        existing, attr, on))
+    session.vars[name] = (
+        existing if attr is None else with_attr(existing, attr, on)
+    )
 
 
-async def mark_var(session: SessionState,
-                   policies: Policies | None,
-                   name: str,
-                   attr: VarAttr | None,
-                   on: bool = True) -> None:
+async def mark_var(
+    session: SessionState,
+    policies: Policies | None,
+    name: str,
+    attr: VarAttr | None,
+    on: bool = True,
+) -> None:
     """Turn one attribute on or off through the session plane's gate.
 
     The no-value writer beside ``set_var``. ``export NAME``,
@@ -1253,11 +1338,14 @@ async def mark_var(session: SessionState,
     ensure_var_visible(session, name)
     await pre_session_gate(
         policies,
-        SessionContext(plane="env",
-                       verb="set",
-                       key=name,
-                       value=None,
-                       session_id=session.session_id))
+        SessionContext(
+            plane="env",
+            verb="set",
+            key=name,
+            value=None,
+            session_id=session.session_id,
+        ),
+    )
     set_attr(session, name, attr, on)
 
 
@@ -1270,8 +1358,9 @@ def session_profile(session: SessionState) -> str | None:
     return session.profile
 
 
-def session_view(session: SessionState,
-                 policies: Policies | None = None) -> SessionView:
+def session_view(
+    session: SessionState, policies: Policies | None = None
+) -> SessionView:
     """The session plane's view: seven facts bound to one session.
 
     The one constructor every tier uses — builtins, the command
@@ -1285,10 +1374,12 @@ def session_view(session: SessionState,
             None gates nothing (a view constructed outside a
             workspace).
     """
-    return SessionView(get=functools.partial(env_get, session),
-                       snapshot=functools.partial(env_snapshot, session),
-                       set=functools.partial(set_var, session, policies),
-                       unset=functools.partial(unset_var, session, policies),
-                       mark=functools.partial(mark_var, session, policies),
-                       is_readonly=functools.partial(env_is_readonly, session),
-                       profile=functools.partial(session_profile, session))
+    return SessionView(
+        get=functools.partial(env_get, session),
+        snapshot=functools.partial(env_snapshot, session),
+        set=functools.partial(set_var, session, policies),
+        unset=functools.partial(unset_var, session, policies),
+        mark=functools.partial(mark_var, session, policies),
+        is_readonly=functools.partial(env_is_readonly, session),
+        profile=functools.partial(session_profile, session),
+    )

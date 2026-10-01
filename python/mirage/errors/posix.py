@@ -19,44 +19,35 @@ from mirage.errors.types import FsCondition, PosixErrno
 # "attribute not set": ENOATTR on macOS, ENODATA on Linux. One
 # condition, resolved once; the phrase follows the number so a raw
 # strerror on either platform reads consistently.
-_NO_XATTR = (PosixErrno(errno.ENOATTR, "Attribute not found") if hasattr(
-    errno, "ENOATTR") else PosixErrno(errno.ENODATA, "No data available"))
+_NO_XATTR = (
+    PosixErrno(errno.ENOATTR, "Attribute not found")
+    if hasattr(errno, "ENOATTR")
+    else PosixErrno(errno.ENODATA, "No data available")
+)
 
 POSIX: dict[FsCondition, PosixErrno] = {
-    FsCondition.ENOENT:
-    PosixErrno(errno.ENOENT, "No such file or directory"),
-    FsCondition.ENOTDIR:
-    PosixErrno(errno.ENOTDIR, "Not a directory"),
-    FsCondition.EISDIR:
-    PosixErrno(errno.EISDIR, "Is a directory"),
-    FsCondition.EEXIST:
-    PosixErrno(errno.EEXIST, "File exists"),
-    FsCondition.EACCES:
-    PosixErrno(errno.EACCES, "Permission denied"),
-    FsCondition.EPERM:
-    PosixErrno(errno.EPERM, "Operation not permitted"),
-    FsCondition.ENOTEMPTY:
-    PosixErrno(errno.ENOTEMPTY, "Directory not empty"),
-    FsCondition.EXDEV:
-    PosixErrno(errno.EXDEV, "Invalid cross-device link"),
+    FsCondition.ENOENT: PosixErrno(errno.ENOENT, "No such file or directory"),
+    FsCondition.ENOTDIR: PosixErrno(errno.ENOTDIR, "Not a directory"),
+    FsCondition.EISDIR: PosixErrno(errno.EISDIR, "Is a directory"),
+    FsCondition.EEXIST: PosixErrno(errno.EEXIST, "File exists"),
+    FsCondition.EACCES: PosixErrno(errno.EACCES, "Permission denied"),
+    FsCondition.EPERM: PosixErrno(errno.EPERM, "Operation not permitted"),
+    FsCondition.ENOTEMPTY: PosixErrno(errno.ENOTEMPTY, "Directory not empty"),
+    FsCondition.EXDEV: PosixErrno(errno.EXDEV, "Invalid cross-device link"),
     # A cross-mount rename is EXDEV to every POSIX consumer: the kernel
     # reads it as "not one filesystem" and mv falls back to copy+unlink.
-    FsCondition.CROSS_MOUNT:
-    PosixErrno(errno.EXDEV, "Invalid cross-device link"),
-    FsCondition.ENOTSUP:
-    PosixErrno(errno.ENOTSUP, "Operation not supported"),
-    FsCondition.ELOOP:
-    PosixErrno(errno.ELOOP, "Too many levels of symbolic links"),
-    FsCondition.EINVAL:
-    PosixErrno(errno.EINVAL, "Invalid argument"),
-    FsCondition.EIO:
-    PosixErrno(errno.EIO, "Input/output error"),
-    FsCondition.EBUSY:
-    PosixErrno(errno.EBUSY, "Device or resource busy"),
-    FsCondition.EROFS:
-    PosixErrno(errno.EROFS, "Read-only file system"),
-    FsCondition.NO_XATTR:
-    _NO_XATTR,
+    FsCondition.CROSS_MOUNT: PosixErrno(
+        errno.EXDEV, "Invalid cross-device link"
+    ),
+    FsCondition.ENOTSUP: PosixErrno(errno.ENOTSUP, "Operation not supported"),
+    FsCondition.ELOOP: PosixErrno(
+        errno.ELOOP, "Too many levels of symbolic links"
+    ),
+    FsCondition.EINVAL: PosixErrno(errno.EINVAL, "Invalid argument"),
+    FsCondition.EIO: PosixErrno(errno.EIO, "Input/output error"),
+    FsCondition.EBUSY: PosixErrno(errno.EBUSY, "Device or resource busy"),
+    FsCondition.EROFS: PosixErrno(errno.EROFS, "Read-only file system"),
+    FsCondition.NO_XATTR: _NO_XATTR,
 }
 
 # The numbers Linux gives each condition, whatever host mirage runs on: a

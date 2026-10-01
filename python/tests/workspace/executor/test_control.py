@@ -21,10 +21,16 @@ from mirage.io import IOResult
 from mirage.io.types import materialize
 from mirage.shell.errors import ArithError
 from mirage.shell.job_table import JobStatus, JobTable
-from mirage.workspace.executor.control import (BreakSignal, ContinueSignal,
-                                               handle_case, handle_cfor,
-                                               handle_for, handle_if,
-                                               handle_until, handle_while)
+from mirage.workspace.executor.control import (
+    BreakSignal,
+    ContinueSignal,
+    handle_case,
+    handle_cfor,
+    handle_for,
+    handle_if,
+    handle_until,
+    handle_while,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.session import vars_from_env
 from mirage.workspace.types import ExecutionNode
@@ -47,8 +53,9 @@ def bg(text: str) -> FakeNode:
     Its text is bytes, as a tree-sitter node's is, because the job
     launcher names the job through ``get_text``.
     """
-    return FakeNode(text=text.encode(),
-                    next_sibling=FakeNode(text="&", type="&"))
+    return FakeNode(
+        text=text.encode(), next_sibling=FakeNode(text="&", type="&")
+    )
 
 
 def session(**kwargs) -> SessionState:
@@ -92,8 +99,9 @@ async def test_if_runs_the_else_body_when_no_branch_matches():
             return result(exit_code=1)
         return result(b"else-out")
 
-    stdout, io, _ = await handle_if(execute, [(node("c"), [node("b")])],
-                                    [node("e")], session())
+    stdout, io, _ = await handle_if(
+        execute, [(node("c"), [node("b")])], [node("e")], session()
+    )
     assert io.exit_code == 0
     assert await text_of(stdout) == "else-out"
 
@@ -104,8 +112,9 @@ async def test_if_without_an_else_body_succeeds_silently():
     async def execute(_n, *_args):
         return result(exit_code=1)
 
-    stdout, io, _ = await handle_if(execute, [(node("c"), [node("b")])], None,
-                                    session())
+    stdout, io, _ = await handle_if(
+        execute, [(node("c"), [node("b")])], None, session()
+    )
     assert io.exit_code == 0
     assert stdout is None
 
@@ -119,8 +128,9 @@ async def test_for_iterates_values_binding_the_loop_variable():
         seen.append(s.env.get("X", ""))
         return result(f"iter-{s.env.get('X', '')}\n".encode())
 
-    stdout, _, _ = await handle_for(execute, "X", ["a", "b", "c"],
-                                    [node("body")], sess)
+    stdout, _, _ = await handle_for(
+        execute, "X", ["a", "b", "c"], [node("body")], sess
+    )
     assert seen == ["a", "b", "c"]
     assert await text_of(stdout) == "iter-a\niter-b\niter-c\n"
     # bash leaves the loop variable holding its last value.
@@ -222,8 +232,9 @@ async def test_while_runs_the_body_while_the_condition_succeeds():
         state["i"] += 1
         return result(f"{state['i']};".encode())
 
-    stdout, _, _ = await handle_while(execute, node("cond"), [node("body")],
-                                      session())
+    stdout, _, _ = await handle_while(
+        execute, node("cond"), [node("body")], session()
+    )
     assert await text_of(stdout) == "1;2;"
 
 
@@ -237,8 +248,9 @@ async def test_until_runs_the_body_while_the_condition_fails():
         state["i"] += 1
         return result(f"{state['i']};".encode())
 
-    stdout, _, _ = await handle_until(execute, node("cond"), [node("body")],
-                                      session())
+    stdout, _, _ = await handle_until(
+        execute, node("cond"), [node("body")], session()
+    )
     assert await text_of(stdout) == "1;2;"
 
 
@@ -248,8 +260,9 @@ async def test_while_caps_runaway_loops_and_says_so_on_stderr():
     async def execute(n, *_args):
         return result(exit_code=0) if n.text == "cond" else result()
 
-    _, io, _ = await handle_while(execute, node("cond"), [node("body")],
-                                  session())
+    _, io, _ = await handle_while(
+        execute, node("cond"), [node("body")], session()
+    )
     assert b"while loop terminated after 10000" in await materialize(io.stderr)
 
 
@@ -261,8 +274,11 @@ async def test_case_runs_the_first_arm_whose_pattern_matches():
         ran.append(n.text)
         return result()
 
-    items = [(["a*"], [node("A")], ";;"), (["b*"], [node("B")], ";;"),
-             (["*"], [node("catchall")], ";;")]
+    items = [
+        (["a*"], [node("A")], ";;"),
+        (["b*"], [node("B")], ";;"),
+        (["*"], [node("catchall")], ";;"),
+    ]
     await handle_case(execute, "banana", items, session())
     assert ran == ["B"]
 
@@ -303,8 +319,11 @@ async def test_case_falls_through_the_next_arm_on_semicolon_amp():
         ran.append(n.text)
         return result()
 
-    items = [(["a"], [node("A")], ";&"), (["b"], [node("B")], ";;"),
-             (["c"], [node("C")], ";;")]
+    items = [
+        (["a"], [node("A")], ";&"),
+        (["b"], [node("B")], ";;"),
+        (["c"], [node("C")], ";;"),
+    ]
     await handle_case(execute, "a", items, session())
     assert ran == ["A", "B"]
 
@@ -317,8 +336,11 @@ async def test_case_keeps_testing_later_patterns_on_double_semicolon_amp():
         ran.append(n.text)
         return result()
 
-    items = [(["a"], [node("A")], ";;&"), (["a"], [node("A2")], ";;&"),
-             (["b"], [node("B")], ";;")]
+    items = [
+        (["a"], [node("A")], ";;&"),
+        (["a"], [node("A2")], ";;&"),
+        (["b"], [node("B")], ";;"),
+    ]
     await handle_case(execute, "a", items, session())
     assert ran == ["A", "A2"]
 
@@ -344,8 +366,9 @@ async def test_cfor_runs_init_once_then_condition_and_update_per_iteration():
         return state["i"]
 
     exprs = [node("init"), node("cond"), node("update")]
-    _, io, _ = await handle_cfor(execute, exprs, [node("body")], eval_expr,
-                                 session())
+    _, io, _ = await handle_cfor(
+        execute, exprs, [node("body")], eval_expr, session()
+    )
     assert ran == ["body", "body", "body"]
     assert io.exit_code == 0
 
@@ -367,8 +390,9 @@ async def test_cfor_aborts_with_status_1_on_a_bad_expression():
         return 1
 
     exprs = [node("init"), node("cond"), node("update")]
-    stdout, io, _ = await handle_cfor(execute, exprs, [node("body")],
-                                      eval_expr, session())
+    stdout, io, _ = await handle_cfor(
+        execute, exprs, [node("body")], eval_expr, session()
+    )
     assert io.exit_code == 1
     assert b"bash: ((: x +: syntax error" in await materialize(io.stderr)
     assert await text_of(stdout) == "ran\n"
@@ -397,20 +421,23 @@ def _parked_executor(gate: asyncio.Event, ran: list[str]):
 
 
 @pytest.mark.asyncio
-async def test_if_body_ampersand_launches_a_job_and_answers_the_launch_status(
-):
+async def test_if_body_ampersand_launches_a_job_and_answers_the_launch_status():
     table = JobTable()
     gate = asyncio.Event()
     ran: list[str] = []
     sess = session()
     branches = [(node("c"), [bg("slow")])]
-    _, io, _ = await asyncio.wait_for(handle_if(_parked_executor(gate, ran),
-                                                branches,
-                                                None,
-                                                sess,
-                                                job_table=table,
-                                                agent_id="a1"),
-                                      timeout=2)
+    _, io, _ = await asyncio.wait_for(
+        handle_if(
+            _parked_executor(gate, ran),
+            branches,
+            None,
+            sess,
+            job_table=table,
+            agent_id="a1",
+        ),
+        timeout=2,
+    )
     # The body came back while the job is still parked, and its status
     # is the launch's 0, not the job's eventual 3.
     assert ran == ["c"]
@@ -432,13 +459,17 @@ async def test_case_arm_ampersand_launches_a_job():
     gate = asyncio.Event()
     ran: list[str] = []
     items = [(["x"], [bg("slow")], ";;")]
-    _, io, _ = await asyncio.wait_for(handle_case(_parked_executor(gate, ran),
-                                                  "x",
-                                                  items,
-                                                  session(),
-                                                  job_table=table,
-                                                  agent_id="a1"),
-                                      timeout=2)
+    _, io, _ = await asyncio.wait_for(
+        handle_case(
+            _parked_executor(gate, ran),
+            "x",
+            items,
+            session(),
+            job_table=table,
+            agent_id="a1",
+        ),
+        timeout=2,
+    )
     assert ran == []
     assert io.exit_code == 0
     job = table.get(1, "test")
@@ -454,12 +485,18 @@ async def test_for_body_ampersand_launches_one_job_per_iteration():
     table = JobTable()
     gate = asyncio.Event()
     ran: list[str] = []
-    _, io, _ = await asyncio.wait_for(handle_for(_parked_executor(gate, ran),
-                                                 "i", ["1", "2"], [bg("slow")],
-                                                 session(),
-                                                 job_table=table,
-                                                 agent_id="a1"),
-                                      timeout=2)
+    _, io, _ = await asyncio.wait_for(
+        handle_for(
+            _parked_executor(gate, ran),
+            "i",
+            ["1", "2"],
+            [bg("slow")],
+            session(),
+            job_table=table,
+            agent_id="a1",
+        ),
+        timeout=2,
+    )
     assert ran == []
     assert io.exit_code == 0
     assert [j.command for j in table.list_jobs("test")] == ["slow", "slow"]

@@ -84,8 +84,11 @@ def test_max_count_cuts_from_the_newest_end(repo_path):
 
 
 def test_reverse_flips_the_whole_walk(repo_path):
-    assert subjects(repo_path,
-                    {"reverse": True}) == ["first", "second", "third"]
+    assert subjects(repo_path, {"reverse": True}) == [
+        "first",
+        "second",
+        "third",
+    ]
 
 
 def test_limit_applies_before_reverse(repo_path):
@@ -117,14 +120,17 @@ def test_since_drops_everything_older(repo_path):
     assert subjects(repo_path, {"since": str(newest + 60)}) == []
 
 
-@pytest.mark.parametrize("argv,expected", [
-    (["--date-order", "--topo-order"], "topo"),
-    (["--topo-order", "--date-order"], "date"),
-    (["--topo-order", "--date-order", "--topo-order"], "topo"),
-    (["--graph", "--date-order", "--topo-order"], "topo"),
-    (["--date-order", "--graph"], "date"),
-    (["-S", "--topo-order", "--date-order"], "date"),
-])
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["--date-order", "--topo-order"], "topo"),
+        (["--topo-order", "--date-order"], "date"),
+        (["--topo-order", "--date-order", "--topo-order"], "topo"),
+        (["--graph", "--date-order", "--topo-order"], "topo"),
+        (["--date-order", "--graph"], "date"),
+        (["-S", "--topo-order", "--date-order"], "date"),
+    ],
+)
 def test_order_options_follow_the_last_typed_occurrence(argv, expected):
     spec = next(node for node in GIT.subcommands if node.name == "log")
     parsed = parse_command(spec, argv, "/")
@@ -142,25 +148,32 @@ def log_subjects(repo_path, argv: list[str]) -> list[str]:
     return subjects(repo_path, parse_to_kwargs(parse_command(spec, argv, "/")))
 
 
-@pytest.mark.parametrize("argv", [
-    ["--max-count=2"],
-    ["--max-count", "2"],
-    ["-n", "2"],
-    ["-n2"],
-    ["-2"],
-])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--max-count=2"],
+        ["--max-count", "2"],
+        ["-n", "2"],
+        ["-n2"],
+        ["-2"],
+    ],
+)
 def test_every_spelling_of_the_count_cuts_the_same(repo_path, argv):
     assert log_subjects(repo_path, argv) == ["third", "second"]
 
 
-@pytest.mark.parametrize("argv,expected", [
-    (["-n", "3", "--max-count=1"], ["third"]),
-    (["--max-count=1", "-n", "3"], ["third", "second", "first"]),
-    (["--max-count=-1"], ["third", "second", "first"]),
-    (["-n", "-5"], ["third", "second", "first"]),
-])
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["-n", "3", "--max-count=1"], ["third"]),
+        (["--max-count=1", "-n", "3"], ["third", "second", "first"]),
+        (["--max-count=-1"], ["third", "second", "first"]),
+        (["-n", "-5"], ["third", "second", "first"]),
+    ],
+)
 def test_the_last_count_wins_and_a_negative_one_is_no_limit(
-        repo_path, argv, expected):
+    repo_path, argv, expected
+):
     assert log_subjects(repo_path, argv) == expected
 
 
@@ -171,8 +184,10 @@ def test_grep_matches_a_line_of_the_body(repo_path):
 
 
 def test_several_greps_are_alternatives(repo_path):
-    assert log_subjects(
-        repo_path, ["--grep=first", "--grep", "third"]) == ["third", "first"]
+    assert log_subjects(repo_path, ["--grep=first", "--grep", "third"]) == [
+        "third",
+        "first",
+    ]
 
 
 def test_grep_never_reads_the_author(repo_path):
@@ -182,8 +197,8 @@ def test_grep_never_reads_the_author(repo_path):
 def test_the_count_applies_after_grep_and_before_reverse(repo_path):
     assert log_subjects(repo_path, ["--grep=ir", "--max-count=1"]) == ["third"]
     assert log_subjects(
-        repo_path,
-        ["--grep=ir", "--max-count=2", "--reverse"]) == ["first", "third"]
+        repo_path, ["--grep=ir", "--max-count=2", "--reverse"]
+    ) == ["first", "third"]
 
 
 @pytest.mark.parametrize("flag", ["-i", "--regexp-ignore-case"])
@@ -192,41 +207,51 @@ def test_ignore_case_reaches_grep_author_and_pickaxe(repo_path, flag):
     assert log_subjects(repo_path, ["--grep=THIRD", flag]) == ["third"]
     assert log_subjects(repo_path, ["--author=TEST AUTHOR"]) == []
     assert log_subjects(repo_path, ["--author=TEST AUTHOR", flag]) == [
-        "third", "second", "first"
+        "third",
+        "second",
+        "first",
     ]
     assert log_subjects(repo_path, ["-S", "ONE"]) == []
     assert log_subjects(repo_path, ["-S", "ONE", flag]) == ["first"]
 
 
 def test_author_and_grep_must_both_match(repo_path):
-    assert log_subjects(repo_path,
-                        ["--author=Test", "--grep=second"]) == ["second"]
+    assert log_subjects(repo_path, ["--author=Test", "--grep=second"]) == [
+        "second"
+    ]
     assert log_subjects(repo_path, ["--author=absent", "--grep=second"]) == []
 
 
-@pytest.mark.parametrize("argv,expected", [
-    (["-E", "--grep=first|third"], ["third", "first"]),
-    (["-E", "-F", "--grep=first|third"], []),
-    (["-F", "-E", "--grep=first|third"], ["third", "first"]),
-    (["--basic-regexp", "--grep=first|third"], []),
-    (["-P", r"--grep=^\p{Ll}hird$"], ["third"]),
-    (["-P", r"--grep=[\d]"], []),
-    (["-P", "--grep=[[:alpha:]]irst"], ["first"]),
-    (["-P", "--grep=f(?=irst)"], ["first"]),
-    (["-P", "-i", "--grep=^THIRD$"], ["third"]),
-    (["-P", "--grep=(?i)^THIRD$"], ["third"]),
-    (["-P", r"--grep=\Athird\z"], ["third"]),
-])
-def test_the_last_pattern_syntax_reads_every_pattern(repo_path, argv,
-                                                     expected):
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["-E", "--grep=first|third"], ["third", "first"]),
+        (["-E", "-F", "--grep=first|third"], []),
+        (["-F", "-E", "--grep=first|third"], ["third", "first"]),
+        (["--basic-regexp", "--grep=first|third"], []),
+        (["-P", r"--grep=^\p{Ll}hird$"], ["third"]),
+        (["-P", r"--grep=[\d]"], []),
+        (["-P", "--grep=[[:alpha:]]irst"], ["first"]),
+        (["-P", "--grep=f(?=irst)"], ["first"]),
+        (["-P", "-i", "--grep=^THIRD$"], ["third"]),
+        (["-P", "--grep=(?i)^THIRD$"], ["third"]),
+        (["-P", r"--grep=\Athird\z"], ["third"]),
+    ],
+)
+def test_the_last_pattern_syntax_reads_every_pattern(
+    repo_path, argv, expected
+):
     assert log_subjects(repo_path, argv) == expected
 
 
-@pytest.mark.parametrize("argv,message", [
-    (["--grep=\\("], "command line, '\\(': Unmatched ( or \\("),
-    (["--author=\\("], "header, '\\(': Unmatched ( or \\("),
-    (["--committer=\\("], "header, '\\(': Unmatched ( or \\("),
-])
+@pytest.mark.parametrize(
+    "argv,message",
+    [
+        (["--grep=\\("], "command line, '\\(': Unmatched ( or \\("),
+        (["--author=\\("], "header, '\\(': Unmatched ( or \\("),
+        (["--committer=\\("], "header, '\\(': Unmatched ( or \\("),
+    ],
+)
 def test_a_refused_pattern_names_where_it_came_from(argv, message):
     spec = next(node for node in GIT.subcommands if node.name == "log")
     kwargs = parse_to_kwargs(parse_command(spec, argv, "/"))
@@ -235,11 +260,14 @@ def test_a_refused_pattern_names_where_it_came_from(argv, message):
     assert str(caught.value) == message
 
 
-@pytest.mark.parametrize("pattern,line", [
-    (r"a\-b\_c\ d", "a-b_c d"),
-    ("[]x]", "]"),
-    ("a{x}", "a{x}"),
-])
+@pytest.mark.parametrize(
+    "pattern,line",
+    [
+        (r"a\-b\_c\ d", "a-b_c d"),
+        ("[]x]", "]"),
+        ("a{x}", "a{x}"),
+    ],
+)
 def test_perl_punctuation_escapes_are_literal(pattern, line):
     flags = parse_flags(FlagView({"perl_regexp": True, "grep": [pattern]}))
     assert flags.greps[0].search(line)

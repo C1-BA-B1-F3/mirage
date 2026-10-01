@@ -24,10 +24,12 @@ COMMENT_BYTES = 40
 Lost = list[list[tuple[str, int]]]
 
 
-def combined_lines(parents: list[list[str]],
-                   result: list[str],
-                   dense: bool,
-                   context: int = CONTEXT) -> list[str]:
+def combined_lines(
+    parents: list[list[str]],
+    result: list[str],
+    dense: bool,
+    context: int = CONTEXT,
+) -> list[str]:
     """The hunks of a combined diff, as git's combine-diff.c selects them.
 
     Row ``k`` is result line ``k``, carrying the parent lines deleted just
@@ -48,15 +50,22 @@ def combined_lines(parents: list[list[str]],
     for parent, old in enumerate(parents):
         bit = 1 << parent
         for tag, i, end, j, stop in SequenceMatcher(
-                a=old, b=result, autojunk=False).get_opcodes():
-            if tag == 'equal':
+            a=old, b=result, autojunk=False
+        ).get_opcodes():
+            if tag == "equal":
                 continue
             for at in range(j, stop):
                 added[at] |= bit
             bucket = lost[j]
             for line in old[i:end]:
-                found = next((n for n, (text, owners) in enumerate(bucket)
-                              if text == line and not owners & bit), None)
+                found = next(
+                    (
+                        n
+                        for n, (text, owners) in enumerate(bucket)
+                        if text == line and not owners & bit
+                    ),
+                    None,
+                )
                 if found is None:
                     bucket.append((line, bit))
                 else:
@@ -92,8 +101,13 @@ def _find(marked: list[bool], at: int, want: bool) -> int:
     return at
 
 
-def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
-                    everyone: int, context: int) -> None:
+def _drop_one_sided(
+    added: list[int],
+    lost: Lost,
+    marked: list[bool],
+    everyone: int,
+    context: int,
+) -> None:
     """Unmark each hunk that only some of the parents changed alike.
 
     Args:
@@ -116,22 +130,25 @@ def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
                 reach = min(_tail(added, begin, end) + context, size + 1)
                 ahead = next(
                     (k for k in range(reach - 1, end - 1, -1) if marked[k]),
-                    None)
+                    None,
+                )
                 if ahead is None:
                     break
                 end = ahead
             end += 1
         sides = {added[k] for k in range(begin, end) if added[k]}
-        sides.update(owners for k in range(begin, end)
-                     for _, owners in lost[k])
+        sides.update(
+            owners for k in range(begin, end) for _, owners in lost[k]
+        )
         if len(sides) == 1 and everyone not in sides:
             for k in range(begin, end):
                 marked[k] = False
         at = end
 
 
-def _give_context(added: list[int], marked: list[bool],
-                  context: int) -> set[int]:
+def _give_context(
+    added: list[int], marked: list[bool], context: int
+) -> set[int]:
     """Paint context rows around the marked ones, joining close hunks.
 
     Returns the rows painted as leading context that were not marked
@@ -166,8 +183,14 @@ def _give_context(added: list[int], marked: list[bool],
     return hidden
 
 
-def _dump(result: list[str], added: list[int], lost: Lost, marked: list[bool],
-          hidden: set[int], count: int) -> list[str]:
+def _dump(
+    result: list[str],
+    added: list[int],
+    lost: Lost,
+    marked: list[bool],
+    hidden: set[int],
+    count: int,
+) -> list[str]:
     """Render each run of marked rows as one ``@@@`` hunk.
 
     Args:
@@ -188,7 +211,7 @@ def _dump(result: list[str], added: list[int], lost: Lost, marked: list[bool],
             if k < size and not added[k] >> p & 1:
                 row[p] += 1
         starts.append(row)
-    marker = '@' * (count + 1)
+    marker = "@" * (count + 1)
     output: list[str] = []
     at = 0
     while True:
@@ -200,19 +223,31 @@ def _dump(result: list[str], added: list[int], lost: Lost, marked: list[bool],
         if at > size:
             return output
         end = _find(marked, at + 1, False)
-        ranges = ' '.join(f'-{starts[at][p]},{starts[end][p] - starts[at][p]}'
-                          for p in range(count))
+        ranges = " ".join(
+            f"-{starts[at][p]},{starts[end][p] - starts[at][p]}"
+            for p in range(count)
+        )
         rows = end - at - int(end > size)
-        output.append(f'{marker} {ranges} +{at + 1},{rows} {marker}'
-                      f'{_funcname(comment)}\n')
+        output.append(
+            f"{marker} {ranges} +{at + 1},{rows} {marker}"
+            f"{_funcname(comment)}\n"
+        )
         for k in range(at, end):
             if k not in hidden:
-                output.extend(''.join('-' if owners >> p & 1 else ' '
-                                      for p in range(count)) + _eol(text)
-                              for text, owners in lost[k])
+                output.extend(
+                    "".join(
+                        "-" if owners >> p & 1 else " " for p in range(count)
+                    )
+                    + _eol(text)
+                    for text, owners in lost[k]
+                )
             if k < size:
-                output.append(''.join('+' if added[k] >> p & 1 else ' '
-                                      for p in range(count)) + _eol(result[k]))
+                output.append(
+                    "".join(
+                        "+" if added[k] >> p & 1 else " " for p in range(count)
+                    )
+                    + _eol(result[k])
+                )
         at = end
 
 
@@ -227,10 +262,10 @@ def _funcname(line: str | None) -> str:
             starts with a letter, ``_`` or ``$``.
     """
     if line is None:
-        return ''
-    head = line.encode()[:COMMENT_BYTES].split(b'\n', 1)[0].split(b'\0', 1)[0]
+        return ""
+    head = line.encode()[:COMMENT_BYTES].split(b"\n", 1)[0].split(b"\0", 1)[0]
     end = max((i for i, c in enumerate(head) if c not in GIT_SPACE), default=0)
-    return ' ' + head[:end].decode(errors='replace') if end else ''
+    return " " + head[:end].decode(errors="replace") if end else ""
 
 
 def _eol(line: str) -> str:
@@ -239,4 +274,4 @@ def _eol(line: str) -> str:
     Args:
         line (str): the line, with or without its newline.
     """
-    return line if line.endswith('\n') else line + '\n'
+    return line if line.endswith("\n") else line + "\n"

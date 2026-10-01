@@ -50,9 +50,11 @@ def _find_command():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual[len(MOUNT):].strip("/"))
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path=virtual[len(MOUNT) :].strip("/"),
+    )
 
 
 def _fake_client(mc) -> None:
@@ -70,8 +72,11 @@ async def _run(paths: list[PathSpec], *texts: str, **flags) -> list[str]:
     with patch("mirage.core.postgres.readdir.client") as rd_client:
         _fake_client(rd_client)
         stdout, _io = await find(
-            _accessor(), paths, list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
+            _accessor(),
+            paths,
+            list(texts),
+            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
+        )
         data = await materialize(stdout)
     return data.decode().splitlines()
 

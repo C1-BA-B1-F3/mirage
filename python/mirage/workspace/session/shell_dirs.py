@@ -76,9 +76,9 @@ def set_cwd(session: SessionState, cwd: str) -> None:
     seed_var(session, "PWD", cwd)
 
 
-def change_dir(session: SessionState,
-               new_cwd: str,
-               logical: str | None = None) -> None:
+def change_dir(
+    session: SessionState, new_cwd: str, logical: str | None = None
+) -> None:
     """Move the session to ``new_cwd`` and record the previous cwd.
 
     ``$OLDPWD`` is a straight copy of ``$PWD`` as it stands right now --

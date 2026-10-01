@@ -100,4 +100,5 @@ def quote_text(text: str) -> str:
         str: the escaped body, ASCII only.
     """
     return quote_word(
-        text.encode("utf-8", "surrogateescape").decode("latin-1"))
+        text.encode("utf-8", "surrogateescape").decode("latin-1")
+    )

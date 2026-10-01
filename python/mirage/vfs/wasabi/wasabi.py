@@ -18,7 +18,6 @@ from mirage.vfs.wasabi.prompt import PROMPT
 
 
 class WasabiVFS(S3AliasVFS):
-
     prompt: str = PROMPT
 
     def __init__(self, config: WasabiConfig) -> None:

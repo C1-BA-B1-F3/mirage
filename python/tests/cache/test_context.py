@@ -16,11 +16,16 @@ import asyncio
 
 import pytest
 
-from mirage.cache.context import (active_cache_manager,
-                                  invalidate_after_unlink,
-                                  invalidate_after_write, invalidate_ancestors,
-                                  invalidate_subtree, invalidate_subtree_after,
-                                  listing_refreshed, push_cache_manager)
+from mirage.cache.context import (
+    active_cache_manager,
+    invalidate_after_unlink,
+    invalidate_after_write,
+    invalidate_ancestors,
+    invalidate_subtree,
+    invalidate_subtree_after,
+    listing_refreshed,
+    push_cache_manager,
+)
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
@@ -33,7 +38,6 @@ def _run(coro):
 
 
 class FakeManager:
-
     def listing_trusted(self, _folder: str) -> bool:
         return False
 
@@ -60,11 +64,13 @@ class FakeManager:
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.strip("/"),
-                    virtual=virtual,
-                    directory="/",
-                    pattern=None,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=virtual.strip("/"),
+        virtual=virtual,
+        directory="/",
+        pattern=None,
+        resolved=True,
+    )
 
 
 async def _delegates() -> FakeManager:
@@ -119,9 +125,12 @@ async def _ancestors() -> FakeManager:
     manager = FakeManager()
     prev = push_cache_manager(manager)
     await invalidate_ancestors(
-        PathSpec(vfs_path="data/a/b.txt",
-                 virtual="/data/data/a/b.txt",
-                 directory="/data/data/a"))
+        PathSpec(
+            vfs_path="data/a/b.txt",
+            virtual="/data/data/a/b.txt",
+            directory="/data/data/a",
+        )
+    )
     push_cache_manager(prev)
     return manager
 
@@ -140,9 +149,11 @@ async def _repeated_mount_case(prefix: str) -> None:
     for ancestor in ancestors:
         await index.set_dir(ancestor, [])
     await index.set_dir(prefix + "/unrelated", [])
-    path = PathSpec(vfs_path=directory[len(prefix):].strip("/") + "/b.txt",
-                    virtual=directory + "/b.txt",
-                    directory=directory)
+    path = PathSpec(
+        vfs_path=directory[len(prefix) :].strip("/") + "/b.txt",
+        virtual=directory + "/b.txt",
+        directory=directory,
+    )
     previous = push_cache_manager(manager)
     try:
         await invalidate_after_write(path)
@@ -161,7 +172,8 @@ def test_ancestor_eviction_with_repeated_mount_name(prefix: str):
 
 @pytest.mark.asyncio
 async def test_listing_refreshed_follows_the_managers_listing_rule(
-        monkeypatch):
+    monkeypatch,
+):
     # github's truncated-tree walk asks here rather than through the gate, so
     # a read that belongs to no command trusts a listing for the window too.
     now = [100.0]
@@ -187,7 +199,6 @@ class _EvictFailed(Exception):
 
 
 class _BrokenEviction(FakeManager):
-
     async def invalidate_subtree(self, path: PathSpec) -> None:
         await super().invalidate_subtree(path)
         raise _EvictFailed
@@ -199,14 +210,18 @@ async def _op(error: type[Exception] | None) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("op_error, evict_breaks, raised", [
-    (None, False, None),
-    (_OpFailed, False, _OpFailed),
-    (_OpFailed, True, _OpFailed),
-    (None, True, _EvictFailed),
-])
+@pytest.mark.parametrize(
+    "op_error, evict_breaks, raised",
+    [
+        (None, False, None),
+        (_OpFailed, False, _OpFailed),
+        (_OpFailed, True, _OpFailed),
+        (None, True, _EvictFailed),
+    ],
+)
 async def test_invalidate_subtree_after_evicts_and_keeps_the_ops_error(
-        op_error, evict_breaks, raised):
+    op_error, evict_breaks, raised
+):
     # The op's own error wins over an eviction that fails after it.
     manager = _BrokenEviction() if evict_breaks else FakeManager()
     previous = push_cache_manager(manager)

@@ -13,12 +13,19 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic.crossmount.fanout.du import du_total
-from mirage.commands.builtin.generic.crossmount.fanout.exit import \
-    combined_exit
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
-                                                              RunSingle)
+from mirage.commands.builtin.generic.crossmount.fanout.exit import (
+    combined_exit,
+)
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    CrossResult,
+    RunSingle,
+)
 from mirage.commands.builtin.generic.crossmount.utils import (
-    merge_operand_ios, run_operands, run_separator)
+    merge_operand_ios,
+    run_operands,
+    run_separator,
+)
 from mirage.commands.builtin.generic.rg import label_flags
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagBag, FlagView
@@ -28,12 +35,14 @@ from mirage.io.types import ByteSource
 from mirage.types import PathSpec
 
 
-async def run_fanout(cmd_name: str,
-                     scopes: list[PathSpec],
-                     text_args: list[str],
-                     flag_kwargs: dict[str, FlagValue],
-                     run_single: RunSingle,
-                     stdin: ByteSource | None = None) -> CrossResult:
+async def run_fanout(
+    cmd_name: str,
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    run_single: RunSingle,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Run a per-operand command whose operands span mounts.
 
     The command runs natively once per operand on the operand's owning
@@ -56,7 +65,8 @@ async def run_fanout(cmd_name: str,
     if cmd_name == Cmd.TEE:
         stdin_bytes = await materialize(stdin) if stdin is not None else b""
     if cmd_name == Cmd.GREP and not FlagView(
-            flags, spec=SPECS[Cmd.GREP]).as_bool("h"):
+        flags, spec=SPECS[Cmd.GREP]
+    ).as_bool("h"):
         flags["H"] = True
     if cmd_name == Cmd.RG:
         flags = label_flags(flags)
@@ -65,37 +75,46 @@ async def run_fanout(cmd_name: str,
     quiet_key = "quiet" if cmd_name == Cmd.HEAD else "q"
     verbose_key = "verbose" if cmd_name == Cmd.HEAD else "v"
     if cmd_name in (Cmd.HEAD, Cmd.TAIL) and not FlagView(
-            flags, spec=SPECS[cmd_name]).as_bool(quiet_key):
+        flags, spec=SPECS[cmd_name]
+    ).as_bool(quiet_key):
         flags[verbose_key] = True
-    du_c = cmd_name == Cmd.DU and FlagView(flag_kwargs,
-                                           spec=SPECS[Cmd.DU]).as_bool("c")
+    du_c = cmd_name == Cmd.DU and FlagView(
+        flag_kwargs, spec=SPECS[Cmd.DU]
+    ).as_bool("c")
     du_human = du_c and FlagView(flag_kwargs, spec=SPECS[Cmd.DU]).as_bool("h")
     if du_human:
         flags["h"] = False
 
-    quiet = (cmd_name == Cmd.GREP
-             and FlagView(flags, spec=SPECS[Cmd.GREP]).as_bool("q")) or (
-                 cmd_name == Cmd.RG
-                 and FlagView(flags, spec=SPECS[Cmd.RG]).as_bool("quiet"))
-    results = await run_operands(run_single,
-                                 cmd_name,
-                                 scopes,
-                                 list(text_args),
-                                 flags,
-                                 stdin_bytes=stdin_bytes,
-                                 stop_at_success=quiet)
+    quiet = (
+        cmd_name == Cmd.GREP
+        and FlagView(flags, spec=SPECS[Cmd.GREP]).as_bool("q")
+    ) or (
+        cmd_name == Cmd.RG
+        and FlagView(flags, spec=SPECS[Cmd.RG]).as_bool("quiet")
+    )
+    results = await run_operands(
+        run_single,
+        cmd_name,
+        scopes,
+        list(text_args),
+        flags,
+        stdin_bytes=stdin_bytes,
+        stop_at_success=quiet,
+    )
     errored = [
         r.io.exit_code != 0 and r.io.stderr is not None for r in results
     ]
-    exit_code = combined_exit(cmd_name, [r.io.exit_code for r in results],
-                              errored, quiet)
+    exit_code = combined_exit(
+        cmd_name, [r.io.exit_code for r in results], errored, quiet
+    )
 
     if du_c:
         body = du_total(results, du_human)
     elif cmd_name == Cmd.TEE:
         body = stdin_bytes or b""
     elif cmd_name in (Cmd.HEAD, Cmd.TAIL) and FlagView(
-            flags, spec=SPECS[cmd_name]).as_bool(verbose_key):
+        flags, spec=SPECS[cmd_name]
+    ).as_bool(verbose_key):
         # Blank line between per-operand blocks, like one native run
         # separates its own file blocks.
         body = b"\n".join(r.data for r in results if r.data)
@@ -103,8 +122,9 @@ async def run_fanout(cmd_name: str,
         # grep and ripgrep set one file's context off from the next file's
         # (and ripgrep one --heading group from the next), as one native
         # run separates its own files.
-        body = run_separator(cmd_name,
-                             flags).join(r.data for r in results if r.data)
+        body = run_separator(cmd_name, flags).join(
+            r.data for r in results if r.data
+        )
 
     io = await merge_operand_ios(results, exit_code)
     return body, io

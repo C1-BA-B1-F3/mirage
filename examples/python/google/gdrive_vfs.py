@@ -34,7 +34,8 @@ vfs = GoogleDriveVFS(config=config)
 async def main():
     with Workspace({"/gdrive/": vfs}, mode=MountMode.READ) as ws:
         print(
-            "=== VFS MODE: open() reads from Google Drive transparently ===\n")
+            "=== VFS MODE: open() reads from Google Drive transparently ===\n"
+        )
 
         print("--- os.listdir() root ---")
         entries = os.listdir("/gdrive")

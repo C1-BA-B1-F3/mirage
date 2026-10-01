@@ -3,13 +3,20 @@ from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from xml.etree import ElementTree
 
-from mirage.core.nextcloud.search.constants import (CONTENT_LENGTH,
-                                                    DISPLAY_NAME,
-                                                    LAST_MODIFIED,
-                                                    RESOURCE_TYPE, SIZE)
+from mirage.core.nextcloud.search.constants import (
+    CONTENT_LENGTH,
+    DISPLAY_NAME,
+    LAST_MODIFIED,
+    RESOURCE_TYPE,
+    SIZE,
+)
 from mirage.core.nextcloud.search.target import relative_path
-from mirage.core.nextcloud.search.types import (Property, SearchEntry,
-                                                SearchTarget, XmlElement)
+from mirage.core.nextcloud.search.types import (
+    Property,
+    SearchEntry,
+    SearchTarget,
+    XmlElement,
+)
 from mirage.core.nextcloud.search.xml import dav
 from mirage.types import FindType
 
@@ -28,7 +35,8 @@ def successful_properties(response: XmlElement) -> list[XmlElement]:
             properties.append(prop)
     if not properties:
         raise ValueError(
-            "Nextcloud Files Search result has no successful properties")
+            "Nextcloud Files Search result has no successful properties"
+        )
     return properties
 
 
@@ -43,8 +51,10 @@ def find_text(properties: list[XmlElement], field: Property) -> str | None:
 def has_collection(properties: list[XmlElement]) -> bool:
     for prop in properties:
         resource_type = prop.find(RESOURCE_TYPE.tag)
-        if (resource_type is not None
-                and resource_type.find(dav("collection")) is not None):
+        if (
+            resource_type is not None
+            and resource_type.find(dav("collection")) is not None
+        ):
             return True
     return False
 
@@ -59,7 +69,8 @@ def modified_timestamp(value: str | None) -> float | None:
             modified = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError as exc:
             raise ValueError(
-                f"invalid Nextcloud Files Search timestamp: {value}") from exc
+                f"invalid Nextcloud Files Search timestamp: {value}"
+            ) from exc
     if modified.tzinfo is None:
         modified = modified.replace(tzinfo=timezone.utc)
     return modified.timestamp()
@@ -75,7 +86,8 @@ def entry_size(properties: list[XmlElement]) -> int | None:
         return int(value)
     except ValueError as exc:
         raise ValueError(
-            f"invalid Nextcloud Files Search size: {value}") from exc
+            f"invalid Nextcloud Files Search size: {value}"
+        ) from exc
 
 
 def parse_response(response: XmlElement, target: SearchTarget) -> SearchEntry:
@@ -84,13 +96,16 @@ def parse_response(response: XmlElement, target: SearchTarget) -> SearchEntry:
         raise ValueError("Nextcloud Files Search result is missing href")
     properties = successful_properties(response)
     key = relative_path(href, target)
-    name = (find_text(properties, DISPLAY_NAME)
-            or key.rstrip("/").rsplit("/", 1)[-1])
+    name = (
+        find_text(properties, DISPLAY_NAME)
+        or key.rstrip("/").rsplit("/", 1)[-1]
+    )
     return SearchEntry(
         key=key,
         name=name,
-        kind=(FindType.DIRECTORY
-              if has_collection(properties) else FindType.FILE),
+        kind=(
+            FindType.DIRECTORY if has_collection(properties) else FindType.FILE
+        ),
         size=entry_size(properties),
         modified=modified_timestamp(find_text(properties, LAST_MODIFIED)),
     )

@@ -28,7 +28,8 @@ def _is_json(value: Any) -> bool:
     if isinstance(value, dict):
         return all(
             isinstance(key, str) and _is_json(item)
-            for key, item in value.items())
+            for key, item in value.items()
+        )
     return False
 
 
@@ -59,5 +60,6 @@ def render_card(row: dict[str, Any], config: LanceDBConfig) -> bytes:
         lines.append(f"{key}: {cell_text(value)}")
     if config.blob_column and config.id_column in row:
         lines.append(
-            f"blob: {cell_text(row[config.id_column])}.{config.blob_ext}")
+            f"blob: {cell_text(row[config.id_column])}.{config.blob_ext}"
+        )
     return ("\n".join(lines) + "\n").encode()

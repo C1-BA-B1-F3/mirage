@@ -25,8 +25,9 @@ BLOB_ID = "1234567890123456789"
 KEY = "filename"
 
 
-async def _download(status: int, body: bytes, offset: int,
-                    size: int | None) -> tuple[bytes, dict]:
+async def _download(
+    status: int, body: bytes, offset: int, size: int | None
+) -> tuple[bytes, dict]:
     with aioresponses() as m:
         m.get(CDN_URL, status=status, body=body)
         data = await download_file(CDN_URL, offset, size)
@@ -66,12 +67,16 @@ async def test_no_window_sends_no_header_and_reads_whole():
     assert "Range" not in (sent["headers"] or {})
 
 
-@pytest.mark.parametrize("raw_name,expected_tail", [
-    ("会議" * 100 + ".txt", ".txt"),
-    ("会議" * 100, ""),
-])
+@pytest.mark.parametrize(
+    "raw_name,expected_tail",
+    [
+        ("会議" * 100 + ".txt", ".txt"),
+        ("会議" * 100, ""),
+    ],
+)
 def test_a_long_filename_fits_name_max_and_keeps_id_and_extension(
-        raw_name, expected_tail):
+    raw_name, expected_tail
+):
     """The stem is the only part that gives.
 
     A trimmed id stops addressing the file and a trimmed extension changes

@@ -25,11 +25,13 @@ from typing import Literal
 from agents.sandbox.errors import ExecTimeoutError
 from agents.sandbox.manifest import Manifest
 from agents.sandbox.session.base_sandbox_session import BaseSandboxSession
-from agents.sandbox.session.pty_types import (PtyExecUpdate,
-                                              allocate_pty_process_id,
-                                              clamp_pty_yield_time_ms,
-                                              resolve_pty_write_yield_time_ms,
-                                              truncate_text_by_tokens)
+from agents.sandbox.session.pty_types import (
+    PtyExecUpdate,
+    allocate_pty_process_id,
+    clamp_pty_yield_time_ms,
+    resolve_pty_write_yield_time_ms,
+    truncate_text_by_tokens,
+)
 from agents.sandbox.session.sandbox_client import BaseSandboxClient
 from agents.sandbox.session.sandbox_session import SandboxSession
 from agents.sandbox.session.sandbox_session_state import SandboxSessionState
@@ -37,11 +39,13 @@ from agents.sandbox.snapshot import NoopSnapshot, SnapshotBase, SnapshotSpec
 from agents.sandbox.types import ExecResult, User
 
 from mirage.agents.io_text import with_refusal_bytes
-from mirage.agents.openai_agents.constants import (DEFAULT_EXEC_YIELD_MS,
-                                                   DEFAULT_WRITE_YIELD_MS,
-                                                   INTERRUPT,
-                                                   INTERRUPTED_EXIT_CODE,
-                                                   NO_STDIN)
+from mirage.agents.openai_agents.constants import (
+    DEFAULT_EXEC_YIELD_MS,
+    DEFAULT_WRITE_YIELD_MS,
+    INTERRUPT,
+    INTERRUPTED_EXIT_CODE,
+    NO_STDIN,
+)
 from mirage.workspace.snapshot import apply_state_dict, read_tar
 from mirage.workspace.workspace import Workspace
 
@@ -87,10 +91,12 @@ class MirageSandboxSession(BaseSandboxSession):
         return self._session_id
 
     async def _ensure_backend_started(self) -> None:
-        root_exists = await self._ws.vfs.exists(self.state.manifest.root,
-                                                session_id=self._session_id)
-        self._set_start_state_preserved(self.state.workspace_root_ready
-                                        and root_exists)
+        root_exists = await self._ws.vfs.exists(
+            self.state.manifest.root, session_id=self._session_id
+        )
+        self._set_start_state_preserved(
+            self.state.workspace_root_ready and root_exists
+        )
 
     async def _prepare_backend_workspace(self) -> None:
         await self._mkdir_p(self.state.manifest.root)
@@ -110,30 +116,32 @@ class MirageSandboxSession(BaseSandboxSession):
     ) -> ExecResult:
         return await self._run(shell_line(command, True), timeout)
 
-    async def _run(self,
-                   line: str,
-                   timeout: float | None = None) -> ExecResult:
+    async def _run(
+        self, line: str, timeout: float | None = None
+    ) -> ExecResult:
         try:
             async with asyncio.timeout(timeout) as deadline:
                 return await self._shell(line)
         except TimeoutError as exc:
             if not deadline.expired():
                 raise
-            raise ExecTimeoutError(command=(line, ),
-                                   timeout_s=timeout) from exc
+            raise ExecTimeoutError(command=(line,), timeout_s=timeout) from exc
 
     async def _shell(self, line: str) -> ExecResult:
         env = await self.state.manifest.environment.resolve()
-        io_result = await self._ws.shell(line,
-                                         session_id=self._session_id,
-                                         cwd=self.state.manifest.root,
-                                         env=env or None)
+        io_result = await self._ws.shell(
+            line,
+            session_id=self._session_id,
+            cwd=self.state.manifest.root,
+            env=env or None,
+        )
         stdout = await io_result.materialize_stdout()
-        stderr = with_refusal_bytes(await io_result.materialize_stderr(),
-                                    io_result.refusal)
-        return ExecResult(exit_code=io_result.exit_code,
-                          stdout=stdout,
-                          stderr=stderr)
+        stderr = with_refusal_bytes(
+            await io_result.materialize_stderr(), io_result.refusal
+        )
+        return ExecResult(
+            exit_code=io_result.exit_code, stdout=stdout, stderr=stderr
+        )
 
     def supports_pty(self) -> bool:
         return True
@@ -150,12 +158,16 @@ class MirageSandboxSession(BaseSandboxSession):
     ) -> PtyExecUpdate:
         process_id = allocate_pty_process_id(set(self._lines))
         self._lines[process_id] = asyncio.create_task(
-            self._run(shell_line(command, bool(shell)), timeout))
-        yield_ms = (DEFAULT_EXEC_YIELD_MS
-                    if yield_time_s is None else int(yield_time_s * 1000))
-        return await self._collect(process_id,
-                                   clamp_pty_yield_time_ms(yield_ms),
-                                   max_output_tokens)
+            self._run(shell_line(command, bool(shell)), timeout)
+        )
+        yield_ms = (
+            DEFAULT_EXEC_YIELD_MS
+            if yield_time_s is None
+            else int(yield_time_s * 1000)
+        )
+        return await self._collect(
+            process_id, clamp_pty_yield_time_ms(yield_ms), max_output_tokens
+        )
 
     async def pty_write_stdin(
         self,
@@ -165,42 +177,56 @@ class MirageSandboxSession(BaseSandboxSession):
         yield_time_s: float | None = None,
         max_output_tokens: int | None = None,
     ) -> PtyExecUpdate:
-        task = self._resolve_pty_session_entry(pty_processes=self._lines,
-                                               session_id=session_id)
+        task = self._resolve_pty_session_entry(
+            pty_processes=self._lines, session_id=session_id
+        )
         if chars.replace(INTERRUPT, ""):
             raise RuntimeError(NO_STDIN)
         if INTERRUPT in chars:
             task.cancel()
-        yield_ms = (DEFAULT_WRITE_YIELD_MS
-                    if yield_time_s is None else int(yield_time_s * 1000))
+        yield_ms = (
+            DEFAULT_WRITE_YIELD_MS
+            if yield_time_s is None
+            else int(yield_time_s * 1000)
+        )
         return await self._collect(
             session_id,
-            resolve_pty_write_yield_time_ms(yield_time_ms=yield_ms,
-                                            input_empty=chars == ""),
-            max_output_tokens)
+            resolve_pty_write_yield_time_ms(
+                yield_time_ms=yield_ms, input_empty=chars == ""
+            ),
+            max_output_tokens,
+        )
 
-    async def _collect(self, process_id: int, yield_ms: int,
-                       max_output_tokens: int | None) -> PtyExecUpdate:
+    async def _collect(
+        self, process_id: int, yield_ms: int, max_output_tokens: int | None
+    ) -> PtyExecUpdate:
         task = self._lines[process_id]
         done, _ = await asyncio.wait({task}, timeout=yield_ms / 1000)
         if not done:
-            return PtyExecUpdate(process_id=process_id,
-                                 output=b"",
-                                 exit_code=None,
-                                 original_token_count=None)
+            return PtyExecUpdate(
+                process_id=process_id,
+                output=b"",
+                exit_code=None,
+                original_token_count=None,
+            )
         del self._lines[process_id]
         if task.cancelled():
-            return PtyExecUpdate(process_id=None,
-                                 output=b"",
-                                 exit_code=INTERRUPTED_EXIT_CODE,
-                                 original_token_count=None)
+            return PtyExecUpdate(
+                process_id=None,
+                output=b"",
+                exit_code=INTERRUPTED_EXIT_CODE,
+                original_token_count=None,
+            )
         result = task.result()
         text, original_token_count = truncate_text_by_tokens(
-            combined_output(result), max_output_tokens)
-        return PtyExecUpdate(process_id=None,
-                             output=text.encode("utf-8"),
-                             exit_code=result.exit_code,
-                             original_token_count=original_token_count)
+            combined_output(result), max_output_tokens
+        )
+        return PtyExecUpdate(
+            process_id=None,
+            output=text.encode("utf-8"),
+            exit_code=result.exit_code,
+            original_token_count=original_token_count,
+        )
 
     async def pty_terminate_all(self) -> None:
         tasks = list(self._lines.values())
@@ -209,8 +235,9 @@ class MirageSandboxSession(BaseSandboxSession):
             task.cancel()
         for outcome in await asyncio.gather(*tasks, return_exceptions=True):
             if isinstance(outcome, Exception):
-                logger.debug("sandbox line failed while terminating: %r",
-                             outcome)
+                logger.debug(
+                    "sandbox line failed while terminating: %r", outcome
+                )
 
     def _path(self, path: Path | str) -> str:
         raw = str(path)
@@ -219,9 +246,11 @@ class MirageSandboxSession(BaseSandboxSession):
         return posixpath.normpath(raw)
 
     async def _mkdir_p(self, path: str) -> None:
-        io_result = await self._ws.shell(f"mkdir -p -- {shlex.quote(path)}",
-                                         session_id=self._session_id,
-                                         record=False)
+        io_result = await self._ws.shell(
+            f"mkdir -p -- {shlex.quote(path)}",
+            session_id=self._session_id,
+            record=False,
+        )
         if io_result.exit_code != 0:
             err = await io_result.materialize_stderr()
             raise OSError(err.decode("utf-8", errors="replace").strip())
@@ -232,8 +261,9 @@ class MirageSandboxSession(BaseSandboxSession):
         *,
         user: str | User | None = None,
     ) -> io.IOBase:
-        data = await self._ws.vfs.read(self._path(path),
-                                       session_id=self._session_id)
+        data = await self._ws.vfs.read(
+            self._path(path), session_id=self._session_id
+        )
         return io.BytesIO(data)
 
     async def write(
@@ -370,7 +400,8 @@ class MirageSandboxClient(BaseSandboxClient[None]):
         if session is None:
             if not isinstance(state, MirageSandboxSessionState):
                 raise TypeError(
-                    f"cannot resume a {state.type!r} sandbox state on mirage")
+                    f"cannot resume a {state.type!r} sandbox state on mirage"
+                )
             session = MirageSandboxSession(workspace=self._ws, state=state)
             self._sessions[state.session_id] = session
         return self._wrap_session(session)

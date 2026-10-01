@@ -61,8 +61,10 @@ def test_assign_element_assoc_and_append():
 
     async def run():
         assert await assign_element(session, None, "m", "b", "2") == "ok"
-        assert await assign_element(session, None, "m", "b", "x",
-                                    append=True) == "ok"
+        assert (
+            await assign_element(session, None, "m", "b", "x", append=True)
+            == "ok"
+        )
         # A bare target over an associative array is the key "0".
         assert await assign_element(session, None, "m", None, "top") == "ok"
         assert await assign_element(session, None, "m", "", "v") == "subscript"
@@ -75,18 +77,21 @@ def test_assign_element_assoc_and_append():
 def test_assign_element_indexed_scalar_and_statuses():
     session = _session()
     session.vars["ro"] = with_attr(session.vars.pop("s5"), VarAttr.READONLY)
-    session.hidden_vars = HiddenVars(names=("h", ), patterns=())
+    session.hidden_vars = HiddenVars(names=("h",), patterns=())
 
     async def run():
         assert await assign_element(session, None, "arr", "1", "X") == "ok"
         assert await assign_element(session, None, "arr", "-1", "Y") == "ok"
-        assert await assign_element(session, None, "arr", "-9",
-                                    "n") == "subscript"
+        assert (
+            await assign_element(session, None, "arr", "-9", "n")
+            == "subscript"
+        )
         # An existing scalar migrates to element 0 under a subscript.
         seed_var(session, "sc", "base")
         assert await assign_element(session, None, "sc", "1", "one") == "ok"
-        assert await assign_element(session, None, "ro", "0",
-                                    "x") == "readonly"
+        assert (
+            await assign_element(session, None, "ro", "0", "x") == "readonly"
+        )
         assert await assign_element(session, None, "h", "0", "x") == "denied"
 
     asyncio.run(run())

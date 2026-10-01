@@ -22,10 +22,10 @@ def test_grep_q_in_if(shell):
 
 def test_grep_q_in_if_no_match(shell):
     shell.create_file("f.txt", b"hello world\n")
-    cmd_m = ("if grep -q missing /data/f.txt;"
-             " then echo found; else echo nope; fi")
-    cmd_n = ("if grep -q missing f.txt;"
-             " then echo found; else echo nope; fi")
+    cmd_m = (
+        "if grep -q missing /data/f.txt; then echo found; else echo nope; fi"
+    )
+    cmd_n = "if grep -q missing f.txt; then echo found; else echo nope; fi"
     assert shell.mirage(cmd_m) == shell.native(cmd_n)
 
 
@@ -52,10 +52,11 @@ def test_grep_q_in_or(shell):
 
 def test_grep_q_in_while(shell):
     shell.create_file("f.txt", b"hello\n")
-    cmd_m = ("while grep -q missing /data/f.txt;"
-             " do echo loop; break; done; echo done")
-    cmd_n = ("while grep -q missing f.txt;"
-             " do echo loop; break; done; echo done")
+    cmd_m = (
+        "while grep -q missing /data/f.txt;"
+        " do echo loop; break; done; echo done"
+    )
+    cmd_n = "while grep -q missing f.txt; do echo loop; break; done; echo done"
     assert shell.mirage(cmd_m) == shell.native(cmd_n)
 
 
@@ -85,12 +86,14 @@ def test_or_left_succeeds_output(shell):
 
 def test_and_exit_code_on_failure(shell):
     assert shell.mirage_exit("false && echo yes") == shell.native_exit(
-        "false && echo yes")
+        "false && echo yes"
+    )
 
 
 def test_or_exit_code_on_success(shell):
     assert shell.mirage_exit("true || echo no") == shell.native_exit(
-        "true || echo no")
+        "true || echo no"
+    )
 
 
 def test_redirect_materializes(shell):

@@ -65,8 +65,10 @@ def test_day_dir():
 
 
 def test_non_date_under_channel_is_invalid():
-    assert detect_scope(
-        "/My Server__G1/channels/general__C1/notadate").kind == INVALID
+    assert (
+        detect_scope("/My Server__G1/channels/general__C1/notadate").kind
+        == INVALID
+    )
 
 
 def test_messages_file():
@@ -76,21 +78,29 @@ def test_messages_file():
 
 
 def test_files_dir():
-    assert detect_scope(
-        "/My Server__G1/channels/general__C1/2024-01-15/files").kind == "files"
+    assert (
+        detect_scope(
+            "/My Server__G1/channels/general__C1/2024-01-15/files"
+        ).kind
+        == "files"
+    )
 
 
 def test_file_blob():
     match = detect_scope(
-        "/My Server__G1/channels/general__C1/2024-01-15/files/kept__A1.txt")
+        "/My Server__G1/channels/general__C1/2024-01-15/files/kept__A1.txt"
+    )
     assert match.kind == "file_blob"
     assert match.slots["blob"] == "kept__A1.txt"
 
 
 def test_deep_unknown_path_is_invalid():
-    assert detect_scope(
-        "/My Server__G1/channels/general__C1/2024-01-15/files/a/b").kind \
+    assert (
+        detect_scope(
+            "/My Server__G1/channels/general__C1/2024-01-15/files/a/b"
+        ).kind
         == INVALID
+    )
 
 
 def test_dot_segment_is_invalid():

@@ -54,8 +54,9 @@ async def resolve_entry(
     if not rel:
         raise eisdir(virtual)
     with refusals_denied(path_spec):
-        found = await lookup_retrying(accessor, index, prefix,
-                                      key_of(prefix, rel))
+        found = await lookup_retrying(
+            accessor, index, prefix, key_of(prefix, rel)
+        )
     if found.is_dir:
         raise eisdir(virtual)
     if found.entry is None:
@@ -80,19 +81,23 @@ def row_token(entry: IndexEntry, etag: str) -> str | None:
     Returns:
         str | None: the oid to stamp, or None.
     """
-    ids = {entry.id,
-           entry.extra.get("lfs_oid"),
-           entry.extra.get("xet_hash")} - {"", None}
+    ids = {
+        entry.id,
+        entry.extra.get("lfs_oid"),
+        entry.extra.get("xet_hash"),
+    } - {"", None}
     if etag_value(etag) not in ids:
         return None
     return entry.id or None
 
 
-async def read_bytes(accessor: HfHubAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: HfHubAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a file's content, or a byte window of it.
 
     Args:
@@ -107,20 +112,29 @@ async def read_bytes(accessor: HfHubAccessor,
     """
     entry = await resolve_entry(accessor, path, index)
     raw = path.mount_path
-    url = resolve_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                      accessor.revision, accessor.repo_path(raw))
-    window = ByteWindow(offset=offset,
-                        size=size) if offset or size is not None else None
+    url = resolve_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        accessor.revision,
+        accessor.repo_path(raw),
+    )
+    window = (
+        ByteWindow(offset=offset, size=size)
+        if offset or size is not None
+        else None
+    )
     timer = start_op()
     with refusals_denied(path, REFUSED_STATUSES):
-        data, etag = await hub_bytes_tagged(accessor.token,
-                                            url,
-                                            window,
-                                            session=accessor.pool)
-    record("read",
-           path.virtual,
-           accessor.VFS_NAME,
-           len(data),
-           timer,
-           fingerprint=row_token(entry, etag))
+        data, etag = await hub_bytes_tagged(
+            accessor.token, url, window, session=accessor.pool
+        )
+    record(
+        "read",
+        path.virtual,
+        accessor.VFS_NAME,
+        len(data),
+        timer,
+        fingerprint=row_token(entry, etag),
+    )
     return data

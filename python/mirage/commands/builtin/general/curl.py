@@ -19,18 +19,23 @@ from urllib.parse import urlsplit
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
 from mirage.commands.builtin.general.curl_write_out import render_write_out
-from mirage.commands.builtin.utils.http import (DEFAULT_USER_AGENT,
-                                                HttpResponse,
-                                                http_form_request,
-                                                http_request)
+from mirage.commands.builtin.utils.http import (
+    DEFAULT_USER_AGENT,
+    HttpResponse,
+    http_form_request,
+    http_request,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
-from mirage.utils.errors import (WALK_ERRORS, OperationNotSupportedError,
-                                 fs_strerror)
+from mirage.utils.errors import (
+    WALK_ERRORS,
+    OperationNotSupportedError,
+    fs_strerror,
+)
 
 # Exit codes real curl uses for the failures mirage can hit. An HTTP error
 # status is deliberately absent: curl treats 4xx/5xx as a successful transfer
@@ -48,13 +53,17 @@ CRLF = "\r\n"
 HELP_HINT = "curl: try 'curl --help' or 'curl --manual' for more information"
 # curl 8.7.1's wording, wrapped where it wraps it (the trailing space is
 # the wrap point).
-HEAD_DATA_WARNING = ("Warning: You can only select one HTTP request method! "
-                     "You asked for both POST \n"
-                     "Warning: (-d, --data) and HEAD (-I, --head).\n")
-HEAD_FORM_WARNING = ("Warning: You can only select one HTTP request method! "
-                     "You asked for both \n"
-                     "Warning: multipart formpost (-F, --form) and HEAD "
-                     "(-I, --head).\n")
+HEAD_DATA_WARNING = (
+    "Warning: You can only select one HTTP request method! "
+    "You asked for both POST \n"
+    "Warning: (-d, --data) and HEAD (-I, --head).\n"
+)
+HEAD_FORM_WARNING = (
+    "Warning: You can only select one HTTP request method! "
+    "You asked for both \n"
+    "Warning: multipart formpost (-F, --form) and HEAD "
+    "(-I, --head).\n"
+)
 # curl's own Content-Type for a -d body, sent unless the line names one:
 # httpx's `content=` and fetch's body carry no type of their own.
 BODY_CONTENT_TYPE = "application/x-www-form-urlencoded"
@@ -66,15 +75,18 @@ def resolve_target(o: str | PathSpec, cwd: PathSpec | str | None) -> PathSpec:
     if o.startswith("/"):
         path = o
     else:
-        base = (cwd.virtual if isinstance(cwd, PathSpec) else
-                (cwd or "")).rstrip("/")
+        base = (
+            cwd.virtual if isinstance(cwd, PathSpec) else (cwd or "")
+        ).rstrip("/")
         path = f"{base}/{o}" if base else f"/{o}"
     last_slash = path.rfind("/")
-    directory = path[:last_slash + 1] if last_slash >= 0 else "/"
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=directory,
-                    resolved=True)
+    directory = path[: last_slash + 1] if last_slash >= 0 else "/"
+    return PathSpec(
+        vfs_path=(path).strip("/"),
+        virtual=path,
+        directory=directory,
+        resolved=True,
+    )
 
 
 def names_content_type(headers: Mapping[str, str]) -> bool:
@@ -86,8 +98,13 @@ def names_content_type(headers: Mapping[str, str]) -> bool:
     return any(k.lower() == "content-type" for k in headers)
 
 
-def request_lines(url: str, method: str, headers: Mapping[str, str],
-                  body_len: int | None, body_type: str | None) -> list[str]:
+def request_lines(
+    url: str,
+    method: str,
+    headers: Mapping[str, str],
+    body_len: int | None,
+    body_type: str | None,
+) -> list[str]:
     """The request curl -v shows, as far as mirage can see it.
 
     Only what leaves mirage is dumped: the request line, Host, the
@@ -140,9 +157,12 @@ def response_lines(resp: HttpResponse) -> list[str]:
         resp (HttpResponse): the response as the client reported it.
     """
     lines = [f"HTTP/1.1 {resp.status} {resp.reason}"]
-    lines.extend(f"{k}: {v}"
-                 for k, v in sorted(((k.lower(), v) for k, v in resp.headers),
-                                    key=lambda kv: kv[0]))
+    lines.extend(
+        f"{k}: {v}"
+        for k, v in sorted(
+            ((k.lower(), v) for k, v in resp.headers), key=lambda kv: kv[0]
+        )
+    )
     return lines
 
 
@@ -160,8 +180,11 @@ def _doubled(hops: list[HttpResponse]) -> str:
     Args:
         hops (list[HttpResponse]): every response, redirects first.
     """
-    return "".join(f"{line}{CRLF}{line}{CRLF}" for hop in hops
-                   for line in [*response_lines(hop), ""])
+    return "".join(
+        f"{line}{CRLF}{line}{CRLF}"
+        for hop in hops
+        for line in [*response_lines(hop), ""]
+    )
 
 
 def _write_failure(shown: str, exc: Exception) -> str:
@@ -211,11 +234,14 @@ async def curl(
     # -D names a file, or stdout as a lone `-`, which the parser leaves
     # unresolved (STDOUT_DASH_OPTIONS); `./-` is a file.
     dump_header = fl.raw("dump_header")
-    dump_to_stdout = dump_header == "-" or (isinstance(dump_header, PathSpec)
-                                            and dump_header.raw_path == "-")
-    dump_file = (None if dump_to_stdout
-                 or not isinstance(dump_header,
-                                   (PathSpec, str)) else dump_header)
+    dump_to_stdout = dump_header == "-" or (
+        isinstance(dump_header, PathSpec) and dump_header.raw_path == "-"
+    )
+    dump_file = (
+        None
+        if dump_to_stdout or not isinstance(dump_header, (PathSpec, str))
+        else dump_header
+    )
     # -k: the server's certificate is not verified.
     verify = not fl.as_bool("insecure")
     location = fl.as_bool("location")
@@ -236,7 +262,8 @@ async def curl(
         raise UsageError(
             "curl: option --max-time: expected a positive numerical "
             f"parameter\n{HELP_HINT}",
-            exit_code=EXIT_USAGE)
+            exit_code=EXIT_USAGE,
+        )
     # -I beside a body option asks two methods of one request: curl warns
     # and refuses. -s mutes the warning and -S does not bring it back; the
     # option error -F adds is never muted.
@@ -247,8 +274,9 @@ async def curl(
             refusal += f"curl: option -F: is badly used here\n{HELP_HINT}\n"
         return None, IOResult(exit_code=EXIT_USAGE, stderr=refusal.encode())
     if not texts:
-        raise UsageError(f"curl: (2) no URL specified\n{HELP_HINT}",
-                         exit_code=EXIT_USAGE)
+        raise UsageError(
+            f"curl: (2) no URL specified\n{HELP_HINT}", exit_code=EXIT_USAGE
+        )
     url = texts[0]
     # -s silences the message, -S puts it back. Neither changes the exit code.
     quiet = fl.as_bool("silent") and not fl.as_bool("show_error")
@@ -264,50 +292,60 @@ async def curl(
             else:
                 if opts.dispatch is None:
                     raise OperationNotSupportedError(
-                        "no filesystem dispatcher")
+                        "no filesystem dispatcher"
+                    )
                 content, _ = await opts.dispatch(
-                    "read", resolve_target(template[1:], opts.cwd))
+                    "read", resolve_target(template[1:], opts.cwd)
+                )
             template = (await materialize(content)).decode(errors="replace")
         except WALK_ERRORS as exc:
             # curl 8.14.1: -s suppresses only the opening diagnostic; -S
             # does not restore it. The option error is always printed.
             # The parsed flags no longer retain the spelling, so use -w.
-            detail = "" if fl.as_bool("silent") else (
-                f"curl: Failed to open {template[1:]}\n")
+            detail = (
+                ""
+                if fl.as_bool("silent")
+                else (f"curl: Failed to open {template[1:]}\n")
+            )
             raise UsageError(
                 f"{detail}curl: option -w: error encountered when reading "
                 f"a file\n{HELP_HINT}",
-                exit_code=EXIT_READ) from exc
+                exit_code=EXIT_READ,
+            ) from exc
     started = time.monotonic()
 
     async def finish(
         stdout: ByteSource | None,
         io: IOResult,
-        response: HttpResponse | None = None
+        response: HttpResponse | None = None,
     ) -> tuple[ByteSource | None, IOResult]:
         code = f"{response.status:03d}" if response is not None else "000"
         values = {
-            "http_code":
-            code,
-            "response_code":
-            code,
-            "url_effective":
-            response.url if response is not None else url,
-            "num_redirects":
-            str(len(response.history)) if response is not None else "0",
-            "size_download":
-            str(len(response.body)) if response is not None else "0",
-            "content_type":
-            next((v
-                  for k, v in response.headers if k.lower() == "content-type"),
-                 "") if response is not None else "",
-            "method":
-            response.method if response is not None else request or
-            ("HEAD" if head else "POST" if data or form else "GET"),
-            "exitcode":
-            str(io.exit_code),
-            "time_total":
-            f"{time.monotonic() - started:.6f}",
+            "http_code": code,
+            "response_code": code,
+            "url_effective": response.url if response is not None else url,
+            "num_redirects": str(len(response.history))
+            if response is not None
+            else "0",
+            "size_download": str(len(response.body))
+            if response is not None
+            else "0",
+            "content_type": next(
+                (
+                    v
+                    for k, v in response.headers
+                    if k.lower() == "content-type"
+                ),
+                "",
+            )
+            if response is not None
+            else "",
+            "method": response.method
+            if response is not None
+            else request
+            or ("HEAD" if head else "POST" if data or form else "GET"),
+            "exitcode": str(io.exit_code),
+            "time_total": f"{time.monotonic() - started:.6f}",
         }
         out, err = render_write_out(template, values)
         io.stderr = (await materialize(io.stderr)) + err
@@ -319,43 +357,60 @@ async def curl(
         if form:
             method = request or "POST"
             key, _, value = form.partition("=")
-            resp = http_form_request(url,
-                                     method=method,
-                                     form_data={key: value},
-                                     headers=headers,
-                                     timeout=timeout,
-                                     follow_redirects=location,
-                                     verify=verify)
+            resp = http_form_request(
+                url,
+                method=method,
+                form_data={key: value},
+                headers=headers,
+                timeout=timeout,
+                follow_redirects=location,
+                verify=verify,
+            )
         else:
-            method = request or ("HEAD" if head else
-                                 ("POST" if data else "GET"))
+            method = request or (
+                "HEAD" if head else ("POST" if data else "GET")
+            )
             body = data.encode() if data else None
             body_len = len(body) if body is not None else None
             # -v shows what is sent, so curl's default for the body goes
             # on the request, not on the trace alone.
             if body is not None and not names_content_type(headers):
                 body_type = BODY_CONTENT_TYPE
-            sent = ({
-                **headers, "Content-Type": body_type
-            } if body_type is not None else headers)
-            resp = http_request(url,
-                                method=method,
-                                headers=sent,
-                                data=body,
-                                timeout=timeout,
-                                follow_redirects=location,
-                                verify=verify)
+            sent = (
+                {**headers, "Content-Type": body_type}
+                if body_type is not None
+                else headers
+            )
+            resp = http_request(
+                url,
+                method=method,
+                headers=sent,
+                data=body,
+                timeout=timeout,
+                follow_redirects=location,
+                verify=verify,
+            )
     except HttpTimeoutError as exc:
         # Nothing was received: the body is read whole, so a deadline
         # that hits mid-transfer still counts as zero bytes here.
-        err = b"" if quiet else (
-            f"curl: ({EXIT_TIMEOUT}) Operation timed out after "
-            f"{exc.elapsed_ms} milliseconds with 0 bytes received\n").encode()
+        err = (
+            b""
+            if quiet
+            else (
+                f"curl: ({EXIT_TIMEOUT}) Operation timed out after "
+                f"{exc.elapsed_ms} milliseconds with 0 bytes received\n"
+            ).encode()
+        )
         return await finish(None, IOResult(exit_code=EXIT_TIMEOUT, stderr=err))
     except HttpConnectError as exc:
-        err = b"" if quiet else (
-            f"curl: ({EXIT_CONNECT}) Failed to connect to {exc.host} port "
-            f"{exc.port}: Could not connect to server\n").encode()
+        err = (
+            b""
+            if quiet
+            else (
+                f"curl: ({EXIT_CONNECT}) Failed to connect to {exc.host} port "
+                f"{exc.port}: Could not connect to server\n"
+            ).encode()
+        )
         return await finish(None, IOResult(exit_code=EXIT_CONNECT, stderr=err))
     hops = [*resp.history, resp]
     # The first request is the one this handler built; each redirect's is
@@ -371,9 +426,16 @@ async def curl(
             carries = sent_as == method
             dumped.append(
                 _dump(
-                    request_lines(target, sent_as, headers,
-                                  body_len if carries else None,
-                                  body_type if carries else None), "> "))
+                    request_lines(
+                        target,
+                        sent_as,
+                        headers,
+                        body_len if carries else None,
+                        body_type if carries else None,
+                    ),
+                    "> ",
+                )
+            )
             dumped.append(_dump(response_lines(hop), "< "))
         trace = "".join(dumped).encode()
     # -i, -I and -D all show every hop's header block (curl 8.14.1); the
@@ -386,36 +448,51 @@ async def curl(
     if dump_file is not None:
         if opts.dispatch is not None:
             try:
-                await opts.dispatch("write",
-                                    resolve_target(dump_file, opts.cwd),
-                                    data=blocks)
+                await opts.dispatch(
+                    "write", resolve_target(dump_file, opts.cwd), data=blocks
+                )
             except WALK_ERRORS as exc:
-                err = b"" if quiet else _write_failure(_path_str(dump_file),
-                                                       exc).encode()
+                err = (
+                    b""
+                    if quiet
+                    else _write_failure(_path_str(dump_file), exc).encode()
+                )
                 return await finish(
-                    None, IOResult(exit_code=EXIT_WRITE, stderr=trace + err),
-                    resp)
+                    None,
+                    IOResult(exit_code=EXIT_WRITE, stderr=trace + err),
+                    resp,
+                )
         writes[_path_str(dump_file)] = blocks
     header_out = blocks if dump_to_stdout else None
     # Only -f makes an error status an error, and then no body is
     # written; the headers -D already dumped stay dumped.
     if fl.as_bool("fail") and resp.is_error:
-        err = b"" if quiet else (
-            f"curl: ({EXIT_HTTP_ERROR}) The requested URL returned error: "
-            f"{resp.status}\n").encode()
+        err = (
+            b""
+            if quiet
+            else (
+                f"curl: ({EXIT_HTTP_ERROR}) The requested URL returned error: "
+                f"{resp.status}\n"
+            ).encode()
+        )
         return await finish(
             header_out,
-            IOResult(exit_code=EXIT_HTTP_ERROR,
-                     stderr=trace + err,
-                     writes=writes), resp)
+            IOResult(
+                exit_code=EXIT_HTTP_ERROR, stderr=trace + err, writes=writes
+            ),
+            resp,
+        )
     result = resp.body
     if head:
         # -I prints the headers alone, whatever method -X made it send.
         result = blocks
     elif include:
         result = blocks + result
-    if isinstance(output, (PathSpec, str)) and (output.raw_path if isinstance(
-            output, PathSpec) else output) != "-":
+    if (
+        isinstance(output, (PathSpec, str))
+        and (output.raw_path if isinstance(output, PathSpec) else output)
+        != "-"
+    ):
         o_str = _path_str(output)
         if opts.dispatch is not None:
             scope = resolve_target(output, opts.cwd)
@@ -429,14 +506,17 @@ async def curl(
                 err = b"" if quiet else _write_failure(o_str, exc).encode()
                 return await finish(
                     header_out,
-                    IOResult(exit_code=EXIT_WRITE,
-                             stderr=trace + err,
-                             writes=writes), resp)
+                    IOResult(
+                        exit_code=EXIT_WRITE, stderr=trace + err, writes=writes
+                    ),
+                    resp,
+                )
         writes[o_str] = result
         # Real curl writes the body to the file and prints nothing else
         # on stdout, the headers -D sends there aside.
-        return await finish(header_out, IOResult(writes=writes, stderr=trace),
-                            resp)
+        return await finish(
+            header_out, IOResult(writes=writes, stderr=trace), resp
+        )
     if dump_to_stdout and (head or include):
         result = _doubled(hops).encode() + (b"" if head else resp.body)
     elif dump_to_stdout:

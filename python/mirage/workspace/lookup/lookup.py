@@ -20,10 +20,14 @@ from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.mixin import LineExecutorMixin, ProcessExecutorMixin
 from mirage.runtime.routing.types import RouteDecision
 from mirage.utils.quote import shell_quote
-from mirage.workspace.lookup.constants import (CAPTURABLE_BUILTINS,
-                                               INTERPRETER_NAMES, KEYWORDS,
-                                               NAMESPACE_COMMANDS, SHELL_NAMES,
-                                               SHELL_ONLY_BUILTINS)
+from mirage.workspace.lookup.constants import (
+    CAPTURABLE_BUILTINS,
+    INTERPRETER_NAMES,
+    KEYWORDS,
+    NAMESPACE_COMMANDS,
+    SHELL_NAMES,
+    SHELL_ONLY_BUILTINS,
+)
 from mirage.workspace.lookup.types import Consumer
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.session import SessionState
@@ -80,8 +84,9 @@ def command_visible(name: str, session: SessionState) -> bool:
     return not is_tool(name, session) or listed(name, session)
 
 
-def verb_visible(head: str, path: Sequence[str],
-                 session: SessionState) -> bool:
+def verb_visible(
+    head: str, path: Sequence[str], session: SessionState
+) -> bool:
     """Whether a session can see one node of an installed CLI's tree.
 
     ``command_visible`` answers for a word, which is all dispatch needs:
@@ -102,23 +107,30 @@ def verb_visible(head: str, path: Sequence[str],
     return node_visible((head, *path), session.commands)
 
 
-def runtime_refused(name: str,
-                    session: SessionState,
-                    registry: MountRegistry,
-                    routing: RouteDecision | None = None) -> bool:
+def runtime_refused(
+    name: str,
+    session: SessionState,
+    registry: MountRegistry,
+    routing: RouteDecision | None = None,
+) -> bool:
     """Whether routing explicitly refused the external runtime for ``name``."""
     if routing is None:
         return False
     bindings = routing.bindings
     key = name if name in bindings else EXTERNAL_COMMANDS
-    return (key in bindings and bindings[key] is None
-            and lookup(name, session, registry) is Consumer.EXTERNAL)
+    return (
+        key in bindings
+        and bindings[key] is None
+        and lookup(name, session, registry) is Consumer.EXTERNAL
+    )
 
 
-def _layers(name: str,
-            session: SessionState,
-            registry: MountRegistry,
-            routing: RouteDecision | None = None) -> Iterator[Consumer]:
+def _layers(
+    name: str,
+    session: SessionState,
+    registry: MountRegistry,
+    routing: RouteDecision | None = None,
+) -> Iterator[Consumer]:
     """Yield every layer holding the name, most-preferred first.
 
     The one place precedence is written down: ``lookup`` reads the first
@@ -138,16 +150,23 @@ def _layers(name: str,
     """
     installed = listed(name, session)
     found = False
-    bindings = (routing.bindings
-                if routing is not None else registry.runtime_bindings)
-    bound = (bindings[name]
-             if name in bindings else registry.runtime_bindings.get(name))
+    bindings = (
+        routing.bindings if routing is not None else registry.runtime_bindings
+    )
+    bound = (
+        bindings[name]
+        if name in bindings
+        else registry.runtime_bindings.get(name)
+    )
     native = isinstance(bound, (LineExecutorMixin, ProcessExecutorMixin))
     refused = runtime_refused(name, session, registry, routing)
     if name in SHELL_NAMES and installed:
         found = True
-        yield (Consumer.EXTERNAL if (native or refused)
-               and name in CAPTURABLE_BUILTINS else Consumer.SESSION)
+        yield (
+            Consumer.EXTERNAL
+            if (native or refused) and name in CAPTURABLE_BUILTINS
+            else Consumer.SESSION
+        )
     if installed and name in NAMESPACE_COMMANDS:
         found = True
         yield Consumer.NAMESPACE
@@ -163,20 +182,30 @@ def _layers(name: str,
     if installed and registry.mount_for_command(name) is not None:
         found = True
         yield Consumer.MOUNT
-    fallback = (bindings[EXTERNAL_COMMANDS] if EXTERNAL_COMMANDS in bindings
-                else registry.runtime_bindings.get(EXTERNAL_COMMANDS))
-    fallback_native = isinstance(fallback,
-                                 (LineExecutorMixin, ProcessExecutorMixin))
-    if (installed and not found and name not in bindings
-            and name not in registry.runtime_unavailable
-            and (fallback_native or refused)):
+    fallback = (
+        bindings[EXTERNAL_COMMANDS]
+        if EXTERNAL_COMMANDS in bindings
+        else registry.runtime_bindings.get(EXTERNAL_COMMANDS)
+    )
+    fallback_native = isinstance(
+        fallback, (LineExecutorMixin, ProcessExecutorMixin)
+    )
+    if (
+        installed
+        and not found
+        and name not in bindings
+        and name not in registry.runtime_unavailable
+        and (fallback_native or refused)
+    ):
         yield Consumer.EXTERNAL
 
 
-def lookup(name: str,
-           session: SessionState,
-           registry: MountRegistry,
-           routing: RouteDecision | None = None) -> Consumer:
+def lookup(
+    name: str,
+    session: SessionState,
+    registry: MountRegistry,
+    routing: RouteDecision | None = None,
+) -> Consumer:
     """Route a command name to the layer that consumes it.
 
     Order mirrors dispatch precedence: shell builtins shadow functions,
@@ -216,8 +245,9 @@ def lookup(name: str,
     return next(_layers(name, session, registry, routing), Consumer.UNKNOWN)
 
 
-def lookup_all(name: str, session: SessionState,
-               registry: MountRegistry) -> list[Consumer]:
+def lookup_all(
+    name: str, session: SessionState, registry: MountRegistry
+) -> list[Consumer]:
     """Every layer holding the name, most-preferred first.
 
     Empty when nothing holds it, where ``lookup`` says UNKNOWN. Only
@@ -232,8 +262,9 @@ def lookup_all(name: str, session: SessionState,
     return list(_layers(name, session, registry))
 
 
-def program(name: str, session: SessionState,
-            registry: MountRegistry) -> Consumer | None:
+def program(
+    name: str, session: SessionState, registry: MountRegistry
+) -> Consumer | None:
     """The layer a name runs from as a program, None when it is none.
 
     A program is what a real system ships as a file on PATH, so it has
@@ -264,12 +295,18 @@ def program(name: str, session: SessionState,
             continue
         if consumer is Consumer.SESSION and name in SHELL_ONLY_BUILTINS:
             return None
-        if (consumer is Consumer.SESSION
-                and name in INTERPRETER_NAMES and not isinstance(
-                    registry.runtime_bindings.get(name), LanguageRuntime)):
+        if (
+            consumer is Consumer.SESSION
+            and name in INTERPRETER_NAMES
+            and not isinstance(
+                registry.runtime_bindings.get(name), LanguageRuntime
+            )
+        ):
             return None
-        if (consumer is Consumer.EXTERNAL
-                and name not in registry.runtime_bindings):
+        if (
+            consumer is Consumer.EXTERNAL
+            and name not in registry.runtime_bindings
+        ):
             return None
         return consumer
     return None
@@ -289,12 +326,16 @@ def execs(name: str, session: SessionState, registry: MountRegistry) -> bool:
         session (SessionState): the session it would run in.
         registry (MountRegistry): mount registry (command registration).
     """
-    return ("/" in name or program(name, session, registry) is not None
-            or lookup(name, session, registry) is Consumer.FUNCTION)
+    return (
+        "/" in name
+        or program(name, session, registry) is not None
+        or lookup(name, session, registry) is Consumer.FUNCTION
+    )
 
 
-def program_note(name: str, session: SessionState,
-                 registry: MountRegistry) -> str | None:
+def program_note(
+    name: str, session: SessionState, registry: MountRegistry
+) -> str | None:
     """What a program's ``/usr/bin`` file says about it, None when the
     name is no program.
 
@@ -314,14 +355,18 @@ def program_note(name: str, session: SessionState,
     if consumer is None:
         return None
     runtime = registry.runtime_bindings.get(name)
-    if runtime is not None and (consumer is Consumer.EXTERNAL
-                                or name in INTERPRETER_NAMES):
+    if runtime is not None and (
+        consumer is Consumer.EXTERNAL or name in INTERPRETER_NAMES
+    ):
         return f"{name} runs on the workspace's {runtime.name} runtime."
     help_line = f" Help: {shell_quote(name)} --help"
     if consumer is Consumer.CLI:
         return f"{name} is a CLI registered with this workspace.{help_line}"
-    mount = (registry.mount_for_command(name)
-             if consumer is Consumer.MOUNT else None)
+    mount = (
+        registry.mount_for_command(name)
+        if consumer is Consumer.MOUNT
+        else None
+    )
     spec = mount.spec_for(name) if mount is not None else None
     if spec is not None and any(o.long == "--help" for o in spec.options):
         return f"{name} is built into mirage.{help_line}"
@@ -347,5 +392,6 @@ def programs(session: SessionState, registry: MountRegistry) -> list[str]:
     names |= {n for n in registry.runtime_bindings if n != EXTERNAL_COMMANDS}
     for mount in registry.mounts():
         names |= {cmd.name.split()[0] for cmd in mount.all_commands()}
-    return sorted(n for n in names
-                  if program(n, session, registry) is not None)
+    return sorted(
+        n for n in names if program(n, session, registry) is not None
+    )

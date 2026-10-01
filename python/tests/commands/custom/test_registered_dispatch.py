@@ -35,11 +35,9 @@ async def test_registered_command_dispatch():
     async def my_cat(store, paths, *texts, stdin=None, **flags):
         return b"custom-cat", IOResult()
 
-    rc = RegisteredCommand("cat",
-                           spec=SPECS["cat"],
-                           vfs="ram",
-                           filetype=None,
-                           fn=my_cat)
+    rc = RegisteredCommand(
+        "cat", spec=SPECS["cat"], vfs="ram", filetype=None, fn=my_cat
+    )
     ws._registry.mount_for("/tmp/").register(rc)
 
     ws._cwd = "/"
@@ -58,11 +56,9 @@ async def test_registered_filetype_dispatch():
     async def cat_avro(store, paths, *texts, stdin=None, **flags):
         return b"avro-output", IOResult()
 
-    rc = RegisteredCommand("cat",
-                           spec=SPECS["cat"],
-                           vfs="ram",
-                           filetype=".avro",
-                           fn=cat_avro)
+    rc = RegisteredCommand(
+        "cat", spec=SPECS["cat"], vfs="ram", filetype=".avro", fn=cat_avro
+    )
     ws._registry.mount_for("/tmp/").register(rc)
 
     ws._cwd = "/"
@@ -86,17 +82,15 @@ async def test_filetype_takes_priority_over_generic():
 
     mount = ws._registry.mount_for("/tmp/")
     mount.register(
-        RegisteredCommand("cat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=None,
-                          fn=cat_generic))
+        RegisteredCommand(
+            "cat", spec=SPECS["cat"], vfs="ram", filetype=None, fn=cat_generic
+        )
+    )
     mount.register(
-        RegisteredCommand("cat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".avro",
-                          fn=cat_avro))
+        RegisteredCommand(
+            "cat", spec=SPECS["cat"], vfs="ram", filetype=".avro", fn=cat_avro
+        )
+    )
 
     ws._cwd = "/"
     result = await ws.shell("cat /tmp/data.avro")
@@ -129,11 +123,9 @@ def test_general_command_dispatch():
     async def my_stat(store, paths, *texts, stdin=None, **flags):
         return b"custom-stat", IOResult()
 
-    rc = RegisteredCommand("stat",
-                           spec=CommandSpec(),
-                           vfs="ram",
-                           filetype=None,
-                           fn=my_stat)
+    rc = RegisteredCommand(
+        "stat", spec=CommandSpec(), vfs="ram", filetype=None, fn=my_stat
+    )
     ws._registry.mount_for("/tmp/").register(rc)
 
     ws._cwd = "/tmp"

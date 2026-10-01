@@ -36,9 +36,12 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
     mkdir_impl = io.require(Operation.MKDIR)
     resolve_glob = io.resolve_glob
 
-    async def mkdir(accessor: Accessor, paths: list[PathSpec],
-                    texts: list[str],
-                    opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    async def mkdir(
+        accessor: Accessor,
+        paths: list[PathSpec],
+        texts: list[str],
+        opts: CommandOpts,
+    ) -> tuple[ByteSource | None, IOResult]:
         fl = FlagView(opts.flags, spec=SPECS["mkdir"])
         parents = fl.as_bool("parents")
         verbose = fl.as_bool("verbose")
@@ -52,15 +55,16 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
         for path in paths:
             # A symlink occupying the name is EEXIST; the shared helper
             # keeps this identical to the generic builder's answer.
-            taken, refusal = await mkdir_link_refusal(path,
-                                                      links,
-                                                      parents=parents)
+            taken, refusal = await mkdir_link_refusal(
+                path, links, parents=parents
+            )
             if taken:
                 if refusal is not None:
                     errors.append(refusal)
                 continue
-            failed = await make_directory(mkdir_impl, accessor, path, parents,
-                                          links)
+            failed = await make_directory(
+                mkdir_impl, accessor, path, parents, links
+            )
             if failed is not None:
                 errors.append(failed)
                 continue
@@ -69,13 +73,11 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 lines.append(f"mkdir: created directory '{path.virtual}'")
         output = ("\n".join(lines) + "\n").encode() if lines else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
-        return output, IOResult(writes=writes,
-                                stderr=stderr,
-                                exit_code=1 if errors else 0)
+        return output, IOResult(
+            writes=writes, stderr=stderr, exit_code=1 if errors else 0
+        )
 
-    wrapped: Callable[..., Any] = command("mkdir",
-                                          vfs=vfs,
-                                          spec=SPECS["mkdir"],
-                                          write=True,
-                                          path_guarded=True)(mkdir)
+    wrapped: Callable[..., Any] = command(
+        "mkdir", vfs=vfs, spec=SPECS["mkdir"], write=True, path_guarded=True
+    )(mkdir)
     return wrapped

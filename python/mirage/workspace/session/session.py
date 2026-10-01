@@ -19,26 +19,52 @@ from types import MappingProxyType
 from typing import Any
 
 from mirage.io.async_line_iterator import SharedInput
-from mirage.policy.types import (AdmissionRules, Decision, HideReason,
-                                 ProfileScript)
+from mirage.policy.types import (
+    AdmissionRules,
+    Decision,
+    HideReason,
+    ProfileScript,
+)
 from mirage.process.config import ProcessPermissions
 from mirage.secrets.config import EnvVar
 from mirage.shell.array import ShellArray
-from mirage.shell.constants import (BIN_PREFIX, IFS_DEFAULT, RANDOM,
-                                    RANDOM_UNSET, SHELL_ARGV0)
+from mirage.shell.constants import (
+    BIN_PREFIX,
+    IFS_DEFAULT,
+    RANDOM,
+    RANDOM_UNSET,
+    SHELL_ARGV0,
+)
 from mirage.shell.types import FunctionBody
-from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr,
-                                   attrs_from_letters, stored_attrs,
-                                   with_value)
-from mirage.types import (HiddenPaths, HiddenVars, Limit, MountMode, ShowEntry,
-                          ShownPaths)
+from mirage.shell.variable import (
+    ManagedRef,
+    ShellVar,
+    VarAttr,
+    attrs_from_letters,
+    stored_attrs,
+    with_value,
+)
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    Limit,
+    MountMode,
+    ShowEntry,
+    ShownPaths,
+)
 from mirage.workspace.abort import StatusWriter
-from mirage.workspace.session.constants import (CHILD_SHELL_FIELDS,
-                                                INHERITED_FIELDS)
-
-from mirage.workspace.session.serialize import (  # isort: skip
-    commands_from_dict, commands_to_dict, decision_from_dict, decision_to_dict,
-    script_from_dict, script_to_dict)
+from mirage.workspace.session.constants import (
+    CHILD_SHELL_FIELDS,
+    INHERITED_FIELDS,
+)
+from mirage.workspace.session.serialize import (
+    commands_from_dict,
+    commands_to_dict,
+    decision_from_dict,
+    decision_to_dict,
+    script_from_dict,
+    script_to_dict,
+)
 
 
 def copy_state(value: Any) -> Any:
@@ -79,8 +105,9 @@ def vars_from_env(env: Mapping[str, str]) -> dict[str, ShellVar]:
     return {name: ShellVar(value, exported) for name, value in env.items()}
 
 
-def vars_from_dict(env: Mapping[str, str],
-                   attrs: Mapping[str, str]) -> dict[str, ShellVar]:
+def vars_from_dict(
+    env: Mapping[str, str], attrs: Mapping[str, str]
+) -> dict[str, ShellVar]:
     """Variable records for a stored session's two halves.
 
     The restore side of `to_dict`. `env` carries every scalar and
@@ -109,7 +136,7 @@ def vars_from_dict(env: Mapping[str, str],
 
 
 def vars_from_entries(
-    entries: Mapping[str, str | EnvVar | Mapping[str, Any]]
+    entries: Mapping[str, str | EnvVar | Mapping[str, Any]],
 ) -> dict[str, ShellVar]:
     """Variable records for a workspace env block.
 
@@ -132,8 +159,12 @@ def vars_from_entries(
             entry = EnvVar.model_validate(entry)
         attrs = set()
         if entry.provider is not None:
-            ref = ManagedRef(entry.provider, entry.ref, entry.key or name,
-                             entry.fetch == "eager")
+            ref = ManagedRef(
+                entry.provider,
+                entry.ref,
+                entry.key or name,
+                entry.fetch == "eager",
+            )
             attrs.add(VarAttr.EXPORT)
             if entry.readonly:
                 attrs.add(VarAttr.READONLY)
@@ -162,7 +193,8 @@ def vars_to_fields(table: Mapping[str, ShellVar]) -> dict[str, Any]:
     """
     managed = {
         name: var.managed
-        for name, var in table.items() if var.managed is not None
+        for name, var in table.items()
+        if var.managed is not None
     }
     fields: dict[str, Any] = {
         "env": {
@@ -171,8 +203,7 @@ def vars_to_fields(table: Mapping[str, ShellVar]) -> dict[str, Any]:
             if isinstance(var.value, str) and name not in managed
         },
         "var_attrs": {
-            name: stored_attrs(var)
-            for name, var in table.items() if var.attrs
+            name: stored_attrs(var) for name, var in table.items() if var.attrs
         },
     }
     if managed:
@@ -200,10 +231,13 @@ def vars_from_fields(data: Mapping[str, Any]) -> dict[str, ShellVar]:
     out = vars_from_dict(data.get("env") or {}, data.get("var_attrs") or {})
     for name, m in (data.get("managed") or {}).items():
         var = out.get(name, ShellVar(None, frozenset({VarAttr.EXPORT})))
-        out[name] = replace(var,
-                            value=None,
-                            managed=ManagedRef(m["from"], m["ref"], m["key"],
-                                               m.get("fetch") == "eager"))
+        out[name] = replace(
+            var,
+            value=None,
+            managed=ManagedRef(
+                m["from"], m["ref"], m["key"], m.get("fetch") == "eager"
+            ),
+        )
     return out
 
 
@@ -316,15 +350,16 @@ class SessionState:
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so
     # its value and its attributes are saved and restored together.
-    _local_vars: (dict[str, ShellVar | None]
-                  | None) = field(default=None, repr=False)
+    _local_vars: dict[str, ShellVar | None] | None = field(
+        default=None, repr=False
+    )
     # Every function frame on the call path, outermost first; the last
     # is `_local_vars`. `declare -g` inside a nested call needs the
     # outermost frame that shadows a name, since that frame's saved
     # record is the global one.
-    _local_frames: list[dict[str,
-                             ShellVar | None]] = field(default_factory=list,
-                                                       repr=False)
+    _local_frames: list[dict[str, ShellVar | None]] = field(
+        default_factory=list, repr=False
+    )
     # The caller's `RANDOM` marker for every frame that shadows the
     # name, innermost last: a local `RANDOM` is an ordinary variable for
     # the function's extent, and the generator resumes when it returns.
@@ -345,8 +380,9 @@ class SessionState:
     _cmdsub_status: int = field(default=0, repr=False)
     # A pipeline's per-segment statuses, parked by `handle_pipe` for the
     # statement boundary that closes it to claim. None between them.
-    _pipe_status_pending: tuple[int, ...] | None = field(default=None,
-                                                         repr=False)
+    _pipe_status_pending: tuple[int, ...] | None = field(
+        default=None, repr=False
+    )
     # `$RANDOM`'s generator state and the seed word it last consumed
     # (`session/rng.py`). A child shell reseeds, as bash's does, and the
     # parent gets its own state back (`snapshot` / `restore`).
@@ -393,8 +429,9 @@ class SessionState:
     _exec_opened: set[str] = field(default_factory=set, repr=False)
     _parse_seq: int = field(default=0, repr=False)
     _parse_current: int = field(default=0, repr=False)
-    _alias_marks: dict[str, tuple[int, int]] = field(default_factory=dict,
-                                                     repr=False)
+    _alias_marks: dict[str, tuple[int, int]] = field(
+        default_factory=dict, repr=False
+    )
     _alias_stack: list[str] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -406,7 +443,8 @@ class SessionState:
         # attributed-unset rather than dropping it.
         managed = {
             name: var.managed
-            for name, var in self.vars.items() if var.managed is not None
+            for name, var in self.vars.items()
+            if var.managed is not None
         }
         # `env` is every scalar and `var_attrs` the letters set on the
         # names that carry any, rather than one key holding both: `env`
@@ -418,10 +456,7 @@ class SessionState:
         data = {
             "session_id": self.session_id,
             "cwd": self.cwd,
-            "env": {
-                n: v
-                for n, v in self.env.items() if n not in managed
-            },
+            "env": {n: v for n, v in self.env.items() if n not in managed},
             "created_at": self.created_at,
             "generation": self.generation,
         }
@@ -433,7 +468,8 @@ class SessionState:
         # so the reload re-exported everything it held.
         data["var_attrs"] = {
             name: stored_attrs(var)
-            for name, var in self.vars.items() if var.attrs
+            for name, var in self.vars.items()
+            if var.attrs
         }
         if managed:
             refs: dict[str, dict[str, str]] = {}
@@ -445,8 +481,7 @@ class SessionState:
             data["managed"] = refs
         if self.mount_modes is not None:
             data["mount_modes"] = {
-                prefix: mode.value
-                for prefix, mode in self.mount_modes.items()
+                prefix: mode.value for prefix, mode in self.mount_modes.items()
             }
         if self.hidden_paths is not None:
             data["hidden_paths"] = {
@@ -455,18 +490,18 @@ class SessionState:
             }
         if self.shown_paths is not None:
             data["shown_paths"] = {
-                "entries": [{
-                    "path": e.path
-                } if e.mode is None else {
-                    "path": e.path,
-                    "mode": e.mode.value
-                } for e in self.shown_paths.entries]
+                "entries": [
+                    {"path": e.path}
+                    if e.mode is None
+                    else {"path": e.path, "mode": e.mode.value}
+                    for e in self.shown_paths.entries
+                ]
             }
         if self.hide_reasons:
-            data["hide_reasons"] = [{
-                "patterns": list(g.patterns),
-                "reason": g.reason
-            } for g in self.hide_reasons]
+            data["hide_reasons"] = [
+                {"patterns": list(g.patterns), "reason": g.reason}
+                for g in self.hide_reasons
+            ]
         if self.hidden_vars is not None:
             data["hidden_vars"] = {
                 "names": list(self.hidden_vars.names),
@@ -502,20 +537,29 @@ class SessionState:
             # which is what a process environment means. With the key
             # present the attributes were recorded and are restored as
             # they were written.
-            out_vars = (vars_from_env(env)
-                        if attrs is None else vars_from_dict(env, attrs))
+            out_vars = (
+                vars_from_env(env)
+                if attrs is None
+                else vars_from_dict(env, attrs)
+            )
             # A managed name restores declared-but-unfetched. The value
             # is forced back to None: a stored session must never carry
             # the plaintext, so one a tampered payload smuggles into
             # `env` is discarded rather than trusted.
             for name, m in (managed or {}).items():
-                var = out_vars.get(name,
-                                   ShellVar(None, frozenset({VarAttr.EXPORT})))
-                out_vars[name] = replace(var,
-                                         value=None,
-                                         managed=ManagedRef(
-                                             m["from"], m["ref"], m["key"],
-                                             m.get("fetch") == "eager"))
+                var = out_vars.get(
+                    name, ShellVar(None, frozenset({VarAttr.EXPORT}))
+                )
+                out_vars[name] = replace(
+                    var,
+                    value=None,
+                    managed=ManagedRef(
+                        m["from"],
+                        m["ref"],
+                        m["key"],
+                        m.get("fetch") == "eager",
+                    ),
+                )
             data["vars"] = out_vars
         modes = data.get("mount_modes")
         paths = data.get("hidden_paths")
@@ -527,34 +571,51 @@ class SessionState:
         decisions = data.get("decisions")
         limits = data.get("command_limits")
         processes = data.get("processes")
-        if (modes is not None or paths is not None or shown is not None
-                or reasons is not None or vars_ is not None
-                or commands is not None or script is not None
-                or decisions is not None or limits is not None
-                or processes is not None):
+        if (
+            modes is not None
+            or paths is not None
+            or shown is not None
+            or reasons is not None
+            or vars_ is not None
+            or commands is not None
+            or script is not None
+            or decisions is not None
+            or limits is not None
+            or processes is not None
+        ):
             data = dict(data)
         if modes is not None:
             data["mount_modes"] = {
-                prefix: MountMode(mode)
-                for prefix, mode in modes.items()
+                prefix: MountMode(mode) for prefix, mode in modes.items()
             }
         if paths is not None:
             data["hidden_paths"] = HiddenPaths(
                 paths=tuple(paths.get("paths", ())),
-                patterns=tuple(paths.get("patterns", ())))
+                patterns=tuple(paths.get("patterns", ())),
+            )
         if shown is not None:
-            data["shown_paths"] = ShownPaths(entries=tuple(
-                ShowEntry(path=e["path"],
-                          mode=MountMode(e["mode"]) if "mode" in e else None)
-                for e in shown.get("entries", ())))
+            data["shown_paths"] = ShownPaths(
+                entries=tuple(
+                    ShowEntry(
+                        path=e["path"],
+                        mode=MountMode(e["mode"]) if "mode" in e else None,
+                    )
+                    for e in shown.get("entries", ())
+                )
+            )
         if reasons is not None:
             data["hide_reasons"] = tuple(
-                HideReason(patterns=tuple(g.get("patterns", ())),
-                           reason=g.get("reason", "")) for g in reasons)
+                HideReason(
+                    patterns=tuple(g.get("patterns", ())),
+                    reason=g.get("reason", ""),
+                )
+                for g in reasons
+            )
         if vars_ is not None:
             data["hidden_vars"] = HiddenVars(
                 names=tuple(vars_.get("names", ())),
-                patterns=tuple(vars_.get("patterns", ())))
+                patterns=tuple(vars_.get("patterns", ())),
+            )
         if commands is not None:
             data["commands"] = commands_from_dict(commands)
         if script is not None:
@@ -596,32 +657,44 @@ class SessionState:
         mapping read-only is what stops it being walked around by
         assigning into storage.
         """
-        return MappingProxyType({
-            name: var.value
-            for name, var in self.vars.items() if isinstance(var.value, str)
-        })
+        return MappingProxyType(
+            {
+                name: var.value
+                for name, var in self.vars.items()
+                if isinstance(var.value, str)
+            }
+        )
 
     @property
     def arrays(self) -> Mapping[str, ShellArray]:
         """The indexed arrays, by name. Read-only, like `env`."""
-        return MappingProxyType({
-            name: var.value
-            for name, var in self.vars.items() if isinstance(var.value, list)
-        })
+        return MappingProxyType(
+            {
+                name: var.value
+                for name, var in self.vars.items()
+                if isinstance(var.value, list)
+            }
+        )
 
     @property
     def assocs(self) -> Mapping[str, dict[str, str]]:
         """The associative arrays, by name. Read-only, like `env`."""
-        return MappingProxyType({
-            name: var.value
-            for name, var in self.vars.items() if isinstance(var.value, dict)
-        })
+        return MappingProxyType(
+            {
+                name: var.value
+                for name, var in self.vars.items()
+                if isinstance(var.value, dict)
+            }
+        )
 
     @property
     def readonly_vars(self) -> frozenset[str]:
         """The names `readonly` has marked. Read-only, like `env`."""
-        return frozenset(name for name, var in self.vars.items()
-                         if VarAttr.READONLY in var.attrs)
+        return frozenset(
+            name
+            for name, var in self.vars.items()
+            if VarAttr.READONLY in var.attrs
+        )
 
     def __post_init__(self) -> None:
         # bash exports `$PWD` from startup, so a session that has never
@@ -630,8 +703,9 @@ class SessionState:
         # and listed by `env`. "Exports" is literal -- it carries the
         # attribute, which is what keeps it in `env` now that the
         # process view is the exported set rather than every string.
-        self.vars.setdefault("PWD",
-                             ShellVar(self.cwd, frozenset({VarAttr.EXPORT})))
+        self.vars.setdefault(
+            "PWD", ShellVar(self.cwd, frozenset({VarAttr.EXPORT}))
+        )
         # bash starts with a PATH when the environment gives it none, and
         # does not export it: `env` does not list it and a child process,
         # such as a host interpreter, keeps its own. The one directory here
@@ -662,8 +736,7 @@ class SessionState:
             **overrides: Field-name kwargs to override on the copy.
         """
         defaults: dict[str, Any] = {
-            name: copy_state(getattr(self, name))
-            for name in INHERITED_FIELDS
+            name: copy_state(getattr(self, name)) for name in INHERITED_FIELDS
         }
         defaults.update(overrides)
         if "cwd" in overrides and "logical_cwd" not in overrides:
@@ -671,8 +744,8 @@ class SessionState:
             # `$PWD` names where the session is, so it follows the move
             # even when the caller also supplied an env to layer on.
             defaults["vars"] = {
-                **defaults["vars"], "PWD":
-                ShellVar(overrides["cwd"], frozenset({VarAttr.EXPORT}))
+                **defaults["vars"],
+                "PWD": ShellVar(overrides["cwd"], frozenset({VarAttr.EXPORT})),
             }
         forked = SessionState(**defaults)
         if self._random_seed == RANDOM_UNSET:
@@ -695,8 +768,11 @@ class SessionState:
         # RANDOM` stays unset.
         if self._random_seed != RANDOM_UNSET:
             var = self.vars.get(RANDOM)
-            self._random_seed = (var.value if var is not None
-                                 and isinstance(var.value, str) else None)
+            self._random_seed = (
+                var.value
+                if var is not None and isinstance(var.value, str)
+                else None
+            )
             self._random_state = None
             self._random_last = 0
         return saved

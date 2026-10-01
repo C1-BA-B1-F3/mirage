@@ -98,7 +98,8 @@ from mirage.shell.parse import env_reads, implicit_reads, opaque_reads, parse
         # Inside a substitution counts; inside a definition does not.
         ("x=$(env)", True, set(), set()),
         ("f() { env; }", False, set(), set()),
-    ])
+    ],
+)
 def test_env_reads(command, whole, names, excluded):
     got = env_reads(parse(command))
     assert got == (whole, frozenset(names), frozenset(excluded))
@@ -120,7 +121,8 @@ def test_env_reads(command, whole, names, excluded):
         ("echo $T", False),
         # A definition's body is not read at definition time.
         ("f() { echo ${!name}; }", False),
-    ])
+    ],
+)
 def test_opaque_reads(command, opaque):
     assert opaque_reads(parse(command)) == opaque
 
@@ -149,6 +151,7 @@ def test_opaque_reads(command, opaque):
         ("getopts ab o", {"OPTIND", "OPTERR"}),
         # A definition's body runs at invocation, not here.
         ("f() { cd; }", set()),
-    ])
+    ],
+)
 def test_implicit_reads(command, names):
     assert implicit_reads(parse(command)) == frozenset(names)

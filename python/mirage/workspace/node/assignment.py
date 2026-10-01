@@ -20,8 +20,14 @@ from mirage.cache.index.scope import command_scope
 from mirage.io import IOResult
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
-from mirage.shell.array import (ShellArray, array_extent, array_get, array_set,
-                                build_assoc_literal, build_indexed_literal)
+from mirage.shell.array import (
+    ShellArray,
+    array_extent,
+    array_get,
+    array_set,
+    build_assoc_literal,
+    build_indexed_literal,
+)
 from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.shell.helpers import get_text
@@ -35,8 +41,12 @@ from mirage.workspace.expand.globs import glob_options, resolve_globs
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (conversion_scalar, deref,
-                                            session_view, subscript_index)
+from mirage.workspace.session.state import (
+    conversion_scalar,
+    deref,
+    session_view,
+    subscript_index,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -52,8 +62,9 @@ def _arith_fatal(exc: ArithError) -> ExitSignal:
     return ExitSignal(1, stderr=f"bash: {exc}\n".encode(), contained_code=1)
 
 
-async def _fatal_index(session: SessionState, subscript: str,
-                       view: SessionView | None) -> int:
+async def _fatal_index(
+    session: SessionState, subscript: str, view: SessionView | None
+) -> int:
     """``subscript_index`` whose failure ends the line, in bash's words.
 
     Args:
@@ -68,8 +79,11 @@ async def _fatal_index(session: SessionState, subscript: str,
 
 
 async def _fatal_index_literal(
-        held: ShellArray | None, items: list[str], append: bool,
-        index_of: Callable[[str], Awaitable[int]]) -> ShellArray:
+    held: ShellArray | None,
+    items: list[str],
+    append: bool,
+    index_of: Callable[[str], Awaitable[int]],
+) -> ShellArray:
     """``build_indexed_literal`` whose subscript failure ends the line.
 
     Args:
@@ -142,19 +156,16 @@ async def expand_array_items(
     # A bare assignment is no command, but its glob reads listings all the
     # same, so it gets a scope of its own.
     async with command_scope():
-        classified = await expand_and_classify(values,
-                                               session,
-                                               execute_fn,
-                                               registry,
-                                               session.cwd,
-                                               cs,
-                                               view=view)
+        classified = await expand_and_classify(
+            values, session, execute_fn, registry, session.cwd, cs, view=view
+        )
         resolved = await resolve_globs(
             classified,
             registry,
             noglob=bool(session.shell_options.get("noglob")),
             links=namespace,
-            options=glob_options(session))
+            options=glob_options(session),
+        )
     return [word_text(w) for w in resolved]
 
 
@@ -187,10 +198,11 @@ async def _subscript_key_text(
         view (SessionView | None): the session plane's gated door.
     """
     inner = [
-        sc for sc in subscript_node.named_children
+        sc
+        for sc in subscript_node.named_children
         if sc.type != NT.VARIABLE_NAME
     ]
-    raw = get_text(subscript_node)[len(name) + 1:-1]
+    raw = get_text(subscript_node)[len(name) + 1 : -1]
     if not inner or all(sc.type in _SUBSCRIPT_LITERAL_TYPES for sc in inner):
         return raw
     parts = []
@@ -227,13 +239,18 @@ async def execute_assignment(
         return None, IOResult(), ExecutionNode(command=text, exit_code=0)
     sub_seq = session._cmdsub_seq
     subscript_node = next(
-        (c for c in node.named_children if c.type == "subscript"), None)
+        (c for c in node.named_children if c.type == "subscript"), None
+    )
     name_source = subscript_node if subscript_node is not None else node
     name_node = next(
         (c for c in name_source.named_children if c.type == NT.VARIABLE_NAME),
-        None)
-    spelled = (get_text(name_node)
-               if name_node is not None else text.partition("=")[0])
+        None,
+    )
+    spelled = (
+        get_text(name_node)
+        if name_node is not None
+        else text.partition("=")[0]
+    )
     # A name reference assigns to its target, whatever the shape of
     # the assignment; an unaimed one (`declare -n r; r=v`) resolves
     # to itself and takes the value as the target's name. The
@@ -248,7 +265,8 @@ async def execute_assignment(
         err = f"bash: {key}: readonly variable\n".encode()
         raise ExitSignal(1, stderr=err, contained_code=1)
     val_nodes = [
-        c for c in node.named_children
+        c
+        for c in node.named_children
         if c.type not in (NT.VARIABLE_NAME, "subscript")
     ]
     # Every branch below computes its resulting value with bash's
@@ -256,24 +274,33 @@ async def execute_assignment(
     # door, which owns the gate and the scalar/array invariant.
     view = session_view(session, namespace.registry.policies)
     if val_nodes and val_nodes[0].type == NT.ARRAY:
-        items = await expand_array_items(val_nodes[0], session, execute_fn,
-                                         registry, namespace, cs)
+        items = await expand_array_items(
+            val_nodes[0], session, execute_fn, registry, namespace, cs
+        )
         amap = session.assocs.get(key)
         if amap is not None:
             built, bad_words = build_assoc_literal(amap, items, append)
             await _assign_var(view, key, built)
             if bad_words:
-                err = ("\n".join(
-                    f"bash: {key}: '{word}': must use subscript when "
-                    "assigning associative array"
-                    for word in bad_words) + "\n").encode()
-                return None, IOResult(exit_code=1,
-                                      stderr=err), ExecutionNode(command=text,
-                                                                 exit_code=1,
-                                                                 stderr=err)
+                err = (
+                    "\n".join(
+                        f"bash: {key}: '{word}': must use subscript when "
+                        "assigning associative array"
+                        for word in bad_words
+                    )
+                    + "\n"
+                ).encode()
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command=text, exit_code=1, stderr=err),
+                )
             code = assignment_status(session, sub_seq)
-            return None, IOResult(exit_code=code), ExecutionNode(
-                command=text, exit_code=code)
+            return (
+                None,
+                IOResult(exit_code=code),
+                ExecutionNode(command=text, exit_code=code),
+            )
         held = session.arrays.get(key)
         if append and held is None:
             scalar = conversion_scalar(session, key)
@@ -283,25 +310,30 @@ async def execute_assignment(
         # a `[i]=v` element places at i and the next plain word
         # continues from there.
         base = await _fatal_index_literal(
-            held, items, append,
-            functools.partial(subscript_index, session, view=view))
+            held,
+            items,
+            append,
+            functools.partial(subscript_index, session, view=view),
+        )
         await _assign_var(view, key, base)
         code = assignment_status(session, sub_seq)
-        return None, IOResult(exit_code=code), ExecutionNode(command=text,
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code),
+            ExecutionNode(command=text, exit_code=code),
+        )
     if val_nodes:
-        val = await expand_node(val_nodes[0],
-                                session,
-                                execute_fn,
-                                cs,
-                                view=view)
+        val = await expand_node(
+            val_nodes[0], session, execute_fn, cs, view=view
+        )
     else:
         val = text.partition("=")[2]
     if subscript_node is not None:
-        sub_text = await _subscript_key_text(subscript_node, spelled, session,
-                                             execute_fn, cs, view)
+        sub_text = await _subscript_key_text(
+            subscript_node, spelled, session, execute_fn, cs, view
+        )
         amap = session.assocs.get(key)
-        raw_sub = get_text(subscript_node)[len(spelled) + 1:-1]
+        raw_sub = get_text(subscript_node)[len(spelled) + 1 : -1]
         if not raw_sub.strip() or (amap is not None and sub_text == ""):
             # bash aborts the whole line on a bad assignment
             # subscript (status 1), naming the raw spelling
@@ -310,20 +342,25 @@ async def execute_assignment(
             # on nothing is 0), so only the associative kind checks
             # the expanded text.
             name_text = text.partition("=")[0].removesuffix("+")
-            raise ExitSignal(1,
-                             stderr=(f"bash: {name_text}: "
-                                     "bad array subscript\n").encode(),
-                             contained_code=1)
+            raise ExitSignal(
+                1,
+                stderr=(f"bash: {name_text}: bad array subscript\n").encode(),
+                contained_code=1,
+            )
         if amap is not None:
             # The subscript is the key: no arithmetic, `m[1+1]`
             # writes the key "1+1".
             new_map = dict(amap)
-            new_map[sub_text] = (amap.get(sub_text, "") +
-                                 val) if append else val
+            new_map[sub_text] = (
+                (amap.get(sub_text, "") + val) if append else val
+            )
             await _assign_var(view, key, new_map)
             code = assignment_status(session, sub_seq)
-            return None, IOResult(exit_code=code), ExecutionNode(
-                command=text, exit_code=code)
+            return (
+                None,
+                IOResult(exit_code=code),
+                ExecutionNode(command=text, exit_code=code),
+            )
         arr = session.arrays.get(key)
         if arr is None:
             scalar = conversion_scalar(session, key)
@@ -336,15 +373,19 @@ async def execute_assignment(
         if idx < 0:
             # Same fatal shape as the empty subscript above.
             name_text = text.partition("=")[0].removesuffix("+")
-            raise ExitSignal(1,
-                             stderr=(f"bash: {name_text}: "
-                                     "bad array subscript\n").encode(),
-                             contained_code=1)
+            raise ExitSignal(
+                1,
+                stderr=(f"bash: {name_text}: bad array subscript\n").encode(),
+                contained_code=1,
+            )
         array_set(arr, idx, array_get(arr, idx) + val if append else val)
         await _assign_var(view, key, arr)
         code = assignment_status(session, sub_seq)
-        return None, IOResult(exit_code=code), ExecutionNode(command=text,
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code),
+            ExecutionNode(command=text, exit_code=code),
+        )
     held_map = session.assocs.get(key)
     held_arr = session.arrays.get(key)
     if held_map is not None:
@@ -361,8 +402,11 @@ async def execute_assignment(
         await _assign_var(view, key, new_arr)
     else:
         held_var = session.vars.get(key)
-        if (append and held_var is not None
-                and VarAttr.INTEGER in held_var.attrs):
+        if (
+            append
+            and held_var is not None
+            and VarAttr.INTEGER in held_var.attrs
+        ):
             # `n+=3` on an integer name adds: the door evaluates
             # `old + new`, so `declare -i n=5; n+=3` stores 8, not 53.
             new_val = f"{session.env.get(key, '0')} + ({val})"

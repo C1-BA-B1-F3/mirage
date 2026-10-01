@@ -26,27 +26,37 @@ from tests.fixtures.driver_ops import ops
 def ws():
     mem = RAMVFS()
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/hello.txt"),
-                       data=b"hello world\n"))
+        ops(mem).write(
+            PathSpec.from_str_path("/hello.txt"), data=b"hello world\n"
+        )
+    )
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/numbers.txt"),
-                       data=b"3\n1\n2\n1\n3\n"))
+        ops(mem).write(
+            PathSpec.from_str_path("/numbers.txt"), data=b"3\n1\n2\n1\n3\n"
+        )
+    )
     asyncio.run(
         ops(mem).write(
             PathSpec.from_str_path("/log.txt"),
-            data=b"INFO start\nERROR fail\nINFO ok\nERROR bad\nINFO done\n"))
+            data=b"INFO start\nERROR fail\nINFO ok\nERROR bad\nINFO done\n",
+        )
+    )
     asyncio.run(ops(mem).mkdir(PathSpec.from_str_path("/subdir")))
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/subdir/a.txt"), data=b"aaa\n"))
+        ops(mem).write(PathSpec.from_str_path("/subdir/a.txt"), data=b"aaa\n")
+    )
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/subdir/b.txt"), data=b"bbb\n"))
+        ops(mem).write(PathSpec.from_str_path("/subdir/b.txt"), data=b"bbb\n")
+    )
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/config.json"),
-                       data=b'{"key": "value"}\n'))
+        ops(mem).write(
+            PathSpec.from_str_path("/config.json"), data=b'{"key": "value"}\n'
+        )
+    )
     lines = "\n".join(f"row {i}" for i in range(5000)) + "\n"
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/big.txt"),
-                       data=lines.encode()))
+        ops(mem).write(PathSpec.from_str_path("/big.txt"), data=lines.encode())
+    )
     ws = Workspace(
         {"/data": (mem, MountMode.WRITE)},
         mode=MountMode.WRITE,
@@ -107,7 +117,8 @@ async def test_and_success(ws):
 @pytest.mark.asyncio
 async def test_and_failure_short_circuits(ws):
     io = await ws.shell(
-        "grep NONEXISTENT /data/hello.txt && echo should_not_appear")
+        "grep NONEXISTENT /data/hello.txt && echo should_not_appear"
+    )
     assert b"should_not_appear" not in (io.stdout or b"")
 
 
@@ -145,17 +156,21 @@ async def test_redirect_append(ws):
 
 @pytest.mark.asyncio
 async def test_redirect_on_or_chain(ws):
-    io = await ws.shell("grep hello /data/hello.txt > /data/out.txt || "
-                        "echo fallback > /data/out.txt; "
-                        "cat /data/out.txt")
+    io = await ws.shell(
+        "grep hello /data/hello.txt > /data/out.txt || "
+        "echo fallback > /data/out.txt; "
+        "cat /data/out.txt"
+    )
     assert "hello" in (await io.stdout_str())
 
 
 @pytest.mark.asyncio
 async def test_redirect_on_and_chain(ws):
-    io = await ws.shell("echo first > /data/chain.txt && "
-                        "echo second >> /data/chain.txt; "
-                        "cat /data/chain.txt")
+    io = await ws.shell(
+        "echo first > /data/chain.txt && "
+        "echo second >> /data/chain.txt; "
+        "cat /data/chain.txt"
+    )
     assert "first" in (await io.stdout_str())
     assert "second" in (await io.stdout_str())
 
@@ -329,7 +344,8 @@ async def test_session_env_not_visible_cross_session(ws):
 @pytest.mark.asyncio
 async def test_for_loop_basic(ws):
     io = await ws.shell(
-        "for f in /data/subdir/a.txt /data/subdir/b.txt; do cat $f; done")
+        "for f in /data/subdir/a.txt /data/subdir/b.txt; do cat $f; done"
+    )
     out = await io.stdout_str()
     assert "aaa" in out
     assert "bbb" in out
@@ -358,7 +374,8 @@ async def test_if_true_branch(ws):
 @pytest.mark.asyncio
 async def test_if_false_branch(ws):
     io = await ws.shell(
-        "if grep -q NOPE /data/hello.txt; then echo found; else echo nope; fi")
+        "if grep -q NOPE /data/hello.txt; then echo found; else echo nope; fi"
+    )
     assert b"nope" in io.stdout
 
 
@@ -439,7 +456,8 @@ async def test_grep_q_no_match(ws):
 @pytest.mark.asyncio
 async def test_grep_and_short_circuit(ws):
     io = await ws.shell(
-        "grep NONEXISTENT /data/hello.txt && echo should_not_appear")
+        "grep NONEXISTENT /data/hello.txt && echo should_not_appear"
+    )
     assert b"should_not_appear" not in (io.stdout or b"")
 
 
@@ -460,7 +478,8 @@ async def test_grep_if_condition(ws):
 @pytest.mark.asyncio
 async def test_grep_if_no_match(ws):
     io = await ws.shell(
-        "if grep -q NOPE /data/hello.txt; then echo found; else echo nope; fi")
+        "if grep -q NOPE /data/hello.txt; then echo found; else echo nope; fi"
+    )
     assert b"nope" in io.stdout
 
 
@@ -483,7 +502,8 @@ async def test_grep_pipe_match(ws):
 @pytest.mark.asyncio
 async def test_grep_no_match_then_or_chain(ws):
     io = await ws.shell(
-        "grep NOPE /data/hello.txt || grep ERROR /data/log.txt | head -n 1")
+        "grep NOPE /data/hello.txt || grep ERROR /data/log.txt | head -n 1"
+    )
     assert b"ERROR" in io.stdout
 
 
@@ -580,7 +600,8 @@ async def test_diff_and_chain(ws):
     await ws.shell("echo same > /data/diff_a.txt")
     await ws.shell("echo same > /data/diff_b.txt")
     io = await ws.shell(
-        "diff /data/diff_a.txt /data/diff_b.txt && echo identical")
+        "diff /data/diff_a.txt /data/diff_b.txt && echo identical"
+    )
     assert b"identical" in io.stdout
 
 
@@ -589,7 +610,8 @@ async def test_diff_or_chain(ws):
     await ws.shell("echo aaa > /data/diff_a.txt")
     await ws.shell("echo bbb > /data/diff_b.txt")
     io = await ws.shell(
-        "diff /data/diff_a.txt /data/diff_b.txt || echo different")
+        "diff /data/diff_a.txt /data/diff_b.txt || echo different"
+    )
     assert b"different" in io.stdout
 
 
@@ -597,8 +619,10 @@ async def test_diff_or_chain(ws):
 async def test_diff_if_identical(ws):
     await ws.shell("echo same > /data/diff_a.txt")
     await ws.shell("echo same > /data/diff_b.txt")
-    cmd = ("if diff /data/diff_a.txt /data/diff_b.txt;"
-           " then echo same; else echo changed; fi")
+    cmd = (
+        "if diff /data/diff_a.txt /data/diff_b.txt;"
+        " then echo same; else echo changed; fi"
+    )
     io = await ws.shell(cmd)
     assert b"same" in io.stdout
 
@@ -607,8 +631,10 @@ async def test_diff_if_identical(ws):
 async def test_diff_if_different(ws):
     await ws.shell("echo aaa > /data/diff_a.txt")
     await ws.shell("echo bbb > /data/diff_b.txt")
-    cmd = ("if diff /data/diff_a.txt /data/diff_b.txt;"
-           " then echo same; else echo changed; fi")
+    cmd = (
+        "if diff /data/diff_a.txt /data/diff_b.txt;"
+        " then echo same; else echo changed; fi"
+    )
     io = await ws.shell(cmd)
     assert b"changed" in io.stdout
 
@@ -635,8 +661,10 @@ async def test_find_with_name(ws):
 
 @pytest.mark.asyncio
 async def test_grep_no_match_pipe_redirect(ws):
-    cmd = ("grep NONEXISTENT /data/log.txt > /data/result.txt"
-           " || echo none > /data/result.txt")
+    cmd = (
+        "grep NONEXISTENT /data/log.txt > /data/result.txt"
+        " || echo none > /data/result.txt"
+    )
     await ws.shell(cmd)
     io = await ws.shell("cat /data/result.txt")
     assert b"none" in io.stdout

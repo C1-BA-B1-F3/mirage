@@ -51,9 +51,9 @@ async def iter_tree(
     stack: list[tuple[str, str, str | None]] = [(base, folder_id, drive_id)]
     while stack:
         rel, fid, did = stack.pop(0)
-        children = await list_files(accessor.token_manager,
-                                    folder_id=fid,
-                                    drive_id=did)
+        children = await list_files(
+            accessor.token_manager, folder_id=fid, drive_id=did
+        )
         children.sort(key=vfs_name)
         for item in children:
             name = vfs_name(item)
@@ -61,5 +61,6 @@ async def iter_tree(
             is_dir = item.get("mimeType") == FOLDER_MIME
             yield child_rel, item, is_dir
             if is_dir:
-                stack.append((child_rel, str(item["id"]), item.get("driveId")
-                              or did))
+                stack.append(
+                    (child_rel, str(item["id"]), item.get("driveId") or did)
+                )

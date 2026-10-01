@@ -50,8 +50,13 @@ class LazyFile:
         loop (asyncio.AbstractEventLoop): the loop serving the mount.
     """
 
-    def __init__(self, dispatch: DispatchFn, path: str, size: int,
-                 loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self,
+        dispatch: DispatchFn,
+        path: str,
+        size: int,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
         self._dispatch = dispatch
         self._path = path
         self._size = size
@@ -71,7 +76,8 @@ class LazyFile:
         start = index * BLOCK
         length = min(BLOCK, self._size - start)
         data = run_async_from_sync(
-            read_range(self._dispatch, self._path, start, length), self._loop)
+            read_range(self._dispatch, self._path, start, length), self._loop
+        )
         self._blocks[index] = data
         return data
 
@@ -90,7 +96,7 @@ class LazyFile:
         remaining = size
         while remaining > 0:
             index, inside = divmod(self._position, BLOCK)
-            piece = self._block(index)[inside:inside + remaining]
+            piece = self._block(index)[inside : inside + remaining]
             if not piece:
                 break
             chunks.append(piece)

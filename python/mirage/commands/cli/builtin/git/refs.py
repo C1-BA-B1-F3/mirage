@@ -18,9 +18,13 @@ from io import BytesIO
 from dulwich.refs import DictRefsContainer, Ref, read_packed_refs_with_peeled
 
 from mirage.commands.cli.builtin.git.constants import HEAD_REF
-from mirage.commands.cli.builtin.git.io import (read_file, read_names,
-                                                read_optional, remove_file,
-                                                write_file)
+from mirage.commands.cli.builtin.git.io import (
+    read_file,
+    read_names,
+    read_optional,
+    remove_file,
+    write_file,
+)
 from mirage.commands.cli.builtin.git.types import HeadRef, Refspec
 from mirage.runtime.types import DispatchFn
 
@@ -48,14 +52,16 @@ async def read_head(dispatch: DispatchFn, gitdir: str) -> HeadRef:
     text = raw.decode("utf-8", errors="replace").strip()
     if not text.startswith(SYMREF_PREFIX):
         return HeadRef(branch=None, ref=None, commit=text or None)
-    ref = text[len(SYMREF_PREFIX):].strip()
-    branch = (ref[len(BRANCH_PREFIX):]
-              if ref.startswith(BRANCH_PREFIX) else ref)
+    ref = text[len(SYMREF_PREFIX) :].strip()
+    branch = (
+        ref[len(BRANCH_PREFIX) :] if ref.startswith(BRANCH_PREFIX) else ref
+    )
     return HeadRef(branch=branch, ref=ref, commit=None)
 
 
-async def _walk_loose_refs(dispatch: DispatchFn, root: str, prefix: str,
-                           refs: dict[Ref, bytes]) -> None:
+async def _walk_loose_refs(
+    dispatch: DispatchFn, root: str, prefix: str, refs: dict[Ref, bytes]
+) -> None:
     """Collect loose refs under one directory into the ref table.
 
     Ref names nest arbitrarily (``refs/heads/feat/git-cli``,
@@ -82,8 +88,9 @@ async def _walk_loose_refs(dispatch: DispatchFn, root: str, prefix: str,
             refs[Ref(f"{prefix}/{name}".encode())] = value
 
 
-async def write_ref(dispatch: DispatchFn, commondir: str, ref: str,
-                    sha: bytes) -> None:
+async def write_ref(
+    dispatch: DispatchFn, commondir: str, ref: str, sha: bytes
+) -> None:
     """Point one ref at an object id, as a loose ref file.
 
     Always written loose, never into ``packed-refs``: git does the same
@@ -130,7 +137,7 @@ def without_packed(data: bytes, ref: str) -> bytes | None:
         dropped = False
         if line and not line.startswith(b"#"):
             space = line.find(b" ")
-            if space != -1 and line[space + 1:].strip() == wanted:
+            if space != -1 and line[space + 1 :].strip() == wanted:
                 dropped = True
                 found = True
                 continue
@@ -172,8 +179,11 @@ async def set_head(dispatch: DispatchFn, gitdir: str, ref: str) -> None:
             directory, which owns HEAD.
         ref (str): full ref name to attach to.
     """
-    await write_file(dispatch, posixpath.join(gitdir, HEAD_FILE),
-                     f"{SYMREF_PREFIX}{ref}\n".encode())
+    await write_file(
+        dispatch,
+        posixpath.join(gitdir, HEAD_FILE),
+        f"{SYMREF_PREFIX}{ref}\n".encode(),
+    )
 
 
 async def detach_head(dispatch: DispatchFn, gitdir: str, sha: bytes) -> None:
@@ -188,9 +198,9 @@ async def detach_head(dispatch: DispatchFn, gitdir: str, sha: bytes) -> None:
     await write_file(dispatch, posixpath.join(gitdir, HEAD_FILE), sha + b"\n")
 
 
-async def load_refs(dispatch: DispatchFn,
-                    gitdir: str,
-                    commondir: str | None = None) -> DictRefsContainer:
+async def load_refs(
+    dispatch: DispatchFn, gitdir: str, commondir: str | None = None
+) -> DictRefsContainer:
     """Read every ref a repository publishes, packed and loose.
 
     Both sources are needed and neither is optional: a freshly cloned
@@ -225,13 +235,16 @@ async def load_refs(dispatch: DispatchFn,
     packed = await read_optional(dispatch, posixpath.join(shared, PACKED_REFS))
     if packed is not None:
         for sha, name, _peeled in read_packed_refs_with_peeled(
-                BytesIO(packed)):
+            BytesIO(packed)
+        ):
             refs[name] = sha
-    await _walk_loose_refs(dispatch, posixpath.join(shared, REFS_DIR),
-                           REFS_DIR, refs)
+    await _walk_loose_refs(
+        dispatch, posixpath.join(shared, REFS_DIR), REFS_DIR, refs
+    )
     if gitdir != shared:
-        await _walk_loose_refs(dispatch, posixpath.join(gitdir, REFS_DIR),
-                               REFS_DIR, refs)
+        await _walk_loose_refs(
+            dispatch, posixpath.join(gitdir, REFS_DIR), REFS_DIR, refs
+        )
     head = await read_head(dispatch, gitdir)
     if head.ref is not None:
         refs[HEAD_REF] = f"{SYMREF_PREFIX}{head.ref}".encode()
@@ -314,7 +327,7 @@ def parse_refspec(text: str) -> Refspec:
         text (str): the refspec as typed or configured.
     """
     force = text.startswith("+")
-    src, colon, dst = text[1 if force else 0:].partition(":")
+    src, colon, dst = text[1 if force else 0 :].partition(":")
     return Refspec(src, dst if colon and dst else None, force)
 
 
@@ -328,10 +341,13 @@ def mapped(spec: Refspec, name: str) -> str | None:
     if "*" not in spec.src:
         return (spec.dst or "") if name == spec.src else None
     head, tail = spec.src.split("*", 1)
-    if (len(name) < len(head) + len(tail) or not name.startswith(head)
-            or not name.endswith(tail)):
+    if (
+        len(name) < len(head) + len(tail)
+        or not name.startswith(head)
+        or not name.endswith(tail)
+    ):
         return None
-    middle = name[len(head):len(name) - len(tail)]
+    middle = name[len(head) : len(name) - len(tail)]
     if not spec.dst:
         return ""
     before, star, after = spec.dst.partition("*")

@@ -51,7 +51,8 @@ async def fetch_dotenv(config: DotenvConfig, ref: str) -> ResolvedSecret:
     except FileNotFoundError as exc:
         raise SecretsError(f"dotenv file not found: {path}") from exc
     values = dotenv_values(stream=io.StringIO(text), interpolate=False)
-    return ResolvedSecret(fields={
-        name: value
-        for name, value in values.items() if value is not None
-    })
+    return ResolvedSecret(
+        fields={
+            name: value for name, value in values.items() if value is not None
+        }
+    )

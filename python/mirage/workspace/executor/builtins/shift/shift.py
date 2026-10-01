@@ -18,8 +18,10 @@ from mirage.shell.call_stack import CallStack
 from mirage.workspace.executor.builtins.shared import is_count_word
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (positional_params,
-                                            set_positional_params)
+from mirage.workspace.session.state import (
+    positional_params,
+    set_positional_params,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -42,25 +44,34 @@ async def handle_shift(
     """
     if len(args) > 1:
         err = b"shift: too many arguments\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="shift",
-                                                         exit_code=1)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="shift", exit_code=1),
+        )
     if args and not is_count_word(args[0]):
         err = f"shift: {args[0]}: numeric argument required\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="shift",
-                                                         exit_code=1)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="shift", exit_code=1),
+        )
     n = int(args[0]) if args else 1
     if n < 0:
         err = f"shift: {args[0]}: shift count out of range\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="shift",
-                                                         exit_code=1)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="shift", exit_code=1),
+        )
     params = positional_params(session, call_stack)
     # bash: a count past `$#` shifts nothing and returns 1, silently.
     if n > len(params):
-        return None, IOResult(exit_code=1), ExecutionNode(command="shift",
-                                                          exit_code=1)
+        return (
+            None,
+            IOResult(exit_code=1),
+            ExecutionNode(command="shift", exit_code=1),
+        )
     set_positional_params(session, call_stack, params[n:])
     return None, IOResult(), ExecutionNode(command="shift", exit_code=0)
 
@@ -71,6 +82,6 @@ async def shift_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_shift(list(call.argv.args),
-                              call.call_stack,
-                              session=call.session)
+    return await handle_shift(
+        list(call.argv.args), call.call_stack, session=call.session
+    )

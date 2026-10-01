@@ -22,7 +22,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def emoji_list(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     emoji = await list_emoji(inv.config)
     out = json.dumps(emoji, ensure_ascii=False, separators=(",", ":")).encode()
     return yield_bytes(out), IOResult()

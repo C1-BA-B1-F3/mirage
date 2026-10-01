@@ -71,8 +71,9 @@ class FakeDropboxRpc:
         self._limits[token] = limit
         return {"entries": head, "cursor": token, "has_more": bool(tail)}
 
-    async def __call__(self, tm: DropboxTokenManager, endpoint: str,
-                       body: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(
+        self, tm: DropboxTokenManager, endpoint: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
         if endpoint == "/files/list_folder":
             limit = int(body.get("limit") or 2000)
             self.list_limits.append(limit)
@@ -91,7 +92,7 @@ class FakeDropboxRpc:
             return {}
         if endpoint == "/files/move_v2":
             self.moves.append((body["from_path"], body["to_path"]))
-            error = (self.move_errors.pop(0) if self.move_errors else None)
+            error = self.move_errors.pop(0) if self.move_errors else None
             if error is not None:
                 raise error
             return {}

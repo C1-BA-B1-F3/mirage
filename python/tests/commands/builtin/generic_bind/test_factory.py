@@ -24,8 +24,12 @@ from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.generic_bind.factory import (
-    _run_with_namespace_globs, make_generic_commands, with_probe_answers,
-    with_read_cache, with_slash_guard)
+    _run_with_namespace_globs,
+    make_generic_commands,
+    with_probe_answers,
+    with_read_cache,
+    with_slash_guard,
+)
 from mirage.commands.config import CommandOpts
 from mirage.ops.types import LinkView, NamespaceView
 from mirage.types import FileStat, FileType, PathSpec
@@ -33,7 +37,6 @@ from mirage.utils.key_prefix import mount_key
 
 
 class _CountingBackend:
-
     def __init__(self, data: bytes) -> None:
         self.data = data
         self.stream_calls = 0
@@ -68,9 +71,11 @@ def _ops(backend: _CountingBackend) -> CommandIO:
 
 
 def _spec() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/s3/a.txt", "/s3/"),
-                    virtual="/s3/a.txt",
-                    directory="/s3/")
+    return PathSpec(
+        vfs_path=mount_key("/s3/a.txt", "/s3/"),
+        virtual="/s3/a.txt",
+        directory="/s3/",
+    )
 
 
 async def _drain(source) -> bytes:
@@ -178,17 +183,26 @@ async def test_namespace_globs_stamp_the_link_target_stat():
     async def capture(ops, accessor, paths, texts, opts):
         seen.append(ops)
 
-    links = LinkView(stat_at=_no_links,
-                     children=_no_links,
-                     subtree=_no_links,
-                     resolve=_same,
-                     exists=_nothing_there,
-                     target_stat=_no_target)
+    links = LinkView(
+        stat_at=_no_links,
+        children=_no_links,
+        subtree=_no_links,
+        resolve=_same,
+        exists=_nothing_there,
+        target_stat=_no_target,
+    )
     opts = CommandOpts(
-        ns=NamespaceView(links=links, child_mounts=_owes_nothing))
-    await _run_with_namespace_globs(_ops(_CountingBackend(b"")),
-                                    lambda ops: ops, capture, None, [], [],
-                                    opts)
+        ns=NamespaceView(links=links, child_mounts=_owes_nothing)
+    )
+    await _run_with_namespace_globs(
+        _ops(_CountingBackend(b"")),
+        lambda ops: ops,
+        capture,
+        None,
+        [],
+        [],
+        opts,
+    )
     assert seen[0].glob_children is _owes_nothing
     assert seen[0].glob_target_stat is _no_target
 
@@ -201,9 +215,15 @@ async def test_namespace_globs_stamp_nothing_without_links():
         seen.append(ops)
 
     opts = CommandOpts(ns=NamespaceView(child_mounts=_owes_nothing))
-    await _run_with_namespace_globs(_ops(_CountingBackend(b"")),
-                                    lambda ops: ops, capture, None, [], [],
-                                    opts)
+    await _run_with_namespace_globs(
+        _ops(_CountingBackend(b"")),
+        lambda ops: ops,
+        capture,
+        None,
+        [],
+        [],
+        opts,
+    )
     assert seen[0].glob_target_stat is None
 
 
@@ -222,11 +242,14 @@ async def test_slash_guard_refuses_a_slashed_write_before_the_backend():
         written.append(path.virtual)
 
     guarded = with_slash_guard(
-        replace(_ops(backend), write=write, append=write, truncate=truncate))
-    slashed = PathSpec(vfs_path=mount_key("/s3/missing", "/s3/"),
-                       virtual="/s3/missing",
-                       directory="/s3/",
-                       raw_path="/s3/missing/")
+        replace(_ops(backend), write=write, append=write, truncate=truncate)
+    )
+    slashed = PathSpec(
+        vfs_path=mount_key("/s3/missing", "/s3/"),
+        virtual="/s3/missing",
+        directory="/s3/",
+        raw_path="/s3/missing/",
+    )
     with pytest.raises(IsADirectoryError):
         await guarded.write(None, slashed, b"x")
     with pytest.raises(IsADirectoryError):
@@ -246,16 +269,13 @@ async def test_slash_guard_leaves_write_absent_when_the_backend_has_none():
     assert guarded.truncate is None
 
 
-@pytest.mark.parametrize("option", [
-    {
-        "overrides": {"cat", "search"}
-    },
-    {
-        "ops_overrides": {
-            "lss": _ops(_CountingBackend(b""))
-        }
-    },
-])
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"overrides": {"cat", "search"}},
+        {"ops_overrides": {"lss": _ops(_CountingBackend(b""))}},
+    ],
+)
 def test_a_name_no_builder_has_is_refused(option):
     """A name no builder has did nothing, so a typo left the generic
     registered beside the bespoke command, and mem0's ``search`` read as
@@ -266,15 +286,15 @@ def test_a_name_no_builder_has_is_refused(option):
 
 @pytest.mark.asyncio
 async def test_partial_consumer_caches_complete_synthesized_stream():
-    backend = _CountingBackend(b'first\nsecond\n')
-    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+    backend = _CountingBackend(b"first\nsecond\n")
+    manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
     prev = push_cache_manager(manager)
     try:
         ops = with_read_cache(replace(_ops(backend), streams_bytes=True))
     finally:
         push_cache_manager(prev)
     source = ops.read_stream(None, _spec())
-    assert (await anext(source))[:5] == b'first'
+    assert (await anext(source))[:5] == b"first"
     await source.aclose()
     assert await manager.cached_bytes(_spec()) == backend.data
     assert await ops.read_bytes(None, _spec()) == backend.data
@@ -283,7 +303,6 @@ async def test_partial_consumer_caches_complete_synthesized_stream():
 
 
 class _CountingStat:
-
     def __init__(self, answer: FileStat) -> None:
         self.answer = answer
         self.calls = 0
@@ -321,8 +340,9 @@ async def test_a_command_stat_serves_what_its_probe_saw():
 @pytest.mark.asyncio
 async def test_a_write_after_the_probe_sends_the_stat_to_the_backend():
     stat = _CountingStat(_BACKEND)
-    manager = CacheManager(RAMFileCacheStore(), RAMIndexCacheStore(), "/s3/",
-                           True)
+    manager = CacheManager(
+        RAMFileCacheStore(), RAMIndexCacheStore(), "/s3/", True
+    )
     ops = with_read_cache(with_probe_answers(_stat_ops(stat)))
     prev = push_cache_manager(manager)
     try:
@@ -348,7 +368,8 @@ async def test_a_probed_stat_without_a_size_still_gets_the_cached_length():
     try:
         async with command_scope():
             manager.note_probed(
-                _spec(), FileStat(name="a.txt", size=None, type=FileType.FILE))
+                _spec(), FileStat(name="a.txt", size=None, type=FileType.FILE)
+            )
             served = await ops.stat(None, _spec())
     finally:
         push_cache_manager(prev)
@@ -370,7 +391,8 @@ async def test_a_command_with_its_own_stat_never_serves_the_probe():
     light = _CountingStat(FileStat(name="a.txt", size=1, type=FileType.FILE))
     base = _stat_ops(table)
     commands = make_generic_commands(
-        "s3", base, ops_overrides={"ls": replace(base, stat=light)})
+        "s3", base, ops_overrides={"ls": replace(base, stat=light)}
+    )
     manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
     prev = push_cache_manager(manager)
     try:

@@ -7,18 +7,22 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.path import parent
 
 
-async def stat_light(accessor: ChromaAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat_light(
+    accessor: ChromaAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     # Never triggers the directory size scan: callers that only need the
     # type must not pay for byte lengths.
     return await stat(accessor, path, index, sizes=False)
 
 
-async def stat(accessor: ChromaAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX,
-               sizes: bool = True) -> FileStat:
+async def stat(
+    accessor: ChromaAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    sizes: bool = True,
+) -> FileStat:
     resolved = await CHROMA_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
         return directory_stat(resolved)

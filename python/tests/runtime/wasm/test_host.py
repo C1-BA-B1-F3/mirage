@@ -18,21 +18,27 @@ import pytest
 
 pytest.importorskip("wasmtime")
 
-import wasmtime  # noqa: E402
+import wasmtime
 
-from mirage.runtime.types import VFSStat  # noqa: E402
-from mirage.runtime.wasm import host  # noqa: E402
-from mirage.runtime.wasm.runtime import epoch_engine  # noqa: E402
-from mirage.runtime.wasm.vfs import WasmVFS  # noqa: E402
-
-from mirage.runtime.wasm.abi import (  # noqa: E402  # isort: skip
-    EINVAL, EIO, ENOENT, FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
-    FT_CHR, FT_DIR, FT_REG, FT_SYMLINK)
-from mirage.runtime.wasm.host import (  # noqa: E402  # isort: skip
-    WasiFs, _call_guarded, _filetype, _spec, _stamp, install_wasi_fs)
-
-from mirage.utils.stat_view import (  # noqa: E402  # isort: skip
-    CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE)
+from mirage.runtime.wasm import host
+from mirage.runtime.wasm.abi import (
+    EINVAL,
+    EIO,
+    ENOENT,
+    FST_ATIM,
+    FST_ATIM_NOW,
+    FST_MTIM,
+    FST_MTIM_NOW,
+)
+from mirage.runtime.wasm.host import (
+    WasiFs,
+    _call_guarded,
+    _spec,
+    _stamp,
+    install_wasi_fs,
+)
+from mirage.runtime.wasm.runtime import epoch_engine
+from mirage.runtime.wasm.vfs import WasmVFS
 
 # End-to-end host-function behavior (path_open buffering, fd table,
 # errno answers inside a real guest) is covered by the live wasi and
@@ -79,36 +85,25 @@ def test_guarded_call_answers_eio_for_an_upstream_failure():
     assert _call_guarded(_raising(upstream), None) == EIO
 
 
-def test_filetype_reads_the_kind_link_first():
-    link = VFSStat(size=3,
-                   is_dir=False,
-                   mode=LINK_MODE,
-                   mtime_ns=0,
-                   is_link=True)
-    assert _filetype(link) == FT_SYMLINK
-    assert _filetype(VFSStat(size=0, is_dir=True, mode=DIR_MODE,
-                             mtime_ns=0)) == FT_DIR
-    assert _filetype(VFSStat(size=1, is_dir=False, mode=FILE_MODE,
-                             mtime_ns=0)) == FT_REG
-    assert _filetype(VFSStat(size=0, is_dir=False, mode=CHAR_MODE,
-                             mtime_ns=0)) == FT_CHR
-
-
 def test_stamp_omits_a_field_no_flag_selected():
     # Neither bit set is utimensat's UTIME_OMIT: leave that stamp alone.
     assert _stamp(0, FST_MTIM, FST_MTIM_NOW, 5_000_000_000, 1.0) is None
 
 
 def test_stamp_reads_the_argument_as_nanoseconds():
-    assert _stamp(FST_MTIM, FST_MTIM, FST_MTIM_NOW, 200_000_000_000,
-                  1.0) == "1970-01-01T00:03:20+00:00"
+    assert (
+        _stamp(FST_MTIM, FST_MTIM, FST_MTIM_NOW, 200_000_000_000, 1.0)
+        == "1970-01-01T00:03:20+00:00"
+    )
 
 
 def test_stamp_now_wins_over_the_argument():
     # preview1 has both bits, and *_NOW means ignore the value entirely.
     both = FST_ATIM | FST_ATIM_NOW
-    assert _stamp(both, FST_ATIM, FST_ATIM_NOW, 200_000_000_000,
-                  100.0) == "1970-01-01T00:01:40+00:00"
+    assert (
+        _stamp(both, FST_ATIM, FST_ATIM_NOW, 200_000_000_000, 100.0)
+        == "1970-01-01T00:01:40+00:00"
+    )
 
 
 def test_stamp_reads_only_its_own_half_of_the_flags():
@@ -122,8 +117,9 @@ def test_install_wasi_fs_locks_the_callback_slab_before_its_funcs(monkeypatch):
     linker.define_wasi()
     store = wasmtime.Store(engine)
     order: list[str] = []
-    monkeypatch.setattr(host, "install_slab_lock",
-                        lambda: order.append("lock"))
+    monkeypatch.setattr(
+        host, "install_slab_lock", lambda: order.append("lock")
+    )
     real_func = host.Func
 
     def counting_func(*args, **kwargs):

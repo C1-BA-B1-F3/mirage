@@ -19,8 +19,9 @@ from mirage.core.slack.client import slack_get
 from mirage.core.slack.config import SlackConfig
 
 
-async def list_emoji(config: SlackConfig,
-                     session: SessionArg = None) -> dict[str, Any]:
+async def list_emoji(
+    config: SlackConfig, session: SessionArg = None
+) -> dict[str, Any]:
     """List the workspace's custom emoji.
 
     Args:

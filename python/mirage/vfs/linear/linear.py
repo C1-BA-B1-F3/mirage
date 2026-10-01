@@ -26,7 +26,6 @@ from mirage.vfs.linear.prompt import PROMPT, WRITE_PROMPT
 
 
 class LinearVFS(BaseVFS):
-
     accessor: LinearAccessor
     name: str = VFSName.LINEAR
     caches_reads: bool = True

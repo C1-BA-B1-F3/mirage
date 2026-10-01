@@ -23,11 +23,13 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def read_bytes(accessor: GridFSAccessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: GridFSAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read bytes from GridFS, with optional range read.
 
     Args:
@@ -61,11 +63,13 @@ async def read_bytes(accessor: GridFSAccessor,
     finally:
         await out.close()
     revision = str(file_id)
-    record("read",
-           virtual,
-           "gridfs",
-           len(data),
-           timer,
-           fingerprint=revision,
-           revision=revision)
+    record(
+        "read",
+        virtual,
+        "gridfs",
+        len(data),
+        timer,
+        fingerprint=revision,
+        revision=revision,
+    )
     return data

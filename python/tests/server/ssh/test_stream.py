@@ -21,9 +21,16 @@ import asyncssh
 import pytest
 
 from mirage.server.ssh import stream
-from mirage.server.ssh.stream import (ChannelInput, ChannelOutput, LoopStdin,
-                                      Mark, decode, deliver, encode,
-                                      loop_sender)
+from mirage.server.ssh.stream import (
+    ChannelInput,
+    ChannelOutput,
+    LoopStdin,
+    Mark,
+    decode,
+    deliver,
+    encode,
+    loop_sender,
+)
 
 Step = str | BaseException
 
@@ -57,7 +64,6 @@ class FakeStdin:
 
 
 class FakeWriter:
-
     def __init__(self) -> None:
         self.data: list[str] = []
 
@@ -69,7 +75,6 @@ class FakeWriter:
 
 
 class FakeProcess:
-
     def __init__(self, steps: list[Step]) -> None:
         self.stdin = FakeStdin(steps)
         self.stdout = FakeWriter()
@@ -77,8 +82,9 @@ class FakeProcess:
         self.channel = None
 
 
-async def _started(steps: list[Step],
-                   max_line: int | None = None) -> ChannelInput:
+async def _started(
+    steps: list[Step], max_line: int | None = None
+) -> ChannelInput:
     source = ChannelInput(FakeProcess(steps), max_line=max_line)
     source.start()
     return source
@@ -139,7 +145,8 @@ async def test_interrupt_at_the_prompt_is_queued_in_band():
 async def test_interrupt_goes_to_the_running_line_handler():
     hits = []
     source = ChannelInput(
-        FakeProcess([asyncssh.SignalReceived("INT"), "after\n"]))
+        FakeProcess([asyncssh.SignalReceived("INT"), "after\n"])
+    )
     source.on_interrupt(lambda: hits.append(1))
     source.start()
     assert await source.readline() == b"after\n"
@@ -150,7 +157,8 @@ async def test_interrupt_goes_to_the_running_line_handler():
 @pytest.mark.asyncio
 async def test_terminal_resize_is_not_input():
     source = await _started(
-        [asyncssh.TerminalSizeChanged(80, 24, 0, 0), "ok\n"])
+        [asyncssh.TerminalSizeChanged(80, 24, 0, 0), "ok\n"]
+    )
     assert await source.readline() == b"ok\n"
     await source.close()
 
@@ -207,14 +215,15 @@ async def test_deliver_streams_stdout_then_stderr():
 
 
 def _run_other_loop(
-    coro_factory: Callable[[], Coroutine[Any, Any,
-                                         list[bytes]]]) -> list[bytes]:
+    coro_factory: Callable[[], Coroutine[Any, Any, list[bytes]]],
+) -> list[bytes]:
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     try:
-        return asyncio.run_coroutine_threadsafe(coro_factory(),
-                                                loop).result(timeout=5)
+        return asyncio.run_coroutine_threadsafe(coro_factory(), loop).result(
+            timeout=5
+        )
     finally:
         loop.call_soon_threadsafe(loop.stop)
         thread.join()

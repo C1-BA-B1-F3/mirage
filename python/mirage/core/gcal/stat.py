@@ -14,8 +14,12 @@
 
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
-from mirage.core.gcal.readdir import (bucket_zone, calendar_index, readdir,
-                                      scoped_day_bounds)
+from mirage.core.gcal.readdir import (
+    bucket_zone,
+    calendar_index,
+    readdir,
+    scoped_day_bounds,
+)
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.scope import ScopeMatch
@@ -24,28 +28,31 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 
 
-def _dir_stat(match: ScopeMatch, path: PathSpec,
-              entry: IndexEntry) -> FileStat:
+def _dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
 
 
-def _file_stat(match: ScopeMatch, path: PathSpec,
-               entry: IndexEntry) -> FileStat:
+def _file_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
         content=ContentType.JSON,
         modified=entry.remote_time,
         size=entry.size,
-        extra={
-            "event_id": entry.id,
-            **entry.extra
-        },
+        extra={"event_id": entry.id, **entry.extra},
     )
 
 
-async def _stat_day(accessor: GCalAccessor, match: ScopeMatch, path: PathSpec,
-                    index: IndexCacheStore) -> FileStat:
+async def _stat_day(
+    accessor: GCalAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     """Stat a day directory, which resolves whether or not it is listed.
 
     A well-formed day under a calendar that exists is a directory whether
@@ -60,8 +67,12 @@ async def _stat_day(accessor: GCalAccessor, match: ScopeMatch, path: PathSpec,
         index (IndexCacheStore): the mount's index cache.
     """
     calendars = await calendar_index(accessor)
-    scoped_day_bounds(accessor, match.slots["day"],
-                      bucket_zone(accessor, calendars), path.virtual)
+    scoped_day_bounds(
+        accessor,
+        match.slots["day"],
+        bucket_zone(accessor, calendars),
+        path.virtual,
+    )
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)

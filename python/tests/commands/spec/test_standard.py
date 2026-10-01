@@ -15,8 +15,12 @@
 from mirage.commands.config import command
 from mirage.commands.spec import SPECS, CommandSpec, Operand, Option
 from mirage.commands.spec.builtins import registered_spec
-from mirage.commands.spec.standard import (has_injected_version, help_page,
-                                           standard_request, version_line)
+from mirage.commands.spec.standard import (
+    has_injected_version,
+    help_page,
+    standard_request,
+    version_line,
+)
 from mirage.version import __version__
 
 
@@ -25,24 +29,27 @@ async def _noop_handler(backend, paths, texts, opts):
 
 
 class TestStandardRequest:
-
     def test_matches_injected_option(self):
-        registered = command("tsort", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("tsort", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         spec = registered._registered_commands[0].spec
-        assert standard_request(
-            "tsort", spec,
-            ["--version"]) == f"tsort (Mirage) {__version__}\n".encode()
+        assert (
+            standard_request("tsort", spec, ["--version"])
+            == f"tsort (Mirage) {__version__}\n".encode()
+        )
 
     def test_none_without_the_flag(self):
-        registered = command("tsort", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("tsort", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         spec = registered._registered_commands[0].spec
         assert standard_request("tsort", spec, ["/data/a.txt"]) is None
 
     def test_none_after_end_of_options(self):
-        registered = command("grep", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("grep", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         spec = registered._registered_commands[0].spec
         assert standard_request("grep", spec, ["--", "--version"]) is None
 
@@ -50,11 +57,16 @@ class TestStandardRequest:
         assert standard_request("nope", None, ["--version"]) is None
 
     def test_none_when_command_declares_its_own_version(self):
-        spec = CommandSpec(options=(Option(long="--version"), ))
+        spec = CommandSpec(options=(Option(long="--version"),))
         registered = command("custom", vfs="disk", spec=spec)(_noop_handler)
-        assert standard_request("custom",
-                                registered._registered_commands[0].spec,
-                                ["--version"]) is None
+        assert (
+            standard_request(
+                "custom",
+                registered._registered_commands[0].spec,
+                ["--version"],
+            )
+            is None
+        )
 
     # This runs ahead of the parser, and the parser expands an
     # abbreviation, so the two have to agree on what named the option: a
@@ -63,21 +75,23 @@ class TestStandardRequest:
     # exact-match-only check answered `cat --vers /ram/a` and refused
     # `cat --vers /ram/a /disk/b`.
     def test_matches_an_unambiguous_abbreviation(self):
-        registered = command("tsort", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("tsort", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         spec = registered._registered_commands[0].spec
         for word in ("--vers", "--versio", "--v"):
-            assert standard_request(
-                "tsort", spec,
-                [word, "/data/a.txt"
-                 ]) == f"tsort (Mirage) {__version__}\n".encode()
+            assert (
+                standard_request("tsort", spec, [word, "/data/a.txt"])
+                == f"tsort (Mirage) {__version__}\n".encode()
+            )
 
     # A value is the parser's to refuse, in getopt_long's own words
     # (`option '--version' doesn't allow an argument`), so this declines
     # rather than answering.
     def test_none_for_an_abbreviation_carrying_a_value(self):
-        registered = command("tsort", vfs="disk",
-                             spec=CommandSpec())(_noop_handler)
+        registered = command("tsort", vfs="disk", spec=CommandSpec())(
+            _noop_handler
+        )
         spec = registered._registered_commands[0].spec
         assert standard_request("tsort", spec, ["--versio=x"]) is None
         assert standard_request("tsort", spec, ["--version=x"]) is None
@@ -85,25 +99,44 @@ class TestStandardRequest:
     # An abbreviation that names two options is not this option, and the
     # parser reports the ambiguity with both candidates.
     def test_none_for_an_ambiguous_abbreviation(self):
-        spec = CommandSpec(options=(Option(long="--verbose"), ))
+        spec = CommandSpec(options=(Option(long="--verbose"),))
         registered = command("custom", vfs="disk", spec=spec)(_noop_handler)
-        assert standard_request("custom",
-                                registered._registered_commands[0].spec,
-                                ["--ver"]) is None
+        assert (
+            standard_request(
+                "custom", registered._registered_commands[0].spec, ["--ver"]
+            )
+            is None
+        )
 
     # expr reads a long option only when it is the whole line, and only
     # for expr's own grammar: a registered command that borrowed the
     # name answers wherever the word sits, like every other command.
     def test_the_sole_argument_window_is_the_builtins_alone(self):
-        assert standard_request("expr", registered_spec("expr", SPECS["expr"]),
-                                ["--versio"]) is not None
-        assert standard_request("expr", registered_spec("expr", SPECS["expr"]),
-                                ["--version", "x"]) is None
+        assert (
+            standard_request(
+                "expr", registered_spec("expr", SPECS["expr"]), ["--versio"]
+            )
+            is not None
+        )
+        assert (
+            standard_request(
+                "expr",
+                registered_spec("expr", SPECS["expr"]),
+                ["--version", "x"],
+            )
+            is None
+        )
         borrowed = command(
-            "expr", vfs="disk",
-            spec=CommandSpec(rest=Operand(type="str")))(_noop_handler)
-        assert standard_request("expr", borrowed._registered_commands[0].spec,
-                                ["--version", "x"]) is not None
+            "expr", vfs="disk", spec=CommandSpec(rest=Operand(type="str"))
+        )(_noop_handler)
+        assert (
+            standard_request(
+                "expr",
+                borrowed._registered_commands[0].spec,
+                ["--version", "x"],
+            )
+            is not None
+        )
 
     # `--version` is an option like any other, so an option error the
     # scan meets FIRST is what GNU reports: measured on coreutils 9.7,
@@ -113,8 +146,9 @@ class TestStandardRequest:
         for name in ("cat", "sort", "tee"):
             spec = registered_spec(name, SPECS[name])
             assert standard_request(name, spec, ["--bogus", "--vers"]) is None
-            assert standard_request(name, spec,
-                                    ["--bogus", "--version"]) is None
+            assert (
+                standard_request(name, spec, ["--bogus", "--version"]) is None
+            )
 
     # The mirror: coreutils answers INSIDE the getopt loop, calling
     # `version_etc` and exiting there, so a word the scan never reaches
@@ -133,10 +167,12 @@ class TestStandardRequest:
         for name in ("grep", "rg"):
             spec = registered_spec(name, SPECS[name])
             assert standard_request(name, spec, ["--version"])
-            assert standard_request(name, spec,
-                                    ["--version", "--bogus"]) is None
-            assert standard_request(name, spec,
-                                    ["--bogus", "--version"]) is None
+            assert (
+                standard_request(name, spec, ["--version", "--bogus"]) is None
+            )
+            assert (
+                standard_request(name, spec, ["--bogus", "--version"]) is None
+            )
 
     # zgrep is a shell script whose own loop answers before it ever
     # builds a grep command, so no refusal outranks it (measured on gzip
@@ -154,8 +190,9 @@ class TestStandardRequest:
     def test_a_value_taking_option_swallows_the_word(self):
         spec = registered_spec("grep", SPECS["grep"])
         assert standard_request("grep", spec, ["-e", "--version"]) is None
-        assert standard_request("grep", spec,
-                                ["--include", "--version"]) is None
+        assert (
+            standard_request("grep", spec, ["--include", "--version"]) is None
+        )
 
     # GNU answers both standard options from one long_options table, so
     # they are ordered against each other by scan position like any
@@ -165,13 +202,15 @@ class TestStandardRequest:
     # wherever it sat.
     def test_the_first_standard_option_the_scan_reaches_wins(self):
         spec = registered_spec("cat", SPECS["cat"])
-        assert standard_request("cat", spec,
-                                ["--help", "--version"]) == help_page(
-                                    "cat", SPECS["cat"])
-        assert standard_request("cat", spec,
-                                ["--version", "--help"]) == version_line("cat")
+        assert standard_request(
+            "cat", spec, ["--help", "--version"]
+        ) == help_page("cat", SPECS["cat"])
+        assert standard_request(
+            "cat", spec, ["--version", "--help"]
+        ) == version_line("cat")
         assert standard_request("cat", spec, ["--h", "--v"]) == help_page(
-            "cat", SPECS["cat"])
+            "cat", SPECS["cat"]
+        )
 
     # --help is served here for the same reason --version is: the
     # cross-mount branch bypasses the registered wrapper that answers it,
@@ -182,8 +221,9 @@ class TestStandardRequest:
     def test_help_is_served_from_either_form_of_the_grammar(self):
         for name in ("mv", "cp", "cat", "rm"):
             declared = SPECS[name]
-            page = standard_request(name, registered_spec(name, declared),
-                                    ["--help"])
+            page = standard_request(
+                name, registered_spec(name, declared), ["--help"]
+            )
             assert page == help_page(name, declared)
             assert f"Usage: {name}".encode() in page
 
@@ -215,11 +255,12 @@ class TestStandardRequest:
     def test_the_position_comes_from_the_parser_not_a_lookalike(self):
         grep = registered_spec("grep", SPECS["grep"])
         assert standard_request(
-            "grep", grep, ["-e", "--", "--version"]) == version_line("grep")
+            "grep", grep, ["-e", "--", "--version"]
+        ) == version_line("grep")
         srt = registered_spec("sort", SPECS["sort"])
         assert standard_request(
-            "sort", srt,
-            ["-o", "--version", "--version"]) == version_line("sort")
+            "sort", srt, ["-o", "--version", "--version"]
+        ) == version_line("sort")
         # A real end-of-options marker still ends the scan.
         assert standard_request("grep", grep, ["--", "--version"]) is None
 
@@ -235,10 +276,14 @@ class TestStandardRequest:
         spec = CommandSpec(rest=Operand(type="str", remainder=True))
         registered = command("mytool", vfs="disk", spec=spec)(_noop_handler)
         rest_spec = registered._registered_commands[0].spec
-        assert standard_request("mytool", rest_spec,
-                                ["operand", "--version"]) is None
-        assert standard_request("mytool", rest_spec,
-                                ["operand", "--vers"]) is None
+        assert (
+            standard_request("mytool", rest_spec, ["operand", "--version"])
+            is None
+        )
+        assert (
+            standard_request("mytool", rest_spec, ["operand", "--vers"])
+            is None
+        )
         # Ahead of the first operand it is still an option, as argparse
         # answers `["--version", "operand"]` with version=True.
         assert standard_request("mytool", rest_spec, ["--version", "operand"])
@@ -253,8 +298,9 @@ class TestStandardRequest:
         for name in ("python", "python3", "node", "js"):
             spec = registered_spec(name, SPECS[name])
             assert not has_injected_version(spec)
-            assert standard_request(name, spec,
-                                    ["-c", "code", "--vers"]) is None
+            assert (
+                standard_request(name, spec, ["-c", "code", "--vers"]) is None
+            )
 
     # Both tables name one real program, so both are gated on the spec
     # being that program's own grammar. A mount may register a command
@@ -263,9 +309,10 @@ class TestStandardRequest:
     def test_a_borrowed_name_does_not_borrow_the_family(self):
         for name in ("grep", "zgrep"):
             borrowed = command(
-                name, vfs="disk",
-                spec=CommandSpec(rest=Operand(type="str")))(_noop_handler)
+                name, vfs="disk", spec=CommandSpec(rest=Operand(type="str"))
+            )(_noop_handler)
             spec = borrowed._registered_commands[0].spec
             assert standard_request(name, spec, ["--version", "--bogus"])
-            assert standard_request(name, spec,
-                                    ["--bogus", "--version"]) is None
+            assert (
+                standard_request(name, spec, ["--bogus", "--version"]) is None
+            )

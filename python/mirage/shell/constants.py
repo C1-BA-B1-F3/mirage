@@ -15,8 +15,12 @@
 import re
 from collections.abc import Mapping
 
-from mirage.shell.types import (BuiltinGroup, BuiltinTier, NodeType,
-                                ShellBuiltin)
+from mirage.shell.types import (
+    BuiltinGroup,
+    BuiltinTier,
+    NodeType,
+    ShellBuiltin,
+)
 
 PARAMETER_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-]")
 
@@ -32,7 +36,9 @@ ARITH_TOKEN = re.compile(
        |[-+*/%<>=!~&|^?:(),])
   | (?P<ws>\s+)
   | (?P<bad>.)
-""", re.VERBOSE)
+""",
+    re.VERBOSE,
+)
 
 ARITH_NAME = re.compile(r"[A-Za-z_]\w*")
 
@@ -43,7 +49,8 @@ ARITH_NAME = re.compile(r"[A-Za-z_]\w*")
 ARITH_ELEM = re.compile(r"([A-Za-z_]\w*)\[(.*)\]\Z", re.DOTALL)
 
 ARITH_ASSIGN_OPS = frozenset(
-    {"=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|="})
+    {"=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|="}
+)
 
 # 64-bit wrap like bash (intmax_t arithmetic).
 ARITH_WRAP = 1 << 64
@@ -117,9 +124,11 @@ RANDOM_UNSET = ""
 # Lists are NOT exempt: bash exits when the command after the final
 # `&&`/`||` fails; short-circuit failures set SessionState.errexit_immune
 # instead, so the executor loops skip only those.
-ERREXIT_EXEMPT_TYPES = frozenset({
-    NodeType.NEGATED_COMMAND,
-})
+ERREXIT_EXEMPT_TYPES = frozenset(
+    {
+        NodeType.NEGATED_COMMAND,
+    }
+)
 
 # Every letter bash's `set` accepts, mapped to the `-o` name it is a
 # synonym for. The full table is here rather than only the letters
@@ -155,35 +164,37 @@ SET_FLAG_TO_OPTION = {
 # name absent from here is the one thing bash rejects outright, and it
 # rejects it with exit 2 -- which is what keeps a silently-ignored
 # `set -o physical` from looking supported.
-SET_OPTION_NAMES = frozenset({
-    "allexport",
-    "braceexpand",
-    "emacs",
-    "errexit",
-    "errtrace",
-    "functrace",
-    "hashall",
-    "histexpand",
-    "history",
-    "ignoreeof",
-    "interactive-comments",
-    "keyword",
-    "monitor",
-    "noclobber",
-    "noexec",
-    "noglob",
-    "nolog",
-    "notify",
-    "nounset",
-    "onecmd",
-    "physical",
-    "pipefail",
-    "posix",
-    "privileged",
-    "verbose",
-    "vi",
-    "xtrace",
-})
+SET_OPTION_NAMES = frozenset(
+    {
+        "allexport",
+        "braceexpand",
+        "emacs",
+        "errexit",
+        "errtrace",
+        "functrace",
+        "hashall",
+        "histexpand",
+        "history",
+        "ignoreeof",
+        "interactive-comments",
+        "keyword",
+        "monitor",
+        "noclobber",
+        "noexec",
+        "noglob",
+        "nolog",
+        "notify",
+        "nounset",
+        "onecmd",
+        "physical",
+        "pipefail",
+        "posix",
+        "privileged",
+        "verbose",
+        "vi",
+        "xtrace",
+    }
+)
 
 # Every name GNU's `shopt` accepts and what it reads as before anything
 # sets it, pinned from `bash -c shopt` on debian:stable-slim (5.2.37), in
@@ -354,8 +365,9 @@ BUILTIN_GROUP: Mapping[ShellBuiltin, BuiltinGroup] = {
 }
 
 GRAMMAR_BUILTINS: frozenset[ShellBuiltin] = frozenset(
-    b for b, g in BUILTIN_GROUP.items()
-    if GROUP_TIER[g] is BuiltinTier.GRAMMAR)
+    b for b, g in BUILTIN_GROUP.items() if GROUP_TIER[g] is BuiltinTier.GRAMMAR
+)
 
 TOOL_BUILTINS: frozenset[ShellBuiltin] = frozenset(
-    b for b, g in BUILTIN_GROUP.items() if GROUP_TIER[g] is BuiltinTier.TOOL)
+    b for b, g in BUILTIN_GROUP.items() if GROUP_TIER[g] is BuiltinTier.TOOL
+)

@@ -53,14 +53,16 @@ async def _drain(stream) -> bytes:
 
 
 async def _history(mount, texts=(), session_id="s1", **flags):
-    stream, io = await mount.execute_cmd("history", [], list(texts), flags,
-                                         ExecContext(session_id=session_id))
+    stream, io = await mount.execute_cmd(
+        "history", [], list(texts), flags, ExecContext(session_id=session_id)
+    )
     return await _drain(stream), io
 
 
 def test_history_numbers_session_events():
     mount = _mounted(
-        _observer_with([("ls /a", "s1"), ("pwd", "s1"), ("other", "s2")]))
+        _observer_with([("ls /a", "s1"), ("pwd", "s1"), ("other", "s2")])
+    )
     out, io = asyncio.run(_history(mount))
     assert io.exit_code == 0
     assert out == b"1  ls /a\n2  pwd\n"
@@ -73,15 +75,16 @@ def test_history_filters_to_caller_session():
 
 
 def test_history_last_n():
-    mount = _mounted(_observer_with([("c1", "s1"), ("c2", "s1"),
-                                     ("c3", "s1")]))
-    out, _ = asyncio.run(_history(mount, texts=("2", )))
+    mount = _mounted(
+        _observer_with([("c1", "s1"), ("c2", "s1"), ("c3", "s1")])
+    )
+    out, _ = asyncio.run(_history(mount, texts=("2",)))
     assert out == b"2  c2\n3  c3\n"
 
 
 def test_history_non_numeric_arg_errors():
     mount = _mounted(_observer_with([("c1", "s1")]))
-    out, io = asyncio.run(_history(mount, texts=("abc", )))
+    out, io = asyncio.run(_history(mount, texts=("abc",)))
     assert io.exit_code == 1
     assert b"numeric argument required" in io.stderr
 

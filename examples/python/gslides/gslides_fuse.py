@@ -30,8 +30,8 @@ config = GSlidesConfig(
 vfs = GSlidesVFS(config=config)
 
 with Workspace(
-    {"/gslides/": Mount(vfs, mode=MountMode.READ,
-                        backend=MountBackend.FUSE)}) as ws:
+    {"/gslides/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

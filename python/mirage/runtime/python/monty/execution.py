@@ -22,8 +22,10 @@ from typing import Any
 from mirage.runtime.errors import EvalError
 from mirage.runtime.python.execution import main_filename
 from mirage.runtime.python.monty.binding import pydantic_monty
-from mirage.runtime.python.monty.constants import (DEFAULT_PROG,
-                                                   INCOMPLETE_MARKERS)
+from mirage.runtime.python.monty.constants import (
+    DEFAULT_PROG,
+    INCOMPLETE_MARKERS,
+)
 from mirage.runtime.python.monty.osaccess import MirageOSAccess
 from mirage.runtime.types import EvalResult, EvalValue, RunArgs, RunResult
 from mirage.types import PathSpec
@@ -88,8 +90,11 @@ class MontyExecution:
         cwd = args.cwd.virtual if args.cwd is not None else None
         # A script is Monty's own script_name, which it keeps the last
         # part of for `__file__`, under the directory a feed starts in.
-        checkout = (pool.checkout() if args.script_path is None else
-                    pool.checkout(script_name=main_filename(args)))
+        checkout = (
+            pool.checkout()
+            if args.script_path is None
+            else pool.checkout(script_name=main_filename(args))
+        )
         try:
             async with checkout as session:
                 # Read the pid before the turn starts: the getter reports
@@ -100,11 +105,13 @@ class MontyExecution:
                 # and pool teardown would block on it uninterruptibly.
                 worker_pid = session.worker_pid
                 try:
-                    await session.feed_run(args.code,
-                                           inputs=inputs,
-                                           print_callback=collector,
-                                           cwd=cwd,
-                                           os=bridge)
+                    await session.feed_run(
+                        args.code,
+                        inputs=inputs,
+                        print_callback=collector,
+                        cwd=cwd,
+                        os=bridge,
+                    )
                 except asyncio.CancelledError:
                     _kill_worker(worker_pid)
                     raise
@@ -114,26 +121,32 @@ class MontyExecution:
         except pydantic_monty.MontyRuntimeError as exc:
             stdout, stderr = _split_streams(collector)
             trace = exc.display(format="traceback") + "\n"
-            return RunResult(stdout=stdout,
-                             stderr=(stderr or b"") + trace.encode(),
-                             exit_code=1)
+            return RunResult(
+                stdout=stdout,
+                stderr=(stderr or b"") + trace.encode(),
+                exit_code=1,
+            )
         except pydantic_monty.MontyCrashedError as exc:
             stdout, stderr = _split_streams(collector)
-            reason = ("timed out" if exc.timed_out else "crashed")
+            reason = "timed out" if exc.timed_out else "crashed"
             note = f"{self.name}: worker {reason}\n"
-            return RunResult(stdout=stdout,
-                             stderr=(stderr or b"") + note.encode(),
-                             exit_code=1)
+            return RunResult(
+                stdout=stdout,
+                stderr=(stderr or b"") + note.encode(),
+                exit_code=1,
+            )
         stdout, stderr = _split_streams(collector)
         return RunResult(stdout=stdout, stderr=stderr, exit_code=0)
 
-    async def eval(self,
-                   code: str,
-                   bridge: MirageOSAccess,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None,
-                   cwd: PathSpec | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        bridge: MirageOSAccess,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+        cwd: PathSpec | None = None,
+    ) -> EvalResult:
         """Evaluate code; the last expression is the value.
 
         One-shot mode checks a worker out for the feed and hands it
@@ -160,8 +173,9 @@ class MontyExecution:
         """
         collector = pydantic_monty.CollectStreams()
         pool = await self._ensure_pool()
-        repl = self._eval_sessions.get(session) if session is not None \
-            else None
+        repl = (
+            self._eval_sessions.get(session) if session is not None else None
+        )
         # A checked-out session owns a worker for its lifetime, so the
         # one-shot arm hands its worker back as soon as the feed ends
         # while a console session keeps its own until close().
@@ -173,11 +187,13 @@ class MontyExecution:
                 self._eval_sessions[session] = repl
         worker_pid = repl.worker_pid
         try:
-            value = await repl.feed_run(code,
-                                        inputs=dict(inputs or {}),
-                                        print_callback=collector,
-                                        cwd=initial_cwd,
-                                        os=bridge)
+            value = await repl.feed_run(
+                code,
+                inputs=dict(inputs or {}),
+                print_callback=collector,
+                cwd=initial_cwd,
+                os=bridge,
+            )
         except asyncio.CancelledError:
             # Same reclaim as run(): cancelling the await leaves the
             # worker running. A console session loses its heap with the
@@ -206,10 +222,11 @@ class MontyExecution:
             trace = exc.display(format="traceback")
             if session is not None:
                 stdout, stderr = _split_streams(collector)
-                return EvalResult(stdout=stdout,
-                                  stderr=(stderr or b"") +
-                                  (trace + "\n").encode(),
-                                  exit_code=1)
+                return EvalResult(
+                    stdout=stdout,
+                    stderr=(stderr or b"") + (trace + "\n").encode(),
+                    exit_code=1,
+                )
             raise EvalError(trace)
         finally:
             if one_shot:
@@ -262,7 +279,7 @@ def _kill_worker(pid: int | None) -> None:
 
 
 def _split_streams(
-        collector: pydantic_monty.CollectStreams
+    collector: pydantic_monty.CollectStreams,
 ) -> tuple[bytes, bytes | None]:
     out: list[str] = []
     err: list[str] = []

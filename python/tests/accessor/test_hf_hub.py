@@ -44,13 +44,16 @@ def test_key_prefix_is_empty_when_unset():
     assert ModelAccessor(HfRepoConfig(repo_id="a/b")).key_prefix == ""
 
 
-@pytest.mark.parametrize("prefix,local,expected", [
-    (None, "/a.txt", "a.txt"),
-    (None, "/d/a.txt", "d/a.txt"),
-    (None, "/", ""),
-    ("sub/dir", "/a.txt", "sub/dir/a.txt"),
-    ("sub/dir", "/", "sub/dir"),
-])
+@pytest.mark.parametrize(
+    "prefix,local,expected",
+    [
+        (None, "/a.txt", "a.txt"),
+        (None, "/d/a.txt", "d/a.txt"),
+        (None, "/", ""),
+        ("sub/dir", "/a.txt", "sub/dir/a.txt"),
+        ("sub/dir", "/", "sub/dir"),
+    ],
+)
 def test_repo_path_joins_the_prefix_exactly_once(prefix, local, expected):
     """The prefix is normalized with a trailing slash, so a hand-written
     join produced `sub/dir//a.txt` and 404'd every prefixed read."""
@@ -71,6 +74,8 @@ def test_a_fresh_accessor_has_hydrated_nothing():
 
 def test_the_pool_waits_the_configured_timeout_without_progress():
     assert ModelAccessor(
-        HfRepoConfig(repo_id="a/b")).pool._timeout == stall_timeout(30)
-    assert ModelAccessor(HfRepoConfig(
-        repo_id="a/b", timeout=5)).pool._timeout == stall_timeout(5)
+        HfRepoConfig(repo_id="a/b")
+    ).pool._timeout == stall_timeout(30)
+    assert ModelAccessor(
+        HfRepoConfig(repo_id="a/b", timeout=5)
+    ).pool._timeout == stall_timeout(5)

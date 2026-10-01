@@ -27,7 +27,6 @@ from mirage.vfs.slack.prompt import PROMPT, WRITE_PROMPT
 
 
 class SlackVFS(BaseVFS):
-
     accessor: SlackAccessor
     name: str = VFSName.SLACK
     caches_reads: bool = True
@@ -44,7 +43,8 @@ class SlackVFS(BaseVFS):
         self.config = config
         self.accessor = SlackAccessor(
             self.config,
-            TimeRange.from_strings(config.start_time, config.end_time))
+            TimeRange.from_strings(config.start_time, config.end_time),
+        )
         self.prompt = PROMPT + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:

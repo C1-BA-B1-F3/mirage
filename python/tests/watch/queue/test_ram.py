@@ -3,23 +3,28 @@ from datetime import datetime, timezone
 import pytest
 
 from mirage.types import FileChangeKind, FileEvent, PathSpec
-from mirage.watch.queue import (OverflowPolicy, QueueOverflowError,
-                                RAMWatchQueue)
+from mirage.watch.queue import (
+    OverflowPolicy,
+    QueueOverflowError,
+    RAMWatchQueue,
+)
 
 _TS = datetime.fromtimestamp(0, tz=timezone.utc)
 
 
 def _change(kind: FileChangeKind, virtual: str) -> FileEvent:
-    return FileEvent(kind=kind,
-                     path=PathSpec.from_str_path(virtual),
-                     timestamp=_TS)
+    return FileEvent(
+        kind=kind, path=PathSpec.from_str_path(virtual), timestamp=_TS
+    )
 
 
 def _move(src: str, dst: str) -> FileEvent:
-    return FileEvent(kind=FileChangeKind.MOVE,
-                     path=PathSpec.from_str_path(dst),
-                     previous_path=PathSpec.from_str_path(src),
-                     timestamp=_TS)
+    return FileEvent(
+        kind=FileChangeKind.MOVE,
+        path=PathSpec.from_str_path(dst),
+        previous_path=PathSpec.from_str_path(src),
+        timestamp=_TS,
+    )
 
 
 def _root() -> PathSpec:
@@ -139,9 +144,9 @@ async def test_move_then_delete_of_destination_keeps_source_delete():
 
 @pytest.mark.asyncio
 async def test_overflow_marker_survives_later_changes():
-    q = RAMWatchQueue(_root(),
-                      max_pending=2,
-                      on_overflow=OverflowPolicy.COLLAPSE)
+    q = RAMWatchQueue(
+        _root(), max_pending=2, on_overflow=OverflowPolicy.COLLAPSE
+    )
     for i in range(3):
         await q.push(_change(FileChangeKind.CREATE, f"/nc/f{i}.txt"))
     await q.push(_change(FileChangeKind.UPDATE, "/nc"))
@@ -155,9 +160,9 @@ async def test_overflow_marker_survives_later_changes():
 
 @pytest.mark.asyncio
 async def test_overflow_collapse_to_unknown_root():
-    q = RAMWatchQueue(_root(),
-                      max_pending=2,
-                      on_overflow=OverflowPolicy.COLLAPSE)
+    q = RAMWatchQueue(
+        _root(), max_pending=2, on_overflow=OverflowPolicy.COLLAPSE
+    )
     for i in range(3):
         await q.push(_change(FileChangeKind.CREATE, f"/nc/f{i}.txt"))
     assert await q.pending() == 1
@@ -168,11 +173,13 @@ async def test_overflow_collapse_to_unknown_root():
 
 @pytest.mark.asyncio
 async def test_overflow_collapse_multi_root_unknown_per_root():
-    roots = (PathSpec.from_str_path("/nc/docs"),
-             PathSpec.from_str_path("/s3/exports"))
-    q = RAMWatchQueue(roots,
-                      max_pending=2,
-                      on_overflow=OverflowPolicy.COLLAPSE)
+    roots = (
+        PathSpec.from_str_path("/nc/docs"),
+        PathSpec.from_str_path("/s3/exports"),
+    )
+    q = RAMWatchQueue(
+        roots, max_pending=2, on_overflow=OverflowPolicy.COLLAPSE
+    )
     for i in range(3):
         await q.push(_change(FileChangeKind.CREATE, f"/nc/docs/f{i}.txt"))
     assert await q.pending() == 2
@@ -180,15 +187,17 @@ async def test_overflow_collapse_multi_root_unknown_per_root():
     second = await q.pop()
     assert first.kind is FileChangeKind.UNKNOWN
     assert second.kind is FileChangeKind.UNKNOWN
-    assert {first.path.virtual,
-            second.path.virtual} == {"/nc/docs", "/s3/exports"}
+    assert {first.path.virtual, second.path.virtual} == {
+        "/nc/docs",
+        "/s3/exports",
+    }
 
 
 @pytest.mark.asyncio
 async def test_overflow_drop_oldest_keeps_cap():
-    q = RAMWatchQueue(_root(),
-                      max_pending=2,
-                      on_overflow=OverflowPolicy.DROP_OLDEST)
+    q = RAMWatchQueue(
+        _root(), max_pending=2, on_overflow=OverflowPolicy.DROP_OLDEST
+    )
     for i in range(4):
         await q.push(_change(FileChangeKind.CREATE, f"/nc/f{i}.txt"))
     assert await q.pending() == 2

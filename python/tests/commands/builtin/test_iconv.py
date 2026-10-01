@@ -46,9 +46,9 @@ async def _collect(ait):
 
 def test_iconv_utf8_to_latin1():
     ws, _ = _ws()
-    stdout, io = _run_raw(ws,
-                          "iconv -f utf-8 -t latin-1",
-                          stdin="caf\u00e9\n".encode())
+    stdout, io = _run_raw(
+        ws, "iconv -f utf-8 -t latin-1", stdin="caf\u00e9\n".encode()
+    )
     assert io.exit_code == 0
     assert _bytes(stdout) == "caf\u00e9\n".encode("latin-1")
 
@@ -56,8 +56,9 @@ def test_iconv_utf8_to_latin1():
 def test_iconv_output_path_writes_file():
     ws, _ = _ws()
     _run_raw(ws, "bash -c 'echo caf\\xc3\\xa9 > /data/in.txt'")
-    _, io = _run_raw(ws,
-                     "iconv -f utf-8 -t utf-8 -o /data/out.txt /data/in.txt")
+    _, io = _run_raw(
+        ws, "iconv -f utf-8 -t utf-8 -o /data/out.txt /data/in.txt"
+    )
     assert io.exit_code == 0
     stdout, _ = _run_raw(ws, "cat /data/out.txt")
     assert _bytes(stdout).strip() != b""

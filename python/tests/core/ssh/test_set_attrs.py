@@ -42,15 +42,19 @@ class _FakeSFTP:
     async def stat(self, path: str) -> SimpleNamespace:
         key = path.rstrip("/") or "/"
         if key in self.dirs:
-            return SimpleNamespace(type=asyncssh.FILEXFER_TYPE_DIRECTORY,
-                                   size=4096,
-                                   atime=_MTIME,
-                                   mtime=_MTIME)
+            return SimpleNamespace(
+                type=asyncssh.FILEXFER_TYPE_DIRECTORY,
+                size=4096,
+                atime=_MTIME,
+                mtime=_MTIME,
+            )
         if key in self.files:
-            return SimpleNamespace(type=asyncssh.FILEXFER_TYPE_REGULAR,
-                                   size=3,
-                                   atime=_MTIME,
-                                   mtime=_MTIME)
+            return SimpleNamespace(
+                type=asyncssh.FILEXFER_TYPE_REGULAR,
+                size=3,
+                atime=_MTIME,
+                mtime=_MTIME,
+            )
         raise asyncssh.SFTPNoSuchFile("no such file")
 
     async def chmod(self, path: str, mode: int) -> None:
@@ -67,18 +71,17 @@ def _accessor(files: set[str], dirs: set[str]) -> SSHAccessor:
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    resolved=False,
-                    vfs_path=virtual)
+    return PathSpec(
+        virtual=virtual, directory=virtual, resolved=False, vfs_path=virtual
+    )
 
 
 @pytest.mark.asyncio
 async def test_mtime_applies_natively_with_empty_residual():
     accessor = _accessor({"/a.txt"}, {"/"})
-    residual = await set_attrs(accessor,
-                               _spec("/a.txt"),
-                               mtime="2020-01-01T00:00:00+00:00")
+    residual = await set_attrs(
+        accessor, _spec("/a.txt"), mtime="2020-01-01T00:00:00+00:00"
+    )
     assert residual == {}
     sftp = accessor._sftp
     assert len(sftp.utimes) == 1

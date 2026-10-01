@@ -54,8 +54,10 @@ async def test_mv_into_missing_parent_reports_cannot_move(workspace):
     await workspace.vfs.write("/a.txt", b"hi")
     io = await workspace.shell("mv /a.txt /missing/a.txt")
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/missing/a.txt': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/missing/a.txt': "
+        b"No such file or directory\n"
+    )
     assert await workspace.vfs.read("/a.txt") == b"hi"
 
 
@@ -75,8 +77,9 @@ async def test_mv_dir_into_missing_parent_reports_cannot_move(workspace):
     await workspace.vfs.write("/dir/f", b"x")
     io = await workspace.shell("mv /dir /gone/dir")
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/dir' to '/gone/dir': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/dir' to '/gone/dir': No such file or directory\n"
+    )
     assert await workspace.vfs.read("/dir/f") == b"x"
 
 
@@ -105,5 +108,6 @@ async def test_mv_source_under_a_plain_file_is_not_a_directory(workspace):
 async def test_mv_absent_source_is_still_no_such_file(workspace):
     io = await workspace.shell("mv /nope /dst")
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot stat '/nope': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot stat '/nope': No such file or directory\n"
+    )

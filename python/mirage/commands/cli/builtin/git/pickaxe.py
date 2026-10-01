@@ -19,8 +19,12 @@ from dulwich.objects import Blob, Commit, ObjectID
 EMPTY_TREE = None
 
 
-def _occurrences(store: BaseObjectStore, sha: ObjectID | None, needle: bytes,
-                 ignore_case: bool) -> int:
+def _occurrences(
+    store: BaseObjectStore,
+    sha: ObjectID | None,
+    needle: bytes,
+    ignore_case: bool,
+) -> int:
     """How many times a string appears in one blob, ASCII case folded
     when asked.
 
@@ -42,10 +46,12 @@ def _occurrences(store: BaseObjectStore, sha: ObjectID | None, needle: bytes,
     return data.count(needle)
 
 
-def touches(store: BaseObjectStore,
-            commit: Commit,
-            needle: bytes,
-            ignore_case: bool = False) -> bool:
+def touches(
+    store: BaseObjectStore,
+    commit: Commit,
+    needle: bytes,
+    ignore_case: bool = False,
+) -> bool:
     """Whether a commit changed the number of occurrences of a string.
 
     This is git's ``-S`` (pickaxe), and it is deliberately not a grep: a
@@ -74,8 +80,8 @@ def touches(store: BaseObjectStore,
     for change in tree_changes(store, parent_tree, commit.tree):
         old = change.old.sha if change.old is not None else None
         new = change.new.sha if change.new is not None else None
-        if _occurrences(store, old, needle,
-                        ignore_case) != _occurrences(store, new, needle,
-                                                     ignore_case):
+        if _occurrences(store, old, needle, ignore_case) != _occurrences(
+            store, new, needle, ignore_case
+        ):
             return True
     return False

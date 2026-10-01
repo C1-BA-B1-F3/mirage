@@ -20,32 +20,35 @@ BASE = "bases/Roadmap__appRoadmapBase001"
 TABLE = f"{BASE}/Features__tblFeatures000001"
 
 
-@pytest.mark.parametrize("path, kind, slots", [
-    ("/", "root", {}),
-    ("/bases", "bases", {}),
-    (f"/{BASE}", "base", {
-        "base_id": "appRoadmapBase001"
-    }),
-    (f"/{BASE}/base.json", "base_json", {
-        "base_id": "appRoadmapBase001"
-    }),
-    (f"/{TABLE}", "table", {
-        "table_id": "tblFeatures000001"
-    }),
-    (f"/{TABLE}/table.json", "table_json", {
-        "table_id": "tblFeatures000001"
-    }),
-    (f"/{TABLE}/records.jsonl", "records", {
-        "table_id": "tblFeatures000001"
-    }),
-    (f"/{TABLE}/views", "views", {}),
-    (f"/{TABLE}/views/Done__viwDone0000000001.jsonl", "view", {
-        "view_id": "viwDone0000000001"
-    }),
-    (f"/{TABLE}/views/Done__viwDone0000000001.json", "invalid", {}),
-    (f"/{BASE}/no_separator", "invalid", {}),
-    (f"/{TABLE}/.hidden", "invalid", {}),
-])
+@pytest.mark.parametrize(
+    "path, kind, slots",
+    [
+        ("/", "root", {}),
+        ("/bases", "bases", {}),
+        (f"/{BASE}", "base", {"base_id": "appRoadmapBase001"}),
+        (f"/{BASE}/base.json", "base_json", {"base_id": "appRoadmapBase001"}),
+        (f"/{TABLE}", "table", {"table_id": "tblFeatures000001"}),
+        (
+            f"/{TABLE}/table.json",
+            "table_json",
+            {"table_id": "tblFeatures000001"},
+        ),
+        (
+            f"/{TABLE}/records.jsonl",
+            "records",
+            {"table_id": "tblFeatures000001"},
+        ),
+        (f"/{TABLE}/views", "views", {}),
+        (
+            f"/{TABLE}/views/Done__viwDone0000000001.jsonl",
+            "view",
+            {"view_id": "viwDone0000000001"},
+        ),
+        (f"/{TABLE}/views/Done__viwDone0000000001.json", "invalid", {}),
+        (f"/{BASE}/no_separator", "invalid", {}),
+        (f"/{TABLE}/.hidden", "invalid", {}),
+    ],
+)
 def test_every_level_classifies(path, kind, slots):
     match = detect_scope(path)
     assert match.kind == kind

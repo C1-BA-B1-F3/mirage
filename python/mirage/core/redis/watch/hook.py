@@ -15,8 +15,12 @@
 from collections.abc import Sequence
 
 from mirage.accessor.redis import RedisAccessor
-from mirage.core.redis.watch.constants import (DIR_SEGMENT, DIR_SET_VERBS,
-                                               FILE_SEGMENT, REDIS_KINDS)
+from mirage.core.redis.watch.constants import (
+    DIR_SEGMENT,
+    DIR_SET_VERBS,
+    FILE_SEGMENT,
+    REDIS_KINDS,
+)
 from mirage.types import FileChangeKind, FileEvent, JsonValue, PathSpec
 from mirage.watch.events import event_at
 
@@ -57,7 +61,7 @@ class RedisEventHook:
 
     def __init__(self, accessor: RedisAccessor) -> None:
         """Args:
-            accessor (RedisAccessor): Backend handle, read for its store.
+        accessor (RedisAccessor): Backend handle, read for its store.
         """
         self._accessor = accessor
 
@@ -70,10 +74,11 @@ class RedisEventHook:
         head = f"{self._accessor.store.key_prefix}{FILE_SEGMENT}"
         if not key.startswith(head):
             return None
-        return key[len(head):]
+        return key[len(head) :]
 
-    async def to_events(self, root: PathSpec, event_type: str,
-                        payload: JsonValue) -> Sequence[FileEvent]:
+    async def to_events(
+        self, root: PathSpec, event_type: str, payload: JsonValue
+    ) -> Sequence[FileEvent]:
         """Map one keyspace notification to the change it implies.
 
         Args:
@@ -86,11 +91,11 @@ class RedisEventHook:
         if payload == f"{self._accessor.store.key_prefix}{DIR_SEGMENT}":
             if event_type not in DIR_SET_VERBS:
                 return ()
-            return (event_at(root, "/", FileChangeKind.UNKNOWN), )
+            return (event_at(root, "/", FileChangeKind.UNKNOWN),)
         relative = self._relative(payload)
         if relative is None:
             return ()
         kind = REDIS_KINDS.get(event_type)
         if kind is None:
             return ()
-        return (event_at(root, relative, kind), )
+        return (event_at(root, relative, kind),)

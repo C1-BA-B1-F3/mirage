@@ -43,8 +43,12 @@ async def main():
             print("\n--- read /m/config.json + parse ---")
             with open("/m/config.json") as f:
                 cfg = json.load(f)
-            for k in ("model_type", "architectures", "hidden_size",
-                      "num_hidden_layers"):
+            for k in (
+                "model_type",
+                "architectures",
+                "hidden_size",
+                "num_hidden_layers",
+            ):
                 if k in cfg:
                     print(f"  {k}: {cfg[k]}")
 

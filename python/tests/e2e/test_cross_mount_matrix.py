@@ -55,16 +55,18 @@ def _supports_delete(ptype: str) -> bool:
     return ptype in WRITABLE
 
 
-async def _populate_file_async(state: MountState, name: str,
-                               content: bytes) -> None:
+async def _populate_file_async(
+    state: MountState, name: str, content: bytes
+) -> None:
     if state.ptype == "ram":
         parts = ("/" + name).strip("/").split("/")
         for i in range(1, len(parts)):
             d = "/" + "/".join(parts[:i])
             if d not in state.accessor.store.dirs:
                 await mem_mkdir(state.accessor, PathSpec.from_str_path(d))
-        await mem_write(state.accessor, PathSpec.from_str_path("/" + name),
-                        content)
+        await mem_write(
+            state.accessor, PathSpec.from_str_path("/" + name), content
+        )
     elif state.ptype == "disk":
         full = state.disk_root / name
         full.parent.mkdir(parents=True, exist_ok=True)
@@ -74,16 +76,19 @@ async def _populate_file_async(state: MountState, name: str,
         if len(parts) > 1:
             # mkdir -p the parent chain, like the disk branch above: plain
             # mkdir refuses a directory that is already there (GNU).
-            await redis_mkdir(state.vfs.accessor,
-                              PathSpec.from_str_path("/" +
-                                                     "/".join(parts[:-1])),
-                              parents=True)
-        await redis_write(state.vfs.accessor,
-                          PathSpec.from_str_path("/" + name), content)
+            await redis_mkdir(
+                state.vfs.accessor,
+                PathSpec.from_str_path("/" + "/".join(parts[:-1])),
+                parents=True,
+            )
+        await redis_write(
+            state.vfs.accessor, PathSpec.from_str_path("/" + name), content
+        )
 
 
-def _populate_file(state: MountState, name: str, content: bytes,
-                   buckets: dict) -> None:
+def _populate_file(
+    state: MountState, name: str, content: bytes, buckets: dict
+) -> None:
     if state.ptype in ("ram", "disk", "redis"):
         asyncio.run(_populate_file_async(state, name, content))
     elif state.ptype == "s3":
@@ -107,9 +112,9 @@ async def _ls_for_index(ws: Workspace, state: MountState, name: str) -> None:
 
 
 class CrossMountEnv:
-
-    def __init__(self, ws: Workspace, m1: MountState, m2: MountState,
-                 buckets: dict) -> None:
+    def __init__(
+        self, ws: Workspace, m1: MountState, m2: MountState, buckets: dict
+    ) -> None:
         self.ws = ws
         self.m1 = m1
         self.m2 = m2
@@ -264,7 +269,8 @@ def test_cp_cross(cross):
         assert cross.run("cat /m2/dst.txt") == "hello\n"
     else:
         assert code != 0, (
-            f"cp into read-only {cross.dst_type} should have failed")
+            f"cp into read-only {cross.dst_type} should have failed"
+        )
 
 
 def test_mv_cross(cross):
@@ -277,7 +283,8 @@ def test_mv_cross(cross):
     else:
         assert code != 0, (
             f"mv with read-only end ({cross.src_type}->{cross.dst_type}) "
-            "should have failed")
+            "should have failed"
+        )
 
 
 def test_cp_recursive_cross(cross):
@@ -286,12 +293,14 @@ def test_cp_recursive_cross(cross):
     code = cross.exit("cp -r /m1/tree /m2/copied")
     if _supports_write(cross.dst_type):
         assert code == 0, (
-            f"cp -r failed for {cross.src_type}->{cross.dst_type}")
+            f"cp -r failed for {cross.src_type}->{cross.dst_type}"
+        )
         assert cross.run("cat /m2/copied/a.txt") == "aaa\n"
         assert cross.run("cat /m2/copied/sub/b.txt") == "bbb\n"
     else:
         assert code != 0, (
-            f"cp -r into read-only {cross.dst_type} should have failed")
+            f"cp -r into read-only {cross.dst_type} should have failed"
+        )
 
 
 def test_mv_recursive_cross(cross):
@@ -300,11 +309,13 @@ def test_mv_recursive_cross(cross):
     code = cross.exit("mv /m1/tree /m2/moved")
     if _supports_write(cross.dst_type) and _supports_delete(cross.src_type):
         assert code == 0, (
-            f"mv -r failed for {cross.src_type}->{cross.dst_type}")
+            f"mv -r failed for {cross.src_type}->{cross.dst_type}"
+        )
         assert cross.run("cat /m2/moved/a.txt") == "aaa\n"
         assert cross.run("cat /m2/moved/sub/b.txt") == "bbb\n"
         assert cross.exit("cat /m1/tree/a.txt") != 0
     else:
         assert code != 0, (
             f"mv -r with read-only end ({cross.src_type}->{cross.dst_type}) "
-            "should have failed")
+            "should have failed"
+        )

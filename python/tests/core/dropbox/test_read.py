@@ -27,10 +27,12 @@ from mirage.vfs.dropbox.config import DropboxConfig
 
 
 def make_accessor(root_path: str = "/") -> DropboxAccessor:
-    config = DropboxConfig(client_id="c",
-                           client_secret="s",
-                           refresh_token="r",
-                           root_path=root_path)
+    config = DropboxConfig(
+        client_id="c",
+        client_secret="s",
+        refresh_token="r",
+        root_path=root_path,
+    )
     return DropboxAccessor(config, DropboxTokenManager(config))
 
 
@@ -39,48 +41,63 @@ def index():
     return RAMIndexCacheStore()
 
 
-FILE_LISTING = [{
-    ".tag": "file",
-    "id": "id:1",
-    "name": "note.txt",
-    "path_display": "/note.txt",
-    "size": 5,
-}]
+FILE_LISTING = [
+    {
+        ".tag": "file",
+        "id": "id:1",
+        "name": "note.txt",
+        "path_display": "/note.txt",
+        "size": 5,
+    }
+]
 
 
 @pytest.mark.asyncio
 async def test_read_strips_mount_prefix(index):
-    with patch("mirage.core.dropbox.readdir.list_folder",
-               new_callable=AsyncMock,
-               return_value=FILE_LISTING):
-        with patch("mirage.core.dropbox.read.dropbox_download",
-                   new_callable=AsyncMock,
-                   return_value=b"hi!") as download:
+    with patch(
+        "mirage.core.dropbox.readdir.list_folder",
+        new_callable=AsyncMock,
+        return_value=FILE_LISTING,
+    ):
+        with patch(
+            "mirage.core.dropbox.read.dropbox_download",
+            new_callable=AsyncMock,
+            return_value=b"hi!",
+        ) as download:
             data = await read(
                 make_accessor(),
-                PathSpec(virtual="/dropbox/note.txt",
-                         directory="/dropbox",
-                         vfs_path=mount_key("/dropbox/note.txt", "/dropbox")),
-                index)
+                PathSpec(
+                    virtual="/dropbox/note.txt",
+                    directory="/dropbox",
+                    vfs_path=mount_key("/dropbox/note.txt", "/dropbox"),
+                ),
+                index,
+            )
     assert data == b"hi!"
     assert download.await_args.args[1] == "/note.txt"
 
 
 @pytest.mark.asyncio
 async def test_a_ranged_read_asks_dropbox_for_the_range(index):
-    with patch("mirage.core.dropbox.readdir.list_folder",
-               new_callable=AsyncMock,
-               return_value=FILE_LISTING):
-        with patch("mirage.core.dropbox.read.dropbox_download",
-                   new_callable=AsyncMock,
-                   return_value=b"i!") as download:
-            data = await read(make_accessor(),
-                              PathSpec(virtual="/note.txt",
-                                       directory="/",
-                                       vfs_path="note.txt"),
-                              index,
-                              offset=1,
-                              size=2)
+    with patch(
+        "mirage.core.dropbox.readdir.list_folder",
+        new_callable=AsyncMock,
+        return_value=FILE_LISTING,
+    ):
+        with patch(
+            "mirage.core.dropbox.read.dropbox_download",
+            new_callable=AsyncMock,
+            return_value=b"i!",
+        ) as download:
+            data = await read(
+                make_accessor(),
+                PathSpec(
+                    virtual="/note.txt", directory="/", vfs_path="note.txt"
+                ),
+                index,
+                offset=1,
+                size=2,
+            )
     assert data == b"i!"
     assert download.await_args.args[2] == ByteWindow(1, 2)
 
@@ -89,62 +106,82 @@ async def test_a_ranged_read_asks_dropbox_for_the_range(index):
 async def test_an_index_less_ranged_read_still_carries_the_range(index):
     # The ops factory's emulated truncate reads without an index, which
     # takes the other branch of read() and must range just the same.
-    with patch("mirage.core.dropbox.read.dropbox_download",
-               new_callable=AsyncMock,
-               return_value=b"i!") as download:
-        await read(make_accessor(),
-                   PathSpec(virtual="/note.txt",
-                            directory="/",
-                            vfs_path="note.txt"),
-                   offset=1,
-                   size=2)
+    with patch(
+        "mirage.core.dropbox.read.dropbox_download",
+        new_callable=AsyncMock,
+        return_value=b"i!",
+    ) as download:
+        await read(
+            make_accessor(),
+            PathSpec(virtual="/note.txt", directory="/", vfs_path="note.txt"),
+            offset=1,
+            size=2,
+        )
     assert download.await_args.args[2] == ByteWindow(1, 2)
 
 
 @pytest.mark.asyncio
 async def test_read_downloads_through_subfolder_root(index):
-    with patch("mirage.core.dropbox.readdir.list_folder",
-               new_callable=AsyncMock,
-               return_value=FILE_LISTING):
-        with patch("mirage.core.dropbox.read.dropbox_download",
-                   new_callable=AsyncMock,
-                   return_value=b"hi") as download:
+    with patch(
+        "mirage.core.dropbox.readdir.list_folder",
+        new_callable=AsyncMock,
+        return_value=FILE_LISTING,
+    ):
+        with patch(
+            "mirage.core.dropbox.read.dropbox_download",
+            new_callable=AsyncMock,
+            return_value=b"hi",
+        ) as download:
             data = await read(
                 make_accessor("Team/data"),
-                PathSpec(virtual="/dropbox/note.txt",
-                         directory="/dropbox",
-                         vfs_path=mount_key("/dropbox/note.txt", "/dropbox")),
-                index)
+                PathSpec(
+                    virtual="/dropbox/note.txt",
+                    directory="/dropbox",
+                    vfs_path=mount_key("/dropbox/note.txt", "/dropbox"),
+                ),
+                index,
+            )
     assert data == b"hi"
     assert download.await_args.args[1] == "/Team/data/note.txt"
 
 
 @pytest.mark.asyncio
 async def test_read_folder_raises_isadirectory(index):
-    listing = [{
-        ".tag": "folder",
-        "id": "id:f",
-        "name": "docs",
-        "path_display": "/docs",
-    }]
-    with patch("mirage.core.dropbox.readdir.list_folder",
-               new_callable=AsyncMock,
-               return_value=listing):
+    listing = [
+        {
+            ".tag": "folder",
+            "id": "id:f",
+            "name": "docs",
+            "path_display": "/docs",
+        }
+    ]
+    with patch(
+        "mirage.core.dropbox.readdir.list_folder",
+        new_callable=AsyncMock,
+        return_value=listing,
+    ):
         with pytest.raises(IsADirectoryError):
             await read(
                 make_accessor(),
                 PathSpec(vfs_path="docs", virtual="/docs", directory="/docs"),
-                index)
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_read_missing_raises_enoent(index):
-    with patch("mirage.core.dropbox.readdir.list_folder",
-               new_callable=AsyncMock,
-               return_value=[]):
+    with patch(
+        "mirage.core.dropbox.readdir.list_folder",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
         with pytest.raises(FileNotFoundError):
             await read(
                 make_accessor(),
-                PathSpec(vfs_path="missing.txt",
-                         virtual="/missing.txt",
-                         directory="/"), index)
+                PathSpec(
+                    vfs_path="missing.txt",
+                    virtual="/missing.txt",
+                    directory="/",
+                ),
+                index,
+            )

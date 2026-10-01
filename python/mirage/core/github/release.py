@@ -26,35 +26,40 @@ def _path(ref: RepoRef, tail: str = "") -> str:
     return f"/repos/{ref.owner}/{ref.repo}/releases{tail}"
 
 
-async def list_releases(config: GhConfig, ref: RepoRef,
-                        limit: int) -> list[dict[str, Any]]:
+async def list_releases(
+    config: GhConfig, ref: RepoRef, limit: int
+) -> list[dict[str, Any]]:
     return await github_pages(config, _path(ref), limit=limit)
 
 
 async def get_release(config: GhConfig, ref: RepoRef, tag: str) -> JsonValue:
-    return await github_request(config.token,
-                                "GET",
-                                _path(ref, f"/tags/{quote(tag, safe='')}"),
-                                base_url=config.base_url)
+    return await github_request(
+        config.token,
+        "GET",
+        _path(ref, f"/tags/{quote(tag, safe='')}"),
+        base_url=config.base_url,
+    )
 
 
-async def get_latest_release(config: GhConfig,
-                             ref: RepoRef) -> "JsonValue | None":
+async def get_latest_release(
+    config: GhConfig, ref: RepoRef
+) -> "JsonValue | None":
     try:
-        return await github_request(config.token,
-                                    "GET",
-                                    _path(ref, "/latest"),
-                                    base_url=config.base_url)
+        return await github_request(
+            config.token,
+            "GET",
+            _path(ref, "/latest"),
+            base_url=config.base_url,
+        )
     except GitHubApiError as exc:
         if exc.status == 404:
             return None
         raise
 
 
-async def create_release(config: GhConfig, ref: RepoRef,
-                         body: dict[str, JsonValue]) -> JsonValue:
-    return await github_request(config.token,
-                                "POST",
-                                _path(ref),
-                                body,
-                                base_url=config.base_url)
+async def create_release(
+    config: GhConfig, ref: RepoRef, body: dict[str, JsonValue]
+) -> JsonValue:
+    return await github_request(
+        config.token, "POST", _path(ref), body, base_url=config.base_url
+    )

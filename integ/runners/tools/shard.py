@@ -74,8 +74,13 @@ def runs_on(target: dict, host: str) -> bool:
     return any(h == host or h.startswith(f"{host}-") for h in target["hosts"])
 
 
-def work_items(manifest: dict, facets: list[str], host: str, skip: set[str],
-               counts: Counter) -> list[tuple[list[str], int]]:
+def work_items(
+    manifest: dict,
+    facets: list[str],
+    host: str,
+    skip: set[str],
+    counts: Counter,
+) -> list[tuple[list[str], int]]:
     """The facets' targets as (ids, weight), one runner process each.
 
     A target the host does not run, or one on a service this job leaves to
@@ -101,14 +106,17 @@ def work_items(manifest: dict, facets: list[str], host: str, skip: set[str],
             continue
         service = target.get("service")
         shared = service is not None and services.get(service, {}).get(
-            "shared", False)
-        lanes.setdefault(service if shared else target["id"],
-                         []).append(target["id"])
+            "shared", False
+        )
+        lanes.setdefault(service if shared else target["id"], []).append(
+            target["id"]
+        )
     return [(ids, sum(counts[i] for i in ids)) for ids in lanes.values()]
 
 
-def split(items: list[tuple[list[str], int]],
-          shards: int) -> list[list[tuple[list[str], int]]]:
+def split(
+    items: list[tuple[list[str], int]], shards: int
+) -> list[list[tuple[list[str], int]]]:
     """Largest first onto the lightest shard, so shards weigh the same.
 
     Args:
@@ -124,8 +132,9 @@ def split(items: list[tuple[list[str], int]],
     return out
 
 
-def run_item(ids: list[str], command: list[str], emit_dir: Path | None,
-             logs: Path) -> tuple[list[str], int, float, Path]:
+def run_item(
+    ids: list[str], command: list[str], emit_dir: Path | None, logs: Path
+) -> tuple[list[str], int, float, Path]:
     """One runner process over one work item, its output to a file.
 
     Args:
@@ -142,10 +151,9 @@ def run_item(ids: list[str], command: list[str], emit_dir: Path | None,
     log = logs / f"{ids[0]}.log"
     start = time.monotonic()
     with log.open("wb") as out:
-        code = subprocess.run(argv,
-                              stdout=out,
-                              stderr=subprocess.STDOUT,
-                              check=False).returncode
+        code = subprocess.run(
+            argv, stdout=out, stderr=subprocess.STDOUT, check=False
+        ).returncode
     return ids, code, time.monotonic() - start, log
 
 
@@ -154,9 +162,9 @@ def main() -> None:
     parser.add_argument("--shard", type=int, required=True)
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--procs", type=int, required=True)
-    parser.add_argument("--host",
-                        required=True,
-                        choices=("python", "typescript"))
+    parser.add_argument(
+        "--host", required=True, choices=("python", "typescript")
+    )
     parser.add_argument("--facet", action="append", dest="facets")
     parser.add_argument("--allow-skip", dest="allow_skip", default="")
     parser.add_argument("--emit-dir", dest="emit_dir")
@@ -164,19 +172,24 @@ def main() -> None:
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command or not 0 <= args.shard < args.shards or args.procs < 1:
-        parser.error("needs 0 <= --shard < --shards, --procs >= 1 and a "
-                     "runner command after --")
+        parser.error(
+            "needs 0 <= --shard < --shards, --procs >= 1 and a "
+            "runner command after --"
+        )
     manifest = json.loads((INTEG / "targets.json").read_text())
     skip = {name for name in args.allow_skip.split(",") if name}
     unknown = skip - set(manifest.get("services", {}))
     if unknown:
         parser.error(f"--allow-skip names no service: {', '.join(unknown)}")
-    items = work_items(manifest, args.facets or ["core"], args.host, skip,
-                       case_counts(INTEG))
+    items = work_items(
+        manifest, args.facets or ["core"], args.host, skip, case_counts(INTEG)
+    )
     mine = split(items, args.shards)[args.shard]
     if not mine:
-        print(f"shard {args.shard} of {args.shards} got no targets",
-              file=sys.stderr)
+        print(
+            f"shard {args.shard} of {args.shards} got no targets",
+            file=sys.stderr,
+        )
         sys.exit(2)
     emit_dir = None
     if args.emit_dir is not None:
@@ -184,8 +197,10 @@ def main() -> None:
         emit_dir.mkdir(parents=True, exist_ok=True)
     timings: list[tuple[float, list[str], int, int]] = []
     failed = 0
-    with tempfile.TemporaryDirectory() as tmp, ThreadPoolExecutor(
-            args.procs) as pool:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        ThreadPoolExecutor(args.procs) as pool,
+    ):
         weights = {tuple(ids): weight for ids, weight in mine}
         running = [
             pool.submit(run_item, ids, command, emit_dir, Path(tmp))
@@ -193,16 +208,20 @@ def main() -> None:
         ]
         for done in as_completed(running):
             ids, code, seconds, log = done.result()
-            print(f"=== {' '.join(ids)}: exit {code} in {seconds:.0f}s ===",
-                  flush=True)
+            print(
+                f"=== {' '.join(ids)}: exit {code} in {seconds:.0f}s ===",
+                flush=True,
+            )
             sys.stdout.buffer.write(log.read_bytes())
             sys.stdout.flush()
             timings.append((seconds, ids, weights[tuple(ids)], code))
             failed += code != 0
     print(f"\nshard {args.shard} of {args.shards}, {args.procs} processes:")
     for seconds, ids, weight, code in sorted(timings, reverse=True):
-        print(f"  {seconds:6.0f}s  {weight:6d} cases  exit {code}  "
-              f"{' '.join(ids)}")
+        print(
+            f"  {seconds:6.0f}s  {weight:6d} cases  exit {code}  "
+            f"{' '.join(ids)}"
+        )
     sys.exit(1 if failed else 0)
 
 

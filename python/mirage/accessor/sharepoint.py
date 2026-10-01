@@ -22,7 +22,6 @@ class SharePointConfig(MsGraphConfig):
 
 
 class SharePointAccessor(SessionAccessor):
-
     def __init__(self, config: SharePointConfig) -> None:
         super().__init__(timeout=aiohttp.ClientTimeout(total=config.timeout))
         self.config = config

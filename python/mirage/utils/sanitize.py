@@ -34,8 +34,9 @@ ESCAPE_LEAD = "⁄"
 # read off ``str.strip``: Python also strips U+001C..U+001F, and
 # JavaScript's ``trim`` strips U+FEFF but not U+0085, so a value blank in
 # one runtime rendered a segment the other runtime spelled out.
-WHITE_SPACE_CLASS = ("\t\n\x0b\x0c\r \x85\xa0\u1680\u2000-\u200a"
-                     "\u2028\u2029\u202f\u205f\u3000")
+WHITE_SPACE_CLASS = (
+    "\t\n\x0b\x0c\r \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
+)
 WHITE_SPACE = re.compile(f"[{WHITE_SPACE_CLASS}]*")
 # The same class, not ``\s``: python's ``\s`` takes U+001C..U+001F and
 # JavaScript's takes U+FEFF, so one runtime kept a character the other
@@ -165,11 +166,9 @@ def path_safe_name(name: str) -> str:
     return safe
 
 
-def sanitize_label(text: str,
-                   *,
-                   fallback: str,
-                   max_len: int,
-                   max_bytes: int = NAME_MAX_BYTES) -> str:
+def sanitize_label(
+    text: str, *, fallback: str, max_len: int, max_bytes: int = NAME_MAX_BYTES
+) -> str:
     """Sanitize an API-supplied label for use inside a filename.
 
     The shared body behind every backend's title/subject sanitizer:
@@ -212,7 +211,7 @@ def sanitize_label(text: str,
     if not cleaned:
         return fallback
     if len(cleaned) > max_len:
-        cleaned = cleaned[:max_len - len(ELLIPSIS)] + ELLIPSIS
+        cleaned = cleaned[: max_len - len(ELLIPSIS)] + ELLIPSIS
     if byte_len(cleaned) > max_bytes:
         head = truncate_bytes(cleaned, max(max_bytes - len(ELLIPSIS), 0))
         trimmed = head.rstrip("_.")

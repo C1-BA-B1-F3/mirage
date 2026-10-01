@@ -17,13 +17,20 @@ from collections.abc import Awaitable
 from typing import TypeVar
 
 from pydantic_ai_backends.protocol import SandboxProtocol
-from pydantic_ai_backends.types import (EditResult, ExecuteResponse, FileInfo,
-                                        GrepMatch, WriteResult)
+from pydantic_ai_backends.types import (
+    EditResult,
+    ExecuteResponse,
+    FileInfo,
+    GrepMatch,
+    WriteResult,
+)
 
 from mirage.agents.io_text import replace_text
-from mirage.agents.pydantic_ai.convert import (io_to_execute_response,
-                                               io_to_file_infos,
-                                               io_to_grep_matches)
+from mirage.agents.pydantic_ai.convert import (
+    io_to_execute_response,
+    io_to_file_infos,
+    io_to_grep_matches,
+)
 from mirage.bridge.sync import run_async_from_sync
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace
@@ -84,14 +91,14 @@ class PydanticAIWorkspace(SandboxProtocol):
 
     # -- execute -------------------------------------------------------
 
-    def execute(self,
-                command: str,
-                timeout: int | None = None) -> ExecuteResponse:
+    def execute(
+        self, command: str, timeout: int | None = None
+    ) -> ExecuteResponse:
         return self._run(self.aexecute(command, timeout=timeout))
 
-    async def aexecute(self,
-                       command: str,
-                       timeout: int | None = None) -> ExecuteResponse:
+    async def aexecute(
+        self, command: str, timeout: int | None = None
+    ) -> ExecuteResponse:
         io = await self._exec(command)
         return io_to_execute_response(io)
 
@@ -114,10 +121,13 @@ class PydanticAIWorkspace(SandboxProtocol):
             is_dir = name.endswith("/")
             clean = name.rstrip("/")
             result.append(
-                FileInfo(name=clean,
-                         path=f"{base}/{clean}",
-                         is_dir=is_dir,
-                         size=None))
+                FileInfo(
+                    name=clean,
+                    path=f"{base}/{clean}",
+                    is_dir=is_dir,
+                    size=None,
+                )
+            )
         return result
 
     # -- read ----------------------------------------------------------
@@ -125,10 +135,9 @@ class PydanticAIWorkspace(SandboxProtocol):
     def read(self, path: str, offset: int = 0, limit: int = 2000) -> str:
         return self._run(self.aread(path, offset, limit))
 
-    async def aread(self,
-                    path: str,
-                    offset: int = 0,
-                    limit: int = 2000) -> str:
+    async def aread(
+        self, path: str, offset: int = 0, limit: int = 2000
+    ) -> str:
         ops = self._ws.vfs
         try:
             data = await ops.read(path)
@@ -136,7 +145,7 @@ class PydanticAIWorkspace(SandboxProtocol):
             return f"Error: {exc}"
         text = data.decode("utf-8", errors="replace")
         lines = text.splitlines(keepends=True)
-        sliced = lines[offset:offset + limit]
+        sliced = lines[offset : offset + limit]
         numbered = []
         for i, line in enumerate(sliced, start=offset + 1):
             numbered.append(f"{i:>6}\t{line}")
@@ -189,15 +198,18 @@ class PydanticAIWorkspace(SandboxProtocol):
         except (FileNotFoundError, NotADirectoryError, ValueError):
             return EditResult(error=f"Error: file '{path}' not found")
         content = data.decode("utf-8", errors="replace")
-        new_content, count = replace_text(content, old_string, new_string,
-                                          replace_all)
+        new_content, count = replace_text(
+            content, old_string, new_string, replace_all
+        )
         if count == 0:
             return EditResult(
-                error=f"Error: string not found in file: '{old_string}'")
+                error=f"Error: string not found in file: '{old_string}'"
+            )
         if count > 1 and not replace_all:
             return EditResult(
                 error=f"Error: string '{old_string}' appears {count} times. "
-                f"Use replace_all=True")
+                f"Use replace_all=True"
+            )
         await ops.write(path, new_content.encode("utf-8"))
         return EditResult(path=path, occurrences=count if replace_all else 1)
 
@@ -232,10 +244,11 @@ class PydanticAIWorkspace(SandboxProtocol):
     def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
         return self._run(self.aglob_info(pattern, path))
 
-    async def aglob_info(self,
-                         pattern: str,
-                         path: str = "/") -> list[FileInfo]:
+    async def aglob_info(
+        self, pattern: str, path: str = "/"
+    ) -> list[FileInfo]:
         name = pattern.split("/")[-1] if "/" in pattern else pattern
         io = await self._exec(
-            f"find {shlex.quote(path)} -name {shlex.quote(name)}")
+            f"find {shlex.quote(path)} -name {shlex.quote(name)}"
+        )
         return io_to_file_infos(io)

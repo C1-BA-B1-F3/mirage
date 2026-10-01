@@ -40,4 +40,5 @@ def build_delta_hook(accessor: GDriveAccessor) -> DeltaHook:
         accessor (GDriveAccessor): Backend handle.
     """
     return ListingDeltaHook(
-        ReaddirWalk(partial(readdir, accessor), partial(stat, accessor)))
+        ReaddirWalk(partial(readdir, accessor), partial(stat, accessor))
+    )

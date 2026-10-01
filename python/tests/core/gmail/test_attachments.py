@@ -29,21 +29,12 @@ def test_extract_attachments_none():
 
 def test_extract_attachments_single():
     payload = {
-        "mimeType":
-        "multipart/mixed",
+        "mimeType": "multipart/mixed",
         "parts": [
-            {
-                "mimeType": "text/plain",
-                "body": {
-                    "data": "text"
-                }
-            },
+            {"mimeType": "text/plain", "body": {"data": "text"}},
             {
                 "filename": "report.pdf",
-                "body": {
-                    "attachmentId": "att1",
-                    "size": 1024
-                },
+                "body": {"attachmentId": "att1", "size": 1024},
             },
         ],
     }
@@ -56,21 +47,18 @@ def test_extract_attachments_single():
 
 def test_extract_attachments_nested():
     payload = {
-        "mimeType":
-        "multipart/mixed",
-        "parts": [{
-            "mimeType":
-            "multipart/alternative",
-            "parts": [
-                {
-                    "filename": "image.png",
-                    "body": {
-                        "attachmentId": "att2",
-                        "size": 2048
+        "mimeType": "multipart/mixed",
+        "parts": [
+            {
+                "mimeType": "multipart/alternative",
+                "parts": [
+                    {
+                        "filename": "image.png",
+                        "body": {"attachmentId": "att2", "size": 2048},
                     },
-                },
-            ],
-        }],
+                ],
+            }
+        ],
     }
     result = _extract_attachments(payload)
     assert len(result) == 1
@@ -80,12 +68,13 @@ def test_extract_attachments_nested():
 @pytest.mark.asyncio
 async def test_get_attachment():
     encoded = base64.urlsafe_b64encode(b"hello world").decode().rstrip("=")
-    token_manager = TokenManager(GoogleConfig(client_id="x",
-                                              refresh_token="y"))
+    token_manager = TokenManager(
+        GoogleConfig(client_id="x", refresh_token="y")
+    )
     with patch(
-            "mirage.core.gmail.messages.google_get",
-            new_callable=AsyncMock,
-            return_value={"data": encoded},
+        "mirage.core.gmail.messages.google_get",
+        new_callable=AsyncMock,
+        return_value={"data": encoded},
     ):
         result = await get_attachment(token_manager, "msg1", "att1")
         assert result == b"hello world"

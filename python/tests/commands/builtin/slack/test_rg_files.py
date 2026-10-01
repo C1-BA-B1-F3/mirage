@@ -42,23 +42,39 @@ async def test_rg_chat_jsonl_scans_the_named_day(accessor, index):
     # (`coalesce_scopes`), which answered with every day the channel ever
     # had. It is one file: read it and grep it.
     with (
-            patch("mirage.commands.builtin.slack.rg.search_messages",
-                  new_callable=AsyncMock) as mock_msgs,
-            patch("mirage.commands.builtin.slack.rg.search_files",
-                  new_callable=AsyncMock) as mock_files,
-            patch("mirage.commands.builtin.slack.rg.resolve_glob",
-                  new_callable=AsyncMock,
-                  return_value=[]),
-            patch("mirage.commands.builtin.slack.rg.generic_rg",
-                  new_callable=AsyncMock,
-                  return_value=(b"", None)) as mock_generic,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_messages",
+            new_callable=AsyncMock,
+        ) as mock_msgs,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_files",
+            new_callable=AsyncMock,
+        ) as mock_files,
+        patch(
+            "mirage.commands.builtin.slack.rg.resolve_glob",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "mirage.commands.builtin.slack.rg.generic_rg",
+            new_callable=AsyncMock,
+            return_value=(b"", None),
+        ) as mock_generic,
     ):
-        await rg(accessor, [
-            PathSpec(vfs_path=mount_key(
-                '/channels/general__C001/2026-04-10/chat.jsonl', ''),
-                     virtual='/channels/general__C001/2026-04-10/chat.jsonl',
-                     directory='/channels/general__C001/2026-04-10/chat.jsonl')
-        ], ['foo'], CommandOpts(index=index, flags={'word_regexp': True}))
+        await rg(
+            accessor,
+            [
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/channels/general__C001/2026-04-10/chat.jsonl", ""
+                    ),
+                    virtual="/channels/general__C001/2026-04-10/chat.jsonl",
+                    directory="/channels/general__C001/2026-04-10/chat.jsonl",
+                )
+            ],
+            ["foo"],
+            CommandOpts(index=index, flags={"word_regexp": True}),
+        )
     assert mock_msgs.await_count == 0
     assert mock_files.await_count == 0
     assert mock_generic.await_count == 1
@@ -67,20 +83,34 @@ async def test_rg_chat_jsonl_scans_the_named_day(accessor, index):
 @pytest.mark.asyncio
 async def test_rg_files_dir_redirects_to_generic_scan(accessor, index):
     with (
-            patch("mirage.commands.builtin.slack.rg.search_messages",
-                  new_callable=AsyncMock) as mock_msgs,
-            patch("mirage.commands.builtin.slack.rg.search_files",
-                  new_callable=AsyncMock) as mock_files,
-            patch("mirage.commands.builtin.slack.rg.generic_rg",
-                  new_callable=AsyncMock,
-                  return_value=(b"", None)) as mock_generic,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_messages",
+            new_callable=AsyncMock,
+        ) as mock_msgs,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_files",
+            new_callable=AsyncMock,
+        ) as mock_files,
+        patch(
+            "mirage.commands.builtin.slack.rg.generic_rg",
+            new_callable=AsyncMock,
+            return_value=(b"", None),
+        ) as mock_generic,
     ):
-        await rg(accessor, [
-            PathSpec(vfs_path=mount_key(
-                '/channels/general__C001/2026-04-10/files', ''),
-                     virtual='/channels/general__C001/2026-04-10/files',
-                     directory='/channels/general__C001/2026-04-10/files')
-        ], ['foo'], CommandOpts(index=index, flags={'word_regexp': True}))
+        await rg(
+            accessor,
+            [
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/channels/general__C001/2026-04-10/files", ""
+                    ),
+                    virtual="/channels/general__C001/2026-04-10/files",
+                    directory="/channels/general__C001/2026-04-10/files",
+                )
+            ],
+            ["foo"],
+            CommandOpts(index=index, flags={"word_regexp": True}),
+        )
     assert mock_msgs.await_count == 0
     assert mock_files.await_count == 0
     assert mock_generic.await_count == 1
@@ -91,19 +121,31 @@ async def test_rg_both_when_channel_or_day_root(accessor, index):
     msgs_payload = b'{"messages":{"matches":[]}}'
     files_payload = b'{"files":{"matches":[]}}'
     with (
-            patch("mirage.commands.builtin.slack.rg.search_messages",
-                  new_callable=AsyncMock,
-                  return_value=msgs_payload) as mock_msgs,
-            patch("mirage.commands.builtin.slack.rg.search_files",
-                  new_callable=AsyncMock,
-                  return_value=files_payload) as mock_files,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_messages",
+            new_callable=AsyncMock,
+            return_value=msgs_payload,
+        ) as mock_msgs,
+        patch(
+            "mirage.commands.builtin.slack.rg.search_files",
+            new_callable=AsyncMock,
+            return_value=files_payload,
+        ) as mock_files,
     ):
-        await rg(accessor, [
-            PathSpec(vfs_path=mount_key('/channels/general__C001/2026-04-10',
-                                        ''),
-                     virtual='/channels/general__C001/2026-04-10',
-                     directory='/channels/general__C001/2026-04-10')
-        ], ['foo'], CommandOpts(index=index, flags={'word_regexp': True}))
+        await rg(
+            accessor,
+            [
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/channels/general__C001/2026-04-10", ""
+                    ),
+                    virtual="/channels/general__C001/2026-04-10",
+                    directory="/channels/general__C001/2026-04-10",
+                )
+            ],
+            ["foo"],
+            CommandOpts(index=index, flags={"word_regexp": True}),
+        )
     assert mock_msgs.await_count == 1
     assert mock_files.await_count == 1
 
@@ -111,24 +153,41 @@ async def test_rg_both_when_channel_or_day_root(accessor, index):
 @pytest.mark.asyncio
 async def test_grep_chat_jsonl_scans_the_named_day(accessor, index):
     with (
-            patch("mirage.commands.builtin.slack.grep.search_messages",
-                  new_callable=AsyncMock) as mock_msgs,
-            patch("mirage.commands.builtin.slack.grep.search_files",
-                  new_callable=AsyncMock) as mock_files,
-            patch("mirage.commands.builtin.slack.grep.resolve_glob",
-                  new_callable=AsyncMock,
-                  return_value=[]),
-            patch("mirage.commands.builtin.slack.grep.generic_grep",
-                  new_callable=AsyncMock,
-                  return_value=(b"", None)) as mock_generic,
+        patch(
+            "mirage.commands.builtin.slack.grep.search_messages",
+            new_callable=AsyncMock,
+        ) as mock_msgs,
+        patch(
+            "mirage.commands.builtin.slack.grep.search_files",
+            new_callable=AsyncMock,
+        ) as mock_files,
+        patch(
+            "mirage.commands.builtin.slack.grep.resolve_glob",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "mirage.commands.builtin.slack.grep.generic_grep",
+            new_callable=AsyncMock,
+            return_value=(b"", None),
+        ) as mock_generic,
     ):
         from mirage.commands.builtin.slack.grep import grep
-        await grep(accessor, [
-            PathSpec(vfs_path=mount_key(
-                '/channels/general__C001/2026-04-10/chat.jsonl', ''),
-                     virtual='/channels/general__C001/2026-04-10/chat.jsonl',
-                     directory='/channels/general__C001/2026-04-10/chat.jsonl')
-        ], ['foo'], CommandOpts(index=index, flags={'w': True}))
+
+        await grep(
+            accessor,
+            [
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/channels/general__C001/2026-04-10/chat.jsonl", ""
+                    ),
+                    virtual="/channels/general__C001/2026-04-10/chat.jsonl",
+                    directory="/channels/general__C001/2026-04-10/chat.jsonl",
+                )
+            ],
+            ["foo"],
+            CommandOpts(index=index, flags={"w": True}),
+        )
     assert mock_msgs.await_count == 0
     assert mock_files.await_count == 0
     assert mock_generic.await_count == 1
@@ -139,34 +198,54 @@ async def test_grep_chat_jsonl_scans_the_named_day(accessor, index):
 async def test_grep_files_dir_redirects_to_per_file_scan(accessor, index):
     blob = PathSpec(
         vfs_path=mount_key(
-            "/channels/general__C001/2026-04-10/files/report.txt", ""),
+            "/channels/general__C001/2026-04-10/files/report.txt", ""
+        ),
         virtual="/channels/general__C001/2026-04-10/files/report.txt",
         directory="/channels/general__C001/2026-04-10/files/report.txt",
     )
     with (
-            patch("mirage.commands.builtin.slack.grep.search_messages",
-                  new_callable=AsyncMock) as mock_msgs,
-            patch("mirage.commands.builtin.slack.grep.search_files",
-                  new_callable=AsyncMock) as mock_files,
-            patch("mirage.commands.builtin.slack.grep.resolve_glob",
-                  new_callable=AsyncMock,
-                  return_value=[blob]),
-            patch("mirage.commands.builtin.slack.grep.slack_read",
-                  new_callable=AsyncMock,
-                  return_value=b"foo line\nbar\n") as mock_read,
-            patch("mirage.commands.builtin.slack.grep._stat",
-                  new_callable=AsyncMock,
-                  return_value=FileStat(name="report.txt",
-                                        type=FileType.FILE,
-                                        content=ContentType.TEXT)),
+        patch(
+            "mirage.commands.builtin.slack.grep.search_messages",
+            new_callable=AsyncMock,
+        ) as mock_msgs,
+        patch(
+            "mirage.commands.builtin.slack.grep.search_files",
+            new_callable=AsyncMock,
+        ) as mock_files,
+        patch(
+            "mirage.commands.builtin.slack.grep.resolve_glob",
+            new_callable=AsyncMock,
+            return_value=[blob],
+        ),
+        patch(
+            "mirage.commands.builtin.slack.grep.slack_read",
+            new_callable=AsyncMock,
+            return_value=b"foo line\nbar\n",
+        ) as mock_read,
+        patch(
+            "mirage.commands.builtin.slack.grep._stat",
+            new_callable=AsyncMock,
+            return_value=FileStat(
+                name="report.txt", type=FileType.FILE, content=ContentType.TEXT
+            ),
+        ),
     ):
         from mirage.commands.builtin.slack.grep import grep
-        out, io = await grep(accessor, [
-            PathSpec(vfs_path=mount_key(
-                '/channels/general__C001/2026-04-10/files', ''),
-                     virtual='/channels/general__C001/2026-04-10/files',
-                     directory='/channels/general__C001/2026-04-10/files')
-        ], ['foo'], CommandOpts(index=index, flags={'w': True}))
+
+        out, io = await grep(
+            accessor,
+            [
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/channels/general__C001/2026-04-10/files", ""
+                    ),
+                    virtual="/channels/general__C001/2026-04-10/files",
+                    directory="/channels/general__C001/2026-04-10/files",
+                )
+            ],
+            ["foo"],
+            CommandOpts(index=index, flags={"w": True}),
+        )
     assert mock_msgs.await_count == 0
     assert mock_files.await_count == 0
     assert mock_read.await_count >= 1

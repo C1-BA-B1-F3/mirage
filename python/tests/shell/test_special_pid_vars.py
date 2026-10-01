@@ -22,8 +22,10 @@ def test_dollar_bang_empty_without_background_job(shell):
 
 
 def test_dollar_bang_is_last_background_jobs_managed_pid(shell):
-    out = shell.mirage('sleep 0.05 & p=$!; [ "$p" -gt 0 ] && '
-                       '[ "$p" = "$(jobs -p)" ] && echo bg=pid')
+    out = shell.mirage(
+        'sleep 0.05 & p=$!; [ "$p" -gt 0 ] && '
+        '[ "$p" = "$(jobs -p)" ] && echo bg=pid'
+    )
     assert out == "bg=pid\n"
 
 

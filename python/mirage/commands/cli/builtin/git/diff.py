@@ -18,26 +18,34 @@ from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.changes import head_entries
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.diff_output import (DiffFlags, compare,
-                                                         parse_diff_flags,
-                                                         renames_enabled,
-                                                         render_changes,
-                                                         tree_output)
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    InvalidOptionError,
-                                                    NoMergeBaseError,
-                                                    NoWorkspaceError)
-from mirage.commands.cli.builtin.git.index_file import (read_index,
-                                                        refuse_unresolved)
+from mirage.commands.cli.builtin.git.diff_output import (
+    DiffFlags,
+    compare,
+    parse_diff_flags,
+    renames_enabled,
+    render_changes,
+    tree_output,
+)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    InvalidOptionError,
+    NoMergeBaseError,
+    NoWorkspaceError,
+)
+from mirage.commands.cli.builtin.git.index_file import (
+    read_index,
+    refuse_unresolved,
+)
 from mirage.commands.cli.builtin.git.repo import config_bool
-from mirage.commands.cli.builtin.git.revparse import (merge_bases,
-                                                      range_commits,
-                                                      resolve_commit)
+from mirage.commands.cli.builtin.git.revparse import (
+    merge_bases,
+    range_commits,
+    resolve_commit,
+)
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.summary import tree_entries
 from mirage.commands.cli.builtin.git.types import IndexState
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal)
+from mirage.commands.cli.builtin.git.util import check_operands, escaped, fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -55,8 +63,9 @@ from mirage.io.types import ByteSource, IOResult
 # `log --oneline`, `show`'s header and `branch` ARE byte-identical.
 
 
-def _render(repo: BaseRepo, texts: tuple[str, ...],
-            flags: DiffFlags) -> tuple[bytes, bytes]:
+def _render(
+    repo: BaseRepo, texts: tuple[str, ...], flags: DiffFlags
+) -> tuple[bytes, bytes]:
     """Resolve both sides and render the patch, synchronously.
 
     One revision is compared with HEAD and two with each other.
@@ -89,13 +98,16 @@ def _render(repo: BaseRepo, texts: tuple[str, ...],
                 raise NoMergeBaseError(texts[0])
             old = bases[0]
             if len(bases) > 1:
-                warning = (f"warning: {texts[0]}: multiple merge bases, "
-                           f"using {old.id.decode()}\n").encode()
+                warning = (
+                    f"warning: {texts[0]}: multiple merge bases, "
+                    f"using {old.id.decode()}\n"
+                ).encode()
     return tree_output(repo, old.tree, new.tree, flags), warning
 
 
-def _cached(repo: BaseRepo, texts: tuple[str, ...], state: IndexState,
-            flags: DiffFlags) -> bytes:
+def _cached(
+    repo: BaseRepo, texts: tuple[str, ...], state: IndexState, flags: DiffFlags
+) -> bytes:
     """Compare a commit tree with staged entries.
 
     Args:
@@ -106,16 +118,17 @@ def _cached(repo: BaseRepo, texts: tuple[str, ...], state: IndexState,
     """
     if len(texts) > 1:
         raise GitError("--cached accepts at most one revision")
-    before = tree_entries(
-        repo.object_store,
-        resolve_commit(repo,
-                       texts[0]).tree) if texts else head_entries(repo) or {}
+    before = (
+        tree_entries(repo.object_store, resolve_commit(repo, texts[0]).tree)
+        if texts
+        else head_entries(repo) or {}
+    )
     after: dict[bytes, tuple[int, bytes]] = {
-        path: (entry.mode, entry.sha)
-        for path, entry in state.entries.items()
+        path: (entry.mode, entry.sha) for path, entry in state.entries.items()
     }
-    return render_changes(repo, compare(repo, before, after, flags.renames),
-                          flags)
+    return render_changes(
+        repo, compare(repo, before, after, flags.renames), flags
+    )
 
 
 async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
@@ -144,21 +157,24 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             raise NoWorkspaceError()
         check_operands(texts, InvalidOptionError, escaped(inv.argv))
         repo, _location = await opened(fl, doors)
-        parsed = parse_diff_flags(fl,
-                                  default_renames=await
-                                  renames_enabled(dispatch, _location),
-                                  quote_path_fully=await
-                                  config_bool(dispatch, _location, b"core",
-                                              b"quotepath", True))
+        parsed = parse_diff_flags(
+            fl,
+            default_renames=await renames_enabled(dispatch, _location),
+            quote_path_fully=await config_bool(
+                dispatch, _location, b"core", b"quotepath", True
+            ),
+        )
         if cached:
             state = await read_index(dispatch, _location.gitdir)
             refuse_unresolved(state)
-            body = await asyncio.to_thread(_cached, repo, tuple(texts), state,
-                                           parsed)
+            body = await asyncio.to_thread(
+                _cached, repo, tuple(texts), state, parsed
+            )
             warning = b""
         else:
-            body, warning = await asyncio.to_thread(_render, repo,
-                                                    tuple(texts), parsed)
+            body, warning = await asyncio.to_thread(
+                _render, repo, tuple(texts), parsed
+            )
     except GitError as exc:
         return fatal(exc)
     result = IOResult(stderr=warning) if warning else IOResult()

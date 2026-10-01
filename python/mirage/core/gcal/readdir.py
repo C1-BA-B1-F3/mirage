@@ -17,8 +17,14 @@ from datetime import date, datetime, timedelta, timezone
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.gcal.client import list_calendars, list_events
-from mirage.core.gcal.day import (clamped_hhmm, day_bounds, days_covered,
-                                  event_span, window_bounds, zone)
+from mirage.core.gcal.day import (
+    clamped_hhmm,
+    day_bounds,
+    days_covered,
+    event_span,
+    window_bounds,
+    zone,
+)
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.scope import ROOT
 from mirage.core.render.json import compact_json_bytes
@@ -27,9 +33,13 @@ from mirage.types import JsonValue, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.glob_walk import glob_span
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.vfs.gcal.event_entry import (CALENDAR_FILE, PRIMARY_DIR,
-                                         event_title, make_calendar_dirname,
-                                         make_event_filename)
+from mirage.vfs.gcal.event_entry import (
+    CALENDAR_FILE,
+    PRIMARY_DIR,
+    event_title,
+    make_calendar_dirname,
+    make_event_filename,
+)
 
 CALENDAR_DIR = "gcal/calendar_dir"
 CALENDAR_JSON = "gcal/calendar_json"
@@ -73,7 +83,7 @@ def normalize(path: PathSpec) -> tuple[str, str, str]:
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     raw = path.directory if path.pattern else path.virtual
     if prefix and raw.startswith(prefix):
-        rest = raw[len(prefix):]
+        rest = raw[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             raw = rest or "/"
     key = raw.strip("/")
@@ -82,7 +92,8 @@ def normalize(path: PathSpec) -> tuple[str, str, str]:
 
 
 async def calendar_index(
-        accessor: GCalAccessor) -> dict[str, dict[str, JsonValue]]:
+    accessor: GCalAccessor,
+) -> dict[str, dict[str, JsonValue]]:
     """Map each calendar's directory name to its calendarList entry.
 
     Args:
@@ -91,8 +102,9 @@ async def calendar_index(
     Returns:
         dict[str, dict]: directory name to entry.
     """
-    rows = await list_calendars(accessor.token_manager,
-                                accessor.config.min_access_role)
+    rows = await list_calendars(
+        accessor.token_manager, accessor.config.min_access_role
+    )
     out: dict[str, dict[str, JsonValue]] = {}
     for row in rows:
         cal_id = row.get("id")
@@ -102,13 +114,15 @@ async def calendar_index(
         name = make_calendar_dirname(
             summary if isinstance(summary, str) else cal_id,
             cal_id,
-            primary=bool(row.get("primary")))
+            primary=bool(row.get("primary")),
+        )
         out[name] = row
     return out
 
 
-def bucket_zone(accessor: GCalAccessor,
-                calendars: dict[str, dict[str, JsonValue]]) -> str:
+def bucket_zone(
+    accessor: GCalAccessor, calendars: dict[str, dict[str, JsonValue]]
+) -> str:
     """The one zone every day directory on this mount is bucketed in.
 
     Defaults to the primary calendar's zone, matching how the Calendar UI
@@ -138,8 +152,8 @@ def bucket_zone(accessor: GCalAccessor,
 
 
 def day_span(
-    pattern: str | None, today: date, tz: str,
-    scope: TimeRange = TimeRange()) -> tuple[str | None, str, date, date]:
+    pattern: str | None, today: date, tz: str, scope: TimeRange = TimeRange()
+) -> tuple[str | None, str, date, date]:
     """Resolve a listing's date glob and configured scope.
 
     Args:
@@ -152,25 +166,36 @@ def day_span(
     lo = scope.start
     hi = scope.end
     if span is not None:
-        first, last = day_bounds(span[0].isoformat(), tz)[0], day_bounds(
-            (span[1] - timedelta(days=1)).isoformat(), tz)[1]
-        lo = max(parse_time(first),
-                 lo) if lo is not None else parse_time(first)
+        first, last = (
+            day_bounds(span[0].isoformat(), tz)[0],
+            day_bounds((span[1] - timedelta(days=1)).isoformat(), tz)[1],
+        )
+        lo = (
+            max(parse_time(first), lo) if lo is not None else parse_time(first)
+        )
         hi = min(parse_time(last), hi) if hi is not None else parse_time(last)
     elif hi is None:
         hi = parse_time(window_bounds(today, tz)[1])
-    lower = datetime.fromtimestamp(
-        lo, timezone.utc).isoformat() if lo is not None else None
+    lower = (
+        datetime.fromtimestamp(lo, timezone.utc).isoformat()
+        if lo is not None
+        else None
+    )
     upper = datetime.fromtimestamp(hi, timezone.utc).isoformat()
-    first_day = datetime.fromtimestamp(
-        lo, zone(tz)).date() if lo is not None else date.min
-    last_day = (datetime.fromtimestamp(hi, zone(tz)) -
-                timedelta(microseconds=1)).date()
+    first_day = (
+        datetime.fromtimestamp(lo, zone(tz)).date()
+        if lo is not None
+        else date.min
+    )
+    last_day = (
+        datetime.fromtimestamp(hi, zone(tz)) - timedelta(microseconds=1)
+    ).date()
     return lower, upper, first_day, last_day
 
 
-def scoped_day_bounds(accessor: GCalAccessor, day: str, tz: str,
-                      virtual: str) -> tuple[str, str]:
+def scoped_day_bounds(
+    accessor: GCalAccessor, day: str, tz: str, virtual: str
+) -> tuple[str, str]:
     """Refuse a day wholly outside the configured mount scope.
 
     Args:
@@ -186,8 +211,9 @@ def scoped_day_bounds(accessor: GCalAccessor, day: str, tz: str,
     return lo, hi
 
 
-def event_entries(events: list[dict[str, JsonValue]], day: str, tz: str,
-                  free_busy: bool) -> list[tuple[str, IndexEntry]]:
+def event_entries(
+    events: list[dict[str, JsonValue]], day: str, tz: str, free_busy: bool
+) -> list[tuple[str, IndexEntry]]:
     """Build the index entries for one day directory.
 
     Args:
@@ -208,22 +234,27 @@ def event_entries(events: list[dict[str, JsonValue]], day: str, tz: str,
         if span is None or day not in days_covered(span, tz):
             continue
         summary = event.get("summary")
-        title = event_title(summary if isinstance(summary, str) else None,
-                            free_busy=free_busy)
-        name = make_event_filename(event_id, clamped_hhmm(span, day, tz),
-                                   title)
+        title = event_title(
+            summary if isinstance(summary, str) else None, free_busy=free_busy
+        )
+        name = make_event_filename(
+            event_id, clamped_hhmm(span, day, tz), title
+        )
         updated = event.get("updated")
         payload = compact_json_bytes(event)
         rows.append(
-            (name,
-             IndexEntry(
-                 id=event_id,
-                 name=title,
-                 resource_type=EVENT,
-                 remote_time=updated if isinstance(updated, str) else "",
-                 vfs_name=name,
-                 size=len(payload),
-             )))
+            (
+                name,
+                IndexEntry(
+                    id=event_id,
+                    name=title,
+                    resource_type=EVENT,
+                    remote_time=updated if isinstance(updated, str) else "",
+                    vfs_name=name,
+                    size=len(payload),
+                ),
+            )
+        )
     return rows
 
 
@@ -254,12 +285,18 @@ async def readdir(
     tz = bucket_zone(accessor, calendars)
 
     if match.kind == ROOT:
-        entries = [(name,
-                    IndexEntry(id=str(entry.get("id") or name),
-                               name=name,
-                               resource_type=CALENDAR_DIR,
-                               vfs_name=name))
-                   for name, entry in sorted(calendars.items())]
+        entries = [
+            (
+                name,
+                IndexEntry(
+                    id=str(entry.get("id") or name),
+                    name=name,
+                    resource_type=CALENDAR_DIR,
+                    vfs_name=name,
+                ),
+            )
+            for name, entry in sorted(calendars.items())
+        ]
         await index.set_dir(virtual_key, entries)
         return [f"{prefix}/{name}" for name, _ in entries]
 
@@ -272,15 +309,17 @@ async def readdir(
     free_busy = entry.get("accessRole") == FREE_BUSY_ROLE
 
     if match.kind == "calendar":
-        time_min, time_max, first, last = day_span(path.pattern,
-                                                   accessor.today(tz), tz,
-                                                   accessor.time_range)
-        events = await list_events(accessor.token_manager,
-                                   cal_id,
-                                   time_min,
-                                   time_max,
-                                   tz,
-                                   scope=accessor.time_range)
+        time_min, time_max, first, last = day_span(
+            path.pattern, accessor.today(tz), tz, accessor.time_range
+        )
+        events = await list_events(
+            accessor.token_manager,
+            cal_id,
+            time_min,
+            time_max,
+            tz,
+            scope=accessor.time_range,
+        )
         seen: set[str] = set()
         for event in events:
             span = event_span(event, tz)
@@ -290,19 +329,29 @@ async def readdir(
                 if first.isoformat() <= day <= last.isoformat():
                     seen.add(day)
         rows: list[tuple[str, IndexEntry]] = [
-            (CALENDAR_FILE,
-             IndexEntry(id=f"{cal_id}:calendar",
-                        name=CALENDAR_FILE,
-                        resource_type=CALENDAR_JSON,
-                        vfs_name=CALENDAR_FILE,
-                        size=len(calendar_payload(entry, tz))))
+            (
+                CALENDAR_FILE,
+                IndexEntry(
+                    id=f"{cal_id}:calendar",
+                    name=CALENDAR_FILE,
+                    resource_type=CALENDAR_JSON,
+                    vfs_name=CALENDAR_FILE,
+                    size=len(calendar_payload(entry, tz)),
+                ),
+            )
         ]
         for day in sorted(seen):
-            rows.append((day,
-                         IndexEntry(id=f"{cal_id}:{day}",
-                                    name=day,
-                                    resource_type=DAY_DIR,
-                                    vfs_name=day)))
+            rows.append(
+                (
+                    day,
+                    IndexEntry(
+                        id=f"{cal_id}:{day}",
+                        name=day,
+                        resource_type=DAY_DIR,
+                        vfs_name=day,
+                    ),
+                )
+            )
         if path.pattern:
             # A globbed listing is a filtered view, not the directory: caching
             # it as the directory would pin a short listing until it expires.
@@ -314,12 +363,14 @@ async def readdir(
 
     day = match.slots["day"]
     time_min, time_max = scoped_day_bounds(accessor, day, tz, path.virtual)
-    events = await list_events(accessor.token_manager,
-                               cal_id,
-                               time_min,
-                               time_max,
-                               tz,
-                               scope=accessor.time_range)
+    events = await list_events(
+        accessor.token_manager,
+        cal_id,
+        time_min,
+        time_max,
+        tz,
+        scope=accessor.time_range,
+    )
     rows = event_entries(events, day, tz, free_busy)
     await index.set_dir(virtual_key, rows)
     return [f"{prefix}/{key}/{name}" for name, _ in rows]

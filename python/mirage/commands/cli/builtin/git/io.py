@@ -36,8 +36,9 @@ async def read_file(dispatch: DispatchFn, path: str) -> bytes:
     return data if isinstance(data, bytes) else bytes(data)
 
 
-async def entry_bytes(dispatch: DispatchFn, path: str,
-                      info: FileStat) -> bytes:
+async def entry_bytes(
+    dispatch: DispatchFn, path: str, info: FileStat
+) -> bytes:
     """The bytes git stores for one working-tree entry.
 
     A symlink's blob is its target string, not what the target holds, so
@@ -59,11 +60,13 @@ async def entry_bytes(dispatch: DispatchFn, path: str,
     return await read_file(dispatch, path)
 
 
-async def restore_entry(dispatch: DispatchFn,
-                        path: str,
-                        mode: int,
-                        blob: bytes,
-                        links: LinkView | None = None) -> None:
+async def restore_entry(
+    dispatch: DispatchFn,
+    path: str,
+    mode: int,
+    blob: bytes,
+    links: LinkView | None = None,
+) -> None:
     """Materialize one tree entry into the working tree.
 
     A 120000 entry is a symlink whose blob is the target string, so it
@@ -108,20 +111,26 @@ async def restore_entry(dispatch: DispatchFn,
         # symlink(2) needs the directory above the entry, as the write
         # below does, so a link alone in a new directory gets one too.
         await ensure_dir(dispatch, posixpath.dirname(path))
-        await dispatch("symlink",
-                       PathSpec.from_str_path(path),
-                       target=blob.decode("utf-8", errors="replace"))
+        await dispatch(
+            "symlink",
+            PathSpec.from_str_path(path),
+            target=blob.decode("utf-8", errors="replace"),
+        )
         return
     if linked:
         await remove_file(dispatch, path)
     await write_file(dispatch, path, blob)
-    await dispatch("setattr",
-                   PathSpec.from_str_path(path),
-                   mode=mode & PERMISSION_BITS)
+    await dispatch(
+        "setattr", PathSpec.from_str_path(path), mode=mode & PERMISSION_BITS
+    )
 
 
-async def keep_gitlink(dispatch: DispatchFn, stat_path: StatPath, path: str,
-                       links: LinkView | None) -> None:
+async def keep_gitlink(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    path: str,
+    links: LinkView | None,
+) -> None:
     """Leave a submodule's working tree alone, but make sure it has one.
 
     A 160000 entry names a commit in another repository, which this one
@@ -151,8 +160,13 @@ async def keep_gitlink(dispatch: DispatchFn, stat_path: StatPath, path: str,
     await ensure_dir(dispatch, path)
 
 
-async def drop_gitlink(dispatch: DispatchFn, stat_path: StatPath, path: str,
-                       name: str, links: LinkView | None) -> str | None:
+async def drop_gitlink(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    path: str,
+    name: str,
+    links: LinkView | None,
+) -> str | None:
     """Take a submodule's directory away, or say why it stays.
 
     The other direction of ``keep_gitlink``, and it is not an unlink:
@@ -193,8 +207,9 @@ async def drop_gitlink(dispatch: DispatchFn, stat_path: StatPath, path: str,
     return None
 
 
-async def read_range(dispatch: DispatchFn, path: str, offset: int,
-                     size: int) -> bytes:
+async def read_range(
+    dispatch: DispatchFn, path: str, offset: int, size: int
+) -> bytes:
     """Read a byte range of one virtual path.
 
     Args:
@@ -203,10 +218,9 @@ async def read_range(dispatch: DispatchFn, path: str, offset: int,
         offset (int): first byte to read.
         size (int): how many bytes to read.
     """
-    data, _ = await dispatch("read",
-                             PathSpec.from_str_path(path),
-                             offset=offset,
-                             size=size)
+    data, _ = await dispatch(
+        "read", PathSpec.from_str_path(path), offset=offset, size=size
+    )
     return data if isinstance(data, bytes) else bytes(data)
 
 
@@ -328,8 +342,9 @@ async def write_once(dispatch: DispatchFn, path: str, data: bytes) -> None:
     await write_file(dispatch, path, data)
 
 
-async def blocking_ancestor(stat_path: StatPath, worktree: str, name: str,
-                            links: LinkView | None) -> str | None:
+async def blocking_ancestor(
+    stat_path: StatPath, worktree: str, name: str, links: LinkView | None
+) -> str | None:
     """The nearest component above an entry that is not a directory.
 
     An entry's path is only a way through the working tree while every
@@ -402,9 +417,11 @@ async def rename_path(dispatch: DispatchFn, source: str, target: str) -> None:
         source (str): absolute virtual path to move.
         target (str): absolute virtual path to move it to.
     """
-    await dispatch("rename",
-                   PathSpec.from_str_path(source),
-                   dst=PathSpec.from_str_path(target))
+    await dispatch(
+        "rename",
+        PathSpec.from_str_path(source),
+        dst=PathSpec.from_str_path(target),
+    )
 
 
 def refuse_mount(mounts: MountView | None, path: str) -> None:
@@ -439,9 +456,13 @@ def refuse_mount(mounts: MountView | None, path: str) -> None:
     raise MountInWayError(path, named[0] if named else None)
 
 
-async def refuse_replaced_mounts(stat_path: StatPath, worktree: str,
-                                 names: list[str], links: LinkView | None,
-                                 mounts: MountView | None) -> None:
+async def refuse_replaced_mounts(
+    stat_path: StatPath,
+    worktree: str,
+    names: list[str],
+    links: LinkView | None,
+    mounts: MountView | None,
+) -> None:
     """Ask of every destination first what the write loop would meet later.
 
     ``remove_tree`` refuses a directory holding a mount, but the loop
@@ -474,8 +495,12 @@ async def refuse_replaced_mounts(stat_path: StatPath, worktree: str,
             refuse_mount(mounts, where)
 
 
-async def remove_tree(dispatch: DispatchFn, path: str, links: LinkView | None,
-                      mounts: MountView | None) -> None:
+async def remove_tree(
+    dispatch: DispatchFn,
+    path: str,
+    links: LinkView | None,
+    mounts: MountView | None,
+) -> None:
     """Delete a path and everything under it, tracked or not.
 
     git replaces a tree entry rather than merging with it, so a
@@ -533,8 +558,9 @@ async def remove_tree(dispatch: DispatchFn, path: str, links: LinkView | None,
         await remove_file(dispatch, path)
 
 
-async def remove_empty_parents(dispatch: DispatchFn, path: str, stop: str,
-                               mounts: MountView | None) -> None:
+async def remove_empty_parents(
+    dispatch: DispatchFn, path: str, stop: str, mounts: MountView | None
+) -> None:
     """Drop the directories a deletion left empty, up to a root.
 
     git removes a directory the moment its last tracked file is deleted

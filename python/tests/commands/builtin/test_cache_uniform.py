@@ -31,7 +31,6 @@ _PAYLOAD = b"alpha\nbeta\n"
 
 
 class _CountingReader:
-
     def __init__(self, data: bytes) -> None:
         self.data = data
         self.calls = 0
@@ -42,9 +41,11 @@ class _CountingReader:
 
 
 def _spec() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/s3/a.txt", "/s3/"),
-                    virtual="/s3/a.txt",
-                    directory="/s3/")
+    return PathSpec(
+        vfs_path=mount_key("/s3/a.txt", "/s3/"),
+        virtual="/s3/a.txt",
+        directory="/s3/",
+    )
 
 
 async def _warm_manager() -> CacheManager:
@@ -54,10 +55,12 @@ async def _warm_manager() -> CacheManager:
 
 
 async def _stat(path) -> FileStat:
-    return FileStat(name="a.txt",
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    size=len(_PAYLOAD))
+    return FileStat(
+        name="a.txt",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        size=len(_PAYLOAD),
+    )
 
 
 async def _readdir(path) -> list[str]:
@@ -123,12 +126,15 @@ async def test_generic_grep_serves_cache_without_backend():
     manager = await _warm_manager()
     prev = push_cache_manager(manager)
     try:
-        out, io = await generic_grep([_spec()], ("alpha", ),
-                                     CommandOpts(),
-                                     readdir=_readdir,
-                                     stat=_stat,
-                                     read_bytes=reader,
-                                     read_stream=None)
+        out, io = await generic_grep(
+            [_spec()],
+            ("alpha",),
+            CommandOpts(),
+            readdir=_readdir,
+            stat=_stat,
+            read_bytes=reader,
+            read_stream=None,
+        )
     finally:
         push_cache_manager(prev)
     assert b"alpha" in await materialize(out)
@@ -141,12 +147,15 @@ async def test_generic_rg_serves_cache_without_backend():
     manager = await _warm_manager()
     prev = push_cache_manager(manager)
     try:
-        out, io = await generic_rg([_spec()], ("alpha", ),
-                                   CommandOpts(),
-                                   readdir=_readdir,
-                                   stat=_stat,
-                                   read_bytes=reader,
-                                   read_stream=None)
+        out, io = await generic_rg(
+            [_spec()],
+            ("alpha",),
+            CommandOpts(),
+            readdir=_readdir,
+            stat=_stat,
+            read_bytes=reader,
+            read_stream=None,
+        )
     finally:
         push_cache_manager(prev)
     assert b"alpha" in await materialize(out)
@@ -156,12 +165,15 @@ async def test_generic_rg_serves_cache_without_backend():
 @pytest.mark.asyncio
 async def test_generic_grep_awaits_byte_reader_before_returning():
     reader = _CountingReader(_PAYLOAD)
-    out, io = await generic_grep([_spec()], ("alpha", ),
-                                 CommandOpts(),
-                                 readdir=_readdir,
-                                 stat=_stat,
-                                 read_bytes=reader,
-                                 read_stream=None)
+    out, io = await generic_grep(
+        [_spec()],
+        ("alpha",),
+        CommandOpts(),
+        readdir=_readdir,
+        stat=_stat,
+        read_bytes=reader,
+        read_stream=None,
+    )
     assert reader.calls == 1
     assert await materialize(out) == b"alpha\n"
     assert io.exit_code == 0

@@ -66,19 +66,21 @@ async def search_code(
     q = f"{query} repo:{owner}/{repo}"
     if path_filter:
         q += f" path:{path_filter}"
-    data = await github_get(config.token,
-                            "/search/code",
-                            params={
-                                "q": q,
-                                "per_page": str(SEARCH_PAGE_SIZE)
-                            },
-                            base_url=config.base_url,
-                            session=session)
+    data = await github_get(
+        config.token,
+        "/search/code",
+        params={"q": q, "per_page": str(SEARCH_PAGE_SIZE)},
+        base_url=config.base_url,
+        session=session,
+    )
     items = data.get("items") or []
     total = data.get("total_count")
-    complete = (data.get("incomplete_results") is False
-                and isinstance(total, int) and not isinstance(total, bool)
-                and total <= len(items))
+    complete = (
+        data.get("incomplete_results") is False
+        and isinstance(total, int)
+        and not isinstance(total, bool)
+        and total <= len(items)
+    )
     want = f"{owner}/{repo}".lower()
     results = []
     for item in items:
@@ -132,36 +134,45 @@ async def narrow_paths(
         except Exception as exc:
             logger.warning(
                 "github code search failed (%s); "
-                "falling back to per-file scan", exc)
+                "falling back to per-file scan",
+                exc,
+            )
             return None
         if truncated:
             return None
         scope_prefix = path_filter + "/" if path_filter else ""
         hits = [
-            r.path for r in results
+            r.path
+            for r in results
             if r.path == path_filter or r.path.startswith(scope_prefix)
         ]
         seen = set(hits)
         narrowed.extend(hits)
-        narrowed.extend(k for k in unsearchable_keys(accessor.tree, key)
-                        if k not in seen)
+        narrowed.extend(
+            k for k in unsearchable_keys(accessor.tree, key) if k not in seen
+        )
     out: list[PathSpec] = []
     for n in narrowed:
         virtual = mount_prefix + "/" + n.lstrip("/")
         out.append(
-            PathSpec(virtual=virtual,
-                     directory="",
-                     vfs_path=mount_key(virtual, mount_prefix),
-                     resolved=True))
+            PathSpec(
+                virtual=virtual,
+                directory="",
+                vfs_path=mount_key(virtual, mount_prefix),
+                resolved=True,
+            )
+        )
     return out
 
 
-async def search(config: GhConfig,
-                 kind: str,
-                 query: str,
-                 limit: int,
-                 sort: str | None = None,
-                 order: str | None = None) -> list[JsonValue]:
+async def search(
+    config: GhConfig,
+    kind: str,
+    query: str,
+    limit: int,
+    sort: str | None = None,
+    order: str | None = None,
+) -> list[JsonValue]:
     """Fetch a bounded REST search, following the server's pagination.
 
     Args:
@@ -188,15 +199,16 @@ async def search(config: GhConfig,
             params=params,
             base_url=config.base_url,
             headers={
-                "Accept":
-                "application/vnd.github.text-match+json"
-                if kind == "code" else "application/vnd.github.v3+json"
-            })
+                "Accept": "application/vnd.github.text-match+json"
+                if kind == "code"
+                else "application/vnd.github.v3+json"
+            },
+        )
         body = response.data
         items = body.get("items", []) if isinstance(body, dict) else []
         if not isinstance(items, list):
             raise ValueError("invalid search response: items must be an array")
-        rows.extend(items[:limit - len(rows)])
+        rows.extend(items[: limit - len(rows)])
         if not items or 'rel="next"' not in response.headers.get("link", ""):
             break
         page += 1

@@ -23,13 +23,17 @@ from mirage.vfs.ram import RAMVFS
 ROLE = {
     "commands": {
         "allow": [
-            "ls", "rm", "printf", "xargs", "sleep", "wait", "eval", "shopt",
-            "alias"
+            "ls",
+            "rm",
+            "printf",
+            "xargs",
+            "sleep",
+            "wait",
+            "eval",
+            "shopt",
+            "alias",
         ],
-        "ask": [{
-            "reason": "deletes are reviewed",
-            "commands": ["rm"]
-        }],
+        "ask": [{"reason": "deletes are reviewed", "commands": ["rm"]}],
     },
 }
 
@@ -55,10 +59,12 @@ async def run(ws: Workspace, line: str) -> None:
 
 
 async def main() -> None:
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles={"agent": ROLE},
-                   on_ask=reviewer)
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles={"agent": ROLE},
+        on_ask=reviewer,
+    )
     ws.create_session("agent", profile="agent")
     try:
         await run(ws, "rm /data/a.txt")

@@ -12,13 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.script.bash import (handle_bash,
-                                                            parse_bash_args)
+from mirage.workspace.executor.builtins.script.bash import (
+    handle_bash,
+    parse_bash_args,
+)
 from mirage.workspace.executor.builtins.script.exec_path import (
-    handle_exec_path, shebang_words)
-from mirage.workspace.executor.builtins.script.script import (read_script_file,
-                                                              read_script_text,
-                                                              script_error)
+    handle_exec_path,
+    shebang_words,
+)
+from mirage.workspace.executor.builtins.script.script import (
+    read_script_file,
+    read_script_text,
+    script_error,
+)
 from mirage.workspace.executor.builtins.script.source import handle_source
 from mirage.workspace.executor.builtins.script.types import BashArgs
 

@@ -20,13 +20,14 @@ CHUNK_SIZE = 16 * 1024
 
 
 async def chunks(
-        source: bytes | AsyncIterator[bytes]) -> AsyncGenerator[bytes, None]:
+    source: bytes | AsyncIterator[bytes],
+) -> AsyncGenerator[bytes, None]:
     """Split even a single RAM/cache blob; close producers on cancellation."""
     budget = YieldBudget()
     if isinstance(source, bytes):
         for offset in range(0, len(source), CHUNK_SIZE):
             await budget.run()
-            yield source[offset:offset + CHUNK_SIZE]
+            yield source[offset : offset + CHUNK_SIZE]
         return
     try:
         async for data in source:
@@ -36,10 +37,11 @@ async def chunks(
             await budget.run()
             for offset in range(0, len(data), CHUNK_SIZE):
                 await budget.run()
-                yield data[offset:offset + CHUNK_SIZE]
+                yield data[offset : offset + CHUNK_SIZE]
     except BaseException as exc:
         if isinstance(source, CachableAsyncIterator) and not isinstance(
-                exc, GeneratorExit):
+            exc, GeneratorExit
+        ):
             await source.discard()
         close = getattr(source, "aclose", None)
         if close is not None:

@@ -1,5 +1,9 @@
-from mirage.shell.constants import (BUILTIN_GROUP, GRAMMAR_BUILTINS,
-                                    GROUP_TIER, TOOL_BUILTINS)
+from mirage.shell.constants import (
+    BUILTIN_GROUP,
+    GRAMMAR_BUILTINS,
+    GROUP_TIER,
+    TOOL_BUILTINS,
+)
 from mirage.shell.types import BuiltinGroup, BuiltinTier, ShellBuiltin
 
 

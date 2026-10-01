@@ -25,5 +25,6 @@ __all__ = ["TrelloConfig", "TrelloVFS"]
 def __getattr__(name: str) -> "type[TrelloVFS]":
     if name == "TrelloVFS":
         from mirage.vfs.trello.trello import TrelloVFS
+
         return TrelloVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

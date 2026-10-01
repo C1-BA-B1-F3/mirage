@@ -106,7 +106,8 @@ def test_quote_text_agrees_with_quote_word_per_byte(byte):
     """
     raw = bytes([byte])
     assert quote_text(raw.decode("utf-8", "surrogateescape")) == quote_word(
-        raw.decode("latin-1"))
+        raw.decode("latin-1")
+    )
 
 
 def test_quote_word_pads_octal_to_three_digits():

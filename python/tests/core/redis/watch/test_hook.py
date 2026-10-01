@@ -34,8 +34,9 @@ def test_set_maps_to_an_update_on_the_virtual_path():
 
 def test_deletions_map_to_delete():
     for verb in ("del", "unlink", "expired", "evicted", "rename_from"):
-        assert _map(verb,
-                    "wt:file:/day/a.txt")[0].kind is FileChangeKind.DELETE
+        assert (
+            _map(verb, "wt:file:/day/a.txt")[0].kind is FileChangeKind.DELETE
+        )
 
 
 def test_rename_to_maps_to_an_update_on_the_new_key():
@@ -82,7 +83,8 @@ async def test_a_real_keyspace_notification_refreshes_the_listing():
     ws = Workspace({"/r": (watched, MountMode.WRITE)}, mode=MountMode.WRITE)
     other = Workspace(
         {"/r": (RedisVFS(url=REDIS_URL, key_prefix=prefix), MountMode.WRITE)},
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     try:
         await ws.shell("mkdir -p /r/day")
         await ws.shell("sh -c 'echo one > /r/day/a.txt'")
@@ -94,8 +96,9 @@ async def test_a_real_keyspace_notification_refreshes_the_listing():
 
         # Exactly what a `__keyevent@N__:set` subscriber would forward.
         hook = RedisEventHook(watched.accessor)
-        for change in await hook.to_events(_root(), "set",
-                                           f"{prefix}file:/day/b.txt"):
+        for change in await hook.to_events(
+            _root(), "set", f"{prefix}file:/day/b.txt"
+        ):
             await ws.notify(change)
 
         assert "b.txt" in await (await ws.shell("ls /r/day")).stdout_str()

@@ -16,8 +16,12 @@ import pytest
 from dulwich import porcelain
 
 from mirage.commands.cli.builtin.git import GIT
-from tests.commands.cli.builtin.git.conftest import (AUTHOR, commit_merge,
-                                                     make_branch, mounted)
+from tests.commands.cli.builtin.git.conftest import (
+    AUTHOR,
+    commit_merge,
+    make_branch,
+    mounted,
+)
 
 
 @pytest.mark.asyncio
@@ -185,10 +189,9 @@ async def test_no_ext_diff_is_accepted_and_changes_nothing(git_ws):
 async def test_stat_reports_a_binary_file_in_bytes(git_ws, repo_path):
     (repo_path / "blob.bin").write_bytes(b"\x00\x01\x02data")
     porcelain.add(str(repo_path), paths=[str(repo_path / "blob.bin")])
-    porcelain.commit(str(repo_path),
-                     message=b"binary",
-                     author=AUTHOR,
-                     committer=AUTHOR)
+    porcelain.commit(
+        str(repo_path), message=b"binary", author=AUTHOR, committer=AUTHOR
+    )
     result = await git_ws.shell("git -C /repo show --stat HEAD")
     text = result.stdout.decode()
     assert " blob.bin | Bin 0 -> 7 bytes" in text

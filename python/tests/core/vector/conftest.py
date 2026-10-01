@@ -35,17 +35,19 @@ ROWS = [
 
 
 class StubAccessor(Accessor):
-
     def __init__(self, pinned: str | None = None) -> None:
         self.pinned = pinned
         self.reads = 0
 
 
 def _detect(accessor):
-    leaves = [("row_text", Codec(suffix=".txt"), ContentType.TEXT),
-              blob_leaf("png")]
+    leaves = [
+        ("row_text", Codec(suffix=".txt"), ContentType.TEXT),
+        blob_leaf("png"),
+    ]
     return make_detect_scope(
-        row_scopes(accessor.pinned is not None, [PATH_SAFE], leaves))
+        row_scopes(accessor.pinned is not None, [PATH_SAFE], leaves)
+    )
 
 
 async def _list_tables(accessor):
@@ -59,14 +61,22 @@ async def _table_exists(accessor, name):
 async def _children(accessor, match):
     label = filters_of(["label"], match).get("label")
     if label is None:
-        return [(row["label"], dir_entry("stub", row["label"]))
-                for row in ROWS]
-    return [(f"{row['id']}.txt",
-             IndexEntry(id=row["id"],
-                        name=f"{row['id']}.txt",
-                        resource_type="stub/row_text",
-                        vfs_name=f"{row['id']}.txt")) for row in ROWS
-            if row["label"] == label]
+        return [
+            (row["label"], dir_entry("stub", row["label"])) for row in ROWS
+        ]
+    return [
+        (
+            f"{row['id']}.txt",
+            IndexEntry(
+                id=row["id"],
+                name=f"{row['id']}.txt",
+                resource_type="stub/row_text",
+                vfs_name=f"{row['id']}.txt",
+            ),
+        )
+        for row in ROWS
+        if row["label"] == label
+    ]
 
 
 async def _read_text(accessor, match, path, index):
@@ -95,21 +105,20 @@ def _hit(accessor, row):
 
 
 def stub_tree(rank_key: str = "_score", drops=operator.lt) -> VectorTree:
-    return VectorTree(vfs="stub",
-                      detect=per_accessor(_detect),
-                      pinned=_pinned,
-                      search_limit=_search_limit,
-                      list_tables=_list_tables,
-                      table_exists=_table_exists,
-                      children=_children,
-                      readers={
-                          "row_text": _read_text,
-                          "row_blob": _read_blob
-                      },
-                      search_rows=_search_rows,
-                      rank_key=rank_key,
-                      drops=drops,
-                      hit=_hit)
+    return VectorTree(
+        vfs="stub",
+        detect=per_accessor(_detect),
+        pinned=_pinned,
+        search_limit=_search_limit,
+        list_tables=_list_tables,
+        table_exists=_table_exists,
+        children=_children,
+        readers={"row_text": _read_text, "row_blob": _read_blob},
+        search_rows=_search_rows,
+        rank_key=rank_key,
+        drops=drops,
+        hit=_hit,
+    )
 
 
 @pytest.fixture

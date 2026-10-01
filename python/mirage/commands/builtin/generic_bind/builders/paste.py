@@ -14,9 +14,12 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.paste import paste as generic_paste
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -24,18 +27,23 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def paste(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def paste(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["paste"])
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
-    return await generic_paste(paths,
-                               read_bytes=bound_op(ops.read_bytes, accessor,
-                                                   opts.index),
-                               stdin=opts.stdin,
-                               delimiters=fl.as_str("delimiters") or "\t",
-                               serial=fl.as_bool("serial"),
-                               zero_terminated=fl.as_bool("zero_terminated"))
+    return await generic_paste(
+        paths,
+        read_bytes=bound_op(ops.read_bytes, accessor, opts.index),
+        stdin=opts.stdin,
+        delimiters=fl.as_str("delimiters") or "\t",
+        serial=fl.as_bool("serial"),
+        zero_terminated=fl.as_bool("zero_terminated"),
+    )
 
 
-BUILDER = Builder('paste', paste, read=True)
+BUILDER = Builder("paste", paste, read=True)

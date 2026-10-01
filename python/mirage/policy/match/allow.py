@@ -49,7 +49,7 @@ def head_visible(name: str, rules: AdmissionRules | None) -> bool:
         name (str): the command name.
         rules (AdmissionRules | None): the session's admission rules.
     """
-    return node_visible((name, ), rules)
+    return node_visible((name,), rules)
 
 
 def line_tokens(ctx: CommandContext) -> tuple[str, ...]:

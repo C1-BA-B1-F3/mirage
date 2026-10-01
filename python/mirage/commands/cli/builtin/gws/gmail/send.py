@@ -24,14 +24,17 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def send(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
-        result = await send_message(tm,
-                                    fl.as_str("to") or "",
-                                    fl.as_str("subject") or "",
-                                    fl.as_str("body") or "")
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+        result = await send_message(
+            tm,
+            fl.as_str("to") or "",
+            fl.as_str("subject") or "",
+            fl.as_str("body") or "",
+        )
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

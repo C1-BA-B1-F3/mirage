@@ -1,8 +1,11 @@
 import pytest
 
 from mirage import RAMVFS, MountMode, Workspace
-from mirage.agents.file_version import (FileVersionTracker,
-                                        StaleMirageFileError, fingerprint)
+from mirage.agents.file_version import (
+    FileVersionTracker,
+    StaleMirageFileError,
+    fingerprint,
+)
 from mirage.agents.tool_operations import MirageToolOperations
 
 
@@ -34,7 +37,6 @@ class _RenderingOps:
 
 
 class _RenderingWorkspace:
-
     def __init__(self, ws):
         self.vfs = _RenderingOps(ws.vfs)
         self.namespace = ws.namespace

@@ -21,8 +21,9 @@ from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.unlink import make_unlink
 
 
-async def _delete(accessor: GDocsAccessor, match: ScopeMatch,
-                  entry: IndexEntry) -> None:
+async def _delete(
+    accessor: GDocsAccessor, match: ScopeMatch, entry: IndexEntry
+) -> None:
     await delete_file(accessor.token_manager, entry.id)
 
 

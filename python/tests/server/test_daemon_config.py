@@ -14,9 +14,12 @@
 
 import pytest
 
-from mirage.server.daemon_config import (ALLOWED_KEYS, DaemonConfigError,
-                                         read_daemon_table,
-                                         validate_daemon_table)
+from mirage.server.daemon_config import (
+    ALLOWED_KEYS,
+    DaemonConfigError,
+    read_daemon_table,
+    validate_daemon_table,
+)
 
 
 def test_read_daemon_table_missing_file(tmp_path):
@@ -29,8 +32,9 @@ def test_read_daemon_table_no_daemon_section(tmp_path):
 
 
 def test_read_daemon_table_reads_keys(tmp_path):
-    (tmp_path / "config.toml"
-     ).write_text('[daemon]\nurl = "http://h:1"\nsocket = "/tmp/s.sock"\n')
+    (tmp_path / "config.toml").write_text(
+        '[daemon]\nurl = "http://h:1"\nsocket = "/tmp/s.sock"\n'
+    )
     table = read_daemon_table(tmp_path)
     assert table["url"] == "http://h:1"
     assert table["socket"] == "/tmp/s.sock"

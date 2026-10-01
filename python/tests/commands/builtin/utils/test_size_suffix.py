@@ -14,8 +14,10 @@
 
 import pytest
 
-from mirage.commands.builtin.utils.size_suffix import (parse_base0,
-                                                       size_suffixes)
+from mirage.commands.builtin.utils.size_suffix import (
+    parse_base0,
+    size_suffixes,
+)
 
 
 def test_letter_is_binary_power():

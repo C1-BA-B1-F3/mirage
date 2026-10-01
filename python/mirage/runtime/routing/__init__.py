@@ -12,16 +12,28 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.runtime.routing.decide import (decide_line, evaluate_policy,
-                                           evaluate_script, evaluator_of,
-                                           parse_verdict, runtime_for_language)
+from mirage.runtime.routing.decide import (
+    decide_line,
+    evaluate_policy,
+    evaluate_script,
+    evaluator_of,
+    parse_verdict,
+    runtime_for_language,
+)
 from mirage.runtime.routing.errors import RouteDeny, RouteError
 from mirage.runtime.routing.facts import command_nodes, parsed_commands
-from mirage.runtime.routing.types import (DenyResult, ParsedCommand,
-                                          RouteContext, RouteDecision,
-                                          RouteOutcome, RoutePolicy,
-                                          RouteResult, RouteScript,
-                                          RouteVerdict, ScriptSource)
+from mirage.runtime.routing.types import (
+    DenyResult,
+    ParsedCommand,
+    RouteContext,
+    RouteDecision,
+    RouteOutcome,
+    RoutePolicy,
+    RouteResult,
+    RouteScript,
+    RouteVerdict,
+    ScriptSource,
+)
 
 __all__ = [
     "ParsedCommand",

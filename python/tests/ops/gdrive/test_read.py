@@ -32,9 +32,11 @@ read = _op("read")
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -49,18 +51,25 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_downloads_plain_file(accessor, index):
-    await index.set_dir('/docs', [('readme.txt',
-                                   IndexEntry(
-                                       id="file123",
-                                       name="readme",
-                                       resource_type="gdrive/file",
-                                       remote_time="2026-04-01T00:00:00Z",
-                                       vfs_name="readme.txt",
-                                   ))])
+    await index.set_dir(
+        "/docs",
+        [
+            (
+                "readme.txt",
+                IndexEntry(
+                    id="file123",
+                    name="readme",
+                    resource_type="gdrive/file",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="readme.txt",
+                ),
+            )
+        ],
+    )
     with patch(
-            "mirage.core.gdrive.read.download_file",
-            new_callable=AsyncMock,
-            return_value=b"file content",
+        "mirage.core.gdrive.read.download_file",
+        new_callable=AsyncMock,
+        return_value=b"file content",
     ) as mock:
         result = await read(accessor, _scope("/docs/readme.txt"), index=index)
         mock.assert_called_once_with(accessor.token_manager, "file123", None)

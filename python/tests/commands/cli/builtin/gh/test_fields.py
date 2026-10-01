@@ -14,9 +14,12 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.gh.fields import (SHARED_FIELDS,
-                                                   exported_node, read_rest,
-                                                   selection)
+from mirage.commands.cli.builtin.gh.fields import (
+    SHARED_FIELDS,
+    exported_node,
+    read_rest,
+    selection,
+)
 
 TABLE = dict(SHARED_FIELDS)
 
@@ -24,26 +27,26 @@ TABLE = dict(SHARED_FIELDS)
 def _comments(bodies, following):
     return {
         "comments": {
-            "nodes": [{
-                "body": body
-            } for body in bodies],
+            "nodes": [{"body": body} for body in bodies],
             "pageInfo": {
                 "hasNextPage": following is not None,
-                "endCursor": following
+                "endCursor": following,
             },
         }
     }
 
 
 def test_each_field_is_asked_for_once_in_the_order_named():
-    assert selection(TABLE, ["title", "number", "title"],
-                     False) == "title,number"
+    assert (
+        selection(TABLE, ["title", "number", "title"], False) == "title,number"
+    )
 
 
 def test_a_view_leaves_out_what_it_reads_apart():
     assert selection(TABLE, ["title", "projectItems"], True) == "title"
-    assert selection(TABLE, ["title", "projectItems"],
-                     False).startswith("title,projectItems(first:100)")
+    assert selection(TABLE, ["title", "projectItems"], False).startswith(
+        "title,projectItems(first:100)"
+    )
 
 
 @pytest.mark.asyncio
@@ -81,36 +84,28 @@ async def test_project_items_are_read_apart_and_none_without_the_scope():
         assert select.startswith("projectItems(first: 100)")
         return {
             "projectItems": {
-                "nodes": [{
-                    "project": {
-                        "title": "Roadmap"
-                    },
-                    "status": {
-                        "optionId": "o1",
-                        "name": "Todo"
+                "nodes": [
+                    {
+                        "project": {"title": "Roadmap"},
+                        "status": {"optionId": "o1", "name": "Todo"},
                     }
-                }],
-                "pageInfo": {
-                    "hasNextPage": False,
-                    "endCursor": None
-                },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
             }
         }
 
     node = await read_rest(TABLE, {}, ["projectItems"], items)
     assert exported_node(TABLE, node, ["projectItems"]) == {
-        "projectItems": [{
-            "status": {
-                "optionId": "o1",
-                "name": "Todo"
-            },
-            "title": "Roadmap"
-        }]
+        "projectItems": [
+            {"status": {"optionId": "o1", "name": "Todo"}, "title": "Roadmap"}
+        ]
     }
 
     async def unscoped(select, cursor):
-        raise ValueError("GraphQL: The 'id' field requires one of the "
-                         "following scopes: ['read:project'], but")
+        raise ValueError(
+            "GraphQL: The 'id' field requires one of the "
+            "following scopes: ['read:project'], but"
+        )
 
     none = await read_rest(TABLE, {}, ["projectItems"], unscoped)
     assert exported_node(TABLE, none, ["projectItems"]) == {"projectItems": []}

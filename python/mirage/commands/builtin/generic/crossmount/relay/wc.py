@@ -14,12 +14,22 @@
 
 import logging
 
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
-                                                              RunSingle)
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    CrossResult,
+    RunSingle,
+)
 from mirage.commands.builtin.generic.crossmount.utils import (
-    merge_operand_ios, relay, run_operands)
-from mirage.commands.builtin.generic.wc import (WCCounts, format_count_rows,
-                                                number_width, parse_flags)
+    merge_operand_ios,
+    relay,
+    run_operands,
+)
+from mirage.commands.builtin.generic.wc import (
+    WCCounts,
+    format_count_rows,
+    number_width,
+    parse_flags,
+)
 from mirage.commands.builtin.utils.stream import is_stdin
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.types import FlagValue
@@ -50,8 +60,9 @@ def parse_row(line: str, columns: list[str]) -> tuple[WCCounts, str | None]:
     return WCCounts(**values), rest or None
 
 
-async def operand_size(dispatch: DispatchFn, path: PathSpec,
-                       counts: list[int]) -> int | None:
+async def operand_size(
+    dispatch: DispatchFn, path: PathSpec, counts: list[int]
+) -> int | None:
     """The size GNU sizes the columns by, which it takes from fstat.
 
     A stream or a directory has none. A file whose size ``stat`` cannot
@@ -78,8 +89,12 @@ async def operand_size(dispatch: DispatchFn, path: PathSpec,
     return info.size if info.size is not None else max(counts)
 
 
-async def run_wc(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
-                 dispatch: DispatchFn, run_single: RunSingle) -> CrossResult:
+async def run_wc(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    run_single: RunSingle,
+) -> CrossResult:
     """Count each operand on its own mount and lay the rows out together.
 
     Each operand runs through its owning mount's ``wc``, so a mount that
@@ -96,15 +111,16 @@ async def run_wc(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
     try:
         flags = parse_flags(flag_kwargs)
     except UsageError as exc:
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=(str(exc) + "\n").encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=(str(exc) + "\n").encode()
+        )
     except ValueError as exc:
         return None, IOResult(exit_code=1, stderr=(str(exc) + "\n").encode())
     columns = [c for c in COLUMNS if getattr(flags, c)]
     columns = columns or ["lines", "words", "bytes_"]
-    runs = await run_operands(run_single, Cmd.WC, scopes, [], {
-        **flag_kwargs, "total": "never"
-    })
+    runs = await run_operands(
+        run_single, Cmd.WC, scopes, [], {**flag_kwargs, "total": "never"}
+    )
     rows: list[tuple[WCCounts, str | None]] = []
     sizes: list[int | None] = []
     totals = WCCounts()
@@ -121,5 +137,6 @@ async def run_wc(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
         totals.merge(counts)
     width = number_width(sizes, len(scopes), len(columns))
     body = format_count_rows(rows, totals, len(scopes), flags, width)
-    return body, await merge_operand_ios(runs,
-                                         max(run.io.exit_code for run in runs))
+    return body, await merge_operand_ios(
+        runs, max(run.io.exit_code for run in runs)
+    )

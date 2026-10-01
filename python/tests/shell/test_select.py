@@ -25,13 +25,15 @@ def test_select_picks_choice_from_stdin(shell):
 def test_select_invalid_choice_sets_empty(shell):
     out = shell.mirage(
         "printf '9\\n' | select x in aa bb; do echo got:${x:-none}; break; "
-        "done")
+        "done"
+    )
     assert out == "got:none\n"
 
 
 def test_select_reply_holds_raw_line(shell):
     out = shell.mirage(
-        "printf 'zz\\n' | select x in aa bb; do echo r:$REPLY; break; done")
+        "printf 'zz\\n' | select x in aa bb; do echo r:$REPLY; break; done"
+    )
     assert out == "r:zz\n"
 
 
@@ -44,7 +46,8 @@ def test_select_empty_line_redisplays_menu(shell):
 def test_select_eof_ends_loop(shell):
     # bash terminates the prompt line with a newline at EOF.
     code, out, err = shell.mirage_result(
-        "printf '' | select x in aa bb; do echo body; done; echo after")
+        "printf '' | select x in aa bb; do echo body; done; echo after"
+    )
     assert code == 0
     assert out == "\nafter\n"
     assert err == "1) aa\n2) bb\n#? "
@@ -53,5 +56,6 @@ def test_select_eof_ends_loop(shell):
 def test_select_loops_until_break(shell):
     out = shell.mirage(
         "printf '1\\n2\\n' | select x in aa bb; do echo got:$x; "
-        "if [ $x = bb ]; then break; fi; done")
+        "if [ $x = bb ]; then break; fi; done"
+    )
     assert out == "got:aa\ngot:bb\n"

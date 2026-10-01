@@ -34,68 +34,85 @@ def _actions(ref: RepoRef, tail: str) -> str:
     return f"/repos/{ref.owner}/{ref.repo}/actions/{tail}"
 
 
-async def resolve_workflow(config: GhConfig, ref: RepoRef,
-                           workflow: str) -> str:
+async def resolve_workflow(
+    config: GhConfig, ref: RepoRef, workflow: str
+) -> str:
     if workflow.isdigit() or workflow.endswith(WORKFLOW_FILES):
         return workflow
     rows = await list_workflows(config, ref, WORKFLOW_LOOKUP)
     wanted = workflow.casefold()
     match = next(
         (row for row in rows if str(row.get("name", "")).casefold() == wanted),
-        None)
+        None,
+    )
     if match is None:
         raise ValueError(f"could not find any workflows named {workflow}")
     return str(match.get("id", ""))
 
 
-async def list_runs(config: GhConfig,
-                    ref: RepoRef,
-                    params: dict[str, str],
-                    limit: int,
-                    workflow: str | None = None) -> list[dict[str, Any]]:
+async def list_runs(
+    config: GhConfig,
+    ref: RepoRef,
+    params: dict[str, str],
+    limit: int,
+    workflow: str | None = None,
+) -> list[dict[str, Any]]:
     if workflow is None:
         tail = "runs"
     else:
         selector = await resolve_workflow(config, ref, workflow)
         tail = f"workflows/{quote(selector, safe='')}/runs"
-    return await github_pages(config,
-                              _actions(ref, tail),
-                              params=params,
-                              limit=limit,
-                              key="workflow_runs")
+    return await github_pages(
+        config,
+        _actions(ref, tail),
+        params=params,
+        limit=limit,
+        key="workflow_runs",
+    )
 
 
 async def get_run(config: GhConfig, ref: RepoRef, run_id: int) -> JsonValue:
-    return await github_request(config.token,
-                                "GET",
-                                _actions(ref, f"runs/{run_id}"),
-                                base_url=config.base_url)
+    return await github_request(
+        config.token,
+        "GET",
+        _actions(ref, f"runs/{run_id}"),
+        base_url=config.base_url,
+    )
 
 
-async def rerun(config: GhConfig,
-                ref: RepoRef,
-                run_id: int,
-                suffix: str,
-                body: JsonValue = None) -> JsonValue:
+async def rerun(
+    config: GhConfig,
+    ref: RepoRef,
+    run_id: int,
+    suffix: str,
+    body: JsonValue = None,
+) -> JsonValue:
     if body is None:
-        return await github_request(config.token,
-                                    "POST",
-                                    _actions(ref, f"runs/{run_id}/{suffix}"),
-                                    base_url=config.base_url)
-    return await github_request(config.token,
-                                "POST",
-                                _actions(ref, f"runs/{run_id}/{suffix}"),
-                                body,
-                                base_url=config.base_url)
+        return await github_request(
+            config.token,
+            "POST",
+            _actions(ref, f"runs/{run_id}/{suffix}"),
+            base_url=config.base_url,
+        )
+    return await github_request(
+        config.token,
+        "POST",
+        _actions(ref, f"runs/{run_id}/{suffix}"),
+        body,
+        base_url=config.base_url,
+    )
 
 
-async def rerun_job(config: GhConfig, ref: RepoRef, job_id: int,
-                    debug: bool) -> JsonValue:
-    return await github_request(config.token,
-                                "POST",
-                                _actions(ref, f"jobs/{job_id}/rerun"),
-                                {"enable_debug_logging": debug},
-                                base_url=config.base_url)
+async def rerun_job(
+    config: GhConfig, ref: RepoRef, job_id: int, debug: bool
+) -> JsonValue:
+    return await github_request(
+        config.token,
+        "POST",
+        _actions(ref, f"jobs/{job_id}/rerun"),
+        {"enable_debug_logging": debug},
+        base_url=config.base_url,
+    )
 
 
 async def list_workflows(
@@ -103,40 +120,45 @@ async def list_workflows(
     ref: RepoRef,
     limit: int,
     *,
-    include: Callable[[dict[str, Any]], bool]
-    | None = None
+    include: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[dict[str, Any]]:
-    return await github_pages(config,
-                              _actions(ref, "workflows"),
-                              limit=limit,
-                              key="workflows",
-                              include=include)
+    return await github_pages(
+        config,
+        _actions(ref, "workflows"),
+        limit=limit,
+        key="workflows",
+        include=include,
+    )
 
 
-async def get_workflow(config: GhConfig, ref: RepoRef,
-                       workflow: str) -> JsonValue:
+async def get_workflow(
+    config: GhConfig, ref: RepoRef, workflow: str
+) -> JsonValue:
     selector = await resolve_workflow(config, ref, workflow)
-    return await github_request(config.token,
-                                "GET",
-                                _actions(
-                                    ref,
-                                    f"workflows/{quote(selector, safe='')}"),
-                                base_url=config.base_url)
+    return await github_request(
+        config.token,
+        "GET",
+        _actions(ref, f"workflows/{quote(selector, safe='')}"),
+        base_url=config.base_url,
+    )
 
 
-async def dispatch_workflow(config: GhConfig, ref: RepoRef, workflow: str,
-                            body: dict[str, JsonValue]) -> JsonValue:
+async def dispatch_workflow(
+    config: GhConfig, ref: RepoRef, workflow: str, body: dict[str, JsonValue]
+) -> JsonValue:
     selector = await resolve_workflow(config, ref, workflow)
     return await github_request(
         config.token,
         "POST",
         _actions(ref, f"workflows/{quote(selector, safe='')}/dispatches"),
         body,
-        base_url=config.base_url)
+        base_url=config.base_url,
+    )
 
 
-async def list_jobs(config: GhConfig, ref: RepoRef,
-                    run_id: int) -> list[dict[str, Any]]:
+async def list_jobs(
+    config: GhConfig, ref: RepoRef, run_id: int
+) -> list[dict[str, Any]]:
     """A run's jobs, every page of them, as ``gh run view`` reads them.
 
     Args:
@@ -144,10 +166,12 @@ async def list_jobs(config: GhConfig, ref: RepoRef,
         ref (RepoRef): the repository.
         run_id (int): the run.
     """
-    return await github_pages(config,
-                              _actions(ref, f"runs/{run_id}/jobs"),
-                              limit=ALL_JOBS,
-                              key="jobs")
+    return await github_pages(
+        config,
+        _actions(ref, f"runs/{run_id}/jobs"),
+        limit=ALL_JOBS,
+        key="jobs",
+    )
 
 
 def _bytes_of(data: "JsonValue | bytes") -> bytes:
@@ -156,8 +180,9 @@ def _bytes_of(data: "JsonValue | bytes") -> bytes:
     return data.encode() if isinstance(data, str) else b""
 
 
-async def run_log_archive(config: GhConfig, ref: RepoRef,
-                          run_id: int) -> bytes:
+async def run_log_archive(
+    config: GhConfig, ref: RepoRef, run_id: int
+) -> bytes:
     """A completed run's log archive, the zip GitHub ships its logs as.
 
     Args:
@@ -165,10 +190,14 @@ async def run_log_archive(config: GhConfig, ref: RepoRef,
         ref (RepoRef): the repository.
         run_id (int): the run.
     """
-    return _bytes_of(await github_request(config.token,
-                                          "GET",
-                                          _actions(ref, f"runs/{run_id}/logs"),
-                                          base_url=config.base_url))
+    return _bytes_of(
+        await github_request(
+            config.token,
+            "GET",
+            _actions(ref, f"runs/{run_id}/logs"),
+            base_url=config.base_url,
+        )
+    )
 
 
 async def job_log(config: GhConfig, ref: RepoRef, job_id: int) -> bytes:
@@ -179,16 +208,19 @@ async def job_log(config: GhConfig, ref: RepoRef, job_id: int) -> bytes:
         ref (RepoRef): the repository.
         job_id (int): the job.
     """
-    return _bytes_of(await github_request(config.token,
-                                          "GET",
-                                          _actions(ref, f"jobs/{job_id}/logs"),
-                                          base_url=config.base_url))
+    return _bytes_of(
+        await github_request(
+            config.token,
+            "GET",
+            _actions(ref, f"jobs/{job_id}/logs"),
+            base_url=config.base_url,
+        )
+    )
 
 
-async def workflow_content(config: GhConfig,
-                           ref: RepoRef,
-                           path: str,
-                           git_ref: str | None = None) -> bytes:
+async def workflow_content(
+    config: GhConfig, ref: RepoRef, path: str, git_ref: str | None = None
+) -> bytes:
     """A workflow file's bytes as the repository holds it.
 
     The one read ``gh workflow view --yaml`` makes, at ``git_ref`` or the
@@ -206,7 +238,11 @@ async def workflow_content(config: GhConfig,
         "GET",
         f"/repos/{ref.owner}/{ref.repo}/contents/{path}",
         params=params,
-        base_url=config.base_url)
+        base_url=config.base_url,
+    )
     content = data.get("content") if isinstance(data, dict) else None
-    return base64.b64decode("".join(content.split())) if isinstance(
-        content, str) else b""
+    return (
+        base64.b64decode("".join(content.split()))
+        if isinstance(content, str)
+        else b""
+    )

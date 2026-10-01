@@ -59,8 +59,7 @@ def ops_summary() -> str:
     ops = ws.vfs
     net = ops.network_bytes
     cache = ops.cache_bytes
-    return (f"{len(ops.records)} ops, "
-            f"{net} net, {cache} cache")
+    return f"{len(ops.records)} ops, {net} net, {cache} cache"
 
 
 async def main():
@@ -143,18 +142,20 @@ async def main():
     # ── pipelines / control flow ──
     print("\n[pipelines]")
     await run("cat /deep/example.jsonl | grep mirage | wc -l")
-    await run("grep queue-operation /deep/example.jsonl"
-              " | head -n 2 | cut -d , -f 1")
+    await run(
+        "grep queue-operation /deep/example.jsonl | head -n 2 | cut -d , -f 1"
+    )
     await run("grep -m 1 mirage /deep/example.jsonl && echo found")
     await run("grep ZZZ_NOPE /deep/example.jsonl || echo fallback")
 
     # ── parity vs /s3/ (same bucket, same object, different mount) ──
     print("\n[parity vs /s3/]")
-    a = await (await
-               ws.shell("grep -c mirage /deep/example.jsonl")).stdout_str()
-    b = await (await
-               ws.shell("grep -c mirage /s3/subdata/subsubdata/example.jsonl")
-               ).stdout_str()
+    a = await (
+        await ws.shell("grep -c mirage /deep/example.jsonl")
+    ).stdout_str()
+    b = await (
+        await ws.shell("grep -c mirage /s3/subdata/subsubdata/example.jsonl")
+    ).stdout_str()
     print(f"  /deep/example.jsonl                       grep -c: {a.strip()}")
     print(f"  /s3/subdata/subsubdata/example.jsonl      grep -c: {b.strip()}")
     print(f"  parity: {a.strip() == b.strip()}")
@@ -192,7 +193,8 @@ async def main():
     # ── simple grep ──
     print("--- grep mirage /s3/data/example.jsonl ---")
     output = await (
-        await ws.shell("grep mirage /s3/data/example.jsonl")).stdout_str()
+        await ws.shell("grep mirage /s3/data/example.jsonl")
+    ).stdout_str()
     lines = output.strip().splitlines() if output.strip() else []
     print(f"  Matches: {len(lines)}")
     if lines:
@@ -202,8 +204,8 @@ async def main():
     # ── grep with limit ──
     print("\n--- grep -m 1 mirage /s3/data/example.jsonl ---")
     output = await (
-        await
-        ws.shell("grep -m 1 mirage /s3/data/example.jsonl")).stdout_str()
+        await ws.shell("grep -m 1 mirage /s3/data/example.jsonl")
+    ).stdout_str()
     lines = output.strip().splitlines() if output.strip() else []
     print(f"  Matches: {len(lines)}")
     print(f"  Stats: {ops_summary()}")
@@ -225,18 +227,26 @@ async def main():
     print(f"  Stats: {ops_summary()}")
 
     # ── pipe: cat | grep | sort | uniq ──
-    print("\n--- cat /s3/data/example.jsonl"
-          " | grep queue-operation | sort | uniq ---")
+    print(
+        "\n--- cat /s3/data/example.jsonl"
+        " | grep queue-operation | sort | uniq ---"
+    )
     result = await ws.shell(
-        "cat /s3/data/example.jsonl | grep queue-operation | sort | uniq")
-    lines = ((await result.stdout_str()).strip().splitlines() if
-             (await result.stdout_str()).strip() else [])
+        "cat /s3/data/example.jsonl | grep queue-operation | sort | uniq"
+    )
+    lines = (
+        (await result.stdout_str()).strip().splitlines()
+        if (await result.stdout_str()).strip()
+        else []
+    )
     print(f"  Unique lines: {len(lines)}")
     print(f"  Stats: {ops_summary()}")
 
     # ── pipe: grep | cut (extract field) ──
-    print("\n--- rg queue-operation /s3/data/example.jsonl"
-          " | head -n 5 | cut -d , -f 2 ---")
+    print(
+        "\n--- rg queue-operation /s3/data/example.jsonl"
+        " | head -n 5 | cut -d , -f 2 ---"
+    )
     result = await ws.shell(
         "rg queue-operation /s3/data/example.jsonl | head -n 5 | cut -d , -f 2"
     )
@@ -244,37 +254,49 @@ async def main():
     print(f"  Stats: {ops_summary()}")
 
     # ── && chain: grep && echo ──
-    print("\n--- grep -m 1 mirage /s3/data/example.jsonl"
-          " && echo 'found mirage' ---")
+    print(
+        "\n--- grep -m 1 mirage /s3/data/example.jsonl"
+        " && echo 'found mirage' ---"
+    )
     result = await ws.shell(
-        "grep -m 1 mirage /s3/data/example.jsonl && echo found")
+        "grep -m 1 mirage /s3/data/example.jsonl && echo found"
+    )
     print(f"  Exit code: {result.exit_code}")
     print(
-        f"  Stdout ends with: ...{(await result.stdout_str()).strip()[-30:]}")
+        f"  Stdout ends with: ...{(await result.stdout_str()).strip()[-30:]}"
+    )
     print(f"  Stats: {ops_summary()}")
 
     # ── || chain: grep nonexistent || echo fallback ──
-    print("\n--- grep NONEXISTENT /s3/data/example.jsonl"
-          " || echo 'not found' ---")
+    print(
+        "\n--- grep NONEXISTENT /s3/data/example.jsonl || echo 'not found' ---"
+    )
     result = await ws.shell(
-        "grep NONEXISTENT /s3/data/example.jsonl || echo not_found")
+        "grep NONEXISTENT /s3/data/example.jsonl || echo not_found"
+    )
     print(f"  Exit code: {result.exit_code}")
     print(f"  Output: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
     # ── subshell: (grep | sort | uniq) | wc -l ──
-    print("\n--- (grep queue-operation /s3/data/example.jsonl"
-          " | sort | uniq) | wc -l ---")
+    print(
+        "\n--- (grep queue-operation /s3/data/example.jsonl"
+        " | sort | uniq) | wc -l ---"
+    )
     result = await ws.shell(
-        "(grep queue-operation /s3/data/example.jsonl | sort | uniq) | wc -l")
+        "(grep queue-operation /s3/data/example.jsonl | sort | uniq) | wc -l"
+    )
     print(f"  Unique queue ops: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
     # ── semicolon: multiple independent reads ──
-    print("\n--- head -n 1 /s3/data/example.jsonl"
-          " ; wc -l /s3/data/example.jsonl ---")
+    print(
+        "\n--- head -n 1 /s3/data/example.jsonl"
+        " ; wc -l /s3/data/example.jsonl ---"
+    )
     result = await ws.shell(
-        "head -n 1 /s3/data/example.jsonl ; wc -l /s3/data/example.jsonl")
+        "head -n 1 /s3/data/example.jsonl ; wc -l /s3/data/example.jsonl"
+    )
     print(f"  Output: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
@@ -285,13 +307,17 @@ async def main():
     # the second grep stops, the first grep stops, and the S3 download
     # is abandoned early — only a fraction of the file is ever read.
     print("\n--- lazy multi-pipe: grep | grep -v | head | cut ---")
-    result = await ws.shell("grep queue-operation /s3/data/example.jsonl"
-                            " | grep -v error | head -n 2 | cut -d , -f 1")
+    result = await ws.shell(
+        "grep queue-operation /s3/data/example.jsonl"
+        " | grep -v error | head -n 2 | cut -d , -f 1"
+    )
     print(f"  Output:\n    {(await result.stdout_str()).strip()}")
 
     # Compare: same pipeline without head reads the entire file
-    result_full = await ws.shell("grep queue-operation /s3/data/example.jsonl"
-                                 " | grep -v error | cut -d , -f 1")
+    result_full = await ws.shell(
+        "grep queue-operation /s3/data/example.jsonl"
+        " | grep -v error | cut -d , -f 1"
+    )
     full_lines = (await result_full.stdout_str()).strip().splitlines()
     print(f"  Without head: {len(full_lines)} lines (full S3 download)")
 
@@ -311,29 +337,36 @@ async def main():
 
     print("\n--- jq: all team names (nested [] iterator) ---")
     result = await ws.shell(
-        "jq \".departments[].teams[].name\" /s3/data/example.json")
+        'jq ".departments[].teams[].name" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: all employee names ---")
-    result = await ws.shell("jq \".departments[].teams[].members[].name\""
-                            " /s3/data/example.json")
+    result = await ws.shell(
+        'jq ".departments[].teams[].members[].name" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: senior engineers on platform ---")
-    result = await ws.shell("jq \".departments[0].teams[0].members"
-                            " | map(select(.level == \\\"senior\\\"))"
-                            " | map(.name)\" /s3/data/example.json")
+    result = await ws.shell(
+        'jq ".departments[0].teams[0].members'
+        ' | map(select(.level == \\"senior\\"))'
+        ' | map(.name)" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: all active project names ---")
-    result = await ws.shell("jq \".departments[].teams[].projects"
-                            " | map(select(.status == \\\"active\\\"))"
-                            " | map(.name)\" /s3/data/example.json")
+    result = await ws.shell(
+        'jq ".departments[].teams[].projects'
+        ' | map(select(.status == \\"active\\"))'
+        ' | map(.name)" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: mirage project metrics ---")
-    result = await ws.shell("jq .departments[0].teams[0].projects[0].metrics"
-                            " /s3/data/example.json")
+    result = await ws.shell(
+        "jq .departments[0].teams[0].projects[0].metrics /s3/data/example.json"
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: total budget ---")
@@ -342,22 +375,27 @@ async def main():
 
     print("\n--- jq: vendor costs ---")
     result = await ws.shell(
-        "jq \".vendor_contracts | map(.annual_cost)\" /s3/data/example.json")
+        'jq ".vendor_contracts | map(.annual_cost)" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: office locations ---")
     result = await ws.shell(
-        "jq \".locations | map(.city)\" /s3/data/example.json")
+        'jq ".locations | map(.city)" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: all incident titles ---")
-    result = await ws.shell("jq \".departments[].teams[].incidents[].title\""
-                            " /s3/data/example.json")
+    result = await ws.shell(
+        'jq ".departments[].teams[].incidents[].title" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: OKR key results ---")
-    result = await ws.shell("jq \".okrs[0].objectives[0].key_results"
-                            " | map(.description)\" /s3/data/example.json")
+    result = await ws.shell(
+        'jq ".okrs[0].objectives[0].key_results'
+        ' | map(.description)" /s3/data/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- pipe: cat | jq (from cache) ---")
@@ -426,16 +464,22 @@ async def main():
 
     print("\n--- wait %1: get first grep result ---")
     r = await ws.shell("wait %1")
-    lines = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    lines = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  Matches: {len(lines)}, exit_code: {r.exit_code}")
     if lines:
         print(f"  First: {lines[0][:80]}...")
 
     print("\n--- wait %2: get second grep result ---")
     r = await ws.shell("wait %2")
-    lines = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    lines = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  Matches: {len(lines)}, exit_code: {r.exit_code}")
 
     print("\n--- background pipe: grep | head & ---")
@@ -453,8 +497,11 @@ async def main():
     await ws.shell("grep NONEXISTENT /s3/data/example.jsonl &")
     await ws.shell("grep mirage /s3/data/example.jsonl &")
     r = await ws.shell("wait %5 || wait %6")
-    lines = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    lines = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  Fallback matches: {len(lines)}")
 
     print("\n--- jobs after all done ---")
@@ -463,7 +510,8 @@ async def main():
 
     print("\n--- background job history ---")
     bg_entries = [
-        e for e in await ws.history()
+        e
+        for e in await ws.history()
         if "grep" in e["command"] and "&" not in e["command"]
     ]
     print(f"  Background job records: {len(bg_entries)}")
@@ -522,8 +570,10 @@ async def main():
         print(f"  tee exit={r.exit_code} (created /local/a.txt)")
 
         r = await mv_ws.shell(f"mv /local/a.txt {remote}")
-        print(f"  mv exit={r.exit_code} "
-              f"stderr={(await r.stderr_str()).strip()!r}")
+        print(
+            f"  mv exit={r.exit_code} "
+            f"stderr={(await r.stderr_str()).strip()!r}"
+        )
 
         r = await mv_ws.shell(f"cat {remote}")
         got = await r.stdout_str()
@@ -531,20 +581,26 @@ async def main():
         print(f"  S3 read back: {got!r} ({'OK' if ok else 'MISMATCH'})")
 
         r = await mv_ws.shell("cat /local/a.txt")
-        print(f"  RAM source after mv: exit={r.exit_code} "
-              f"(expect non-zero — file moved away)")
+        print(
+            f"  RAM source after mv: exit={r.exit_code} "
+            f"(expect non-zero — file moved away)"
+        )
 
         # ── metadata on S3 (namespace overlay) ───────────────────────
         # S3 has no native attr slots, so chmod/chown/touch land in the
         # workspace namespace (durable, snapshot-captured) and merge
         # into dispatch-level stat.
-        r = await mv_ws.shell(f"chmod 640 {remote} && chown 500:dev"
-                              f" {remote} && touch -t 202601021530"
-                              f" {remote}")
+        r = await mv_ws.shell(
+            f"chmod 640 {remote} && chown 500:dev"
+            f" {remote} && touch -t 202601021530"
+            f" {remote}"
+        )
         print(f"  chmod/chown/touch exit={r.exit_code}")
         st, _ = await mv_ws.dispatch("stat", PathSpec.from_str_path(remote))
-        print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-              f"gid={st.gid} mtime={st.modified}")
+        print(
+            f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+            f"gid={st.gid} mtime={st.modified}"
+        )
     finally:
         r = await mv_ws.shell(f"rm {remote}")
         print(f"  cleanup rm exit={r.exit_code}")
@@ -565,19 +621,22 @@ async def main():
         # Verify creds are NOT in the raw tar bytes
         raw = open(snap, "rb").read()
         leaked = config.aws_access_key_id and (
-            config.aws_access_key_id.get_secret_value().encode() in raw)
-        print(f"  creds leaked in tar bytes: {bool(leaked)} "
-              f"(expect False)")
-        print(f"  '<REDACTED>' present in tar: "
-              f"{b'<REDACTED>' in raw} (expect True)")
+            config.aws_access_key_id.get_secret_value().encode() in raw
+        )
+        print(f"  creds leaked in tar bytes: {bool(leaked)} (expect False)")
+        print(
+            f"  '<REDACTED>' present in tar: "
+            f"{b'<REDACTED>' in raw} (expect True)"
+        )
 
         # Loading without mounts= must fail fast
         try:
             await Workspace.load(snap)
             print("  ✗ load() should have raised without mounts=")
         except ValueError as e:
-            print(f"  ✓ load() w/o mounts raises: "
-                  f"{str(e).splitlines()[0][:70]}…")
+            print(
+                f"  ✓ load() w/o mounts raises: {str(e).splitlines()[0][:70]}…"
+            )
 
         # Load with fresh creds (both mounts were redacted)
         loaded = await Workspace.load(
@@ -588,16 +647,17 @@ async def main():
             },
         )
         r = await loaded.shell("ls /s3/")
-        print(f"  loaded ws ls /s3/: "
-              f"{(await r.stdout_str()).strip()[:60]}…")
+        print(f"  loaded ws ls /s3/: {(await r.stdout_str()).strip()[:60]}…")
 
         # copy(): in-process, reuses the same S3VFS; both copies
         # see the same bucket
         cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")
@@ -608,11 +668,14 @@ async def main():
 
     print("\n=== DRIFT + VERSION PIN ===\n")
     print("  requires bucket versioning enabled:")
-    print("  aws s3api put-bucket-versioning --bucket <bucket> "
-          "--versioning-configuration Status=Enabled\n")
+    print(
+        "  aws s3api put-bucket-versioning --bucket <bucket> "
+        "--versioning-configuration Status=Enabled\n"
+    )
     probe = f"/s3/drift-probe-{uuid.uuid4().hex[:8]}.txt"
-    drift_ws = Workspace({"/s3/": (S3VFS(config), MountMode.WRITE)},
-                         mode=MountMode.WRITE)
+    drift_ws = Workspace(
+        {"/s3/": (S3VFS(config), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         drift_snap = f.name
     try:
@@ -621,8 +684,10 @@ async def main():
         s = await drift_ws.stat(probe)
         print(f"  wrote {probe}")
         print(f"  fingerprint={s.fingerprint}")
-        print(f"  revision   ={s.revision} "
-              f"({'versioning on' if s.revision else 'no versioning'})")
+        print(
+            f"  revision   ={s.revision} "
+            f"({'versioning on' if s.revision else 'no versioning'})"
+        )
 
         await drift_ws.snapshot(drift_snap)
         snap_size = os.path.getsize(drift_snap)
@@ -632,20 +697,26 @@ async def main():
         s2 = await drift_ws.stat(probe)
         print(f"  mutated on bucket: new revision={s2.revision}")
 
-        loaded = await Workspace.load(drift_snap,
-                                      mounts={"/s3/": S3VFS(config)})
+        loaded = await Workspace.load(
+            drift_snap, mounts={"/s3/": S3VFS(config)}
+        )
         loaded._cache.evict_paths([probe])
         try:
             r = await loaded.shell(f"cat {probe}")
             served = (await r.stdout_str()).strip()
             pinned_ok = s.revision is not None and served == "original"
-            label = ("OK pin served original" if pinned_ok else
-                     "no pin (bucket not versioned?), live fingerprint matched"
-                     if served == "original" else "UNEXPECTED")
+            label = (
+                "OK pin served original"
+                if pinned_ok
+                else "no pin (bucket not versioned?), live fingerprint matched"
+                if served == "original"
+                else "UNEXPECTED"
+            )
             print(f"  STRICT load → served: {served!r} ({label})")
         except ContentDriftError as e:
-            print(f"  STRICT load raised ContentDriftError as expected: "
-                  f"{e.path}")
+            print(
+                f"  STRICT load raised ContentDriftError as expected: {e.path}"
+            )
     finally:
         try:
             await drift_ws.shell(f"rm {probe}")

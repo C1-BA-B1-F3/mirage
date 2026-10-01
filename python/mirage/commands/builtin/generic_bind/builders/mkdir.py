@@ -17,8 +17,11 @@ import os
 from dataclasses import replace
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+)
 from mirage.commands.builtin.utils.paths import descendant_path, entry_kind
 from mirage.commands.builtin.utils.slash_links import mkdir_link_refusal
 from mirage.commands.config import CommandOpts
@@ -28,17 +31,26 @@ from mirage.context import DEFAULT_UMASK, get_walk_probe, session_umask
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
 from mirage.types import FileType, PathSpec
-from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, error_path,
-                                 fs_strerror, operand_spelling)
+from mirage.utils.errors import (
+    ELOOP_STRERROR,
+    FS_ERRORS,
+    error_path,
+    fs_strerror,
+    operand_spelling,
+)
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.mode import DEFAULT_DIR_MODE, parse_chmod
 from mirage.utils.path import CycleError, walk_nodes
 from mirage.vfs.types import OperationFn
 
 
-async def mkdir(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def mkdir(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["mkdir"])
     parents = fl.as_bool("parents")
     verbose = fl.as_bool("verbose")
@@ -55,7 +67,8 @@ async def mkdir(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
             raise ValueError(f"mkdir: invalid mode '{mode_text}'")
         if ops.set_attrs is None:
             raise NotImplementedError(
-                "mkdir: --mode is not supported on this backend")
+                "mkdir: --mode is not supported on this backend"
+            )
     elif ops.set_attrs is not None:
         # A new directory is 0777 masked by the session's umask. Only a
         # mask away from bash's default costs a setattr, because 755 is
@@ -92,11 +105,13 @@ async def mkdir(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return output, IOResult(stderr=stderr, exit_code=1 if errors else 0)
 
 
-async def make_directory(mkdir_fn: OperationFn,
-                         accessor: Accessor,
-                         path: PathSpec,
-                         parents: bool,
-                         links: LinkView | None = None) -> str | None:
+async def make_directory(
+    mkdir_fn: OperationFn,
+    accessor: Accessor,
+    path: PathSpec,
+    parents: bool,
+    links: LinkView | None = None,
+) -> str | None:
     """Make one mkdir operand, or the line GNU reports when it cannot.
 
     One unusable operand is not an aborted command: GNU reports it and
@@ -116,8 +131,9 @@ async def make_directory(mkdir_fn: OperationFn,
     # dot among them, or a link loop the walk refused the operand for,
     # is met at that name and GNU quotes it rather than the operand.
     if parents and (path.dotted is not None or path.walk_error == "ELOOP"):
-        failed = await _make_walked(mkdir_fn, accessor, path, path.dotted
-                                    or path.virtual, links)
+        failed = await _make_walked(
+            mkdir_fn, accessor, path, path.dotted or path.virtual, links
+        )
         if failed is not None:
             return failed
         # The walk has entered every name the spelling passes through, so
@@ -129,14 +145,17 @@ async def make_directory(mkdir_fn: OperationFn,
         await mkdir_fn(accessor, path, parents=parents)
     except FS_ERRORS as exc:
         named = operand_spelling(error_path(exc), path)
-        return (f"mkdir: cannot create directory '{named}': "
-                f"{fs_strerror(exc)}")
+        return f"mkdir: cannot create directory '{named}': {fs_strerror(exc)}"
     return None
 
 
-async def _make_walked(mkdir_fn: OperationFn, accessor: Accessor,
-                       path: PathSpec, dotted: str,
-                       links: LinkView | None) -> str | None:
+async def _make_walked(
+    mkdir_fn: OperationFn,
+    accessor: Accessor,
+    path: PathSpec,
+    dotted: str,
+    links: LinkView | None,
+) -> str | None:
     """Make every name an operand's walk enters, GNU ``mkdir -p`` style.
 
     The backend's ``parents`` makes the ancestors of the simplified path,
@@ -155,8 +174,9 @@ async def _make_walked(mkdir_fn: OperationFn, accessor: Accessor,
     root = mount_prefix_of(path.virtual, path.vfs_path).rstrip("/")
     for node, spelled in walk_nodes(dotted, path.raw_path):
         try:
-            why = await _enter_node(mkdir_fn, accessor, path, node, root,
-                                    links)
+            why = await _enter_node(
+                mkdir_fn, accessor, path, node, root, links
+            )
         except FileExistsError:
             why = os.strerror(errno.ENOTDIR)
         except FS_ERRORS as exc:
@@ -166,9 +186,14 @@ async def _make_walked(mkdir_fn: OperationFn, accessor: Accessor,
     return None
 
 
-async def _enter_node(mkdir_fn: OperationFn, accessor: Accessor,
-                      path: PathSpec, node: str, root: str,
-                      links: LinkView | None) -> str | None:
+async def _enter_node(
+    mkdir_fn: OperationFn,
+    accessor: Accessor,
+    path: PathSpec,
+    node: str,
+    root: str,
+    links: LinkView | None,
+) -> str | None:
     """Make one name of a walk a directory, or say why it is not one.
 
     Judged the way GNU's walk into the name is, before anything is made:
@@ -201,8 +226,9 @@ async def _enter_node(mkdir_fn: OperationFn, accessor: Accessor,
         return None
     probe = get_walk_probe()
     if probe is not None:
-        exists, is_dir = await entry_kind(probe.stat,
-                                          PathSpec.from_str_path(node))
+        exists, is_dir = await entry_kind(
+            probe.stat, PathSpec.from_str_path(node)
+        )
         if exists:
             return None if is_dir else os.strerror(errno.ENOTDIR)
     real = links.resolve(node) if links is not None else node
@@ -211,4 +237,4 @@ async def _enter_node(mkdir_fn: OperationFn, accessor: Accessor,
     return None
 
 
-BUILDER = Builder('mkdir', mkdir, write=True)
+BUILDER = Builder("mkdir", mkdir, write=True)

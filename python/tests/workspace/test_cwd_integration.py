@@ -129,7 +129,7 @@ async def test_cd_relative_nested():
 @pytest.mark.asyncio
 async def test_cd_dotdot_twice():
     ws = _make_ws()
-    r = await ws.shell('cd /ram/subdir/nested && cd ../.. && pwd')
+    r = await ws.shell("cd /ram/subdir/nested && cd ../.. && pwd")
     assert (await r.stdout_str()).strip() == "/ram"
 
 

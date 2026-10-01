@@ -44,8 +44,9 @@ async def tsort(
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 1:
-        raise extra_operand_error(CommandName.TSORT, paths[1].raw_path
-                                  or paths[1].virtual)
+        raise extra_operand_error(
+            CommandName.TSORT, paths[1].raw_path or paths[1].virtual
+        )
     if paths:
         raw = await stdin_bytes(read_bytes, stdin)(paths[0])
     else:

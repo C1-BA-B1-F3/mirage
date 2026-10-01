@@ -20,7 +20,6 @@ from mirage.core.ssh.config import SSHConfig
 
 
 class SSHAccessor(Accessor):
-
     def __init__(self, config: SSHConfig) -> None:
         self.config = config
         self._conn: asyncssh.SSHClientConnection | None = None

@@ -14,21 +14,32 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.cmp import cmp_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def cmp_cmd(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                  texts: list[str],
-                  opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def cmp_cmd(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("cmp: no VFS")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
-    return await cmp_generic(resolved, list(texts), opts,
-                             bound_op(ops.read_bytes, accessor, opts.index))
+    return await cmp_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(ops.read_bytes, accessor, opts.index),
+    )
 
 
-BUILDER = Builder('cmp', cmp_cmd, read=True)
+BUILDER = Builder("cmp", cmp_cmd, read=True)

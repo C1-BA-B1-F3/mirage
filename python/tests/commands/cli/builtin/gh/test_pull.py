@@ -16,8 +16,14 @@ import json
 
 import pytest
 
-from mirage.commands.cli.builtin.gh.pull import (PR_FIELDS, _check, checks_cmd,
-                                                 diff_cmd, list_cmd, view_cmd)
+from mirage.commands.cli.builtin.gh.pull import (
+    PR_FIELDS,
+    _check,
+    checks_cmd,
+    diff_cmd,
+    list_cmd,
+    view_cmd,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.core.github.config import GhConfig
@@ -27,38 +33,45 @@ CONFIG = GhConfig(token="t")
 
 
 def _inv(texts=(), flags=None) -> CLIInvocation:
-    return CLIInvocation(CONFIG,
-                         argv=(),
-                         texts=tuple(texts),
-                         flags=flags or {},
-                         stdin=None,
-                         doors=None)
+    return CLIInvocation(
+        CONFIG,
+        argv=(),
+        texts=tuple(texts),
+        flags=flags or {},
+        stdin=None,
+        doors=None,
+    )
 
 
-@pytest.mark.parametrize("conclusion,bucket", [
-    ("success", "pass"),
-    ("neutral", "skipping"),
-    ("skipped", "skipping"),
-    ("failure", "fail"),
-    ("error", "fail"),
-    ("timed_out", "fail"),
-    ("action_required", "fail"),
-    ("cancelled", "cancel"),
-    ("stale", "pending"),
-])
+@pytest.mark.parametrize(
+    "conclusion,bucket",
+    [
+        ("success", "pass"),
+        ("neutral", "skipping"),
+        ("skipped", "skipping"),
+        ("failure", "fail"),
+        ("error", "fail"),
+        ("timed_out", "fail"),
+        ("action_required", "fail"),
+        ("cancelled", "cancel"),
+        ("stale", "pending"),
+    ],
+)
 def test_conclusions_bucket_the_way_gh_buckets_them(conclusion, bucket):
     assert _check({"name": "t", "conclusion": conclusion})["bucket"] == bucket
 
 
 @pytest.mark.parametrize(
-    "status", ["queued", "in_progress", "pending", "requested", "waiting"])
+    "status", ["queued", "in_progress", "pending", "requested", "waiting"]
+)
 def test_an_unfinished_run_is_pending(status):
     assert _check({"name": "t", "status": status})["bucket"] == "pending"
 
 
 def test_an_unknown_state_is_pending_rather_than_failed():
-    assert _check({"name": "t", "conclusion": "invented"})["bucket"] \
-        == "pending"
+    assert (
+        _check({"name": "t", "conclusion": "invented"})["bucket"] == "pending"
+    )
 
 
 @pytest.mark.asyncio
@@ -90,16 +103,18 @@ async def test_a_failing_check_still_exits_one(monkeypatch):
 # What real gh 2.85 printed for `gh pr diff --name-only` over this diff:
 # the `b/` side of each header, a quoted name kept quoted, a rename by its
 # new name.
-NAME_ONLY_DIFF = ("diff --git a/README.md b/README.md\n"
-                  "deleted file mode 100644\n"
-                  "--- a/README.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
-                  'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"\n'
-                  "new file mode 100644\n"
-                  "diff --git a/docs/contributing.md b/moved/contributing.md\n"
-                  "similarity index 100%\n"
-                  'diff --git "a/q\\"t.txt" "b/q\\"t.txt"\n'
-                  "diff --git a/sub dir/x y.txt b/sub dir/x y.txt\n"
-                  "+++ b/sub dir/x y.txt\t\n")
+NAME_ONLY_DIFF = (
+    "diff --git a/README.md b/README.md\n"
+    "deleted file mode 100644\n"
+    "--- a/README.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+    'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"\n'
+    "new file mode 100644\n"
+    "diff --git a/docs/contributing.md b/moved/contributing.md\n"
+    "similarity index 100%\n"
+    'diff --git "a/q\\"t.txt" "b/q\\"t.txt"\n'
+    "diff --git a/sub dir/x y.txt b/sub dir/x y.txt\n"
+    "+++ b/sub dir/x y.txt\t\n"
+)
 
 
 @pytest.mark.asyncio
@@ -111,29 +126,64 @@ async def test_name_only_prints_the_b_side_of_each_header(monkeypatch):
     monkeypatch.setitem(diff_cmd.__globals__, "diff_pull", diff)
 
     out, io = await diff_cmd(
-        _inv(texts=["5"], flags={
-            "repo": "o/r",
-            "name_only": True
-        }))
+        _inv(texts=["5"], flags={"repo": "o/r", "name_only": True})
+    )
 
     assert io.exit_code == 0
     assert (await materialize(out)).decode() == (
         'README.md\n"caf\\303\\251.txt"\nmoved/contributing.md\n'
-        '"q\\"t.txt"\nsub dir/x y.txt\n')
+        '"q\\"t.txt"\nsub dir/x y.txt\n'
+    )
 
 
 # Every field `gh pr view --json` and `gh pr list --json` accept in gh 2.85.
 GH_FIELDS = [
-    "additions", "assignees", "author", "autoMergeRequest", "baseRefName",
-    "baseRefOid", "body", "changedFiles", "closed", "closedAt",
-    "closingIssuesReferences", "comments", "commits", "createdAt", "deletions",
-    "files", "fullDatabaseId", "headRefName", "headRefOid", "headRepository",
-    "headRepositoryOwner", "id", "isCrossRepository", "isDraft", "labels",
-    "latestReviews", "maintainerCanModify", "mergeCommit", "mergeStateStatus",
-    "mergeable", "mergedAt", "mergedBy", "milestone", "number",
-    "potentialMergeCommit", "projectCards", "projectItems", "reactionGroups",
-    "reviewDecision", "reviewRequests", "reviews", "state",
-    "statusCheckRollup", "title", "updatedAt", "url"
+    "additions",
+    "assignees",
+    "author",
+    "autoMergeRequest",
+    "baseRefName",
+    "baseRefOid",
+    "body",
+    "changedFiles",
+    "closed",
+    "closedAt",
+    "closingIssuesReferences",
+    "comments",
+    "commits",
+    "createdAt",
+    "deletions",
+    "files",
+    "fullDatabaseId",
+    "headRefName",
+    "headRefOid",
+    "headRepository",
+    "headRepositoryOwner",
+    "id",
+    "isCrossRepository",
+    "isDraft",
+    "labels",
+    "latestReviews",
+    "maintainerCanModify",
+    "mergeCommit",
+    "mergeStateStatus",
+    "mergeable",
+    "mergedAt",
+    "mergedBy",
+    "milestone",
+    "number",
+    "potentialMergeCommit",
+    "projectCards",
+    "projectItems",
+    "reactionGroups",
+    "reviewDecision",
+    "reviewRequests",
+    "reviews",
+    "state",
+    "statusCheckRollup",
+    "title",
+    "updatedAt",
+    "url",
 ]
 
 
@@ -172,7 +222,7 @@ async def test_one_query_names_the_fields_and_the_id_and_number(monkeypatch):
 
     assert await _json(await _view("title,changedFiles")) == {
         "changedFiles": 8,
-        "title": "DOC"
+        "title": "DOC",
     }
     assert answers.calls == [(5, "title,changedFiles,id,number", None)]
 
@@ -188,106 +238,92 @@ async def test_number_alone_is_answered_from_the_line(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_files_commits_and_reviews_print_as_gh_prints_them(monkeypatch):
-    answers = Answers({
-        "files": {
-            "nodes": [{
-                "additions": 6,
-                "deletions": 6,
-                "path": "README.md"
-            }]
-        },
-        "commits": {
-            "nodes": [{
-                "commit": {
-                    "authors": {
-                        "nodes": [{
-                            "name": "Work",
-                            "email": "w@example.test",
-                            "user": None
-                        }]
-                    },
-                    "messageHeadline": "DOC: fix typos",
-                    "messageBody": "and terms",
-                    "oid": "abc",
-                    "committedDate": "2025-08-12T03:37:28Z",
-                    "authoredDate": "2025-08-12T03:37:28Z",
-                }
-            }]
-        },
-        "reviews": {
-            "nodes": [{
-                "id":
-                "PRR_1",
-                "author": {
-                    "login": "me"
-                },
-                "authorAssociation":
-                "CONTRIBUTOR",
-                "submittedAt":
-                "2025-08-17T20:15:50Z",
-                "body":
-                "please review",
-                "state":
-                "COMMENTED",
-                "commit": {
-                    "oid": "abc"
-                },
-                "reactionGroups": [{
-                    "content": "EYES",
-                    "users": {
-                        "totalCount": 0
-                    }
-                }],
-            }],
-            "pageInfo": {
-                "hasNextPage": False,
-                "endCursor": "c"
+    answers = Answers(
+        {
+            "files": {
+                "nodes": [
+                    {"additions": 6, "deletions": 6, "path": "README.md"}
+                ]
             },
-        },
-    })
+            "commits": {
+                "nodes": [
+                    {
+                        "commit": {
+                            "authors": {
+                                "nodes": [
+                                    {
+                                        "name": "Work",
+                                        "email": "w@example.test",
+                                        "user": None,
+                                    }
+                                ]
+                            },
+                            "messageHeadline": "DOC: fix typos",
+                            "messageBody": "and terms",
+                            "oid": "abc",
+                            "committedDate": "2025-08-12T03:37:28Z",
+                            "authoredDate": "2025-08-12T03:37:28Z",
+                        }
+                    }
+                ]
+            },
+            "reviews": {
+                "nodes": [
+                    {
+                        "id": "PRR_1",
+                        "author": {"login": "me"},
+                        "authorAssociation": "CONTRIBUTOR",
+                        "submittedAt": "2025-08-17T20:15:50Z",
+                        "body": "please review",
+                        "state": "COMMENTED",
+                        "commit": {"oid": "abc"},
+                        "reactionGroups": [
+                            {"content": "EYES", "users": {"totalCount": 0}}
+                        ],
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": "c"},
+            },
+        }
+    )
     monkeypatch.setitem(view_cmd.__globals__, "pull_request_fields", answers)
 
     out = await _json(await _view("files,commits,reviews"))
 
-    assert out["files"] == [{
-        "path": "README.md",
-        "additions": 6,
-        "deletions": 6
-    }]
+    assert out["files"] == [
+        {"path": "README.md", "additions": 6, "deletions": 6}
+    ]
     assert list(out["files"][0]) == ["path", "additions", "deletions"]
-    assert out["commits"] == [{
-        "authoredDate":
-        "2025-08-12T03:37:28Z",
-        "authors": [{
-            "email": "w@example.test",
-            "id": "",
-            "login": "",
-            "name": "Work"
-        }],
-        "committedDate":
-        "2025-08-12T03:37:28Z",
-        "messageBody":
-        "and terms",
-        "messageHeadline":
-        "DOC: fix typos",
-        "oid":
-        "abc",
-    }]
-    assert out["reviews"] == [{
-        "id": "PRR_1",
-        "author": {
-            "login": "me"
-        },
-        "authorAssociation": "CONTRIBUTOR",
-        "body": "please review",
-        "submittedAt": "2025-08-17T20:15:50Z",
-        "includesCreatedEdit": False,
-        "reactionGroups": [],
-        "state": "COMMENTED",
-        "commit": {
-            "oid": "abc"
-        },
-    }]
+    assert out["commits"] == [
+        {
+            "authoredDate": "2025-08-12T03:37:28Z",
+            "authors": [
+                {
+                    "email": "w@example.test",
+                    "id": "",
+                    "login": "",
+                    "name": "Work",
+                }
+            ],
+            "committedDate": "2025-08-12T03:37:28Z",
+            "messageBody": "and terms",
+            "messageHeadline": "DOC: fix typos",
+            "oid": "abc",
+        }
+    ]
+    assert out["reviews"] == [
+        {
+            "id": "PRR_1",
+            "author": {"login": "me"},
+            "authorAssociation": "CONTRIBUTOR",
+            "body": "please review",
+            "submittedAt": "2025-08-17T20:15:50Z",
+            "includesCreatedEdit": False,
+            "reactionGroups": [],
+            "state": "COMMENTED",
+            "commit": {"oid": "abc"},
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -295,25 +331,17 @@ async def test_a_paged_connection_is_read_to_its_end(monkeypatch):
     answers = Answers(
         {
             "reviews": {
-                "nodes": [{
-                    "id": "R1"
-                }],
-                "pageInfo": {
-                    "hasNextPage": True,
-                    "endCursor": "c1"
-                }
+                "nodes": [{"id": "R1"}],
+                "pageInfo": {"hasNextPage": True, "endCursor": "c1"},
             }
-        }, {
+        },
+        {
             "reviews": {
-                "nodes": [{
-                    "id": "R2"
-                }],
-                "pageInfo": {
-                    "hasNextPage": False,
-                    "endCursor": "c2"
-                }
+                "nodes": [{"id": "R2"}],
+                "pageInfo": {"hasNextPage": False, "endCursor": "c2"},
             }
-        })
+        },
+    )
     monkeypatch.setitem(view_cmd.__globals__, "pull_request_fields", answers)
 
     out = await _json(await _view("reviews"))
@@ -329,35 +357,48 @@ async def test_status_checks_come_from_the_one_commit_gh_rolls_up(monkeypatch):
     def rollup(nodes, following):
         return {
             "statusCheckRollup": {
-                "nodes": [{
-                    "commit": {
-                        "statusCheckRollup": {
-                            "contexts": {
-                                "nodes": nodes,
-                                "pageInfo": {
-                                    "hasNextPage": following is not None,
-                                    "endCursor": following
+                "nodes": [
+                    {
+                        "commit": {
+                            "statusCheckRollup": {
+                                "contexts": {
+                                    "nodes": nodes,
+                                    "pageInfo": {
+                                        "hasNextPage": following is not None,
+                                        "endCursor": following,
+                                    },
                                 }
                             }
                         }
                     }
-                }]
+                ]
             }
         }
 
     answers = Answers(
-        rollup([{
-            "__typename": "CheckRun",
-            "name": "test",
-            "conclusion": "SUCCESS",
-            "status": "COMPLETED"
-        }], "c1"),
-        rollup([{
-            "__typename": "StatusContext",
-            "context": "ci",
-            "state": "PENDING",
-            "createdAt": "t"
-        }], None))
+        rollup(
+            [
+                {
+                    "__typename": "CheckRun",
+                    "name": "test",
+                    "conclusion": "SUCCESS",
+                    "status": "COMPLETED",
+                }
+            ],
+            "c1",
+        ),
+        rollup(
+            [
+                {
+                    "__typename": "StatusContext",
+                    "context": "ci",
+                    "state": "PENDING",
+                    "createdAt": "t",
+                }
+            ],
+            None,
+        ),
+    )
     monkeypatch.setitem(view_cmd.__globals__, "pull_request_fields", answers)
 
     out = await _json(await _view("statusCheckRollup"))
@@ -378,7 +419,7 @@ async def test_status_checks_come_from_the_one_commit_gh_rolls_up(monkeypatch):
             "context": "ci",
             "startedAt": "t",
             "state": "PENDING",
-            "targetUrl": ""
+            "targetUrl": "",
         },
     ]
     assert "contexts(first:100, after: $endCursor)" in answers.calls[1][1]
@@ -405,17 +446,17 @@ async def test_project_cards_are_never_asked_for_and_print_null(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_project_items_read_apart_take_a_missing_scope_as_none(
-        monkeypatch):
+    monkeypatch,
+):
     answers = Answers(
-        {
-            "id": "PR_1",
-            "number": 5
-        },
+        {"id": "PR_1", "number": 5},
         ValueError(
             "GraphQL: Your token has not been granted the required scopes "
             "to execute this query. The 'id' field requires one of the "
             "following scopes: ['read:project'], but your token has only "
-            "been granted the: ['repo'] scopes."))
+            "been granted the: ['repo'] scopes."
+        ),
+    )
     monkeypatch.setitem(view_cmd.__globals__, "pull_request_fields", answers)
 
     assert await _json(await _view("projectItems")) == {"projectItems": []}
@@ -424,10 +465,9 @@ async def test_project_items_read_apart_take_a_missing_scope_as_none(
 
 @pytest.mark.asyncio
 async def test_any_other_project_items_failure_stands(monkeypatch):
-    answers = Answers({
-        "id": "PR_1",
-        "number": 5
-    }, ValueError("GraphQL: something else"))
+    answers = Answers(
+        {"id": "PR_1", "number": 5}, ValueError("GraphQL: something else")
+    )
     monkeypatch.setitem(view_cmd.__globals__, "pull_request_fields", answers)
 
     with pytest.raises(ValueError, match="something else"):
@@ -452,20 +492,30 @@ async def test_pr_list_json_lists_over_graphql_with_ghs_states(monkeypatch):
         calls.append((filter_, limit, selection))
         return [{"number": 3, "files": {"nodes": []}}]
 
-    monkeypatch.setitem(list_cmd.__globals__, "list_pull_request_fields",
-                        listing)
+    monkeypatch.setitem(
+        list_cmd.__globals__, "list_pull_request_fields", listing
+    )
 
-    out = await _json(await list_cmd(
-        _inv(flags={
-            "repo": "o/r",
-            "json": "number,files",
-            "state": "closed"
-        })))
+    out = await _json(
+        await list_cmd(
+            _inv(
+                flags={
+                    "repo": "o/r",
+                    "json": "number,files",
+                    "state": "closed",
+                }
+            )
+        )
+    )
 
     assert out == [{"files": [], "number": 3}]
     filter_, limit, selection = calls[0]
-    assert (filter_.states, filter_.base,
-            filter_.head) == (("CLOSED", "MERGED"), None, None)
+    assert (filter_.states, filter_.base, filter_.head) == (
+        ("CLOSED", "MERGED"),
+        None,
+        None,
+    )
     assert limit == 30
-    assert selection == ("number,files(first: 100) "
-                         "{nodes {additions,deletions,path}}")
+    assert selection == (
+        "number,files(first: 100) {nodes {additions,deletions,path}}"
+    )

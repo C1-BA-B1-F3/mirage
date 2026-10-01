@@ -14,7 +14,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def stash_list(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """List the stash reflog newest first, including stashes from real Git.
 
     Args:
@@ -24,19 +25,22 @@ async def stash_list(
         doors = inv.doors or CLIDoors()
         _, location = await opened(FlagView(inv.flags), doors)
         assert doors.dispatch is not None
-        data = await read_optional(doors.dispatch,
-                                   f"{location.commondir}/logs/refs/stash")
+        data = await read_optional(
+            doors.dispatch, f"{location.commondir}/logs/refs/stash"
+        )
         lines = (data or b"").splitlines()
-        text = b"".join(f"stash@{{{index}}}: ".encode() +
-                        row.split(b"\t", 1)[-1] + b"\n"
-                        for index, row in enumerate(reversed(lines)))
+        text = b"".join(
+            f"stash@{{{index}}}: ".encode() + row.split(b"\t", 1)[-1] + b"\n"
+            for index, row in enumerate(reversed(lines))
+        )
         return text, IOResult()
     except GitError as exc:
         return fatal(exc)
 
 
 async def stash_show(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Show a stash's working tree against its first parent, not HEAD.
 
     Args:
@@ -50,12 +54,14 @@ async def stash_show(
         match = re.fullmatch(r"(?:stash@\{(\d+)\}|(\d+))", selector)
         if match is not None:
             data = await read_optional(
-                doors.dispatch, f"{location.commondir}/logs/refs/stash")
+                doors.dispatch, f"{location.commondir}/logs/refs/stash"
+            )
             rows = list(reversed((data or b"").splitlines()))
             index = int(match.group(1) or match.group(2))
             if not rows:
-                return None, IOResult(exit_code=1,
-                                      stderr=b"No stash entries found.\n")
+                return None, IOResult(
+                    exit_code=1, stderr=b"No stash entries found.\n"
+                )
             if index >= len(rows):
                 raise GitError(f"log for 'stash' only has {len(rows)} entries")
             selector = rows[index].split(b" ", 2)[1].decode()
@@ -65,13 +71,25 @@ async def stash_show(
         flags = dict(inv.flags)
         view = FlagView(flags)
         if not any(
-                view.as_bool(name)
-                for name in ("patch", "name_only", "name_status", "stat",
-                             "numstat", "shortstat", "summary", "raw")):
+            view.as_bool(name)
+            for name in (
+                "patch",
+                "name_only",
+                "name_status",
+                "stat",
+                "numstat",
+                "shortstat",
+                "summary",
+                "raw",
+            )
+        ):
             flags["stat"] = True
         return await diff(
-            replace(inv,
-                    texts=(commit.parents[0].decode(), commit.id.decode()),
-                    flags=flags))
+            replace(
+                inv,
+                texts=(commit.parents[0].decode(), commit.id.decode()),
+                flags=flags,
+            )
+        )
     except GitError as exc:
         return fatal(exc)

@@ -46,7 +46,7 @@ export function refuseParents(st: GwsState, ids: readonly string[]): Reply | nul
 // Whether `id` is `folder` itself or sits anywhere below it.
 function within(st: GwsState, id: string, folder: string): boolean {
   const seen = new Set<string>()
-  for (let at: string | undefined = id; at !== undefined && !seen.has(at); ) {
+  for (let at: string | undefined = id; at !== undefined && !seen.has(at);) {
     if (at === folder) return true
     seen.add(at)
     at = st.files.get(at)?.parents[0]

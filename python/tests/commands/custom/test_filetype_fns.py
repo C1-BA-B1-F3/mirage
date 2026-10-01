@@ -45,17 +45,19 @@ def test_filetype_fns_passed_to_generic_command():
 
     mount = ws._registry.mount_for("/tmp/")
     mount.register(
-        RegisteredCommand("mycat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=None,
-                          fn=my_cat))
+        RegisteredCommand(
+            "mycat", spec=SPECS["cat"], vfs="ram", filetype=None, fn=my_cat
+        )
+    )
     mount.register(
-        RegisteredCommand("mycat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".parquet",
-                          fn=my_cat_parquet))
+        RegisteredCommand(
+            "mycat",
+            spec=SPECS["cat"],
+            vfs="ram",
+            filetype=".parquet",
+            fn=my_cat_parquet,
+        )
+    )
 
     _run(ws, "mycat /tmp/a.txt")
     assert received["filetype_fns"] is not None
@@ -81,17 +83,19 @@ def test_filetype_fns_not_passed_to_filetype_command():
 
     mount = ws._registry.mount_for("/tmp/")
     mount.register(
-        RegisteredCommand("mycat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=None,
-                          fn=my_cat))
+        RegisteredCommand(
+            "mycat", spec=SPECS["cat"], vfs="ram", filetype=None, fn=my_cat
+        )
+    )
     mount.register(
-        RegisteredCommand("mycat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".parquet",
-                          fn=my_cat_parquet))
+        RegisteredCommand(
+            "mycat",
+            spec=SPECS["cat"],
+            vfs="ram",
+            filetype=".parquet",
+            fn=my_cat_parquet,
+        )
+    )
 
     _run(ws, "mycat /tmp/a.parquet")
     fns = received.get("filetype_fns", {})
@@ -112,11 +116,10 @@ def test_filetype_fns_empty_when_no_variants():
         return b"ok", IOResult()
 
     ws._registry.mount_for("/tmp/").register(
-        RegisteredCommand("myecho",
-                          spec=SPECS["echo"],
-                          vfs="ram",
-                          filetype=None,
-                          fn=my_echo))
+        RegisteredCommand(
+            "myecho", spec=SPECS["echo"], vfs="ram", filetype=None, fn=my_echo
+        )
+    )
 
     _run(ws, "myecho /tmp/a.txt")
     fns = received.get("filetype_fns", {})
@@ -142,11 +145,10 @@ def test_a_directory_does_not_route_to_a_filetype_handler():
     asyncio.run(ws.vfs.write("/data/dir.tally/inside.txt", b"nested\n"))
     asyncio.run(ws.vfs.write("/data/file.tally", b"raw\n"))
     ws._registry.mount_for("/data/").register(
-        RegisteredCommand("cat",
-                          spec=SPECS["cat"],
-                          vfs="ram",
-                          filetype=".tally",
-                          fn=renderer))
+        RegisteredCommand(
+            "cat", spec=SPECS["cat"], vfs="ram", filetype=".tally", fn=renderer
+        )
+    )
 
     io = _run(ws, "cat /data/dir.tally")
     assert fired == []

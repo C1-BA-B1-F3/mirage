@@ -21,27 +21,31 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.object_store import make_object_store_commands
 from mirage.commands.config import CommandOpts
-from mirage.context import (reset_current_session, reset_mount_gate,
-                            set_current_session, set_mount_gate)
+from mirage.context import (
+    reset_current_session,
+    reset_mount_gate,
+    set_current_session,
+    set_mount_gate,
+)
 from mirage.types import MountMode, PathSpec, ShowEntry, ShownPaths
 from mirage.workspace.session import SessionState
 
 
-async def _readdir(_accessor: Accessor,
-                   _path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def _readdir(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> list[str]:
     return []
 
 
-async def _missing(_accessor: Accessor,
-                   _path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> bytes:
+async def _missing(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> bytes:
     raise FileNotFoundError(_path.virtual)
 
 
-async def _exists(_accessor: Accessor,
-                  _path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> bool:
+async def _exists(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> bool:
     return False
 
 
@@ -54,17 +58,19 @@ def _io(writes: list[str]) -> CommandIO:
     async def write(_accessor: Accessor, path: PathSpec, _data: bytes) -> None:
         writes.append(path.virtual)
 
-    return CommandIO(readdir=_readdir,
-                     read_bytes=_missing,
-                     read_stream=_missing,
-                     stat=_missing,
-                     write=write,
-                     exists=_exists,
-                     mkdir=_unused_dir_op,
-                     unlink=_unused_dir_op,
-                     rmdir=_unused_dir_op,
-                     rm_r=_unused_dir_op,
-                     is_mounted=lambda a: True)
+    return CommandIO(
+        readdir=_readdir,
+        read_bytes=_missing,
+        read_stream=_missing,
+        stat=_missing,
+        write=write,
+        exists=_exists,
+        mkdir=_unused_dir_op,
+        unlink=_unused_dir_op,
+        rmdir=_unused_dir_op,
+        rm_r=_unused_dir_op,
+        is_mounted=lambda a: True,
+    )
 
 
 def _tee(writes: list[str]):
@@ -84,13 +90,18 @@ async def test_tee_holds_each_path_to_its_regions_mode():
         session_id="agent",
         mount_modes={"/s3": MountMode.READ},
         shown_paths=ShownPaths(
-            entries=(ShowEntry("/s3/build", MountMode.WRITE), )))
+            entries=(ShowEntry("/s3/build", MountMode.WRITE),)
+        ),
+    )
     session_token = set_current_session(sess)
     gate_token = set_mount_gate("/s3", MountMode.WRITE)
     try:
-        _, result = await tee(cast(Accessor, object()),
-                              [PathSpec.from_str_path("/s3/data.txt")], [],
-                              CommandOpts(index=NULL_INDEX))
+        _, result = await tee(
+            cast(Accessor, object()),
+            [PathSpec.from_str_path("/s3/data.txt")],
+            [],
+            CommandOpts(index=NULL_INDEX),
+        )
     finally:
         reset_mount_gate(gate_token)
         reset_current_session(session_token)
@@ -107,13 +118,18 @@ async def test_tee_writes_inside_the_granted_region():
         session_id="agent",
         mount_modes={"/s3": MountMode.READ},
         shown_paths=ShownPaths(
-            entries=(ShowEntry("/s3/build", MountMode.WRITE), )))
+            entries=(ShowEntry("/s3/build", MountMode.WRITE),)
+        ),
+    )
     session_token = set_current_session(sess)
     gate_token = set_mount_gate("/s3", MountMode.WRITE)
     try:
-        _, result = await tee(cast(Accessor, object()),
-                              [PathSpec.from_str_path("/s3/build/out.txt")],
-                              [], CommandOpts(index=NULL_INDEX))
+        _, result = await tee(
+            cast(Accessor, object()),
+            [PathSpec.from_str_path("/s3/build/out.txt")],
+            [],
+            CommandOpts(index=NULL_INDEX),
+        )
     finally:
         reset_mount_gate(gate_token)
         reset_current_session(session_token)

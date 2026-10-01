@@ -36,12 +36,18 @@ async def store(redis_prefix):
 @pytest.mark.asyncio
 async def test_set_dir_preserves_insertion_order(store):
     entries = [
-        ("2026-05-03_zebra__id3.gdoc.json",
-         IndexEntry(id="3", name="zebra", resource_type="gdocs/file")),
-        ("2026-05-02_apple__id2.gdoc.json",
-         IndexEntry(id="2", name="apple", resource_type="gdocs/file")),
-        ("2026-05-01_mango__id1.gdoc.json",
-         IndexEntry(id="1", name="mango", resource_type="gdocs/file")),
+        (
+            "2026-05-03_zebra__id3.gdoc.json",
+            IndexEntry(id="3", name="zebra", resource_type="gdocs/file"),
+        ),
+        (
+            "2026-05-02_apple__id2.gdoc.json",
+            IndexEntry(id="2", name="apple", resource_type="gdocs/file"),
+        ),
+        (
+            "2026-05-01_mango__id1.gdoc.json",
+            IndexEntry(id="1", name="mango", resource_type="gdocs/file"),
+        ),
     ]
     await store.set_dir("/gdocs/owned", entries)
     result = await store.list_dir("/gdocs/owned")

@@ -53,14 +53,16 @@ def run_async_from_sync(
 
     if loop is not None and loop is not running_loop:
         if loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(_await_result(awaitable),
-                                                      loop)
+            future = asyncio.run_coroutine_threadsafe(
+                _await_result(awaitable), loop
+            )
             return future.result()
         if running_loop is None:
             return loop.run_until_complete(_await_result(awaitable))
         with concurrent.futures.ThreadPoolExecutor(1) as pool:
-            return pool.submit(loop.run_until_complete,
-                               _await_result(awaitable)).result()
+            return pool.submit(
+                loop.run_until_complete, _await_result(awaitable)
+            ).result()
     if running_loop is None:
         return _run_in_new_loop(awaitable)
     with concurrent.futures.ThreadPoolExecutor(1) as pool:

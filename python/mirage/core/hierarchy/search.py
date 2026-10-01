@@ -35,19 +35,23 @@ def query_matcher(query: SearchQuery) -> re.Pattern[str]:
         query (SearchQuery): the qualified request.
     """
     options = grep_search_options(query)
-    return compile_pattern(query.query,
-                           ignore_case=options.ignore_case,
-                           fixed_string=options.fixed_string,
-                           whole_word=options.whole_word,
-                           syntax=options.syntax)
+    return compile_pattern(
+        query.query,
+        ignore_case=options.ignore_case,
+        fixed_string=options.fixed_string,
+        whole_word=options.whole_word,
+        syntax=options.syntax,
+    )
 
 
 Searcher = Callable[[A, ScopeMatch, SearchQuery], Awaitable[list[str]]]
 
 
-def make_search_op(detect: DetectFn,
-                   searchers: Mapping[str, Searcher[A]],
-                   stat: StatOp | None = None) -> SearchOp:
+def make_search_op(
+    detect: DetectFn,
+    searchers: Mapping[str, Searcher[A]],
+    stat: StatOp | None = None,
+) -> SearchOp:
     """Adapt scope-specific search functions to the VFS search contract.
 
     Args:
@@ -56,10 +60,12 @@ def make_search_op(detect: DetectFn,
         stat (StatOp | None): optional existence check for non-root scopes.
     """
 
-    async def search(accessor: A,
-                     path: PathSpec,
-                     query: SearchQuery,
-                     index: IndexCacheStore = NULL_INDEX) -> list[str] | None:
+    async def search(
+        accessor: A,
+        path: PathSpec,
+        query: SearchQuery,
+        index: IndexCacheStore = NULL_INDEX,
+    ) -> list[str] | None:
         match = detect(path)
         searcher = searchers.get(match.kind)
         if searcher is None:

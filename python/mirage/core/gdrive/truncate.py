@@ -21,10 +21,12 @@ from mirage.utils.errors import eisdir, enotsup
 
 
 @eacces_on_denied
-async def truncate(accessor: GDriveAccessor,
-                   path: PathSpec,
-                   length: int,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    length: int,
+    no_create: bool = False,
+) -> None:
     if no_create:
         raise enotsup("gdrive", "truncate --no-create", path)
     node = await resolve_key(accessor, path.vfs_path)

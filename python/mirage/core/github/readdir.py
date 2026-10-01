@@ -16,12 +16,19 @@ import logging
 
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.context import listing_refreshed
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
 from mirage.cache.index.lock import index_lock
 from mirage.core.github.repo import ensure_ref
-from mirage.core.github.tree import (ensure_live_snapshot, fetch_dir_tree,
-                                     refill_snapshot)
+from mirage.core.github.tree import (
+    ensure_live_snapshot,
+    fetch_dir_tree,
+    refill_snapshot,
+)
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -57,17 +64,23 @@ async def _readdir(
     # an *expired* answer means the tree aged out, not that the path is
     # gone. Refetch once and ask again. A NOT_FOUND against a live index
     # is a real absence and must not cost a tree fetch.
-    if (listing.status == LookupStatus.EXPIRED and not accessor.truncated
-            and refilled is None):
+    if (
+        listing.status == LookupStatus.EXPIRED
+        and not accessor.truncated
+        and refilled is None
+    ):
         refilled = await refill_snapshot(accessor, index, prefix)
         if refilled is not None:
             listing = await index.list_dir(virtual_key)
     if listing.entries is not None:
         return listing.entries
-    if accessor.truncated and listing.status in (LookupStatus.NOT_FOUND,
-                                                 LookupStatus.EXPIRED):
-        return await _fallback_readdir(accessor, virtual_key, index, virtual,
-                                       prefix)
+    if accessor.truncated and listing.status in (
+        LookupStatus.NOT_FOUND,
+        LookupStatus.EXPIRED,
+    ):
+        return await _fallback_readdir(
+            accessor, virtual_key, index, virtual, prefix
+        )
     # A lock wait can outlast the TTL; use this refill only on EXPIRED.
     if refilled is not None and listing.status == LookupStatus.EXPIRED:
         refilled = index.scope_snapshot(refilled)
@@ -100,13 +113,19 @@ async def _fallback_readdir(
     parent_sha = await _resolve_dir_sha(accessor, virtual_key, index, prefix)
     if parent_sha is None:
         raise enoent(virtual)
-    entries = await fetch_dir_tree(accessor.config, accessor.owner,
-                                   accessor.repo, parent_sha, accessor.pool)
+    entries = await fetch_dir_tree(
+        accessor.config,
+        accessor.owner,
+        accessor.repo,
+        parent_sha,
+        accessor.pool,
+    )
     return await _cache_dir(index, virtual_key, entries)
 
 
-async def _cache_dir(index: IndexCacheStore, virtual_key: str,
-                     entries: list[TreeEntry]) -> list[str]:
+async def _cache_dir(
+    index: IndexCacheStore, virtual_key: str, entries: list[TreeEntry]
+) -> list[str]:
     """Cache one complete tree listing, including each traversed parent."""
     norm = virtual_key.rstrip("/") or "/"
     child_keys: list[str] = []
@@ -123,8 +142,11 @@ async def _cache_dir(index: IndexCacheStore, virtual_key: str,
         dir_entries.append((entry.path, idx_entry))
         child_keys.append(child_path)
     await index.set_dir(norm, dir_entries)
-    log.debug("fallback readdir populated %d entries for %s", len(entries),
-              virtual_key)
+    log.debug(
+        "fallback readdir populated %d entries for %s",
+        len(entries),
+        virtual_key,
+    )
     return sorted(child_keys)
 
 
@@ -132,7 +154,7 @@ async def _resolve_dir_sha(
     accessor: GitHubAccessor,
     virtual_key: str,
     index: IndexCacheStore,
-    prefix: str = '',
+    prefix: str = "",
 ) -> str | None:
     """Get the tree SHA for a directory path.
 
@@ -147,7 +169,7 @@ async def _resolve_dir_sha(
     """
     norm = virtual_key.rstrip("/") or "/"
     stem = prefix.rstrip("/")
-    rest = norm[len(stem):] if stem and norm.startswith(stem) else norm
+    rest = norm[len(stem) :] if stem and norm.startswith(stem) else norm
     parts = [p for p in rest.strip("/").split("/") if p]
     current_sha = await ensure_ref(accessor)
     current_path = stem or "/"
@@ -161,9 +183,13 @@ async def _resolve_dir_sha(
                     current_sha = cached.id
                     current_path = child_path
                     continue
-        entries = await fetch_dir_tree(accessor.config, accessor.owner,
-                                       accessor.repo, current_sha,
-                                       accessor.pool)
+        entries = await fetch_dir_tree(
+            accessor.config,
+            accessor.owner,
+            accessor.repo,
+            current_sha,
+            accessor.pool,
+        )
         child_path = current_path.rstrip("/") + "/" + part
         found = next((entry for entry in entries if entry.path == part), None)
         if found is None or found.type != "tree":

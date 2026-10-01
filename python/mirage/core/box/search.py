@@ -17,8 +17,12 @@ import logging
 from mirage.accessor.box import BoxAccessor
 from mirage.core.box.api import search_content
 from mirage.core.box.client import BoxApiError
-from mirage.core.box.resolve import (mount_relative_key, path_parts,
-                                     resolve_item, root_id)
+from mirage.core.box.resolve import (
+    mount_relative_key,
+    path_parts,
+    resolve_item,
+    root_id,
+)
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_raw
@@ -72,12 +76,15 @@ async def narrow_paths(
         else:
             folder_id = root
         try:
-            results, truncated = await search_content(accessor.token_manager,
-                                                      query, folder_id)
+            results, truncated = await search_content(
+                accessor.token_manager, query, folder_id
+            )
         except BoxApiError as exc:
             logger.warning(
                 "box search push-down failed (%s); "
-                "falling back to per-file scan", exc)
+                "falling back to per-file scan",
+                exc,
+            )
             return None
         if truncated:
             return None
@@ -87,14 +94,17 @@ async def narrow_paths(
             if key is None:
                 continue
             scoped.append(
-                f"{mount_prefix}/{key}" if key else mount_prefix or "/")
+                f"{mount_prefix}/{key}" if key else mount_prefix or "/"
+            )
         scoped.sort(key=_path_components)
         for virtual in scoped:
             narrowed.append(
-                PathSpec(virtual=virtual,
-                         directory="",
-                         vfs_path=mount_key(virtual, mount_prefix),
-                         resolved=True,
-                         raw_path=respell_raw([virtual], p.virtual,
-                                              p.raw_path)[0]))
+                PathSpec(
+                    virtual=virtual,
+                    directory="",
+                    vfs_path=mount_key(virtual, mount_prefix),
+                    resolved=True,
+                    raw_path=respell_raw([virtual], p.virtual, p.raw_path)[0],
+                )
+            )
     return narrowed

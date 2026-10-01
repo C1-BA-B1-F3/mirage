@@ -13,13 +13,17 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.workspace.executor.builtins.getopt import last_of, scan_options
-from mirage.workspace.executor.builtins.lookup.classify import (describe,
-                                                                locations,
-                                                                program_file)
-from mirage.workspace.executor.builtins.lookup.constants import (TYPE_OPTIONS,
-                                                                 TYPE_USAGE,
-                                                                 WHICH_OPTIONS,
-                                                                 WHICH_USAGE)
+from mirage.workspace.executor.builtins.lookup.classify import (
+    describe,
+    locations,
+    program_file,
+)
+from mirage.workspace.executor.builtins.lookup.constants import (
+    TYPE_OPTIONS,
+    TYPE_USAGE,
+    WHICH_OPTIONS,
+    WHICH_USAGE,
+)
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.executor.builtins.shared import result
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
@@ -53,9 +57,11 @@ def handle_type(
     """
     scan = scan_options(args, TYPE_OPTIONS)
     if scan.bad is not None:
-        return result("type",
-                      exit_code=2,
-                      stderr=f"type: {scan.bad}: invalid option\n{TYPE_USAGE}")
+        return result(
+            "type",
+            exit_code=2,
+            stderr=f"type: {scan.bad}: invalid option\n{TYPE_USAGE}",
+        )
     mode = last_of(scan.letters, "tpP")
     all_mode = "a" in scan.letters
     hidden = NameKind.FUNCTION if "f" in scan.letters else None
@@ -78,11 +84,15 @@ def handle_type(
         if mode == "t":
             out_lines.extend(f"{kind.value}\n" for kind in kinds)
         elif mode == "p":
-            out_lines.extend(f"{program_file(name)}\n" for kind in kinds
-                             if kind is NameKind.FILE)
+            out_lines.extend(
+                f"{program_file(name)}\n"
+                for kind in kinds
+                if kind is NameKind.FILE
+            )
         else:
-            out_lines.extend(f"{describe(name, kind, session)}\n"
-                             for kind in kinds)
+            out_lines.extend(
+                f"{describe(name, kind, session)}\n" for kind in kinds
+            )
     out = "".join(out_lines).encode() if out_lines else None
     # One call, so the diagnostics never ride on the status: a partial
     # miss both warns and reports through the exit code.
@@ -119,7 +129,8 @@ def handle_which(
         return result(
             "which",
             exit_code=2,
-            stderr=f"which: {scan.bad}: invalid option\n{WHICH_USAGE}")
+            stderr=f"which: {scan.bad}: invalid option\n{WHICH_USAGE}",
+        )
     silent = "s" in scan.letters
     out_lines: list[str] = []
     all_found = True

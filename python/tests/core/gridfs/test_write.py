@@ -22,7 +22,6 @@ from mirage.types import PathSpec
 
 
 class _FakeManager:
-
     def __init__(self) -> None:
         self.writes: list[str] = []
         self.ancestors: list[str] = []
@@ -43,7 +42,6 @@ class _FakeManager:
 
 
 class _FakeBucket:
-
     def __init__(self, uploads: list[tuple[str, bytes]]) -> None:
         self._uploads = uploads
 
@@ -56,17 +54,21 @@ class _FakeBucket:
 
 async def _write(monkeypatch, mount_path: str) -> tuple[_FakeManager, list]:
     uploads: list[tuple[str, bytes]] = []
-    monkeypatch.setattr(gridfs_driver, "bucket",
-                        lambda accessor: _FakeBucket(uploads))
+    monkeypatch.setattr(
+        gridfs_driver, "bucket", lambda accessor: _FakeBucket(uploads)
+    )
     manager = _FakeManager()
     prev = push_cache_manager(manager)
     try:
         await write_bytes(
             GridFSAccessor(
-                GridFSConfig(uri="mongodb://localhost:27017", database="db")),
-            PathSpec(virtual="/mnt" + mount_path,
-                     directory="/mnt/",
-                     vfs_path=mount_path.lstrip("/")),
+                GridFSConfig(uri="mongodb://localhost:27017", database="db")
+            ),
+            PathSpec(
+                virtual="/mnt" + mount_path,
+                directory="/mnt/",
+                vfs_path=mount_path.lstrip("/"),
+            ),
             b"hi",
         )
     finally:
@@ -91,13 +93,18 @@ def test_write_reports_the_new_revision_as_the_object_token(monkeypatch):
     """gridfs spells a token as the uploaded revision's _id, the same
     string ``_head`` answers for the latest revision."""
     uploads: list[tuple[str, bytes]] = []
-    monkeypatch.setattr(gridfs_driver, "bucket",
-                        lambda accessor: _FakeBucket(uploads))
+    monkeypatch.setattr(
+        gridfs_driver, "bucket", lambda accessor: _FakeBucket(uploads)
+    )
     meta = asyncio.run(
         gridfs_driver.DRIVER.put(
             GridFSAccessor(
-                GridFSConfig(uri="mongodb://localhost:27017", database="db")),
-            "a/b.txt", b"hi"))
+                GridFSConfig(uri="mongodb://localhost:27017", database="db")
+            ),
+            "a/b.txt",
+            b"hi",
+        )
+    )
     assert meta is not None
     assert meta.fingerprint == "oid-1"
     assert meta.revision == "oid-1"

@@ -25,5 +25,6 @@ __all__ = ["DropboxConfig", "DropboxVFS"]
 def __getattr__(name: str) -> "type[DropboxVFS]":
     if name == "DropboxVFS":
         from mirage.vfs.dropbox.dropbox import DropboxVFS
+
         return DropboxVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

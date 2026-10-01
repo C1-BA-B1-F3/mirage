@@ -66,8 +66,9 @@ def snapshot_dir(cache_dir: str, folder: str, sha: str) -> str:
     return posixpath.join(cache_dir, folder, "snapshots", sha)
 
 
-def snapshot_path(cache_dir: str, folder: str, sha: str,
-                  repo_path: str) -> str:
+def snapshot_path(
+    cache_dir: str, folder: str, sha: str, repo_path: str
+) -> str:
     """Where one file appears within a commit's rendered tree."""
     return posixpath.join(snapshot_dir(cache_dir, folder, sha), repo_path)
 
@@ -77,8 +78,9 @@ def ref_path(cache_dir: str, folder: str, revision: str) -> str:
     return posixpath.join(cache_dir, folder, "refs", revision)
 
 
-def link_target(cache_dir: str, folder: str, sha: str, repo_path: str,
-                etag: str) -> str:
+def link_target(
+    cache_dir: str, folder: str, sha: str, repo_path: str, etag: str
+) -> str:
     """The relative target a snapshot entry points at.
 
     Relative, not absolute, because upstream's cache is relocatable: a
@@ -97,8 +99,9 @@ def link_target(cache_dir: str, folder: str, sha: str, repo_path: str,
         str: the link target, relative to the entry's own directory.
     """
     entry = snapshot_path(cache_dir, folder, sha, repo_path)
-    return posixpath.relpath(blob_path(cache_dir, folder, etag),
-                             posixpath.dirname(entry))
+    return posixpath.relpath(
+        blob_path(cache_dir, folder, etag), posixpath.dirname(entry)
+    )
 
 
 def cache_root(env: dict[str, str] | None) -> str | None:

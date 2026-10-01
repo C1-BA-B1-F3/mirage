@@ -2,13 +2,25 @@ import math
 from xml.etree import ElementTree
 
 import mirage.core.nextcloud.search.constants as constants
-from mirage.commands.builtin.find_eval import (And, Name, Not, Or, PredNode,
-                                               TrueNode, Type)
+from mirage.commands.builtin.find_eval import (
+    And,
+    Name,
+    Not,
+    Or,
+    PredNode,
+    TrueNode,
+    Type,
+)
 from mirage.core.nextcloud.search.target import scope_path
-from mirage.core.nextcloud.search.types import (BooleanOperation, Comparison,
-                                                CompiledPredicate,
-                                                FilesSearchQuery, Property,
-                                                SearchTarget, XmlElement)
+from mirage.core.nextcloud.search.types import (
+    BooleanOperation,
+    Comparison,
+    CompiledPredicate,
+    FilesSearchQuery,
+    Property,
+    SearchTarget,
+    XmlElement,
+)
 from mirage.core.nextcloud.search.xml import dav, searchdav
 from mirage.types import FindType, PathSpec
 from mirage.utils.stat_view import DIR_SIZE
@@ -20,8 +32,9 @@ def property_element(parent: XmlElement, field: Property) -> XmlElement:
     return prop
 
 
-def comparison(operation: Comparison, field: Property,
-               value: str | int) -> XmlElement:
+def comparison(
+    operation: Comparison, field: Property, value: str | int
+) -> XmlElement:
     element = ElementTree.Element(dav(operation))
     property_element(element, field)
     literal = ElementTree.SubElement(element, dav("literal"))
@@ -43,8 +56,9 @@ def not_collection() -> XmlElement:
     return negate(is_collection())
 
 
-def combine(operation: BooleanOperation,
-            elements: list[XmlElement]) -> XmlElement:
+def combine(
+    operation: BooleanOperation, elements: list[XmlElement]
+) -> XmlElement:
     if len(elements) == 1:
         return elements[0]
     combined = ElementTree.Element(dav(operation))
@@ -68,14 +82,16 @@ def glob_to_like(pattern: str) -> str:
 
 def name_operation(name: Name) -> Comparison:
     has_wildcard = "*" in name.pattern or "?" in name.pattern
-    return (Comparison.LIKE
-            if has_wildcard or name.icase else Comparison.EQUAL)
+    return Comparison.LIKE if has_wildcard or name.icase else Comparison.EQUAL
 
 
 def name_condition(name: Name) -> XmlElement:
     operation = name_operation(name)
-    value = (glob_to_like(name.pattern)
-             if operation == Comparison.LIKE else name.pattern)
+    value = (
+        glob_to_like(name.pattern)
+        if operation == Comparison.LIKE
+        else name.pattern
+    )
     return comparison(operation, constants.DISPLAY_NAME, value)
 
 
@@ -129,36 +145,50 @@ def compile_predicate(node: PredNode) -> CompiledPredicate | None:
             negatable = compiled.negatable
         if not conditions:
             return CompiledPredicate(None) if isinstance(node, And) else None
-        operation = (BooleanOperation.AND
-                     if isinstance(node, And) else BooleanOperation.OR)
+        operation = (
+            BooleanOperation.AND
+            if isinstance(node, And)
+            else BooleanOperation.OR
+        )
         # `combine` returns a lone condition unwrapped, so a one-armed group
         # is still exactly whatever that arm was, negatable included. With two
         # or more arms the result is a `<d:and>`/`<d:or>`, which is not.
-        return CompiledPredicate(combine(operation, conditions),
-                                 negatable=len(conditions) == 1 and negatable)
+        return CompiledPredicate(
+            combine(operation, conditions),
+            negatable=len(conditions) == 1 and negatable,
+        )
     return None
 
 
 def size_condition(query: FilesSearchQuery) -> XmlElement | None:
     bounds: list[XmlElement] = []
-    if (query.size.lower is not None and query.size.upper == query.size.lower):
+    if query.size.lower is not None and query.size.upper == query.size.lower:
         bounds.append(
-            comparison(Comparison.EQUAL, constants.SIZE, query.size.lower))
+            comparison(Comparison.EQUAL, constants.SIZE, query.size.lower)
+        )
     else:
         if query.size.lower is not None:
             bounds.append(
-                comparison(Comparison.GREATER_THAN_OR_EQUAL, constants.SIZE,
-                           query.size.lower))
+                comparison(
+                    Comparison.GREATER_THAN_OR_EQUAL,
+                    constants.SIZE,
+                    query.size.lower,
+                )
+            )
         if query.size.upper is not None:
             bounds.append(
-                comparison(Comparison.LESS_THAN_OR_EQUAL, constants.SIZE,
-                           query.size.upper))
+                comparison(
+                    Comparison.LESS_THAN_OR_EQUAL,
+                    constants.SIZE,
+                    query.size.upper,
+                )
+            )
     if not bounds:
         return None
     file_bounds = combine(BooleanOperation.AND, [not_collection(), *bounds])
     includes_dir_size = (
-        (query.size.lower is None or query.size.lower <= DIR_SIZE)
-        and (query.size.upper is None or query.size.upper >= DIR_SIZE))
+        query.size.lower is None or query.size.lower <= DIR_SIZE
+    ) and (query.size.upper is None or query.size.upper >= DIR_SIZE)
     if includes_dir_size:
         return combine(BooleanOperation.OR, [is_collection(), file_bounds])
     return file_bounds
@@ -176,13 +206,20 @@ def where_condition(query: FilesSearchQuery) -> XmlElement | None:
         conditions.append(size)
     if query.modified.lower is not None:
         conditions.append(
-            comparison(Comparison.GREATER_THAN_OR_EQUAL,
-                       constants.LAST_MODIFIED,
-                       math.floor(query.modified.lower)))
+            comparison(
+                Comparison.GREATER_THAN_OR_EQUAL,
+                constants.LAST_MODIFIED,
+                math.floor(query.modified.lower),
+            )
+        )
     if query.modified.upper is not None:
         conditions.append(
-            comparison(Comparison.LESS_THAN_OR_EQUAL, constants.LAST_MODIFIED,
-                       math.ceil(query.modified.upper)))
+            comparison(
+                Comparison.LESS_THAN_OR_EQUAL,
+                constants.LAST_MODIFIED,
+                math.ceil(query.modified.upper),
+            )
+        )
     return combine(BooleanOperation.AND, conditions) if conditions else None
 
 
@@ -196,8 +233,9 @@ def order(parent: XmlElement, field: Property) -> None:
     ElementTree.SubElement(element, dav("ascending"))
 
 
-def request_body(target: SearchTarget, path: PathSpec, query: FilesSearchQuery,
-                 offset: int) -> bytes:
+def request_body(
+    target: SearchTarget, path: PathSpec, query: FilesSearchQuery, offset: int
+) -> bytes:
     condition = where_condition(query)
     if condition is None:
         raise ValueError("Nextcloud Files Search requires a supported query")

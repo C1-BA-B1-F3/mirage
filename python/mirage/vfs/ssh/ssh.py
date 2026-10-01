@@ -28,7 +28,6 @@ from mirage.watch.base import DeltaHook
 
 
 class SSHVFS(BaseVFS):
-
     accessor: SSHAccessor
     name: str = VFSName.SSH
     caches_reads: bool = True

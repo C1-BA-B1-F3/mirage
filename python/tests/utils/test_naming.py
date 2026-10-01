@@ -14,8 +14,12 @@
 
 import pytest
 
-from mirage.utils.naming import (SEPARATOR, fit_id_name, make_id_name,
-                                 parse_id_name)
+from mirage.utils.naming import (
+    SEPARATOR,
+    fit_id_name,
+    make_id_name,
+    parse_id_name,
+)
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
 
 CJK = "会議の記録" * 40
@@ -28,8 +32,10 @@ def test_make_id_name_sanitizes_by_default():
 
 
 def test_make_id_name_path_safe_keeps_the_spelling():
-    assert make_id_name("Zecheng's Server", "G1",
-                        path_safe=True) == "Zecheng's Server__G1"
+    assert (
+        make_id_name("Zecheng's Server", "G1", path_safe=True)
+        == "Zecheng's Server__G1"
+    )
 
 
 def test_make_id_name_takes_the_suffix_as_an_argument():

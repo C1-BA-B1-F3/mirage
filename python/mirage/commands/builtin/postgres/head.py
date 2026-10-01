@@ -17,8 +17,10 @@ from functools import partial
 from mirage.accessor.postgres import PostgresAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
-from mirage.commands.builtin.generic_bind.adapter import (bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.builtin.postgres.io import IO
 from mirage.commands.builtin.utils.limit import note_after, row_cap_notice
 from mirage.commands.config import CommandOpts, command
@@ -29,12 +31,14 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def _head_rows(accessor: PostgresAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     *,
-                     n: int,
-                     notices: list[bytes]) -> bytes:
+async def _head_rows(
+    accessor: PostgresAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    *,
+    n: int,
+    notices: list[bytes],
+) -> bytes:
     """Read the first ``n`` rows of a relation with the count pushed down.
 
     ``max_read_rows`` is the most rows one read may return, so a count
@@ -59,14 +63,18 @@ async def _head_rows(accessor: PostgresAccessor,
     if len(lines) - 1 <= cap:
         return data
     notices.append(
-        row_cap_notice("head", path.raw_path, cap, "rows", "max_read_rows"))
+        row_cap_notice("head", path.raw_path, cap, "rows", "max_read_rows")
+    )
     return b"\n".join(lines[:cap]) + b"\n"
 
 
 @command("head", vfs="postgres", spec=SPECS["head"])
-async def head(accessor: PostgresAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def head(
+    accessor: PostgresAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:
@@ -79,9 +87,13 @@ async def head(accessor: PostgresAccessor, paths: list[PathSpec],
     if parsed.bytes_ is None and n_eff > 0 and not parsed.zero_terminated:
         read_fn = partial(_head_rows, n=n_eff, notices=notices)
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
-    out, io = await head_generic(resolved, list(texts), opts,
-                                 bound_op(IO.stat, accessor, opts.index),
-                                 bound_op(read_fn, accessor, opts.index))
+    out, io = await head_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(IO.stat, accessor, opts.index),
+        bound_op(read_fn, accessor, opts.index),
+    )
     if out is None:
         return out, io
     return note_after(out, io, notices), io

@@ -16,25 +16,37 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.zip_cmd import zip_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+)
 from mirage.commands.builtin.generic_bind.archive_io import walk_of
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def zip_cmd(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                  texts: list[str],
-                  opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def zip_cmd(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor) or not paths:
         raise ValueError("zip: usage: zip archive.zip file1 [file2 ...]")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
-    return await zip_generic(resolved, list(texts), opts,
-                             bound_op(ops.read_bytes, accessor, opts.index),
-                             partial(ops.require(Operation.WRITE), accessor),
-                             partial(ops.stat, accessor, index=opts.index),
-                             walk_of(ops, accessor, opts.index))
+    return await zip_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(ops.read_bytes, accessor, opts.index),
+        partial(ops.require(Operation.WRITE), accessor),
+        partial(ops.stat, accessor, index=opts.index),
+        walk_of(ops, accessor, opts.index),
+    )
 
 
-BUILDER = Builder('zip', zip_cmd, write=True)
+BUILDER = Builder("zip", zip_cmd, write=True)

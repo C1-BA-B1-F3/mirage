@@ -31,20 +31,24 @@ from mirage.vfs.types import NativeReadOps, ReadOps, WriteOps
 # Databricks Volume files are read and written through the generic factory;
 # head keeps a wrapper because -c fetches only the first N bytes via a single
 # range request instead of streaming the whole file.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read,
-                                     read_stream=_read_stream,
-                                     exists=_exists),
-                writes=WriteOps(write=_write,
-                                append=append_from_read(_read, _write),
-                                mkdir=_mkdir,
-                                unlink=_unlink,
-                                rmdir=_rmdir,
-                                rm_r=_rm_r,
-                                rename=_rename,
-                                copy=_copy,
-                                create=_create),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(
+        read_range=_read, read_stream=_read_stream, exists=_exists
+    ),
+    writes=WriteOps(
+        write=_write,
+        append=append_from_read(_read, _write),
+        mkdir=_mkdir,
+        unlink=_unlink,
+        rmdir=_rmdir,
+        rm_r=_rm_r,
+        rename=_rename,
+        copy=_copy,
+        create=_create,
+    ),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

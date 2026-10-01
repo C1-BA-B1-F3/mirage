@@ -88,6 +88,7 @@ def test_disk_round_trip(tmp_path):
 @pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 def test_redis_round_trip():
     import redis as sync_redis
+
     src_prefix = f"mirage:test:src:{uuid.uuid4().hex}:"
     dst_prefix = f"mirage:test:dst:{uuid.uuid4().hex}:"
     src = RedisVFS(url=REDIS_URL, key_prefix=src_prefix)
@@ -174,99 +175,194 @@ def test_s3_load_state_is_noop():
 
 def _build(mod_path, cls_name, cfg_cls_name, **cfg_kwargs):
     import importlib
+
     mod = importlib.import_module(mod_path)
     cfg = getattr(mod, cfg_cls_name)(**cfg_kwargs)
     return getattr(mod, cls_name)(cfg)
 
 
 REDACTION_CASES = [
-    ("mirage.vfs.r2", "R2VFS", "R2Config",
-     dict(bucket="b",
-          account_id="acc",
-          access_key_id="AKIA-R2-LEAK",
-          secret_access_key="R2-SECRET-LEAK"),
-     ["AKIA-R2-LEAK", "R2-SECRET-LEAK"]),
-    ("mirage.vfs.oci", "OCIVFS", "OCIConfig",
-     dict(bucket="b",
-          namespace="ns",
-          region="us-ashburn-1",
-          access_key_id="OCI-AKIA-LEAK",
-          secret_access_key="OCI-SECRET-LEAK"),
-     ["OCI-AKIA-LEAK", "OCI-SECRET-LEAK"]),
-    ("mirage.vfs.supabase", "SupabaseVFS", "SupabaseConfig",
-     dict(bucket="b",
-          region="us-east-1",
-          project_ref="ref",
-          access_key_id="SUPA-AKIA-LEAK",
-          secret_access_key="SUPA-SECRET-LEAK",
-          session_token="SUPA-TOKEN-LEAK"),
-     ["SUPA-AKIA-LEAK", "SUPA-SECRET-LEAK", "SUPA-TOKEN-LEAK"]),
-    ("mirage.vfs.gcs", "GCSVFS", "GCSConfig",
-     dict(bucket="b",
-          access_key_id="GCS-AKIA-LEAK",
-          secret_access_key="GCS-SECRET-LEAK"),
-     ["GCS-AKIA-LEAK", "GCS-SECRET-LEAK"]),
-    ("mirage.vfs.gdrive", "GoogleDriveVFS", "GoogleDriveConfig",
-     dict(client_id="id",
-          client_secret="GD-SECRET-LEAK",
-          refresh_token="GD-REFRESH-LEAK"),
-     ["GD-SECRET-LEAK", "GD-REFRESH-LEAK"]),
-    ("mirage.vfs.gmail", "GmailVFS", "GmailConfig",
-     dict(client_id="id",
-          client_secret="GM-SECRET-LEAK",
-          refresh_token="GM-REFRESH-LEAK"),
-     ["GM-SECRET-LEAK", "GM-REFRESH-LEAK"]),
-    ("mirage.vfs.gdocs", "GDocsVFS", "GDocsConfig",
-     dict(client_id="id",
-          client_secret="GDOC-SECRET-LEAK",
-          refresh_token="GDOC-REFRESH-LEAK"),
-     ["GDOC-SECRET-LEAK", "GDOC-REFRESH-LEAK"]),
-    ("mirage.vfs.gsheets", "GSheetsVFS", "GSheetsConfig",
-     dict(client_id="id",
-          client_secret="GSH-SECRET-LEAK",
-          refresh_token="GSH-REFRESH-LEAK"),
-     ["GSH-SECRET-LEAK", "GSH-REFRESH-LEAK"]),
-    ("mirage.vfs.gslides", "GSlidesVFS", "GSlidesConfig",
-     dict(client_id="id",
-          client_secret="GSL-SECRET-LEAK",
-          refresh_token="GSL-REFRESH-LEAK"),
-     ["GSL-SECRET-LEAK", "GSL-REFRESH-LEAK"]),
-    ("mirage.vfs.slack", "SlackVFS", "SlackConfig",
-     dict(token="SLACK-TOKEN-LEAK", search_token="SLACK-SEARCH-LEAK"),
-     ["SLACK-TOKEN-LEAK", "SLACK-SEARCH-LEAK"]),
-    ("mirage.vfs.discord", "DiscordVFS", "DiscordConfig",
-     dict(token="DISCORD-TOKEN-LEAK"), ["DISCORD-TOKEN-LEAK"]),
-    ("mirage.vfs.notion", "NotionVFS", "NotionConfig",
-     dict(api_key="NOTION-KEY-LEAK"), ["NOTION-KEY-LEAK"]),
-    ("mirage.vfs.linear", "LinearVFS", "LinearConfig",
-     dict(api_key="LINEAR-KEY-LEAK"), ["LINEAR-KEY-LEAK"]),
-    ("mirage.vfs.trello", "TrelloVFS", "TrelloConfig",
-     dict(api_key="TRELLO-KEY-LEAK", api_token="TRELLO-TOKEN-LEAK"),
-     ["TRELLO-KEY-LEAK", "TRELLO-TOKEN-LEAK"]),
-    ("mirage.vfs.email", "EmailVFS", "EmailConfig",
-     dict(imap_host="h",
-          smtp_host="h",
-          username="u",
-          password="EMAIL-PWD-LEAK"), ["EMAIL-PWD-LEAK"]),
-    ("mirage.vfs.langfuse", "LangfuseVFS", "LangfuseConfig",
-     dict(public_key="LF-PUB",
-          secret_key="LF-SECRET-LEAK"), ["LF-SECRET-LEAK"]),
-    ("mirage.vfs.mongodb", "MongoDBVFS", "MongoDBConfig",
-     dict(uri="mongodb://user:pwd@h:27017/db"),
-     ["mongodb://user:pwd@h:27017/db"]),
+    (
+        "mirage.vfs.r2",
+        "R2VFS",
+        "R2Config",
+        dict(
+            bucket="b",
+            account_id="acc",
+            access_key_id="AKIA-R2-LEAK",
+            secret_access_key="R2-SECRET-LEAK",
+        ),
+        ["AKIA-R2-LEAK", "R2-SECRET-LEAK"],
+    ),
+    (
+        "mirage.vfs.oci",
+        "OCIVFS",
+        "OCIConfig",
+        dict(
+            bucket="b",
+            namespace="ns",
+            region="us-ashburn-1",
+            access_key_id="OCI-AKIA-LEAK",
+            secret_access_key="OCI-SECRET-LEAK",
+        ),
+        ["OCI-AKIA-LEAK", "OCI-SECRET-LEAK"],
+    ),
+    (
+        "mirage.vfs.supabase",
+        "SupabaseVFS",
+        "SupabaseConfig",
+        dict(
+            bucket="b",
+            region="us-east-1",
+            project_ref="ref",
+            access_key_id="SUPA-AKIA-LEAK",
+            secret_access_key="SUPA-SECRET-LEAK",
+            session_token="SUPA-TOKEN-LEAK",
+        ),
+        ["SUPA-AKIA-LEAK", "SUPA-SECRET-LEAK", "SUPA-TOKEN-LEAK"],
+    ),
+    (
+        "mirage.vfs.gcs",
+        "GCSVFS",
+        "GCSConfig",
+        dict(
+            bucket="b",
+            access_key_id="GCS-AKIA-LEAK",
+            secret_access_key="GCS-SECRET-LEAK",
+        ),
+        ["GCS-AKIA-LEAK", "GCS-SECRET-LEAK"],
+    ),
+    (
+        "mirage.vfs.gdrive",
+        "GoogleDriveVFS",
+        "GoogleDriveConfig",
+        dict(
+            client_id="id",
+            client_secret="GD-SECRET-LEAK",
+            refresh_token="GD-REFRESH-LEAK",
+        ),
+        ["GD-SECRET-LEAK", "GD-REFRESH-LEAK"],
+    ),
+    (
+        "mirage.vfs.gmail",
+        "GmailVFS",
+        "GmailConfig",
+        dict(
+            client_id="id",
+            client_secret="GM-SECRET-LEAK",
+            refresh_token="GM-REFRESH-LEAK",
+        ),
+        ["GM-SECRET-LEAK", "GM-REFRESH-LEAK"],
+    ),
+    (
+        "mirage.vfs.gdocs",
+        "GDocsVFS",
+        "GDocsConfig",
+        dict(
+            client_id="id",
+            client_secret="GDOC-SECRET-LEAK",
+            refresh_token="GDOC-REFRESH-LEAK",
+        ),
+        ["GDOC-SECRET-LEAK", "GDOC-REFRESH-LEAK"],
+    ),
+    (
+        "mirage.vfs.gsheets",
+        "GSheetsVFS",
+        "GSheetsConfig",
+        dict(
+            client_id="id",
+            client_secret="GSH-SECRET-LEAK",
+            refresh_token="GSH-REFRESH-LEAK",
+        ),
+        ["GSH-SECRET-LEAK", "GSH-REFRESH-LEAK"],
+    ),
+    (
+        "mirage.vfs.gslides",
+        "GSlidesVFS",
+        "GSlidesConfig",
+        dict(
+            client_id="id",
+            client_secret="GSL-SECRET-LEAK",
+            refresh_token="GSL-REFRESH-LEAK",
+        ),
+        ["GSL-SECRET-LEAK", "GSL-REFRESH-LEAK"],
+    ),
+    (
+        "mirage.vfs.slack",
+        "SlackVFS",
+        "SlackConfig",
+        dict(token="SLACK-TOKEN-LEAK", search_token="SLACK-SEARCH-LEAK"),
+        ["SLACK-TOKEN-LEAK", "SLACK-SEARCH-LEAK"],
+    ),
+    (
+        "mirage.vfs.discord",
+        "DiscordVFS",
+        "DiscordConfig",
+        dict(token="DISCORD-TOKEN-LEAK"),
+        ["DISCORD-TOKEN-LEAK"],
+    ),
+    (
+        "mirage.vfs.notion",
+        "NotionVFS",
+        "NotionConfig",
+        dict(api_key="NOTION-KEY-LEAK"),
+        ["NOTION-KEY-LEAK"],
+    ),
+    (
+        "mirage.vfs.linear",
+        "LinearVFS",
+        "LinearConfig",
+        dict(api_key="LINEAR-KEY-LEAK"),
+        ["LINEAR-KEY-LEAK"],
+    ),
+    (
+        "mirage.vfs.trello",
+        "TrelloVFS",
+        "TrelloConfig",
+        dict(api_key="TRELLO-KEY-LEAK", api_token="TRELLO-TOKEN-LEAK"),
+        ["TRELLO-KEY-LEAK", "TRELLO-TOKEN-LEAK"],
+    ),
+    (
+        "mirage.vfs.email",
+        "EmailVFS",
+        "EmailConfig",
+        dict(
+            imap_host="h",
+            smtp_host="h",
+            username="u",
+            password="EMAIL-PWD-LEAK",
+        ),
+        ["EMAIL-PWD-LEAK"],
+    ),
+    (
+        "mirage.vfs.langfuse",
+        "LangfuseVFS",
+        "LangfuseConfig",
+        dict(public_key="LF-PUB", secret_key="LF-SECRET-LEAK"),
+        ["LF-SECRET-LEAK"],
+    ),
+    (
+        "mirage.vfs.mongodb",
+        "MongoDBVFS",
+        "MongoDBConfig",
+        dict(uri="mongodb://user:pwd@h:27017/db"),
+        ["mongodb://user:pwd@h:27017/db"],
+    ),
 ]
 
 
-@pytest.mark.parametrize("mod,cls,cfg_cls,kwargs,leaks",
-                         REDACTION_CASES,
-                         ids=[c[1] for c in REDACTION_CASES])
+@pytest.mark.parametrize(
+    "mod,cls,cfg_cls,kwargs,leaks",
+    REDACTION_CASES,
+    ids=[c[1] for c in REDACTION_CASES],
+)
 def test_vfs_get_state_redacts(mod, cls, cfg_cls, kwargs, leaks):
     p = _build(mod, cls, cfg_cls, **kwargs)
     state = p.get_state()
     assert "redacted_fields" not in state
     blob = repr(state)
     for leaked in leaks:
-        assert leaked not in blob, (f"{cls}: leaked {leaked!r} in state")
+        assert leaked not in blob, f"{cls}: leaked {leaked!r} in state"
     assert "<REDACTED>" in blob
 
 
@@ -290,6 +386,7 @@ def test_github_vfs_get_state_redacts():
 
 def test_ssh_no_redaction_no_override():
     from mirage.vfs.ssh import SSHVFS, SSHConfig
+
     cfg = SSHConfig(host="example.com", username="me")
     p = SSHVFS(cfg)
     state = p.get_state()
@@ -309,10 +406,16 @@ def test_ssh_no_redaction_no_override():
 # inside a DSN, so no string-shape heuristic finds it. Twin of the
 # TypeScript sweep in packages/node/src/vfs/state_round_trip.test.ts.
 DB_STATE_CASES = [
-    ("postgres", dict(dsn="postgresql://u:PGSECRET@localhost:5432/db"),
-     "PGSECRET"),
-    ("mongodb", dict(uri="mongodb://u:MONGOSECRET@localhost:27017/db"),
-     "MONGOSECRET"),
+    (
+        "postgres",
+        dict(dsn="postgresql://u:PGSECRET@localhost:5432/db"),
+        "PGSECRET",
+    ),
+    (
+        "mongodb",
+        dict(uri="mongodb://u:MONGOSECRET@localhost:27017/db"),
+        "MONGOSECRET",
+    ),
     ("lancedb", dict(uri="db://x", api_key="LANCESECRET"), "LANCESECRET"),
     ("qdrant", dict(collection="c", api_key="QDRANTSECRET"), "QDRANTSECRET"),
     # No credential at all. `_walk_config_dump` skips a None secret, so the
@@ -321,8 +424,11 @@ DB_STATE_CASES = [
     # held one. The TypeScript redactors mirror this.
     ("lancedb", dict(uri="db://x"), None),
     ("qdrant", dict(collection="c"), None),
-    ("dify", dict(api_key="DIFYSECRET", base_url="http://x",
-                  dataset_id="d"), "DIFYSECRET"),
+    (
+        "dify",
+        dict(api_key="DIFYSECRET", base_url="http://x", dataset_id="d"),
+        "DIFYSECRET",
+    ),
     # chroma reaches its server with no credential at all.
     ("chroma", dict(collection_name="c"), None),
 ]
@@ -332,7 +438,8 @@ DB_STATE_CASES = [
 @pytest.mark.parametrize(
     "name,config,secret",
     DB_STATE_CASES,
-    ids=[f"{c[0]}-{'secret' if c[2] else 'nocreds'}" for c in DB_STATE_CASES])
+    ids=[f"{c[0]}-{'secret' if c[2] else 'nocreds'}" for c in DB_STATE_CASES],
+)
 async def test_registry_vfs_state_masks_credential(name, config, secret):
     from mirage.vfs.registry import build_vfs
     from mirage.vfs.secrets import has_redacted_secret

@@ -21,8 +21,9 @@ import redis.asyncio as aioredis
 
 from mirage.workspace.session.store import SessionFields, SessionStore
 
-CAS_SCRIPT = (files("mirage.workspace.session") /
-              "cas.lua").read_text(encoding="utf-8")
+CAS_SCRIPT = (files("mirage.workspace.session") / "cas.lua").read_text(
+    encoding="utf-8"
+)
 
 
 class RedisSessionStore(SessionStore):
@@ -35,9 +36,11 @@ class RedisSessionStore(SessionStore):
     single-command (HSET/HDEL) so mutations stay one round trip.
     """
 
-    def __init__(self,
-                 url: str = "redis://localhost:6379/0",
-                 key_prefix: str = "mirage:session:") -> None:
+    def __init__(
+        self,
+        url: str = "redis://localhost:6379/0",
+        key_prefix: str = "mirage:session:",
+    ) -> None:
         self._client = aioredis.from_url(url)
         self._key = f"{key_prefix}sessions"
         self._cas = self._client.register_script(CAS_SCRIPT)
@@ -49,18 +52,22 @@ class RedisSessionStore(SessionStore):
     async def set(self, session_id: str, fields: SessionFields) -> None:
         await cast(
             Awaitable[Any],
-            self._client.hset(self._key, session_id, json.dumps(fields)))
+            self._client.hset(self._key, session_id, json.dumps(fields)),
+        )
 
-    async def cas_set(self, session_id: str, fields: SessionFields,
-                      expected_generation: int) -> bool:
+    async def cas_set(
+        self, session_id: str, fields: SessionFields, expected_generation: int
+    ) -> bool:
         # One atomic server-side compare-and-set: Lua reads the stored
         # record's generation and writes only on a match.
-        result = await self._cas(keys=[self._key],
-                                 args=[
-                                     session_id,
-                                     json.dumps(fields),
-                                     expected_generation,
-                                 ])
+        result = await self._cas(
+            keys=[self._key],
+            args=[
+                session_id,
+                json.dumps(fields),
+                expected_generation,
+            ],
+        )
         return bool(result)
 
     async def delete(self, session_ids: Iterable[str]) -> None:
@@ -73,11 +80,12 @@ class RedisSessionStore(SessionStore):
         pipe = self._client.pipeline(transaction=True)
         pipe.delete(self._key)
         if entries:
-            pipe.hset(self._key,
-                      mapping={
-                          sid: json.dumps(fields)
-                          for sid, fields in entries.items()
-                      })
+            pipe.hset(
+                self._key,
+                mapping={
+                    sid: json.dumps(fields) for sid, fields in entries.items()
+                },
+            )
         await pipe.execute()
 
     async def clear(self) -> None:

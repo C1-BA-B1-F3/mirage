@@ -56,8 +56,9 @@ def literal_tree(argv: tuple[str, ...]) -> TSNodeLike:
     words: list[LiteralNode] = []
     offset = 0
     for i, arg in enumerate(argv):
-        word = LiteralNode("raw_string", ("'" + arg + "'").encode(),
-                           start_byte=offset)
+        word = LiteralNode(
+            "raw_string", ("'" + arg + "'").encode(), start_byte=offset
+        )
         if i == 0:
             name = LiteralNode("command_name", arg.encode(), [word])
             word.parent = name

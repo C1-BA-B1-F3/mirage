@@ -52,7 +52,8 @@ def resolve_backend(value: "str | MountBackend | None") -> MountBackend:
     except ValueError:
         known = ", ".join(b.value for b in MountBackend)
         raise ValueError(
-            f"unknown mount backend {value!r}; expected one of: {known}")
+            f"unknown mount backend {value!r}; expected one of: {known}"
+        )
 
 
 def require_kernel_backend(backend: MountBackend) -> None:
@@ -68,7 +69,8 @@ def require_kernel_backend(backend: MountBackend) -> None:
         raise ValueError(
             f"backend {backend.value!r} does not register a mountpoint; it "
             "is served inside mirage's own filesystem, so there is nothing "
-            "to mount")
+            "to mount"
+        )
 
 
 def check_platform(backend: MountBackend) -> None:
@@ -83,7 +85,8 @@ def check_platform(backend: MountBackend) -> None:
     if backend is MountBackend.FSKIT and sys.platform != "darwin":
         raise RuntimeError(
             f"the fskit mount backend is macOS-only (running on "
-            f"{sys.platform!r}); use backend='fuse'")
+            f"{sys.platform!r}); use backend='fuse'"
+        )
 
 
 def check_mountpoint(backend: MountBackend, mountpoint: str) -> None:
@@ -106,15 +109,17 @@ def check_mountpoint(backend: MountBackend, mountpoint: str) -> None:
         return
     resolved = posixpath.normpath(mountpoint)
     if resolved != FSKIT_MOUNT_ROOT and not resolved.startswith(
-            FSKIT_MOUNT_ROOT + "/"):
+        FSKIT_MOUNT_ROOT + "/"
+    ):
         raise ValueError(
             f"the fskit mount backend only mounts under {FSKIT_MOUNT_ROOT}; "
-            f"got {mountpoint!r}")
+            f"got {mountpoint!r}"
+        )
 
 
-def check_sizes(backend: MountBackend,
-                ops: Ops,
-                root_prefix: str = "") -> None:
+def check_sizes(
+    backend: MountBackend, ops: Ops, root_prefix: str = ""
+) -> None:
     """Warn when an fskit mount will serve size-unknown files as empty.
 
     FSKit drives reads from the size the filesystem reports and has no
@@ -138,19 +143,23 @@ def check_sizes(backend: MountBackend,
         return
     # resource_type may be a VFSName enum member; print its value, not
     # the "VFSName.SLACK" repr Python 3.12 gives a str-mixin Enum.
-    listed = ", ".join(f"{prefix} ({getattr(name, 'value', name)})"
-                       for prefix, name in offenders)
+    listed = ", ".join(
+        f"{prefix} ({getattr(name, 'value', name)})"
+        for prefix, name in offenders
+    )
     logger.warning(
         "the fskit mount backend cannot serve mounts whose file sizes "
         "are only known after a read; size-unknown files under these "
         "mounts will read as empty: %s. Mount them with backend='fuse', "
         "or scope the fskit mount to a byte-store VFS (ram, disk, "
-        "redis, s3, gridfs).", listed)
+        "redis, s3, gridfs).",
+        listed,
+    )
 
 
-def check_writes(backend: MountBackend,
-                 ops: Ops,
-                 root_prefix: str = "") -> None:
+def check_writes(
+    backend: MountBackend, ops: Ops, root_prefix: str = ""
+) -> None:
     """Warn when an fskit mount accepts writes the shim may corrupt.
 
     Measured on live fskit mounts, pinned in ``integ/fuse/truth_fskit.json``:
@@ -170,24 +179,32 @@ def check_writes(backend: MountBackend,
         return
     # /dev is mounted writable into every workspace, and a zeroed flush
     # cannot corrupt a discard/byte-source device, so it never warns.
-    offenders = [(prefix, name)
-                 for prefix, name in ops.writable_mounts(root_prefix)
-                 if prefix.rstrip("/") != "/dev"]
+    offenders = [
+        (prefix, name)
+        for prefix, name in ops.writable_mounts(root_prefix)
+        if prefix.rstrip("/") != "/dev"
+    ]
     if not offenders:
         return
-    listed = ", ".join(f"{prefix} ({getattr(name, 'value', name)})"
-                       for prefix, name in offenders)
+    listed = ", ".join(
+        f"{prefix} ({getattr(name, 'value', name)})"
+        for prefix, name in offenders
+    )
     logger.warning(
         "file data written through an fskit mount may be flushed by the "
         "macFUSE FSKit shim as zeroed pages (metadata ops are reliable; "
         "the writer sees no error): %s. Mount them read-only, or use "
-        "backend='fuse' for writes.", listed)
+        "backend='fuse' for writes.",
+        listed,
+    )
 
 
-def prepare_backend(value: "str | MountBackend | None",
-                    ops: Ops | None = None,
-                    mountpoint: str | None = None,
-                    root_prefix: str = "") -> MountBackend:
+def prepare_backend(
+    value: "str | MountBackend | None",
+    ops: Ops | None = None,
+    mountpoint: str | None = None,
+    root_prefix: str = "",
+) -> MountBackend:
     """Resolve a backend for a kernel mount and run every guard it implies.
 
     One entry point, so a new mount path cannot pick up fskit support while

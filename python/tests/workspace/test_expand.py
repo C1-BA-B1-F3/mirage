@@ -21,17 +21,21 @@ from mirage.shell.call_stack import CallStack
 from mirage.shell.helpers import get_parts
 from mirage.types import PathSpec
 from mirage.workspace.cli.registry import CLIRegistry
-from mirage.workspace.expand import (classify_parts, classify_word,
-                                     expand_and_classify, expand_node)
+from mirage.workspace.expand import (
+    classify_parts,
+    classify_word,
+    expand_and_classify,
+    expand_node,
+)
 from mirage.workspace.expand.parts import expand_words
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.session import vars_from_env
 
 
 def _session(env=None, cwd="/"):
-    return SessionState(session_id="test",
-                        cwd=cwd,
-                        vars=vars_from_env(env or {}))
+    return SessionState(
+        session_id="test", cwd=cwd, vars=vars_from_env(env or {})
+    )
 
 
 def _execute_fn():
@@ -472,8 +476,9 @@ def test_classify_parts_command_name_stays_str():
 
 def test_classify_parts_mixed():
     reg = _mock_registry(["/data/"])
-    result = classify_parts(["grep", "-n", "pattern", "/data/file.txt"], reg,
-                            "/")
+    result = classify_parts(
+        ["grep", "-n", "pattern", "/data/file.txt"], reg, "/"
+    )
     assert result[0] == "grep"
     assert result[1] == "-n"
     assert result[2] == "pattern"
@@ -526,7 +531,8 @@ def test_expand_and_classify_glob():
     reg = _mock_registry(["/data/"])
     session = _session(cwd="/data")
     result = _run(
-        expand_and_classify(parts, session, _execute_fn(), reg, "/data"))
+        expand_and_classify(parts, session, _execute_fn(), reg, "/data")
+    )
     assert len(result) == 1
     assert isinstance(result[0], PathSpec)
     assert result[0].pattern == "*.txt"

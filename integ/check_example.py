@@ -108,10 +108,12 @@ def capture(run: Run) -> Capture:
     Returns:
         Capture: the output lines and the process exit code.
     """
-    proc = subprocess.run(run.command,
-                          cwd=os.path.join(REPO_ROOT, run.cwd),
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT)
+    proc = subprocess.run(
+        run.command,
+        cwd=os.path.join(REPO_ROOT, run.cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     text = proc.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
     lines = text.split("\n")
     if lines and lines[-1] == "":
@@ -179,8 +181,9 @@ def runs_of(lines: list[str]) -> list[tuple[int, int]]:
     return spans
 
 
-def build_lines(first: list[str], second: list[str],
-                digest_over: int) -> list[Matcher]:
+def build_lines(
+    first: list[str], second: list[str], digest_over: int
+) -> list[Matcher]:
     """Turn two captures into the truth file's matcher list.
 
     Args:
@@ -243,31 +246,40 @@ def compare(matchers: list[Matcher], lines: list[str]) -> list[str]:
     for index, matcher in enumerate(matchers):
         if isinstance(matcher, dict) and "count" in matcher:
             count = matcher["count"]
-            block = lines[cursor:cursor + count]
+            block = lines[cursor : cursor + count]
             if len(block) < count:
-                problems.append(f"line {cursor + 1}: output ended inside a "
-                                f"{count}-line block")
+                problems.append(
+                    f"line {cursor + 1}: output ended inside a "
+                    f"{count}-line block"
+                )
                 return problems
             actual = digest(block)
             if actual != matcher["sha256"]:
-                problems.append(f"line {cursor + 1}: {count}-line block "
-                                f"digest {actual[:16]} != "
-                                f"{matcher['sha256'][:16]}")
+                problems.append(
+                    f"line {cursor + 1}: {count}-line block "
+                    f"digest {actual[:16]} != "
+                    f"{matcher['sha256'][:16]}"
+                )
             cursor += count
             continue
         if cursor >= len(lines):
-            problems.append(f"line {cursor + 1}: output ended, matcher "
-                            f"{index + 1} of {len(matchers)} unmatched")
+            problems.append(
+                f"line {cursor + 1}: output ended, matcher "
+                f"{index + 1} of {len(matchers)} unmatched"
+            )
             return problems
         failure = match_line(matcher, lines[cursor])
         if failure:
-            problems.append(f"line {cursor + 1}: {failure}, "
-                            f"got {lines[cursor]!r}")
+            problems.append(
+                f"line {cursor + 1}: {failure}, got {lines[cursor]!r}"
+            )
         cursor += 1
     if cursor < len(lines):
         extra = len(lines) - cursor
-        problems.append(f"line {cursor + 1}: {extra} unexpected trailing "
-                        f"line(s), first is {lines[cursor]!r}")
+        problems.append(
+            f"line {cursor + 1}: {extra} unexpected trailing "
+            f"line(s), first is {lines[cursor]!r}"
+        )
     return problems
 
 
@@ -286,20 +298,25 @@ def check(truth: dict, path: str, variant: str | None) -> int:
     if variant is not None:
         runs = [run for run in runs if run.name == variant]
         if not runs:
-            print(f"FAIL: {path} declares no run named {variant!r}",
-                  file=sys.stderr)
+            print(
+                f"FAIL: {path} declares no run named {variant!r}",
+                file=sys.stderr,
+            )
             return 1
     elif len(runs) != 1:
         names = ", ".join(run.name for run in runs)
-        print(f"FAIL: {path} declares runs ({names}); pass --variant",
-              file=sys.stderr)
+        print(
+            f"FAIL: {path} declares runs ({names}); pass --variant",
+            file=sys.stderr,
+        )
         return 1
     run = runs[0]
     result = capture(run)
     problems = compare(truth["lines"], result.lines)
     if result.exit_code != truth["exit"]:
-        problems.insert(0,
-                        f"exit {result.exit_code}, expected {truth['exit']}")
+        problems.insert(
+            0, f"exit {result.exit_code}, expected {truth['exit']}"
+        )
     if problems:
         print(f"FAIL: {path} [{run.name}]", file=sys.stderr)
         for problem in problems[:20]:
@@ -307,8 +324,10 @@ def check(truth: dict, path: str, variant: str | None) -> int:
         if len(problems) > 20:
             print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
         return 1
-    print(f"OK: {path} [{run.name}] "
-          f"({len(truth['lines'])} matchers, {len(result.lines)} lines)")
+    print(
+        f"OK: {path} [{run.name}] "
+        f"({len(truth['lines'])} matchers, {len(result.lines)} lines)"
+    )
     return 0
 
 
@@ -336,21 +355,26 @@ def emit(truth: dict, path: str, variant: str | None, digest_over: int) -> int:
     for run in runs:
         first = capture(run)
         second = capture(run)
-        captured[run.name] = build_lines(first.lines, second.lines,
-                                         digest_over)
+        captured[run.name] = build_lines(
+            first.lines, second.lines, digest_over
+        )
         exits[run.name] = first.exit_code
         print(
             f"  captured {run.name}: {len(first.lines)} lines, "
             f"exit {first.exit_code}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
     names = list(captured)
     for name in names[1:]:
-        if captured[name] != captured[names[0]] or exits[name] != exits[
-                names[0]]:
+        if (
+            captured[name] != captured[names[0]]
+            or exits[name] != exits[names[0]]
+        ):
             print(
                 f"FAIL: {path} runs {names[0]!r} and {name!r} disagree; "
                 "a shared truth file must hold for both",
-                file=sys.stderr)
+                file=sys.stderr,
+            )
             return 1
     truth["lines"] = captured[names[0]]
     truth["exit"] = exits[names[0]]

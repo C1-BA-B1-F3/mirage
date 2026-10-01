@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-SMOLVM_CLI_HINT = ("the smolvm runtime needs the smolvm CLI on PATH "
-                   "(https://smolmachines.com); the host also needs a "
-                   "hypervisor: /dev/kvm on Linux, Hypervisor.framework on "
-                   "macOS, WHP on Windows")
+SMOLVM_CLI_HINT = (
+    "the smolvm runtime needs the smolvm CLI on PATH "
+    "(https://smolmachines.com); the host also needs a "
+    "hypervisor: /dev/kvm on Linux, Hypervisor.framework on "
+    "macOS, WHP on Windows"
+)
 
 # `machine status --json` reports RecordState's Display form, which is
 # lowercase. Only "running" can take a line: "frozen" is a fork base
@@ -24,20 +26,19 @@ SMOLVM_CLI_HINT = ("the smolvm runtime needs the smolvm CLI on PATH "
 RUNNING_STATE = "running"
 
 STATE_HINTS: dict[str, str] = {
-    "unreachable":
-    ("its guest agent is not answering (the VMM is alive but the agent "
-     "died); recover with `smolvm machine start --name {machine}`"),
-    "frozen":
-    ("it is a frozen fork base, deliberately paused so its clones can "
-     "copy-on-write from it; exec against a clone instead"),
-    "created":
-    "it has never been started; start it with "
+    "unreachable": (
+        "its guest agent is not answering (the VMM is alive but the agent "
+        "died); recover with `smolvm machine start --name {machine}`"
+    ),
+    "frozen": (
+        "it is a frozen fork base, deliberately paused so its clones can "
+        "copy-on-write from it; exec against a clone instead"
+    ),
+    "created": "it has never been started; start it with "
     "`smolvm machine start --name {machine}`",
-    "stopped":
-    "it is stopped; start it with "
+    "stopped": "it is stopped; start it with "
     "`smolvm machine start --name {machine}`",
-    "failed":
-    "it crashed; inspect with `smolvm machine status --name {machine}`",
+    "failed": "it crashed; inspect with `smolvm machine status --name {machine}`",
 }
 
 

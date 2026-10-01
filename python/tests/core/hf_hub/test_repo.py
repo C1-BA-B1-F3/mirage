@@ -29,7 +29,8 @@ async def test_head_commit_reads_the_repo_sha(mock_get, accessor):
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.repo.hub_get")
 async def test_head_commit_asks_the_revision_not_the_bare_repo(
-        mock_get, accessor):
+    mock_get, accessor
+):
     """The bare repo object answers the default branch's sha whatever
     revision was asked for, and the download cache is keyed by this sha,
     so reading it there files a `--revision dev` fetch under main's
@@ -49,6 +50,7 @@ async def test_head_commit_of_a_non_object_is_empty(mock_get, accessor):
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.repo.hub_get")
 async def test_head_commit_is_empty_when_the_hub_reports_none(
-        mock_get, accessor):
+    mock_get, accessor
+):
     mock_get.return_value = {}
     assert await head_commit(accessor) == ""

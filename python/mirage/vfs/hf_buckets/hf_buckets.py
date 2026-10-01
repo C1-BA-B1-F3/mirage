@@ -27,7 +27,6 @@ from mirage.watch.base import DeltaHook
 
 
 class HfBucketsVFS(BaseVFS):
-
     accessor: HfBucketsAccessor
     name: str = VFSName.HF_BUCKETS
     caches_reads: bool = True

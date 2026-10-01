@@ -82,30 +82,43 @@ from tests.fixtures.github_api import FakeGitHub, blob_sha
 from tests.fixtures.github_api import serve as serve_github
 from tests.fixtures.hf_buckets_opendal import FakeAsyncOperator
 from tests.fixtures.hf_hub_api import FakeHub, blob_oid, serve, xet_hash
-from tests.fixtures.msgraph_api import (DRIVE_ID, DRIVE_NAME, ME, SITE_NAME,
-                                        FakeGraph)
+from tests.fixtures.msgraph_api import (
+    DRIVE_ID,
+    DRIVE_NAME,
+    ME,
+    SITE_NAME,
+    FakeGraph,
+)
 from tests.fixtures.msgraph_api import serve as serve_graph
 
-S3_FAMILY = ("s3", "aliyun", "backblaze", "ceph", "digitalocean", "gcs",
-             "minio", "oci", "qingstor", "r2", "scaleway", "seaweedfs",
-             "supabase", "tencent", "wasabi")
+S3_FAMILY = (
+    "s3",
+    "aliyun",
+    "backblaze",
+    "ceph",
+    "digitalocean",
+    "gcs",
+    "minio",
+    "oci",
+    "qingstor",
+    "r2",
+    "scaleway",
+    "seaweedfs",
+    "supabase",
+    "tencent",
+    "wasabi",
+)
 
 HF_FAMILY = {
     "hf_models": "models",
     "hf_datasets": "datasets",
-    "hf_spaces": "spaces"
+    "hf_spaces": "spaces",
 }
 
 HARNESSES = {
-    **{
-        name: "s3"
-        for name in S3_FAMILY
-    },
+    **{name: "s3" for name in S3_FAMILY},
     "gridfs": "gridfs",
-    **{
-        name: "hf_models"
-        for name in HF_FAMILY
-    },
+    **{name: "hf_models" for name in HF_FAMILY},
     "onedrive": "onedrive",
     "sharepoint": "sharepoint",
     "hf_buckets": "hf_buckets",
@@ -121,7 +134,7 @@ HARNESSES = {
 # stay drive-relative (unscoped, `a.txt` would name a site).
 GRAPH = {
     "onedrive": (ME, ONEDRIVE_IO),
-    "sharepoint": (DRIVE_ID, SHAREPOINT_IO)
+    "sharepoint": (DRIVE_ID, SHAREPOINT_IO),
 }
 
 ALL_SHAPES = ("root", "nested", "prefixed")
@@ -130,12 +143,24 @@ ALL_ROWS = ("bytes", "stream", "drain")
 # The mounts that render a Drive file through its editor API: the mime type
 # they list, the module whose `record` a read stamps through, and the door.
 GAPPS = {
-    "gdocs": ("application/vnd.google-apps.document", gdocs_read, GDOCS_IO,
-              doc_filename),
-    "gsheets": ("application/vnd.google-apps.spreadsheet", gsheets_read,
-                GSHEETS_IO, sheet_filename),
-    "gslides": ("application/vnd.google-apps.presentation", gslides_read,
-                GSLIDES_IO, slide_filename),
+    "gdocs": (
+        "application/vnd.google-apps.document",
+        gdocs_read,
+        GDOCS_IO,
+        doc_filename,
+    ),
+    "gsheets": (
+        "application/vnd.google-apps.spreadsheet",
+        gsheets_read,
+        GSHEETS_IO,
+        sheet_filename,
+    ),
+    "gslides": (
+        "application/vnd.google-apps.presentation",
+        gslides_read,
+        GSLIDES_IO,
+        slide_filename,
+    ),
 }
 
 # What each family can run, fixed at collection. github and gdrive have no
@@ -145,18 +170,12 @@ GAPPS = {
 FAMILY_SHAPES = {
     "github": ("root", "nested"),
     "gdrive": ("root", "nested"),
-    **{
-        name: ("root", )
-        for name in GAPPS
-    },
+    **{name: ("root",) for name in GAPPS},
 }
 FAMILY_ROWS = {
     "github": ("bytes", "stream"),
     "gdrive": ("bytes", "stream"),
-    **{
-        name: ("bytes", "stream")
-        for name in GAPPS
-    },
+    **{name: ("bytes", "stream") for name in GAPPS},
 }
 
 # One document per family, identical in the TypeScript twin. oci is the one
@@ -227,8 +246,8 @@ class Fake:
 
     def args(self) -> tuple:
         if self.mount_index:
-            return (own_index(self.vfs), )
-        return () if self.index is None else (self.index, )
+            return (own_index(self.vfs),)
+        return () if self.index is None else (self.index,)
 
     def stat_args(self) -> tuple:
         return self.args() if self.stat_indexed else ()
@@ -251,7 +270,6 @@ def own_index(vfs: BaseVFS) -> IndexCacheStore:
 
 
 class _Download:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
         self._pos = 0
@@ -259,7 +277,7 @@ class _Download:
     async def read(self, size: int = -1) -> bytes:
         if size < 0:
             size = len(self._data) - self._pos
-        chunk = self._data[self._pos:self._pos + size]
+        chunk = self._data[self._pos : self._pos + size]
         self._pos += len(chunk)
         return chunk
 
@@ -268,7 +286,6 @@ class _Download:
 
 
 class _Bucket:
-
     def __init__(self, files: dict[str, dict]) -> None:
         self._files = files
         self.opened: list[ObjectId] = []
@@ -286,10 +303,9 @@ def _gridfs_doc(key: str, data: bytes, oid: str, year: int) -> dict:
         "_id": ObjectId(oid),
         "filename": key,
         "length": len(data),
-        "uploadDate": datetime.datetime(year,
-                                        1,
-                                        2,
-                                        tzinfo=datetime.timezone.utc),
+        "uploadDate": datetime.datetime(
+            year, 1, 2, tzinfo=datetime.timezone.utc
+        ),
         "data": data,
     }
 
@@ -320,19 +336,22 @@ def _s3_fake(name: str, shape: str, data: bytes) -> Iterator[Fake]:
     with patch_s3_session(session):
         vfs = build_vfs(name, config)
         assert vfs.accessor.config.key_prefix == prefix
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: session._client.calls["get_object"],
-                   rewrite=rewrite,
-                   reach=[],
-                   io=S3_IO,
-                   read_mod=s3_read,
-                   stream_mod=s3_stream)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: session._client.calls["get_object"],
+            rewrite=rewrite,
+            reach=[],
+            io=S3_IO,
+            read_mod=s3_read,
+            stream_mod=s3_stream,
+        )
 
 
 @contextmanager
-def _gridfs_fake(shape: str, data: bytes,
-                 monkeypatch: pytest.MonkeyPatch) -> Iterator[Fake]:
+def _gridfs_fake(
+    shape: str, data: bytes, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Fake]:
     key = KEYS[shape]
     prefix = PREFIX if shape == "prefixed" else None
     stored = (prefix or "") + key
@@ -352,8 +371,9 @@ def _gridfs_fake(shape: str, data: bytes,
         return files.get(name)
 
     def rewrite(new: bytes) -> None:
-        files[stored] = _gridfs_doc(stored, new, "aaaaaaaaaaaaaaaaaaaaaaaa",
-                                    2022)
+        files[stored] = _gridfs_doc(
+            stored, new, "aaaaaaaaaaaaaaaaaaaaaaaa", 2022
+        )
 
     for module in (gridfs_read, gridfs_stream, gridfs_driver):
         monkeypatch.setitem(vars(module), "latest_file", latest_file)
@@ -366,19 +386,22 @@ def _gridfs_fake(shape: str, data: bytes,
                 monkeypatch.setitem(vars(module), name, _stray(reach, name))
     vfs = build_vfs("gridfs", config)
     assert vfs.accessor.config.key_prefix == prefix
-    yield Fake(vfs=vfs,
-               key=key,
-               fetches=lambda: len(bucket.opened),
-               rewrite=rewrite,
-               reach=reach,
-               io=GRIDFS_IO,
-               read_mod=gridfs_read,
-               stream_mod=gridfs_stream)
+    yield Fake(
+        vfs=vfs,
+        key=key,
+        fetches=lambda: len(bucket.opened),
+        rewrite=rewrite,
+        reach=reach,
+        io=GRIDFS_IO,
+        read_mod=gridfs_read,
+        stream_mod=gridfs_stream,
+    )
 
 
 @contextmanager
-def _hf_fake(name: str, shape: str, data: bytes,
-             monkeypatch: pytest.MonkeyPatch) -> Iterator[Fake]:
+def _hf_fake(
+    name: str, shape: str, data: bytes, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Fake]:
     key = KEYS[shape]
     prefix = PREFIX if shape == "prefixed" else None
     stored = (prefix or "") + key
@@ -401,10 +424,9 @@ def _hf_fake(name: str, shape: str, data: bytes,
         # A whole-tree refill is the one thing that invalidates a store's
         # prefix. On the mount's own index a cold read does it legitimately;
         # on any other store it is the reconcile probe walking the tree.
-        async def watched(store,
-                          prefix_: str,
-                          *,
-                          excluded: tuple[str, ...] = ()) -> None:
+        async def watched(
+            store, prefix_: str, *, excluded: tuple[str, ...] = ()
+        ) -> None:
             if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
             await invalidate(store, prefix_, excluded=excluded)
@@ -414,14 +436,16 @@ def _hf_fake(name: str, shape: str, data: bytes,
         def rewrite(new: bytes) -> None:
             files[stored] = new
 
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: hub.count("resolve"),
-                   rewrite=rewrite,
-                   reach=reach,
-                   io=HF_IO,
-                   read_mod=hf_read,
-                   stream_mod=hf_stream)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: hub.count("resolve"),
+            rewrite=rewrite,
+            reach=reach,
+            io=HF_IO,
+            read_mod=hf_read,
+            stream_mod=hf_stream,
+        )
 
 
 @contextmanager
@@ -439,24 +463,28 @@ def _graph_fake(name: str, shape: str, data: bytes) -> Iterator[Fake]:
         config["key_prefix"] = prefix
     # A children listing is a walk no read or stat should make; the listed
     # shape's own `ls` is the one allowed.
-    graph = FakeGraph(drives={drive: files},
-                      children_allowed=1 if shape == "listed" else 0)
+    graph = FakeGraph(
+        drives={drive: files}, children_allowed=1 if shape == "listed" else 0
+    )
     with serve_graph(graph):
         vfs = build_vfs(name, {**config, "graph_base_url": graph.url})
-        assert ((vfs.accessor.config.key_prefix
-                 or "").strip("/") == (prefix or "").strip("/"))
+        assert (vfs.accessor.config.key_prefix or "").strip("/") == (
+            prefix or ""
+        ).strip("/")
 
         def rewrite(new: bytes) -> None:
             graph.write(drive, stored, new)
 
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=graph.fetches,
-                   rewrite=rewrite,
-                   reach=graph.reach,
-                   io=io,
-                   read_mod=drive_ops,
-                   stream_mod=drive_ops)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=graph.fetches,
+            rewrite=rewrite,
+            reach=graph.reach,
+            io=io,
+            read_mod=drive_ops,
+            stream_mod=drive_ops,
+        )
 
 
 @contextmanager
@@ -468,16 +496,18 @@ def _gdrive_fake(shape: str, data: bytes) -> Iterator[Fake]:
         vfs = build_vfs("gdrive", GDRIVE_CONFIG)
         # No stray reach to refuse: stat has no download to fall into, and
         # a no-index stat reaching get_file is its legitimate API door.
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: drive.calls["download_file"],
-                   rewrite=lambda new: drive.add_file(key, new),
-                   reach=[],
-                   io=GDRIVE_IO,
-                   read_mod=gdrive_read,
-                   stream_mod=None,
-                   index=RAMIndexCacheStore(),
-                   stat_indexed=False)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: drive.calls["download_file"],
+            rewrite=lambda new: drive.add_file(key, new),
+            reach=[],
+            io=GDRIVE_IO,
+            read_mod=gdrive_read,
+            stream_mod=None,
+            index=RAMIndexCacheStore(),
+            stat_indexed=False,
+        )
 
 
 @contextmanager
@@ -492,16 +522,18 @@ def _gapps_fake(name: str, data: bytes) -> Iterator[Fake]:
     key = "shared/" + filename("a", file_id, listed["modifiedTime"])
     with patch_gdrive(drive):
         vfs = build_vfs(name, GDRIVE_CONFIG)
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: drive.calls["render"],
-                   rewrite=lambda new: drive.add_file("a", new, mime),
-                   reach=[],
-                   io=io,
-                   read_mod=read_mod,
-                   stream_mod=None,
-                   index=RAMIndexCacheStore(),
-                   stat_indexed=False)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: drive.calls["render"],
+            rewrite=lambda new: drive.add_file("a", new, mime),
+            reach=[],
+            io=io,
+            read_mod=read_mod,
+            stream_mod=None,
+            index=RAMIndexCacheStore(),
+            stat_indexed=False,
+        )
 
 
 @contextmanager
@@ -522,27 +554,30 @@ def _hf_buckets_fake(shape: str, data: bytes) -> Iterator[Fake]:
         vfs = build_vfs("hf_buckets", {**config, "endpoint": hub.url})
         assert vfs.accessor.config.key_prefix == prefix
         reach: list[str] = []
-        op = FakeAsyncOperator(files=files,
-                               root=vfs.accessor._root() or "",
-                               reach=reach)
+        op = FakeAsyncOperator(
+            files=files, root=vfs.accessor._root() or "", reach=reach
+        )
         vfs.accessor.operator = lambda: op
 
         def rewrite(new: bytes) -> None:
             files[stored] = new
 
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: hub.count("bucket_resolve"),
-                   rewrite=rewrite,
-                   reach=reach,
-                   io=HF_BUCKETS_IO,
-                   read_mod=hf_buckets_read,
-                   stream_mod=hf_buckets_stream)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: hub.count("bucket_resolve"),
+            rewrite=rewrite,
+            reach=reach,
+            io=HF_BUCKETS_IO,
+            read_mod=hf_buckets_read,
+            stream_mod=hf_buckets_stream,
+        )
 
 
 @contextmanager
-def _github_fake(shape: str, data: bytes,
-                 monkeypatch: pytest.MonkeyPatch) -> Iterator[Fake]:
+def _github_fake(
+    shape: str, data: bytes, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Fake]:
     # The nested key's parent is two or more lowercase letters, the spelling
     # Octokit rewrites when the point request goes unencoded; the python
     # twin keeps the same key so both hosts test one shape.
@@ -550,20 +585,21 @@ def _github_fake(shape: str, data: bytes,
     hub = FakeGitHub(files={key: data, "other.txt": DECOY})
     with serve_github(hub):
         vfs = build_vfs(
-            "github", {
+            "github",
+            {
                 "token": "t",
                 "owner": "o",
                 "repo": "r",
                 "ref": "main",
-                "base_url": hub.url
-            })
+                "base_url": hub.url,
+            },
+        )
         reach: list[str] = []
         invalidate = RAMIndexCacheStore.invalidate_prefix
 
-        async def watched(store,
-                          prefix_: str,
-                          *,
-                          excluded: tuple[str, ...] = ()) -> None:
+        async def watched(
+            store, prefix_: str, *, excluded: tuple[str, ...] = ()
+        ) -> None:
             if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
             await invalidate(store, prefix_, excluded=excluded)
@@ -573,20 +609,23 @@ def _github_fake(shape: str, data: bytes,
         def rewrite(new: bytes) -> None:
             hub.files[key] = new
 
-        yield Fake(vfs=vfs,
-                   key=key,
-                   fetches=lambda: hub.count("blob"),
-                   rewrite=rewrite,
-                   reach=reach,
-                   io=GITHUB_IO,
-                   read_mod=github_read,
-                   stream_mod=None,
-                   mount_index=True)
+        yield Fake(
+            vfs=vfs,
+            key=key,
+            fetches=lambda: hub.count("blob"),
+            rewrite=rewrite,
+            reach=reach,
+            io=GITHUB_IO,
+            read_mod=github_read,
+            stream_mod=None,
+            mount_index=True,
+        )
 
 
 @contextmanager
-def _fake(name: str, shape: str, data: bytes,
-          monkeypatch: pytest.MonkeyPatch) -> Iterator[Fake]:
+def _fake(
+    name: str, shape: str, data: bytes, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Fake]:
     if HARNESSES[name] == "hf_buckets":
         with _hf_buckets_fake(shape, data) as fake:
             yield fake
@@ -624,14 +663,18 @@ def _cases(rows: tuple[str, ...]) -> list:
     for name, family in HARNESSES.items():
         # The aliases share every read and stat path with s3, so the key
         # shapes run once per family.
-        shapes = FAMILY_SHAPES.get(
-            family, ALL_SHAPES) if name == family else ("root", )
+        shapes = (
+            FAMILY_SHAPES.get(family, ALL_SHAPES)
+            if name == family
+            else ("root",)
+        )
         for shape in shapes:
             for row in rows:
                 if row not in FAMILY_ROWS.get(family, ALL_ROWS):
                     continue
                 cases.append(
-                    pytest.param(name, shape, row, id=f"{name}-{shape}-{row}"))
+                    pytest.param(name, shape, row, id=f"{name}-{shape}-{row}")
+                )
     return cases
 
 
@@ -643,13 +686,16 @@ B_CASES = _cases(("bytes", "stream"))
 
 
 def _fresh_workspace(vfs: BaseVFS) -> Workspace:
-    ws = Workspace({
-        "/m":
-        Mount(vfs=vfs,
-              mode=MountMode.WRITE,
-              read=ReadSpec(policy=ReadPolicy.FRESH)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    ws = Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs,
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.FRESH),
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
     _OWN_INDEX[vfs] = ws.mount("/m").index_store
     return ws
 
@@ -664,17 +710,22 @@ async def _line(ws: Workspace, line: str) -> bytes:
 
 async def _partial_read(ws: Workspace, fake: Fake, virtual: str) -> bytes:
     # Exercise the cache handoff directly, independent of pipe cancellation.
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] + "/",
-                    vfs_path=fake.key)
+    spec = PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] + "/",
+        vfs_path=fake.key,
+    )
     scope = RecordingScope()
     try:
         source = CachableAsyncIterator(
-            fake.io.read_stream(fake.vfs.accessor, spec, *fake.args()))
+            fake.io.read_stream(fake.vfs.accessor, spec, *fake.args())
+        )
         first = await anext(source)
         assert not source.exhausted
-        await ws.apply_io(IOResult(reads={virtual: source}, cache=[virtual]),
-                          records=scope.records)
+        await ws.apply_io(
+            IOResult(reads={virtual: source}, cache=[virtual]),
+            records=scope.records,
+        )
         return first[:1]
     finally:
         scope.close()
@@ -683,13 +734,14 @@ async def _partial_read(ws: Workspace, fake: Fake, virtual: str) -> bytes:
 async def _reconcile_stat(ws: Workspace, virtual: str) -> FileStat:
     # Reconcile stats through a fresh index (workspace/reconcile.py), so a
     # listing's index row, which carries no token, cannot answer for it.
-    return await ws.mount(virtual).execute_op("stat",
-                                              virtual,
-                                              index=RAMIndexCacheStore())
+    return await ws.mount(virtual).execute_op(
+        "stat", virtual, index=RAMIndexCacheStore()
+    )
 
 
-def _spy_slots(fake: Fake,
-               monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+def _spy_slots(
+    fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[str, str]]:
     slots: list[tuple[str, str]] = []
     record = fake.read_mod.record
 
@@ -706,8 +758,9 @@ def _spy_slots(fake: Fake,
         slots.append(("stream", path))
         return record_stream(op, path, *args, **kwargs)
 
-    monkeypatch.setitem(vars(fake.stream_mod), "record_stream",
-                        spy_record_stream)
+    monkeypatch.setitem(
+        vars(fake.stream_mod), "record_stream", spy_record_stream
+    )
     return slots
 
 
@@ -748,32 +801,42 @@ def test_each_family_runs_exactly_its_rows():
     # The per-family table is filtered at collection, so a filter bug drops
     # a row silently or hands a whole-read stream a drain row that passes
     # without draining. Pin the ids outright rather than the count.
-    aliases = [n
-               for n in S3_FAMILY if n != "s3"] + ["hf_datasets", "hf_spaces"]
+    aliases = [n for n in S3_FAMILY if n != "s3"] + [
+        "hf_datasets",
+        "hf_spaces",
+    ]
     # Literals, not ALL_SHAPES / ALL_ROWS: the expectation must not move
     # with the tables it checks.
     shapes = ("root", "nested", "prefixed")
     rows = ("bytes", "stream", "drain")
-    expected_a = {
-        f"{family}-{shape}-{row}"
-        for family in ("s3", "gridfs", "hf_models", "onedrive", "sharepoint",
-                       "hf_buckets")
-        for shape in shapes
-        for row in rows
-    } | {f"{n}-root-{row}"
-         for n in aliases
-         for row in rows
-         } | {f"{n}-listed-stream"
-              for n in ("s3", "onedrive", "sharepoint")} | {
-                  f"{family}-{shape}-{row}"
-                  for family in ("github", "gdrive")
-                  for shape in ("root", "nested")
-                  for row in ("bytes", "stream")
-              } | {
-                  f"{family}-root-{row}"
-                  for family in ("gdocs", "gsheets", "gslides")
-                  for row in ("bytes", "stream")
-              }
+    expected_a = (
+        {
+            f"{family}-{shape}-{row}"
+            for family in (
+                "s3",
+                "gridfs",
+                "hf_models",
+                "onedrive",
+                "sharepoint",
+                "hf_buckets",
+            )
+            for shape in shapes
+            for row in rows
+        }
+        | {f"{n}-root-{row}" for n in aliases for row in rows}
+        | {f"{n}-listed-stream" for n in ("s3", "onedrive", "sharepoint")}
+        | {
+            f"{family}-{shape}-{row}"
+            for family in ("github", "gdrive")
+            for shape in ("root", "nested")
+            for row in ("bytes", "stream")
+        }
+        | {
+            f"{family}-root-{row}"
+            for family in ("gdocs", "gsheets", "gslides")
+            for row in ("bytes", "stream")
+        }
+    )
     expected_b = {
         i
         for i in expected_a
@@ -782,8 +845,11 @@ def test_each_family_runs_exactly_its_rows():
     assert {c.id for c in A_CASES} == expected_a
     assert {c.id for c in B_CASES} == expected_b
     assert not any(
-        c.id.startswith(("github-", "gdrive-", "gdocs-", "gsheets-",
-                         "gslides-")) for c in _cases(("drain", )))
+        c.id.startswith(
+            ("github-", "gdrive-", "gdocs-", "gsheets-", "gslides-")
+        )
+        for c in _cases(("drain",))
+    )
 
 
 def test_every_declaring_backend_has_a_harness():
@@ -803,8 +869,9 @@ def test_every_declaring_backend_has_a_harness():
 
 
 @pytest.mark.parametrize(("name", "shape", "row"), A_CASES)
-def test_a_read_leaves_an_entry_reconcile_calls_fresh(name, shape, row,
-                                                      monkeypatch):
+def test_a_read_leaves_an_entry_reconcile_calls_fresh(
+    name, shape, row, monkeypatch
+):
     data = BIG if row == "drain" else SEED
     with _fake(name, shape, data, monkeypatch) as fake:
         slots = _spy_slots(fake, monkeypatch)
@@ -819,8 +886,11 @@ def test_a_read_leaves_an_entry_reconcile_calls_fresh(name, shape, row,
                     await _line(ws, "ls /m")
                 cached_before = await ws.cache.exists(virtual)
                 before = fake.fetches()
-                first = await (_partial_read(ws, fake, virtual)
-                               if row == "drain" else _line(ws, line))
+                first = await (
+                    _partial_read(ws, fake, virtual)
+                    if row == "drain"
+                    else _line(ws, line)
+                )
                 drained = len(drains)
                 for done in drains:
                     await done.wait()
@@ -829,21 +899,41 @@ def test_a_read_leaves_an_entry_reconcile_calls_fresh(name, shape, row,
                 if row == "bytes":
                     first = await _line(ws, "cat /r/a.txt")
                 stat = await _reconcile_stat(ws, virtual)
-                fresh = (stat.fingerprint is not None and await
-                         ws.cache.is_fresh(virtual, stat.fingerprint))
+                fresh = (
+                    stat.fingerprint is not None
+                    and await ws.cache.is_fresh(virtual, stat.fingerprint)
+                )
                 middle = fake.fetches()
                 # The drain row's second run reads the whole entry back, so
                 # a drain that cached a truncated buffer cannot pass.
                 second = await _line(ws, line)
                 if row == "bytes":
                     second = await _line(ws, "cat /r/a.txt")
-                return (cached_before, first, drained, fetched, taken, stat,
-                        fresh, fake.fetches() - middle, second)
+                return (
+                    cached_before,
+                    first,
+                    drained,
+                    fetched,
+                    taken,
+                    stat,
+                    fresh,
+                    fake.fetches() - middle,
+                    second,
+                )
             finally:
                 await ws.close()
 
-        (cached_before, first, drained, fetched, taken, stat, fresh, refetched,
-         second) = asyncio.run(run())
+        (
+            cached_before,
+            first,
+            drained,
+            fetched,
+            taken,
+            stat,
+            fresh,
+            refetched,
+            second,
+        ) = asyncio.run(run())
 
     assert cached_before is False
     assert taken == [(fake.slot(row), virtual)]
@@ -858,7 +948,7 @@ def test_a_read_leaves_an_entry_reconcile_calls_fresh(name, shape, row,
     assert fake.reach == []
 
 
-@pytest.mark.parametrize(("name", "shape", "row"), _cases(("drain", )))
+@pytest.mark.parametrize(("name", "shape", "row"), _cases(("drain",)))
 def test_early_pipe_exit_never_caches_a_prefix(name, shape, row, monkeypatch):
     with _fake(name, shape, BIG, monkeypatch) as fake:
         slots = _spy_slots(fake, monkeypatch)
@@ -885,65 +975,83 @@ def test_early_pipe_exit_never_caches_a_prefix(name, shape, row, monkeypatch):
 
 
 @pytest.mark.parametrize(("name", "shape", "row"), B_CASES)
-def test_an_unrecorded_read_stamps_the_stat_token(name, shape, row,
-                                                  monkeypatch):
+def test_an_unrecorded_read_stamps_the_stat_token(
+    name, shape, row, monkeypatch
+):
     records: list[OpRecord] = []
 
-    def capture(op: str,
-                path: str,
-                source: str,
-                nbytes: int,
-                _timer: OpTimer,
-                fingerprint: str | None = None,
-                revision: str | None = None) -> None:
+    def capture(
+        op: str,
+        path: str,
+        source: str,
+        nbytes: int,
+        _timer: OpTimer,
+        fingerprint: str | None = None,
+        revision: str | None = None,
+    ) -> None:
         records.append(
-            OpRecord(op=op,
-                     path=path,
-                     source=source,
-                     bytes=nbytes,
-                     timestamp=0,
-                     duration_ms=0,
-                     fingerprint=fingerprint,
-                     revision=revision))
+            OpRecord(
+                op=op,
+                path=path,
+                source=source,
+                bytes=nbytes,
+                timestamp=0,
+                duration_ms=0,
+                fingerprint=fingerprint,
+                revision=revision,
+            )
+        )
 
-    def capture_stream(op: str,
-                       path: str,
-                       source: str,
-                       fingerprint: str | None = None,
-                       revision: str | None = None) -> OpRecord:
-        rec = OpRecord(op=op,
-                       path=path,
-                       source=source,
-                       bytes=0,
-                       timestamp=0,
-                       duration_ms=0,
-                       fingerprint=fingerprint,
-                       revision=revision)
+    def capture_stream(
+        op: str,
+        path: str,
+        source: str,
+        fingerprint: str | None = None,
+        revision: str | None = None,
+    ) -> OpRecord:
+        rec = OpRecord(
+            op=op,
+            path=path,
+            source=source,
+            bytes=0,
+            timestamp=0,
+            duration_ms=0,
+            fingerprint=fingerprint,
+            revision=revision,
+        )
         records.append(rec)
         return rec
 
     with _fake(name, shape, SEED, monkeypatch) as fake:
         monkeypatch.setitem(vars(fake.read_mod), "record", capture)
         if fake.stream_mod is not None:
-            monkeypatch.setitem(vars(fake.stream_mod), "record_stream",
-                                capture_stream)
+            monkeypatch.setitem(
+                vars(fake.stream_mod), "record_stream", capture_stream
+            )
         virtual = "/m/" + fake.key
-        spec = PathSpec(virtual=virtual,
-                        directory=virtual.rsplit("/", 1)[0] + "/",
-                        vfs_path=fake.key)
+        spec = PathSpec(
+            virtual=virtual,
+            directory=virtual.rsplit("/", 1)[0] + "/",
+            vfs_path=fake.key,
+        )
         accessor = fake.vfs.accessor
 
         async def run():
             unrecorded = active_recorder() is None
             try:
                 if row == "bytes":
-                    data = await fake.io.read_bytes(accessor, spec,
-                                                    *fake.args())
+                    data = await fake.io.read_bytes(
+                        accessor, spec, *fake.args()
+                    )
                 else:
-                    data = b"".join([
-                        c async for c in fake.io.read_stream(
-                            accessor, spec, *fake.args())
-                    ])
+                    data = b"".join(
+                        [
+                            c
+                            async for c in fake.io.read_stream(
+                                accessor, spec, *fake.args()
+                            )
+                        ]
+                    )
                 stat = await fake.io.stat(accessor, spec, *fake.stat_args())
             finally:
                 await accessor.close()
@@ -991,26 +1099,37 @@ def test_a_changed_object_is_refetched(name, shape, monkeypatch):
                 await _line(ws, f"cat {virtual}")
                 fake.rewrite(CHANGED)
                 stat = await _reconcile_stat(ws, virtual)
-                fresh = (stat.fingerprint is not None and await
-                         ws.cache.is_fresh(virtual, stat.fingerprint))
+                fresh = (
+                    stat.fingerprint is not None
+                    and await ws.cache.is_fresh(virtual, stat.fingerprint)
+                )
                 before = fake.fetches()
                 second = await _line(ws, f"cat {virtual}")
                 refetched = fake.fetches() - before
                 # The refetch has to stamp the new token, or every later
                 # read refetches as well and the backend never serves warm.
                 restat = await _reconcile_stat(ws, virtual)
-                refreshed = (restat.fingerprint is not None
-                             and await ws.cache.is_fresh(
-                                 virtual, restat.fingerprint))
+                refreshed = (
+                    restat.fingerprint is not None
+                    and await ws.cache.is_fresh(virtual, restat.fingerprint)
+                )
                 before = fake.fetches()
                 third = await _line(ws, f"cat {virtual}")
-                return (stat, fresh, refetched, second, refreshed,
-                        fake.fetches() - before, third)
+                return (
+                    stat,
+                    fresh,
+                    refetched,
+                    second,
+                    refreshed,
+                    fake.fetches() - before,
+                    third,
+                )
             finally:
                 await ws.close()
 
-        (stat, fresh, refetched, second, refreshed, third_fetched,
-         third) = asyncio.run(run())
+        (stat, fresh, refetched, second, refreshed, third_fetched, third) = (
+            asyncio.run(run())
+        )
 
     assert stat.fingerprint is not None
     assert not fresh
@@ -1032,41 +1151,50 @@ def moto_endpoint() -> Iterator[str]:
 
 
 def test_moto_agrees_that_stat_and_read_stamp_one_token(
-        moto_endpoint, monkeypatch):
+    moto_endpoint, monkeypatch
+):
     # The fakes derive Head and Get ETags from one helper, so they cannot
     # disagree; moto 5.2.1 (uv.lock) is the real implementation checked here,
     # multipart included. Its part-size floor is patched so two tiny parts
     # make a real multipart object.
     monkeypatch.setattr(moto.s3.models, "S3_UPLOAD_PART_MIN_SIZE", 5)
-    client = boto3.client("s3",
-                          endpoint_url=moto_endpoint,
-                          aws_access_key_id="testing",
-                          aws_secret_access_key="testing",
-                          region_name="us-east-1")
+    client = boto3.client(
+        "s3",
+        endpoint_url=moto_endpoint,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        region_name="us-east-1",
+    )
     client.create_bucket(Bucket="bkt")
     client.put_object(Bucket="bkt", Key="simple.txt", Body=SEED)
     upload = client.create_multipart_upload(Bucket="bkt", Key="multi.txt")
     parts = []
     for number, body in enumerate((b"first part\n", b"second part\n"), 1):
-        part = client.upload_part(Bucket="bkt",
-                                  Key="multi.txt",
-                                  PartNumber=number,
-                                  UploadId=upload["UploadId"],
-                                  Body=body)
+        part = client.upload_part(
+            Bucket="bkt",
+            Key="multi.txt",
+            PartNumber=number,
+            UploadId=upload["UploadId"],
+            Body=body,
+        )
         parts.append({"ETag": part["ETag"], "PartNumber": number})
-    client.complete_multipart_upload(Bucket="bkt",
-                                     Key="multi.txt",
-                                     UploadId=upload["UploadId"],
-                                     MultipartUpload={"Parts": parts})
+    client.complete_multipart_upload(
+        Bucket="bkt",
+        Key="multi.txt",
+        UploadId=upload["UploadId"],
+        MultipartUpload={"Parts": parts},
+    )
     vfs = build_vfs(
-        "s3", {
+        "s3",
+        {
             "bucket": "bkt",
             "region": "us-east-1",
             "endpoint_url": moto_endpoint,
             "aws_access_key_id": "testing",
             "aws_secret_access_key": "testing",
             "path_style": True,
-        })
+        },
+    )
 
     async def run():
         ws = _fresh_workspace(vfs)
@@ -1077,8 +1205,10 @@ def test_moto_agrees_that_stat_and_read_stamp_one_token(
                 cached_before = await ws.cache.exists(virtual)
                 await _line(ws, f"cat {virtual}")
                 stat = await _reconcile_stat(ws, virtual)
-                fresh = (stat.fingerprint is not None and await
-                         ws.cache.is_fresh(virtual, stat.fingerprint))
+                fresh = (
+                    stat.fingerprint is not None
+                    and await ws.cache.is_fresh(virtual, stat.fingerprint)
+                )
                 seen[key] = (cached_before, stat.fingerprint, fresh)
             return seen
         finally:
@@ -1119,8 +1249,12 @@ def test_the_contract_goes_red_on_a_backend_with_two_token_kinds(monkeypatch):
             assert stat.fingerprint is not None
             fresh = await ws.cache.is_fresh(virtual, stat.fingerprint)
             await _line(ws, f"cat {virtual}")
-            return (holds_read_token, stat.fingerprint != read_token, fresh,
-                    session._client.calls["get_object"] - before)
+            return (
+                holds_read_token,
+                stat.fingerprint != read_token,
+                fresh,
+                session._client.calls["get_object"] - before,
+            )
         finally:
             await ws.close()
 
@@ -1155,7 +1289,8 @@ def test_the_contract_goes_red_on_hf_stamping_another_kind(monkeypatch):
             try:
                 await _line(ws, f"cat {virtual}")
                 holds_read_token = await ws.cache.is_fresh(
-                    virtual, xet_hash(SEED))
+                    virtual, xet_hash(SEED)
+                )
                 stat = await _reconcile_stat(ws, virtual)
                 fresh = await ws.cache.is_fresh(virtual, stat.fingerprint)
                 return holds_read_token, stat.fingerprint, fresh
@@ -1182,8 +1317,9 @@ def test_the_contract_goes_red_on_msgraph_stamping_another_kind(monkeypatch):
         return item["eTag"], revision, url
 
     with _fake("onedrive", "root", SEED, monkeypatch) as fake:
-        monkeypatch.setitem(vars(drive_ops), "capture_item_metadata",
-                            etag_instead)
+        monkeypatch.setitem(
+            vars(drive_ops), "capture_item_metadata", etag_instead
+        )
         monkeypatch.setattr(fake.vfs, "read_revalidatable", True)
         virtual = "/m/" + fake.key
 
@@ -1206,7 +1342,8 @@ def test_the_contract_goes_red_on_msgraph_stamping_another_kind(monkeypatch):
 
 
 def test_the_contract_goes_red_on_hf_buckets_stamping_another_kind(
-        monkeypatch):
+    monkeypatch,
+):
     # hf_buckets forced to stamp a hash of the header rather than the token
     # stat reports: both exist and differ, so the entry must never be
     # called fresh, and the warm read refetches exactly once.
@@ -1224,13 +1361,18 @@ def test_the_contract_goes_red_on_hf_buckets_stamping_another_kind(
             try:
                 await _line(ws, f"cat {virtual}")
                 holds_read_token = await ws.cache.is_fresh(
-                    virtual, other_kind(served))
+                    virtual, other_kind(served)
+                )
                 stat = await _reconcile_stat(ws, virtual)
                 fresh = await ws.cache.is_fresh(virtual, stat.fingerprint)
                 before = fake.fetches()
                 await _line(ws, f"cat {virtual}")
-                return (holds_read_token, stat.fingerprint, fresh,
-                        fake.fetches() - before)
+                return (
+                    holds_read_token,
+                    stat.fingerprint,
+                    fresh,
+                    fake.fetches() - before,
+                )
             finally:
                 await ws.close()
 
@@ -1249,7 +1391,7 @@ def test_a_synthesized_stream_is_the_read_it_records_through():
     stream = GITHUB_IO.read_stream
     assert isinstance(stream, functools.partial)
     assert stream.func is stream_from_bytes
-    assert stream.args == (github_read.read, )
+    assert stream.args == (github_read.read,)
 
 
 def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
@@ -1257,21 +1399,19 @@ def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
     # sha: both tokens exist and differ.
     record = github_read.record
 
-    def md5_record(op,
-                   path,
-                   source,
-                   nbytes,
-                   timer,
-                   fingerprint=None,
-                   revision=None):
+    def md5_record(
+        op, path, source, nbytes, timer, fingerprint=None, revision=None
+    ):
         del fingerprint
-        return record(op,
-                      path,
-                      source,
-                      nbytes,
-                      timer,
-                      fingerprint=hashlib.md5(SEED).hexdigest(),
-                      revision=revision)
+        return record(
+            op,
+            path,
+            source,
+            nbytes,
+            timer,
+            fingerprint=hashlib.md5(SEED).hexdigest(),
+            revision=revision,
+        )
 
     with _fake("github", "root", SEED, monkeypatch) as fake:
         monkeypatch.setitem(vars(github_read), "record", md5_record)
@@ -1282,8 +1422,8 @@ def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
             try:
                 await _line(ws, f"cat {virtual}")
                 holds_read_token = await ws.cache.is_fresh(
-                    virtual,
-                    hashlib.md5(SEED).hexdigest())
+                    virtual, hashlib.md5(SEED).hexdigest()
+                )
                 stat = await _reconcile_stat(ws, virtual)
                 fresh = await ws.cache.is_fresh(virtual, stat.fingerprint)
                 return holds_read_token, stat.fingerprint, fresh
@@ -1299,7 +1439,8 @@ def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
 
 @pytest.mark.parametrize("name", ["gdocs", "gsheets", "gslides"])
 def test_partial_search_cannot_evict_live_app_bytes_or_overlay(
-        name, monkeypatch):
+    name, monkeypatch
+):
     with _fake(name, "root", SEED, monkeypatch) as fake:
         virtual = "/m/" + fake.key
 
@@ -1310,7 +1451,8 @@ def test_partial_search_cannot_evict_live_app_bytes_or_overlay(
                 await _line(ws, f"chmod 600 {virtual}")
                 search = AsyncMock(return_value=([], False))
                 monkeypatch.setattr(
-                    "mirage.core.google.readdir.list_all_files", search)
+                    "mirage.core.google.readdir.list_all_files", search
+                )
                 before = fake.fetches()
                 assert await _line(ws, f"cat {virtual}") == SEED
                 assert await _line(ws, f"stat -c %a {virtual}") == b"600\n"

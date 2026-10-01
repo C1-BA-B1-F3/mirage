@@ -44,15 +44,19 @@ def index():
 async def test_read_trace(accessor, index):
     trace_data = {"id": "abc123", "name": "chat", "input": "hello"}
     with patch(
-            "mirage.core.langfuse.read.fetch_trace",
-            new_callable=AsyncMock,
-            return_value=trace_data,
+        "mirage.core.langfuse.read.fetch_trace",
+        new_callable=AsyncMock,
+        return_value=trace_data,
     ):
         result = await read(
             accessor,
-            PathSpec(vfs_path="traces/abc123.json",
-                     virtual="/traces/abc123.json",
-                     directory="/traces/abc123.json"), index)
+            PathSpec(
+                vfs_path="traces/abc123.json",
+                virtual="/traces/abc123.json",
+                directory="/traces/abc123.json",
+            ),
+            index,
+        )
 
     parsed = json.loads(result)
     assert parsed["id"] == "abc123"
@@ -63,15 +67,19 @@ async def test_read_trace(accessor, index):
 async def test_read_prompt_version(accessor, index):
     prompt_data = {"name": "summarize", "version": 1, "prompt": "Summarize:"}
     with patch(
-            "mirage.core.langfuse.read.fetch_prompt",
-            new_callable=AsyncMock,
-            return_value=prompt_data,
+        "mirage.core.langfuse.read.fetch_prompt",
+        new_callable=AsyncMock,
+        return_value=prompt_data,
     ):
         result = await read(
             accessor,
-            PathSpec(vfs_path="prompts/summarize/1.json",
-                     virtual="/prompts/summarize/1.json",
-                     directory="/prompts/summarize/1.json"), index)
+            PathSpec(
+                vfs_path="prompts/summarize/1.json",
+                virtual="/prompts/summarize/1.json",
+                directory="/prompts/summarize/1.json",
+            ),
+            index,
+        )
 
     parsed = json.loads(result)
     assert parsed["name"] == "summarize"
@@ -81,27 +89,23 @@ async def test_read_prompt_version(accessor, index):
 @pytest.mark.asyncio
 async def test_read_dataset_items(accessor, index):
     items = [
-        {
-            "id": "item1",
-            "input": "q1",
-            "output": "a1"
-        },
-        {
-            "id": "item2",
-            "input": "q2",
-            "output": "a2"
-        },
+        {"id": "item1", "input": "q1", "output": "a1"},
+        {"id": "item2", "input": "q2", "output": "a2"},
     ]
     with patch(
-            "mirage.core.langfuse.read.fetch_dataset_items",
-            new_callable=AsyncMock,
-            return_value=items,
+        "mirage.core.langfuse.read.fetch_dataset_items",
+        new_callable=AsyncMock,
+        return_value=items,
     ):
         result = await read(
             accessor,
-            PathSpec(vfs_path="datasets/qa-eval/items.jsonl",
-                     virtual="/datasets/qa-eval/items.jsonl",
-                     directory="/datasets/qa-eval/items.jsonl"), index)
+            PathSpec(
+                vfs_path="datasets/qa-eval/items.jsonl",
+                virtual="/datasets/qa-eval/items.jsonl",
+                directory="/datasets/qa-eval/items.jsonl",
+            ),
+            index,
+        )
 
     lines = result.decode().strip().split("\n")
     assert len(lines) == 2
@@ -114,24 +118,32 @@ async def test_read_invalid_path_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await read(
             accessor,
-            PathSpec(vfs_path="not_a_valid_path",
-                     virtual="/not_a_valid_path",
-                     directory="/not_a_valid_path"), index)
+            PathSpec(
+                vfs_path="not_a_valid_path",
+                virtual="/not_a_valid_path",
+                directory="/not_a_valid_path",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
 async def test_read_session_trace(accessor, index):
     trace_data = {"id": "tid1", "sessionId": "sid1"}
     with patch(
-            "mirage.core.langfuse.read.fetch_trace",
-            new_callable=AsyncMock,
-            return_value=trace_data,
+        "mirage.core.langfuse.read.fetch_trace",
+        new_callable=AsyncMock,
+        return_value=trace_data,
     ):
         result = await read(
             accessor,
-            PathSpec(vfs_path="sessions/sid1/tid1.json",
-                     virtual="/sessions/sid1/tid1.json",
-                     directory="/sessions/sid1/tid1.json"), index)
+            PathSpec(
+                vfs_path="sessions/sid1/tid1.json",
+                virtual="/sessions/sid1/tid1.json",
+                directory="/sessions/sid1/tid1.json",
+            ),
+            index,
+        )
 
     parsed = json.loads(result)
     assert parsed["id"] == "tid1"
@@ -143,15 +155,19 @@ async def test_read_dataset_run_renders_jsonl(accessor, index):
     # with a trailing newline, not an indented document.
     runs = [{"name": "run-a", "metadata": {}}, {"name": "run-b"}]
     with patch(
-            "mirage.core.langfuse.read.fetch_dataset_runs",
-            new_callable=AsyncMock,
-            return_value=runs,
+        "mirage.core.langfuse.read.fetch_dataset_runs",
+        new_callable=AsyncMock,
+        return_value=runs,
     ):
         result = await read(
             accessor,
-            PathSpec(vfs_path="datasets/qa-eval/runs/run-a.jsonl",
-                     virtual="/datasets/qa-eval/runs/run-a.jsonl",
-                     directory="/datasets/qa-eval/runs/run-a.jsonl"), index)
+            PathSpec(
+                vfs_path="datasets/qa-eval/runs/run-a.jsonl",
+                virtual="/datasets/qa-eval/runs/run-a.jsonl",
+                directory="/datasets/qa-eval/runs/run-a.jsonl",
+            ),
+            index,
+        )
 
     text = result.decode()
     assert text.endswith("\n")
@@ -163,53 +179,68 @@ async def test_read_dataset_run_renders_jsonl(accessor, index):
 async def test_read_trace_not_found_is_enoent(accessor, index):
     # A 404 from the API is a missing file, not a leaked SDK error string.
     with patch(
-            "mirage.core.langfuse.read.fetch_trace",
-            new_callable=AsyncMock,
-            side_effect=ApiError(status_code=404, body={"message": "nope"}),
+        "mirage.core.langfuse.read.fetch_trace",
+        new_callable=AsyncMock,
+        side_effect=ApiError(status_code=404, body={"message": "nope"}),
     ):
         with pytest.raises(FileNotFoundError):
             await read(
                 accessor,
-                PathSpec(vfs_path="traces/gone.json",
-                         virtual="/traces/gone.json",
-                         directory="/traces/gone.json"), index)
+                PathSpec(
+                    vfs_path="traces/gone.json",
+                    virtual="/traces/gone.json",
+                    directory="/traces/gone.json",
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_read_trace_server_error_propagates(accessor, index):
     # Only 404 maps to ENOENT; a 500 must not be disguised as a missing file.
     with patch(
-            "mirage.core.langfuse.read.fetch_trace",
-            new_callable=AsyncMock,
-            side_effect=ApiError(status_code=500, body={"message": "boom"}),
+        "mirage.core.langfuse.read.fetch_trace",
+        new_callable=AsyncMock,
+        side_effect=ApiError(status_code=500, body={"message": "boom"}),
     ):
         with pytest.raises(ApiError):
             await read(
                 accessor,
-                PathSpec(vfs_path="traces/tid1.json",
-                         virtual="/traces/tid1.json",
-                         directory="/traces/tid1.json"), index)
+                PathSpec(
+                    vfs_path="traces/tid1.json",
+                    virtual="/traces/tid1.json",
+                    directory="/traces/tid1.json",
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_read_refuses_another_sessions_trace(accessor, index):
     """sessions/<id>/<trace>.json names a trace of that session; the
     trace id alone would fetch any session's trace."""
-    with patch("mirage.core.langfuse.read.fetch_trace",
-               new_callable=AsyncMock,
-               return_value={
-                   "id": "t1",
-                   "sessionId": "s2"
-               }):
+    with patch(
+        "mirage.core.langfuse.read.fetch_trace",
+        new_callable=AsyncMock,
+        return_value={"id": "t1", "sessionId": "s2"},
+    ):
         with pytest.raises(FileNotFoundError):
             await read(
                 accessor,
-                PathSpec(vfs_path="sessions/s1/t1.json",
-                         virtual="/sessions/s1/t1.json",
-                         directory="/sessions/s1/t1.json"), index)
+                PathSpec(
+                    vfs_path="sessions/s1/t1.json",
+                    virtual="/sessions/s1/t1.json",
+                    directory="/sessions/s1/t1.json",
+                ),
+                index,
+            )
         own = await read(
             accessor,
-            PathSpec(vfs_path="sessions/s2/t1.json",
-                     virtual="/sessions/s2/t1.json",
-                     directory="/sessions/s2/t1.json"), index)
+            PathSpec(
+                vfs_path="sessions/s2/t1.json",
+                virtual="/sessions/s2/t1.json",
+                directory="/sessions/s2/t1.json",
+            ),
+            index,
+        )
     assert json.loads(own)["sessionId"] == "s2"

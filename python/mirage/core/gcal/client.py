@@ -17,8 +17,12 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from mirage.core.gcal.day import event_span
-from mirage.core.google.client import (TokenManager, calendar_base,
-                                       google_delete, google_get)
+from mirage.core.google.client import (
+    TokenManager,
+    calendar_base,
+    google_delete,
+    google_get,
+)
 from mirage.core.google.constants import CALENDAR_API_BASE
 from mirage.core.time_range import TimeRange, parse_time
 from mirage.types import JsonValue
@@ -38,8 +42,8 @@ MAX_PAGES = 50
 
 
 async def list_calendars(
-        token_manager: TokenManager,
-        min_access_role: str | None = None) -> list[dict[str, JsonValue]]:
+    token_manager: TokenManager, min_access_role: str | None = None
+) -> list[dict[str, JsonValue]]:
     """List the account's calendars.
 
     showHidden is left at its default (false) so the mount shows what the
@@ -75,18 +79,19 @@ async def list_calendars(
         token = nxt
     else:
         raise RuntimeError(
-            "gcal: listing exceeded 50 pages; narrow the date range")
+            "gcal: listing exceeded 50 pages; narrow the date range"
+        )
     return items
 
 
 async def list_events(
-        token_manager: TokenManager,
-        calendar_id: str,
-        time_min: str | None,
-        time_max: str,
-        time_zone: str | None = None,
-        *,
-        scope: TimeRange = TimeRange(),
+    token_manager: TokenManager,
+    calendar_id: str,
+    time_min: str | None,
+    time_max: str,
+    time_zone: str | None = None,
+    *,
+    scope: TimeRange = TimeRange(),
 ) -> list[dict[str, JsonValue]]:
     """List a calendar's events overlapping a time window.
 
@@ -113,23 +118,28 @@ async def list_events(
     # holiday calendar is "en.usa#holiday@group.v.calendar.google.com", and
     # an unencoded "#" opens a fragment, so the request would reach
     # /calendars/en.usa instead.
-    url = (f"{calendar_base(token_manager)}/calendars/"
-           f"{quote(calendar_id, safe='')}/events")
+    url = (
+        f"{calendar_base(token_manager)}/calendars/"
+        f"{quote(calendar_id, safe='')}/events"
+    )
     lo, hi = scope.clip(
         parse_time(time_min) if time_min is not None else -math.inf,
-        parse_time(time_max))
+        parse_time(time_max),
+    )
     if lo >= hi:
         return []
     params = {
-        "timeMax": datetime.fromtimestamp(math.ceil(hi),
-                                          timezone.utc).isoformat(),
+        "timeMax": datetime.fromtimestamp(
+            math.ceil(hi), timezone.utc
+        ).isoformat(),
         "singleEvents": "true",
         "orderBy": "startTime",
         "maxResults": "2500",
     }
     if math.isfinite(lo):
-        params["timeMin"] = datetime.fromtimestamp(math.floor(lo),
-                                                   timezone.utc).isoformat()
+        params["timeMin"] = datetime.fromtimestamp(
+            math.floor(lo), timezone.utc
+        ).isoformat()
     if time_zone:
         params["timeZone"] = time_zone
     items: list[dict[str, JsonValue]] = []
@@ -150,19 +160,26 @@ async def list_events(
         token = nxt
     else:
         raise RuntimeError(
-            "gcal: listing exceeded 50 pages; narrow the date range")
+            "gcal: listing exceeded 50 pages; narrow the date range"
+        )
     if scope.bounded:
         items = [
-            event for event in items
+            event
+            for event in items
             if (span := event_span(event, time_zone or "UTC")) is not None
-            and span[0].timestamp() < hi and (span[1].timestamp(
-            ) > lo or span[0] == span[1] and span[0].timestamp() >= lo)
+            and span[0].timestamp() < hi
+            and (
+                span[1].timestamp() > lo
+                or span[0] == span[1]
+                and span[0].timestamp() >= lo
+            )
         ]
     return items
 
 
-async def delete_event(token_manager: TokenManager, calendar_id: str,
-                       event_id: str) -> None:
+async def delete_event(
+    token_manager: TokenManager, calendar_id: str, event_id: str
+) -> None:
     """Delete one event.
 
     Args:
@@ -170,7 +187,9 @@ async def delete_event(token_manager: TokenManager, calendar_id: str,
         calendar_id (str): the calendar id, or "primary".
         event_id (str): the event id.
     """
-    url = (f"{calendar_base(token_manager)}/calendars/"
-           f"{quote(calendar_id, safe='')}/events/"
-           f"{quote(event_id, safe='')}")
+    url = (
+        f"{calendar_base(token_manager)}/calendars/"
+        f"{quote(calendar_id, safe='')}/events/"
+        f"{quote(event_id, safe='')}"
+    )
     await google_delete(token_manager, url)

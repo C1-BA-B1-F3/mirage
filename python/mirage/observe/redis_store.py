@@ -79,10 +79,12 @@ class RedisObserverStore(ObserverStoreBase):
         return await self._read_paths(paths)
 
     async def _indexed_paths(self) -> list[str]:
-        members = await cast("Awaitable[set[bytes]]",
-                             self._client.smembers(self._index_key))
-        return sorted(m.decode() if isinstance(m, bytes) else m
-                      for m in members)
+        members = await cast(
+            "Awaitable[set[bytes]]", self._client.smembers(self._index_key)
+        )
+        return sorted(
+            m.decode() if isinstance(m, bytes) else m for m in members
+        )
 
     async def _read_paths(self, paths: list[str]) -> dict[str, bytes]:
         if not paths:

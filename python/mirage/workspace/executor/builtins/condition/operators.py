@@ -14,8 +14,11 @@
 
 from functools import partial
 
-from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
-                                                 typed_spec)
+from mirage.commands.builtin.utils.paths import (
+    dispatch_stat,
+    dot_refusal,
+    typed_spec,
+)
 from mirage.io.types import materialize
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.types import FileStat, FileType, PathSpec
@@ -23,9 +26,15 @@ from mirage.utils.dates import iso_timestamp
 from mirage.utils.errors import FileTooLargeError
 from mirage.utils.path import CycleError, resolve_path, resolve_symlinks
 from mirage.workspace.executor.builtins.condition.constants import (
-    FILE_PAIR_BINARY, FILE_UNARY, INT_COMPARATORS, UNSUPPORTED_UNARY)
-from mirage.workspace.executor.builtins.condition.types import (CondContext,
-                                                                CondError)
+    FILE_PAIR_BINARY,
+    FILE_UNARY,
+    INT_COMPARATORS,
+    UNSUPPORTED_UNARY,
+)
+from mirage.workspace.executor.builtins.condition.types import (
+    CondContext,
+    CondError,
+)
 from mirage.workspace.executor.builtins.scope import _scope_path, _to_scope
 from mirage.workspace.mount.namespace.probe import resolve_path_stat
 from mirage.workspace.session.elements import element_is_set
@@ -45,8 +54,9 @@ def operand_scope(ctx: CondContext, val: str | PathSpec) -> PathSpec:
     return _to_scope(resolved)
 
 
-async def path_kind(ctx: CondContext,
-                    val: str | PathSpec) -> tuple[str | None, FileStat | None]:
+async def path_kind(
+    ctx: CondContext, val: str | PathSpec
+) -> tuple[str | None, FileStat | None]:
     """Resolve an operand to 'dir' / 'file' / None plus its stat.
 
     Symlinks are followed first (test -e/-f/-d act on the target), then
@@ -59,8 +69,10 @@ async def path_kind(ctx: CondContext,
         val (str | PathSpec): operand as typed or classified.
     """
     walk = typed_spec(val, ctx.session.cwd)
-    if await dot_refusal(partial(dispatch_stat, ctx.dispatch),
-                         walk) is not None:
+    if (
+        await dot_refusal(partial(dispatch_stat, ctx.dispatch), walk)
+        is not None
+    ):
         # A path whose `.` and `..` do not resolve names nothing, which
         # is what every file test reads as false.
         return None, None
@@ -101,9 +113,9 @@ async def apply_unary(ctx: CondContext, op: str, val: str | PathSpec) -> bool:
             # bash aborts the line on `[[ -v a[1/0] ]]` with `1/0:
             # division by 0`, a test's grammar error being the only
             # other thing that ends it.
-            raise ExitSignal(1,
-                             stderr=f"bash: {exc}\n".encode(),
-                             contained_code=1) from exc
+            raise ExitSignal(
+                1, stderr=f"bash: {exc}\n".encode(), contained_code=1
+            ) from exc
     if op in ("-L", "-h"):
         resolved = resolve_path(text, ctx.session.cwd)
         return ctx.namespace.is_link(resolved)
@@ -164,8 +176,9 @@ def to_int(ctx: CondContext, text: str) -> int:
         raise CondError(f"{ctx.name}: {text}: integer expression expected")
 
 
-async def apply_binary(ctx: CondContext, left: str | PathSpec, op: str,
-                       right: str | PathSpec) -> bool:
+async def apply_binary(
+    ctx: CondContext, left: str | PathSpec, op: str, right: str | PathSpec
+) -> bool:
     """Evaluate a test/[ binary operator (literal string semantics).
 
     Args:
@@ -203,8 +216,9 @@ async def _pair_stat(ctx: CondContext, val: str | PathSpec) -> FileStat | None:
     return stat
 
 
-async def apply_file_pair(ctx: CondContext, op: str, left: str | PathSpec,
-                          right: str | PathSpec) -> bool:
+async def apply_file_pair(
+    ctx: CondContext, op: str, left: str | PathSpec, right: str | PathSpec
+) -> bool:
     """Evaluate ``-nt``, ``-ot`` and ``-ef``, with bash's absence rules.
 
     ``-nt`` is true when the left file exists and either the right does
@@ -226,8 +240,9 @@ async def apply_file_pair(ctx: CondContext, op: str, left: str | PathSpec,
     if op == "-ef":
         if lstat is None or rstat is None:
             return False
-        return (operand_scope(ctx, left).virtual.rstrip("/") == operand_scope(
-            ctx, right).virtual.rstrip("/"))
+        return operand_scope(ctx, left).virtual.rstrip("/") == operand_scope(
+            ctx, right
+        ).virtual.rstrip("/")
     if op == "-ot":
         lstat, rstat = rstat, lstat
     if lstat is None:

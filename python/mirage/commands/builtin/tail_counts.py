@@ -35,7 +35,9 @@ _STRTOD_RE = re.compile(
             (?:[pP][+-]?[0-9]+)?
           | inf(?:inity)?
           | nan(?:\([0-9A-Za-z_]*\))?
-        )$""", re.VERBOSE | re.IGNORECASE)
+        )$""",
+    re.VERBOSE | re.IGNORECASE,
+)
 _HEX_RE = re.compile(r"^[ \t\n\v\f\r]*[+-]?0[xX]")
 _NAN_RE = re.compile(r"^[ \t\n\v\f\r]*[+-]?nan", re.IGNORECASE)
 _BYTE_RE = re.compile(r"^([+-]?)([0-9]+)([A-Za-z]*)$")
@@ -86,15 +88,16 @@ def parse_seconds(raw: str) -> float | None:
     return float(text)
 
 
-def number_flag_error(cmd: str, n_raw: str | None,
-                      c_raw: str | None) -> str | None:
+def number_flag_error(
+    cmd: str, n_raw: str | None, c_raw: str | None
+) -> str | None:
     if n_raw is not None and not _NUMBER_RE.match(n_raw):
         return f"{cmd}: invalid number of lines: '{quote_text(n_raw)}'\n"
     if c_raw is not None:
         try:
             parse_byte_count(c_raw)
         except ValueError:
-            return (f"{cmd}: invalid number of bytes: '{quote_text(c_raw)}'\n")
+            return f"{cmd}: invalid number of bytes: '{quote_text(c_raw)}'\n"
     return None
 
 

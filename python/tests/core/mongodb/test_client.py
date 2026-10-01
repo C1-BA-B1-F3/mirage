@@ -16,14 +16,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from mirage.core.mongodb.client import (get_index_stats, get_indexes,
-                                        get_validator, is_view, iter_documents,
-                                        iter_inserts, list_collections)
+from mirage.core.mongodb.client import (
+    get_index_stats,
+    get_indexes,
+    get_validator,
+    is_view,
+    iter_documents,
+    iter_inserts,
+    list_collections,
+)
 from mirage.core.mongodb.types import EntityKind
 
 
 class _AsyncIter:
-
     def __init__(self, items):
         self._items = list(items)
 
@@ -69,15 +74,15 @@ async def test_iter_documents_applies_filter_projection_and_sort():
     docs = [{"_id": 1, "x": 5}]
     client, col, cursor = _build_mock_client(docs)
     out = []
-    async for doc in iter_documents(client,
-                                    "db1",
-                                    "coll1",
-                                    filter={"x": {
-                                        "$gt": 0
-                                    }},
-                                    projection={"x": 1},
-                                    sort=[("_id", -1)],
-                                    batch_size=50):
+    async for doc in iter_documents(
+        client,
+        "db1",
+        "coll1",
+        filter={"x": {"$gt": 0}},
+        projection={"x": 1},
+        sort=[("_id", -1)],
+        batch_size=50,
+    ):
         out.append(doc)
     assert out == docs
     col.find.assert_called_once_with({"x": {"$gt": 0}}, {"x": 1})
@@ -96,9 +101,9 @@ async def test_iter_documents_empty_yields_nothing():
 
 def _build_indexes_client(spec, indexes):
     spec_cursor = MagicMock()
-    spec_cursor.__aiter__ = lambda self: _AsyncIter([spec]
-                                                    if spec else []).__aiter__(
-                                                    )
+    spec_cursor.__aiter__ = lambda self: _AsyncIter(
+        [spec] if spec else []
+    ).__aiter__()
     idx_cursor = MagicMock()
     idx_cursor.__aiter__ = lambda self: _AsyncIter(indexes).__aiter__()
     col = MagicMock()
@@ -114,10 +119,7 @@ def _build_indexes_client(spec, indexes):
 @pytest.mark.asyncio
 async def test_is_view_true_when_spec_type_view():
     client, _, db = _build_indexes_client(
-        spec={
-            "name": "myview",
-            "type": "view"
-        },
+        spec={"name": "myview", "type": "view"},
         indexes=[],
     )
     assert await is_view(client, "db1", "myview") is True
@@ -127,10 +129,7 @@ async def test_is_view_true_when_spec_type_view():
 @pytest.mark.asyncio
 async def test_is_view_false_for_regular_collection():
     client, _, _ = _build_indexes_client(
-        spec={
-            "name": "coll1",
-            "type": "collection"
-        },
+        spec={"name": "coll1", "type": "collection"},
         indexes=[],
     )
     assert await is_view(client, "db1", "coll1") is False
@@ -146,10 +145,7 @@ async def test_is_view_false_when_collection_absent():
 async def test_get_indexes_returns_indexes_for_collection():
     indexes = [{"name": "_id_", "key": {"_id": 1}}]
     client, col, db = _build_indexes_client(
-        spec={
-            "name": "coll1",
-            "type": "collection"
-        },
+        spec={"name": "coll1", "type": "collection"},
         indexes=indexes,
     )
     out = await get_indexes(client, "db1", "coll1")
@@ -160,9 +156,9 @@ async def test_get_indexes_returns_indexes_for_collection():
 
 def _build_validator_client(spec):
     spec_cursor = MagicMock()
-    spec_cursor.__aiter__ = lambda self: _AsyncIter([spec]
-                                                    if spec else []).__aiter__(
-                                                    )
+    spec_cursor.__aiter__ = lambda self: _AsyncIter(
+        [spec] if spec else []
+    ).__aiter__()
     db = MagicMock()
     db.list_collections = AsyncMock(return_value=spec_cursor)
     client = MagicMock()
@@ -176,12 +172,9 @@ async def test_get_validator_returns_json_schema_when_present():
         "name": "movies",
         "options": {
             "validator": {
-                "$jsonSchema": {
-                    "bsonType": "object",
-                    "required": ["title"]
-                }
+                "$jsonSchema": {"bsonType": "object", "required": ["title"]}
             }
-        }
+        },
     }
     client, db = _build_validator_client(spec)
     out = await get_validator(client, "db1", "movies")
@@ -217,19 +210,10 @@ def _build_indexstats_client(rows):
 @pytest.mark.asyncio
 async def test_get_index_stats_returns_map_keyed_by_name():
     rows = [
-        {
-            "name": "_id_",
-            "accesses": {
-                "ops": 1234,
-                "since": "2026-01-01"
-            }
-        },
+        {"name": "_id_", "accesses": {"ops": 1234, "since": "2026-01-01"}},
         {
             "name": "title_text",
-            "accesses": {
-                "ops": 5678,
-                "since": "2026-02-01"
-            }
+            "accesses": {"ops": 5678, "since": "2026-02-01"},
         },
     ]
     client, col = _build_indexstats_client(rows)
@@ -249,10 +233,7 @@ async def test_get_index_stats_empty_when_view():
 @pytest.mark.asyncio
 async def test_get_indexes_returns_empty_for_view_without_listing():
     client, col, db = _build_indexes_client(
-        spec={
-            "name": "myview",
-            "type": "view"
-        },
+        spec={"name": "myview", "type": "view"},
         indexes=[],
     )
     out = await get_indexes(client, "db1", "myview")
@@ -262,7 +243,6 @@ async def test_get_indexes_returns_empty_for_view_without_listing():
 
 
 class _AsyncChangeStream:
-
     def __init__(self, changes):
         self._iter = _AsyncIter(changes)
 
@@ -290,51 +270,25 @@ def _build_watch_client(changes):
 @pytest.mark.asyncio
 async def test_iter_inserts_yields_full_documents():
     changes = [
-        {
-            "operationType": "insert",
-            "fullDocument": {
-                "_id": 1,
-                "v": "a"
-            }
-        },
-        {
-            "operationType": "insert",
-            "fullDocument": {
-                "_id": 2,
-                "v": "b"
-            }
-        },
+        {"operationType": "insert", "fullDocument": {"_id": 1, "v": "a"}},
+        {"operationType": "insert", "fullDocument": {"_id": 2, "v": "b"}},
     ]
     client, col = _build_watch_client(changes)
     out = []
     async for doc in iter_inserts(client, "db1", "coll1"):
         out.append(doc)
     assert out == [{"_id": 1, "v": "a"}, {"_id": 2, "v": "b"}]
-    col.watch.assert_awaited_once_with([{
-        "$match": {
-            "operationType": "insert"
-        }
-    }])
+    col.watch.assert_awaited_once_with(
+        [{"$match": {"operationType": "insert"}}]
+    )
 
 
 @pytest.mark.asyncio
 async def test_iter_inserts_skips_changes_without_full_document():
     changes = [
-        {
-            "operationType": "insert",
-            "fullDocument": {
-                "_id": 1
-            }
-        },
-        {
-            "operationType": "drop"
-        },
-        {
-            "operationType": "insert",
-            "fullDocument": {
-                "_id": 2
-            }
-        },
+        {"operationType": "insert", "fullDocument": {"_id": 1}},
+        {"operationType": "drop"},
+        {"operationType": "insert", "fullDocument": {"_id": 2}},
     ]
     client, _ = _build_watch_client(changes)
     out = []
@@ -353,17 +307,14 @@ async def test_iter_documents_closes_cursor_on_early_stop():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind, expected", [
-    (None, None),
-    (EntityKind.COLLECTION, {
-        "type": {
-            "$ne": "view"
-        }
-    }),
-    (EntityKind.VIEW, {
-        "type": "view"
-    }),
-])
+@pytest.mark.parametrize(
+    "kind, expected",
+    [
+        (None, None),
+        (EntityKind.COLLECTION, {"type": {"$ne": "view"}}),
+        (EntityKind.VIEW, {"type": "view"}),
+    ],
+)
 async def test_collection_namespace_includes_non_view_types(kind, expected):
     db = MagicMock()
     db.list_collection_names = AsyncMock(return_value=["measurements"])

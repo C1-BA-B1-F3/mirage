@@ -75,7 +75,7 @@ def whoami_row(me: dict[str, Any]) -> bytes:
 
 
 async def whoami(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     me = await get_self(notion_config(inv))

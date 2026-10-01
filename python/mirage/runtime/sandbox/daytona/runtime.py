@@ -15,8 +15,11 @@
 from typing import Any
 
 from mirage.runtime.sandbox.base import RemoteSandbox
-from mirage.runtime.sandbox.constants import (sdk_install_hint, stdin_path,
-                                              stdin_redirect)
+from mirage.runtime.sandbox.constants import (
+    sdk_install_hint,
+    stdin_path,
+    stdin_redirect,
+)
 from mirage.runtime.sandbox.daytona import sdk
 from mirage.runtime.sandbox.daytona.config import DaytonaConfig
 from mirage.runtime.types import RunResult
@@ -47,22 +50,28 @@ class DaytonaRuntime(RemoteSandbox):
             raise ImportError(sdk_install_hint("daytona"))
         if self._client is None:
             api_key = self.config.api_key
-            config = (sdk.DaytonaConfig(
-                api_key=api_key) if api_key is not None else None)
+            config = (
+                sdk.DaytonaConfig(api_key=api_key)
+                if api_key is not None
+                else None
+            )
             self._client = sdk.AsyncDaytona(config)
         self._sandbox = await self._client.get(self.config.sandbox_id)
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         command = line
         if stdin is not None:
             path = stdin_path()
             await self._upload(path, stdin)
             command = stdin_redirect(line, path)
         response = await self._sandbox.process.exec(command, cwd=cwd, env=env)
-        return RunResult(stdout=str(response.result).encode(),
-                         stderr=None,
-                         exit_code=int(response.exit_code))
+        return RunResult(
+            stdout=str(response.result).encode(),
+            stderr=None,
+            exit_code=int(response.exit_code),
+        )
 
     async def _upload(self, path: str, data: bytes) -> None:
         parent = path.rsplit("/", 1)[0]

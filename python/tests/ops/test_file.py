@@ -31,7 +31,6 @@ def _read(ops, path):
 
 
 class TestMirageFile:
-
     def test_read_text(self):
         ops, _ = make_ops_with_dir()
         _write(ops, "/data/dir/f.txt", b"hello")
@@ -182,10 +181,9 @@ class TestMirageFile:
     def test_text_encoding_and_error_policy_are_honored(self):
         ops, _ = make_ops_with_dir()
         _write(ops, "/data/dir/f.txt", b"caf\xe9")
-        with MirageFile(ops,
-                        "/data/dir/f.txt",
-                        encoding="ascii",
-                        errors="replace") as f:
+        with MirageFile(
+            ops, "/data/dir/f.txt", encoding="ascii", errors="replace"
+        ) as f:
             assert f.read() == "caf�"
 
     def test_the_locale_encoding_sentinel_is_not_a_codec_name(self):

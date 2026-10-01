@@ -40,15 +40,8 @@ def test_normalize_document_resolves_project_and_creator():
         "createdAt": "2026-05-01T00:00:00.000Z",
         "updatedAt": "2026-05-02T00:00:00.000Z",
         "url": "https://linear.app/strukto/document/doc_1",
-        "project": {
-            "id": "prj_1",
-            "name": "Search"
-        },
-        "creator": {
-            "id": "usr_1",
-            "name": "alex",
-            "email": "alex@x.io"
-        },
+        "project": {"id": "prj_1", "name": "Search"},
+        "creator": {"id": "usr_1", "name": "alex", "email": "alex@x.io"},
     }
     assert normalize_document(document) == {
         "document_id": "doc_1",
@@ -66,10 +59,7 @@ def test_normalize_document_resolves_project_and_creator():
 
 
 def test_normalize_document_defaults_content_and_nulls():
-    assert normalize_document({
-        "id": "doc_2",
-        "title": "Empty"
-    }) == {
+    assert normalize_document({"id": "doc_2", "title": "Empty"}) == {
         "document_id": "doc_2",
         "title": "Empty",
         "content": "",

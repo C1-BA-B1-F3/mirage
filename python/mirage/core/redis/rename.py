@@ -39,7 +39,7 @@ async def _move_subtree(store: RedisStore, s: str, d: str) -> None:
     new_prefix = d.rstrip("/") + "/"
     for key in sorted(await store.list_dirs()):
         if key.startswith(prefix):
-            new_key = new_prefix + key[len(prefix):]
+            new_key = new_prefix + key[len(prefix) :]
             mod = await store.get_modified(key)
             attrs = await store.get_attrs(key)
             await store.remove_dir(key)
@@ -52,7 +52,7 @@ async def _move_subtree(store: RedisStore, s: str, d: str) -> None:
                 await store.set_attrs(new_key, attrs)
     for key in await store.list_files():
         if key.startswith(prefix):
-            new_key = new_prefix + key[len(prefix):]
+            new_key = new_prefix + key[len(prefix) :]
             data = await store.get_file(key) or b""
             mod = await store.get_modified(key)
             attrs = await store.get_attrs(key)

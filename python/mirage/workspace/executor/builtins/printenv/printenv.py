@@ -31,8 +31,11 @@ async def handle_printenv(
     if name:
         val = env.get(name)
         if val is None:
-            return None, IOResult(exit_code=1), ExecutionNode(
-                command="printenv", exit_code=1)
+            return (
+                None,
+                IOResult(exit_code=1),
+                ExecutionNode(command="printenv", exit_code=1),
+            )
         out = f"{val}\n".encode()
     else:
         lines = [f"{k}={v}" for k, v in env.items()]

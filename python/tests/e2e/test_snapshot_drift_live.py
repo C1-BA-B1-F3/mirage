@@ -33,15 +33,18 @@ def _spec(key: str, virtual: str) -> PathSpec:
     Passing the bare string was an AttributeError waiting for a live
     versioned bucket -- this test skips without one, so nothing caught it.
     """
-    return PathSpec(vfs_path=key,
-                    virtual=virtual,
-                    directory="/s3",
-                    pattern=None,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=key,
+        virtual=virtual,
+        directory="/s3",
+        pattern=None,
+        resolved=True,
+    )
 
 
 LIVE_BUCKET = os.environ.get("MIRAGE_LIVE_S3_BUCKET") or os.environ.get(
-    "AWS_S3_BUCKET")
+    "AWS_S3_BUCKET"
+)
 LIVE_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 LIVE_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 LIVE_SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -50,8 +53,10 @@ _LIVE_READY = bool(LIVE_BUCKET and LIVE_KEY_ID and LIVE_SECRET)
 
 pytestmark = pytest.mark.skipif(
     not _LIVE_READY,
-    reason=("set MIRAGE_LIVE_S3_BUCKET (or AWS_S3_BUCKET) plus "
-            "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY to run live S3 tests"),
+    reason=(
+        "set MIRAGE_LIVE_S3_BUCKET (or AWS_S3_BUCKET) plus "
+        "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY to run live S3 tests"
+    ),
 )
 
 
@@ -97,22 +102,22 @@ def _cleanup_key(key: str) -> None:
     client = _boto_client()
     try:
         if _versioning_enabled():
-            versions = client.list_object_versions(Bucket=LIVE_BUCKET,
-                                                   Prefix=key).get(
-                                                       "Versions", [])
+            versions = client.list_object_versions(
+                Bucket=LIVE_BUCKET, Prefix=key
+            ).get("Versions", [])
             for v in versions:
                 if v.get("Key") == key:
-                    client.delete_object(Bucket=LIVE_BUCKET,
-                                         Key=key,
-                                         VersionId=v["VersionId"])
-            markers = client.list_object_versions(Bucket=LIVE_BUCKET,
-                                                  Prefix=key).get(
-                                                      "DeleteMarkers", [])
+                    client.delete_object(
+                        Bucket=LIVE_BUCKET, Key=key, VersionId=v["VersionId"]
+                    )
+            markers = client.list_object_versions(
+                Bucket=LIVE_BUCKET, Prefix=key
+            ).get("DeleteMarkers", [])
             for m in markers:
                 if m.get("Key") == key:
-                    client.delete_object(Bucket=LIVE_BUCKET,
-                                         Key=key,
-                                         VersionId=m["VersionId"])
+                    client.delete_object(
+                        Bucket=LIVE_BUCKET, Key=key, VersionId=m["VersionId"]
+                    )
         else:
             client.delete_object(Bucket=LIVE_BUCKET, Key=key)
     except Exception:
@@ -129,9 +134,11 @@ def test_live_strict_raises_on_etag_drift(tmp_path):
     drift detection). That path is covered by the version-pin test.
     """
     if _versioning_enabled():
-        pytest.skip(f"bucket {LIVE_BUCKET} is versioned; STRICT will pin "
-                    "instead of drift-checking. See the version-pin test "
-                    "for the versioned path.")
+        pytest.skip(
+            f"bucket {LIVE_BUCKET} is versioned; STRICT will pin "
+            "instead of drift-checking. See the version-pin test "
+            "for the versioned path."
+        )
     key = _probe_key()
     probe = f"/s3/{key}"
     client = _boto_client()
@@ -150,8 +157,10 @@ def test_live_strict_raises_on_etag_drift(tmp_path):
         with pytest.raises(ContentDriftError) as exc_info:
             asyncio.run(dst.shell(f"cat {probe}"))
         assert exc_info.value.path == probe
-        assert (exc_info.value.snapshot_fingerprint
-                != exc_info.value.live_fingerprint)
+        assert (
+            exc_info.value.snapshot_fingerprint
+            != exc_info.value.live_fingerprint
+        )
     finally:
         _cleanup_key(key)
 
@@ -213,7 +222,8 @@ def test_live_pin_records_agent_version_not_snapshot_time_version(tmp_path):
         result = asyncio.run(dst.shell(f"cat {probe}"))
         assert result.stdout == b"v1\n", (
             f"snapshot pinned the wrong VersionId; served {result.stdout!r} "
-            "instead of the V1 the agent actually saw")
+            "instead of the V1 the agent actually saw"
+        )
     finally:
         _cleanup_key(key)
 
@@ -232,7 +242,8 @@ def test_live_version_pin_serves_original_on_versioned_bucket(tmp_path):
             f"bucket {LIVE_BUCKET} does not have versioning enabled; "
             "run `aws s3api put-bucket-versioning --bucket "
             f"{LIVE_BUCKET} --versioning-configuration Status=Enabled` "
-            "to exercise the pin path")
+            "to exercise the pin path"
+        )
 
     key = _probe_key()
     probe = f"/s3/{key}"
@@ -253,7 +264,8 @@ def test_live_version_pin_serves_original_on_versioned_bucket(tmp_path):
         result = asyncio.run(dst.shell(f"cat {probe}"))
         assert result.stdout == b"original\n", (
             "pinned read should serve the recorded version, "
-            f"got {result.stdout!r}")
+            f"got {result.stdout!r}"
+        )
     finally:
         _cleanup_key(key)
 
@@ -277,9 +289,9 @@ def test_live_off_policy_serves_current(tmp_path):
 
         client.put_object(Bucket=LIVE_BUCKET, Key=key, Body=b"mutated\n")
 
-        dst = Workspace.load(snap,
-                             mounts=_override(),
-                             drift_policy=DriftPolicy.OFF)
+        dst = Workspace.load(
+            snap, mounts=_override(), drift_policy=DriftPolicy.OFF
+        )
         assert dst.revisions == {}
         result = asyncio.run(dst.shell(f"cat {probe}"))
         assert b"mutated" in result.stdout
@@ -304,6 +316,7 @@ def test_live_stat_populates_revision_when_versioned(tmp_path):
         stat = asyncio.run(ops(vfs).stat(_spec(key, probe)))
         assert stat.fingerprint is not None
         assert stat.revision is not None, (
-            "versioned bucket head should carry a VersionId")
+            "versioned bucket head should carry a VersionId"
+        )
     finally:
         _cleanup_key(key)

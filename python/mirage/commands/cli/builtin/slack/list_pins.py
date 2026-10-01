@@ -23,7 +23,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def list_pins(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     items = await list_pins_core(inv.config, fl.as_str("channel") or "")
     out = json.dumps(items, ensure_ascii=False, separators=(",", ":")).encode()

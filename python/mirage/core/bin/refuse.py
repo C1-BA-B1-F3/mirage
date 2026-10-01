@@ -20,8 +20,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import ReadOnlyError
 
 
-async def refuse(accessor: BinAccessor, path: PathSpec, *args: Any,
-                 **kwargs: Any) -> None:
+async def refuse(
+    accessor: BinAccessor, path: PathSpec, *args: Any, **kwargs: Any
+) -> None:
     """Refuse a write into the view, as a read-only file system does.
 
     What the view holds is the lookup's to say, so every write op lands

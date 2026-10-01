@@ -20,9 +20,11 @@ from mirage.core.nextcloud.du.walk import stat_or_null
 from mirage.types import FileType, PathSpec
 
 
-async def size(accessor: NextcloudAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> int:
+async def size(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> int:
     """Recursive byte size of everything under a path.
 
     Args:

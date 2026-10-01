@@ -48,8 +48,9 @@ class FileHandle:
     dirty: bool = False
 
     @classmethod
-    def opened(cls, path: str, data: bytes, *, writable: bool,
-               append: bool) -> "FileHandle":
+    def opened(
+        cls, path: str, data: bytes, *, writable: bool, append: bool
+    ) -> "FileHandle":
         """A handle over `data`, positioned by the open mode.
 
         Args:
@@ -60,11 +61,13 @@ class FileHandle:
             append (bool): start positioned at the end.
         """
         buf = bytearray(data)
-        return cls(path=path,
-                   buf=buf,
-                   pos=len(buf) if append else 0,
-                   writable=writable,
-                   base_len=len(buf))
+        return cls(
+            path=path,
+            buf=buf,
+            pos=len(buf) if append else 0,
+            writable=writable,
+            base_len=len(buf),
+        )
 
     def read(self, size: int | None = None) -> bytes:
         """Read from the position, advancing it by what was read.
@@ -77,7 +80,7 @@ class FileHandle:
             end = len(self.buf)
         else:
             end = min(len(self.buf), self.pos + size)
-        chunk = bytes(self.buf[self.pos:end])
+        chunk = bytes(self.buf[self.pos : end])
         self.pos += len(chunk)
         return chunk
 
@@ -88,7 +91,7 @@ class FileHandle:
             offset (int): byte offset to read from.
             size (int): byte budget.
         """
-        return bytes(self.buf[offset:offset + size])
+        return bytes(self.buf[offset : offset + size])
 
     def pwrite(self, offset: int, data: bytes) -> None:
         """Splice bytes in at an offset without moving the position.
@@ -104,7 +107,7 @@ class FileHandle:
         if offset > len(self.buf):
             self.buf += b"\0" * (offset - len(self.buf))
         self.low_write = min(self.low_write, offset)
-        self.buf[offset:offset + len(data)] = data
+        self.buf[offset : offset + len(data)] = data
         self.dirty = True
 
     def write(self, data: bytes) -> None:

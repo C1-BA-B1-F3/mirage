@@ -25,9 +25,17 @@ from asyncssh.connection import SSHConnection
 from mirage import Workspace
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
 from mirage.server.ssh.constants import PROFILE_OPTION
-from mirage.server.ssh.stream import (ChannelInput, ChannelOutput, LoopStdin,
-                                      Mark, Send, decode, deliver, encode,
-                                      loop_sender)
+from mirage.server.ssh.stream import (
+    ChannelInput,
+    ChannelOutput,
+    LoopStdin,
+    Mark,
+    Send,
+    decode,
+    deliver,
+    encode,
+    loop_sender,
+)
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.statement import record_status
 
@@ -108,10 +116,12 @@ def key_profile(conn: SSHConnection) -> str | None:
     return name
 
 
-async def open_session(ws: Workspace,
-                       session_id: str,
-                       env: Mapping[str, str] | None = None,
-                       profile: str | None = None) -> None:
+async def open_session(
+    ws: Workspace,
+    session_id: str,
+    env: Mapping[str, str] | None = None,
+    profile: str | None = None,
+) -> None:
     """Create the session a channel runs as.
 
     The session runs under ``profile`` (the login key's), else the
@@ -134,24 +144,28 @@ async def open_session(ws: Workspace,
     session = ws.create_session(session_id, profile=profile)
     try:
         missing = {
-            k: v
-            for k, v in (env or {}).items() if k not in session.env
+            k: v for k, v in (env or {}).items() if k not in session.env
         }
         if not missing:
             return
-        line = "export " + " ".join(f"{k}={shlex.quote(v)}"
-                                    for k, v in missing.items())
+        line = "export " + " ".join(
+            f"{k}={shlex.quote(v)}" for k, v in missing.items()
+        )
         io = await ws.shell(line, session_id=session_id, record=False)
         if io.exit_code != 0:
-            logger.debug("ssh: login env refused on %s: %s", session_id, await
-                         io.stderr_str())
+            logger.debug(
+                "ssh: login env refused on %s: %s",
+                session_id,
+                await io.stderr_str(),
+            )
     except BaseException:
         await ws.close_session(session_id)
         raise
 
 
-async def run_line(ws: Workspace, session_id: str, line: str, stdin: LoopStdin,
-                   send: Send) -> int:
+async def run_line(
+    ws: Workspace, session_id: str, line: str, stdin: LoopStdin, send: Send
+) -> int:
     """Run one line as the session and stream its output back.
 
     Runs on the workspace's loop. The status is read after the streams
@@ -168,10 +182,9 @@ async def run_line(ws: Workspace, session_id: str, line: str, stdin: LoopStdin,
         int: the line's exit status.
     """
     try:
-        io = await ws.shell(line,
-                            session_id=session_id,
-                            stdin=stdin,
-                            agent_id=AGENT_ID)
+        io = await ws.shell(
+            line, session_id=session_id, stdin=stdin, agent_id=AGENT_ID
+        )
     except MirageAbortError:
         return INTERRUPTED
     await deliver(io.stdout, io.stderr, send)
@@ -210,9 +223,13 @@ class ShellChannel:
         process (asyncssh.SSHServerProcess[str]): the channel's process.
     """
 
-    def __init__(self, registry: WorkspaceRegistry, entry: WorkspaceEntry,
-                 session_id: str,
-                 process: asyncssh.SSHServerProcess[str]) -> None:
+    def __init__(
+        self,
+        registry: WorkspaceRegistry,
+        entry: WorkspaceEntry,
+        session_id: str,
+        process: asyncssh.SSHServerProcess[str],
+    ) -> None:
         self._registry = registry
         self._entry = entry
         self._session_id = session_id
@@ -277,15 +294,22 @@ class ShellChannel:
             int: the line's status; 130 when it was interrupted.
         """
         if not self._live():
-            await self._output.write(b"mirage: the workspace is gone\n",
-                                     stderr=True)
+            await self._output.write(
+                b"mirage: the workspace is gone\n", stderr=True
+            )
             return 1
         runner = self._entry.runner
         loop = asyncio.get_running_loop()
         self._running = asyncio.run_coroutine_threadsafe(
-            run_line(runner.ws, self._session_id, line,
-                     LoopStdin(self._input, loop),
-                     loop_sender(self._output, loop)), runner.loop)
+            run_line(
+                runner.ws,
+                self._session_id,
+                line,
+                LoopStdin(self._input, loop),
+                loop_sender(self._output, loop),
+            ),
+            runner.loop,
+        )
         self._input.on_interrupt(self._interrupt)
         try:
             return await asyncio.wrap_future(self._running)
@@ -324,7 +348,8 @@ class ShellChannel:
             item = await self._input.readline()
             if item is Mark.LIMIT:
                 await self._output.write(
-                    b"mirage: shell input line too long\n", stderr=True)
+                    b"mirage: shell input line too long\n", stderr=True
+                )
                 return 1
             if item is Mark.EOF:
                 if self._tty:
@@ -337,7 +362,8 @@ class ShellChannel:
                 if self._live():
                     runner = self._entry.runner
                     await runner.call(
-                        stamp_interrupt(runner.ws, self._session_id))
+                        stamp_interrupt(runner.ws, self._session_id)
+                    )
                 continue
             line = decode(item).rstrip("\r\n")
             if not line.strip():
@@ -348,8 +374,9 @@ class ShellChannel:
         return status
 
 
-async def handle_process(registry: WorkspaceRegistry,
-                         process: asyncssh.SSHServerProcess[str]) -> None:
+async def handle_process(
+    registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
+) -> None:
     """Serve one session channel: a command, or an interactive shell.
 
     The SSH username names the workspace. SFTP and scp never reach
@@ -362,7 +389,8 @@ async def handle_process(registry: WorkspaceRegistry,
     workspace_id = process.get_extra_info("username")
     if process.subsystem is not None:
         process.stderr.write(
-            f"mirage: unsupported subsystem: {process.subsystem}\n")
+            f"mirage: unsupported subsystem: {process.subsystem}\n"
+        )
         process.exit(1)
         return
     if workspace_id not in registry:
@@ -375,10 +403,12 @@ async def handle_process(registry: WorkspaceRegistry,
     try:
         profile = key_profile(process.channel.get_connection())
         await runner.call(
-            open_session(runner.ws, session_id, login_env(process), profile))
+            open_session(runner.ws, session_id, login_env(process), profile)
+        )
     except Exception as exc:
-        logger.warning("ssh: cannot open a session on %s: %r", workspace_id,
-                       exc)
+        logger.warning(
+            "ssh: cannot open a session on %s: %r", workspace_id, exc
+        )
         process.stderr.write(f"mirage: cannot open a session: {exc}\n")
         process.exit(1)
         return

@@ -21,9 +21,11 @@ async def rolling_client(request):
     url = os.environ.get("REDIS_URL")
     if request.param == "redis" and not url:
         pytest.skip("REDIS_URL not set")
-    client = FakeRedis(
-        decode_responses=True) if request.param == "fake" else Redis.from_url(
-            url, decode_responses=True)
+    client = (
+        FakeRedis(decode_responses=True)
+        if request.param == "fake"
+        else Redis.from_url(url, decode_responses=True)
+    )
     prefix = f"rolling:{uuid4()}:"
     try:
         yield client, prefix
@@ -37,18 +39,24 @@ async def rolling_client(request):
 @pytest.fixture
 def client():
     value = MagicMock()
-    value.scan = AsyncMock(return_value=(
-        0,
-        [b"test:mirage:idx:entry:/folder/a.txt"],
-    ))
-    value.mget = AsyncMock(return_value=[
-        b'{"entries":["/folder/a.txt"],"expires_at":4102444800,"generation":"g:d"}',
-        b'g', b'd'
-    ])
+    value.scan = AsyncMock(
+        return_value=(
+            0,
+            [b"test:mirage:idx:entry:/folder/a.txt"],
+        )
+    )
+    value.mget = AsyncMock(
+        return_value=[
+            b'{"entries":["/folder/a.txt"],"expires_at":4102444800,"generation":"g:d"}',
+            b"g",
+            b"d",
+        ]
+    )
     value.set = AsyncMock()
     value.delete = AsyncMock()
     value.get = AsyncMock(
-        return_value=(b'{"id":"a","name":"a.txt","resource_type":"file"}'))
+        return_value=(b'{"id":"a","name":"a.txt","resource_type":"file"}')
+    )
     pipe = MagicMock()
     pipe.execute = AsyncMock()
     value.pipeline.return_value = pipe
@@ -60,9 +68,11 @@ async def test_list_dir_decodes_injected_client_values(client):
     store = RedisIndexCacheStore(client=client)
     result = await store.list_dir("/folder")
     assert result.entries == ["/folder/a.txt"]
-    client.mget.assert_awaited_once_with("mirage:idx:directory:/folder",
-                                         "mirage:idx:generation",
-                                         "mirage:idx:generation:/folder")
+    client.mget.assert_awaited_once_with(
+        "mirage:idx:directory:/folder",
+        "mirage:idx:generation",
+        "mirage:idx:generation:/folder",
+    )
 
 
 @pytest.mark.asyncio
@@ -73,9 +83,12 @@ async def test_invalidate_dir_is_one_script_over_its_three_keys(client):
     store = RedisIndexCacheStore(client=client)
     await store.invalidate_dir("/folder")
     args = client.eval.await_args.args
-    assert args[1:5] == (4, "mirage:idx:directory:/folder",
-                         "mirage:idx:tombstone:/folder",
-                         "mirage:idx:generation:/folder")
+    assert args[1:5] == (
+        4,
+        "mirage:idx:directory:/folder",
+        "mirage:idx:tombstone:/folder",
+        "mirage:idx:generation:/folder",
+    )
 
 
 @pytest.mark.asyncio
@@ -105,7 +118,8 @@ async def test_seed_flushes_before_first_lookup(client):
     store.seed(
         {
             "/folder/a.txt": IndexEntry(
-                id="a", name="a.txt", resource_type="file")
+                id="a", name="a.txt", resource_type="file"
+            )
         },
         {"/folder": ["/folder/a.txt"]},
         datetime.now(timezone.utc) + timedelta(hours=1),
@@ -122,9 +136,11 @@ async def test_failed_seed_flush_remains_retryable(client):
     client.get.return_value = b"g"
     client.mget.return_value = [b"d"]
     store = RedisIndexCacheStore(client=client)
-    store.seed({"/a": IndexEntry(id="a", name="a", resource_type="file")},
-               {"/": ["/a"]},
-               datetime.now(timezone.utc) + timedelta(hours=1))
+    store.seed(
+        {"/a": IndexEntry(id="a", name="a", resource_type="file")},
+        {"/": ["/a"]},
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     pipe = client.pipeline.return_value
     pipe.execute.side_effect = [ConnectionError("retry"), None]
     with pytest.raises(ConnectionError, match="retry"):
@@ -139,9 +155,11 @@ async def test_concurrent_readers_flush_each_seed_once(client):
     client.get.return_value = None
     client.mget.return_value = [b"d"]
     store = RedisIndexCacheStore(client=client)
-    store.seed({"/a": IndexEntry(id="a", name="a", resource_type="file")},
-               {"/": ["/a"]},
-               datetime.now(timezone.utc) + timedelta(hours=1))
+    store.seed(
+        {"/a": IndexEntry(id="a", name="a", resource_type="file")},
+        {"/": ["/a"]},
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     await asyncio.gather(store.get("/a"), store.get("/a"))
     client.pipeline.return_value.execute.assert_awaited_once()
 
@@ -167,7 +185,8 @@ async def test_evicted_generation_cannot_revive_invalidated_listing():
 @pytest.mark.parametrize("empty", [False, True])
 @pytest.mark.parametrize("seed", [False, True])
 async def test_global_invalidation_expires_year_long_listings(
-        rolling_client, empty, seed):
+    rolling_client, empty, seed
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     row = IndexEntry(id="old", name="old.txt", resource_type="file")
@@ -175,18 +194,20 @@ async def test_global_invalidation_expires_year_long_listings(
     rows = [] if empty else [("old.txt", row)]
     try:
         if seed:
-            store.seed({
-                f"/repo/{name}": entry
-                for name, entry in rows
-            }, {"/repo": [f"/repo/{name}" for name, _ in rows]}, deadline)
+            store.seed(
+                {f"/repo/{name}": entry for name, entry in rows},
+                {"/repo": [f"/repo/{name}" for name, _ in rows]},
+                deadline,
+            )
         else:
             await store.set_dir("/repo", rows, expired_at=deadline)
         assert (await store.list_dir("/repo")).entries == [
             f"/repo/{name}" for name, _ in rows
         ]
 
-        await RedisIndexCacheStore(client=client,
-                                   key_prefix=prefix).invalidate()
+        await RedisIndexCacheStore(
+            client=client, key_prefix=prefix
+        ).invalidate()
         assert (await store.list_dir("/repo")).status == LookupStatus.EXPIRED
         await store.set_dir("/other", [])
         assert (await store.list_dir("/other")).entries == []
@@ -199,7 +220,8 @@ async def test_global_invalidation_expires_year_long_listings(
 
 @pytest.mark.asyncio
 async def test_invalidation_between_generation_and_seed_commit_stays_expired(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     original_pipeline = client.pipeline
@@ -209,8 +231,9 @@ async def test_invalidation_between_generation_and_seed_commit_stays_expired(
         execute = pipe.execute
 
         async def execute_after_clear():
-            await RedisIndexCacheStore(client=client,
-                                       key_prefix=prefix).invalidate()
+            await RedisIndexCacheStore(
+                client=client, key_prefix=prefix
+            ).invalidate()
             return await execute()
 
         pipe.execute = execute_after_clear
@@ -218,8 +241,9 @@ async def test_invalidation_between_generation_and_seed_commit_stays_expired(
 
     try:
         monkeypatch.setattr(client, "pipeline", delayed_pipeline)
-        store.seed({}, {"/repo": []},
-                   datetime.now(timezone.utc) + timedelta(days=365))
+        store.seed(
+            {}, {"/repo": []}, datetime.now(timezone.utc) + timedelta(days=365)
+        )
         assert (await store.list_dir("/repo")).status == LookupStatus.EXPIRED
         monkeypatch.setattr(client, "pipeline", original_pipeline)
         await store.set_dir("/other", [])
@@ -229,10 +253,12 @@ async def test_invalidation_between_generation_and_seed_commit_stays_expired(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation",
-                         ["invalidate_dir", "invalidate_prefix", "clear"])
+@pytest.mark.parametrize(
+    "operation", ["invalidate_dir", "invalidate_prefix", "clear"]
+)
 async def test_scoped_invalidations_respect_literal_namespaces(
-        rolling_client, operation):
+    rolling_client, operation
+):
     client, prefix = rolling_client
     stores = [
         RedisIndexCacheStore(client=client, key_prefix=prefix + suffix)
@@ -248,12 +274,15 @@ async def test_scoped_invalidations_respect_literal_namespaces(
             await store.clear()
         else:
             await getattr(store, operation)("/repo[1]")
-        assert (await
-                store.get("/repo[1]/a.txt")).status == LookupStatus.NOT_FOUND
-        assert (await
-                store.list_dir("/repo[1]")).status == LookupStatus.NOT_FOUND
-        assert (await
-                neighbor.list_dir("/repo[1]")).entries == ["/repo[1]/a.txt"]
+        assert (
+            await store.get("/repo[1]/a.txt")
+        ).status == LookupStatus.NOT_FOUND
+        assert (
+            await store.list_dir("/repo[1]")
+        ).status == LookupStatus.NOT_FOUND
+        assert (await neighbor.list_dir("/repo[1]")).entries == [
+            "/repo[1]/a.txt"
+        ]
         assert (await neighbor.list_dir("/repo1")).entries == ["/repo1/a.txt"]
         if operation != "clear":
             assert (await store.list_dir("/repo1")).entries == ["/repo1/a.txt"]
@@ -264,7 +293,8 @@ async def test_scoped_invalidations_respect_literal_namespaces(
 
 @pytest.mark.asyncio
 async def test_evicted_directory_token_cannot_revive_restored_listing(
-        rolling_client):
+    rolling_client,
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     try:
@@ -283,7 +313,8 @@ async def test_evicted_directory_token_cannot_revive_restored_listing(
 
 @pytest.mark.asyncio
 async def test_seed_directory_tokens_use_bounded_round_trips(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     get = MagicMock(wraps=client.get)
@@ -293,9 +324,11 @@ async def test_seed_directory_tokens_use_bounded_round_trips(
     monkeypatch.setattr(client, "mget", mget)
     monkeypatch.setattr(client, "pipeline", pipeline)
     try:
-        store.seed({}, {f"/repo/{i}": []
-                        for i in range(1000)},
-                   datetime.now(timezone.utc) + timedelta(days=365))
+        store.seed(
+            {},
+            {f"/repo/{i}": [] for i in range(1000)},
+            datetime.now(timezone.utc) + timedelta(days=365),
+        )
         assert (await store.list_dir("/repo/0")).entries == []
         assert get.call_count == 1
         assert mget.call_count == 2
@@ -306,7 +339,8 @@ async def test_seed_directory_tokens_use_bounded_round_trips(
 
 @pytest.mark.asyncio
 async def test_batched_initialization_preserves_observed_tokens(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     try:
@@ -318,21 +352,23 @@ async def test_batched_initialization_preserves_observed_tokens(
             execute = pipe.execute
 
             async def execute_after_invalidation():
-                await client.set(f"{prefix}mirage:idx:generation:/present",
-                                 "replacement")
+                await client.set(
+                    f"{prefix}mirage:idx:generation:/present", "replacement"
+                )
                 return await execute()
 
             pipe.execute = execute_after_invalidation
             return pipe
 
         monkeypatch.setattr(client, "pipeline", invalidate_during_pipeline)
-        store.seed({}, {
-            "/present": [],
-            "/missing": []
-        },
-                   datetime.now(timezone.utc) + timedelta(days=365))
-        assert (await
-                store.list_dir("/present")).status == LookupStatus.EXPIRED
+        store.seed(
+            {},
+            {"/present": [], "/missing": []},
+            datetime.now(timezone.utc) + timedelta(days=365),
+        )
+        assert (
+            await store.list_dir("/present")
+        ).status == LookupStatus.EXPIRED
         assert (await store.list_dir("/missing")).entries == []
     finally:
         await store.close()
@@ -342,7 +378,8 @@ async def test_batched_initialization_preserves_observed_tokens(
 @pytest.mark.parametrize("timing", ["before", "after"])
 @pytest.mark.parametrize("scope", ["global", "directory"])
 async def test_scalar_initialization_does_not_adopt_replacement_tokens(
-        rolling_client, monkeypatch, timing, scope):
+    rolling_client, monkeypatch, timing, scope
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     writer = RedisIndexCacheStore(client=client, key_prefix=prefix)
@@ -393,9 +430,11 @@ async def test_scalar_initialization_does_not_adopt_replacement_tokens(
             monkeypatch.setattr(client, "set", set_during_refill)
         else:
             monkeypatch.setattr(client, "pipeline", pipeline_during_refill)
-        await store.set_dir("/repo", [("old.txt", stale)],
-                            expired_at=datetime.now(timezone.utc) +
-                            timedelta(days=365))
+        await store.set_dir(
+            "/repo",
+            [("old.txt", stale)],
+            expired_at=datetime.now(timezone.utc) + timedelta(days=365),
+        )
         assert (await store.list_dir("/repo")).status == LookupStatus.EXPIRED
         await store.set_dir("/repo", [("new.txt", fresh)])
         assert (await store.list_dir("/repo")).entries == ["/repo/new.txt"]
@@ -418,8 +457,9 @@ async def test_parallel_cold_directory_writes_remain_fresh(rolling_client):
 
 
 @pytest.mark.asyncio
-async def test_shared_generation_failure_can_retry(rolling_client,
-                                                   monkeypatch):
+async def test_shared_generation_failure_can_retry(
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     original_get = client.get
@@ -430,9 +470,11 @@ async def test_shared_generation_failure_can_retry(rolling_client,
 
     try:
         monkeypatch.setattr(client, "get", fail)
-        results = await asyncio.gather(store.set_dir("/a", []),
-                                       store.set_dir("/b", []),
-                                       return_exceptions=True)
+        results = await asyncio.gather(
+            store.set_dir("/a", []),
+            store.set_dir("/b", []),
+            return_exceptions=True,
+        )
         assert all(isinstance(result, ConnectionError) for result in results)
         monkeypatch.setattr(client, "get", original_get)
         await asyncio.gather(store.set_dir("/a", []), store.set_dir("/b", []))
@@ -444,7 +486,8 @@ async def test_shared_generation_failure_can_retry(rolling_client,
 
 @pytest.mark.asyncio
 async def test_cancelled_generation_waiter_does_not_cancel_peer(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     original_get = client.get
@@ -475,7 +518,8 @@ async def test_cancelled_generation_waiter_does_not_cancel_peer(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("timing", ["before", "after"])
 async def test_seed_initialization_does_not_adopt_replacement_tokens(
-        rolling_client, monkeypatch, timing):
+    rolling_client, monkeypatch, timing
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     writer = RedisIndexCacheStore(client=client, key_prefix=prefix)
@@ -507,10 +551,13 @@ async def test_seed_initialization_does_not_adopt_replacement_tokens(
         monkeypatch.setattr(client, "pipeline", pipeline_during_refill)
         store.seed(
             {
-                "/repo/old.txt":
-                IndexEntry(id="old", name="old.txt", resource_type="file")
-            }, {"/repo": ["/repo/old.txt"]},
-            datetime.now(timezone.utc) + timedelta(days=365))
+                "/repo/old.txt": IndexEntry(
+                    id="old", name="old.txt", resource_type="file"
+                )
+            },
+            {"/repo": ["/repo/old.txt"]},
+            datetime.now(timezone.utc) + timedelta(days=365),
+        )
         assert (await store.list_dir("/repo")).status == LookupStatus.EXPIRED
         await store.set_dir("/repo", [("new.txt", fresh)])
         assert (await store.list_dir("/repo")).entries == ["/repo/new.txt"]
@@ -521,7 +568,8 @@ async def test_seed_initialization_does_not_adopt_replacement_tokens(
 
 @pytest.mark.asyncio
 async def test_subtree_eviction_finishes_before_a_newer_listing(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     first = RedisIndexCacheStore(client=client, key_prefix=prefix)
     second = RedisIndexCacheStore(client=client, key_prefix=prefix)
@@ -550,28 +598,34 @@ async def test_subtree_eviction_finishes_before_a_newer_listing(
 
 @pytest.mark.asyncio
 async def test_subtree_eviction_does_not_scan_unrelated_keys(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     folder = IndexEntry(id="sub", name="sub", resource_type="folder")
     child = IndexEntry(id="child", name="child", resource_type="file")
     await store.set_dir("/d", [("sub", folder)])
     await store.put("/d/sub/unlisted/deep", child)
-    store.seed({f"/other/{i}": child
-                for i in range(200)}, {},
-               datetime.now(timezone.utc) + timedelta(hours=1))
+    store.seed(
+        {f"/other/{i}": child for i in range(200)},
+        {},
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     await store.get("/other/0")
     await client.set(prefix + "unrelated", "keep")
     evaluate = client.eval
 
     async def forbid_scan(script, *args, **kwargs):
-        guarded = """
+        guarded = (
+            """
 local call = redis.call
 local redis = {call = function(command, ...)
   if command == 'SCAN' then error('unexpected database scan') end
   return call(command, ...)
 end}
-""" + script
+"""
+            + script
+        )
         return await evaluate(guarded, *args, **kwargs)
 
     monkeypatch.setattr(client, "eval", forbid_scan)
@@ -583,7 +637,8 @@ end}
 
 @pytest.mark.asyncio
 async def test_subtree_eviction_recovers_an_evicted_path_registry(
-        rolling_client):
+    rolling_client,
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     folder = IndexEntry(id="sub", name="sub", resource_type="folder")
@@ -596,14 +651,16 @@ async def test_subtree_eviction_recovers_an_evicted_path_registry(
     await store.put("/unrelated", child)
     await store.set_dir("/d", [])
     assert (await store.get("/d/sub/unlisted/deep")).entry is None
-    assert await client.get(prefix +
-                            "mirage:idx:tombstone:/d/sub/buried") is None
+    assert (
+        await client.get(prefix + "mirage:idx:tombstone:/d/sub/buried") is None
+    )
     assert (await store.get("/unrelated")).entry is not None
 
 
 @pytest.mark.asyncio
 async def test_path_registry_prunes_removed_rows_but_preserves_tombstones(
-        rolling_client):
+    rolling_client,
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
@@ -626,28 +683,33 @@ async def test_path_registry_prunes_removed_rows_but_preserves_tombstones(
 
 @pytest.mark.asyncio
 async def test_registry_prefix_invalidation_accepts_trailing_slashes(
-        rolling_client):
+    rolling_client,
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
     await store.set_dir("/literal[1]", [("child", child)])
     await store.set_dir("/literal[1]/nested", [("child", child)])
     await store.put("/literal[1]sibling/child", child)
-    await store.invalidate_prefix("/literal[1]/",
-                                  excluded=("/literal[1]/nested/", ))
+    await store.invalidate_prefix(
+        "/literal[1]/", excluded=("/literal[1]/nested/",)
+    )
     assert (await store.get("/literal[1]/child")).entry is None
-    assert (await
-            store.list_dir("/literal[1]")).status == LookupStatus.NOT_FOUND
+    assert (
+        await store.list_dir("/literal[1]")
+    ).status == LookupStatus.NOT_FOUND
     assert (await store.get("/literal[1]/nested/child")).entry is not None
     assert (await store.get("/literal[1]sibling/child")).entry is not None
 
 
 @pytest.mark.asyncio
 async def test_cold_registry_recovery_never_scans_inside_lua(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
-    store = RedisIndexCacheStore(client=client,
-                                 key_prefix=prefix + "literal[1]:")
+    store = RedisIndexCacheStore(
+        client=client, key_prefix=prefix + "literal[1]:"
+    )
     child = IndexEntry(id="child", name="child", resource_type="file")
     await store.put("/d/sub/orphan", child)
     evaluate = client.eval
@@ -678,21 +740,25 @@ end}
     await client.delete(prefix + "literal[1]:mirage:idx:paths")
     await store.set_dir(
         "/d",
-        [("sub", IndexEntry(id="sub", name="sub", resource_type="folder"))])
+        [("sub", IndexEntry(id="sub", name="sub", resource_type="folder"))],
+    )
     await store.set_dir("/d", [])
     assert (await store.get("/d/sub/orphan")).entry is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["invalidate_prefix", "clear"])
-async def test_large_wipes_page_the_registry(rolling_client, monkeypatch,
-                                             operation):
+async def test_large_wipes_page_the_registry(
+    rolling_client, monkeypatch, operation
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
-    store.seed({f"/d/{i}": child
-                for i in range(400)}, {},
-               datetime.now(timezone.utc) + timedelta(hours=1))
+    store.seed(
+        {f"/d/{i}": child for i in range(400)},
+        {},
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     await store.set_dir("/other", [])
     evaluate = client.eval
     calls = 0
@@ -726,17 +792,21 @@ end}
 
 def test_the_two_inline_lua_copies_are_byte_identical():
     root = Path(__file__).resolve().parents[4]
-    source = (root /
-              "typescript/packages/core/src/cache/index/redis.ts").read_text()
+    source = (
+        root / "typescript/packages/core/src/cache/index/redis.ts"
+    ).read_text()
     copies = {}
     for match in re.finditer(
-            r"const ([A-Z_]+)\s*=\s*(?:([A-Z_]+)\s*\+\s*)?`([^`]*)`", source):
+        r"const ([A-Z_]+)\s*=\s*(?:([A-Z_]+)\s*\+\s*)?`([^`]*)`", source
+    ):
         name, parent, body = match.groups()
         copies[name] = (copies[parent] if parent else "") + body
     originals = {
         name[1:]: value
-        for name, value in vars(redis_index).items() if name.startswith("_")
-        and isinstance(value, str) and "redis.call(" in value
+        for name, value in vars(redis_index).items()
+        if name.startswith("_")
+        and isinstance(value, str)
+        and "redis.call(" in value
     }
     assert copies.keys() == originals.keys()
     for name, original in originals.items():
@@ -745,7 +815,8 @@ def test_the_two_inline_lua_copies_are_byte_identical():
 
 @pytest.mark.asyncio
 async def test_registry_recovery_restarts_if_evicted_during_a_scan(
-        rolling_client, monkeypatch):
+    rolling_client, monkeypatch
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
@@ -775,7 +846,8 @@ async def test_registry_recovery_restarts_if_evicted_during_a_scan(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("directory", ["/d", "/d/nested"])
 async def test_paged_invalidation_cannot_leave_a_refill_naming_deleted_rows(
-        rolling_client, monkeypatch, directory):
+    rolling_client, monkeypatch, directory
+):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
@@ -795,5 +867,7 @@ async def test_paged_invalidation_cannot_leave_a_refill_naming_deleted_rows(
     await store.invalidate_prefix("/d")
     assert refilled
     assert (await store.get(directory + "/zzz")).entry is None
-    assert (await store.list_dir(directory)).status in (LookupStatus.NOT_FOUND,
-                                                        LookupStatus.EXPIRED)
+    assert (await store.list_dir(directory)).status in (
+        LookupStatus.NOT_FOUND,
+        LookupStatus.EXPIRED,
+    )

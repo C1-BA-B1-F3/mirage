@@ -27,7 +27,8 @@ CONFIG = EmailConfig(imap_host="h", smtp_host="h", username="u", password="p")
 
 @pytest.mark.asyncio
 async def test_read_takes_the_id_positionally_and_closes_the_accessor(
-        monkeypatch):
+    monkeypatch,
+):
     seen = {}
     closed = []
 
@@ -46,7 +47,8 @@ async def test_read_takes_the_id_positionally_and_closes_the_accessor(
     monkeypatch.setitem(read.__globals__, "fetch_message", fake_fetch)
     monkeypatch.setattr(EmailAccessor, "close", fake_close)
     out, io = await read(
-        CLIInvocation(CONFIG, texts=("7", ), flags={"mailbox": "INBOX"}))
+        CLIInvocation(CONFIG, texts=("7",), flags={"mailbox": "INBOX"})
+    )
     assert io.exit_code == 0
     # Rendered through the mount's own renderer, so INTERNALDATE (which
     # only picks the date directory) never reaches the output.
@@ -67,7 +69,7 @@ async def test_read_defaults_the_mailbox_to_inbox(monkeypatch):
 
     monkeypatch.setitem(read.__globals__, "fetch_message", fake_fetch)
     monkeypatch.setattr(EmailAccessor, "close", lambda self: _noop())
-    await read(CLIInvocation(CONFIG, texts=("7", )))
+    await read(CLIInvocation(CONFIG, texts=("7",)))
     assert seen["folder"] == "INBOX"
 
 
@@ -94,7 +96,8 @@ async def test_raw_writes_the_rfc5322_bytes_verbatim(monkeypatch):
     monkeypatch.setitem(read.__globals__, "fetch_message", boom)
     monkeypatch.setattr(EmailAccessor, "close", lambda self: _noop())
     out, io = await read(
-        CLIInvocation(CONFIG, texts=("7", ), flags={"raw": True}))
+        CLIInvocation(CONFIG, texts=("7",), flags={"raw": True})
+    )
     assert io.exit_code == 0
     assert await materialize(out) == b"From: a@x\r\n\r\nbody"
 
@@ -112,5 +115,5 @@ async def test_read_closes_the_accessor_on_error(monkeypatch):
     monkeypatch.setitem(read.__globals__, "fetch_message", fake_fetch)
     monkeypatch.setattr(EmailAccessor, "close", fake_close)
     with pytest.raises(FileNotFoundError):
-        await read(CLIInvocation(CONFIG, texts=("9", )))
+        await read(CLIInvocation(CONFIG, texts=("9",)))
     assert len(closed) == 1

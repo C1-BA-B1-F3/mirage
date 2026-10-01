@@ -128,7 +128,7 @@ def test_double_backslash_before_e():
 
 def test_unicode_escape_is_a_code_point():
     assert interpret_escapes("\\u00e9") == ("é", False)
-    assert interpret_escapes("\\U0001F600") == ("\U0001F600", False)
+    assert interpret_escapes("\\U0001F600") == ("\U0001f600", False)
 
 
 def test_unicode_escape_reads_at_most_its_digits():
@@ -149,6 +149,7 @@ def test_unicode_nul_is_written():
 
 def test_unicode_escape_outside_unicode_is_utf8_shaped():
     assert encode_text(interpret_escapes("\\uD800")[0]) == b"\xed\xa0\x80"
-    assert encode_text(
-        interpret_escapes("\\U00110000")[0]) == b"\xf4\x90\x80\x80"
+    assert (
+        encode_text(interpret_escapes("\\U00110000")[0]) == b"\xf4\x90\x80\x80"
+    )
     assert interpret_escapes("\\UFFFFFFFF") == ("", False)

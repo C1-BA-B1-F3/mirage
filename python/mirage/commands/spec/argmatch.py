@@ -40,6 +40,7 @@ class ArgmatchMatch:
             the meaning up under, so `--sort=non` answers `none` and
             `--time=use` answers `atime`.
     """
+
     word: str
 
 
@@ -52,6 +53,7 @@ class ArgmatchRefusal:
             words spanning two or more values, "invalid" when it is a
             prefix of none.
     """
+
     kind: ArgmatchKind
 
 
@@ -68,8 +70,10 @@ def value_classes(choices: ArgmatchChoices) -> tuple[tuple[str, ...], ...]:
     Args:
         choices (ArgmatchChoices): the candidates in declaration order.
     """
-    grouped = ((choice, ) if isinstance(choice, str) else tuple(choice)
-               for choice in choices)
+    grouped = (
+        (choice,) if isinstance(choice, str) else tuple(choice)
+        for choice in choices
+    )
     return tuple(group for group in grouped if group)
 
 
@@ -113,8 +117,9 @@ def argmatch(value: str, choices: ArgmatchChoices) -> ArgmatchResult:
         if value in group:
             return ArgmatchMatch(group[0])
     matched = [
-        group for group in classes if any(
-            word.startswith(value) for word in group)
+        group
+        for group in classes
+        if any(word.startswith(value) for word in group)
     ]
     if not matched:
         return ArgmatchRefusal("invalid")

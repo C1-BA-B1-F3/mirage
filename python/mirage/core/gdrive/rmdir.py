@@ -22,9 +22,11 @@ from mirage.utils.errors import enoent, enotdir, enotempty
 
 
 @eacces_on_denied
-async def rmdir(accessor: GDriveAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Remove an empty folder.
 
     A Drive ``files.delete`` on a folder removes every descendant with
@@ -51,10 +53,12 @@ async def rmdir(accessor: GDriveAccessor,
         raise enoent(virtual)
     if not node.is_folder:
         raise enotdir(virtual)
-    children = await list_files(accessor.token_manager,
-                                folder_id=node.id,
-                                drive_id=node.drive_id,
-                                limit=1)
+    children = await list_files(
+        accessor.token_manager,
+        folder_id=node.id,
+        drive_id=node.drive_id,
+        limit=1,
+    )
     if children:
         raise enotempty(path)
     await delete_file(accessor.token_manager, node.id)

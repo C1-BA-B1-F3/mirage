@@ -18,8 +18,8 @@ from mirage.vfs.box.config import BoxConfig
 
 
 class BoxAccessor(Accessor):
-
-    def __init__(self, config: BoxConfig,
-                 token_manager: BoxTokenManager) -> None:
+    def __init__(
+        self, config: BoxConfig, token_manager: BoxTokenManager
+    ) -> None:
         self.config = config
         self.token_manager = token_manager

@@ -24,11 +24,13 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_cmp(scopes: list[PathSpec],
-                  text_args: list[str],
-                  flag_kwargs: dict[str, FlagValue],
-                  dispatch: DispatchFn,
-                  stdin: ByteSource | None = None) -> CrossResult:
+async def run_cmp(
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Byte-compare two files on different mounts via the shared generic.
 
     Pure wiring: both sides are read through dispatch-relayed primitives,
@@ -45,13 +47,14 @@ async def run_cmp(scopes: list[PathSpec],
             ``/dev/stdin`` operand reads.
     """
     parsed = parse_flags(flag_kwargs)
-    return await generic_cmp(flat_scopes(scopes),
-                             text_args,
-                             stdin=stdin,
-                             read_bytes=functools.partial(
-                                 relay, dispatch, "read"),
-                             silent=parsed.silent,
-                             verbose=parsed.verbose,
-                             limit=parsed.limit,
-                             print_bytes=parsed.print_bytes,
-                             skip=parsed.skip)
+    return await generic_cmp(
+        flat_scopes(scopes),
+        text_args,
+        stdin=stdin,
+        read_bytes=functools.partial(relay, dispatch, "read"),
+        silent=parsed.silent,
+        verbose=parsed.verbose,
+        limit=parsed.limit,
+        print_bytes=parsed.print_bytes,
+        skip=parsed.skip,
+    )

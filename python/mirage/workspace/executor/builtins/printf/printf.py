@@ -86,12 +86,17 @@ _HELP = (
     "    Exit Status:\n"
     "    Returns success unless an invalid option is given or a write or"
     " assignment\n"
-    "    error occurs.\n")
+    "    error occurs.\n"
+)
 
 
-async def _assign_printf_target(session: SessionState,
-                                view: SessionView | None, name: str,
-                                subscript: str | None, value: str) -> str:
+async def _assign_printf_target(
+    session: SessionState,
+    view: SessionView | None,
+    name: str,
+    subscript: str | None,
+    value: str,
+) -> str:
     """Assign ``value`` to a ``printf -v`` target (scalar or ``name[idx]``).
 
     A delegation to the one element writer: a bare name assigns element
@@ -163,10 +168,11 @@ async def handle_printf(
             # bash validates the name before formatting, so a bad name
             # suppresses the conversion errors the format would report.
             err = f"printf: `{target}': not a valid identifier\n".encode()
-            return None, IOResult(exit_code=2,
-                                  stderr=err), ExecutionNode(command="printf",
-                                                             exit_code=2,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=2, stderr=err),
+                ExecutionNode(command="printf", exit_code=2, stderr=err),
+            )
     if args and not program_invocation(session):
         first = args[0]
         if first == "--":
@@ -178,8 +184,11 @@ async def handle_printf(
                 # with the usage, where `printf -- --zzz` prints
                 # `--zzz`).
                 err = _USAGE.encode()
-                return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
-                    command="printf", exit_code=2, stderr=err)
+                return (
+                    None,
+                    IOResult(exit_code=2, stderr=err),
+                    ExecutionNode(command="printf", exit_code=2, stderr=err),
+                )
         elif first == "--help":
             # bash answers the EXACT word `--help` for every builtin,
             # ahead of `internal_getopt`, by writing the builtin's help
@@ -189,8 +198,11 @@ async def handle_printf(
             # page is the BUILTIN's, in bash's own words and layout,
             # because that is whose printf this is; see _HELP.
             page = _HELP.encode()
-            return yield_bytes(page), IOResult(exit_code=2), ExecutionNode(
-                command="printf", exit_code=2)
+            return (
+                yield_bytes(page),
+                IOResult(exit_code=2),
+                ExecutionNode(command="printf", exit_code=2),
+            )
         elif first.startswith("-") and len(first) > 1 and first != "-v":
             # bash's `internal_getopt` takes single letters only, so it
             # reports the first character it does not know spelled with
@@ -204,27 +216,31 @@ async def handle_printf(
             # bash's own `option requires an argument` is a separate
             # change.
             err = f"printf: -{first[1]}: invalid option\n{_USAGE}".encode()
-            return None, IOResult(exit_code=2,
-                                  stderr=err), ExecutionNode(command="printf",
-                                                             exit_code=2,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=2, stderr=err),
+                ExecutionNode(command="printf", exit_code=2, stderr=err),
+            )
     elif args and args[0] == "--":
         # coreutils printf takes one leading `--` as the end of its
         # options.
         args = args[1:]
     if not args and program_invocation(session):
         err = f"printf: missing operand\n{usage_hint('printf')}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="printf",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="printf", exit_code=1, stderr=err),
+        )
     if not args:
         if target is not None:
             # `printf -v x` with no format is a usage error in bash.
             err = _USAGE.encode()
-            return None, IOResult(exit_code=2,
-                                  stderr=err), ExecutionNode(command="printf",
-                                                             exit_code=2)
+            return (
+                None,
+                IOResult(exit_code=2, stderr=err),
+                ExecutionNode(command="printf", exit_code=2),
+            )
         return b"", IOResult(), ExecutionNode(command="printf", exit_code=0)
     output, messages, failed, excess = run_printf(args[0], args[1:])
     err_bytes = "".join(messages).encode() if messages else b""
@@ -232,22 +248,25 @@ async def handle_printf(
     if target is not None and parsed is not None:
         base, subscript = parsed.group(1), parsed.group(2)
         try:
-            status = await _assign_printf_target(session, view, base,
-                                                 subscript, output)
+            status = await _assign_printf_target(
+                session, view, base, subscript, output
+            )
         except PolicyDenied as exc:
             err_bytes += f"bash: {exc.strerror}\n".encode()
-            return None, IOResult(
-                exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err_bytes),
+                ExecutionNode(command="printf", exit_code=1, stderr=err_bytes),
+            )
         except ArithError as exc:
             # The target carries `-i` and the formatted text does not
             # evaluate; bash voices the evaluator after the text.
             err_bytes += f"bash: printf: {exc}\n".encode()
-            return None, IOResult(
-                exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err_bytes),
+                ExecutionNode(command="printf", exit_code=1, stderr=err_bytes),
+            )
         if status != "ok":
             if status == "readonly":
                 refusal = f"bash: {base}: readonly variable\n"
@@ -256,26 +275,33 @@ async def handle_printf(
             else:
                 refusal = f"bash: {target}: bad array subscript\n"
             err_bytes += refusal.encode()
-            return None, IOResult(
-                exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
-        return None, IOResult(exit_code=exit_code, stderr=err_bytes
-                              or None), ExecutionNode(command="printf",
-                                                      exit_code=exit_code)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err_bytes),
+                ExecutionNode(command="printf", exit_code=1, stderr=err_bytes),
+            )
+        return (
+            None,
+            IOResult(exit_code=exit_code, stderr=err_bytes or None),
+            ExecutionNode(command="printf", exit_code=exit_code),
+        )
     out = encode_text(output)
     if excess is not None and program_invocation(session):
         # coreutils printf names the first argument a format that takes
         # none left over, where bash's builtin drops them silently; a
         # warning, so the status stays the format's own.
-        err_bytes += ("printf: warning: ignoring excess arguments, "
-                      f"starting with '{quote_text(excess)}'\n").encode()
+        err_bytes += (
+            "printf: warning: ignoring excess arguments, "
+            f"starting with '{quote_text(excess)}'\n"
+        ).encode()
     if err_bytes:
-        return out, IOResult(exit_code=exit_code,
-                             stderr=err_bytes), ExecutionNode(
-                                 command="printf",
-                                 exit_code=exit_code,
-                                 stderr=err_bytes)
+        return (
+            out,
+            IOResult(exit_code=exit_code, stderr=err_bytes),
+            ExecutionNode(
+                command="printf", exit_code=exit_code, stderr=err_bytes
+            ),
+        )
     return out, IOResult(), ExecutionNode(command="printf", exit_code=0)
 
 
@@ -286,5 +312,7 @@ async def printf_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_printf(
-        list(call.argv.args), call.session,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        session_view(call.session, call.namespace.registry.policies),
+    )

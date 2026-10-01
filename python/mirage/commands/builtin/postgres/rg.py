@@ -26,7 +26,10 @@ _search = partial(run_search, IO, "rg")
 
 
 @command("rg", vfs="postgres", spec=SPECS["rg"])
-async def rg(accessor: PostgresAccessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: PostgresAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     return await _search(accessor, paths, texts, opts)

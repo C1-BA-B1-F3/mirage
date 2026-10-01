@@ -29,8 +29,9 @@ def format_records(records: Sequence[str]) -> bytes:
     """
     if not records:
         return b""
-    return ("\n".join(records) + "\n").encode("utf-8",
-                                              errors="surrogateescape")
+    return ("\n".join(records) + "\n").encode(
+        "utf-8", errors="surrogateescape"
+    )
 
 
 def format_optional_records(records: Sequence[str]) -> bytes | None:

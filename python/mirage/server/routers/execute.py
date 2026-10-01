@@ -50,8 +50,9 @@ def _require_entry(request: Request, workspace_id: str):
     return registry.get(workspace_id)
 
 
-def _build_execute_kwargs(req: ExecuteRequest,
-                          stdin: bytes | None) -> dict[str, Any]:
+def _build_execute_kwargs(
+    req: ExecuteRequest, stdin: bytes | None
+) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "command": req.command,
         "record": req.record,
@@ -83,9 +84,9 @@ def _schedule_on_runner(runner, coro):
 
 @router.post("")
 async def execute(
-        workspace_id: str,
-        request: Request,
-        background: bool = Query(False),
+    workspace_id: str,
+    request: Request,
+    background: bool = Query(False),
 ) -> Response:
     entry = _require_entry(request, workspace_id)
     job_table = request.app.state.jobs
@@ -116,8 +117,9 @@ async def execute(
     if job.status == JobStatus.CANCELED:
         raise HTTPException(status_code=499, detail="job canceled")
     if job.status == JobStatus.FAILED:
-        raise HTTPException(status_code=500,
-                            detail=job.error or "execute failed")
+        raise HTTPException(
+            status_code=500, detail=job.error or "execute failed"
+        )
     result_dict = await io_result_to_dict(job.result)
     return Response(
         content=json.dumps(result_dict),
@@ -128,14 +130,15 @@ async def execute(
 
 
 async def _parse_execute_body(
-        request: Request,
-        content_type: str) -> tuple[ExecuteRequest, bytes | None]:
+    request: Request, content_type: str
+) -> tuple[ExecuteRequest, bytes | None]:
     if content_type.startswith("multipart/"):
         form = await request.form()
         request_part = form.get("request")
         if request_part is None:
-            raise HTTPException(status_code=400,
-                                detail="multipart body missing 'request' part")
+            raise HTTPException(
+                status_code=400, detail="multipart body missing 'request' part"
+            )
         if hasattr(request_part, "read"):
             req_text = (await request_part.read()).decode("utf-8")
         else:
@@ -143,8 +146,9 @@ async def _parse_execute_body(
         try:
             req_obj = ExecuteRequest.model_validate(json.loads(req_text))
         except (json.JSONDecodeError, ValueError) as e:
-            raise HTTPException(status_code=400,
-                                detail=f"bad request part: {e}")
+            raise HTTPException(
+                status_code=400, detail=f"bad request part: {e}"
+            )
         stdin_part = form.get("stdin")
         stdin_bytes: bytes | None = None
         if stdin_part is not None:
@@ -156,5 +160,6 @@ async def _parse_execute_body(
     try:
         return ExecuteRequest.model_validate(await request.json()), None
     except ValueError as e:
-        raise HTTPException(status_code=400,
-                            detail=f"bad execute request: {e}")
+        raise HTTPException(
+            status_code=400, detail=f"bad execute request: {e}"
+        )

@@ -14,8 +14,10 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.git.clone import (default_directory,
-                                                   remote_head)
+from mirage.commands.cli.builtin.git.clone import (
+    default_directory,
+    remote_head,
+)
 from mirage.commands.cli.builtin.git.transport import Advertisement
 
 ADV = Advertisement(
@@ -24,30 +26,40 @@ ADV = Advertisement(
         "refs/heads/main": "c" * 40,
         "refs/heads/topic": "b" * 40,
         "refs/tags/v1": "t" * 40,
-    }, {"refs/tags/v1": "a" * 40}, "refs/heads/main")
+    },
+    {"refs/tags/v1": "a" * 40},
+    "refs/heads/main",
+)
 
 
-@pytest.mark.parametrize("url,expected", [
-    ("src", "src"),
-    ("src/", "src"),
-    ("src/.git", "src"),
-    ("repos/proj.git", "proj"),
-    ("repos/proj.git/", "proj"),
-    ("https://github.com/octocat/Hello-World.git", "Hello-World"),
-    ("git@github.com:octocat/Hello-World", "Hello-World"),
-])
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("src", "src"),
+        ("src/", "src"),
+        ("src/.git", "src"),
+        ("repos/proj.git", "proj"),
+        ("repos/proj.git/", "proj"),
+        ("https://github.com/octocat/Hello-World.git", "Hello-World"),
+        ("git@github.com:octocat/Hello-World", "Hello-World"),
+    ],
+)
 def test_the_directory_is_named_after_the_repository(url, expected):
     assert default_directory(url) == expected
 
 
-@pytest.mark.parametrize("chosen,expected", [
-    (None, ("main", "c" * 40)),
-    ("topic", ("topic", "b" * 40)),
-    ("v1", (None, "a" * 40)),
-    ("nosuch", ("nosuch", None)),
-])
+@pytest.mark.parametrize(
+    "chosen,expected",
+    [
+        (None, ("main", "c" * 40)),
+        ("topic", ("topic", "b" * 40)),
+        ("v1", (None, "a" * 40)),
+        ("nosuch", ("nosuch", None)),
+    ],
+)
 def test_the_checkout_follows_head_or_the_named_branch_or_tag(
-        chosen, expected):
+    chosen, expected
+):
     assert remote_head(ADV, chosen) == expected
 
 

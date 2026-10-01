@@ -3,8 +3,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.operands import split_readable
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stat, stdin_stream)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    resolve_source,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
@@ -71,8 +75,9 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> UniqFlags:
     elif isinstance(raw_all, str):
         all_repeated = raw_all
     if all_repeated is not None:
-        all_repeated = _method_word("--all-repeated", all_repeated,
-                                    ALL_REPEATED_ARGS)
+        all_repeated = _method_word(
+            "--all-repeated", all_repeated, ALL_REPEATED_ARGS
+        )
     raw_group = fl.raw("group")
     group = "separate" if raw_group is True else raw_group
     if group is not None:
@@ -80,13 +85,17 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> UniqFlags:
     count = fl.as_bool("count")
     duplicates_only = fl.as_bool("repeated")
     unique_only = fl.as_bool("unique")
-    if group is not None and (count or duplicates_only or unique_only
-                              or all_repeated is not None):
+    if group is not None and (
+        count or duplicates_only or unique_only or all_repeated is not None
+    ):
         raise ValueError(
-            "uniq: --group is mutually exclusive with -c/-d/-D/-u")
+            "uniq: --group is mutually exclusive with -c/-d/-D/-u"
+        )
     if count and all_repeated is not None:
-        raise ValueError("uniq: printing all duplicated lines and repeat "
-                         "counts is meaningless")
+        raise ValueError(
+            "uniq: printing all duplicated lines and repeat "
+            "counts is meaningless"
+        )
     return UniqFlags(
         count=count,
         duplicates_only=duplicates_only,
@@ -114,16 +123,17 @@ def _skip_fields(text: str, count: int) -> str:
 def _comparison_key(line: bytes, flags: UniqFlags) -> str:
     text = _skip_fields(line.decode(errors="replace"), flags.skip_fields)
     if flags.skip_chars > 0:
-        text = text[flags.skip_chars:]
+        text = text[flags.skip_chars :]
     if flags.check_chars is not None:
-        text = text[:flags.check_chars]
+        text = text[: flags.check_chars]
     if flags.ignore_case:
         text = text.lower()
     return text
 
 
-async def _records(source: AsyncIterator[bytes],
-                   separator: bytes) -> AsyncIterator[bytes]:
+async def _records(
+    source: AsyncIterator[bytes], separator: bytes
+) -> AsyncIterator[bytes]:
     buffer = b""
     async for chunk in source:
         buffer += chunk
@@ -134,8 +144,9 @@ async def _records(source: AsyncIterator[bytes],
         yield buffer
 
 
-def _format_record(line: bytes, count: int, flags: UniqFlags,
-                   separator: bytes) -> bytes:
+def _format_record(
+    line: bytes, count: int, flags: UniqFlags, separator: bytes
+) -> bytes:
     if flags.count:
         return f"{count:>7} ".encode() + line + separator
     return line + separator
@@ -147,8 +158,9 @@ def _group_separator_before(index: int, method: str) -> bool:
     return method in ("separate", "append") and index > 0
 
 
-async def _uniq_stream(source: AsyncIterator[bytes],
-                       flags: UniqFlags) -> AsyncIterator[bytes]:
+async def _uniq_stream(
+    source: AsyncIterator[bytes], flags: UniqFlags
+) -> AsyncIterator[bytes]:
     separator = b"\x00" if flags.zero_terminated else b"\n"
     groups: list[list[bytes]] = []
     current: list[bytes] = []
@@ -179,7 +191,8 @@ async def _uniq_stream(source: AsyncIterator[bytes],
             if len(group) == 1:
                 continue
             if flags.all_repeated == "prepend" or (
-                    flags.all_repeated == "separate" and emitted > 0):
+                flags.all_repeated == "separate" and emitted > 0
+            ):
                 yield separator
             for line in group:
                 yield line + separator
@@ -212,21 +225,27 @@ async def uniq(
     stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
-        raise extra_operand_error(CommandName.UNIQ, paths[2].raw_path
-                                  or paths[2].virtual)
+        raise extra_operand_error(
+            CommandName.UNIQ, paths[2].raw_path or paths[2].virtual
+        )
     try:
-        parsed = parse_flags(flags) if flags is not None else UniqFlags(
-            count=count,
-            duplicates_only=duplicates_only,
-            unique_only=unique_only,
-            skip_fields=_parse_count(skip_fields) or 0,
-            skip_chars=_parse_count(skip_chars) or 0,
-            ignore_case=ignore_case,
-            check_chars=_parse_count(check_chars),
+        parsed = (
+            parse_flags(flags)
+            if flags is not None
+            else UniqFlags(
+                count=count,
+                duplicates_only=duplicates_only,
+                unique_only=unique_only,
+                skip_fields=_parse_count(skip_fields) or 0,
+                skip_chars=_parse_count(skip_chars) or 0,
+                ignore_case=ignore_case,
+                check_chars=_parse_count(check_chars),
+            )
         )
     except UsageError as exc:
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=(str(exc) + "\n").encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=(str(exc) + "\n").encode()
+        )
     except ValueError as exc:
         return None, IOResult(exit_code=1, stderr=(str(exc) + "\n").encode())
     read_stream = stdin_stream(read_stream, stdin)
@@ -246,12 +265,15 @@ async def uniq(
     output: ByteSource = _uniq_stream(source, parsed)
     if len(paths) == 2 and paths[1].raw_path != "-":
         if write_bytes is None:
-            return None, IOResult(exit_code=1,
-                                  stderr=b"uniq: output is not writable\n")
+            return None, IOResult(
+                exit_code=1, stderr=b"uniq: output is not writable\n"
+            )
         data = await materialize(output)
         await write_bytes(paths[1], data)
-        return b"", IOResult(writes={paths[1].mount_path: data},
-                             cache=cache + [paths[1].mount_path])
+        return b"", IOResult(
+            writes={paths[1].mount_path: data},
+            cache=cache + [paths[1].mount_path],
+        )
     return output, IOResult(cache=cache)
 
 

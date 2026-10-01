@@ -22,15 +22,13 @@ if TYPE_CHECKING:
     from mirage.vfs.redis import RedisVFS
 
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.vfs.base": ("BaseVFS", ),
-    "mirage.vfs.disk": ("DiskVFS", ),
-    "mirage.vfs.ram": ("RAMVFS", ),
-    "mirage.vfs.redis": ("RedisVFS", ),
+    "mirage.vfs.base": ("BaseVFS",),
+    "mirage.vfs.disk": ("DiskVFS",),
+    "mirage.vfs.ram": ("RAMVFS",),
+    "mirage.vfs.redis": ("RedisVFS",),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = [

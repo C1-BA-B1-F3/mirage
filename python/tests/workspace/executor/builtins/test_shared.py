@@ -24,10 +24,22 @@ from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.constants import IDENTIFIER_RE
-from mirage.workspace.executor.builtins.shared import (  # yapf: disable
-    abs_path, arith_refusal, expand_operands, fail, finish, is_count_word,
-    is_valid_name, ok, operand_text, readonly_refusal, refusal, require_view,
-    split_flags, split_value_flags)
+from mirage.workspace.executor.builtins.shared import (
+    abs_path,
+    arith_refusal,
+    expand_operands,
+    fail,
+    finish,
+    is_count_word,
+    is_valid_name,
+    ok,
+    operand_text,
+    readonly_refusal,
+    refusal,
+    require_view,
+    split_flags,
+    split_value_flags,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view
 
@@ -98,7 +110,8 @@ def test_split_flags_double_dash_ends_parsing():
 
 def test_split_value_flags_detached_value():
     flags, values, operands, bad = split_value_flags(
-        ["-c", "-t", "202601021530", "f.txt"], "acmh", "tdr")
+        ["-c", "-t", "202601021530", "f.txt"], "acmh", "tdr"
+    )
     assert bad is None
     assert flags == {"c"}
     assert values == {"t": "202601021530"}
@@ -106,8 +119,9 @@ def test_split_value_flags_detached_value():
 
 
 def test_split_value_flags_attached_value():
-    _flags, values, operands, bad = split_value_flags(["-t202601021530", "f"],
-                                                      "acmh", "tdr")
+    _flags, values, operands, bad = split_value_flags(
+        ["-t202601021530", "f"], "acmh", "tdr"
+    )
     assert bad is None
     assert values == {"t": "202601021530"}
     assert operands == ["f"]
@@ -123,9 +137,9 @@ async def test_expand_operands_globs():
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
     await ws.shell("echo a > /data/a.txt && echo b > /data/b.txt")
     namespace = ws._namespace
-    glob_spec = replace(PathSpec.from_str_path("/data/*.txt"),
-                        pattern="*.txt",
-                        resolved=False)
+    glob_spec = replace(
+        PathSpec.from_str_path("/data/*.txt"), pattern="*.txt", resolved=False
+    )
     expanded = await expand_operands(namespace, [glob_spec, "/data/c.md"])
     virtuals = sorted(p.virtual for p in expanded)
     assert virtuals == ["/data/a.txt", "/data/b.txt", "/data/c.md"]

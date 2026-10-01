@@ -42,18 +42,21 @@ def make_state_store(prefix: str) -> RedisWorkspaceStateStore:
     the sessions+meta group riding S3 as the workspace group override."""
     if STORE_BACKEND == "s3":
         s3 = S3WorkspaceStateStore(
-            S3Config(bucket=S3_BUCKET,
-                     region="us-east-1",
-                     endpoint_url=S3_ENDPOINT,
-                     aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID",
-                                                      "minio"),
-                     aws_secret_access_key=os.environ.get(
-                         "AWS_SECRET_ACCESS_KEY", "minio123"),
-                     path_style=True,
-                     key_prefix=prefix))
-        return RedisWorkspaceStateStore(url=REDIS_URL,
-                                        key_prefix=prefix,
-                                        workspace=s3)
+            S3Config(
+                bucket=S3_BUCKET,
+                region="us-east-1",
+                endpoint_url=S3_ENDPOINT,
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "minio"),
+                aws_secret_access_key=os.environ.get(
+                    "AWS_SECRET_ACCESS_KEY", "minio123"
+                ),
+                path_style=True,
+                key_prefix=prefix,
+            )
+        )
+        return RedisWorkspaceStateStore(
+            url=REDIS_URL, key_prefix=prefix, workspace=s3
+        )
     return RedisWorkspaceStateStore(url=REDIS_URL, key_prefix=prefix)
 
 
@@ -71,10 +74,12 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 def make_workspace(prefix: str) -> tuple[Workspace, RedisWorkspaceStateStore]:
     store = make_state_store(prefix)
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   workspace_id=WORKSPACE_ID,
-                   store=store)
+    ws = Workspace(
+        {"/data": RAMVFS()},
+        mode=MountMode.EXEC,
+        workspace_id=WORKSPACE_ID,
+        store=store,
+    )
     return ws, store
 
 
@@ -92,8 +97,11 @@ async def write(prefix: str) -> None:
     shared = ws.create_session("shared")
     seed_var(shared, "ORIGIN", "py")
     await ws.flush_sessions()
-    check("py write: shared session at generation 1", shared.generation == 1,
-          f"got {shared.generation}")
+    check(
+        "py write: shared session at generation 1",
+        shared.generation == 1,
+        f"got {shared.generation}",
+    )
     await ws.close()
     await store.close()
 
@@ -104,33 +112,50 @@ async def read(prefix: str) -> None:
     probe = make_state_store(prefix)
     meta = await probe.load_meta(WORKSPACE_ID)
     check("py read: meta record found", meta is not None)
-    check("py read: meta carries a CAS generation", meta is not None
-          and int(meta.get("generation", 0)) >= 1, f"got {meta!r}")
+    check(
+        "py read: meta carries a CAS generation",
+        meta is not None and int(meta.get("generation", 0)) >= 1,
+        f"got {meta!r}",
+    )
     pointer = meta.get("default_session_id") if meta is not None else None
-    check("py read: default session id is uuid7",
-          isinstance(pointer, str) and uuid.UUID(pointer).version == 7,
-          f"got {meta!r}")
+    check(
+        "py read: default session id is uuid7",
+        isinstance(pointer, str) and uuid.UUID(pointer).version == 7,
+        f"got {meta!r}",
+    )
     await probe.close()
 
     ws, store = make_workspace(prefix)
     await ws.ensure_sessions_loaded()
-    check("py read: adopted writer's default session",
-          ws.default_session_id == pointer,
-          f"got {ws.default_session_id!r} want {pointer!r}")
+    check(
+        "py read: adopted writer's default session",
+        ws.default_session_id == pointer,
+        f"got {ws.default_session_id!r} want {pointer!r}",
+    )
     result = await ws.shell("history")
-    check("py read: history has marker", MARKER
-          in result.stdout.decode(errors="replace"), f"got {result.stdout!r}")
+    check(
+        "py read: history has marker",
+        MARKER in result.stdout.decode(errors="replace"),
+        f"got {result.stdout!r}",
+    )
     result = await ws.shell("readlink /data/l.txt")
-    check("py read: symlink target",
-          result.stdout.decode().strip() == "/data/f.txt",
-          f"got {result.stdout!r}")
+    check(
+        "py read: symlink target",
+        result.stdout.decode().strip() == "/data/f.txt",
+        f"got {result.stdout!r}",
+    )
     await ws.ensure_sessions_loaded()
     session = ws.get_session("narrow")
     check(
-        "py read: session grant narrowed", session.mount_modes is not None
-        and session.mount_modes.get("/data") == MountMode.READ)
-    check("py read: generation survived the wire", session.generation >= 1,
-          f"got {session.generation}")
+        "py read: session grant narrowed",
+        session.mount_modes is not None
+        and session.mount_modes.get("/data") == MountMode.READ,
+    )
+    check(
+        "py read: generation survived the wire",
+        session.generation >= 1,
+        f"got {session.generation}",
+    )
     result = await ws.shell("echo blocked > /data/x.txt", session_id="narrow")
     check("py read: narrowed write denied", result.exit_code != 0)
 
@@ -138,19 +163,25 @@ async def read(prefix: str) -> None:
     # must parse its JSON bytes.
     shared = ws.get_session("shared")
     base = shared.generation
-    check("py read: shared session hydrated",
-          shared.env.get("ORIGIN") == "ts" and base >= 1,
-          f"got env={shared.env!r} generation={base}")
+    check(
+        "py read: shared session hydrated",
+        shared.env.get("ORIGIN") == "ts" and base >= 1,
+        f"got env={shared.env!r} generation={base}",
+    )
     seed_var(shared, "REPLY", "py")
     await ws.flush_sessions()
     sess_store = store.sessions(WORKSPACE_ID)
     entries = await sess_store.load()
-    check("py read: flush CAS-bumped the foreign record",
-          entries["shared"]["generation"] == base + 1,
-          f"got {entries['shared']!r}")
+    check(
+        "py read: flush CAS-bumped the foreign record",
+        entries["shared"]["generation"] == base + 1,
+        f"got {entries['shared']!r}",
+    )
     stale = dict(entries["shared"])
-    check("py read: stale cas_set rejected", await
-          sess_store.cas_set("shared", stale, base) is False)
+    check(
+        "py read: stale cas_set rejected",
+        await sess_store.cas_set("shared", stale, base) is False,
+    )
     # A third writer advances the record behind our back; the next
     # flush must adopt its generation and land serialized on top.
     ahead = dict(entries["shared"])
@@ -163,7 +194,8 @@ async def read(prefix: str) -> None:
         "py read: conflict adopted and serialized",
         entries["shared"]["generation"] == base + 6
         and entries["shared"]["env"].get("AGAIN") == "py",
-        f"got {entries['shared']!r}")
+        f"got {entries['shared']!r}",
+    )
     await ws.close()
     await store.close()
 
@@ -172,10 +204,13 @@ async def cas_increment(sess: SessionStore, worker: str, rounds: int) -> None:
     """Read-modify-CAS this worker's counter, retrying until it lands."""
     for _ in range(rounds):
         for _ in range(500):
-            record = (await sess.load()).get("hot", {
-                "session_id": "hot",
-                "env": {},
-            })
+            record = (await sess.load()).get(
+                "hot",
+                {
+                    "session_id": "hot",
+                    "env": {},
+                },
+            )
             env = dict(record.get("env", {}))
             env[worker] = str(int(env.get(worker, "0")) + 1)
             expected = int(record.get("generation", 0))
@@ -217,7 +252,9 @@ async def cas_verify(prefix: str, rounds: int) -> None:
         "py verify: concurrent hammers lost no updates",
         final["generation"] == 2 * rounds
         and final["env"].get("py") == str(rounds)
-        and final["env"].get("ts") == str(rounds), f"got {final!r}")
+        and final["env"].get("ts") == str(rounds),
+        f"got {final!r}",
+    )
     await store.close()
 
 

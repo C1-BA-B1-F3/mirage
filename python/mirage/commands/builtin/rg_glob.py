@@ -21,10 +21,12 @@ from mirage.commands.errors import UsageError
 
 # globset's own words for a glob it cannot compile (ripgrep 14.1.1).
 UNCLOSED_CLASS = "unclosed character class; missing ']'"
-UNCLOSED_ALTERNATES = ("unclosed alternate group; missing '}' "
-                       "(maybe escape '{' with '[{]'?)")
-UNOPENED_ALTERNATES = ("unopened alternate group; missing '{' "
-                       "(maybe escape '}' with '[}]'?)")
+UNCLOSED_ALTERNATES = (
+    "unclosed alternate group; missing '}' (maybe escape '{' with '[{]'?)"
+)
+UNOPENED_ALTERNATES = (
+    "unopened alternate group; missing '{' (maybe escape '}' with '[}]'?)"
+)
 NESTED_ALTERNATES = "nested alternate groups are not allowed"
 DANGLING_ESCAPE = "dangling '\\'"
 
@@ -68,7 +70,7 @@ def _class_source(shown: str, text: str, i: int) -> tuple[str, int]:
             prefix = "[^" if negated else "["
             return prefix + "".join(members) + "]", i + 1
         first = False
-        if (i + 2 < len(text) and text[i + 1] == "-" and text[i + 2] != "]"):
+        if i + 2 < len(text) and text[i + 1] == "-" and text[i + 2] != "]":
             members.append(re.escape(ch) + "-" + re.escape(text[i + 2]))
             i += 3
             continue
@@ -136,8 +138,11 @@ def _glob_body(glob: str, text: str, nested: bool) -> str:
             if nested:
                 raise glob_error(glob, NESTED_ALTERNATES)
             close, parts = _alternates(glob, text, i + 1)
-            out.append("(?:" + "|".join(
-                _glob_body(glob, part, True) for part in parts) + ")")
+            out.append(
+                "(?:"
+                + "|".join(_glob_body(glob, part, True) for part in parts)
+                + ")"
+            )
             i = close + 1
         elif ch == "}" and not nested:
             raise glob_error(glob, UNOPENED_ALTERNATES)
@@ -160,7 +165,7 @@ def _alternates(glob: str, text: str, i: int) -> tuple[int, list[str]]:
     while i < len(text):
         ch = text[i]
         if ch == "\\" and i + 1 < len(text):
-            current.append(text[i:i + 2])
+            current.append(text[i : i + 2])
             i += 2
             continue
         if ch == "[":
@@ -182,9 +187,9 @@ def _alternates(glob: str, text: str, i: int) -> tuple[int, list[str]]:
     raise glob_error(glob, UNCLOSED_ALTERNATES)
 
 
-def compile_glob(glob: str,
-                 case_insensitive: bool = False,
-                 shown: str | None = None) -> re.Pattern[str]:
+def compile_glob(
+    glob: str, case_insensitive: bool = False, shown: str | None = None
+) -> re.Pattern[str]:
     """ripgrep's glob syntax as one anchored matcher.
 
     globset with literal separators and backslash escapes, which is what
@@ -262,13 +267,17 @@ def override_glob(line: str, case_insensitive: bool) -> OverrideGlob | None:
         if line.endswith("\\"):
             line = line[:-1]
     actual = line
-    if not absolute and "/" not in line and not (actual.startswith("**/")
-                                                 or actual == "**"):
+    if (
+        not absolute
+        and "/" not in line
+        and not (actual.startswith("**/") or actual == "**")
+    ):
         actual = "**/" + actual
     if actual.endswith("/**"):
         actual += "/*"
-    return OverrideGlob(compile_glob(actual, case_insensitive, shown), keep,
-                        dir_only)
+    return OverrideGlob(
+        compile_glob(actual, case_insensitive, shown), keep, dir_only
+    )
 
 
 class Overrides:
@@ -287,8 +296,12 @@ class Overrides:
         case_insensitive (bool): --glob-case-insensitive.
     """
 
-    def __init__(self, globs: Sequence[str], iglobs: Sequence[str],
-                 case_insensitive: bool) -> None:
+    def __init__(
+        self,
+        globs: Sequence[str],
+        iglobs: Sequence[str],
+        case_insensitive: bool,
+    ) -> None:
         parsed = [override_glob(g, case_insensitive) for g in globs]
         parsed += [override_glob(g, True) for g in iglobs]
         self._globs = tuple(g for g in parsed if g is not None)
@@ -331,5 +344,5 @@ def walk_candidate(shown: str, cwd: str) -> str:
     if not root:
         return path.lstrip("/")
     if path.startswith(root + "/"):
-        return path[len(root) + 1:]
+        return path[len(root) + 1 :]
     return path

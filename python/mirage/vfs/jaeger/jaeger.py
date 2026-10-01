@@ -26,7 +26,6 @@ from mirage.vfs.jaeger.prompt import PROMPT
 
 
 class JaegerVFS(BaseVFS):
-
     accessor: JaegerAccessor
     name: str = VFSName.JAEGER
     caches_reads: bool = True

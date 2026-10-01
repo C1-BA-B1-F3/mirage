@@ -23,10 +23,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_join(scopes: list[PathSpec],
-                   flag_kwargs: dict[str, FlagValue],
-                   dispatch: DispatchFn,
-                   stdin: ByteSource | None = None) -> CrossResult:
+async def run_join(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Join two files on different mounts via the shared generic join.
 
     Pure wiring: both sides are read through dispatch-relayed primitives
@@ -40,7 +42,9 @@ async def run_join(scopes: list[PathSpec],
         stdin (ByteSource | None): The line's input, which a ``-`` or
             ``/dev/stdin`` operand reads.
     """
-    return await join(flat_scopes(scopes),
-                      read_bytes=functools.partial(relay, dispatch, "read"),
-                      stdin=stdin,
-                      flags=parse_flags(flag_kwargs))
+    return await join(
+        flat_scopes(scopes),
+        read_bytes=functools.partial(relay, dispatch, "read"),
+        stdin=stdin,
+        flags=parse_flags(flag_kwargs),
+    )

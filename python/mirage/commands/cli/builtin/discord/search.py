@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def search(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     results = await search_guild(
@@ -32,6 +32,7 @@ async def search(
         fl.as_str("query") or "",
         channel_id=fl.as_str("channel"),
     )
-    out = json.dumps(results, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        results, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

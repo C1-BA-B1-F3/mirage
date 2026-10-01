@@ -23,7 +23,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def send_message(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     channel = fl.as_str("channel") or ""
     text = fl.as_str("text") or ""
@@ -32,6 +33,7 @@ async def send_message(
         result = await reply_to_thread(inv.config, channel, thread_ts, text)
     else:
         result = await post_message(inv.config, channel, text)
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

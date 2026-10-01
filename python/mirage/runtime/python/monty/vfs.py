@@ -84,8 +84,9 @@ class MontyVFS:
 
     def read(self, virtual: str) -> bytes | None:
         """The file's bytes, or None when the mount does not have it."""
-        return self._or_none(virtual, ABSENT_CONTENT,
-                             lambda core: core.read(virtual))
+        return self._or_none(
+            virtual, ABSENT_CONTENT, lambda core: core.read(virtual)
+        )
 
     def readdir(self, virtual: str) -> list[VFSEntry] | None:
         """The directory's entries, or None when it is not a directory.
@@ -121,14 +122,19 @@ class MontyVFS:
         Args:
             virtual (str): the path to stat.
         """
-        row = self._or_none(virtual, ABSENT_PATH,
-                            lambda core: core.stat(virtual))
+        row = self._or_none(
+            virtual, ABSENT_PATH, lambda core: core.stat(virtual)
+        )
         if row is None:
             self._missing.add(virtual)
         return row
 
-    def _or_none(self, virtual: str, absent: tuple[type[Exception], ...],
-                 run: Callable[[RuntimeVFS], T]) -> T | None:
+    def _or_none(
+        self,
+        virtual: str,
+        absent: tuple[type[Exception], ...],
+        run: Callable[[RuntimeVFS], T],
+    ) -> T | None:
         """Run one op, answering None for an absence rather than raising.
 
         It records nothing itself: only the caller that asked the

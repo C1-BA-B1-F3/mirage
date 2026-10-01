@@ -19,11 +19,13 @@ from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
-async def read_bytes(accessor: OneDriveAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: OneDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a file, optionally only a byte range of it.
 
     Args:
@@ -34,10 +36,12 @@ async def read_bytes(accessor: OneDriveAccessor,
         offset (int): first byte of the window.
         size (int | None): window length, or None for the rest.
     """
-    return await read_item(accessor.config,
-                           drive_loc(accessor.config, path.vfs_path),
-                           path.virtual,
-                           "onedrive",
-                           offset=offset,
-                           size=size,
-                           session=accessor.pool)
+    return await read_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        path.virtual,
+        "onedrive",
+        offset=offset,
+        size=size,
+        session=accessor.pool,
+    )

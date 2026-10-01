@@ -19,16 +19,32 @@ from mirage.policy import PolicyDenied
 from mirage.shell.errors import ArithError
 from mirage.shell.variable import VarAttr
 from mirage.workspace.executor.builtins.declare.constants import (
-    READONLY_FLAGS, READONLY_USAGE)
+    READONLY_FLAGS,
+    READONLY_USAGE,
+)
 from mirage.workspace.executor.builtins.declare.declare import (
-    assoc_body, bash_declare_quote, identifier_failure, identifier_refusal,
-    premark, readonly_functions, split_decl_flags, store_staged_arrays)
-from mirage.workspace.executor.builtins.shared import (arith_refusal,
-                                                       readonly_refusal,
-                                                       refusal, require_view)
+    assoc_body,
+    bash_declare_quote,
+    identifier_failure,
+    identifier_refusal,
+    premark,
+    readonly_functions,
+    split_decl_flags,
+    store_staged_arrays,
+)
+from mirage.workspace.executor.builtins.shared import (
+    arith_refusal,
+    readonly_refusal,
+    refusal,
+    require_view,
+)
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (env_is_readonly, outlive_call,
-                                            set_attr, visible_env)
+from mirage.workspace.session.state import (
+    env_is_readonly,
+    outlive_call,
+    set_attr,
+    visible_env,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -55,13 +71,15 @@ def _readonly_lines(session: SessionState, flags: set[str]) -> list[str]:
     lines: list[str] = []
     # env_is_readonly answers False for a hidden name, so a hidden
     # readonly never prints even its bare `declare -r NAME` row.
-    for name in sorted(n for n in session.readonly_vars
-                       if env_is_readonly(session, n)):
+    for name in sorted(
+        n for n in session.readonly_vars if env_is_readonly(session, n)
+    ):
         arr = session.arrays.get(name)
         amap = session.assocs.get(name)
         if arr is not None and not assocs_only:
             parts = [
-                f"[{i}]={bash_declare_quote(v)}" for i, v in enumerate(arr)
+                f"[{i}]={bash_declare_quote(v)}"
+                for i, v in enumerate(arr)
                 if v is not None
             ]
             lines.append(f"declare -ar {name}=({' '.join(parts)})")
@@ -102,12 +120,14 @@ async def handle_readonly(
     """
     flags, names, bad = split_decl_flags(assignments, READONLY_FLAGS)
     if bad is not None:
-        err = (f"bash: readonly: -{bad}: invalid option\n"
-               f"{READONLY_USAGE}").encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="readonly",
-                                                         exit_code=2,
-                                                         stderr=err)
+        err = (
+            f"bash: readonly: -{bad}: invalid option\n{READONLY_USAGE}"
+        ).encode()
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="readonly", exit_code=2, stderr=err),
+        )
     if "f" in flags:
         return readonly_functions(session, names)
     if not names and not arrays:
@@ -117,16 +137,18 @@ async def handle_readonly(
     view = require_view(state)
     errors: list[str] = []
     if arrays:
-        refused = await store_staged_arrays("readonly",
-                                            session,
-                                            view,
-                                            arrays,
-                                            mark=VarAttr.READONLY,
-                                            fatal=True,
-                                            stored=stored,
-                                            assoc=assoc or "A" in flags,
-                                            errors=errors,
-                                            shaping=shaping)
+        refused = await store_staged_arrays(
+            "readonly",
+            session,
+            view,
+            arrays,
+            mark=VarAttr.READONLY,
+            fatal=True,
+            stored=stored,
+            assoc=assoc or "A" in flags,
+            errors=errors,
+            shaping=shaping,
+        )
         if refused is not None:
             return refused
     for assign in names:

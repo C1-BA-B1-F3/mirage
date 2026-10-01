@@ -22,7 +22,7 @@ from mirage.workspace.types import ExecutionNode
 
 
 async def handle_echo(
-        args: list[str],  # noqa: E125
+    args: list[str],
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Print arguments, honoring GNU echo's option rules.
 

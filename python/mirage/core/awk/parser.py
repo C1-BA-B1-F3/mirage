@@ -14,18 +14,53 @@
 
 from mirage.core.awk.errors import AwkSyntaxError
 from mirage.core.awk.lexer import Token, TokKind, tokenize
-# yapf: disable
-from mirage.core.awk.nodes import Binary  # yapf: disable
-from mirage.core.awk.nodes import (ArrayRef, Assign, Block, Break, BuiltinCall,
-                                   Call, Compare, Concat, Continue, Delete,
-                                   DoWhile, Exit, Expr, ExprStmt, Field, For,
-                                   ForIn, FuncDef, Getline, GetlineKind, If,
-                                   InArray, IncDec, Logical, MatchOp, Next,
-                                   NextFile, Not, Num, Print, Printf, Program,
-                                   Redirect, RedirKind, Regex, Return, Rule,
-                                   RuleKind, Stmt, Str, Ternary, Unary, Var,
-                                   While)
-# yapf: enable
+from mirage.core.awk.nodes import (
+    ArrayRef,
+    Assign,
+    Binary,
+    Block,
+    Break,
+    BuiltinCall,
+    Call,
+    Compare,
+    Concat,
+    Continue,
+    Delete,
+    DoWhile,
+    Exit,
+    Expr,
+    ExprStmt,
+    Field,
+    For,
+    ForIn,
+    FuncDef,
+    Getline,
+    GetlineKind,
+    If,
+    InArray,
+    IncDec,
+    Logical,
+    MatchOp,
+    Next,
+    NextFile,
+    Not,
+    Num,
+    Print,
+    Printf,
+    Program,
+    Redirect,
+    RedirKind,
+    Regex,
+    Return,
+    Rule,
+    RuleKind,
+    Stmt,
+    Str,
+    Ternary,
+    Unary,
+    Var,
+    While,
+)
 from mirage.core.awk.regex import compile_ere
 
 P_ASSIGN = 1
@@ -46,10 +81,16 @@ COMPARE_OPS = frozenset({"<", "<=", ">", ">=", "==", "!="})
 ADD_OPS = frozenset({"+", "-"})
 MUL_OPS = frozenset({"*", "/", "%"})
 
-CONCAT_START_KINDS = frozenset({
-    TokKind.NUMBER, TokKind.STRING, TokKind.ERE, TokKind.NAME,
-    TokKind.FUNC_NAME, TokKind.BUILTIN
-})
+CONCAT_START_KINDS = frozenset(
+    {
+        TokKind.NUMBER,
+        TokKind.STRING,
+        TokKind.ERE,
+        TokKind.NAME,
+        TokKind.FUNC_NAME,
+        TokKind.BUILTIN,
+    }
+)
 
 CONCAT_START_OPS = frozenset({"$", "(", "++", "--", "!"})
 
@@ -57,7 +98,6 @@ LVALUE_TYPES = (Var, Field, ArrayRef)
 
 
 class Parser:
-
     def __init__(self, tokens: list[Token]) -> None:
         self.toks = tokens
         self.pos = 0
@@ -113,8 +153,9 @@ class Parser:
 
     def at_stmt_end(self) -> bool:
         tok = self.peek()
-        return (tok.kind in (TokKind.NEWLINE, TokKind.EOF)
-                or (tok.kind is TokKind.OP and tok.text in ("}", ";")))
+        return tok.kind in (TokKind.NEWLINE, TokKind.EOF) or (
+            tok.kind is TokKind.OP and tok.text in ("}", ";")
+        )
 
     def parse_program(self) -> Program:
         """Parse a whole awk program into rules and function definitions.
@@ -230,8 +271,9 @@ class Parser:
                 if tok.text == "return" and not self.in_function:
                     raise self.error("return outside a function")
                 self.pos += 1
-                value = None if self.at_stmt_end() else self.parse_expr(
-                    P_ASSIGN)
+                value = (
+                    None if self.at_stmt_end() else self.parse_expr(P_ASSIGN)
+                )
                 return Exit(value) if tok.text == "exit" else Return(value)
         return ExprStmt(self.parse_expr(P_ASSIGN))
 
@@ -283,9 +325,11 @@ class Parser:
     def parse_for(self) -> Stmt:
         self.eat_keyword("for")
         self.eat_op("(")
-        if (self.peek().kind is TokKind.NAME
-                and self.peek(1).kind is TokKind.KEYWORD
-                and self.peek(1).text == "in"):
+        if (
+            self.peek().kind is TokKind.NAME
+            and self.peek(1).kind is TokKind.KEYWORD
+            and self.peek(1).text == "in"
+        ):
             var = self.next_token().text
             self.pos += 1
             array = self.next_token()
@@ -343,8 +387,11 @@ class Parser:
         if not self.at_stmt_end() and not self.at_op(">", ">>", "|"):
             args = self.parse_print_args()
         redirect = self.parse_redirect()
-        return Print(args, redirect) if word == "print" else Printf(
-            args, redirect)
+        return (
+            Print(args, redirect)
+            if word == "print"
+            else Printf(args, redirect)
+        )
 
     def parse_print_args(self) -> tuple[Expr, ...]:
         """Parse a print/printf argument list.
@@ -427,9 +474,12 @@ class Parser:
             node (Expr): the primary before the ``|``.
             no_gt (bool): whether ``|`` belongs to a print statement.
         """
-        while (not no_gt and self.at_op("|")
-               and self.peek(1).kind is TokKind.KEYWORD
-               and self.peek(1).text == "getline"):
+        while (
+            not no_gt
+            and self.at_op("|")
+            and self.peek(1).kind is TokKind.KEYWORD
+            and self.peek(1).text == "getline"
+        ):
             self.pos += 1
             node = self.parse_getline(node)
         return node
@@ -520,8 +570,9 @@ class Parser:
         self.eat_keyword("getline")
         target: Expr | None = None
         tok = self.peek()
-        if tok.kind is TokKind.NAME or (tok.kind is TokKind.OP
-                                        and tok.text == "$"):
+        if tok.kind is TokKind.NAME or (
+            tok.kind is TokKind.OP and tok.text == "$"
+        ):
             candidate = self.parse_primary(True)
             if not isinstance(candidate, LVALUE_TYPES):
                 raise self.error("getline needs an lvalue")
@@ -557,7 +608,7 @@ class Parser:
                 name = self.next_token()
                 if name.kind is not TokKind.NAME:
                     raise self.error("expected array name after 'in'")
-                left = InArray((left, ), name.text)
+                left = InArray((left,), name.text)
                 continue
             if tok.kind is not TokKind.OP:
                 if self.starts_concat() and P_CONCAT >= min_bp:
@@ -593,8 +644,9 @@ class Parser:
                 if P_MATCH < min_bp:
                     return left
                 self.pos += 1
-                left = MatchOp(op == "!~", left,
-                               self.parse_expr(P_MATCH + 1, no_gt))
+                left = MatchOp(
+                    op == "!~", left, self.parse_expr(P_MATCH + 1, no_gt)
+                )
                 continue
             if op in COMPARE_OPS:
                 if (no_gt and op in (">", ">>")) or P_COMPARE < min_bp:

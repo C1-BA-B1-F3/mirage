@@ -1,7 +1,12 @@
 import pytest
 
-from mirage.commands.builtin.generic.nl import (NlFlags, _section_delimiters,
-                                                nl, nl_generic, parse_flags)
+from mirage.commands.builtin.generic.nl import (
+    NlFlags,
+    _section_delimiters,
+    nl,
+    nl_generic,
+    parse_flags,
+)
 from mirage.commands.builtin.generic.rev import rev
 from mirage.commands.builtin.generic.sort import sort
 from mirage.commands.builtin.generic.tac import tac
@@ -15,24 +20,33 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
 
     async def read_bytes(path):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         if spec.virtual not in files:
             raise FileNotFoundError(spec.virtual)
         return files[spec.virtual]
 
     async def read_stream(path):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         if spec.virtual not in files:
             raise FileNotFoundError(spec.virtual)
         yield files[spec.virtual]
@@ -103,20 +117,18 @@ async def test_sort_reverse():
 @pytest.mark.asyncio
 async def test_sort_numeric():
     rb, _ = _make_backend({})
-    output, _ = await sort([],
-                           read_bytes=rb,
-                           stdin=b"10\n2\n1\n",
-                           numeric=True)
+    output, _ = await sort(
+        [], read_bytes=rb, stdin=b"10\n2\n1\n", numeric=True
+    )
     assert output == b"1\n2\n10\n"
 
 
 @pytest.mark.asyncio
 async def test_sort_unique():
     rb, _ = _make_backend({})
-    output, _ = await sort([],
-                           read_bytes=rb,
-                           stdin=b"b\na\nb\na\n",
-                           unique=True)
+    output, _ = await sort(
+        [], read_bytes=rb, stdin=b"b\na\nb\na\n", unique=True
+    )
     assert output == b"a\nb\n"
 
 
@@ -139,10 +151,9 @@ async def test_nl_stdin_default():
 @pytest.mark.asyncio
 async def test_nl_start_value():
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"alpha\nbeta\n",
-                         start_raw="100")
+    output, _ = await nl(
+        [], read_stream=rs, stdin=b"alpha\nbeta\n", start_raw="100"
+    )
     decoded = (await _drain(output)).decode()
     assert "100" in decoded
     assert "101" in decoded
@@ -222,8 +233,12 @@ def test_nl_positive_options_report_out_of_range(dest, raw, label):
 
 
 @pytest.mark.parametrize(
-    "dest,label", [("number_width", "invalid line number field width"),
-                   ("join_blank_lines", "invalid line number of blank lines")])
+    "dest,label",
+    [
+        ("number_width", "invalid line number field width"),
+        ("join_blank_lines", "invalid line number of blank lines"),
+    ],
+)
 def test_nl_positive_options_omit_out_of_range_for_an_empty_value(dest, label):
     """The clause attaches to a range failure, never to a scan failure.
 
@@ -276,23 +291,33 @@ _NL_FIRST_ON_THE_LINE = [
     (("-v", "xyz", "-w", "abc"), "nl: invalid starting line number: 'xyz'"),
     (("-i", "abc", "-v", "xyz"), "nl: invalid line number increment: 'abc'"),
     (("-v", "xyz", "-i", "abc"), "nl: invalid starting line number: 'xyz'"),
-    (("-l", "abc", "-w", "xyz"),
-     "nl: invalid line number of blank lines: 'abc'"),
+    (
+        ("-l", "abc", "-w", "xyz"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
     (("-w", "xyz", "-l", "abc"), "nl: invalid line number field width: 'xyz'"),
     (("-i", "abc", "-w", "xyz"), "nl: invalid line number increment: 'abc'"),
     (("-w", "abc", "-i", "xyz"), "nl: invalid line number field width: 'abc'"),
-    (("-l", "abc", "-i", "xyz"),
-     "nl: invalid line number of blank lines: 'abc'"),
+    (
+        ("-l", "abc", "-i", "xyz"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
     (("-i", "abc", "-l", "xyz"), "nl: invalid line number increment: 'abc'"),
-    (("-l", "abc", "-v", "xyz"),
-     "nl: invalid line number of blank lines: 'abc'"),
+    (
+        ("-l", "abc", "-v", "xyz"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
     (("-v", "xyz", "-l", "abc"), "nl: invalid starting line number: 'xyz'"),
     # The rule is about position, not spelling: the long forms reverse
     # exactly the same way.
-    (("--line-increment=abc", "--number-width=xyz"),
-     "nl: invalid line number increment: 'abc'"),
-    (("--number-width=xyz", "--line-increment=abc"),
-     "nl: invalid line number field width: 'xyz'"),
+    (
+        ("--line-increment=abc", "--number-width=xyz"),
+        "nl: invalid line number increment: 'abc'",
+    ),
+    (
+        ("--number-width=xyz", "--line-increment=abc"),
+        "nl: invalid line number field width: 'xyz'",
+    ),
 ]
 
 
@@ -309,10 +334,14 @@ _NL_MIXED = [
     (("-v", "5", "-w", "abc"), "nl: invalid line number field width: 'abc'"),
     (("-w", "abc", "-v", "5"), "nl: invalid line number field width: 'abc'"),
     (("-w", "3", "-v", "xyz"), "nl: invalid starting line number: 'xyz'"),
-    (("-i", "2", "-l", "abc"),
-     "nl: invalid line number of blank lines: 'abc'"),
-    (("-w", "0", "-v", "xyz"),
-     f"nl: invalid line number field width: '0': {_NL_ERANGE}"),
+    (
+        ("-i", "2", "-l", "abc"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
+    (
+        ("-w", "0", "-v", "xyz"),
+        f"nl: invalid line number field width: '0': {_NL_ERANGE}",
+    ),
     (("-v", "xyz", "-w", "0"), "nl: invalid starting line number: 'xyz'"),
 ]
 
@@ -328,8 +357,10 @@ _NL_REPEATED_BAD_LAST = [
     (("-w", "3", "-w", "abc"), "nl: invalid line number field width: 'abc'"),
     (("-v", "5", "-v", "abc"), "nl: invalid starting line number: 'abc'"),
     (("-i", "5", "-i", "abc"), "nl: invalid line number increment: 'abc'"),
-    (("-l", "5", "-l", "abc"),
-     "nl: invalid line number of blank lines: 'abc'"),
+    (
+        ("-l", "5", "-l", "abc"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
 ]
 
 
@@ -348,15 +379,21 @@ _NL_REPEATED_BAD_FIRST = [
     (("-w", "abc", "-w", "3"), "nl: invalid line number field width: 'abc'"),
     (("-v", "abc", "-v", "5"), "nl: invalid starting line number: 'abc'"),
     (("-i", "abc", "-i", "5"), "nl: invalid line number increment: 'abc'"),
-    (("-l", "abc", "-l", "5"),
-     "nl: invalid line number of blank lines: 'abc'"),
+    (
+        ("-l", "abc", "-l", "5"),
+        "nl: invalid line number of blank lines: 'abc'",
+    ),
     # Both occurrences bad: the leftmost still speaks.
     (("-w", "abc", "-w", "xyz"), "nl: invalid line number field width: 'abc'"),
     # Spelling does not matter, only position.
-    (("--number-width=abc", "-w", "3"),
-     "nl: invalid line number field width: 'abc'"),
-    (("-w", "abc", "--number-width=3"),
-     "nl: invalid line number field width: 'abc'"),
+    (
+        ("--number-width=abc", "-w", "3"),
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-w", "abc", "--number-width=3"),
+        "nl: invalid line number field width: 'abc'",
+    ),
 ]
 
 
@@ -378,14 +415,22 @@ def test_nl_repeated_option_refuses_the_earlier_bad_value(argv, expected):
 # because keeping the line's own order would take a per-occurrence
 # record across options, which neither argparse nor the parser keeps.
 _NL_INTERLEAVED_REPEATS = [
-    (("-w", "3", "-v", "xyz", "-w", "abc"),
-     "nl: invalid line number field width: 'abc'"),
-    (("-w", "abc", "-v", "xyz", "-w", "3"),
-     "nl: invalid line number field width: 'abc'"),
-    (("-v", "xyz", "-w", "abc", "-v", "5"),
-     "nl: invalid starting line number: 'xyz'"),
-    (("-w", "3", "-w", "abc", "-v", "xyz"),
-     "nl: invalid line number field width: 'abc'"),
+    (
+        ("-w", "3", "-v", "xyz", "-w", "abc"),
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-w", "abc", "-v", "xyz", "-w", "3"),
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-v", "xyz", "-w", "abc", "-v", "5"),
+        "nl: invalid starting line number: 'xyz'",
+    ),
+    (
+        ("-w", "3", "-w", "abc", "-v", "xyz"),
+        "nl: invalid line number field width: 'abc'",
+    ),
 ]
 
 
@@ -396,13 +441,17 @@ def test_nl_reports_the_leftmost_bad_value_across_a_repeat(argv, expected):
     assert str(refusal.value) == expected
 
 
-@pytest.mark.parametrize("argv,dest,expected", [
-    (("-w", "3", "-w", "9"), "width_raw", "9"),
-    (("-w", "3", "-v", "5", "-w", "9"), "width_raw", "9"),
-    (("-v", "2", "-v", "8"), "start_raw", "8"),
-])
+@pytest.mark.parametrize(
+    "argv,dest,expected",
+    [
+        (("-w", "3", "-w", "9"), "width_raw", "9"),
+        (("-w", "3", "-v", "5", "-w", "9"), "width_raw", "9"),
+        (("-v", "2", "-v", "8"), "start_raw", "8"),
+    ],
+)
 def test_nl_a_repeat_of_valid_values_still_takes_the_last(
-        argv, dest, expected):
+    argv, dest, expected
+):
     """The occurrence record refuses; it never reassigns.
 
     A control on the fix: reading the leftmost BAD value must not also
@@ -455,18 +504,32 @@ def test_nl_accepts_every_number_format_gnu_accepts(raw):
     assert _nl_parse("-n", raw).number_format == raw
 
 
-@pytest.mark.parametrize("argv", [("-d", ""), ("-d", "x"), ("-d", "xy"),
-                                  ("-d", "xyz"), ("-s", ""), ("-s", "::")])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("-d", ""),
+        ("-d", "x"),
+        ("-d", "xy"),
+        ("-d", "xyz"),
+        ("-s", ""),
+        ("-s", "::"),
+    ],
+)
 def test_nl_validates_neither_delimiter_nor_separator(argv):
     """GNU validates neither, not even a three-character `-d` (section U)."""
     assert _nl_parse(*argv) is not None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw,rendered", [("tt", b"     1\tx\n"),
-                                          ("nn", b"       x\n"),
-                                          ("aa", b"     1\tx\n"),
-                                          ("n", b"       x\n")])
+@pytest.mark.parametrize(
+    "raw,rendered",
+    [
+        ("tt", b"     1\tx\n"),
+        ("nn", b"       x\n"),
+        ("aa", b"     1\tx\n"),
+        ("n", b"       x\n"),
+    ],
+)
 async def test_nl_reads_only_the_first_character_of_a_style(raw, rendered):
     """`-b nn` is the `n` style, not an unknown one falling through to `t`.
 
@@ -474,10 +537,9 @@ async def test_nl_reads_only_the_first_character_of_a_style(raw, rendered):
     so a trailing byte changes nothing. Measured stdout, section U.
     """
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"x\n",
-                         body_numbering_raw=raw)
+    output, _ = await nl(
+        [], read_stream=rs, stdin=b"x\n", body_numbering_raw=raw
+    )
     assert (await _drain(output)) == rendered
 
 
@@ -513,13 +575,15 @@ _NL_BLANK_PREFIX = [
 async def test_nl_pads_an_unnumbered_line_over_the_separator(extra, rendered):
     _, rs = _make_backend({})
     parsed = _nl_parse("-b", "n", *extra)
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"x\n",
-                         body_numbering_raw=parsed.body_numbering_raw,
-                         width_raw=parsed.width_raw,
-                         separator=parsed.separator,
-                         number_format=parsed.number_format)
+    output, _ = await nl(
+        [],
+        read_stream=rs,
+        stdin=b"x\n",
+        body_numbering_raw=parsed.body_numbering_raw,
+        width_raw=parsed.width_raw,
+        separator=parsed.separator,
+        number_format=parsed.number_format,
+    )
     assert (await _drain(output)) == rendered
 
 
@@ -540,10 +604,12 @@ async def test_nl_pads_a_line_no_pattern_matched():
     """A `-b p<re>` line that did not match is padded, not separated."""
     _, rs = _make_backend({})
     parsed = _nl_parse("-b", "pfoo")
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"x\n",
-                         body_numbering_raw=parsed.body_numbering_raw)
+    output, _ = await nl(
+        [],
+        read_stream=rs,
+        stdin=b"x\n",
+        body_numbering_raw=parsed.body_numbering_raw,
+    )
     assert (await _drain(output)) == b"       x\n"
 
 
@@ -553,42 +619,66 @@ async def test_nl_pads_a_line_no_pattern_matched():
 # valid numeric value after it leaves the hint in place. Measured on GNU
 # coreutils 9.4 (section U).
 _NL_DEFERRED = [
-    (("-b", "bogus", "-w", "abc"),
-     "nl: invalid body numbering style: 'bogus'\n"
-     "nl: invalid line number field width: 'abc'"),
-    (("-b", "bogus", "-w", "3"),
-     f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}"),
-    (("-w", "abc", "-b", "bogus"),
-     "nl: invalid line number field width: 'abc'"),
-    (("-n", "bogus", "-w", "abc"),
-     "nl: invalid line numbering format: 'bogus'\n"
-     "nl: invalid line number field width: 'abc'"),
-    (("-w", "abc", "-n", "bogus"),
-     "nl: invalid line number field width: 'abc'"),
-    (("-b", "bogus", "-v", "xyz", "-w", "abc"),
-     "nl: invalid body numbering style: 'bogus'\n"
-     "nl: invalid starting line number: 'xyz'"),
+    (
+        ("-b", "bogus", "-w", "abc"),
+        "nl: invalid body numbering style: 'bogus'\n"
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-b", "bogus", "-w", "3"),
+        f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}",
+    ),
+    (
+        ("-w", "abc", "-b", "bogus"),
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-n", "bogus", "-w", "abc"),
+        "nl: invalid line numbering format: 'bogus'\n"
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-w", "abc", "-n", "bogus"),
+        "nl: invalid line number field width: 'abc'",
+    ),
+    (
+        ("-b", "bogus", "-v", "xyz", "-w", "abc"),
+        "nl: invalid body numbering style: 'bogus'\n"
+        "nl: invalid starting line number: 'xyz'",
+    ),
     # Several deferred refusals accumulate in scan order, then the hint.
-    (("-b", "bogus", "-h", "bogus"),
-     "nl: invalid body numbering style: 'bogus'\n"
-     f"nl: invalid header numbering style: 'bogus'\n{_NL_HINT}"),
-    (("-n", "bogus", "-b", "bogus"),
-     "nl: invalid line numbering format: 'bogus'\n"
-     f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}"),
-    (("-b", "bogus", "-h", "bogus", "-f", "bogus"),
-     "nl: invalid body numbering style: 'bogus'\n"
-     "nl: invalid header numbering style: 'bogus'\n"
-     f"nl: invalid footer numbering style: 'bogus'\n{_NL_HINT}"),
-    (("-b", "bogus", "-f", "bogus", "-w", "abc"),
-     "nl: invalid body numbering style: 'bogus'\n"
-     "nl: invalid footer numbering style: 'bogus'\n"
-     "nl: invalid line number field width: 'abc'"),
+    (
+        ("-b", "bogus", "-h", "bogus"),
+        "nl: invalid body numbering style: 'bogus'\n"
+        f"nl: invalid header numbering style: 'bogus'\n{_NL_HINT}",
+    ),
+    (
+        ("-n", "bogus", "-b", "bogus"),
+        "nl: invalid line numbering format: 'bogus'\n"
+        f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}",
+    ),
+    (
+        ("-b", "bogus", "-h", "bogus", "-f", "bogus"),
+        "nl: invalid body numbering style: 'bogus'\n"
+        "nl: invalid header numbering style: 'bogus'\n"
+        f"nl: invalid footer numbering style: 'bogus'\n{_NL_HINT}",
+    ),
+    (
+        ("-b", "bogus", "-f", "bogus", "-w", "abc"),
+        "nl: invalid body numbering style: 'bogus'\n"
+        "nl: invalid footer numbering style: 'bogus'\n"
+        "nl: invalid line number field width: 'abc'",
+    ),
     # A style occurrence GNU has already reported still counts after a
     # later occurrence overrides it.
-    (("-b", "bogus", "-b", "t"),
-     f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}"),
-    (("-b", "t", "-b", "bogus"),
-     f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}"),
+    (
+        ("-b", "bogus", "-b", "t"),
+        f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}",
+    ),
+    (
+        ("-b", "t", "-b", "bogus"),
+        f"nl: invalid body numbering style: 'bogus'\n{_NL_HINT}",
+    ),
 ]
 
 
@@ -721,10 +811,12 @@ async def test_nl_p_style_matches_what_glibc_matches(pattern, subject):
     """The pattern compiles AND numbers the line glibc numbers."""
     _, rs = _make_backend({})
     parsed = _nl_parse("-b", "p" + pattern)
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=subject.encode() + b"\n",
-                         body_numbering_raw=parsed.body_numbering_raw)
+    output, _ = await nl(
+        [],
+        read_stream=rs,
+        stdin=subject.encode() + b"\n",
+        body_numbering_raw=parsed.body_numbering_raw,
+    )
     assert (await _drain(output)) == f"     1\t{subject}\n".encode()
 
 
@@ -745,15 +837,21 @@ def test_nl_p_style_accepts_a_pattern_that_matches_nothing(pattern):
 _NL_PATTERN_ORDER = [
     (("-b", "p[", "-w", "abc"), "nl: Invalid regular expression"),
     (("-w", "abc", "-b", "p["), "nl: invalid line number field width: 'abc'"),
-    (("-h", "bogus", "-b", "p["),
-     "nl: invalid header numbering style: 'bogus'\n"
-     "nl: Invalid regular expression"),
+    (
+        ("-h", "bogus", "-b", "p["),
+        "nl: invalid header numbering style: 'bogus'\n"
+        "nl: Invalid regular expression",
+    ),
     (("-b", "p[", "-h", "bogus"), "nl: Invalid regular expression"),
-    (("-b", "bogus", "-b", "p["), "nl: invalid body numbering style: 'bogus'\n"
-     "nl: Invalid regular expression"),
-    (("-n", "bogus", "-f", "p\\)"),
-     "nl: invalid line numbering format: 'bogus'\n"
-     "nl: Unmatched ) or \\)"),
+    (
+        ("-b", "bogus", "-b", "p["),
+        "nl: invalid body numbering style: 'bogus'\n"
+        "nl: Invalid regular expression",
+    ),
+    (
+        ("-n", "bogus", "-f", "p\\)"),
+        "nl: invalid line numbering format: 'bogus'\nnl: Unmatched ) or \\)",
+    ),
 ]
 
 
@@ -774,34 +872,44 @@ def test_nl_a_bad_style_outranks_its_own_pattern():
     """
     with pytest.raises(ValueError) as refusal:
         _nl_parse("-b", "[")
-    assert str(refusal.value) == ("nl: invalid body numbering style: '['\n" +
-                                  _NL_HINT)
+    assert str(refusal.value) == (
+        "nl: invalid body numbering style: '['\n" + _NL_HINT
+    )
 
 
 @pytest.mark.parametrize(
     "argv,dest,expected",
-    [(("-v", "1", "-v", "7"), "start_raw", "7"),
-     (("-w", "3", "-w", "9"), "width_raw", "9"),
-     (("-i", "2", "-i", "4"), "increment_raw", "4"),
-     (("-l", "2", "-l", "4"), "join_blank_lines_raw", "4")])
+    [
+        (("-v", "1", "-v", "7"), "start_raw", "7"),
+        (("-w", "3", "-w", "9"), "width_raw", "9"),
+        (("-i", "2", "-i", "4"), "increment_raw", "4"),
+        (("-l", "2", "-l", "4"), "join_blank_lines_raw", "4"),
+    ],
+)
 def test_nl_repeated_valid_option_is_last_one_wins(argv, dest, expected):
     """GNU assigns as it reads, so `nl -v 1 -v 7` numbers from 7."""
     assert getattr(_nl_parse(*argv), dest) == expected
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("argv,rendered",
-                         [(("-v", "1", "-v", "7"), b"     7\tx\n"),
-                          (("-w", "3", "-w", "9"), b"        1\tx\n")])
+@pytest.mark.parametrize(
+    "argv,rendered",
+    [
+        (("-v", "1", "-v", "7"), b"     7\tx\n"),
+        (("-w", "3", "-w", "9"), b"        1\tx\n"),
+    ],
+)
 async def test_nl_last_valid_value_is_the_one_that_numbers(argv, rendered):
     """The od-verified stdout from ground truth section N3."""
     _, rs = _make_backend({})
     parsed = _nl_parse(*argv)
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"x\n",
-                         start_raw=parsed.start_raw,
-                         width_raw=parsed.width_raw)
+    output, _ = await nl(
+        [],
+        read_stream=rs,
+        stdin=b"x\n",
+        start_raw=parsed.start_raw,
+        width_raw=parsed.width_raw,
+    )
     assert (await _drain(output)) == rendered
 
 
@@ -811,18 +919,29 @@ async def test_nl_last_valid_value_is_the_one_that_numbers(argv, rendered):
 # as the valid width 3. GNU's scanner stops at the first non-digit and
 # refuses all four (ground truth NL2-A), as the TypeScript twin always
 # did, so the fix is `fullmatch`.
-@pytest.mark.parametrize("dest,label", [
-    ("starting_line_number", "invalid starting line number"),
-    ("line_increment", "invalid line number increment"),
-    ("number_width", "invalid line number field width"),
-    ("join_blank_lines", "invalid line number of blank lines"),
-])
-@pytest.mark.parametrize("raw,quoted", [("3\n", "3\\n"), ("5\n", "5\\n"),
-                                        ("1\n2", "1\\n2"), ("3\r", "3\\r"),
-                                        ("3\x0b", "3\\v"),
-                                        ("3\x01", "3\\001")])
-def test_nl_numeric_options_refuse_a_trailing_newline(dest, label, raw,
-                                                      quoted):
+@pytest.mark.parametrize(
+    "dest,label",
+    [
+        ("starting_line_number", "invalid starting line number"),
+        ("line_increment", "invalid line number increment"),
+        ("number_width", "invalid line number field width"),
+        ("join_blank_lines", "invalid line number of blank lines"),
+    ],
+)
+@pytest.mark.parametrize(
+    "raw,quoted",
+    [
+        ("3\n", "3\\n"),
+        ("5\n", "5\\n"),
+        ("1\n2", "1\\n2"),
+        ("3\r", "3\\r"),
+        ("3\x0b", "3\\v"),
+        ("3\x01", "3\\001"),
+    ],
+)
+def test_nl_numeric_options_refuse_a_trailing_newline(
+    dest, label, raw, quoted
+):
     """The value is rendered through gnulib ``quote()``.
 
     So the newline is the TWO characters ``\\n``, not the byte. These
@@ -841,25 +960,43 @@ def test_nl_numeric_options_refuse_a_trailing_newline(dest, label, raw,
 # The class is C `isspace`, which is NARROWER than python's
 # `str.isspace()`: 0x1c-0x1f are whitespace to python and garbage to GNU,
 # so `\s` would have accepted four bytes too many. Ground truth NL3-C.
-@pytest.mark.parametrize("dest", [
-    "starting_line_number", "line_increment", "number_width",
-    "join_blank_lines"
-])
 @pytest.mark.parametrize(
-    "raw", ["\t3", " 3", "\n3", "\x0b3", "\f3", "\r3", "  3", "\t\n 3", " +3"])
+    "dest",
+    [
+        "starting_line_number",
+        "line_increment",
+        "number_width",
+        "join_blank_lines",
+    ],
+)
+@pytest.mark.parametrize(
+    "raw", ["\t3", " 3", "\n3", "\x0b3", "\f3", "\r3", "  3", "\t\n 3", " +3"]
+)
 def test_nl_numeric_options_skip_leading_c_whitespace(dest, raw):
     assert parse_flags({dest: raw}) is not None
 
 
-@pytest.mark.parametrize("dest,label", [
-    ("starting_line_number", "invalid starting line number"),
-    ("number_width", "invalid line number field width"),
-])
-@pytest.mark.parametrize("raw,quoted", [("3 ", "3 "), ("  3  ", "  3  "),
-                                        ("+ 3", "+ 3"), ("--3", "--3"),
-                                        ("+-3", "+-3"), ("\x1c3", "\\0343")])
+@pytest.mark.parametrize(
+    "dest,label",
+    [
+        ("starting_line_number", "invalid starting line number"),
+        ("number_width", "invalid line number field width"),
+    ],
+)
+@pytest.mark.parametrize(
+    "raw,quoted",
+    [
+        ("3 ", "3 "),
+        ("  3  ", "  3  "),
+        ("+ 3", "+ 3"),
+        ("--3", "--3"),
+        ("+-3", "+-3"),
+        ("\x1c3", "\\0343"),
+    ],
+)
 def test_nl_numeric_options_refuse_the_rest_of_the_prefix(
-        dest, label, raw, quoted):
+    dest, label, raw, quoted
+):
     """Trailing whitespace, a split sign, two signs, and 0x1c.
 
     0x1c is the row that says the class is C ``isspace`` and not
@@ -887,19 +1024,37 @@ _NL_EOVERFLOW = "Value too large for defined data type"
 _NL_TOO_LARGE = [
     ("number_width", "2147483648", "invalid line number field width"),
     ("number_width", "+2147483648", "invalid line number field width"),
-    ("number_width", "99999999999999999999",
-     "invalid line number field width"),
-    ("join_blank_lines", "9223372036854775808",
-     "invalid line number of blank lines"),
-    ("join_blank_lines", "99999999999999999999",
-     "invalid line number of blank lines"),
-    ("starting_line_number", "9223372036854775808",
-     "invalid starting line number"),
-    ("starting_line_number", "-9223372036854775809",
-     "invalid starting line number"),
+    (
+        "number_width",
+        "99999999999999999999",
+        "invalid line number field width",
+    ),
+    (
+        "join_blank_lines",
+        "9223372036854775808",
+        "invalid line number of blank lines",
+    ),
+    (
+        "join_blank_lines",
+        "99999999999999999999",
+        "invalid line number of blank lines",
+    ),
+    (
+        "starting_line_number",
+        "9223372036854775808",
+        "invalid starting line number",
+    ),
+    (
+        "starting_line_number",
+        "-9223372036854775809",
+        "invalid starting line number",
+    ),
     ("line_increment", "9223372036854775808", "invalid line number increment"),
-    ("line_increment", "-9223372036854775809",
-     "invalid line number increment"),
+    (
+        "line_increment",
+        "-9223372036854775809",
+        "invalid line number increment",
+    ),
 ]
 
 
@@ -910,15 +1065,18 @@ def test_nl_reports_a_value_too_large_for_the_type(dest, raw, label):
     assert str(refusal.value) == f"nl: {label}: '{raw}': {_NL_EOVERFLOW}"
 
 
-@pytest.mark.parametrize("dest,raw", [
-    ("number_width", "2147483647"),
-    ("join_blank_lines", "2147483648"),
-    ("join_blank_lines", "9223372036854775807"),
-    ("starting_line_number", "9223372036854775807"),
-    ("starting_line_number", "-9223372036854775808"),
-    ("line_increment", "9223372036854775807"),
-    ("line_increment", "-9223372036854775808"),
-])
+@pytest.mark.parametrize(
+    "dest,raw",
+    [
+        ("number_width", "2147483647"),
+        ("join_blank_lines", "2147483648"),
+        ("join_blank_lines", "9223372036854775807"),
+        ("starting_line_number", "9223372036854775807"),
+        ("starting_line_number", "-9223372036854775808"),
+        ("line_increment", "9223372036854775807"),
+        ("line_increment", "-9223372036854775808"),
+    ],
+)
 def test_nl_accepts_the_largest_value_in_range(dest, raw):
     """The controls: each option's own limit is IN range.
 
@@ -936,10 +1094,13 @@ def test_nl_accepts_the_largest_value_in_range(dest, raw):
 # runs and whatever else the line carried; -2**30 matches no type
 # boundary, so this is an unexplained gnulib artifact of that platform
 # and is the row here most likely to move (ground truth NL2-I).
-@pytest.mark.parametrize("dest,label", [
-    ("number_width", "invalid line number field width"),
-    ("join_blank_lines", "invalid line number of blank lines"),
-])
+@pytest.mark.parametrize(
+    "dest,label",
+    [
+        ("number_width", "invalid line number field width"),
+        ("join_blank_lines", "invalid line number of blank lines"),
+    ],
+)
 def test_nl_width_options_switch_wording_at_the_overflow_floor(dest, label):
     with pytest.raises(ValueError) as inside:
         parse_flags({dest: "-1073741824"})
@@ -972,23 +1133,21 @@ def test_nl_an_absent_delimiter_takes_the_default():
 async def test_nl_an_empty_delimiter_numbers_the_delimiter_lines():
     """The `\\:\\:\\:` line is ordinary text, not a logical-page header."""
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"\\:\\:\\:\nH\n\\:\\:\nB\n",
-                         delimiter="")
-    assert (await _drain(output)) == (b"     1\t\\:\\:\\:\n"
-                                      b"     2\tH\n"
-                                      b"     3\t\\:\\:\n"
-                                      b"     4\tB\n")
+    output, _ = await nl(
+        [], read_stream=rs, stdin=b"\\:\\:\\:\nH\n\\:\\:\nB\n", delimiter=""
+    )
+    assert (await _drain(output)) == (
+        b"     1\t\\:\\:\\:\n     2\tH\n     3\t\\:\\:\n     4\tB\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_nl_a_default_delimiter_consumes_the_delimiter_lines():
     """The control: the same input with `-d` absent."""
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=b"\\:\\:\\:\nH\n\\:\\:\nB\n")
+    output, _ = await nl(
+        [], read_stream=rs, stdin=b"\\:\\:\\:\nH\n\\:\\:\nB\n"
+    )
     assert (await _drain(output)) == (b"\n       H\n\n     1\tB\n")
 
 
@@ -998,14 +1157,17 @@ async def test_nl_a_default_delimiter_consumes_the_delimiter_lines():
 # read a two-byte `é` as one and padded it, and only python also padded a
 # four-byte emoji. Measured against GNU by feeding each candidate line in
 # (ground truth NL2-H): `ééé` opens a header while `é:é:é:` does not.
-@pytest.mark.parametrize("delimiter,pair", [
-    ("x", "x:"),
-    (":", "::"),
-    ("é", "é"),
-    ("\U0001f600", "\U0001f600"),
-    ("xy", "xy"),
-    ("xyz", "xyz"),
-])
+@pytest.mark.parametrize(
+    "delimiter,pair",
+    [
+        ("x", "x:"),
+        (":", "::"),
+        ("é", "é"),
+        ("\U0001f600", "\U0001f600"),
+        ("xy", "xy"),
+        ("xyz", "xyz"),
+    ],
+)
 def test_nl_pads_a_delimiter_only_when_it_is_one_byte(delimiter, pair):
     assert _section_delimiters(delimiter) == {
         pair * 3: "header",
@@ -1028,31 +1190,31 @@ _NL_BARE_DELIMITER_HEADERS = [
 @pytest.mark.parametrize("delimiter,header", _NL_BARE_DELIMITER_HEADERS)
 async def test_nl_a_multibyte_delimiter_is_used_unpadded(delimiter, header):
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=f"{header}\nH\nA\n".encode(),
-                         delimiter=delimiter)
+    output, _ = await nl(
+        [],
+        read_stream=rs,
+        stdin=f"{header}\nH\nA\n".encode(),
+        delimiter=delimiter,
+    )
     assert (await _drain(output)) == b"\n       H\n       A\n"
 
 
-# yapf and ruff measure an emoji's width differently, so this pair lives
-# here rather than inline in the decorator.
-_NL_PADDED_DELIMITER_LINES = [
-    ("é", "é:é:é:"),
-    ("\U0001f600", "\U0001f600:\U0001f600:\U0001f600:"),
-]
-
-
 @pytest.mark.asyncio
-@pytest.mark.parametrize("delimiter,line", _NL_PADDED_DELIMITER_LINES)
+@pytest.mark.parametrize(
+    "delimiter,line",
+    [
+        ("é", "é:é:é:"),
+        ("\U0001f600", "\U0001f600:\U0001f600:\U0001f600:"),
+    ],
+)
 async def test_nl_a_multibyte_delimiter_does_not_match_a_padded_line(
-        delimiter, line):
+    delimiter, line
+):
     """The other direction: the `:`-padded form is ordinary text."""
     _, rs = _make_backend({})
-    output, _ = await nl([],
-                         read_stream=rs,
-                         stdin=f"{line}\nH\n".encode(),
-                         delimiter=delimiter)
+    output, _ = await nl(
+        [], read_stream=rs, stdin=f"{line}\nH\n".encode(), delimiter=delimiter
+    )
     assert (await _drain(output)) == f"     1\t{line}\n     2\tH\n".encode()
 
 
@@ -1072,10 +1234,13 @@ async def test_nl_generic_returns_a_refusal_rather_than_raising():
     def never_stream(path):
         raise AssertionError("nl read an operand although -w was refused")
 
-    output, io = await nl_generic([], [],
-                                  CommandOpts(stdin=b"x\n",
-                                              flags={"number_width": "abc"}),
-                                  never_stat, never_stream)
+    output, io = await nl_generic(
+        [],
+        [],
+        CommandOpts(stdin=b"x\n", flags={"number_width": "abc"}),
+        never_stat,
+        never_stream,
+    )
     assert output is None
     assert io.exit_code == 1
     assert io.stderr == b"nl: invalid line number field width: 'abc'\n"
@@ -1104,8 +1269,9 @@ _NL_OVERFLOW = [
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("start,count,printed,exit_code", _NL_OVERFLOW)
-async def test_nl_line_number_overflow_is_deferred(start, count, printed,
-                                                   exit_code):
+async def test_nl_line_number_overflow_is_deferred(
+    start, count, printed, exit_code
+):
     _, rs = _make_backend({})
     stdin = "".join(f"l{i}\n" for i in range(count)).encode()
     output, io = await nl([], read_stream=rs, stdin=stdin, start_raw=start)
@@ -1126,11 +1292,13 @@ async def test_nl_overflow_counts_only_numbered_lines():
     belongs to numbering, not to reading a line.
     """
     _, rs = _make_backend({})
-    output, io = await nl([],
-                          read_stream=rs,
-                          stdin=b"a\nb\n",
-                          start_raw=_INTMAX_MAX_TXT,
-                          body_numbering_raw="n")
+    output, io = await nl(
+        [],
+        read_stream=rs,
+        stdin=b"a\nb\n",
+        start_raw=_INTMAX_MAX_TXT,
+        body_numbering_raw="n",
+    )
     rendered = await _drain(output)
     assert io.exit_code == 0
     assert rendered == b"       a\n       b\n"
@@ -1145,10 +1313,9 @@ async def test_nl_overflow_still_prints_unnumbered_lines_first():
     numbered line AND the padded blank, then dies on the `b`.
     """
     _, rs = _make_backend({})
-    output, io = await nl([],
-                          read_stream=rs,
-                          stdin=b"a\n\nb\n",
-                          start_raw=_INTMAX_MAX_TXT)
+    output, io = await nl(
+        [], read_stream=rs, stdin=b"a\n\nb\n", start_raw=_INTMAX_MAX_TXT
+    )
     rendered = await _drain(output)
     assert io.exit_code == 1
     assert io.stderr == b"nl: line number overflow\n"
@@ -1158,11 +1325,13 @@ async def test_nl_overflow_still_prints_unnumbered_lines_first():
 @pytest.mark.asyncio
 async def test_nl_overflow_reaches_the_negative_limit_too():
     _, rs = _make_backend({})
-    output, io = await nl([],
-                          read_stream=rs,
-                          stdin=b"a\nb\n",
-                          start_raw="-9223372036854775808",
-                          increment_raw="-1")
+    output, io = await nl(
+        [],
+        read_stream=rs,
+        stdin=b"a\nb\n",
+        start_raw="-9223372036854775808",
+        increment_raw="-1",
+    )
     rendered = await _drain(output)
     assert io.exit_code == 1
     assert io.stderr == b"nl: line number overflow\n"
@@ -1178,12 +1347,12 @@ async def test_nl_numbers_past_two_to_the_fifty_third_exactly():
     9223372036854776000 where GNU and this host print the value.
     """
     _, rs = _make_backend({})
-    output, io = await nl([],
-                          read_stream=rs,
-                          stdin=b"x\ny\n",
-                          start_raw="9007199254740991")
-    assert (await _drain(output)) == (b"9007199254740991\tx\n"
-                                      b"9007199254740992\ty\n")
+    output, io = await nl(
+        [], read_stream=rs, stdin=b"x\ny\n", start_raw="9007199254740991"
+    )
+    assert (await _drain(output)) == (
+        b"9007199254740991\tx\n9007199254740992\ty\n"
+    )
     assert io.exit_code == 0
 
 
@@ -1198,20 +1367,26 @@ async def test_tr_translate_charset():
 async def test_tr_delete():
     _, rs = _make_backend({})
     # One set: GNU refuses a second operand beside -d without -s.
-    output, _ = await tr([], ("aeiou", ),
-                         read_stream=rs,
-                         stdin=b"hello world",
-                         flags={"delete": True})
+    output, _ = await tr(
+        [],
+        ("aeiou",),
+        read_stream=rs,
+        stdin=b"hello world",
+        flags={"delete": True},
+    )
     assert (await _drain(output)) == b"hll wrld"
 
 
 @pytest.mark.asyncio
 async def test_tr_squeeze():
     _, rs = _make_backend({})
-    output, _ = await tr([], (" ", " "),
-                         read_stream=rs,
-                         stdin=b"a   b   c",
-                         flags={"squeeze_repeats": True})
+    output, _ = await tr(
+        [],
+        (" ", " "),
+        read_stream=rs,
+        stdin=b"a   b   c",
+        flags={"squeeze_repeats": True},
+    )
     assert (await _drain(output)) == b"a b c"
 
 
@@ -1241,10 +1416,9 @@ async def test_uniq_keeps_non_adjacent_dupes():
 @pytest.mark.asyncio
 async def test_uniq_count():
     _, rs = _make_backend({})
-    output, _ = await uniq([],
-                           read_stream=rs,
-                           stdin=b"a\na\na\nb\n",
-                           count=True)
+    output, _ = await uniq(
+        [], read_stream=rs, stdin=b"a\na\na\nb\n", count=True
+    )
     decoded = (await _drain(output)).decode()
     assert "3" in decoded and "a" in decoded
     assert "1" in decoded and "b" in decoded
@@ -1253,10 +1427,9 @@ async def test_uniq_count():
 @pytest.mark.asyncio
 async def test_uniq_duplicates_only():
     _, rs = _make_backend({})
-    output, _ = await uniq([],
-                           read_stream=rs,
-                           stdin=b"a\na\nb\n",
-                           duplicates_only=True)
+    output, _ = await uniq(
+        [], read_stream=rs, stdin=b"a\na\nb\n", duplicates_only=True
+    )
     decoded = (await _drain(output)).decode()
     assert "a" in decoded
     assert "b" not in decoded
@@ -1265,10 +1438,9 @@ async def test_uniq_duplicates_only():
 @pytest.mark.asyncio
 async def test_uniq_unique_only():
     _, rs = _make_backend({})
-    output, _ = await uniq([],
-                           read_stream=rs,
-                           stdin=b"a\na\nb\n",
-                           unique_only=True)
+    output, _ = await uniq(
+        [], read_stream=rs, stdin=b"a\na\nb\n", unique_only=True
+    )
     decoded = (await _drain(output)).decode()
     assert "b" in decoded
     assert decoded.count("a") == 0
@@ -1277,9 +1449,8 @@ async def test_uniq_unique_only():
 @pytest.mark.asyncio
 async def test_uniq_ignore_case():
     _, rs = _make_backend({})
-    output, _ = await uniq([],
-                           read_stream=rs,
-                           stdin=b"Apple\napple\nBanana\n",
-                           ignore_case=True)
+    output, _ = await uniq(
+        [], read_stream=rs, stdin=b"Apple\napple\nBanana\n", ignore_case=True
+    )
     decoded = (await _drain(output)).decode().splitlines()
     assert len(decoded) == 2

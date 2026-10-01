@@ -46,24 +46,37 @@ async def read_doc(token_manager: TokenManager, doc_id: str) -> bytes:
         bytes: JSON response as bytes.
     """
     url = f"{docs_base(token_manager)}/documents/{doc_id}"
-    data = await google_get(token_manager,
-                            url,
-                            params={"includeTabsContent": TABS_CONTENT_PARAM})
+    data = await google_get(
+        token_manager, url, params={"includeTabsContent": TABS_CONTENT_PARAM}
+    )
     return compact_json_bytes(data)
 
 
-async def _read_file(accessor: GDocsAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
-    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
-                                    MIME, "gdocs/file", make_filename)
+async def _read_file(
+    accessor: GDocsAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    entry = await resolve_app_entry(
+        accessor.token_manager,
+        match,
+        path,
+        index,
+        MIME,
+        "gdocs/file",
+        make_filename,
+    )
     timer = start_op()
     data = await read_doc(accessor.token_manager, entry.id)
-    record("read",
-           path.virtual,
-           "gdocs",
-           len(data),
-           timer,
-           fingerprint=entry.remote_time or None)
+    record(
+        "read",
+        path.virtual,
+        "gdocs",
+        len(data),
+        timer,
+        fingerprint=entry.remote_time or None,
+    )
     return data
 
 

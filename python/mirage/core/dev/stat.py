@@ -21,9 +21,11 @@ from mirage.types import DEVICE_NUMBERS_KEY, FileStat, FileType, PathSpec
 from mirage.utils.path import norm
 
 
-async def stat(accessor: RAMAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: RAMAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     """Stat a /dev path: a char device for an active synthetic name,
     otherwise the ordinary RAM stat (a recreated real file, or a dir).
 

@@ -15,26 +15,39 @@
 from functools import partial
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic.crossmount.utils import \
-    transfer_primitives
+from mirage.commands.builtin.generic.crossmount.utils import (
+    transfer_primitives,
+)
+from mirage.commands.builtin.generic.split import (
+    parse_bytes_value,
+    parse_chunks_value,
+    parse_lines_value,
+    parse_separator,
+    parse_suffix_length,
+    parse_suffix_start,
+)
 from mirage.commands.builtin.generic.split import split as generic_split
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-from mirage.commands.builtin.generic.split import (  # isort: skip
-    parse_bytes_value, parse_chunks_value, parse_lines_value, parse_separator,
-    parse_suffix_length, parse_suffix_start)
 
-
-async def split(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def split(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["split"])
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     # as_str, not `x or y`: the latter would swallow an explicitly empty
@@ -49,33 +62,47 @@ async def split(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # GNU reads an explicit `-a 0` as "revert to auto width": names start
     # at the default length of 2 and keep auto-lengthening. An explicit
     # width or an explicit start value pins the width instead.
-    suffix_len_raw = (parse_suffix_length(length_value)
-                      if length_value is not None else None)
+    suffix_len_raw = (
+        parse_suffix_length(length_value) if length_value is not None else None
+    )
     suffix_len = suffix_len_raw or 2
-    suffix_auto = (not suffix_len_raw and not isinstance(numeric_value, str)
-                   and not isinstance(hex_value, str))
-    suffix_start = (parse_suffix_start(numeric_value, False, suffix_len)
-                    if isinstance(numeric_value, str) else
-                    parse_suffix_start(hex_value, True, suffix_len)
-                    if isinstance(hex_value, str) else 0)
+    suffix_auto = (
+        not suffix_len_raw
+        and not isinstance(numeric_value, str)
+        and not isinstance(hex_value, str)
+    )
+    suffix_start = (
+        parse_suffix_start(numeric_value, False, suffix_len)
+        if isinstance(numeric_value, str)
+        else parse_suffix_start(hex_value, True, suffix_len)
+        if isinstance(hex_value, str)
+        else 0
+    )
     # The pieces go to the prefix, or `x` in the working directory, which
     # need not be this mount, so a dispatcher routes each write to the
     # mount that owns it.
     relay = opts.dispatch is not None
-    write_bytes = (transfer_primitives(opts.dispatch)["write"]
-                   if opts.dispatch is not None else partial(
-                       ops.require(Operation.WRITE), accessor))
+    write_bytes = (
+        transfer_primitives(opts.dispatch)["write"]
+        if opts.dispatch is not None
+        else partial(ops.require(Operation.WRITE), accessor)
+    )
     return await generic_split(
         paths,
         read_stream=bound_op(ops.read_stream, accessor, opts.index),
         write_bytes=write_bytes,
         stdin=opts.stdin,
-        lines_per_file=(parse_lines_value(lines_value)
-                        if lines_value is not None else 0),
-        byte_limit=(parse_bytes_value(bytes_value)
-                    if bytes_value is not None else 0),
-        chunks=(parse_chunks_value(number_value)
-                if number_value is not None else None),
+        lines_per_file=(
+            parse_lines_value(lines_value) if lines_value is not None else 0
+        ),
+        byte_limit=(
+            parse_bytes_value(bytes_value) if bytes_value is not None else 0
+        ),
+        chunks=(
+            parse_chunks_value(number_value)
+            if number_value is not None
+            else None
+        ),
         suffix_len=suffix_len,
         suffix_auto=suffix_auto,
         numeric_suffix=numeric_value is not None,
@@ -85,7 +112,8 @@ async def split(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         separator=parse_separator(fl.as_str("separator")),
         mount_prefix=opts.mount_prefix,
         cwd=opts.cwd.virtual,
-        relay=relay)
+        relay=relay,
+    )
 
 
-BUILDER = Builder('split', split, write=True)
+BUILDER = Builder("split", split, write=True)

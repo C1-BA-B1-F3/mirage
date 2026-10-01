@@ -27,8 +27,9 @@ from mirage.core.linear.stat import stat
 from mirage.types import PathSpec
 
 _TEAM = "/teams/ENG__Engineering__TEAM1"
-_ISSUE_PATH = ("/teams/ENG__Engineering__TEAM1/issues"
-               "/ENG-123__ISSUE1/issue.json")
+_ISSUE_PATH = (
+    "/teams/ENG__Engineering__TEAM1/issues/ENG-123__ISSUE1/issue.json"
+)
 
 
 @pytest.fixture
@@ -42,44 +43,53 @@ def index():
 
 
 def _entry(name: str, ident: str, kind: str) -> tuple[str, IndexEntry]:
-    return (name,
-            IndexEntry(id=ident,
-                       name=name,
-                       resource_type=f"linear/{kind}",
-                       vfs_name=name))
+    return (
+        name,
+        IndexEntry(
+            id=ident, name=name, resource_type=f"linear/{kind}", vfs_name=name
+        ),
+    )
 
 
 async def _seed(index: RAMIndexCacheStore, issue: bool = False) -> None:
     # The listings a traversal would have left: a read proves the file's
     # directory exists through them before fetching by the ids in the path.
-    await index.set_dir("/teams",
-                        [_entry("ENG__Engineering__TEAM1", "TEAM1", "team")])
+    await index.set_dir(
+        "/teams", [_entry("ENG__Engineering__TEAM1", "TEAM1", "team")]
+    )
     if issue:
-        await index.set_dir(_TEAM + "/issues",
-                            [_entry("ENG-123__ISSUE1", "ISSUE1", "issue")])
+        await index.set_dir(
+            _TEAM + "/issues", [_entry("ENG-123__ISSUE1", "ISSUE1", "issue")]
+        )
 
 
 @pytest.mark.asyncio
 async def test_read_team_json(accessor, index):
-    teams = [{
-        "id": "TEAM1",
-        "key": "ENG",
-        "name": "Engineering",
-        "description": "Core team",
-        "timezone": "UTC",
-        "updatedAt": "2026-04-05T00:00:00Z",
-        "states": {
-            "nodes": [{
-                "id": "STATE1",
-                "name": "Todo",
-                "type": "unstarted",
-            }]
-        },
-    }]
+    teams = [
+        {
+            "id": "TEAM1",
+            "key": "ENG",
+            "name": "Engineering",
+            "description": "Core team",
+            "timezone": "UTC",
+            "updatedAt": "2026-04-05T00:00:00Z",
+            "states": {
+                "nodes": [
+                    {
+                        "id": "STATE1",
+                        "name": "Todo",
+                        "type": "unstarted",
+                    }
+                ]
+            },
+        }
+    ]
     await _seed(index)
-    with patch("mirage.core.linear.read.list_teams",
-               new_callable=AsyncMock,
-               return_value=teams):
+    with patch(
+        "mirage.core.linear.read.list_teams",
+        new_callable=AsyncMock,
+        return_value=teams,
+    ):
         result = await read(
             accessor,
             PathSpec.from_str_path("/teams/ENG__Engineering__TEAM1/team.json"),
@@ -131,16 +141,20 @@ async def test_read_issue_json(accessor, index):
             "email": "bob@example.com",
         },
         "labels": {
-            "nodes": [{
-                "id": "L1",
-                "name": "bug",
-            }]
+            "nodes": [
+                {
+                    "id": "L1",
+                    "name": "bug",
+                }
+            ]
         },
     }
     await _seed(index, issue=True)
-    with patch("mirage.core.linear.read.get_issue",
-               new_callable=AsyncMock,
-               return_value=issue):
+    with patch(
+        "mirage.core.linear.read.get_issue",
+        new_callable=AsyncMock,
+        return_value=issue,
+    ):
         result = await read(
             accessor,
             PathSpec.from_str_path(_ISSUE_PATH),
@@ -172,34 +186,42 @@ async def test_read_comments_jsonl(accessor, index):
         "cycle": {},
         "assignee": {},
         "creator": {},
-        "labels": {
-            "nodes": []
-        },
+        "labels": {"nodes": []},
     }
-    comments = [{
-        "id": "COMMENT1",
-        "body": "first",
-        "createdAt": "2026-04-05T00:00:00Z",
-        "updatedAt": "2026-04-05T00:00:00Z",
-        "url": "https://linear.app/comment",
-        "user": {
-            "id": "USER1",
-            "name": "Alice",
-            "displayName": "Alice",
-            "email": "alice@example.com",
-        },
-    }]
+    comments = [
+        {
+            "id": "COMMENT1",
+            "body": "first",
+            "createdAt": "2026-04-05T00:00:00Z",
+            "updatedAt": "2026-04-05T00:00:00Z",
+            "url": "https://linear.app/comment",
+            "user": {
+                "id": "USER1",
+                "name": "Alice",
+                "displayName": "Alice",
+                "email": "alice@example.com",
+            },
+        }
+    ]
     await _seed(index, issue=True)
-    with patch("mirage.core.linear.read.get_issue",
-               new_callable=AsyncMock,
-               return_value=issue), patch(
-                   "mirage.core.linear.read.list_issue_comments",
-                   new_callable=AsyncMock,
-                   return_value=comments):
+    with (
+        patch(
+            "mirage.core.linear.read.get_issue",
+            new_callable=AsyncMock,
+            return_value=issue,
+        ),
+        patch(
+            "mirage.core.linear.read.list_issue_comments",
+            new_callable=AsyncMock,
+            return_value=comments,
+        ),
+    ):
         result = await read(
             accessor,
-            PathSpec.from_str_path("/teams/ENG__Engineering__TEAM1"
-                                   "/issues/ENG-123__ISSUE1/comments.jsonl"),
+            PathSpec.from_str_path(
+                "/teams/ENG__Engineering__TEAM1"
+                "/issues/ENG-123__ISSUE1/comments.jsonl"
+            ),
             index,
         )
     line = json.loads(result.decode().strip())
@@ -209,53 +231,67 @@ async def test_read_comments_jsonl(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_project_json_includes_issue_refs(accessor, index):
-    teams = [{
-        "id": "TEAM1",
-        "key": "ENG",
-        "name": "Engineering",
-        "updatedAt": "2026-04-05T00:00:00Z",
-        "states": {
-            "nodes": []
-        },
-    }]
-    projects = [{
-        "id": "PROJ1",
-        "name": "Agent Data Plane",
-        "description": "Project body",
-        "state": "planned",
-        "updatedAt": "2026-04-05T00:00:00Z",
-        "url": "https://linear.app/project",
-        "lead": {
-            "id": "USER1",
-        },
-    }]
-    issues = [{
-        "id": "ISSUE1",
-        "identifier": "ENG-123",
-        "title": "Wire VFS",
-        "url": "https://linear.app/issue",
-        "project": {
+    teams = [
+        {
+            "id": "TEAM1",
+            "key": "ENG",
+            "name": "Engineering",
+            "updatedAt": "2026-04-05T00:00:00Z",
+            "states": {"nodes": []},
+        }
+    ]
+    projects = [
+        {
             "id": "PROJ1",
-        },
-        "state": {
-            "id": "STATE1",
-            "name": "Todo",
-        },
-    }]
+            "name": "Agent Data Plane",
+            "description": "Project body",
+            "state": "planned",
+            "updatedAt": "2026-04-05T00:00:00Z",
+            "url": "https://linear.app/project",
+            "lead": {
+                "id": "USER1",
+            },
+        }
+    ]
+    issues = [
+        {
+            "id": "ISSUE1",
+            "identifier": "ENG-123",
+            "title": "Wire VFS",
+            "url": "https://linear.app/issue",
+            "project": {
+                "id": "PROJ1",
+            },
+            "state": {
+                "id": "STATE1",
+                "name": "Todo",
+            },
+        }
+    ]
     await _seed(index)
-    with patch("mirage.core.linear.read.list_teams",
-               new_callable=AsyncMock,
-               return_value=teams), patch(
-                   "mirage.core.linear.read.list_team_projects",
-                   new_callable=AsyncMock,
-                   return_value=projects), patch(
-                       "mirage.core.linear.read.list_team_issues",
-                       new_callable=AsyncMock,
-                       return_value=issues):
+    with (
+        patch(
+            "mirage.core.linear.read.list_teams",
+            new_callable=AsyncMock,
+            return_value=teams,
+        ),
+        patch(
+            "mirage.core.linear.read.list_team_projects",
+            new_callable=AsyncMock,
+            return_value=projects,
+        ),
+        patch(
+            "mirage.core.linear.read.list_team_issues",
+            new_callable=AsyncMock,
+            return_value=issues,
+        ),
+    ):
         result = await read(
             accessor,
-            PathSpec.from_str_path("/teams/ENG__Engineering__TEAM1"
-                                   "/projects/Agent-Data-Plane__PROJ1.json"),
+            PathSpec.from_str_path(
+                "/teams/ENG__Engineering__TEAM1"
+                "/projects/Agent-Data-Plane__PROJ1.json"
+            ),
             index,
         )
     payload = json.loads(result)
@@ -275,16 +311,22 @@ async def test_a_team_outside_team_ids_is_absent_on_every_surface(index):
     issue read used to fetch straight by the id in the path: ``cat``
     served an issue of a team ``ls`` and ``stat`` reported absent."""
     accessor = LinearAccessor(
-        LinearConfig(api_key="lin_api_test", team_ids=["TEAM1"]))
+        LinearConfig(api_key="lin_api_test", team_ids=["TEAM1"])
+    )
     get_issue = AsyncMock(return_value={"id": "ISSUE9"})
     list_members = AsyncMock(return_value=[{"id": "U9", "name": "Eve"}])
     secret = "/teams/FIN__Finance__TEAM2"
-    with patch("mirage.core.linear.readdir.list_teams",
-               AsyncMock(return_value=[T1, T2])), \
-            patch("mirage.core.linear.read.get_issue", get_issue), \
-            patch("mirage.core.linear.read.list_team_members", list_members):
-        issue_json = PathSpec.from_str_path(secret +
-                                            "/issues/FIN-9__ISSUE9/issue.json")
+    with (
+        patch(
+            "mirage.core.linear.readdir.list_teams",
+            AsyncMock(return_value=[T1, T2]),
+        ),
+        patch("mirage.core.linear.read.get_issue", get_issue),
+        patch("mirage.core.linear.read.list_team_members", list_members),
+    ):
+        issue_json = PathSpec.from_str_path(
+            secret + "/issues/FIN-9__ISSUE9/issue.json"
+        )
         for surface in (read, stat):
             with pytest.raises(FileNotFoundError):
                 await surface(accessor, issue_json, index)
@@ -294,6 +336,7 @@ async def test_a_team_outside_team_ids_is_absent_on_every_surface(index):
             await read(
                 accessor,
                 PathSpec.from_str_path(secret + "/members/Eve__U9.json"),
-                index)
+                index,
+            )
     get_issue.assert_not_awaited()
     list_members.assert_not_awaited()

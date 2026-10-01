@@ -34,6 +34,7 @@ class BashArgs:
         invalid (str | None): the option word the shell does not have.
         needs_value (str | None): the option given no argument.
     """
+
     script: str | None = None
     path: str | None = None
     argv: list[str] = field(default_factory=list)

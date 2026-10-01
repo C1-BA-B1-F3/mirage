@@ -31,16 +31,20 @@ def format_file_result(
         brief (bool): -b, drop the filename column.
         mime (bool): -i, map the type to its MIME spelling.
     """
-    key = (result.value if isinstance(result, (ContentType,
-                                               FileType)) else str(result))
+    key = (
+        result.value
+        if isinstance(result, (ContentType, FileType))
+        else str(result)
+    )
     desc = FILE_MIME_MAP.get(key, key) if mime else key
     if brief:
         return desc
     return f"{path}: {desc}"
 
 
-def detect_file_type(path: str, header: bytes,
-                     s: FileStat) -> ContentType | str:
+def detect_file_type(
+    path: str, header: bytes, s: FileStat
+) -> ContentType | str:
     if s.content is not None and s.content != ContentType.BINARY:
         return s.content
     magic: list[tuple[bytes, ContentType]] = [

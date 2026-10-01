@@ -7,9 +7,11 @@ from mirage.types import MountMode, PathSpec
 from mirage.utils.errors import ReadOnlyError
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.dispatcher.lineage import (BARE_PREFIX,
-                                                 require_turf_writable,
-                                                 turf_of)
+from mirage.workspace.dispatcher.lineage import (
+    BARE_PREFIX,
+    require_turf_writable,
+    turf_of,
+)
 from mirage.workspace.mount.mount import MountEntry
 
 

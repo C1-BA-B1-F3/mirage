@@ -3,9 +3,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 
-from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
-                                                 dot_refusal, link_follow,
-                                                 stat_or_enoent)
+from mirage.commands.builtin.utils.paths import (
+    absent_dest_strerror,
+    dot_refusal,
+    link_follow,
+    stat_or_enoent,
+)
 from mirage.commands.builtin.utils.wrap import to_pathspec
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -25,9 +28,16 @@ async def _exists(stat_fn: StatFn, path: PathSpec) -> bool:
         return False
 
 
-async def _unresolved(p: PathSpec, resolved: PathSpec, *, stat_fn: StatFn,
-                      walk: StatFn | None, follow: Callable[[str], str] | None,
-                      e: bool, m: bool) -> OSError | None:
+async def _unresolved(
+    p: PathSpec,
+    resolved: PathSpec,
+    *,
+    stat_fn: StatFn,
+    walk: StatFn | None,
+    follow: Callable[[str], str] | None,
+    e: bool,
+    m: bool,
+) -> OSError | None:
     """Why one operand does not resolve under the requested mode.
 
     GNU's three modes ask for different amounts of the path: ``-m`` for
@@ -95,15 +105,12 @@ async def realpath(
     errors: list[str] = []
     for p in paths:
         resolved_display = posixpath.normpath(p.virtual)
-        resolved = to_pathspec(resolved_display,
-                               mount_prefix_of(p.virtual, p.vfs_path))
-        failure = await _unresolved(p,
-                                    resolved,
-                                    stat_fn=stat_fn,
-                                    walk=walk,
-                                    follow=follow,
-                                    e=e,
-                                    m=m)
+        resolved = to_pathspec(
+            resolved_display, mount_prefix_of(p.virtual, p.vfs_path)
+        )
+        failure = await _unresolved(
+            p, resolved, stat_fn=stat_fn, walk=walk, follow=follow, e=e, m=m
+        )
         if failure is not None:
             errors.append(fs_error_line("realpath", p, failure))
             continue
@@ -124,8 +131,9 @@ class RealpathFlags:
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> RealpathFlags:
     fl = FlagView(flags, spec=SPECS["realpath"])
-    return RealpathFlags(must_exist=fl.as_bool("e"),
-                         allow_missing=fl.as_bool("m"))
+    return RealpathFlags(
+        must_exist=fl.as_bool("e"), allow_missing=fl.as_bool("m")
+    )
 
 
 async def realpath_generic(
@@ -135,12 +143,16 @@ async def realpath_generic(
     stat_fn: StatFn,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    walk = (partial(stat_or_enoent, opts.stat_path)
-            if opts.stat_path is not None else None)
+    walk = (
+        partial(stat_or_enoent, opts.stat_path)
+        if opts.stat_path is not None
+        else None
+    )
     return await realpath(
         paths,
         stat_fn=stat_fn,
         walk=walk,
         follow=link_follow(opts.ns.links if opts.ns is not None else None),
         e=parsed.must_exist,
-        m=parsed.allow_missing)
+        m=parsed.allow_missing,
+    )

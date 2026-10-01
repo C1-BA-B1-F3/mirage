@@ -23,10 +23,18 @@ from mirage.secrets.registry import fetch_secret
 from mirage.secrets.summary import field_summary
 from mirage.secrets.types import ResolvedSource
 from mirage.shell.constants import SHOPT_DEFAULTS
-from mirage.shell.parse import (arith_reads, assignment_values,
-                                command_invocations, command_words, env_reads,
-                                identifier_names, implicit_reads, opaque_reads,
-                                parse, referenced_names)
+from mirage.shell.parse import (
+    arith_reads,
+    assignment_values,
+    command_invocations,
+    command_words,
+    env_reads,
+    identifier_names,
+    implicit_reads,
+    opaque_reads,
+    parse,
+    referenced_names,
+)
 from mirage.shell.types import TSNodeLike
 from mirage.shell.variable import ManagedRef, VarAttr, with_value
 from mirage.utils.hidden import var_hidden
@@ -91,8 +99,9 @@ def line_nodes(node: TSNodeLike, session: SessionState) -> list[TSNodeLike]:
             functions, aliases, shopts).
     """
     defined = _defined_bodies(node)
-    expand = session.shopts.get("expand_aliases",
-                                SHOPT_DEFAULTS["expand_aliases"])
+    expand = session.shopts.get(
+        "expand_aliases", SHOPT_DEFAULTS["expand_aliases"]
+    )
     nodes: list[TSNodeLike] = [node]
     seen: set[str] = set()
     frontier: list[TSNodeLike] = [node]
@@ -117,8 +126,11 @@ def line_nodes(node: TSNodeLike, session: SessionState) -> list[TSNodeLike]:
     return nodes
 
 
-def guest_bound(nodes: Sequence[TSNodeLike], decision: RouteDecision | None,
-                static_bindings: Mapping[str, Runtime | None]) -> bool:
+def guest_bound(
+    nodes: Sequence[TSNodeLike],
+    decision: RouteDecision | None,
+    static_bindings: Mapping[str, Runtime | None],
+) -> bool:
     """Whether any of the line's commands runs on a guest runtime.
 
     A guest receives the exported environment as one snapshot, so
@@ -138,7 +150,7 @@ def guest_bound(nodes: Sequence[TSNodeLike], decision: RouteDecision | None,
         static_bindings (Mapping[str, Runtime | None]): the registry's
             standing command bindings, the fallback ``whole_line`` uses.
     """
-    bindings = (decision.bindings if decision is not None else static_bindings)
+    bindings = decision.bindings if decision is not None else static_bindings
     if not bindings:
         return False
     words: set[str] = {"*"}
@@ -151,8 +163,9 @@ def guest_bound(nodes: Sequence[TSNodeLike], decision: RouteDecision | None,
     return False
 
 
-def cli_env_names(nodes: Sequence[TSNodeLike], session: SessionState,
-                  registry: MountRegistry) -> frozenset[str]:
+def cli_env_names(
+    nodes: Sequence[TSNodeLike], session: SessionState, registry: MountRegistry
+) -> frozenset[str]:
     """Env names the line's installed CLIs are about to read.
 
     An installed CLI reads a managed name through ``Option.env`` with
@@ -186,10 +199,12 @@ def cli_env_names(nodes: Sequence[TSNodeLike], session: SessionState,
             if len(literal) != len(args):
                 out |= invoked_env_names(install.spec, None)
                 continue
-            words = frozenset(arg for arg in literal
-                              if not arg.startswith("-"))
-            out |= (invoked_env_names(install.spec, words) -
-                    supplied_env_names(install.spec, literal))
+            words = frozenset(
+                arg for arg in literal if not arg.startswith("-")
+            )
+            out |= invoked_env_names(install.spec, words) - supplied_env_names(
+                install.spec, literal
+            )
     return frozenset(out)
 
 
@@ -197,7 +212,8 @@ def cli_env_names(nodes: Sequence[TSNodeLike], session: SessionState,
 # them), but a substitution runs commands of its own, which is exactly
 # the "nothing runs before the masks land" premise the prefix trades on.
 _MASK_VALUE_BLOCKERS = frozenset(
-    {"command_substitution", "process_substitution"})
+    {"command_substitution", "process_substitution"}
+)
 
 
 def _replacement_blocked(part: TSNodeLike) -> bool:
@@ -235,8 +251,11 @@ def _assignment_masks(stmt: TSNodeLike) -> frozenset[str] | None:
             ``variable_assignments`` or ``declaration_command``
             statement node.
     """
-    parts = ([stmt] if stmt.type == "variable_assignment" else list(
-        stmt.named_children))
+    parts = (
+        [stmt]
+        if stmt.type == "variable_assignment"
+        else list(stmt.named_children)
+    )
     names: set[str] = set()
     for part in parts:
         if part.type != "variable_assignment":
@@ -261,7 +280,8 @@ def _assignment_masks(stmt: TSNodeLike) -> frozenset[str] | None:
 # function it refuses without writing, so the standing value stays
 # readable.
 _DECLARATION_MASK_HEADS = frozenset(
-    {b"declare", b"typeset", b"export", b"readonly"})
+    {b"declare", b"typeset", b"export", b"readonly"}
+)
 
 
 def _declaration_replaces(stmt: TSNodeLike, in_body: bool) -> bool:
@@ -309,11 +329,13 @@ def _unset_masks(stmt: TSNodeLike) -> frozenset[str] | None:
     return frozenset(names)
 
 
-def masked_names(node: TSNodeLike,
-                 session: SessionState,
-                 writes_gated: bool,
-                 in_body: bool = False,
-                 before: TSNodeLike | None = None) -> frozenset[str]:
+def masked_names(
+    node: TSNodeLike,
+    session: SessionState,
+    writes_gated: bool,
+    in_body: bool = False,
+    before: TSNodeLike | None = None,
+) -> frozenset[str]:
     """Names one unit definitely replaces before anything can read them.
 
     The unit's leading run of plain statements that only assign,
@@ -362,8 +384,11 @@ def masked_names(node: TSNodeLike,
         if stmt.type in ("variable_assignment", "variable_assignments"):
             masks = _assignment_masks(stmt)
         elif stmt.type == "declaration_command":
-            masks = (_assignment_masks(stmt) if _declaration_replaces(
-                stmt, in_body) else None)
+            masks = (
+                _assignment_masks(stmt)
+                if _declaration_replaces(stmt, in_body)
+                else None
+            )
         elif stmt.type == "unset_command":
             masks = _unset_masks(stmt)
         else:
@@ -373,9 +398,11 @@ def masked_names(node: TSNodeLike,
         following = children[idx + 1] if idx + 1 < len(children) else None
         if following is not None and following.type == "&":
             break
-        readonly = any(name in session.vars
-                       and VarAttr.READONLY in session.vars[name].attrs
-                       for name in masks)
+        readonly = any(
+            name in session.vars
+            and VarAttr.READONLY in session.vars[name].attrs
+            for name in masks
+        )
         if readonly:
             break
         for name in referenced_names(stmt):
@@ -391,8 +418,9 @@ def masked_names(node: TSNodeLike,
 _BODY_CONTAINERS = frozenset({"compound_statement", "subshell"})
 
 
-def _own_masks(node: TSNodeLike, session: SessionState,
-               writes_gated: bool) -> frozenset[str]:
+def _own_masks(
+    node: TSNodeLike, session: SessionState, writes_gated: bool
+) -> frozenset[str]:
     """A walked unit's own leading masks, discounting its own reads.
 
     A defined body's prefix masks the body's later reads exactly as the
@@ -419,16 +447,15 @@ def _own_masks(node: TSNodeLike, session: SessionState,
         own = masked_names(node, session, writes_gated)
     parent = node.parent
     if parent is not None and parent.type in _BODY_CONTAINERS:
-        own |= masked_names(parent,
-                            session,
-                            writes_gated,
-                            in_body=True,
-                            before=node)
+        own |= masked_names(
+            parent, session, writes_gated, in_body=True, before=node
+        )
     return own
 
 
 def _assigned_reach(
-        nodes: Sequence[TSNodeLike]) -> dict[str, tuple[set[str], set[str]]]:
+    nodes: Sequence[TSNodeLike],
+) -> dict[str, tuple[set[str], set[str]]]:
     """What the line's own assignments may leave in each target.
 
     Per target name, the literal values assigned anywhere in the walked
@@ -451,8 +478,10 @@ def _assigned_reach(
 
 
 def _arith_targets(
-        session: SessionState, names: frozenset[str],
-        assigned: Mapping[str, tuple[set[str], set[str]]]) -> frozenset[str]:
+    session: SessionState,
+    names: frozenset[str],
+    assigned: Mapping[str, tuple[set[str], set[str]]],
+) -> frozenset[str]:
     """Every name an arithmetic read may reach through stored values.
 
     Arithmetic resolution recurses: a name's value is evaluated as an
@@ -503,9 +532,14 @@ def _arith_targets(
     return frozenset(out)
 
 
-def _wanted(session: SessionState, nodes: Sequence[TSNodeLike],
-            pending: Mapping[str, ManagedRef], cli_env_names: frozenset[str],
-            masked: frozenset[str], writes_gated: bool) -> frozenset[str]:
+def _wanted(
+    session: SessionState,
+    nodes: Sequence[TSNodeLike],
+    pending: Mapping[str, ManagedRef],
+    cli_env_names: frozenset[str],
+    masked: frozenset[str],
+    writes_gated: bool,
+) -> frozenset[str]:
     """The pending names the line's walked set is about to read.
 
     An opaque read (``opaque_reads``) or a command head no static read
@@ -551,22 +585,30 @@ def _wanted(session: SessionState, nodes: Sequence[TSNodeLike],
             return frozenset(pending.keys() - masked)
         if any(head is None for head, _ in command_invocations(node)):
             return frozenset(pending.keys() - masked)
-        own = (_own_masks(node, session, writes_gated)
-               if position else frozenset())
+        own = (
+            _own_masks(node, session, writes_gated)
+            if position
+            else frozenset()
+        )
         if rendered:
             rendered_any = True
-            rendered_excluded = (excluded if rendered_excluded is None else
-                                 rendered_excluded & excluded)
+            rendered_excluded = (
+                excluded
+                if rendered_excluded is None
+                else rendered_excluded & excluded
+            )
         arith = arith_reads(node)
         if arith:
             referenced |= _arith_targets(session, arith, assigned) - own
         printed |= names - own
         implicit |= implicit_reads(node) - own
         referenced |= referenced_names(node) - own
-    wanted = printed | implicit | cli_env_names | {
-        name
-        for name, ref in pending.items() if ref.eager
-    }
+    wanted = (
+        printed
+        | implicit
+        | cli_env_names
+        | {name for name, ref in pending.items() if ref.eager}
+    )
     for name in referenced:
         wanted.add(name)
         wanted.add(deref(session, name))
@@ -594,12 +636,14 @@ def _pending(session: SessionState) -> dict[str, ManagedRef]:
     return out
 
 
-def fill_names(session: SessionState,
-               nodes: Sequence[TSNodeLike],
-               *,
-               whole: bool,
-               cli_env_names: frozenset[str],
-               writes_gated: bool = False) -> frozenset[str]:
+def fill_names(
+    session: SessionState,
+    nodes: Sequence[TSNodeLike],
+    *,
+    whole: bool,
+    cli_env_names: frozenset[str],
+    writes_gated: bool = False,
+) -> frozenset[str]:
     """The managed names one line is about to read, without fetching.
 
     Pure planning, split from :func:`fill_env` so the executor can
@@ -626,16 +670,19 @@ def fill_names(session: SessionState,
         return frozenset()
     if whole:
         return frozenset(pending)
-    masked = (masked_names(nodes[0], session, writes_gated)
-              if nodes else frozenset())
-    return _wanted(session, nodes, pending, cli_env_names, masked,
-                   writes_gated)
+    masked = (
+        masked_names(nodes[0], session, writes_gated) if nodes else frozenset()
+    )
+    return _wanted(
+        session, nodes, pending, cli_env_names, masked, writes_gated
+    )
 
 
 async def fill_env(
-        session: SessionState,
-        names: frozenset[str],
-        sources: Mapping[str, ResolvedSource] | None = None) -> None:
+    session: SessionState,
+    names: frozenset[str],
+    sources: Mapping[str, ResolvedSource] | None = None,
+) -> None:
     """Fetch the named managed values into the session.
 
     The session is the truth, not the workspace's declaration: it may
@@ -685,12 +732,14 @@ async def fill_env(
             # is a copy nobody redacted, and the source's own words
             # ride `from exc`.
             raise SecretsError(
-                f"{listed}: cannot fetch from {source}") from exc
+                f"{listed}: cannot fetch from {source}"
+            ) from exc
         for name in group:
             key = pending[name].key
             value = secret.fields.get(key)
             if value is None:
                 raise SecretsError(
                     f"{name}: wanted field {key!r}, the {source} secret "
-                    f"has {field_summary(secret.fields, provider)}")
+                    f"has {field_summary(secret.fields, provider)}"
+                )
             session.vars[name] = with_value(records[name], value)

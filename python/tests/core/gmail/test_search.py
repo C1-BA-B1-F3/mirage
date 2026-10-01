@@ -18,7 +18,7 @@ from mirage.core.gmail.search import format_grep_results
 
 LABEL = "INBOX"
 
-EMOJI = "\U0001F600"
+EMOJI = "\U0001f600"
 
 
 def _row(body_text: str) -> dict[str, Any]:
@@ -36,7 +36,7 @@ def _row(body_text: str) -> dict[str, Any]:
 def _excerpt(lines: list[str]) -> str:
     """Everything after the ``<path>:[<sender>] `` header."""
     line = lines[0]
-    return line[line.index("] ") + 2:]
+    return line[line.index("] ") + 2 :]
 
 
 def test_no_match_budget_counts_code_points():
@@ -46,7 +46,8 @@ def test_no_match_budget_counts_code_points():
     # typescript twin cut to 117 -- splitting the 118th surrogate pair.
     body = EMOJI * 200
     excerpt = _excerpt(
-        format_grep_results([_row(body)], LABEL, "/gmail", "zzz"))
+        format_grep_results([_row(body)], LABEL, "/gmail", "zzz")
+    )
     assert excerpt == f"note {body}"
     assert len(excerpt) == 205
     assert "�" not in excerpt
@@ -55,8 +56,10 @@ def test_no_match_budget_counts_code_points():
 def test_match_window_cuts_on_code_point_boundaries():
     pad = EMOJI * 200
     excerpt = _excerpt(
-        format_grep_results([_row(f"{pad} needle {pad}")], LABEL, "/gmail",
-                            "needle"))
+        format_grep_results(
+            [_row(f"{pad} needle {pad}")], LABEL, "/gmail", "needle"
+        )
+    )
     assert excerpt == f"...{EMOJI * 119} needle {EMOJI * 119}..."
     assert "�" not in excerpt
 
@@ -64,7 +67,8 @@ def test_match_window_cuts_on_code_point_boundaries():
 def test_match_window_on_ascii():
     body = "a" * 300 + " needle " + "b" * 300
     excerpt = _excerpt(
-        format_grep_results([_row(body)], LABEL, "/gmail", "needle"))
+        format_grep_results([_row(body)], LABEL, "/gmail", "needle")
+    )
     assert excerpt == f"...{'a' * 119} needle {'b' * 119}..."
 
 

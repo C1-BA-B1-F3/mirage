@@ -9,8 +9,15 @@ import aiohttp
 from mirage.core.api.client import SessionPool, api_request
 from mirage.core.wandb.config import WandbConfig
 from mirage.core.wandb.errors import WandbAPIError
-from mirage.core.wandb.queries import (FILE, FILES, HISTORY, HISTORY_KEYS,
-                                       PROJECTS, RUN, RUNS)
+from mirage.core.wandb.queries import (
+    FILE,
+    FILES,
+    HISTORY,
+    HISTORY_KEYS,
+    PROJECTS,
+    RUN,
+    RUNS,
+)
 from mirage.core.wandb.types import FileMetadata, Run, RunFile, RunVariables
 from mirage.vfs.secrets import reveal_secret
 
@@ -29,7 +36,6 @@ def origin_key(url: SplitResult) -> tuple[str, str | None, int | None]:
 
 
 class WandbClient:
-
     def __init__(self, config: WandbConfig, pool: SessionPool) -> None:
         self.config = config
         self.pool = pool
@@ -41,18 +47,17 @@ class WandbClient:
         token = base64.b64encode(f"api:{key}".encode()).decode()
         return {"Authorization": f"Basic {token}"}
 
-    async def request(self, query: str,
-                      variables: Mapping[str, Any]) -> dict[str, Any]:
-        result = await api_request("POST",
-                                   self.config.base_url.rstrip("/") +
-                                   "/graphql",
-                                   error_of=response_error,
-                                   headers=self.headers(),
-                                   json_body={
-                                       "query": query,
-                                       "variables": dict(variables)
-                                   },
-                                   session=self.pool)
+    async def request(
+        self, query: str, variables: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        result = await api_request(
+            "POST",
+            self.config.base_url.rstrip("/") + "/graphql",
+            error_of=response_error,
+            headers=self.headers(),
+            json_body={"query": query, "variables": dict(variables)},
+            session=self.pool,
+        )
         if result.get("errors"):
             raise WandbAPIError("W&B GraphQL request failed")
         if not isinstance(result.get("data"), dict):
@@ -60,16 +65,21 @@ class WandbClient:
         data: dict[str, Any] = result["data"]
         return data
 
-    async def pages(self, query: str, variables: Mapping[str, Any],
-                    keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    async def pages(
+        self, query: str, variables: Mapping[str, Any], keys: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
         cursor = None
         seen: set[str] = set()
         rows: list[dict[str, Any]] = []
         for _ in range(self.config.max_pages):
-            data = await self.request(query, {
-                **variables, "cursor": cursor,
-                "perPage": self.config.page_size
-            })
+            data = await self.request(
+                query,
+                {
+                    **variables,
+                    "cursor": cursor,
+                    "perPage": self.config.page_size,
+                },
+            )
             for key in keys:
                 data = data[key]
                 if data is None:
@@ -84,13 +94,12 @@ class WandbClient:
         raise WandbAPIError("W&B pagination limit exceeded")
 
     async def projects(self, entity: str) -> list[dict[str, Any]]:
-        return await self.pages(PROJECTS, {"entity": entity}, ("models", ))
+        return await self.pages(PROJECTS, {"entity": entity}, ("models",))
 
     async def runs(self, entity: str, project: str) -> list[dict[str, Any]]:
-        return await self.pages(RUNS, {
-            "entity": entity,
-            "project": project
-        }, ("project", "runs"))
+        return await self.pages(
+            RUNS, {"entity": entity, "project": project}, ("project", "runs")
+        )
 
     async def run(self, variables: RunVariables, query: str = RUN) -> Run:
         data = await self.request(query, variables)
@@ -101,8 +110,9 @@ class WandbClient:
 
     async def files(self, variables: RunVariables) -> list[FileMetadata]:
         return cast(
-            list[FileMetadata], await self.pages(FILES, variables,
-                                                 ("project", "run", "files")))
+            list[FileMetadata],
+            await self.pages(FILES, variables, ("project", "run", "files")),
+        )
 
     async def file(self, variables: RunVariables, name: str) -> RunFile | None:
         data = await self.request(FILE, {**variables, "names": [name]})
@@ -112,7 +122,8 @@ class WandbClient:
         return cast(RunFile, edges[0]["node"]) if edges else None
 
     async def history(
-            self, variables: RunVariables) -> AsyncIterator[dict[str, Any]]:
+        self, variables: RunVariables
+    ) -> AsyncIterator[dict[str, Any]]:
         run = await self.run(variables, HISTORY_KEYS)
         last = (run.get("historyKeys") or {}).get("lastStep", -1)
         if not isinstance(last, int) or last < -1:
@@ -125,28 +136,38 @@ class WandbClient:
             query_start = max(0, start - 1) if stop - start == 1 else start
             query_stop = max(stop, query_start + 2)
             data = await self.request(
-                HISTORY, {
-                    **variables, "minStep": query_start,
+                HISTORY,
+                {
+                    **variables,
+                    "minStep": query_start,
                     "maxStep": query_stop,
-                    "pageSize": max(size, query_stop - query_start)
-                })
+                    "pageSize": max(size, query_stop - query_start),
+                },
+            )
             if data["project"] is None or data["project"]["run"] is None:
                 raise FileNotFoundError("W&B run not found")
             for raw in data["project"]["run"]["history"]:
                 row = json.loads(raw)
-                if (query_start == start and query_stop == stop
-                        or start <= row["_step"] < stop):
+                if (
+                    query_start == start
+                    and query_stop == stop
+                    or start <= row["_step"] < stop
+                ):
                     yield row
 
     async def download(self, url: str) -> AsyncIterator[bytes]:
         url = urljoin(self.config.base_url + "/", url)
         origin = urlsplit(self.config.base_url)
         target = urlsplit(url)
-        if target.scheme not in (
-                "http", "https") or target.username or target.password:
+        if (
+            target.scheme not in ("http", "https")
+            or target.username
+            or target.password
+        ):
             raise WandbAPIError("W&B invalid download URL")
-        headers = self.headers() if origin_key(origin) == origin_key(
-            target) else {}
+        headers = (
+            self.headers() if origin_key(origin) == origin_key(target) else {}
+        )
         async with self.pool.get().get(url, headers=headers) as response:
             if response.status >= 400:
                 raise response_error(response, "")

@@ -26,16 +26,11 @@ from mirage.types import FileStat, FileType, PathSpec
 
 
 class _S3Error(Exception):
-
     def __init__(self, code: str, status: int) -> None:
         super().__init__(code)
         self.response = {
-            "Error": {
-                "Code": code
-            },
-            "ResponseMetadata": {
-                "HTTPStatusCode": status
-            },
+            "Error": {"Code": code},
+            "ResponseMetadata": {"HTTPStatusCode": status},
         }
 
 
@@ -43,12 +38,14 @@ PATH = PathSpec.from_str_path("/x/a.txt", "a.txt")
 
 
 def make_table(**kwargs) -> CommandIO:
-    return CommandIO(readdir=AsyncMock(return_value=["/x/a.txt"]),
-                     read_bytes=AsyncMock(return_value=b"data"),
-                     read_stream=AsyncMock(),
-                     stat=AsyncMock(),
-                     is_mounted=lambda a: True,
-                     **kwargs)
+    return CommandIO(
+        readdir=AsyncMock(return_value=["/x/a.txt"]),
+        read_bytes=AsyncMock(return_value=b"data"),
+        read_stream=AsyncMock(),
+        stat=AsyncMock(),
+        is_mounted=lambda a: True,
+        **kwargs,
+    )
 
 
 def rows(ops) -> set:
@@ -66,15 +63,17 @@ def test_read_only_table_emits_trio():
 
 
 def test_full_table_emits_mutations():
-    table = make_table(write=AsyncMock(),
-                       mkdir=AsyncMock(),
-                       unlink=AsyncMock(),
-                       rmdir=AsyncMock(),
-                       rename=AsyncMock(),
-                       create=AsyncMock(),
-                       truncate=AsyncMock(),
-                       append=AsyncMock(),
-                       set_attrs=AsyncMock())
+    table = make_table(
+        write=AsyncMock(),
+        mkdir=AsyncMock(),
+        unlink=AsyncMock(),
+        rmdir=AsyncMock(),
+        rename=AsyncMock(),
+        create=AsyncMock(),
+        truncate=AsyncMock(),
+        append=AsyncMock(),
+        set_attrs=AsyncMock(),
+    )
     names = {(o.name, o.write) for o in make_generic_ops("x", table)}
     assert names == {
         ("glob", False),
@@ -128,8 +127,11 @@ async def test_emulated_append_reads_current_bytes_and_creates_missing():
     acc = NOOPAccessor()
     for data in (b"new", b"!", b"created"):
         await op.fn(acc, PATH, data)
-    assert [call.args[2] for call in table.write.await_args_list
-            ] == [b"oldnew", b"oldnew!", b"created"]
+    assert [call.args[2] for call in table.write.await_args_list] == [
+        b"oldnew",
+        b"oldnew!",
+        b"created",
+    ]
 
 
 @pytest.mark.asyncio
@@ -182,8 +184,12 @@ async def test_native_append_skips_emulation_and_overrides_still_win():
     table.append.assert_awaited_once_with(acc, PATH, b"new")
     table.read_bytes.assert_not_awaited()
     table.write.assert_not_awaited()
-    assert not any(o.name == "append" for o in make_generic_ops(
-        "x", make_table(write=AsyncMock()), overrides={"append"}))
+    assert not any(
+        o.name == "append"
+        for o in make_generic_ops(
+            "x", make_table(write=AsyncMock()), overrides={"append"}
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -297,8 +303,9 @@ async def test_a_window_past_the_end_reads_empty_not_416():
     refused = _S3Error("InvalidRange", 416)
     native = AsyncMock(side_effect=refused)
     table = make_table(read_range=native)
-    assert await read_op(table).fn(NOOPAccessor(), PATH, offset=99,
-                                   size=2) == b""
+    assert (
+        await read_op(table).fn(NOOPAccessor(), PATH, offset=99, size=2) == b""
+    )
     native.assert_awaited_once()
 
 
@@ -317,8 +324,9 @@ async def test_a_zero_length_read_asks_the_backend_nothing():
     # either fetch the whole object or be refused.
     native = AsyncMock(return_value=b"ng")
     table = make_table(read_range=native)
-    assert await read_op(table).fn(NOOPAccessor(), PATH, offset=1,
-                                   size=0) == b""
+    assert (
+        await read_op(table).fn(NOOPAccessor(), PATH, offset=1, size=0) == b""
+    )
     native.assert_not_awaited()
     table.read_bytes.assert_not_awaited()
 

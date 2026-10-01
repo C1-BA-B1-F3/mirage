@@ -19,10 +19,15 @@ import pytest
 
 from mirage import Workspace
 from mirage.cache.index import IndexEntry
-from mirage.core.discord.entry import (channel_dirname, channel_entry,
-                                       guild_dirname, guild_entry,
-                                       history_entry, member_entry,
-                                       member_filename)
+from mirage.core.discord.entry import (
+    channel_dirname,
+    channel_entry,
+    guild_dirname,
+    guild_entry,
+    history_entry,
+    member_entry,
+    member_filename,
+)
 from mirage.fuse.fs import MirageFS
 from mirage.ops import Ops
 from mirage.types import ContentType, FileType, MountMode
@@ -47,15 +52,19 @@ MEMBER_PATH = f"{GUILD}/members/{MEMBER}"
 
 PREFIX = "/discord"
 
-FAKE_JSONL = (b'{"id":"1","content":"hello","author":{"username":"alice"}}\n'
-              b'{"id":"2","content":"world","author":{"username":"bob"}}\n')
+FAKE_JSONL = (
+    b'{"id":"1","content":"hello","author":{"username":"alice"}}\n'
+    b'{"id":"2","content":"world","author":{"username":"bob"}}\n'
+)
 
 # The day lister records chat.jsonl's exact rendered size, so a sizeless
 # entry is the sealed-day case, which is what getattr reports 0 for.
-CHAT_ENTRY = IndexEntry(id=f"{CHANNEL_PAYLOAD['id']}:{DATE}:chat",
-                        name=FILE,
-                        resource_type="discord/chat_jsonl",
-                        vfs_name=FILE)
+CHAT_ENTRY = IndexEntry(
+    id=f"{CHANNEL_PAYLOAD['id']}:{DATE}:chat",
+    name=FILE,
+    resource_type="discord/chat_jsonl",
+    vfs_name=FILE,
+)
 
 
 def _run(coro):
@@ -72,22 +81,34 @@ def _make_world() -> tuple[DiscordVFS, Workspace]:
     _run(index.set_dir(PREFIX, [(GUILD, guild_entry(GUILD_PAYLOAD))]))
     _run(index.put(f"{PREFIX}/{CHANNEL_PATH}", channel_entry(CHANNEL_PAYLOAD)))
     _run(
-        index.put(f"{PREFIX}/{DATE_DIR_PATH}",
-                  history_entry(CHANNEL_PAYLOAD["id"], DATE)))
+        index.put(
+            f"{PREFIX}/{DATE_DIR_PATH}",
+            history_entry(CHANNEL_PAYLOAD["id"], DATE),
+        )
+    )
     _run(index.put(f"{PREFIX}/{FILE_PATH}", CHAT_ENTRY))
     _run(index.put(f"{PREFIX}/{MEMBER_PATH}", member_entry(MEMBER_PAYLOAD)))
     # A seeded listing answers readdir without a lister, so the mount
     # serves these directories without reaching the API.
     _run(
-        index.set_dir(f"{PREFIX}/{GUILD}/channels",
-                      [(CHANNEL, channel_entry(CHANNEL_PAYLOAD))]))
+        index.set_dir(
+            f"{PREFIX}/{GUILD}/channels",
+            [(CHANNEL, channel_entry(CHANNEL_PAYLOAD))],
+        )
+    )
     _run(
-        index.set_dir(f"{PREFIX}/{CHANNEL_PATH}",
-                      [(DATE, history_entry(CHANNEL_PAYLOAD["id"], DATE))]))
+        index.set_dir(
+            f"{PREFIX}/{CHANNEL_PATH}",
+            [(DATE, history_entry(CHANNEL_PAYLOAD["id"], DATE))],
+        )
+    )
     _run(index.set_dir(f"{PREFIX}/{DATE_DIR_PATH}", [(FILE, CHAT_ENTRY)]))
     _run(
-        index.set_dir(f"{PREFIX}/{GUILD}/members",
-                      [(MEMBER, member_entry(MEMBER_PAYLOAD))]))
+        index.set_dir(
+            f"{PREFIX}/{GUILD}/members",
+            [(MEMBER, member_entry(MEMBER_PAYLOAD))],
+        )
+    )
     return vfs, ws
 
 
@@ -157,23 +178,22 @@ def test_ops_stat_file(ops):
 
 
 def test_ops_read_jsonl(ops):
-    with patch("mirage.core.discord.read.get_history_jsonl",
-               new_callable=AsyncMock,
-               return_value=FAKE_JSONL):
+    with patch(
+        "mirage.core.discord.read.get_history_jsonl",
+        new_callable=AsyncMock,
+        return_value=FAKE_JSONL,
+    ):
         data = _run(ops.read(f"{PREFIX}/{FILE_PATH}"))
     assert data == FAKE_JSONL
     assert b"hello" in data
 
 
 def test_ops_read_member(ops):
-    with patch("mirage.core.discord.read.list_members",
-               new_callable=AsyncMock,
-               return_value=[{
-                   "user": {
-                       "id": "U1",
-                       "username": "alice"
-                   }
-               }]):
+    with patch(
+        "mirage.core.discord.read.list_members",
+        new_callable=AsyncMock,
+        return_value=[{"user": {"id": "U1", "username": "alice"}}],
+    ):
         data = _run(ops.read(f"{PREFIX}/{MEMBER_PATH}"))
     assert b"alice" in data
 
@@ -182,9 +202,11 @@ def test_ops_read_member(ops):
 
 
 def test_ops_read_uses_prefix_for_index(ops):
-    with patch("mirage.core.discord.read.get_history_jsonl",
-               new_callable=AsyncMock,
-               return_value=b"data") as mock_get:
+    with patch(
+        "mirage.core.discord.read.get_history_jsonl",
+        new_callable=AsyncMock,
+        return_value=b"data",
+    ) as mock_get:
         data = _run(ops.read(f"{PREFIX}/{FILE_PATH}"))
     assert data == b"data"
     mock_get.assert_called_once()
@@ -247,9 +269,11 @@ def test_fuse_readdir_dates(fs):
 
 
 def test_fuse_read_file(fs):
-    with patch("mirage.core.discord.read.get_history_jsonl",
-               new_callable=AsyncMock,
-               return_value=FAKE_JSONL):
+    with patch(
+        "mirage.core.discord.read.get_history_jsonl",
+        new_callable=AsyncMock,
+        return_value=FAKE_JSONL,
+    ):
         fh = fs.open(f"{PREFIX}/{FILE_PATH}", 0)
         data = fs.read(f"{PREFIX}/{FILE_PATH}", 4096, 0, fh)
         fs.release(f"{PREFIX}/{FILE_PATH}", fh)
@@ -257,9 +281,11 @@ def test_fuse_read_file(fs):
 
 
 def test_fuse_read_offset(fs):
-    with patch("mirage.core.discord.read.get_history_jsonl",
-               new_callable=AsyncMock,
-               return_value=FAKE_JSONL):
+    with patch(
+        "mirage.core.discord.read.get_history_jsonl",
+        new_callable=AsyncMock,
+        return_value=FAKE_JSONL,
+    ):
         fh = fs.open(f"{PREFIX}/{FILE_PATH}", 0)
         data = fs.read(f"{PREFIX}/{FILE_PATH}", 10, 0, fh)
         fs.release(f"{PREFIX}/{FILE_PATH}", fh)
@@ -267,9 +293,11 @@ def test_fuse_read_offset(fs):
 
 
 def test_fuse_read_beyond_eof(fs):
-    with patch("mirage.core.discord.read.get_history_jsonl",
-               new_callable=AsyncMock,
-               return_value=FAKE_JSONL):
+    with patch(
+        "mirage.core.discord.read.get_history_jsonl",
+        new_callable=AsyncMock,
+        return_value=FAKE_JSONL,
+    ):
         fh = fs.open(f"{PREFIX}/{FILE_PATH}", 0)
         data = fs.read(f"{PREFIX}/{FILE_PATH}", 4096, len(FAKE_JSONL), fh)
         fs.release(f"{PREFIX}/{FILE_PATH}", fh)

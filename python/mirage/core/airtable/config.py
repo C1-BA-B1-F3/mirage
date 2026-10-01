@@ -31,6 +31,7 @@ class AirtableConfig(BaseModel):
         requests_per_second (float): pacing per base. Airtable allows 5
             and answers a burst with a 30-second penalty.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     token: SecretStr

@@ -39,4 +39,5 @@ def build_delta_hook(accessor: OneDriveAccessor) -> DeltaHook:
         accessor (OneDriveAccessor): Backend handle.
     """
     return ListingDeltaHook(
-        ReaddirWalk(partial(readdir, accessor), partial(stat, accessor)))
+        ReaddirWalk(partial(readdir, accessor), partial(stat, accessor))
+    )

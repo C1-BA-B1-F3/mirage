@@ -63,7 +63,8 @@ class Job:
         return self.process.info.pid if self.process is not None else self.id
 
 
-JobRunner = Callable[[Job], Coroutine[Any, Any, tuple[IOResult,
-                                                      ExecutionNode]]]
+JobRunner = Callable[
+    [Job], Coroutine[Any, Any, tuple[IOResult, ExecutionNode]]
+]
 
 ConsoleFactory = Callable[[int], JobConsole]

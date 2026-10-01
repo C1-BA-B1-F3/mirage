@@ -16,10 +16,15 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from mirage.commands.builtin.sed_script import (SED_STDERR, SED_STDOUT,
-                                                SedAddr, SedCommand,
-                                                SedProgram, SedRegex,
-                                                sed_regex_flags)
+from mirage.commands.builtin.sed_script import (
+    SED_STDERR,
+    SED_STDOUT,
+    SedAddr,
+    SedCommand,
+    SedProgram,
+    SedRegex,
+    sed_regex_flags,
+)
 from mirage.utils.posix import compile_posix_regex
 
 SED_LINE_LENGTH = 70
@@ -274,7 +279,8 @@ class SedMachine:
         self.stderr_lines: list[str] = []
         self.wfiles: dict[str, SedOutput] = {
             name: SedOutput()
-            for name in program.wfiles if name not in (SED_STDOUT, SED_STDERR)
+            for name in program.wfiles
+            if name not in (SED_STDOUT, SED_STDERR)
         }
         self.quit_code: int | None = None
         self.panic_code: int | None = None
@@ -347,9 +353,11 @@ class SedMachine:
     def _reset_addresses(self) -> None:
         for i, cmd in enumerate(self.program.commands):
             a1 = cmd.a1
-            self._range_state[i] = (_RANGE_ACTIVE
-                                    if a1 is not None and a1.kind == "num"
-                                    and a1.n == 0 else _RANGE_INACTIVE)
+            self._range_state[i] = (
+                _RANGE_ACTIVE
+                if a1 is not None and a1.kind == "num" and a1.n == 0
+                else _RANGE_INACTIVE
+            )
 
     def _open_next_file(self) -> bool:
         while self._file_idx < len(self._inputs):
@@ -424,7 +432,9 @@ class SedMachine:
         if use is None:
             raise SedPanic(
                 f"sed: {self.program.end_where}: "
-                "no previous regular expression\n", 1)
+                "no previous regular expression\n",
+                1,
+            )
         self._last_regex = use
         key = (use, global_)
         hit = self._compiled.get(key)
@@ -438,11 +448,14 @@ class SedMachine:
         if kind == "null":
             return True
         if kind == "regex":
-            return self._regex(addr.re, False).search(self._pattern) \
-                is not None
+            return (
+                self._regex(addr.re, False).search(self._pattern) is not None
+            )
         if kind == "mod":
-            return (self._line_number >= addr.n
-                    and (self._line_number - addr.n) % addr.step == 0)
+            return (
+                self._line_number >= addr.n
+                and (self._line_number - addr.n) % addr.step == 0
+            )
         if kind in ("step", "stepmod"):
             return self._a2_number[index] <= self._line_number
         if kind == "last":
@@ -534,8 +547,11 @@ class SedMachine:
             content = self.opts.reader_files.get(name)
             if isinstance(content, SedFileError):
                 raise SedPanic(content.error)
-            self._readers[name] = None if content is None else _Reader(
-                _reader_lines(content.text))
+            self._readers[name] = (
+                None
+                if content is None
+                else _Reader(_reader_lines(content.text))
+            )
         reader = self._readers[name]
         if reader is None or reader.pos >= len(reader.lines):
             return None
@@ -601,8 +617,10 @@ class SedMachine:
                 pc = cmd.jump
                 continue
             elif c == "c":
-                if (self._range_state[pc] != _RANGE_ACTIVE
-                        and cmd.text is not None):
+                if (
+                    self._range_state[pc] != _RANGE_ACTIVE
+                    and cmd.text is not None
+                ):
                     self._main.line(cmd.text[:-1], True)
                 return -1
             elif c == "d":
@@ -611,7 +629,7 @@ class SedMachine:
                 nl = self._pattern.find("\n")
                 if nl < 0:
                     return -1
-                self._pattern = self._pattern[nl + 1:]
+                self._pattern = self._pattern[nl + 1 :]
                 pc = 0
                 continue
             elif c == "g":
@@ -626,8 +644,9 @@ class SedMachine:
                 if cmd.text is not None:
                     self._main.line(cmd.text[:-1], True)
             elif c == "l":
-                width = (self.opts.line_length
-                         if cmd.int_arg == -1 else cmd.int_arg)
+                width = (
+                    self.opts.line_length if cmd.int_arg == -1 else cmd.int_arg
+                )
                 self._main.flush_newline()
                 self._main.raw(list_line(self._pattern, width))
             elif c == "L":

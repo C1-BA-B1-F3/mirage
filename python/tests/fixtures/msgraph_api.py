@@ -109,12 +109,14 @@ class FakeGraph:
         version = f"{len(versions) + 1}.0"
         versions.append({"id": version, "lastModifiedDateTime": stamp})
         history[version] = data
-        self._rows[(drive, path)] = _Row(data=data,
-                                         ctag=f"c{n}",
-                                         etag=f"e{n}",
-                                         modified=stamp,
-                                         versions=versions,
-                                         history=history)
+        self._rows[(drive, path)] = _Row(
+            data=data,
+            ctag=f"c{n}",
+            etag=f"e{n}",
+            modified=stamp,
+            versions=versions,
+            history=history,
+        )
 
     def remove(self, drive: str, path: str) -> None:
         self._rows.pop((drive, path))
@@ -134,30 +136,28 @@ class FakeGraph:
     def on_bytes(self, fn: Callable[[], None]) -> None:
         self._on_bytes = fn
 
-    def _item(self, drive: str, path: str,
-              request: web.Request | None) -> dict[str, Any] | None:
+    def _item(
+        self, drive: str, path: str, request: web.Request | None
+    ) -> dict[str, Any] | None:
         row = self._rows.get((drive, path))
         name = path.rsplit("/", 1)[-1]
         if row is not None:
             item: dict[str, Any] = {
-                "id":
-                f"{drive}:{path}",
-                "name":
-                name,
-                "size":
-                len(row.data),
+                "id": f"{drive}:{path}",
+                "name": name,
+                "size": len(row.data),
                 "file": {},
-                "cTag":
-                row.ctag,
-                "eTag":
-                row.etag,
-                "lastModifiedDateTime":
-                row.modified,
-                "@microsoft.graph.downloadUrl":
-                f"{self.url}/download/{quote(drive, safe='')}/{quote(path)}",
+                "cTag": row.ctag,
+                "eTag": row.etag,
+                "lastModifiedDateTime": row.modified,
+                "@microsoft.graph.downloadUrl": (
+                    f"{self.url}/download/{quote(drive, safe='')}/"
+                    f"{quote(path)}"
+                ),
             }
-            if (request is not None
-                    and "versions" in request.query.get("$expand", "")):
+            if request is not None and "versions" in request.query.get(
+                "$expand", ""
+            ):
                 item["versions"] = list(reversed(row.versions))
             return item
         under = path + "/" if path else ""
@@ -165,15 +165,15 @@ class FakeGraph:
         if path and not kids:
             return None
         size = sum(
-            len(r.data) for (d, p), r in self._rows.items()
-            if d == drive and p.startswith(under))
+            len(r.data)
+            for (d, p), r in self._rows.items()
+            if d == drive and p.startswith(under)
+        )
         return {
             "id": f"{drive}:{path}/",
             "name": name or "root",
             "size": size,
-            "folder": {
-                "childCount": len(kids)
-            },
+            "folder": {"childCount": len(kids)},
             "cTag": f"cf:{path}",
             "eTag": f"ef:{path}",
             "lastModifiedDateTime": "2026-01-01T00:00:00Z",
@@ -184,7 +184,7 @@ class FakeGraph:
         names: set[str] = set()
         for d, p in self._rows:
             if d == drive and p.startswith(under):
-                names.add(under + p[len(under):].split("/", 1)[0])
+                names.add(under + p[len(under) :].split("/", 1)[0])
         return sorted(names)
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
@@ -213,13 +213,17 @@ class FakeGraph:
         self.log.append(("sites", "", query))
         if self.count("sites") > 1:
             self.reach.append("sites listed twice")
-        return web.json_response({
-            "value": [{
-                "id": SITE_ID,
-                "name": SITE_NAME.lower(),
-                "displayName": SITE_NAME
-            }]
-        })
+        return web.json_response(
+            {
+                "value": [
+                    {
+                        "id": SITE_ID,
+                        "name": SITE_NAME.lower(),
+                        "displayName": SITE_NAME,
+                    }
+                ]
+            }
+        )
 
     def _site_drives(self, site: str, query: str) -> web.Response:
         self.log.append(("drives", site, query))
@@ -228,27 +232,27 @@ class FakeGraph:
         if site != SITE_ID:
             return _error(404, "itemNotFound", "no such site")
         return web.json_response(
-            {"value": [{
-                "id": DRIVE_ID,
-                "name": DRIVE_NAME
-            }]})
+            {"value": [{"id": DRIVE_ID, "name": DRIVE_NAME}]}
+        )
 
-    def _drive(self, request: web.Request, drive: str, rest: str,
-               query: str) -> web.StreamResponse:
+    def _drive(
+        self, request: web.Request, drive: str, rest: str, query: str
+    ) -> web.StreamResponse:
         if rest == "root":
             path, action = "", ""
         elif rest == "root/children":
             path, action = "", "/children"
         elif rest.startswith("root:/"):
-            path, _, action = rest[len("root:/"):].partition(":")
+            path, _, action = rest[len("root:/") :].partition(":")
         else:
             return self._unrouted(rest, query)
         if action == "":
             self.log.append(("item", path, query))
             item = self._item(drive, path, request)
             if item is None:
-                return _error(404, "itemNotFound", "The resource could "
-                              "not be found.")
+                return _error(
+                    404, "itemNotFound", "The resource could not be found."
+                )
             return web.json_response(item)
         if action == "/children":
             self.log.append(("children", path, query))
@@ -266,7 +270,7 @@ class FakeGraph:
             return self._bytes(request, drive, path)
         if action.startswith("/versions/") and action.endswith("/content"):
             self.log.append(("version_content", path, query))
-            version = action[len("/versions/"):-len("/content")]
+            version = action[len("/versions/") : -len("/content")]
             return self._bytes(request, drive, path, version)
         if action == "/delta":
             self.log.append(("delta", path, query))
@@ -274,11 +278,13 @@ class FakeGraph:
             return web.json_response({"value": []})
         return self._unrouted(rest, query)
 
-    def _bytes(self,
-               request: web.Request,
-               drive: str,
-               path: str,
-               version: str | None = None) -> web.Response:
+    def _bytes(
+        self,
+        request: web.Request,
+        drive: str,
+        path: str,
+        version: str | None = None,
+    ) -> web.Response:
         row = self._rows.get((drive, path))
         if row is None:
             return _error(404, "itemNotFound", "no such item")
@@ -294,18 +300,16 @@ class FakeGraph:
             hook()
         span = request.headers.get("Range", "")
         if span.startswith("bytes="):
-            first, _, last = span[len("bytes="):].partition("-")
+            first, _, last = span[len("bytes=") :].partition("-")
             end = int(last) + 1 if last else len(data)
-            return web.Response(status=206, body=data[int(first):end])
+            return web.Response(status=206, body=data[int(first) : end])
         return web.Response(body=data)
 
 
 def _error(status: int, code: str, message: str) -> web.Response:
-    return web.json_response({"error": {
-        "code": code,
-        "message": message
-    }},
-                             status=status)
+    return web.json_response(
+        {"error": {"code": code, "message": message}}, status=status
+    )
 
 
 @contextmanager

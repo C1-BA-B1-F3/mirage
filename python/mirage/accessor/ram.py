@@ -17,6 +17,5 @@ from mirage.vfs.ram.store import RAMStore
 
 
 class RAMAccessor(Accessor):
-
     def __init__(self, store: RAMStore) -> None:
         self.store = store

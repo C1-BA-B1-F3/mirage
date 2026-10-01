@@ -25,11 +25,13 @@ from mirage.types import PathSpec, VFSName
 from mirage.utils.errors import enoent
 
 
-async def read_bytes(config: GitHubConfig,
-                     owner: str,
-                     repo: str,
-                     sha: str,
-                     session: SessionArg = None) -> bytes:
+async def read_bytes(
+    config: GitHubConfig,
+    owner: str,
+    repo: str,
+    sha: str,
+    session: SessionArg = None,
+) -> bytes:
     data = await github_get(
         config.token,
         "/repos/{owner}/{repo}/git/blobs/{sha}",
@@ -79,12 +81,10 @@ async def read(
     if entry.resource_type == "folder":
         raise IsADirectoryError(virtual)
     timer = start_op()
-    data = await read_bytes(accessor.config, accessor.owner, accessor.repo,
-                            entry.id, accessor.pool)
-    record("read",
-           virtual,
-           VFSName.GITHUB,
-           len(data),
-           timer,
-           fingerprint=entry.id)
+    data = await read_bytes(
+        accessor.config, accessor.owner, accessor.repo, entry.id, accessor.pool
+    )
+    record(
+        "read", virtual, VFSName.GITHUB, len(data), timer, fingerprint=entry.id
+    )
     return data

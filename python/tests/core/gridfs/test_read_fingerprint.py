@@ -23,7 +23,6 @@ DOC = {"_id": FILE_ID, "length": 5, "uploadDate": None, "filename": "a.txt"}
 
 
 class _Out:
-
     async def read(self, _size):
         return b"hello"
 
@@ -32,7 +31,6 @@ class _Out:
 
 
 class _Bucket:
-
     async def open_download_stream(self, _file_id):
         return _Out()
 
@@ -55,22 +53,29 @@ async def test_stat_and_read_stamp_the_same_token(monkeypatch):
     assert meta is not None
 
     records = []
-    monkeypatch.setitem(read_bytes.__globals__, "latest_file",
-                        fake_latest_file)
-    monkeypatch.setitem(read_bytes.__globals__,
-                        "bucket",
-                        lambda _a, _c=None: _Bucket())
-    monkeypatch.setitem(read_bytes.__globals__, "record",
-                        lambda *a, **kw: records.append(kw.get("fingerprint")))
+    monkeypatch.setitem(
+        read_bytes.__globals__, "latest_file", fake_latest_file
+    )
+    monkeypatch.setitem(
+        read_bytes.__globals__, "bucket", lambda _a, _c=None: _Bucket()
+    )
+    monkeypatch.setitem(
+        read_bytes.__globals__,
+        "record",
+        lambda *a, **kw: records.append(kw.get("fingerprint")),
+    )
 
     from mirage.accessor.gridfs import GridFSConfig
     from mirage.types import PathSpec
+
     accessor = type(
-        "A", (), {"config": GridFSConfig(uri="mongodb://h", database="d")})()
+        "A", (), {"config": GridFSConfig(uri="mongodb://h", database="d")}
+    )()
     data = await read_bytes(accessor, PathSpec.from_str_path("/a.txt"))
 
     assert data == b"hello"
     assert records == [str(FILE_ID)]
     assert meta.fingerprint == records[0], (
         "stat and read must stamp the same token, or a `fresh` gridfs "
-        "mount refetches on every read forever")
+        "mount refetches on every read forever"
+    )

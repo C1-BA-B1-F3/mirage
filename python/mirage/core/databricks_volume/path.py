@@ -19,8 +19,9 @@ from mirage.vfs.databricks_volume.config import DatabricksVolumeConfig
 
 
 def volume_root(config: DatabricksVolumeConfig) -> str:
-    return posixpath.join("/Volumes", config.catalog, config.schema_name,
-                          config.volume)
+    return posixpath.join(
+        "/Volumes", config.catalog, config.schema_name, config.volume
+    )
 
 
 def _assert_inside_root(root: str, path: str, message: str) -> None:
@@ -33,7 +34,8 @@ def configured_root(config: DatabricksVolumeConfig) -> str:
     root_relative = config.root_path.strip("/")
     if root_relative:
         return posixpath.normpath(
-            posixpath.join(volume_root(config), root_relative))
+            posixpath.join(volume_root(config), root_relative)
+        )
     return posixpath.normpath(volume_root(config))
 
 
@@ -53,9 +55,9 @@ def backend_path(config: DatabricksVolumeConfig, path: str | PathSpec) -> str:
     return remote_path
 
 
-def virtual_path(config: DatabricksVolumeConfig,
-                 backend: str,
-                 prefix: str = "") -> str:
+def virtual_path(
+    config: DatabricksVolumeConfig, backend: str, prefix: str = ""
+) -> str:
     root = configured_root(config)
     remote_path = posixpath.normpath(backend)
     _assert_inside_root(
@@ -65,5 +67,6 @@ def virtual_path(config: DatabricksVolumeConfig,
     )
     relative = remote_path.removeprefix(root).strip("/")
     path = "/" + relative if relative else "/"
-    return prefix.rstrip(
-        "/") + path if prefix and path != "/" else prefix or path
+    return (
+        prefix.rstrip("/") + path if prefix and path != "/" else prefix or path
+    )

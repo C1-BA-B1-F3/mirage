@@ -10,10 +10,15 @@ from mirage.workspace.session import SessionState
 
 @pytest.mark.asyncio
 async def test_find_mtime_does_not_return_entries_without_timestamps(
-        github_env):
+    github_env,
+):
     accessor, index = github_env
-    stdout, io = await find(accessor, [PathSpec.from_str_path('/')], [],
-                            CommandOpts(index=index, flags={'mtime': '-1'}))
+    stdout, io = await find(
+        accessor,
+        [PathSpec.from_str_path("/")],
+        [],
+        CommandOpts(index=index, flags={"mtime": "-1"}),
+    )
 
     assert await materialize(stdout) == b""
     assert io.exit_code == 0
@@ -22,8 +27,12 @@ async def test_find_mtime_does_not_return_entries_without_timestamps(
 @pytest.mark.asyncio
 async def test_find_missing_start_reports_error(github_env):
     accessor, index = github_env
-    stdout, io = await find(accessor, [PathSpec.from_str_path('/missing')], [],
-                            CommandOpts(index=index))
+    stdout, io = await find(
+        accessor,
+        [PathSpec.from_str_path("/missing")],
+        [],
+        CommandOpts(index=index),
+    )
 
     assert await materialize(stdout) == b""
     assert io.exit_code == 1
@@ -33,13 +42,16 @@ async def test_find_missing_start_reports_error(github_env):
 @pytest.mark.asyncio
 async def test_a_hidden_child_leaves_its_directory_empty(github_env):
     accessor, index = github_env
-    hidden = HiddenPaths(paths=("/docs/guide.md", ))
+    hidden = HiddenPaths(paths=("/docs/guide.md",))
     session = SessionState(session_id="veiled", hidden_paths=hidden)
     token = set_current_session(session)
     try:
-        stdout, io = await find(accessor, [PathSpec.from_str_path('/docs')],
-                                ["-type", "d", "-empty"],
-                                CommandOpts(index=index))
+        stdout, io = await find(
+            accessor,
+            [PathSpec.from_str_path("/docs")],
+            ["-type", "d", "-empty"],
+            CommandOpts(index=index),
+        )
         out = await materialize(stdout)
     finally:
         reset_current_session(token)

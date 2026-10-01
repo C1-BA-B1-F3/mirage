@@ -80,9 +80,7 @@ PROFILES = {
                 # A name pattern written in a mount section is anchored
                 # to that mount when the role compiles, so this is
                 # every .env under /repo and nothing anywhere else.
-                "paths": {
-                    "hide": ["*.env"]
-                },
+                "paths": {"hide": ["*.env"]},
             },
             "/runbook": {
                 "commands": {
@@ -93,9 +91,7 @@ PROFILES = {
                             # 1 that also covers these files. Writing
                             # it in the mount section is not what makes
                             # it win; the extra component is.
-                            "commands": {
-                                "rm": ["/runbook/frozen/*"]
-                            },
+                            "commands": {"rm": ["/runbook/frozen/*"]},
                         },
                     ],
                 },
@@ -105,14 +101,10 @@ PROFILES = {
     "auditor": {
         # No rm, no cp: this role cannot be talked into a write, because
         # there is no rule to argue with.
-        "commands": {
-            "allow": ["ls", "cat", "grep"]
-        },
+        "commands": {"allow": ["ls", "cat", "grep"]},
         # Hidden, where the oncall has it denied. Same mount, same
         # files, two different answers to `ls /vault`.
-        "paths": {
-            "hide": ["/vault"]
-        },
+        "paths": {"hide": ["/vault"]},
     },
     "commander": {
         "commands": {
@@ -147,32 +139,59 @@ SEED = [
 
 LINES = [
     ("oncall", "cat /repo/service.py", "the allow list installed cat"),
-    ("oncall", "sort /repo/service.py",
-     "unlisted: not a command, not a refusal"),
+    (
+        "oncall",
+        "sort /repo/service.py",
+        "unlisted: not a command, not a refusal",
+    ),
     ("oncall", "ls /repo", "the hide takes .env out of the listing"),
     ("oncall", "cat /repo/.env", "and answers absence, not refusal"),
-    ("oncall", "cat /runbook/local.env",
-     "the same pattern, anchored to /repo, reaches no further"),
+    (
+        "oncall",
+        "cat /runbook/local.env",
+        "the same pattern, anchored to /repo, reaches no further",
+    ),
     ("oncall", "ls /vault", "a deny leaves the name where it is"),
     ("oncall", "cat /vault/aws.token", "and refuses the read: paths, depth 1"),
     ("oncall", "rm /runbook/steps.md", "ask at depth 1"),
-    ("oncall", "rm /runbook/frozen/rollback.md",
-     "deny at depth 2 outranks it"),
-    ("oncall", "cp /vault/aws.token /runbook/steps.md",
-     "every operand is judged: the source's deny wins"),
+    (
+        "oncall",
+        "rm /runbook/frozen/rollback.md",
+        "deny at depth 2 outranks it",
+    ),
+    (
+        "oncall",
+        "cp /vault/aws.token /runbook/steps.md",
+        "every operand is judged: the source's deny wins",
+    ),
     ("oncall", "rm /repo/service.py", "the mount section narrowed the mode"),
     ("auditor", "ls /vault", "hidden here, so the mount is not there at all"),
-    ("auditor", "cat /repo/.env",
-     "the hide was the other role's, not the workspace's"),
+    (
+        "auditor",
+        "cat /repo/.env",
+        "the hide was the other role's, not the workspace's",
+    ),
     ("auditor", "rm /runbook/steps.md", "no rm in this allow list"),
-    ("commander", "sort /repo/service.py",
-     "no allow list, so every tool is installed"),
-    ("commander", "wc -l /runbook/steps.md",
-     "including the ones no other role names"),
-    ("commander", "cat /vault/aws.token",
-     "and it is still not unrestricted: the deny runs"),
-    ("commander", "rm /repo/service.py",
-     "no mount section, so /repo keeps the workspace's write mode"),
+    (
+        "commander",
+        "sort /repo/service.py",
+        "no allow list, so every tool is installed",
+    ),
+    (
+        "commander",
+        "wc -l /runbook/steps.md",
+        "including the ones no other role names",
+    ),
+    (
+        "commander",
+        "cat /vault/aws.token",
+        "and it is still not unrestricted: the deny runs",
+    ),
+    (
+        "commander",
+        "rm /repo/service.py",
+        "no mount section, so /repo keeps the workspace's write mode",
+    ),
 ]
 
 # The approval id is a digest of the session, cwd and words; it is
@@ -216,8 +235,10 @@ async def main() -> None:
 
     for role, line, note in LINES:
         res = await ws.shell(line, session_id=role)
-        print(f"{role:10} {line:42} "
-              f"{answer(res.stdout or b'', res.stderr or b'', res.exit_code)}")
+        print(
+            f"{role:10} {line:42} "
+            f"{answer(res.stdout or b'', res.stderr or b'', res.exit_code)}"
+        )
         print(f"{'':10} {'':42} {note}")
 
 

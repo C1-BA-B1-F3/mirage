@@ -16,13 +16,16 @@ import pytest
 
 from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
 from mirage.commands.builtin.utils import http as http_mod
-from mirage.commands.builtin.utils.http import (DEFAULT_USER_AGENT,
-                                                HttpResponse, _endpoint,
-                                                _with_default_ua, http_request)
+from mirage.commands.builtin.utils.http import (
+    DEFAULT_USER_AGENT,
+    HttpResponse,
+    _endpoint,
+    _with_default_ua,
+    http_request,
+)
 
 
 class _FakeHeaders:
-
     def __init__(self, items: list[tuple[str, str]]) -> None:
         self._items = items
 
@@ -31,21 +34,21 @@ class _FakeHeaders:
 
 
 class _FakeRequest:
-
     def __init__(self, method: str) -> None:
         self.method = method
 
 
 class _FakeResponse:
-
-    def __init__(self,
-                 status: int,
-                 reason: str,
-                 content: bytes,
-                 headers: list[tuple[str, str]] | None = None,
-                 url: str = "http://x.test/f",
-                 method: str = "GET",
-                 history: list["_FakeResponse"] | None = None) -> None:
+    def __init__(
+        self,
+        status: int,
+        reason: str,
+        content: bytes,
+        headers: list[tuple[str, str]] | None = None,
+        url: str = "http://x.test/f",
+        method: str = "GET",
+        history: list["_FakeResponse"] | None = None,
+    ) -> None:
         self.status_code = status
         self.reason_phrase = reason
         self.content = content
@@ -56,7 +59,6 @@ class _FakeResponse:
 
 
 class _FakeClient:
-
     def __init__(self, resp=None, exc=None, **kwargs) -> None:
         self.resp = resp
         self.exc = exc
@@ -70,12 +72,14 @@ class _FakeClient:
         return None
 
     def request(self, method, url, headers=None, content=None, data=None):
-        self.calls.append({
-            "method": method,
-            "url": url,
-            "headers": headers,
-            "content": content,
-        })
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "content": content,
+            }
+        )
         if self.exc is not None:
             raise self.exc
         return self.resp
@@ -90,7 +94,6 @@ class _FakeTimeoutException(_FakeTransportError):
 
 
 class _FakeHttpx:
-
     TransportError = _FakeTransportError
     TimeoutException = _FakeTimeoutException
 
@@ -111,12 +114,15 @@ def test_with_default_ua_adds_and_is_overridable():
     assert _with_default_ua({"User-Agent": "mine"}) == {"User-Agent": "mine"}
 
 
-@pytest.mark.parametrize("url,expected", [
-    ("http://example.com/x", ("example.com", 80)),
-    ("https://example.com/x", ("example.com", 443)),
-    ("http://127.0.0.1:1/x", ("127.0.0.1", 1)),
-    ("https://host:8443/x", ("host", 8443)),
-])
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("http://example.com/x", ("example.com", 80)),
+        ("https://example.com/x", ("example.com", 443)),
+        ("http://127.0.0.1:1/x", ("127.0.0.1", 1)),
+        ("https://host:8443/x", ("host", 8443)),
+    ],
+)
 def test_endpoint_defaults_the_port_by_scheme(url, expected):
     assert _endpoint(url) == expected
 
@@ -157,33 +163,34 @@ def test_redirects_are_not_followed_by_default(monkeypatch):
 
 
 def test_followed_redirects_are_kept_as_history_in_order(monkeypatch):
-    hop = _FakeResponse(302,
-                        "Found",
-                        b"302: Found", [("Location", "/f")],
-                        url="http://x.test/r")
+    hop = _FakeResponse(
+        302,
+        "Found",
+        b"302: Found",
+        [("Location", "/f")],
+        url="http://x.test/r",
+    )
     fake = _FakeHttpx(resp=_FakeResponse(200, "OK", b"ok", history=[hop]))
     monkeypatch.setattr(http_mod, "httpx", fake)
     resp = http_request("http://x.test/r", follow_redirects=True)
-    assert [(h.status, h.url)
-            for h in resp.history] == [(302, "http://x.test/r")]
-    assert resp.history[0].headers == (("Location", "/f"), )
+    assert [(h.status, h.url) for h in resp.history] == [
+        (302, "http://x.test/r")
+    ]
+    assert resp.history[0].headers == (("Location", "/f"),)
     assert resp.history[0].body == b"302: Found"
     assert (resp.status, resp.url) == (200, "http://x.test/f")
 
 
 def test_each_hop_reports_the_method_the_client_sent(monkeypatch):
     # A 302 turns a POST into a GET, in httpx as in curl.
-    hop = _FakeResponse(302,
-                        "Found",
-                        b"",
-                        url="http://x.test/r",
-                        method="POST")
+    hop = _FakeResponse(
+        302, "Found", b"", url="http://x.test/r", method="POST"
+    )
     fake = _FakeHttpx(resp=_FakeResponse(200, "OK", b"ok", history=[hop]))
     monkeypatch.setattr(http_mod, "httpx", fake)
-    resp = http_request("http://x.test/r",
-                        method="POST",
-                        data=b"a=1",
-                        follow_redirects=True)
+    resp = http_request(
+        "http://x.test/r", method="POST", data=b"a=1", follow_redirects=True
+    )
     assert resp.history[0].method == "POST"
     assert resp.method == "GET"
 
@@ -214,10 +221,22 @@ def test_none_timeout_reaches_the_client(monkeypatch):
 
 
 def test_response_headers_are_captured_in_order(monkeypatch):
-    fake = _FakeHttpx(resp=_FakeResponse(200, "OK", b"x", [(
-        "Content-Type", "text/plain"), ("Set-Cookie", "a"), ("Set-Cookie",
-                                                             "b")]))
+    fake = _FakeHttpx(
+        resp=_FakeResponse(
+            200,
+            "OK",
+            b"x",
+            [
+                ("Content-Type", "text/plain"),
+                ("Set-Cookie", "a"),
+                ("Set-Cookie", "b"),
+            ],
+        )
+    )
     monkeypatch.setattr(http_mod, "httpx", fake)
     resp = http_request("http://x.test/f")
-    assert resp.headers == (("Content-Type", "text/plain"),
-                            ("Set-Cookie", "a"), ("Set-Cookie", "b"))
+    assert resp.headers == (
+        ("Content-Type", "text/plain"),
+        ("Set-Cookie", "a"),
+        ("Set-Cookie", "b"),
+    )

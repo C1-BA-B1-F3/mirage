@@ -39,8 +39,11 @@ async def walk(
     except asyncssh.SFTPNoSuchFile:
         raise FileNotFoundError(path)
     for entry in listing:
-        filename = (entry.filename.decode("utf-8") if isinstance(
-            entry.filename, bytes) else entry.filename)
+        filename = (
+            entry.filename.decode("utf-8")
+            if isinstance(entry.filename, bytes)
+            else entry.filename
+        )
         if filename in (".", ".."):
             continue
         child = f"{path.rstrip('/')}/{filename}"

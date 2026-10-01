@@ -194,22 +194,18 @@ export async function loadState(db: C, tenant: string, epochMs?: number): Promis
       createdTime: row.createdTime,
       modifiedTime: row.modifiedTime,
       content: bytes(row.content),
-      revisions: (revisionsOf.get(row.id) ?? []).map(
-        (r): Revision => ({
-          id: r.id,
-          modifiedTime: r.modifiedTime,
-          md5Checksum: r.md5Checksum,
-          content: bytes(r.content),
-        }),
-      ),
-      permissions: (permissionsOf.get(row.id) ?? []).map(
-        (p): Permission => ({
-          id: p.id,
-          role: p.role,
-          type: p.type,
-          ...(p.emailAddress === null ? {} : { emailAddress: p.emailAddress }),
-        }),
-      ),
+      revisions: (revisionsOf.get(row.id) ?? []).map((r): Revision => ({
+        id: r.id,
+        modifiedTime: r.modifiedTime,
+        md5Checksum: r.md5Checksum,
+        content: bytes(r.content),
+      })),
+      permissions: (permissionsOf.get(row.id) ?? []).map((p): Permission => ({
+        id: p.id,
+        role: p.role,
+        type: p.type,
+        ...(p.emailAddress === null ? {} : { emailAddress: p.emailAddress }),
+      })),
       ...(row.driveId === null ? {} : { driveId: row.driveId }),
     }
     st.files.set(item.id, item)
@@ -247,20 +243,18 @@ export async function loadState(db: C, tenant: string, epochMs?: number): Promis
     st.sheets.set(row.id, {
       title: row.title,
       nextSheetId: row.nextSheetId,
-      tabs: (tabsOf.get(row.id) ?? []).map(
-        (t): SheetTab => ({
-          sheetId: t.sheetId,
-          title: t.title,
-          rows: t.rows,
-          cols: t.cols,
-          rowMeta: byIndex(t.rowMeta),
-          columnMeta: byIndex(t.columnMeta),
-          bandedRanges: objs(t.bandedRanges),
-          basicFilter: t.basicFilter === null ? null : obj(t.basicFilter),
-          conditionalFormats: objs(t.conditionalFormats),
-          ...tabCells(cellsOf.get(`${t.spreadsheetId} ${String(t.sheetId)}`) ?? []),
-        }),
-      ),
+      tabs: (tabsOf.get(row.id) ?? []).map((t): SheetTab => ({
+        sheetId: t.sheetId,
+        title: t.title,
+        rows: t.rows,
+        cols: t.cols,
+        rowMeta: byIndex(t.rowMeta),
+        columnMeta: byIndex(t.columnMeta),
+        bandedRanges: objs(t.bandedRanges),
+        basicFilter: t.basicFilter === null ? null : obj(t.basicFilter),
+        conditionalFormats: objs(t.conditionalFormats),
+        ...tabCells(cellsOf.get(`${t.spreadsheetId} ${String(t.sheetId)}`) ?? []),
+      })),
     } satisfies Spreadsheet)
   }
 
@@ -269,17 +263,15 @@ export async function loadState(db: C, tenant: string, epochMs?: number): Promis
   for (const row of presentations) {
     st.presentations.set(row.id, {
       title: row.title,
-      slides: (slidesOf.get(row.id) ?? []).map(
-        (s): SlidePage => ({
-          objectId: s.objectId,
-          texts: new Map(
-            (elementsOf.get(`${s.presentationId} ${s.objectId}`) ?? []).map((e) => [
-              e.objectId,
-              e.text,
-            ]),
-          ),
-        }),
-      ),
+      slides: (slidesOf.get(row.id) ?? []).map((s): SlidePage => ({
+        objectId: s.objectId,
+        texts: new Map(
+          (elementsOf.get(`${s.presentationId} ${s.objectId}`) ?? []).map((e) => [
+            e.objectId,
+            e.text,
+          ]),
+        ),
+      })),
     } satisfies Presentation)
   }
 
@@ -349,9 +341,10 @@ export async function loadState(db: C, tenant: string, epochMs?: number): Promis
       ...(row.description === null ? {} : { description: row.description }),
       // `itemId` first and the stored body after it, which is the order
       // newFormItem builds an item in and therefore the order it renders in.
-      items: (itemsOf.get(row.id) ?? []).map(
-        (i): FormItem => ({ itemId: i.itemId, ...obj(i.body) }),
-      ),
+      items: (itemsOf.get(row.id) ?? []).map((i): FormItem => ({
+        itemId: i.itemId,
+        ...obj(i.body),
+      })),
       responses: (responsesOf.get(row.id) ?? []).map((r) => obj(r.body)),
       revision: row.revision,
     })

@@ -38,9 +38,13 @@ def index():
 async def test_stat_root(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/gsheets", "/gsheets"),
-                 virtual="/gsheets",
-                 directory="/gsheets"), index)
+        PathSpec(
+            vfs_path=mount_key("/gsheets", "/gsheets"),
+            virtual="/gsheets",
+            directory="/gsheets",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "/"
 
@@ -49,30 +53,43 @@ async def test_stat_root(accessor, index):
 async def test_stat_owned_dir(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
-                 virtual="/gsheets/owned",
-                 directory="/gsheets/owned"), index)
+        PathSpec(
+            vfs_path=mount_key("/gsheets/owned", "/gsheets"),
+            virtual="/gsheets/owned",
+            directory="/gsheets/owned",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "owned"
 
 
 @pytest.mark.asyncio
 async def test_stat_sheet_from_cache(accessor, index):
-    await index.set_dir("/gsheets/owned", [
-        ("2026-04-01_My_Sheet__s1.gsheet.json",
-         IndexEntry(id="s1",
+    await index.set_dir(
+        "/gsheets/owned",
+        [
+            (
+                "2026-04-01_My_Sheet__s1.gsheet.json",
+                IndexEntry(
+                    id="s1",
                     name="My Sheet",
                     resource_type="gsheets/file",
                     remote_time="2026-04-01T00:00:00.000Z",
                     vfs_name="2026-04-01_My_Sheet__s1.gsheet.json",
-                    size=512)),
-    ])
+                    size=512,
+                ),
+            ),
+        ],
+    )
     target = "/gsheets/owned/2026-04-01_My_Sheet__s1.gsheet.json"
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key(target, "/gsheets"),
-                 virtual=target,
-                 directory=target),
+        PathSpec(
+            vfs_path=mount_key(target, "/gsheets"),
+            virtual=target,
+            directory=target,
+        ),
         index,
     )
     assert result.content == ContentType.JSON
@@ -82,27 +99,31 @@ async def test_stat_sheet_from_cache(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.spreadsheet",
-        "id": "s1",
-        "name": "My Sheet",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "size": "512",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "id": "s1",
+            "name": "My Sheet",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "size": "512",
+            "owners": [{"me": True}],
+        }
+    ]
     target = "/gsheets/owned/2026-04-01_My_Sheet__s1.gsheet.json"
     with patch(
-            "mirage.core.google.entry.get_file",
-            new_callable=AsyncMock,
-            return_value=files[0],
+        "mirage.core.google.entry.get_file",
+        new_callable=AsyncMock,
+        return_value=files[0],
     ) as mock_list:
         result = await stat(
             accessor,
-            PathSpec(vfs_path=mount_key(target, "/gsheets"),
-                     virtual=target,
-                     directory=target), index)
+            PathSpec(
+                vfs_path=mount_key(target, "/gsheets"),
+                virtual=target,
+                directory=target,
+            ),
+            index,
+        )
     assert result.content == ContentType.JSON
     assert result.extra["doc_id"] == "s1"
     assert mock_list.call_count == 1
@@ -110,24 +131,29 @@ async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_not_found_after_fallback(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.spreadsheet",
-        "id": "s1",
-        "name": "Other",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "id": "s1",
+            "name": "Other",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     with patch(
-            "mirage.core.google.entry.get_file",
-            new_callable=AsyncMock,
-            return_value=files[0],
+        "mirage.core.google.entry.get_file",
+        new_callable=AsyncMock,
+        return_value=files[0],
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
-                PathSpec(vfs_path=mount_key("/gsheets/owned/nope.gsheet.json",
-                                            "/gsheets"),
-                         virtual="/gsheets/owned/nope.gsheet.json",
-                         directory="/gsheets/owned/nope.gsheet.json"), index)
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/gsheets/owned/nope.gsheet.json", "/gsheets"
+                    ),
+                    virtual="/gsheets/owned/nope.gsheet.json",
+                    directory="/gsheets/owned/nope.gsheet.json",
+                ),
+                index,
+            )

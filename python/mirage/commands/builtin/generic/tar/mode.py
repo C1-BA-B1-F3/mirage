@@ -46,8 +46,9 @@ def is_create_mode(argv: Sequence[str]) -> bool:
         if tok == "--":
             return False
         if tok.startswith("--"):
-            if expand_table_long(TAR_LONG_OPTIONS,
-                                 tok.split("=", 1)[0]) == ("--create", ):
+            if expand_table_long(TAR_LONG_OPTIONS, tok.split("=", 1)[0]) == (
+                "--create",
+            ):
                 return True
             continue
         if tok.startswith("-"):

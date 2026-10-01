@@ -17,7 +17,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_sort(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("sort /dbx/words.txt")
 
     assert io.exit_code == 0
@@ -26,7 +27,8 @@ async def test_workspace_execute_databricks_volume_sort(
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_sort_resolves_glob(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("sort /dbx/*.txt")
 
     assert io.exit_code == 0

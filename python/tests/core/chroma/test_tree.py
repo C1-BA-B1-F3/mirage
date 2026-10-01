@@ -8,7 +8,8 @@ from mirage.core.chroma import tree
 
 @pytest.mark.asyncio
 async def test_ensure_tree_builds_prefixed_entries_from_path_tree(
-        chroma_accessor, chroma_index):
+    chroma_accessor, chroma_index
+):
     await tree.CHROMA_TREE.ensure(chroma_accessor, chroma_index, "/knowledge/")
 
     root = await chroma_index.list_dir("/knowledge")

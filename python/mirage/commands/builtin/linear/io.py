@@ -23,6 +23,8 @@ from mirage.vfs.types import ReadOps
 # (commands/cli/builtin/linear), which reads and writes by id. The generic
 # byte-mutation commands are intentionally absent (mutations go through
 # that CLI, no write op wired).
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

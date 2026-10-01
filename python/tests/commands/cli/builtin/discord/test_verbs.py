@@ -16,9 +16,18 @@ import json
 
 import pytest
 
-from mirage.commands.cli.builtin.discord import (delete, edit, members, poll,
-                                                 react, read, search, send,
-                                                 server_info, thread_create)
+from mirage.commands.cli.builtin.discord import (
+    delete,
+    edit,
+    members,
+    poll,
+    react,
+    read,
+    search,
+    send,
+    server_info,
+    thread_create,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.core.discord.config import DiscordConfig
 from mirage.io.types import materialize
@@ -40,12 +49,10 @@ async def test_send_forwards_reply_to(monkeypatch):
 
     monkeypatch.setitem(send.__globals__, "send_message", fake_send)
     await send(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "channel": "C1",
-                          "text": "hi",
-                          "reply_to": "M0"
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"channel": "C1", "text": "hi", "reply_to": "M0"}
+        )
+    )
     assert calls == [("C1", "hi", "M0")]
 
 
@@ -72,18 +79,14 @@ async def test_edit_and_delete(monkeypatch):
     monkeypatch.setitem(edit.__globals__, "edit_message", fake_edit)
     monkeypatch.setitem(delete.__globals__, "delete_message", fake_delete)
     out, _io = await edit(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "channel": "C1",
-                          "message": "M1",
-                          "text": "new"
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"channel": "C1", "message": "M1", "text": "new"}
+        )
+    )
     assert (await _json(out))["content"] == "new"
     out, _io = await delete(
-        CLIInvocation(CONFIG, flags={
-            "channel": "C1",
-            "message": "M1"
-        }))
+        CLIInvocation(CONFIG, flags={"channel": "C1", "message": "M1"})
+    )
     assert (await _json(out))["ok"] is True
 
 
@@ -95,12 +98,10 @@ async def test_react_returns_ok(monkeypatch):
 
     monkeypatch.setitem(react.__globals__, "add_reaction", fake_react)
     out, _io = await react(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "channel": "C1",
-                          "message": "M1",
-                          "emoji": "x"
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"channel": "C1", "message": "M1", "emoji": "x"}
+        )
+    )
     assert (await _json(out))["ok"] is True
 
 
@@ -114,12 +115,10 @@ async def test_search_forwards_channel_filter(monkeypatch):
 
     monkeypatch.setitem(search.__globals__, "search_guild", fake_search)
     out, _io = await search(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "guild": "G1",
-                          "query": "q",
-                          "channel": "C1"
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"guild": "G1", "query": "q", "channel": "C1"}
+        )
+    )
     assert calls == [("G1", "q", "C1")]
     assert await _json(out) == [{"id": "M1"}]
 
@@ -130,28 +129,31 @@ async def test_thread_create_and_poll(monkeypatch):
     async def fake_thread(config, channel, name, message_id=None):
         return {"id": "T1", "name": name, "from": message_id}
 
-    async def fake_poll(config, channel, question, answers, duration_hours,
-                        multiselect):
+    async def fake_poll(
+        config, channel, question, answers, duration_hours, multiselect
+    ):
         return {"id": "M9", "answers": answers, "hours": duration_hours}
 
-    monkeypatch.setitem(thread_create.__globals__, "create_thread",
-                        fake_thread)
+    monkeypatch.setitem(
+        thread_create.__globals__, "create_thread", fake_thread
+    )
     monkeypatch.setitem(poll.__globals__, "send_poll", fake_poll)
     out, _io = await thread_create(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "channel": "C1",
-                          "name": "topic",
-                          "message": "M1"
-                      }))
+        CLIInvocation(
+            CONFIG, flags={"channel": "C1", "name": "topic", "message": "M1"}
+        )
+    )
     assert (await _json(out))["from"] == "M1"
     out, _io = await poll(
-        CLIInvocation(CONFIG,
-                      flags={
-                          "channel": "C1",
-                          "question": "Lunch?",
-                          "answer": ["Pizza", "Sushi"]
-                      }))
+        CLIInvocation(
+            CONFIG,
+            flags={
+                "channel": "C1",
+                "question": "Lunch?",
+                "answer": ["Pizza", "Sushi"],
+            },
+        )
+    )
     data = await _json(out)
     assert data["answers"] == ["Pizza", "Sushi"]
     assert data["hours"] == 24
@@ -175,10 +177,8 @@ async def test_members_and_server_info(monkeypatch):
     out, _io = await members(CLIInvocation(CONFIG, flags={"guild": "G1"}))
     assert await _json(out) == [{"user": {"id": "U1"}}]
     out, _io = await members(
-        CLIInvocation(CONFIG, flags={
-            "guild": "G1",
-            "query": "al"
-        }))
+        CLIInvocation(CONFIG, flags={"guild": "G1", "query": "al"})
+    )
     assert await _json(out) == [{"user": {"id": "U2"}}]
     out, _io = await server_info(CLIInvocation(CONFIG, flags={"guild": "G1"}))
     assert (await _json(out))["id"] == "G1"

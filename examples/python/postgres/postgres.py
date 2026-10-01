@@ -83,14 +83,17 @@ async def main():
     # namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {fp} ===")
-    meta_res = await ws.shell(f'chmod 640 "{fp}" && chown 500:dev "{fp}"'
-                              f' && touch -t 202601021530 "{fp}"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{fp}" && chown 500:dev "{fp}"'
+        f' && touch -t 202601021530 "{fp}"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     try:
         meta_st, _ = await ws.dispatch("stat", PathSpec.from_str_path(fp))
         print(
             f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-            f"gid={meta_st.gid} mtime={meta_st.modified}")
+            f"gid={meta_st.gid} mtime={meta_st.modified}"
+        )
     except FileNotFoundError:
         print("  dispatch stat: target missing in this environment")
 
@@ -115,8 +118,8 @@ async def main():
 
     await _run(ws, f'grep system "{fp}"')
     await _run(ws, f'grep -c system "{fp}"')
-    await _run(ws, 'grep system /pg/public/tables/')
-    await _run(ws, 'grep system /pg/public/')
+    await _run(ws, "grep system /pg/public/tables/")
+    await _run(ws, "grep system /pg/public/")
 
     print("\n" + "=" * 60)
     print("RG at schema scope")
@@ -135,7 +138,7 @@ async def main():
     print("FIND")
     print("=" * 60)
 
-    await _run(ws, 'find /pg/public/tables/ -name rows.jsonl')
+    await _run(ws, "find /pg/public/tables/ -name rows.jsonl")
 
     print("\n" + "=" * 60)
     print("CD + relative paths")

@@ -12,8 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import (AsyncIterator, Awaitable, Callable, Iterable,
-                             Iterator)
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Iterator,
+)
 
 from mirage.cache.index import IndexCacheStore
 from mirage.cache.index.ram import RAMIndexCacheStore
@@ -41,8 +46,9 @@ def _ancestors(stem: str, start: str, seen: set[str]) -> Iterator[WalkEntry]:
         parent = parent.rsplit("/", 1)[0]
 
 
-def synth_dirs(root: str, files: Iterable[str],
-               dirs: Iterable[str]) -> Iterator[WalkEntry]:
+def synth_dirs(
+    root: str, files: Iterable[str], dirs: Iterable[str]
+) -> Iterator[WalkEntry]:
     """Directory rows a prefix store implies but does not store.
 
     An object store has no directories: ``ls`` shows them because
@@ -83,16 +89,20 @@ def entry_of(virtual: str, stat: FileStat) -> WalkEntry:
     """
     if stat.type == FileType.DIRECTORY:
         return WalkEntry(virtual=virtual, is_dir=True, fingerprint=None)
-    return WalkEntry(virtual=virtual,
-                     is_dir=False,
-                     fingerprint=stat_fingerprint(stat.fingerprint,
-                                                  stat.modified, stat.size),
-                     size=stat.size,
-                     modified=stat.modified)
+    return WalkEntry(
+        virtual=virtual,
+        is_dir=False,
+        fingerprint=stat_fingerprint(
+            stat.fingerprint, stat.modified, stat.size
+        ),
+        size=stat.size,
+        modified=stat.modified,
+    )
 
 
-async def _stat_at(stat: StatFn, virtual: str, prefix: str,
-                   index: IndexCacheStore) -> FileStat | None:
+async def _stat_at(
+    stat: StatFn, virtual: str, prefix: str, index: IndexCacheStore
+) -> FileStat | None:
     """Stat one virtual path, or None when it has vanished.
 
     Args:
@@ -101,10 +111,12 @@ async def _stat_at(stat: StatFn, virtual: str, prefix: str,
         prefix (str): Mount prefix.
         index (IndexCacheStore): Index the walk is populating.
     """
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual,
-                    resolved=False,
-                    vfs_path=mount_key(virtual, prefix))
+    spec = PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        resolved=False,
+        vfs_path=mount_key(virtual, prefix),
+    )
     try:
         return await stat(spec, index)
     except (FileNotFoundError, NotADirectoryError):
@@ -114,9 +126,13 @@ async def _stat_at(stat: StatFn, virtual: str, prefix: str,
         return None
 
 
-async def _descend(readdir: ReaddirFn, stat: StatFn, spec: PathSpec,
-                   index: IndexCacheStore,
-                   prefix: str) -> AsyncIterator[WalkEntry]:
+async def _descend(
+    readdir: ReaddirFn,
+    stat: StatFn,
+    spec: PathSpec,
+    index: IndexCacheStore,
+    prefix: str,
+) -> AsyncIterator[WalkEntry]:
     """Yield every entry under one directory, depth first.
 
     Args:
@@ -146,12 +162,15 @@ async def _descend(readdir: ReaddirFn, stat: StatFn, spec: PathSpec,
             yield entry_of(trimmed, found)
             is_dir = found.type == FileType.DIRECTORY
         if is_dir:
-            child_spec = PathSpec(virtual=trimmed,
-                                  directory=trimmed,
-                                  resolved=False,
-                                  vfs_path=mount_key(trimmed, prefix))
-            async for row in _descend(readdir, stat, child_spec, index,
-                                      prefix):
+            child_spec = PathSpec(
+                virtual=trimmed,
+                directory=trimmed,
+                resolved=False,
+                vfs_path=mount_key(trimmed, prefix),
+            )
+            async for row in _descend(
+                readdir, stat, child_spec, index, prefix
+            ):
                 yield row
 
 
@@ -174,9 +193,9 @@ class ReaddirWalk:
 
     def __init__(self, readdir: ReaddirFn, stat: StatFn) -> None:
         """Args:
-            readdir (ReaddirFn): Backend readdir, already bound to its
-                accessor.
-            stat (StatFn): Backend stat, already bound to its accessor.
+        readdir (ReaddirFn): Backend readdir, already bound to its
+            accessor.
+        stat (StatFn): Backend stat, already bound to its accessor.
         """
         self._readdir = readdir
         self._stat = stat
@@ -189,6 +208,7 @@ class ReaddirWalk:
         """
         prefix = mount_prefix_of(root.virtual, root.vfs_path)
         index = RAMIndexCacheStore()
-        async for entry in _descend(self._readdir, self._stat, root, index,
-                                    prefix):
+        async for entry in _descend(
+            self._readdir, self._stat, root, index, prefix
+        ):
             yield entry

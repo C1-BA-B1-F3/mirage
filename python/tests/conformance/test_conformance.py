@@ -38,8 +38,8 @@ def _decode_bytes(record: dict, text_key: str, base64_key: str) -> bytes:
     has_base64 = base64_key in record
     if has_text == has_base64:
         raise ValueError(
-            f"record must set exactly one of {text_key}/{base64_key}: "
-            f"{record}")
+            f"record must set exactly one of {text_key}/{base64_key}: {record}"
+        )
     if has_text:
         return record[text_key].encode()
     return base64.b64decode(record[base64_key])
@@ -60,7 +60,8 @@ def _validate_matrix(case: dict, spec_name: str) -> None:
         names = ", ".join(sorted(unknown_languages))
         raise ValueError(
             f"case {case['id']} in {spec_name} has unknown matrix "
-            f"language(s): {names}")
+            f"language(s): {names}"
+        )
 
     for language, backends in matrix.items():
         unsupported = set(backends) - SUPPORTED_MATRIX[language]
@@ -68,11 +69,13 @@ def _validate_matrix(case: dict, spec_name: str) -> None:
             names = ", ".join(sorted(unsupported))
             raise ValueError(
                 f"case {case['id']} in {spec_name} has unsupported "
-                f"{language} backend(s): {names}")
+                f"{language} backend(s): {names}"
+            )
 
     if not any(matrix.values()):
         raise ValueError(
-            f"case {case['id']} in {spec_name} applies to no backend")
+            f"case {case['id']} in {spec_name} applies to no backend"
+        )
 
     # A case is a parity claim, so the two languages have to be asked the
     # same question. Dropping a backend from one side reads as coverage
@@ -88,15 +91,20 @@ def _validate_matrix(case: dict, spec_name: str) -> None:
         python_backends = set(matrix.get("python", []))
         typescript_backends = set(matrix.get("typescript", []))
         if python_backends != typescript_backends:
-            only_python = ", ".join(
-                sorted(python_backends - typescript_backends)) or "none"
-            only_typescript = ", ".join(
-                sorted(typescript_backends - python_backends)) or "none"
+            only_python = (
+                ", ".join(sorted(python_backends - typescript_backends))
+                or "none"
+            )
+            only_typescript = (
+                ", ".join(sorted(typescript_backends - python_backends))
+                or "none"
+            )
             raise ValueError(
                 f"case {case['id']} in {spec_name} has an asymmetric "
                 f"matrix (python-only: {only_python}; typescript-only: "
                 f"{only_typescript}). Run it on both, or record why it "
-                f"cannot with a `divergence` key.")
+                f"cannot with a `divergence` key."
+            )
 
 
 def _load_cases() -> list[dict]:
@@ -121,23 +129,26 @@ def _params() -> list:
             if backend == "redis" and not REDIS_URL:
                 marks.append(pytest.mark.skip(reason="REDIS_URL not set"))
             params.append(
-                pytest.param(backend,
-                             case,
-                             id=f"{backend}-{case['id']}",
-                             marks=marks))
+                pytest.param(
+                    backend, case, id=f"{backend}-{case['id']}", marks=marks
+                )
+            )
     return params
 
 
-async def _build_workspace(backend: str, tmp_path: Path,
-                           case_id: str) -> tuple[Workspace, RedisVFS | None]:
+async def _build_workspace(
+    backend: str, tmp_path: Path, case_id: str
+) -> tuple[Workspace, RedisVFS | None]:
     if backend == "ram":
         return Workspace({"/": RAMVFS()}, mode=MountMode.WRITE), None
     if backend == "disk":
-        return Workspace({"/": DiskVFS(root=str(tmp_path))},
-                         mode=MountMode.WRITE), None
+        return Workspace(
+            {"/": DiskVFS(root=str(tmp_path))}, mode=MountMode.WRITE
+        ), None
     if backend == "redis":
-        vfs = RedisVFS(url=REDIS_URL,
-                       key_prefix=f"test:conformance:{case_id}:")
+        vfs = RedisVFS(
+            url=REDIS_URL, key_prefix=f"test:conformance:{case_id}:"
+        )
         await vfs._store.clear()
         return Workspace({"/": vfs}, mode=MountMode.WRITE), vfs
     raise ValueError(f"unknown python backend in matrix: {backend}")
@@ -180,20 +191,14 @@ async def test_conformance(backend: str, case: dict, tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("matrix", "message"),
     [
-        ({
-            "pyhton": ["ram"]
-        }, "unknown matrix language"),
-        ({
-            "typescript": ["s3"]
-        }, "unsupported typescript backend"),
-        ({
-            "python": [],
-            "typescript": []
-        }, "applies to no backend"),
+        ({"pyhton": ["ram"]}, "unknown matrix language"),
+        ({"typescript": ["s3"]}, "unsupported typescript backend"),
+        ({"python": [], "typescript": []}, "applies to no backend"),
     ],
 )
-def test_validate_matrix_rejects_invalid_targets(matrix: dict,
-                                                 message: str) -> None:
+def test_validate_matrix_rejects_invalid_targets(
+    matrix: dict, message: str
+) -> None:
     case = {"id": "invalid_matrix", "matrix": matrix}
     with pytest.raises(ValueError, match=message):
         _validate_matrix(case, "invalid.json")

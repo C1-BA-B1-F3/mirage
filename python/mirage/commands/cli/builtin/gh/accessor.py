@@ -54,7 +54,8 @@ def gh_repo(config: GhConfig, spec: str | None) -> RepoRef:
     named = spec if spec else config.repo
     if not named:
         raise ValueError(
-            "no repository given; pass one or set `repo` on the install")
+            "no repository given; pass one or set `repo` on the install"
+        )
     return parse_repo(named)
 
 
@@ -101,30 +102,40 @@ def list_limit(fl: FlagView, default: int) -> int:
     return default if value is None else value
 
 
-def repo_number(inv: CLIInvocation[GhConfig], fl: FlagView, value: str | None,
-                label: str, url_kind: str) -> tuple[RepoRef, int]:
+def repo_number(
+    inv: CLIInvocation[GhConfig],
+    fl: FlagView,
+    value: str | None,
+    label: str,
+    url_kind: str,
+) -> tuple[RepoRef, int]:
     """Resolve a numeric subject or a full GitHub subject URL atomically."""
     raw = value or ""
     if raw.isdigit():
         return repo_for(inv, fl), int(raw)
     match = re.fullmatch(
-        r"https?://[^/]+/([^/]+)/([^/]+)/(issues|pull)/(\d+)/?", raw)
+        r"https?://[^/]+/([^/]+)/([^/]+)/(issues|pull)/(\d+)/?", raw
+    )
     if match is None or match.group(3) != url_kind:
         raise ValueError(f"a {label} number is required")
     return parse_repo(f"{match.group(1)}/{match.group(2)}"), int(
-        match.group(4))
+        match.group(4)
+    )
 
 
 def csv_values(values: Iterable[str]) -> list[str]:
     """Expand repeatable comma-separated gh flags, preserving order."""
     return [
-        item.strip() for value in values for item in value.split(",")
+        item.strip()
+        for value in values
+        for item in value.split(",")
         if item.strip()
     ]
 
 
-async def read_cli_file(inv: CLIInvocation[GhConfig], raw: FlagValue,
-                        option: str) -> bytes:
+async def read_cli_file(
+    inv: CLIInvocation[GhConfig], raw: FlagValue, option: str
+) -> bytes:
     """Read a path-valued CLI option from the VFS, or `-` from stdin."""
     if not isinstance(raw, (str, PathSpec)):
         raise ValueError(f"{option} expects a file")
@@ -133,8 +144,13 @@ async def read_cli_file(inv: CLIInvocation[GhConfig], raw: FlagValue,
         if inv.stdin is None:
             raise ValueError(f"{option} needs standard input")
         return await materialize(inv.stdin)
-    spec = raw if isinstance(raw, PathSpec) else PathSpec.from_str_path(
-        posixpath.normpath(posixpath.join(inv.env.get("PWD", "/"), raw)))
+    spec = (
+        raw
+        if isinstance(raw, PathSpec)
+        else PathSpec.from_str_path(
+            posixpath.normpath(posixpath.join(inv.env.get("PWD", "/"), raw))
+        )
+    )
     if inv.doors is None or inv.doors.dispatch is None:
         raise ValueError(f"{option} needs a workspace to read files from")
     try:
@@ -144,26 +160,33 @@ async def read_cli_file(inv: CLIInvocation[GhConfig], raw: FlagValue,
         raise ValueError(f"read {path}: {fs_strerror(exc)}") from None
 
 
-async def body_value(inv: CLIInvocation[GhConfig],
-                     fl: FlagView,
-                     *,
-                     value: str = "body",
-                     file: str = "body_file",
-                     required: bool = False) -> str | None:
+async def body_value(
+    inv: CLIInvocation[GhConfig],
+    fl: FlagView,
+    *,
+    value: str = "body",
+    file: str = "body_file",
+    required: bool = False,
+) -> str | None:
     """Resolve mutually exclusive inline and file/stdin text options."""
     inline = fl.as_str(value)
     source = fl.raw(file)
     if inline is not None and source is not None:
-        raise UsageError(f"--{value.replace('_', '-')} and "
-                         f"--{file.replace('_', '-')} are mutually exclusive")
+        raise UsageError(
+            f"--{value.replace('_', '-')} and "
+            f"--{file.replace('_', '-')} are mutually exclusive"
+        )
     if inline is not None:
         return inline
     if source is not None:
-        return (await read_cli_file(inv, source,
-                                    f"--{file.replace('_', '-')}")).decode()
+        return (
+            await read_cli_file(inv, source, f"--{file.replace('_', '-')}")
+        ).decode()
     if required:
-        raise ValueError(f"--{value.replace('_', '-')} or "
-                         f"--{file.replace('_', '-')} is required")
+        raise ValueError(
+            f"--{value.replace('_', '-')} or "
+            f"--{file.replace('_', '-')} is required"
+        )
     return None
 
 
@@ -191,7 +214,8 @@ def camel(value: Any) -> Any:
 # JavaScript on top of the escapes json.dumps shares with it; gojq's own
 # encoder escapes none of them, but does escape DEL.
 _MARSHAL_ESCAPES = re.compile(
-    r"[<>&\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+    r"[<>&\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]"
+)
 
 
 def _go_number(number: int | float) -> str:
@@ -218,8 +242,10 @@ def _marshal_string(text: str) -> str:
     Args:
         text (str): the string.
     """
-    return _MARSHAL_ESCAPES.sub(lambda match: f"\\u{ord(match.group()):04x}",
-                                json.dumps(text, ensure_ascii=False))
+    return _MARSHAL_ESCAPES.sub(
+        lambda match: f"\\u{ord(match.group()):04x}",
+        json.dumps(text, ensure_ascii=False),
+    )
 
 
 def _gojq_string(text: str) -> str:
@@ -241,8 +267,10 @@ def _go_encoded(value: JsonValue, quote: Callable[[str], str]) -> str:
         quote (Callable[[str], str]): how a string is written.
     """
     if isinstance(value, dict):
-        pairs = (f"{quote(key)}:{_go_encoded(value[key], quote)}"
-                 for key in sorted(value))
+        pairs = (
+            f"{quote(key)}:{_go_encoded(value[key], quote)}"
+            for key in sorted(value)
+        )
         return "{" + ",".join(pairs) + "}"
     if isinstance(value, list):
         return "[" + ",".join(_go_encoded(item, quote) for item in value) + "]"
@@ -314,17 +342,26 @@ def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
     listing = [f"  {field}" for field in sorted(known)]
     if not fields:
         raise UsageError(
-            "\n".join([
-                "Specify one or more comma-separated fields for `--json`:",
-                *listing
-            ]), 1)
+            "\n".join(
+                [
+                    "Specify one or more comma-separated fields for `--json`:",
+                    *listing,
+                ]
+            ),
+            1,
+        )
     unknown = [field for field in fields if field not in known]
     if unknown:
         raise UsageError(
-            "\n".join([
-                f"Unknown JSON field: {json.dumps(unknown[0])}",
-                "Available fields:", *listing
-            ]), 1)
+            "\n".join(
+                [
+                    f"Unknown JSON field: {json.dumps(unknown[0])}",
+                    "Available fields:",
+                    *listing,
+                ]
+            ),
+            1,
+        )
     return fields
 
 
@@ -339,8 +376,9 @@ def _gojq_text(text: str, string: bool) -> str:
     return text if string else _go_encoded(json.loads(text), _gojq_string)
 
 
-def _jq_failure(value: JsonValue, program: str,
-                run: JqRun[JsonValue]) -> str | None:
+def _jq_failure(
+    value: JsonValue, program: str, run: JqRun[JsonValue]
+) -> str | None:
     """The message go-gh fails with when a run stopped early, or None when
     that stop ends the output without failing.
 
@@ -392,8 +430,8 @@ def jq_lines(values: Iterable[JsonValue], program: str) -> str:
 
 
 async def typed_out(
-        value: Any, fl: FlagView, human: str,
-        allowed: Iterable[str]) -> tuple[ByteSource | None, IOResult]:
+    value: Any, fl: FlagView, human: str, allowed: Iterable[str]
+) -> tuple[ByteSource | None, IOResult]:
     """Render a typed verb as stable projected JSON/jq or human text."""
     program = fl.as_str("jq")
     fields = json_fields(fl, allowed)

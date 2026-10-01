@@ -17,20 +17,27 @@ import errno
 from mirage.commands.spec import SPECS, parse_command
 from mirage.errors import FsCondition, posix_errno
 from mirage.workspace.executor.builtins.metadata.xattr import (
-    GETFATTR_USAGE, attr_error, attr_operands, attr_usage_refusal)
+    GETFATTR_USAGE,
+    attr_error,
+    attr_operands,
+    attr_usage_refusal,
+)
 
 
 def test_attr_error_says_no_such_attribute_whatever_the_platform_errno():
     missing = OSError(posix_errno(FsCondition.NO_XATTR), "x", "/f")
     assert attr_error(missing) == "No such attribute"
-    assert attr_error(PermissionError(errno.EPERM, "x",
-                                      "/f")) == "Operation not permitted"
+    assert (
+        attr_error(PermissionError(errno.EPERM, "x", "/f"))
+        == "Operation not permitted"
+    )
     assert attr_error(FileNotFoundError("/f")) == "No such file or directory"
 
 
 def test_attr_operands_resolve_against_the_cwd_and_keep_the_typed_word():
-    parsed = parse_command(SPECS["getfattr"], ["-d", "d/f", "/abs"], "/r",
-                           "getfattr")
+    parsed = parse_command(
+        SPECS["getfattr"], ["-d", "d/f", "/abs"], "/r", "getfattr"
+    )
     found = [(p.virtual, p.raw_path) for p in attr_operands(parsed)]
     assert found == [("/r/d/f", "d/f"), ("/abs", "/abs")]
 
@@ -39,8 +46,10 @@ def test_a_refused_line_gets_getopts_line_then_the_usage_block():
     parsed = parse_command(SPECS["getfattr"], ["-Z", "f"], "/", "getfattr")
     _, io, _ = attr_usage_refusal("getfattr", parsed, GETFATTR_USAGE)
     assert io.exit_code == 2
-    assert io.stderr == ("getfattr: invalid option -- 'Z'\n" +
-                         GETFATTR_USAGE).encode()
+    assert (
+        io.stderr
+        == ("getfattr: invalid option -- 'Z'\n" + GETFATTR_USAGE).encode()
+    )
 
 
 def test_an_accepted_line_is_not_refused():

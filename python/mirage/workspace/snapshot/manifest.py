@@ -15,8 +15,13 @@
 from typing import Any
 
 from mirage.types import VFSName
-from mirage.workspace.snapshot.keys import (CacheKey, JobKey, MountKey,
-                                            StateKey, VFSStateKey)
+from mirage.workspace.snapshot.keys import (
+    CacheKey,
+    JobKey,
+    MountKey,
+    StateKey,
+    VFSStateKey,
+)
 from mirage.workspace.snapshot.utils import BLOB_REF_KEY, is_safe_blob_path
 
 
@@ -39,7 +44,8 @@ class _BlobAllocator:
 
 
 def split_manifest_and_blobs(
-        state: dict[str, Any]) -> tuple[dict[str, Any], dict[str, bytes]]:
+    state: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, bytes]]:
     """The state as a JSON-safe manifest plus the bytes it referenced.
 
     The manifest IS the state, minus the four keys that hold bytes:
@@ -58,7 +64,8 @@ def split_manifest_and_blobs(
     cache = state.get(StateKey.CACHE) or {}
 
     manifest[StateKey.HISTORY] = _history_to_manifest(
-        state.get(StateKey.HISTORY), a)
+        state.get(StateKey.HISTORY), a
+    )
     manifest[StateKey.MOUNTS] = [
         _mount_to_manifest(m, a) for m in state.get(StateKey.MOUNTS) or []
     ]
@@ -76,8 +83,9 @@ def split_manifest_and_blobs(
     return manifest, a.blobs
 
 
-def _cache_entry_to_manifest(entry: dict[str, Any],
-                             a: _BlobAllocator) -> dict[str, Any]:
+def _cache_entry_to_manifest(
+    entry: dict[str, Any], a: _BlobAllocator
+) -> dict[str, Any]:
     """One cache entry with its data stashed as a blob reference.
 
     Args:
@@ -111,17 +119,17 @@ def _job_to_manifest(job: dict[str, Any], a: _BlobAllocator) -> dict[str, Any]:
     return j
 
 
-def _mount_to_manifest(mount: dict[str, Any],
-                       a: _BlobAllocator) -> dict[str, Any]:
+def _mount_to_manifest(
+    mount: dict[str, Any], a: _BlobAllocator
+) -> dict[str, Any]:
     idx = mount[MountKey.INDEX]
     ps = dict(mount[MountKey.VFS_STATE])
     ptype = ps.get(VFSStateKey.TYPE, "")
     files = ps.get(VFSStateKey.FILES, {})
     if ptype == VFSName.RAM:
-        ps[VFSStateKey.FILES] = _stash_blobs(files,
-                                             a,
-                                             f"_ram{idx}",
-                                             tar_dir=f"mounts/{idx}/files")
+        ps[VFSStateKey.FILES] = _stash_blobs(
+            files, a, f"_ram{idx}", tar_dir=f"mounts/{idx}/files"
+        )
     elif ptype == VFSName.DISK:
         # tree-preserving: real files at their relative paths
         new_files: dict[str, dict[str, Any]] = {}
@@ -131,20 +139,18 @@ def _mount_to_manifest(mount: dict[str, Any],
             new_files[rel] = {BLOB_REF_KEY: tar_path}
         ps[VFSStateKey.FILES] = new_files
     elif ptype == VFSName.REDIS:
-        ps[VFSStateKey.FILES] = _stash_blobs(files,
-                                             a,
-                                             f"_redis{idx}",
-                                             tar_dir=f"mounts/{idx}/data")
+        ps[VFSStateKey.FILES] = _stash_blobs(
+            files, a, f"_redis{idx}", tar_dir=f"mounts/{idx}/data"
+        )
     return {
-        **{
-            k: v
-            for k, v in mount.items() if k != MountKey.VFS_STATE
-        }, MountKey.VFS_STATE: ps
+        **{k: v for k, v in mount.items() if k != MountKey.VFS_STATE},
+        MountKey.VFS_STATE: ps,
     }
 
 
-def _stash_blobs(files: dict[str, Any], a: _BlobAllocator, category: str,
-                 tar_dir: str) -> dict[str, Any]:
+def _stash_blobs(
+    files: dict[str, Any], a: _BlobAllocator, category: str, tar_dir: str
+) -> dict[str, Any]:
     """Replace each {key: bytes} with {key: {__file: tar-path}}."""
     out: dict[str, dict[str, Any]] = {}
     for k, data in files.items():

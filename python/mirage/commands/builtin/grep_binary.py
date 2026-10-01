@@ -3,8 +3,12 @@ from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 
-from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
-                                                  encode_line, prefix_of)
+from mirage.commands.builtin.grep_offsets import (
+    MatchOffsets,
+    decode_line,
+    encode_line,
+    prefix_of,
+)
 from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_select import WalkFilters
 from mirage.commands.builtin.types import RegexSyntax
@@ -18,6 +22,7 @@ from mirage.io.yield_budget import YieldBudget
 @dataclass(frozen=True, slots=True)
 class GrepFlags:
     """Parsed grep flags (TS FlagSet parity); the complete set grep honors."""
+
     ignore_case: bool
     invert: bool
     line_numbers: bool
@@ -45,7 +50,6 @@ PROBE_BLOCK_BYTES = 96 * 1024
 
 
 class BinaryInput:
-
     def __init__(self, mode: str) -> None:
         self.mode = mode
         self.nul = False
@@ -65,7 +69,7 @@ class BinaryInput:
         """
         async for chunk in source:
             for offset in range(0, len(chunk), PROBE_BLOCK_BYTES):
-                block = chunk[offset:offset + PROBE_BLOCK_BYTES]
+                block = chunk[offset : offset + PROBE_BLOCK_BYTES]
                 if self.stops(block):
                     return
                 yield self.deliver(block)
@@ -91,8 +95,9 @@ async def binary_notice(io: IOResult, path: str) -> None:
         io (IOResult): the input's result.
         path (str): the name the notice carries.
     """
-    io.stderr = (await materialize(
-        io.stderr)) + f"grep: {path}: binary file matches\n".encode()
+    io.stderr = (
+        await materialize(io.stderr)
+    ) + f"grep: {path}: binary file matches\n".encode()
 
 
 def valid_utf8(data: bytes) -> bool:
@@ -103,13 +108,15 @@ def valid_utf8(data: bytes) -> bool:
         return False
 
 
-def output_line(raw: bytes,
-                number: int,
-                selected: bool,
-                path: str,
-                show_filename: bool,
-                f: GrepFlags,
-                offset: int = 0) -> bytes:
+def output_line(
+    raw: bytes,
+    number: int,
+    selected: bool,
+    path: str,
+    show_filename: bool,
+    f: GrepFlags,
+    offset: int = 0,
+) -> bytes:
     """One output line, prefix fields in GNU's fixed order.
 
     Args:
@@ -125,19 +132,23 @@ def output_line(raw: bytes,
     """
     separator = b":" if selected else b"-"
     prefix = path.encode() + separator if show_filename else b""
-    fields = prefix_of(number if f.line_numbers else None,
-                       offset if f.byte_offsets else None, selected)
+    fields = prefix_of(
+        number if f.line_numbers else None,
+        offset if f.byte_offsets else None,
+        selected,
+    )
     return prefix + fields.encode() + raw + b"\n"
 
 
 async def grep_input(
-        source: AsyncIterator[bytes],
-        pat: re.Pattern[str],
-        f: GrepFlags,
-        path: str,
-        show_filename: bool,
-        io: IOResult,
-        after_output: bool = False) -> AsyncGenerator[bytes, None]:
+    source: AsyncIterator[bytes],
+    pat: re.Pattern[str],
+    f: GrepFlags,
+    path: str,
+    show_filename: bool,
+    io: IOResult,
+    after_output: bool = False,
+) -> AsyncGenerator[bytes, None]:
     """Scan one input, yielding grep's output for it.
 
     Args:
@@ -160,8 +171,9 @@ async def grep_input(
     previous: deque[tuple[int, bytes, int]] = deque(maxlen=f.before_context)
     last_printed = 0
     after_until = 0
-    has_context = bool(f.after_context
-                       or f.before_context) and not f.only_matching
+    has_context = (
+        bool(f.after_context or f.before_context) and not f.only_matching
+    )
     if f.max_count == 0:
         # GNU selects no line at all and the whole command goes quiet:
         # `grep -m0 -c a f` prints NOTHING and exits 1, and so does
@@ -182,9 +194,18 @@ async def grep_input(
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
-    needles = (required_needles(pat) if not f.invert and
-               (not has_context or f.count_only or f.quiet or f.files_only
-                or f.files_without_match) else None)
+    needles = (
+        required_needles(pat)
+        if not f.invert
+        and (
+            not has_context
+            or f.count_only
+            or f.quiet
+            or f.files_only
+            or f.files_without_match
+        )
+        else None
+    )
     fold = bool(pat.flags & re.IGNORECASE)
     input_stream = binary.read(source)
     lines = AsyncLineIterator(input_stream)
@@ -222,8 +243,11 @@ async def grep_input(
             # NUL runs become empty lines. Batch decisions only when no
             # per-line output or context must be retained.
             if not raw and (f.count_only or (not hit and not has_context)):
-                limit = (f.max_count -
-                         count if hit and f.max_count is not None else None)
+                limit = (
+                    f.max_count - count
+                    if hit and f.max_count is not None
+                    else None
+                )
                 skipped = lines.skip_empty_lines(limit)
                 number += skipped
                 byte_pos += skipped
@@ -237,48 +261,80 @@ async def grep_input(
             if hit:
                 if f.only_matching:
                     if not f.invert:
-                        offsets = MatchOffsets(
-                            line_start, line) if f.byte_offsets else None
+                        offsets = (
+                            MatchOffsets(line_start, line)
+                            if f.byte_offsets
+                            else None
+                        )
                         for m in pat.finditer(line):
                             await budget.run()
                             text = match_text(m)
                             if text:
                                 chunks.append(
                                     output_line(
-                                        encode_line(text), number, True, path,
-                                        show_filename, f,
+                                        encode_line(text),
+                                        number,
+                                        True,
+                                        path,
+                                        show_filename,
+                                        f,
                                         offsets.at(match_start(m))
-                                        if offsets else 0))
+                                        if offsets
+                                        else 0,
+                                    )
+                                )
                 else:
                     if has_context:
-                        pending = [(n, data, at) for n, data, at in previous
-                                   if n > last_printed]
+                        pending = [
+                            (n, data, at)
+                            for n, data, at in previous
+                            if n > last_printed
+                        ]
                         first = pending[0][0] if pending else number
                         if (last_printed and first > last_printed + 1) or (
-                                not last_printed and after_output):
+                            not last_printed and after_output
+                        ):
                             chunks.append(b"--\n")
                         chunks.extend(
-                            output_line(data, n, False, path, show_filename, f,
-                                        at) for n, data, at in pending)
+                            output_line(
+                                data, n, False, path, show_filename, f, at
+                            )
+                            for n, data, at in pending
+                        )
                     chunks.append(
-                        output_line(raw, number, True, path, show_filename, f,
-                                    line_start))
+                        output_line(
+                            raw,
+                            number,
+                            True,
+                            path,
+                            show_filename,
+                            f,
+                            line_start,
+                        )
+                    )
                     last_printed = number
                     after_until = number + f.after_context
             elif has_context and number <= after_until:
                 chunks.append(
-                    output_line(raw, number, False, path, show_filename, f,
-                                line_start))
+                    output_line(
+                        raw, number, False, path, show_filename, f, line_start
+                    )
+                )
                 last_printed = number
             # A selected line with nothing to print (-o on a zero-width
             # match) still earns the notice.
-            if hit and not chunks and binary.nul and (f.binary_mode == "binary"
-                                                      and not notified):
+            if (
+                hit
+                and not chunks
+                and binary.nul
+                and (f.binary_mode == "binary" and not notified)
+            ):
                 await binary_notice(io, path)
                 notified = True
             for chunk in chunks:
-                if f.binary_mode != "text" and (binary.nul
-                                                or not valid_utf8(chunk)):
+                if f.binary_mode != "text" and (
+                    binary.nul or not valid_utf8(chunk)
+                ):
                     if f.binary_mode == "binary" and not notified:
                         await binary_notice(io, path)
                         notified = True
@@ -287,8 +343,11 @@ async def grep_input(
             if binary.nul and count and f.binary_mode == "binary":
                 return
             previous.append((number, raw, line_start))
-            if (f.max_count is not None and count >= f.max_count
-                    and number >= after_until):
+            if (
+                f.max_count is not None
+                and count >= f.max_count
+                and number >= after_until
+            ):
                 break
     finally:
         await close_quietly(input_stream)
@@ -305,8 +364,9 @@ async def grep_input(
         yield path.encode() + b"\n"
         return
     if f.count_only and not (f.quiet or f.files_only):
-        yield (f"{path}:"
-               if show_filename else "").encode() + f"{count}\n".encode()
+        yield (
+            f"{path}:" if show_filename else ""
+        ).encode() + f"{count}\n".encode()
 
 
 def utf8_pattern(pat: re.Pattern[str]) -> re.Pattern[str]:
@@ -326,7 +386,7 @@ def utf8_pattern(pat: re.Pattern[str]) -> re.Pattern[str]:
             in_class = True
             # A leading ] after an optional ^ is a class member.
             class_start = index + 1
-            if pat.pattern[class_start:class_start + 1] == "^":
+            if pat.pattern[class_start : class_start + 1] == "^":
                 class_start += 1
         elif char == "]" and in_class and index > class_start:
             parts.append(char)

@@ -17,14 +17,20 @@ import functools
 from typing import Any, cast
 
 from mirage.commands.builtin.generic.cp import TransferLinks
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, OperandRun,
-                                                              RunSingle)
-from mirage.commands.builtin.generic.grep import \
-    parse_flags as parse_grep_flags
-from mirage.commands.builtin.generic.grep import \
-    prints_context as grep_prints_context
-from mirage.commands.builtin.generic.rg import \
-    between_files as rg_between_files
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    OperandRun,
+    RunSingle,
+)
+from mirage.commands.builtin.generic.grep import (
+    parse_flags as parse_grep_flags,
+)
+from mirage.commands.builtin.generic.grep import (
+    prints_context as grep_prints_context,
+)
+from mirage.commands.builtin.generic.rg import (
+    between_files as rg_between_files,
+)
 from mirage.commands.builtin.generic.rg import parse_flags as parse_rg_flags
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -38,16 +44,18 @@ from mirage.types import FileType, PathSpec, PrimitiveCopy
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 
 
-async def relay(dispatch: DispatchFn, name: str, path: PathSpec,
-                **kwargs: Any) -> Any:
+async def relay(
+    dispatch: DispatchFn, name: str, path: PathSpec, **kwargs: Any
+) -> Any:
     # Relay one op for one path to the mount that owns it. The generics call
     # ops as (path); dispatch keys off the path.
     data, _ = await dispatch(name, path, **kwargs)
     return data
 
 
-async def read_file(dispatch: DispatchFn, io: IOResult,
-                    path: PathSpec) -> bytes:
+async def read_file(
+    dispatch: DispatchFn, io: IOResult, path: PathSpec
+) -> bytes:
     """Read a relayed file and retain its cache/accounting envelope.
 
     Args:
@@ -65,8 +73,9 @@ async def read_file(dispatch: DispatchFn, io: IOResult,
     return data
 
 
-async def _relay_write(dispatch: DispatchFn, path: PathSpec,
-                       data: bytes) -> None:
+async def _relay_write(
+    dispatch: DispatchFn, path: PathSpec, data: bytes
+) -> None:
     """Write one whole file on the mount that owns it.
 
     The door every generic writes through, which the transfer
@@ -80,13 +89,15 @@ async def _relay_write(dispatch: DispatchFn, path: PathSpec,
     await dispatch("write", path, data=data)
 
 
-async def run_operands(run_single: RunSingle,
-                       cmd_name: str,
-                       scopes: list[PathSpec],
-                       texts: list[str],
-                       flag_kwargs: dict[str, FlagValue],
-                       stdin_bytes: bytes | None = None,
-                       stop_at_success: bool = False) -> list[OperandRun]:
+async def run_operands(
+    run_single: RunSingle,
+    cmd_name: str,
+    scopes: list[PathSpec],
+    texts: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    stdin_bytes: bytes | None = None,
+    stop_at_success: bool = False,
+) -> list[OperandRun]:
     """Run one native single-mount command per operand, in operand order.
 
     Each operand executes on its owning mount through ``run_single`` (which
@@ -105,10 +116,9 @@ async def run_operands(run_single: RunSingle,
     """
     results: list[OperandRun] = []
     for scope in scopes:
-        out, io = await run_single(cmd_name, [scope],
-                                   texts,
-                                   flag_kwargs,
-                                   stdin=stdin_bytes)
+        out, io = await run_single(
+            cmd_name, [scope], texts, flag_kwargs, stdin=stdin_bytes
+        )
         try:
             data = await materialize(out) if out is not None else b""
         except FS_ERRORS as exc:
@@ -129,8 +139,9 @@ async def run_operands(run_single: RunSingle,
     return results
 
 
-async def merge_operand_ios(results: list[OperandRun],
-                            exit_code: int) -> IOResult:
+async def merge_operand_ios(
+    results: list[OperandRun], exit_code: int
+) -> IOResult:
     """Merge per-operand IOResults in operand order under one exit code.
 
     Args:
@@ -148,8 +159,11 @@ async def merge_operand_ios(results: list[OperandRun],
     # selection is unstructured.
     runs = [run.io.matched_runs for run in results]
     known = [run_rows for run_rows in runs if run_rows is not None]
-    io.matched_runs = ([r for run_rows in known for r in run_rows]
-                       if len(known) == len(runs) else None)
+    io.matched_runs = (
+        [r for run_rows in known for r in run_rows]
+        if len(known) == len(runs)
+        else None
+    )
     return io
 
 
@@ -199,8 +213,9 @@ def transfer_primitives(dispatch: DispatchFn) -> dict[str, Any]:
     )
 
 
-def transfer_links(links: LinkView, dispatch: DispatchFn,
-                   cwd: str) -> TransferLinks:
+def transfer_links(
+    links: LinkView, dispatch: DispatchFn, cwd: str
+) -> TransferLinks:
     """Namespace links with the dispatcher primitives shared by cp and mv.
 
     Args:
@@ -209,11 +224,15 @@ def transfer_links(links: LinkView, dispatch: DispatchFn,
         cwd (str): the directory a typed operand resolves against.
     """
     prim = transfer_primitives(dispatch)
-    return TransferLinks(links=links,
-                         dispatch=dispatch,
-                         cwd=cwd,
-                         relay=PrimitiveCopy(read_bytes=prim["read_bytes"],
-                                             write=prim["write"],
-                                             mkdir=prim["mkdir"],
-                                             readdir=prim["readdir"]),
-                         relay_stat=prim["stat"])
+    return TransferLinks(
+        links=links,
+        dispatch=dispatch,
+        cwd=cwd,
+        relay=PrimitiveCopy(
+            read_bytes=prim["read_bytes"],
+            write=prim["write"],
+            mkdir=prim["mkdir"],
+            readdir=prim["readdir"],
+        ),
+        relay_stat=prim["stat"],
+    )

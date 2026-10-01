@@ -30,7 +30,7 @@ cfg = S3Config(
 
 with Workspace(
     {"/s3/": Mount(S3VFS(cfg), backend=MountBackend.FUSE)},
-        mode=MountMode.READ,
+    mode=MountMode.READ,
 ) as ws:
     time.sleep(1)
     mp = ws.fuse_mountpoint

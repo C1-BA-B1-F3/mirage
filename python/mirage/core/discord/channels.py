@@ -23,9 +23,8 @@ TEXT_CHANNEL_TYPES = (0, 5, 15)
 
 
 async def list_channels_stream(
-        config: DiscordConfig,
-        guild_id: str,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: DiscordConfig, guild_id: str, session: SessionArg = None
+) -> AsyncIterator[list[dict[str, Any]]]:
     """List text channels in a guild as a single-page stream.
 
     Discord returns all guild channels in one response (no pagination
@@ -40,17 +39,17 @@ async def list_channels_stream(
     Yields:
         list[dict]: filtered text-channel dicts.
     """
-    raw = await discord_get(config,
-                            f"/guilds/{guild_id}/channels",
-                            session=session)
+    raw = await discord_get(
+        config, f"/guilds/{guild_id}/channels", session=session
+    )
     if not isinstance(raw, list):
         return
     yield [c for c in raw if c.get("type") in TEXT_CHANNEL_TYPES]
 
 
-async def list_channels(config: DiscordConfig,
-                        guild_id: str,
-                        session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_channels(
+    config: DiscordConfig, guild_id: str, session: SessionArg = None
+) -> list[dict[str, Any]]:
     """List text channels in a guild.
 
     Args:

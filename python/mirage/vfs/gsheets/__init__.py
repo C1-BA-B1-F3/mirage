@@ -26,5 +26,6 @@ __all__ = ["GSheetsConfig", "SheetEntry", "GSheetsVFS"]
 def __getattr__(name: str) -> "type[GSheetsVFS]":
     if name == "GSheetsVFS":
         from mirage.vfs.gsheets.gsheets import GSheetsVFS
+
         return GSheetsVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

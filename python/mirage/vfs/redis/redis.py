@@ -17,8 +17,10 @@ from typing import Any, cast
 try:
     import redis as sync_redis
 except ImportError as _err:
-    raise ImportError("RedisVFS requires the 'redis' extra. "
-                      "Install with: pip install mirage-ai[redis]") from _err
+    raise ImportError(
+        "RedisVFS requires the 'redis' extra. "
+        "Install with: pip install mirage-ai[redis]"
+    ) from _err
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.commands.builtin.redis import COMMANDS as REDIS_COMMANDS
@@ -33,7 +35,6 @@ from mirage.vfs.secrets import REDACTED_SECRET
 
 
 class RedisVFS(BaseVFS):
-
     accessor: RedisAccessor
     name: str = VFSName.REDIS
     # byte store: stat() sizes every file from metadata
@@ -84,8 +85,9 @@ class RedisVFS(BaseVFS):
                     files[key[strip:]] = data
             dir_key = f"{prefix}dir"
             members = cast("set[bytes]", client.smembers(dir_key))
-            dirs = sorted(m.decode() if isinstance(m, bytes) else m
-                          for m in members)
+            dirs = sorted(
+                m.decode() if isinstance(m, bytes) else m for m in members
+            )
             attrs: dict[str, dict[str, str]] = {}
             attrs_pattern = f"{escape_glob(prefix)}attrs:*"
             astrip = len(f"{prefix}attrs:")
@@ -94,8 +96,9 @@ class RedisVFS(BaseVFS):
                     key = key.decode()
                 raw = cast("dict[bytes, bytes]", client.hgetall(key))
                 attrs[key[astrip:]] = {
-                    (k.decode() if isinstance(k, bytes) else k):
-                    (v.decode() if isinstance(v, bytes) else v)
+                    (k.decode() if isinstance(k, bytes) else k): (
+                        v.decode() if isinstance(v, bytes) else v
+                    )
                     for k, v in raw.items()
                 }
             modified: dict[str, str] = {}
@@ -106,8 +109,9 @@ class RedisVFS(BaseVFS):
                     key = key.decode()
                 val = cast("bytes | None", client.get(key))
                 if val is not None:
-                    modified[key[mstrip:]] = (val.decode() if isinstance(
-                        val, bytes) else val)
+                    modified[key[mstrip:]] = (
+                        val.decode() if isinstance(val, bytes) else val
+                    )
         finally:
             client.close()
         return {

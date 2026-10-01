@@ -19,33 +19,47 @@ from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.mongodb._schema_json import (build_collection_schema_json,
-                                              build_database_json)
+from mirage.core.mongodb._schema_json import (
+    build_collection_schema_json,
+    build_database_json,
+)
 from mirage.core.mongodb.readdir import database_guard, entity_guard
 from mirage.core.mongodb.scope import detect_scope
 from mirage.core.mongodb.stream import read_stream, render_doc
 from mirage.types import PathSpec
 
 
-async def _read_documents(accessor: MongoDBAccessor, match: ScopeMatch,
-                          path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_documents(
+    accessor: MongoDBAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     chunks: list[bytes] = []
     async for chunk in read_stream(accessor, path, index):
         chunks.append(chunk)
     return b"".join(chunks)
 
 
-async def _read_schema_json(accessor: MongoDBAccessor, match: ScopeMatch,
-                            path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_schema_json(
+    accessor: MongoDBAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     await entity_guard(accessor, match, path.virtual)
-    payload = await build_collection_schema_json(accessor,
-                                                 match.slots["database"],
-                                                 match.slots["name"])
+    payload = await build_collection_schema_json(
+        accessor, match.slots["database"], match.slots["name"]
+    )
     return (render_doc(payload) + "\n").encode()
 
 
-async def _read_database_json(accessor: MongoDBAccessor, match: ScopeMatch,
-                              path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_database_json(
+    accessor: MongoDBAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     await database_guard(accessor, match, path.virtual)
     payload = await build_database_json(accessor, match.slots["database"])
     return (render_doc(payload) + "\n").encode()
@@ -62,9 +76,10 @@ read = make_read(
 
 
 async def stream_any(
-        accessor: MongoDBAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> AsyncIterator[bytes]:
+    accessor: MongoDBAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> AsyncIterator[bytes]:
     """Serve every readable leaf through the same streaming interface.
 
     Args:

@@ -1,5 +1,11 @@
-from collections.abc import (AsyncIterator, Awaitable, Callable, Coroutine,
-                             Mapping, Sequence)
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Mapping,
+    Sequence,
+)
 from contextlib import aclosing
 from functools import partial
 from typing import Any
@@ -13,8 +19,15 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.core.awk import (AwkIOError, AwkRuntimeError, AwkSyntaxError,
-                             CommandRun, ExitProgram, Interpreter, parse)
+from mirage.core.awk import (
+    AwkIOError,
+    AwkRuntimeError,
+    AwkSyntaxError,
+    CommandRun,
+    ExitProgram,
+    Interpreter,
+    parse,
+)
 from mirage.core.awk.builtins import split_assignment, unescape
 from mirage.core.awk.value import text as text_value
 from mirage.io.cooperative import chunks
@@ -37,7 +50,7 @@ def parse_flags(fl: FlagView) -> AwkFlags:
     """
     raw_f = fl.raw("f")
     if isinstance(raw_f, PathSpec):
-        program_files: tuple[PathSpec, ...] = (raw_f, )
+        program_files: tuple[PathSpec, ...] = (raw_f,)
     elif isinstance(raw_f, list):
         program_files = tuple(p for p in raw_f if isinstance(p, PathSpec))
     else:
@@ -63,8 +76,9 @@ def split_assignments(raw: Sequence[str]) -> dict[str, str]:
     return out
 
 
-def served_here(ns: NamespaceView | None, mount_prefix: str,
-                path: PathSpec) -> bool:
+def served_here(
+    ns: NamespaceView | None, mount_prefix: str, path: PathSpec
+) -> bool:
     """Whether the mount awk runs on serves an operand.
 
     A line whose operands span mounts runs awk once, on its first file's
@@ -93,8 +107,9 @@ async def _guarded(source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
             async for chunk in pulled:
                 yield chunk
     except FS_ERRORS as exc:
-        raise AwkIOError(fs_strerror(exc)
-                         or "No such file or directory") from exc
+        raise AwkIOError(
+            fs_strerror(exc) or "No such file or directory"
+        ) from exc
 
 
 class AwkStreams:
@@ -121,11 +136,16 @@ class AwkStreams:
             operand.
     """
 
-    def __init__(self, operands: Sequence[PathSpec],
-                 read_stream: Callable[..., AsyncIterator[bytes]],
-                 stdin: ByteSource | None, dispatch: DispatchFn | None,
-                 cwd: PathSpec, shell: ShellFn | None,
-                 local: Callable[[PathSpec], bool]) -> None:
+    def __init__(
+        self,
+        operands: Sequence[PathSpec],
+        read_stream: Callable[..., AsyncIterator[bytes]],
+        stdin: ByteSource | None,
+        dispatch: DispatchFn | None,
+        cwd: PathSpec,
+        shell: ShellFn | None,
+        local: Callable[[PathSpec], bool],
+    ) -> None:
         self.local = local
         self.operands = operands
         self.read_stream = read_stream
@@ -145,8 +165,9 @@ class AwkStreams:
         # A keyed store reads a directory as nothing at all, and other
         # backends fail it in their own words, so the stat goes first to
         # fail it the way a POSIX read does.
-        if (await dispatch_stat(self.dispatch,
-                                path)).type == FileType.DIRECTORY:
+        if (
+            await dispatch_stat(self.dispatch, path)
+        ).type == FileType.DIRECTORY:
             raise eisdir(path)
         data, _ = await self.dispatch("read", path)
         yield data
@@ -182,12 +203,13 @@ class AwkStreams:
             raise AwkRuntimeError("awk: file output requires a workspace")
         path = typed_spec(name, self.cwd.virtual)
         try:
-            await self.dispatch("append" if append else "write",
-                                path,
-                                data=body.encode())
+            await self.dispatch(
+                "append" if append else "write", path, data=body.encode()
+            )
         except WALK_ERRORS as exc:
-            raise AwkIOError(fs_strerror(exc)
-                             or "Cannot write output file") from exc
+            raise AwkIOError(
+                fs_strerror(exc) or "Cannot write output file"
+            ) from exc
 
     async def run(self, command: str, stdin: bytes | None) -> CommandRun:
         """Run a command line in a subshell of the session, as sh -c would.
@@ -200,8 +222,9 @@ class AwkStreams:
             stdin (bytes | None): its input, None for awk's own.
         """
         if self.shell is None:
-            raise AwkRuntimeError("awk: running a command requires a "
-                                  "workspace")
+            raise AwkRuntimeError(
+                "awk: running a command requires a workspace"
+            )
         source: ByteSource = self.stdin_view() if stdin is None else stdin
         io = await self.shell(f"( {shell_join(['eval', command])} )", source)
         out = await materialize(io.stdout) if io.stdout is not None else b""
@@ -236,8 +259,9 @@ async def _drained(interp: Interpreter, io: IOResult) -> bytes:
     return out
 
 
-async def _awk_stream(interp: Interpreter,
-                      io: IOResult) -> AsyncIterator[bytes]:
+async def _awk_stream(
+    interp: Interpreter, io: IOResult
+) -> AsyncIterator[bytes]:
     """Run the program, yielding standard output as each record settles.
 
     ``exit`` in BEGIN skips the input and in the main rules stops it,
@@ -326,8 +350,9 @@ async def awk(
                 raw = await read_bytes(prog)
             except (FileNotFoundError, NotADirectoryError) as exc:
                 # GNU awk exits 2 when a -f program file cannot be opened.
-                raise UsageError(f"awk: {prog.raw_path}: "
-                                 f"{fs_strerror(exc)}") from exc
+                raise UsageError(
+                    f"awk: {prog.raw_path}: {fs_strerror(exc)}"
+                ) from exc
             pieces.append(raw.decode(errors="replace"))
         source = "\n".join(pieces)
     elif texts:
@@ -343,15 +368,29 @@ async def awk(
     # An empty operand names no file and mawk skips it, as it does an
     # operand ARGV no longer holds; a `var=value` operand is assigned
     # when the input reaches it. FILENAME reports the operand as typed.
-    streams = AwkStreams(paths, read_stream, stdin, dispatch, cwd, shell,
-                         partial(served_here, ns, mount_prefix))
-    interp = Interpreter(program, streams, [p.raw_path for p in paths],
-                         split_assignments(f.assignments))
+    streams = AwkStreams(
+        paths,
+        read_stream,
+        stdin,
+        dispatch,
+        cwd,
+        shell,
+        partial(served_here, ns, mount_prefix),
+    )
+    interp = Interpreter(
+        program,
+        streams,
+        [p.raw_path for p in paths],
+        split_assignments(f.assignments),
+    )
     if f.field_separator is not None:
         interp.set_var("FS", text_value(unescape(f.field_separator)))
 
     cache = [
-        p.mount_path for p in paths if p.raw_path != "" and not is_stdin(p)
+        p.mount_path
+        for p in paths
+        if p.raw_path != ""
+        and not is_stdin(p)
         and split_assignment(p.raw_path) is None
     ]
     io = IOResult(cache=cache)

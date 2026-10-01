@@ -49,14 +49,19 @@ def split_backtick_region(raw: str) -> list[BacktickSegment]:
     start = 0
     i = 0
     while i < len(raw):
-        if (raw[i] == "\\" and in_command and i + 1 < len(raw)
-                and raw[i + 1] in _ESCAPABLE):
+        if (
+            raw[i] == "\\"
+            and in_command
+            and i + 1 < len(raw)
+            and raw[i + 1] in _ESCAPABLE
+        ):
             buf.append(raw[i + 1])
             i += 2
             continue
         if raw[i] == "`":
-            segments.append(BacktickSegment("".join(buf), in_command, start,
-                                            i))
+            segments.append(
+                BacktickSegment("".join(buf), in_command, start, i)
+            )
             buf = []
             in_command = not in_command
             i += 1

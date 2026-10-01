@@ -15,20 +15,34 @@
 from collections.abc import Mapping
 
 from mirage.policy.errors import PolicyError
-from mirage.policy.types import (AdmissionRules, CommandRule, HideReason,
-                                 ProfileScript)
+from mirage.policy.profile import (
+    CommandsBlock,
+    CompiledProfile,
+    MountCommandsBlock,
+    PathsBlock,
+    ProfileMount,
+    SessionProfile,
+    VarsBlock,
+)
+from mirage.policy.types import (
+    AdmissionRules,
+    CommandRule,
+    HideReason,
+    ProfileScript,
+)
 from mirage.process.config import ProcessPermissions
-from mirage.types import (HiddenPaths, MountMode, ShowEntry, ShownPaths,
-                          weaker_mode)
+from mirage.types import (
+    HiddenPaths,
+    MountMode,
+    ShowEntry,
+    ShownPaths,
+    weaker_mode,
+)
 from mirage.utils.hidden import classify_paths, classify_shows, classify_vars
 from mirage.workspace.session.constants import DEFAULT_PROFILE
 from mirage.workspace.session.session import SessionState, vars_from_env
 from mirage.workspace.session.shell_dirs import set_cwd
 from mirage.workspace.session.validate import check_rules
-
-from mirage.policy.profile import (  # isort: skip
-    CommandsBlock, CompiledProfile, MountCommandsBlock, PathsBlock,
-    ProfileMount, SessionProfile, VarsBlock)
 
 
 def resolve_profile(
@@ -61,8 +75,9 @@ def resolve_profile(
     return profiles[profile]
 
 
-def _union_hide(a: PathsBlock | VarsBlock | None,
-                b: PathsBlock | VarsBlock | None) -> tuple[str, ...]:
+def _union_hide(
+    a: PathsBlock | VarsBlock | None, b: PathsBlock | VarsBlock | None
+) -> tuple[str, ...]:
     """Every entry of both blocks, first spelling wins, order kept.
 
     Args:
@@ -71,7 +86,7 @@ def _union_hide(a: PathsBlock | VarsBlock | None,
     """
     out: list[str] = []
     for block in (a, b):
-        for entry in (block.hide if block is not None else ()):
+        for entry in block.hide if block is not None else ():
             if entry not in out:
                 out.append(entry)
     return tuple(out)
@@ -92,8 +107,9 @@ def refuse_allow(inline: CommandsBlock | None) -> None:
         PolicyError: the inline document states an allow list.
     """
     if inline is not None and inline.allow is not None:
-        raise PolicyError("inline permissions may add ask and deny rules, "
-                          "not an allow list")
+        raise PolicyError(
+            "inline permissions may add ask and deny rules, not an allow list"
+        )
 
 
 def refuse_show(inline: SessionProfile) -> None:
@@ -113,12 +129,15 @@ def refuse_show(inline: SessionProfile) -> None:
     blocks = [inline.paths]
     blocks.extend(entry.paths for entry in (inline.mounts or {}).values())
     if any(block is not None and block.show for block in blocks):
-        raise PolicyError("inline permissions may add ask and deny rules "
-                          "and hides, not show entries")
+        raise PolicyError(
+            "inline permissions may add ask and deny rules "
+            "and hides, not show entries"
+        )
 
 
-def _add_commands(base: CommandsBlock | None,
-                  inline: CommandsBlock | None) -> CommandsBlock | None:
+def _add_commands(
+    base: CommandsBlock | None, inline: CommandsBlock | None
+) -> CommandsBlock | None:
     """The profile's commands block with the inline document's rules added.
 
     An inline document may only restrict, so it carries ask and deny
@@ -138,13 +157,16 @@ def _add_commands(base: CommandsBlock | None,
     refuse_allow(inline)
     if base is None:
         return inline
-    return CommandsBlock(allow=base.allow,
-                         ask=base.ask + inline.ask,
-                         deny=base.deny + inline.deny)
+    return CommandsBlock(
+        allow=base.allow,
+        ask=base.ask + inline.ask,
+        deny=base.deny + inline.deny,
+    )
 
 
-def _add_mount(base: ProfileMount | None,
-               inline: ProfileMount | None) -> ProfileMount:
+def _add_mount(
+    base: ProfileMount | None, inline: ProfileMount | None
+) -> ProfileMount:
     """One mount's entry with the inline document's added: the weaker
     mode, both rule lists, both hide lists.
 
@@ -159,24 +181,30 @@ def _add_mount(base: ProfileMount | None,
         return base
     mode = base.mode
     if inline.mode is not None:
-        mode = (inline.mode if mode is None else weaker_mode(
-            mode, inline.mode))
+        mode = inline.mode if mode is None else weaker_mode(mode, inline.mode)
     ask = _rules_of(base.commands, "ask") + _rules_of(inline.commands, "ask")
     deny = _rules_of(base.commands, "deny") + _rules_of(
-        inline.commands, "deny")
+        inline.commands, "deny"
+    )
     hide = _union_hide(base.paths, inline.paths)
     show = base.paths.show if base.paths is not None else ()
     reasons = _merge_reasons(base.paths, inline.paths)
     return ProfileMount(
         mode=mode,
-        commands=(MountCommandsBlock(ask=ask, deny=deny) if
-                  (ask or deny) else None),
-        paths=(PathsBlock(hide=hide, show=show, reasons=reasons) if
-               (hide or show or reasons) else None))
+        commands=(
+            MountCommandsBlock(ask=ask, deny=deny) if (ask or deny) else None
+        ),
+        paths=(
+            PathsBlock(hide=hide, show=show, reasons=reasons)
+            if (hide or show or reasons)
+            else None
+        ),
+    )
 
 
-def _merge_reasons(a: PathsBlock | None,
-                   b: PathsBlock | None) -> tuple[HideReason, ...]:
+def _merge_reasons(
+    a: PathsBlock | None, b: PathsBlock | None
+) -> tuple[HideReason, ...]:
     """Both blocks' reason groups, the profile's first.
 
     Args:
@@ -190,8 +218,9 @@ def _merge_reasons(a: PathsBlock | None,
     return tuple(out)
 
 
-def _rules_of(block: MountCommandsBlock | None,
-              verb: str) -> tuple[CommandRule, ...]:
+def _rules_of(
+    block: MountCommandsBlock | None, verb: str
+) -> tuple[CommandRule, ...]:
     """One verb's rules in a mount entry's commands block, empty when
     unstated.
 
@@ -204,8 +233,9 @@ def _rules_of(block: MountCommandsBlock | None,
     return block.ask if verb == "ask" else block.deny
 
 
-def with_inline(base: SessionProfile | None,
-                inline: SessionProfile | None) -> SessionProfile | None:
+def with_inline(
+    base: SessionProfile | None, inline: SessionProfile | None
+) -> SessionProfile | None:
     """A profile with the inline document of one ``create_session`` added.
 
     The one rule about combining two documents: an inline document may
@@ -231,17 +261,24 @@ def with_inline(base: SessionProfile | None,
     refuse_show(inline)
     if inline.command_limits is not None:
         raise PolicyError(
-            "command_limits belong on the profile, not inline permissions")
+            "command_limits belong on the profile, not inline permissions"
+        )
     if inline.policy is not None:
-        raise PolicyError("inline permissions may add ask and deny rules, "
-                          "not a policy; state one on the profile")
-    processes = (base.processes
-                 if base is not None else None) or ProcessPermissions()
+        raise PolicyError(
+            "inline permissions may add ask and deny rules, "
+            "not a policy; state one on the profile"
+        )
+    processes = (
+        base.processes if base is not None else None
+    ) or ProcessPermissions()
     if inline.processes is not None:
         processes = processes.restrict(inline.processes)
     if base is None:
-        return inline if inline.processes is None else inline.model_copy(
-            update={"processes": processes})
+        return (
+            inline
+            if inline.processes is None
+            else inline.model_copy(update={"processes": processes})
+        )
     hide_paths = _union_hide(base.paths, inline.paths)
     hide_vars = _union_hide(base.vars, inline.vars)
     env = None
@@ -252,22 +289,30 @@ def with_inline(base: SessionProfile | None,
         prefixes = [*(base.mounts or {})]
         prefixes.extend(p for p in (inline.mounts or {}) if p not in prefixes)
         mounts = {
-            prefix:
-            _add_mount((base.mounts or {}).get(prefix), (inline.mounts
-                                                         or {}).get(prefix))
+            prefix: _add_mount(
+                (base.mounts or {}).get(prefix),
+                (inline.mounts or {}).get(prefix),
+            )
             for prefix in prefixes
         }
     return SessionProfile(
         cwd=inline.cwd if inline.cwd is not None else base.cwd,
         env=env,
         mounts=mounts,
-        paths=(PathsBlock(hide=hide_paths,
-                          show=base.paths.show if base.paths is not None else
-                          (),
-                          reasons=_merge_reasons(base.paths, inline.paths)) if
-               (base.paths is not None or inline.paths is not None) else None),
-        vars=(VarsBlock(hide=hide_vars) if
-              (base.vars is not None or inline.vars is not None) else None),
+        paths=(
+            PathsBlock(
+                hide=hide_paths,
+                show=base.paths.show if base.paths is not None else (),
+                reasons=_merge_reasons(base.paths, inline.paths),
+            )
+            if (base.paths is not None or inline.paths is not None)
+            else None
+        ),
+        vars=(
+            VarsBlock(hide=hide_vars)
+            if (base.vars is not None or inline.vars is not None)
+            else None
+        ),
         commands=_add_commands(base.commands, inline.commands),
         policy=base.policy,
         command_limits=base.command_limits,
@@ -305,12 +350,14 @@ def _anchored(entries: tuple[str, ...], root: str) -> tuple[str, ...]:
         entries (tuple[str, ...]): the entries as written.
         root (str): the mount root, leading slash, no trailing one.
     """
-    return tuple(e if e.startswith("/") else f"{root.rstrip('/')}/{e}"
-                 for e in entries)
+    return tuple(
+        e if e.startswith("/") else f"{root.rstrip('/')}/{e}" for e in entries
+    )
 
 
-def _scoped_rules(rules: tuple[CommandRule, ...],
-                  root: str) -> tuple[CommandRule, ...]:
+def _scoped_rules(
+    rules: tuple[CommandRule, ...], root: str
+) -> tuple[CommandRule, ...]:
     """A mount entry's rules, stamped with the mount they belong to and
     anchored to it.
 
@@ -324,10 +371,14 @@ def _scoped_rules(rules: tuple[CommandRule, ...],
         root (str): the mount prefix, leading slash, no trailing one.
     """
     return tuple(
-        CommandRule(reason=rule.reason,
-                    commands=rule.commands,
-                    paths=_anchored(rule.paths, root),
-                    mount=root) for rule in rules)
+        CommandRule(
+            reason=rule.reason,
+            commands=rule.commands,
+            paths=_anchored(rule.paths, root),
+            mount=root,
+        )
+        for rule in rules
+    )
 
 
 def compile_commands(profile: SessionProfile) -> AdmissionRules | None:
@@ -407,8 +458,11 @@ def _hide_reasons(profile: SessionProfile) -> tuple[HideReason, ...]:
         if entry.paths is not None:
             root = _root_of(prefix)
             groups.extend(
-                HideReason(patterns=_anchored(g.patterns, root),
-                           reason=g.reason) for g in entry.paths.reasons)
+                HideReason(
+                    patterns=_anchored(g.patterns, root), reason=g.reason
+                )
+                for g in entry.paths.reasons
+            )
     return tuple(groups)
 
 
@@ -430,8 +484,9 @@ def _modes(profile: SessionProfile) -> dict[str, MountMode] | None:
     return modes or None
 
 
-def compile_script(effective: SessionProfile,
-                   name: str) -> ProfileScript | None:
+def compile_script(
+    effective: SessionProfile, name: str
+) -> ProfileScript | None:
     """The profile's per-command script, compiled onto the session.
 
     Args:
@@ -451,14 +506,16 @@ def compile_script(effective: SessionProfile,
         raise PolicyError(
             f"profile {name!r} names a policy by path "
             f"({policy.script!r}); only the config door loads one, pass "
-            f"ScriptSource in code")
-    return ProfileScript(profile=name,
-                         script=policy.script,
-                         runtime=policy.runtime)
+            f"ScriptSource in code"
+        )
+    return ProfileScript(
+        profile=name, script=policy.script, runtime=policy.runtime
+    )
 
 
-def compile_profile(effective: SessionProfile | None,
-                    name: str = "") -> CompiledProfile:
+def compile_profile(
+    effective: SessionProfile | None, name: str = ""
+) -> CompiledProfile:
     """The session fields a profile compiles to.
 
     Args:
@@ -471,13 +528,15 @@ def compile_profile(effective: SessionProfile | None,
             owner-rendering command shows.
     """
     if effective is None:
-        return CompiledProfile(mount_modes=None,
-                               hidden_paths=None,
-                               hidden_vars=None,
-                               env=None,
-                               cwd=None,
-                               commands=None,
-                               profile=name or None)
+        return CompiledProfile(
+            mount_modes=None,
+            hidden_paths=None,
+            hidden_vars=None,
+            env=None,
+            cwd=None,
+            commands=None,
+            profile=name or None,
+        )
     commands = compile_commands(effective)
     check_rules(commands)
     return CompiledProfile(
@@ -485,7 +544,8 @@ def compile_profile(effective: SessionProfile | None,
         mount_modes=_modes(effective),
         hidden_paths=_hidden(effective),
         hidden_vars=classify_vars(
-            effective.vars.hide if effective.vars is not None else ()),
+            effective.vars.hide if effective.vars is not None else ()
+        ),
         env=dict(effective.env) if effective.env is not None else None,
         cwd=effective.cwd,
         commands=commands,
@@ -511,8 +571,11 @@ def narrow(session: SessionState, compiled: CompiledProfile) -> None:
         session (SessionState): the session to narrow.
         compiled (CompiledProfile): the effective profile.
     """
-    session.mount_modes = (dict(compiled.mount_modes)
-                           if compiled.mount_modes is not None else None)
+    session.mount_modes = (
+        dict(compiled.mount_modes)
+        if compiled.mount_modes is not None
+        else None
+    )
     session.hidden_paths = compiled.hidden_paths
     session.shown_paths = compiled.shown_paths
     session.hidden_vars = compiled.hidden_vars

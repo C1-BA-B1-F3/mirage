@@ -6,13 +6,21 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from mirage.cache.read_through import cache_aware_read
-from mirage.commands.builtin.tail_counts import (TailCounts, number_flag_error,
-                                                 parse_counts, parse_seconds)
+from mirage.commands.builtin.tail_counts import (
+    TailCounts,
+    number_flag_error,
+    parse_counts,
+    parse_seconds,
+)
 from mirage.commands.builtin.utils.constants import STDIN_HEADER_NAME
 from mirage.commands.builtin.utils.operands import operands_io, split_readable
-from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
-                                                  resolve_source, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    operand_label,
+    resolve_source,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
@@ -50,6 +58,7 @@ class TailFlags:
             missing or vanishes.
         interval (float): ``-s``; seconds between polls.
     """
+
     counts: TailCounts
     quiet: bool = False
     verbose: bool = False
@@ -59,8 +68,9 @@ class TailFlags:
     interval: float = DEFAULT_SLEEP_INTERVAL
 
 
-RETRY_IGNORED = (b"tail: warning: --retry ignored; --retry is useful only "
-                 b"when following\n")
+RETRY_IGNORED = (
+    b"tail: warning: --retry ignored; --retry is useful only when following\n"
+)
 # What a waited-for name is announced as when it turns up: a missing file
 # has appeared, an untailable one (a directory) has become accessible.
 APPEARED = "has appeared;  following new file"
@@ -78,16 +88,18 @@ def _follow_flags(fl: FlagView) -> tuple[bool, bool, bool]:
     if isinstance(raw, str):
         match = argmatch(raw, FOLLOW_ARGS)
         if not isinstance(match, ArgmatchMatch):
-            raise argmatch_error("tail", "--follow", raw, FOLLOW_ARGS, None,
-                                 match.kind)
+            raise argmatch_error(
+                "tail", "--follow", raw, FOLLOW_ARGS, None, match.kind
+            )
         how = match.word
     # -F is --follow=name --retry. The mode is whichever of -f/--follow
     # and -F came last, GNU's own order (`-F --follow=descriptor` follows
     # the descriptor), while -F's --retry half stays on either way.
     typed = [
-        k for k in fl.typed_order("follow", "F")
-        if (k == "F" and fl.as_bool("F")) or (
-            k == "follow" and raw is not None and raw is not False)
+        k
+        for k in fl.typed_order("follow", "F")
+        if (k == "F" and fl.as_bool("F"))
+        or (k == "follow" and raw is not None and raw is not False)
     ]
     if not typed:
         return False, False, fl.as_bool("retry")
@@ -110,7 +122,8 @@ def _interval_flag(fl: FlagView) -> float:
     # while `inf` passes both and is ACCEPTED (measured, coreutils 9.4).
     if seconds is None or not 0 <= seconds:
         raise ValueError(
-            f"tail: invalid number of seconds: '{quote_text(raw)}'\n")
+            f"tail: invalid number of seconds: '{quote_text(raw)}'\n"
+        )
     return seconds
 
 
@@ -244,13 +257,15 @@ def tail_multi(
             returns bytes, an awaitable of bytes, or an async byte iterator.
     """
     cached = cache_aware_read(read)
-    return _tail_multi(paths,
-                       read=lambda p: read(p) if is_stdin(p) else cached(p),
-                       n=n,
-                       c=c,
-                       from_line=from_line,
-                       from_byte=from_byte,
-                       show_headers=show_headers)
+    return _tail_multi(
+        paths,
+        read=lambda p: read(p) if is_stdin(p) else cached(p),
+        n=n,
+        c=c,
+        from_line=from_line,
+        from_byte=from_byte,
+        show_headers=show_headers,
+    )
 
 
 async def _tail_multi(
@@ -272,11 +287,9 @@ async def _tail_multi(
         source = read(p)
         if inspect.isawaitable(source):
             source = await source
-        async for chunk in tail(source,
-                                n=n,
-                                c=c,
-                                from_line=from_line,
-                                from_byte=from_byte):
+        async for chunk in tail(
+            source, n=n, c=c, from_line=from_line, from_byte=from_byte
+        ):
             yield chunk
 
 
@@ -310,8 +323,13 @@ async def _counted(source: Any, box: list[int]) -> AsyncIterator[bytes]:
         yield chunk
 
 
-async def _window(read: Callable[..., Any], read_range: ReadRangeFn | None,
-                  path: PathSpec, offset: int, size: int) -> bytes:
+async def _window(
+    read: Callable[..., Any],
+    read_range: ReadRangeFn | None,
+    path: PathSpec,
+    offset: int,
+    size: int,
+) -> bytes:
     """The bytes a file gained past ``offset``.
 
     Args:
@@ -327,7 +345,7 @@ async def _window(read: Callable[..., Any], read_range: ReadRangeFn | None,
         # are already bound, and the protocol names the rest.
         data = await read_range(path, offset=offset, size=size)
         return bytes(data)
-    return (await _whole(read, path))[offset:offset + size]
+    return (await _whole(read, path))[offset : offset + size]
 
 
 async def _whole(read: Callable[..., Any], path: PathSpec) -> bytes:
@@ -340,9 +358,14 @@ async def _whole(read: Callable[..., Any], path: PathSpec) -> bytes:
     return b"".join([chunk async for chunk in _counted(read(path), [0])])
 
 
-async def _catch_up(read: Callable[..., Any], read_range: ReadRangeFn | None,
-                    io: IOResult, p: PathSpec, size: int | None,
-                    pos: int) -> tuple[bytes, int]:
+async def _catch_up(
+    read: Callable[..., Any],
+    read_range: ReadRangeFn | None,
+    io: IOResult,
+    p: PathSpec,
+    size: int | None,
+    pos: int,
+) -> tuple[bytes, int]:
     """What a followed file gained past ``pos``, and where the next poll
     starts: a size-unknown file is read whole and measured, and a file
     shorter than ``pos`` was truncated, which is noted and read from the
@@ -366,8 +389,11 @@ async def _catch_up(read: Callable[..., Any], read_range: ReadRangeFn | None,
         pos = 0
     if size <= pos:
         return b"", pos
-    data = (whole[pos:] if whole is not None else await _window(
-        read, read_range, p, pos, size - pos))
+    data = (
+        whole[pos:]
+        if whole is not None
+        else await _window(read, read_range, p, pos, size - pos)
+    )
     return data, pos + len(data)
 
 
@@ -443,11 +469,14 @@ async def _follow(
         box = [0]
         try:
             chunks = [
-                chunk async for chunk in tail(_counted(read(p), box),
-                                              n=counts.lines,
-                                              c=counts.byte_count,
-                                              from_line=counts.from_line,
-                                              from_byte=counts.from_byte)
+                chunk
+                async for chunk in tail(
+                    _counted(read(p), box),
+                    n=counts.lines,
+                    c=counts.byte_count,
+                    from_line=counts.from_line,
+                    from_byte=counts.from_byte,
+                )
             ]
         except FS_ERRORS as exc:
             # There is no handle to hold, so this first read is the
@@ -489,8 +518,9 @@ async def _follow(
                 if current.type is FileType.DIRECTORY:
                     grown = None
                 else:
-                    grown = await _catch_up(read, read_range, io, p,
-                                            current.size, positions[slot])
+                    grown = await _catch_up(
+                        read, read_range, io, p, current.size, positions[slot]
+                    )
             except IsADirectoryError:
                 grown = None
             except FS_ERRORS as exc:
@@ -500,8 +530,10 @@ async def _follow(
                 # --retry covers the initial open alone, as in GNU.
                 if flags.follow_name:
                     _note(
-                        io, f"tail: '{p.raw_path}' has become inaccessible: "
-                        f"{fs_strerror(exc)}\n")
+                        io,
+                        f"tail: '{p.raw_path}' has become inaccessible: "
+                        f"{fs_strerror(exc)}\n",
+                    )
                     active.remove((slot, p))
                     if flags.retry:
                         waiting.append((slot, p, APPEARED))
@@ -509,11 +541,15 @@ async def _follow(
             if grown is None:
                 if not flags.follow_name:
                     continue
-                line = (f"tail: '{p.raw_path}' has been replaced with an "
-                        "untailable file")
+                line = (
+                    f"tail: '{p.raw_path}' has been replaced with an "
+                    "untailable file"
+                )
                 _note(
-                    io, line +
-                    ("\n" if flags.retry else "; giving up on this name\n"))
+                    io,
+                    line
+                    + ("\n" if flags.retry else "; giving up on this name\n"),
+                )
                 active.remove((slot, p))
                 if flags.retry:
                     waiting.append((slot, p, ACCESSIBLE))
@@ -529,9 +565,13 @@ async def _follow(
     io.exit_code = 1
 
 
-async def _unfollowable(paths: list[PathSpec], readable: list[PathSpec],
-                        stat: StatFn, flags: TailFlags,
-                        io: IOResult) -> list[tuple[PathSpec, str]]:
+async def _unfollowable(
+    paths: list[PathSpec],
+    readable: list[PathSpec],
+    stat: StatFn,
+    flags: TailFlags,
+    io: IOResult,
+) -> list[tuple[PathSpec, str]]:
     """Sort the operands that did not open into the ones ``--retry``
     waits for and the ones tail gives up on, wording the latter.
 
@@ -604,27 +644,31 @@ async def tail_generic(
     try:
         parsed = parse_flags(opts.flags)
     except UsageError as exc:
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=f"{exc}\n".encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=f"{exc}\n".encode()
+        )
     except ValueError as exc:
         return None, IOResult(exit_code=1, stderr=str(exc).encode())
     counts = parsed.counts
     # GNU warns first, then tails as if --retry were not there.
-    retry_warning = (RETRY_IGNORED
-                     if parsed.retry and not parsed.follow else b"")
+    retry_warning = (
+        RETRY_IGNORED if parsed.retry and not parsed.follow else b""
+    )
     if paths:
         show_headers = (parsed.verbose or len(paths) > 1) and not parsed.quiet
         readable, err = await split_readable(paths, stat, "tail")
         io = operands_io(err)
         if retry_warning:
-            io.stderr = retry_warning + (io.stderr if isinstance(
-                io.stderr, bytes) else b"")
+            io.stderr = retry_warning + (
+                io.stderr if isinstance(io.stderr, bytes) else b""
+            )
         if parsed.follow:
             if parsed.retry and not parsed.follow_name:
                 io.stderr = (
                     b"tail: warning: --retry only effective for "
-                    b"the initial open\n" +
-                    (io.stderr if isinstance(io.stderr, bytes) else b""))
+                    b"the initial open\n"
+                    + (io.stderr if isinstance(io.stderr, bytes) else b"")
+                )
             pending = await _unfollowable(paths, readable, stat, parsed, io)
             if not readable and not pending:
                 _note(io, "tail: no files remaining\n")
@@ -633,30 +677,36 @@ async def tail_generic(
             # A follow reads the backend itself, never the read-through
             # cache: what it is polling for is exactly the change the
             # cached body does not have yet.
-            return _follow(readable,
-                           pending,
-                           read=stream,
-                           read_range=read_range,
-                           stat=stat,
-                           counts=counts,
-                           show_headers=show_headers,
-                           flags=parsed,
-                           io=io), io
+            return _follow(
+                readable,
+                pending,
+                read=stream,
+                read_range=read_range,
+                stat=stat,
+                counts=counts,
+                show_headers=show_headers,
+                flags=parsed,
+                io=io,
+            ), io
         if not readable:
             return None, io
-        return tail_multi(readable,
-                          read=stream,
-                          n=counts.lines,
-                          c=counts.byte_count,
-                          from_line=counts.from_line,
-                          from_byte=counts.from_byte,
-                          show_headers=show_headers), io
+        return tail_multi(
+            readable,
+            read=stream,
+            n=counts.lines,
+            c=counts.byte_count,
+            from_line=counts.from_line,
+            from_byte=counts.from_byte,
+            show_headers=show_headers,
+        ), io
     source = resolve_source(opts.stdin, "tail: missing operand")
-    body = tail(source,
-                n=counts.lines,
-                c=counts.byte_count,
-                from_line=counts.from_line,
-                from_byte=counts.from_byte)
+    body = tail(
+        source,
+        n=counts.lines,
+        c=counts.byte_count,
+        from_line=counts.from_line,
+        from_byte=counts.from_byte,
+    )
     if parsed.verbose and not parsed.quiet:
         # -v heads a stdin nobody named with the name it gives `-`.
         body = async_chain([f"==> {STDIN_HEADER_NAME} <==\n".encode(), body])

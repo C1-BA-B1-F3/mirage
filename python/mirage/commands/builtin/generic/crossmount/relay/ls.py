@@ -17,9 +17,8 @@ import functools
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import flat_scopes, relay
-from mirage.commands.builtin.generic.ls import Stat
+from mirage.commands.builtin.generic.ls import Stat, ls_options
 from mirage.commands.builtin.generic.ls import ls as generic_ls
-from mirage.commands.builtin.generic.ls import ls_options
 from mirage.commands.builtin.generic_bind.adapter import overlaid_stat
 from mirage.commands.builtin.utils.identity import identity_from
 from mirage.commands.spec.types import FlagValue
@@ -29,8 +28,9 @@ from mirage.types import FileStat, PathSpec
 from mirage.utils.path import gnu_basename
 
 
-async def relayed_readdir(dispatch: DispatchFn, path: PathSpec,
-                          index: IndexCacheStore | None) -> list[str]:
+async def relayed_readdir(
+    dispatch: DispatchFn, path: PathSpec, index: IndexCacheStore | None
+) -> list[str]:
     """Read one directory on the mount that owns it.
 
     The index argument is accepted and dropped. A cache index belongs to
@@ -46,8 +46,9 @@ async def relayed_readdir(dispatch: DispatchFn, path: PathSpec,
     return names
 
 
-async def relayed_stat(dispatch: DispatchFn, path: PathSpec,
-                       index: IndexCacheStore | None) -> FileStat:
+async def relayed_stat(
+    dispatch: DispatchFn, path: PathSpec, index: IndexCacheStore | None
+) -> FileStat:
     """Stat one entry on the mount that owns it, named by its own path.
 
     readdir supplies the parent's names and stat supplies the target's
@@ -70,11 +71,13 @@ async def relayed_stat(dispatch: DispatchFn, path: PathSpec,
     return info.model_copy(update={"name": name})
 
 
-async def run_ls(scopes: list[PathSpec],
-                 flag_kwargs: dict[str, FlagValue],
-                 dispatch: DispatchFn,
-                 ns: NamespaceView | None,
-                 session_view: SessionView | None = None) -> CrossResult:
+async def run_ls(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    ns: NamespaceView | None,
+    session_view: SessionView | None = None,
+) -> CrossResult:
     """List operands spanning mounts through the shared generic ls.
 
     ls relays rather than fans out because its layout is decided across
@@ -113,4 +116,5 @@ async def run_ls(scopes: list[PathSpec],
         links=ns.links if ns is not None else None,
         child_mounts=(ns.child_mounts if ns is not None else None),
         identity=identity_from(ns, session_view),
-        **ls_options(flag_kwargs))
+        **ls_options(flag_kwargs),
+    )

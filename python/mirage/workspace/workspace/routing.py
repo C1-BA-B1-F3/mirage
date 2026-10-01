@@ -15,8 +15,14 @@
 from typing import Any
 
 from mirage.runtime.resolver import MountResolver
-from mirage.runtime.routing import (RouteContext, RouteDecision, RouteError,
-                                    RoutePolicy, decide_line, parsed_commands)
+from mirage.runtime.routing import (
+    RouteContext,
+    RouteDecision,
+    RouteError,
+    RoutePolicy,
+    decide_line,
+    parsed_commands,
+)
 from mirage.runtime.table import catch_all, runtime_bindings_for
 from mirage.workspace.lookup import Consumer, lookup
 from mirage.workspace.mount import MountRegistry
@@ -40,8 +46,12 @@ class Router:
         resolver (MountResolver): mount prefixes for the policy context.
     """
 
-    def __init__(self, registry: MountRegistry, runtimes: Runtimes,
-                 resolver: MountResolver) -> None:
+    def __init__(
+        self,
+        registry: MountRegistry,
+        runtimes: Runtimes,
+        resolver: MountResolver,
+    ) -> None:
         self._registry = registry
         self._runtimes = runtimes
         self._resolver = resolver
@@ -88,22 +98,26 @@ class Router:
                 overlay = runtime_bindings_for(entries, runtime)
             except ValueError as exc:
                 raise RouteError(str(exc)) from exc
-            return RouteDecision(bindings={
-                **self._registry.runtime_bindings,
-                **overlay
-            },
-                                 fallback=catch_all(entries))
+            return RouteDecision(
+                bindings={**self._registry.runtime_bindings, **overlay},
+                fallback=catch_all(entries),
+            )
         has_scripts = any(entry.script is not None for entry in entries)
         if route_policy is None and not has_scripts:
             return None
-        commands = parsed_commands(ast, self._registry.clis.names(),
-                                   self._registry.match_command_prefix)
+        commands = parsed_commands(
+            ast,
+            self._registry.clis.names(),
+            self._registry.match_command_prefix,
+        )
         external_commands: list[str] = []
         for parsed in commands:
             name = parsed.command
-            if ("/" not in name
-                    and name not in self._registry.runtime_bindings and lookup(
-                        name, session, self._registry) is Consumer.EXTERNAL):
+            if (
+                "/" not in name
+                and name not in self._registry.runtime_bindings
+                and lookup(name, session, self._registry) is Consumer.EXTERNAL
+            ):
                 external_commands.append(parsed.command)
         ctx = RouteContext(
             line=command,
@@ -117,9 +131,13 @@ class Router:
             mounts=tuple(self._resolver.prefixes()),
         )
         try:
-            return await decide_line(entries, route_policy, ctx,
-                                     self._registry.runtime_bindings,
-                                     external_commands)
+            return await decide_line(
+                entries,
+                route_policy,
+                ctx,
+                self._registry.runtime_bindings,
+                external_commands,
+            )
         except RouteError:
             raise
         except (ValueError, ImportError) as exc:

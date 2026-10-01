@@ -14,8 +14,12 @@
 
 import pytest
 
-from mirage.cache.index import (IndexConfig, RAMIndexCacheStore,
-                                RedisIndexCacheStore, RedisIndexConfig)
+from mirage.cache.index import (
+    IndexConfig,
+    RAMIndexCacheStore,
+    RedisIndexCacheStore,
+    RedisIndexConfig,
+)
 from mirage.cache.index.config import LookupStatus
 from mirage.cache.index.factory import build_index
 
@@ -38,5 +42,6 @@ async def test_config_ttl_wins_over_the_driver_ttl():
 
 def test_redis_config_builds_a_redis_store():
     store = build_index(
-        RedisIndexConfig(url="redis://127.0.0.1:1/0", key_prefix="t:"), -1)
+        RedisIndexConfig(url="redis://127.0.0.1:1/0", key_prefix="t:"), -1
+    )
     assert isinstance(store, RedisIndexCacheStore)

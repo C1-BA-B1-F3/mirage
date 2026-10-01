@@ -14,8 +14,13 @@
 
 import pytest
 
-from mirage.policy import (CommandContext, CommandRule, Deny, DenyScope,
-                           OpsContext)
+from mirage.policy import (
+    CommandContext,
+    CommandRule,
+    Deny,
+    DenyScope,
+    OpsContext,
+)
 from mirage.policy.rule import RulePolicy
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
@@ -29,19 +34,23 @@ def _registry() -> MountRegistry:
 
 
 def _path(virtual: str, raw: str | None = None) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path="",
-                    raw_path=raw or virtual,
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path="",
+        raw_path=raw or virtual,
+        resolved=True,
+    )
 
 
 def _ctx(command: str, paths: list[PathSpec]) -> CommandContext:
-    return CommandContext(command=command,
-                          paths=tuple(paths),
-                          argv=(),
-                          cwd="/",
-                          registry=_registry())
+    return CommandContext(
+        command=command,
+        paths=tuple(paths),
+        argv=(),
+        cwd="/",
+        registry=_registry(),
+    )
 
 
 @pytest.mark.asyncio
@@ -51,61 +60,79 @@ async def test_plain_path_denies_the_whole_subtree_and_nothing_beside_it():
     # `/data/production`; the old `*`/`?`-only dialect needed `/data/prod/*`
     # and then missed the directory itself.
     policy = RulePolicy(
-        CommandRule(reason="prod", commands=("rm", ), paths=("/data/prod", )))
+        CommandRule(reason="prod", commands=("rm",), paths=("/data/prod",))
+    )
     assert isinstance(
-        await policy.pre_command(_ctx("rm", [_path("/data/prod")])), Deny)
+        await policy.pre_command(_ctx("rm", [_path("/data/prod")])), Deny
+    )
     assert isinstance(
-        await policy.pre_command(_ctx("rm", [_path("/data/prod/x")])), Deny)
-    assert await policy.pre_command(_ctx("rm",
-                                         [_path("/data/production")])) is None
+        await policy.pre_command(_ctx("rm", [_path("/data/prod/x")])), Deny
+    )
+    assert (
+        await policy.pre_command(_ctx("rm", [_path("/data/production")]))
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_slashless_glob_matches_any_name_component():
-    policy = RulePolicy(CommandRule(reason="keys", paths=("*.key", )))
+    policy = RulePolicy(CommandRule(reason="keys", paths=("*.key",)))
     deny = await policy.pre_command(_ctx("cat", [_path("/a/b.key/c")]))
     assert deny == Deny("/a/b.key/c: keys", DenyScope.OPERAND)
     assert await policy.pre_command(_ctx("cat", [_path("/a/b.keyx")])) is None
-    op = OpsContext(op="read",
-                    path=_path("/x/y.key"),
-                    write=False,
-                    prefix="/x/")
+    op = OpsContext(
+        op="read", path=_path("/x/y.key"), write=False, prefix="/x/"
+    )
     assert await policy.pre_ops(op) == Deny("keys")
 
 
 @pytest.mark.asyncio
 async def test_question_mark_and_class_are_patterns_too():
-    policy = RulePolicy(CommandRule(reason="one", paths=("/data/?.txt", )))
-    assert await policy.pre_command(_ctx("cat",
-                                         [_path("/data/a.txt")])) is not None
-    assert await policy.pre_command(_ctx("cat",
-                                         [_path("/data/ab.txt")])) is None
-    classed = RulePolicy(CommandRule(reason="cls", paths=("/data/[ab].txt", )))
-    assert await classed.pre_command(_ctx("cat",
-                                          [_path("/data/b.txt")])) is not None
-    assert await classed.pre_command(_ctx("cat",
-                                          [_path("/data/c.txt")])) is None
+    policy = RulePolicy(CommandRule(reason="one", paths=("/data/?.txt",)))
+    assert (
+        await policy.pre_command(_ctx("cat", [_path("/data/a.txt")]))
+        is not None
+    )
+    assert (
+        await policy.pre_command(_ctx("cat", [_path("/data/ab.txt")])) is None
+    )
+    classed = RulePolicy(CommandRule(reason="cls", paths=("/data/[ab].txt",)))
+    assert (
+        await classed.pre_command(_ctx("cat", [_path("/data/b.txt")]))
+        is not None
+    )
+    assert (
+        await classed.pre_command(_ctx("cat", [_path("/data/c.txt")])) is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_rule_policy_matches_command_and_path():
     policy = RulePolicy(
-        CommandRule(reason="prod is protected",
-                    commands=("rm", "mv"),
-                    paths=("/data/prod/*", )))
+        CommandRule(
+            reason="prod is protected",
+            commands=("rm", "mv"),
+            paths=("/data/prod/*",),
+        )
+    )
     deny = await policy.pre_command(
-        _ctx("rm", [_path("/data/prod/x.txt", raw="prod/x.txt")]))
+        _ctx("rm", [_path("/data/prod/x.txt", raw="prod/x.txt")])
+    )
     assert deny is not None
     assert deny == Deny("prod/x.txt: prod is protected", DenyScope.OPERAND)
-    assert await policy.pre_command(_ctx("rm",
-                                         [_path("/data/dev/x.txt")])) is None
-    assert await policy.pre_command(_ctx("cat",
-                                         [_path("/data/prod/x.txt")])) is None
+    assert (
+        await policy.pre_command(_ctx("rm", [_path("/data/dev/x.txt")]))
+        is None
+    )
+    assert (
+        await policy.pre_command(_ctx("cat", [_path("/data/prod/x.txt")]))
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_rule_policy_without_paths_refuses_the_command_outright():
-    policy = RulePolicy(CommandRule(reason="not here", commands=("shred", )))
+    policy = RulePolicy(CommandRule(reason="not here", commands=("shred",)))
     deny = await policy.pre_command(_ctx("shred", []))
     assert deny is not None
     assert deny == Deny("not here")
@@ -114,11 +141,15 @@ async def test_rule_policy_without_paths_refuses_the_command_outright():
 @pytest.mark.asyncio
 async def test_rule_policy_without_commands_covers_every_command():
     policy = RulePolicy(
-        CommandRule(reason="frozen", paths=("/data/locked/*", )))
-    assert await policy.pre_command(_ctx("cat", [_path("/data/locked/a")])
-                                    ) is not None
-    assert await policy.pre_command(_ctx("rm",
-                                         [_path("/data/open/a")])) is None
+        CommandRule(reason="frozen", paths=("/data/locked/*",))
+    )
+    assert (
+        await policy.pre_command(_ctx("cat", [_path("/data/locked/a")]))
+        is not None
+    )
+    assert (
+        await policy.pre_command(_ctx("rm", [_path("/data/open/a")])) is None
+    )
 
 
 @pytest.mark.asyncio
@@ -126,18 +157,17 @@ async def test_rule_policy_op_twin_holds_for_path_only_rules():
     # Pure path protection also fires at the op doors, so FUSE and
     # programmatic ops cannot bypass it.
     policy = RulePolicy(
-        CommandRule(reason="frozen", paths=("/data/locked/*", )))
-    ctx = OpsContext(op="read",
-                     path=_path("/data/locked/a"),
-                     write=False,
-                     prefix="/data/")
+        CommandRule(reason="frozen", paths=("/data/locked/*",))
+    )
+    ctx = OpsContext(
+        op="read", path=_path("/data/locked/a"), write=False, prefix="/data/"
+    )
     deny = await policy.pre_ops(ctx)
     assert deny is not None
     assert deny == Deny("frozen")
-    open_ctx = OpsContext(op="read",
-                          path=_path("/data/open/a"),
-                          write=False,
-                          prefix="/data/")
+    open_ctx = OpsContext(
+        op="read", path=_path("/data/open/a"), write=False, prefix="/data/"
+    )
     assert await policy.pre_ops(open_ctx) is None
 
 
@@ -146,11 +176,9 @@ async def test_rule_policy_op_twin_skips_command_scoped_rules():
     # An op does not know which command issued it; command-scoped
     # rules stay at the command layer.
     policy = RulePolicy(
-        CommandRule(reason="no rm",
-                    commands=("rm", ),
-                    paths=("/data/prod/*", )))
-    ctx = OpsContext(op="unlink",
-                     path=_path("/data/prod/x"),
-                     write=True,
-                     prefix="/data/")
+        CommandRule(reason="no rm", commands=("rm",), paths=("/data/prod/*",))
+    )
+    ctx = OpsContext(
+        op="unlink", path=_path("/data/prod/x"), write=True, prefix="/data/"
+    )
     assert await policy.pre_ops(ctx) is None

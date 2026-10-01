@@ -16,24 +16,36 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.gunzip import gunzip_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def gunzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    resolved = await ops.resolve_glob(accessor, paths,
-                                      opts.index) if paths else []
+async def gunzip(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
+    resolved = (
+        await ops.resolve_glob(accessor, paths, opts.index) if paths else []
+    )
     return await gunzip_generic(
-        resolved, list(texts), opts,
+        resolved,
+        list(texts),
+        opts,
         bound_op(ops.read_bytes, accessor, opts.index),
         partial(ops.require(Operation.WRITE), accessor),
         partial(ops.require(Operation.UNLINK), accessor),
-        partial(ops.stat, accessor))
+        partial(ops.stat, accessor),
+    )
 
 
-BUILDER = Builder('gunzip', gunzip, write=True)
+BUILDER = Builder("gunzip", gunzip, write=True)

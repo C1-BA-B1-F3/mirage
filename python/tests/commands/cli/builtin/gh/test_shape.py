@@ -12,8 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.gh.shape import (ZERO_TIME, ListOf, OrNull,
-                                                  exported, pointer, struct)
+from mirage.commands.cli.builtin.gh.shape import (
+    ZERO_TIME,
+    ListOf,
+    OrNull,
+    exported,
+    pointer,
+    struct,
+)
 
 
 def test_the_go_primitives_zero_fill():
@@ -32,16 +38,9 @@ def test_a_struct_prints_in_its_own_order_and_a_nil_pointer_as_null():
 
 
 def test_a_user_author_keeps_its_id_and_a_bot_is_app_login():
-    assert exported({
-        "id": "U1",
-        "login": "octo",
-        "name": "Octo"
-    }, "author") == {
-        "id": "U1",
-        "is_bot": False,
-        "login": "octo",
-        "name": "Octo"
-    }
+    assert exported(
+        {"id": "U1", "login": "octo", "name": "Octo"}, "author"
+    ) == {"id": "U1", "is_bot": False, "login": "octo", "name": "Octo"}
     assert exported({"login": "dependabot"}, "author") == {
         "is_bot": True,
         "login": "app/dependabot",
@@ -51,34 +50,19 @@ def test_a_user_author_keeps_its_id_and_a_bot_is_app_login():
 
 def test_reaction_groups_nobody_reacted_with_are_dropped():
     groups = [
-        {
-            "content": "THUMBS_UP",
-            "users": {
-                "totalCount": 2
-            }
-        },
-        {
-            "content": "LAUGH",
-            "users": {
-                "totalCount": 0
-            }
-        },
+        {"content": "THUMBS_UP", "users": {"totalCount": 2}},
+        {"content": "LAUGH", "users": {"totalCount": 0}},
     ]
     assert exported(groups, "reactions") == [groups[0]]
     assert exported(None, "reactions") == []
 
 
 def test_an_owner_leaves_an_empty_id_and_name_out():
-    assert exported({
+    assert exported({"id": "O1", "login": "org"}, "owner") == {
         "id": "O1",
-        "login": "org"
-    }, "owner") == {
-        "id": "O1",
-        "login": "org"
+        "login": "org",
     }
-    assert list(exported({
-        "id": "U1",
-        "name": "Me",
-        "login": "me"
-    }, "owner")) == ["id", "name", "login"]
+    assert list(
+        exported({"id": "U1", "name": "Me", "login": "me"}, "owner")
+    ) == ["id", "name", "login"]
     assert exported(None, "owner") == {"login": ""}

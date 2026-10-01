@@ -25,8 +25,9 @@ from mirage.vfs.hf_datasets import HfDatasetsConfig, HfDatasetsVFS
 load_dotenv(".env.development")
 
 config = HfDatasetsConfig(
-    repo_id=os.environ.get("HF_DATASET_REPO",
-                           "AlienKevin/SWE-ZERO-12M-trajectories"),
+    repo_id=os.environ.get(
+        "HF_DATASET_REPO", "AlienKevin/SWE-ZERO-12M-trajectories"
+    ),
     token=os.environ.get("HF_TOKEN"),
 )
 vfs = HfDatasetsVFS(config)
@@ -43,12 +44,16 @@ async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /ds/ ===")
 
     print("\n=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /ds/__nf_missing__.txt", "head /ds/__nf_missing__.txt",
-                "stat /ds/__nf_missing__.txt"):
+    for cmd in (
+        "cat /ds/__nf_missing__.txt",
+        "head /ds/__nf_missing__.txt",
+        "stat /ds/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ── discover structure ──────────────────────────────
     print("\n=== ls /ds/ ===")
@@ -76,14 +81,19 @@ async def main():
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print("=== metadata overlay on /ds/README.md ===")
-    meta_res = await ws.shell('chmod 640 "/ds/README.md"'
-                              ' && chown 500:dev "/ds/README.md"'
-                              ' && touch -t 202601021530 "/ds/README.md"')
+    meta_res = await ws.shell(
+        'chmod 640 "/ds/README.md"'
+        ' && chown 500:dev "/ds/README.md"'
+        ' && touch -t 202601021530 "/ds/README.md"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path("/ds/README.md"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path("/ds/README.md")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     # ── find ────────────────────────────────────────────
     print("\n=== find /ds/ -name '*.md' ===")
@@ -155,8 +165,7 @@ async def main():
     print(f"  stdout: {(await r.stdout_str()).strip()}  exit: {r.exit_code}")
 
     print("=== grep -c parquet README ; wc -l README (semicolon) ===")
-    r = await ws.shell("grep -c parquet /ds/README.md"
-                       "; wc -l /ds/README.md")
+    r = await ws.shell("grep -c parquet /ds/README.md; wc -l /ds/README.md")
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
     # ── quoting / escaping / command substitution ───────
@@ -166,18 +175,22 @@ async def main():
     print(f'  cat "$TGT" | head -n 2:\n{(await r.stdout_str()).rstrip()}')
 
     r = await ws.shell("head -n 1 $(echo /ds/README.md)")
-    print(f"  head -n 1 $(echo /ds/README.md): "
-          f"{(await r.stdout_str()).strip()}")
+    print(
+        f"  head -n 1 $(echo /ds/README.md): {(await r.stdout_str()).strip()}"
+    )
 
     # ── background jobs ─────────────────────────────────
     print("\n=== background jobs ===")
-    r = await ws.shell("grep -c parquet /ds/README.md &"
-                       " echo 'kicked off'; wait")
+    r = await ws.shell(
+        "grep -c parquet /ds/README.md & echo 'kicked off'; wait"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
 
-    r = await ws.shell("grep -c parquet /ds/README.md &"
-                       " wc -l /ds/README.md &"
-                       " wait; echo all done")
+    r = await ws.shell(
+        "grep -c parquet /ds/README.md &"
+        " wc -l /ds/README.md &"
+        " wait; echo all done"
+    )
     print(f"  parallel: {(await r.stdout_str()).strip()}")
 
     # ── streaming chain backpressure ────────────────────
@@ -193,8 +206,9 @@ async def main():
         dt = time.monotonic() - t0
         net = sum(rec.bytes for rec in ws.vfs.records) - before_bytes
         out = (await r.stdout_str()).rstrip().splitlines()
-        print(f"  {label:38s} bytes={net:>6,}  t={dt:4.2f}s  "
-              f"lines={len(out):>3}")
+        print(
+            f"  {label:38s} bytes={net:>6,}  t={dt:4.2f}s  lines={len(out):>3}"
+        )
 
     await ws.cache.clear()
     await measure("head -n 1 (line streamed)", f"head -n 1 {target}")
@@ -205,11 +219,15 @@ async def main():
     await ws.cache.clear()
     await measure("cat | head -n 1", f"cat {target} | head -n 1")
     await ws.cache.clear()
-    await measure("cat | tr A-Z a-z | head -n 1",
-                  f"cat {target} | tr A-Z a-z | head -n 1")
+    await measure(
+        "cat | tr A-Z a-z | head -n 1",
+        f"cat {target} | tr A-Z a-z | head -n 1",
+    )
     await ws.cache.clear()
-    await measure("4-stage: cat|tr|grep|head -n 1",
-                  f"cat {target} | tr A-Z a-z | grep parquet | head -n 1")
+    await measure(
+        "4-stage: cat|tr|grep|head -n 1",
+        f"cat {target} | tr A-Z a-z | grep parquet | head -n 1",
+    )
 
     print(f"\nFinal: {ops_summary()}")
 

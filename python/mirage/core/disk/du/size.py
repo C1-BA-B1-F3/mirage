@@ -21,9 +21,11 @@ from mirage.core.disk.errors import disk_errors
 from mirage.types import PathSpec
 
 
-async def size(accessor: DiskAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> int:
+async def size(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> int:
     """Recursive byte size of everything under a path.
 
     Args:

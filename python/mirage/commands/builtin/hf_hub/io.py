@@ -44,10 +44,12 @@ from mirage.vfs.types import NativeReadOps, ReadOps
 # there with ordinary commands and `hf upload /work/f path` sends one
 # commit back. Pinned end to end by
 # `hf_a_local_mount_is_the_writable_copy` in integ/cli/hf.json.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read,
-                                     read_stream=_read_stream,
-                                     exists=_exists),
-                is_mounted=lambda a: True,
-                local=False,
-                max_glob_matches=SCOPE_ERROR).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(
+        read_range=_read, read_stream=_read_stream, exists=_exists
+    ),
+    is_mounted=lambda a: True,
+    local=False,
+    max_glob_matches=SCOPE_ERROR,
+).to_command_io()

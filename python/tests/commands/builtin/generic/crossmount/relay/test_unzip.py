@@ -43,10 +43,13 @@ async def _run(line: str) -> tuple[int, bytes, dict[str, bytes]]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flag,head", [
-    ("-v", b"Archive:  /a/a.zip\n Length   Method"),
-    ("-l", b"  Length      Name\n"),
-])
+@pytest.mark.parametrize(
+    "flag,head",
+    [
+        ("-v", b"Archive:  /a/a.zip\n Length   Method"),
+        ("-l", b"  Length      Name\n"),
+    ],
+)
 async def test_relay_listing_letters_list_instead_of_extracting(flag, head):
     exit_code, out, written = await _run(f"unzip {flag} /a/a.zip -d /b/out")
     assert exit_code == 0
@@ -57,6 +60,7 @@ async def test_relay_listing_letters_list_instead_of_extracting(flag, head):
 @pytest.mark.asyncio
 async def test_relay_extraction_honours_excludes():
     exit_code, _, written = await _run(
-        "unzip -q /a/a.zip -x drop.txt -d /b/out")
+        "unzip -q /a/a.zip -x drop.txt -d /b/out"
+    )
     assert exit_code == 0
     assert written == {"/out/keep.txt": b"keep\n"}

@@ -31,11 +31,16 @@ from agents.sandbox.errors import ExecTimeoutError
 from agents.sandbox.manifest import Environment
 from agents.sandbox.session.sandbox_session_state import SandboxSessionState
 
-from mirage.agents.openai_agents.constants import (INTERRUPT,
-                                                   INTERRUPTED_EXIT_CODE,
-                                                   NO_STDIN)
-from mirage.agents.openai_agents.sandbox import (MirageSandboxClient,
-                                                 combined_output, shell_line)
+from mirage.agents.openai_agents.constants import (
+    INTERRUPT,
+    INTERRUPTED_EXIT_CODE,
+    NO_STDIN,
+)
+from mirage.agents.openai_agents.sandbox import (
+    MirageSandboxClient,
+    combined_output,
+    shell_line,
+)
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -111,15 +116,19 @@ def test_exec_names_the_reason_beside_a_refused_command():
     # refusal record, and a byte surface appends it as one more line.
 
     async def _run():
-        ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)},
-                       mode=MountMode.WRITE,
-                       route_policy=lambda ctx: {"deny": "no deletes"}
-                       if ctx.command == "rm" else None)
+        ws = Workspace(
+            {"/": (RAMVFS(), MountMode.WRITE)},
+            mode=MountMode.WRITE,
+            route_policy=lambda ctx: (
+                {"deny": "no deletes"} if ctx.command == "rm" else None
+            ),
+        )
         session = await MirageSandboxClient(ws).create()
         result = await session.exec("rm", "/x", shell=False)
         assert result.exit_code == 126
         assert result.stderr == (
-            b"rm: Permission denied\npolicy denied: no deletes\n")
+            b"rm: Permission denied\npolicy denied: no deletes\n"
+        )
 
     asyncio.run(_run())
 
@@ -180,8 +189,11 @@ def test_commands_start_at_the_manifest_root():
 
     async def _run():
         client = MirageSandboxClient(_workspace())
-        session = await client.create(manifest=Manifest(
-            root="/workspace", entries={"notes.md": File(content=b"hi\n")}))
+        session = await client.create(
+            manifest=Manifest(
+                root="/workspace", entries={"notes.md": File(content=b"hi\n")}
+            )
+        )
         await session.start()
         assert (await session.exec("pwd")).stdout == b"/workspace\n"
         assert (await session.exec("cat notes.md")).stdout == b"hi\n"
@@ -230,8 +242,9 @@ def test_relative_paths_resolve_against_the_manifest_root():
 
     async def _run():
         ws = _workspace()
-        session = await MirageSandboxClient(ws).create(manifest=Manifest(
-            root="/project"))
+        session = await MirageSandboxClient(ws).create(
+            manifest=Manifest(root="/project")
+        )
         await session.start()
         await session.write(Path("rel.txt"), io.BytesIO(b"rel"))
         assert await ws.vfs.read("/project/rel.txt") == b"rel"
@@ -256,8 +269,11 @@ def test_resume_after_delete_keeps_the_agents_edits():
     async def _run():
         ws = _workspace()
         client = MirageSandboxClient(ws)
-        session = await client.create(manifest=Manifest(
-            root="/workspace", entries={"notes.md": File(content=b"v1\n")}))
+        session = await client.create(
+            manifest=Manifest(
+                root="/workspace", entries={"notes.md": File(content=b"v1\n")}
+            )
+        )
         await session.start()
         await session.exec("echo v2 > notes.md")
         state = session.state
@@ -277,9 +293,11 @@ def test_resume_refuses_another_backends_state():
     async def _run():
         client = MirageSandboxClient(_workspace())
         session = await client.create()
-        other = OtherState(session_id=uuid.uuid4(),
-                           snapshot=session.state.snapshot,
-                           manifest=session.state.manifest)
+        other = OtherState(
+            session_id=uuid.uuid4(),
+            snapshot=session.state.snapshot,
+            manifest=session.state.manifest,
+        )
         with pytest.raises(TypeError, match="'other'"):
             await client.resume(other)
 
@@ -290,13 +308,14 @@ def test_a_long_command_keeps_running_in_the_background():
 
     async def _run():
         session = await _make_client().create()
-        started = await session.pty_exec_start("sleep 1; echo done",
-                                               yield_time_s=0.25)
+        started = await session.pty_exec_start(
+            "sleep 1; echo done", yield_time_s=0.25
+        )
         assert started.process_id is not None
         assert started.exit_code is None
-        finished = await session.pty_write_stdin(session_id=started.process_id,
-                                                 chars="",
-                                                 yield_time_s=5)
+        finished = await session.pty_write_stdin(
+            session_id=started.process_id, chars="", yield_time_s=5
+        )
         assert finished.process_id is None
         assert finished.exit_code == 0
         assert finished.output == b"done\n"
@@ -322,8 +341,9 @@ def test_interrupt_cancels_a_background_command():
         session = await _make_client().create()
         started = await session.pty_exec_start("sleep 30", yield_time_s=0.25)
         assert started.process_id is not None
-        stopped = await session.pty_write_stdin(session_id=started.process_id,
-                                                chars=INTERRUPT)
+        stopped = await session.pty_write_stdin(
+            session_id=started.process_id, chars=INTERRUPT
+        )
         assert stopped.exit_code == INTERRUPTED_EXIT_CODE
         assert stopped.process_id is None
 
@@ -337,8 +357,9 @@ def test_a_background_command_refuses_stdin():
         started = await session.pty_exec_start("sleep 30", yield_time_s=0.25)
         assert started.process_id is not None
         with pytest.raises(RuntimeError, match=NO_STDIN):
-            await session.pty_write_stdin(session_id=started.process_id,
-                                          chars="y\n")
+            await session.pty_write_stdin(
+                session_id=started.process_id, chars="y\n"
+            )
         await session.pty_terminate_all()
 
     asyncio.run(_run())
@@ -351,10 +372,15 @@ def test_shell_line_quotes_an_argv_and_keeps_a_shell_string():
 
 def test_combined_output_puts_stderr_on_its_own_line():
     from agents.sandbox.types import ExecResult
-    assert combined_output(ExecResult(exit_code=1, stdout=b"a",
-                                      stderr=b"b")) == "a\nb"
-    assert combined_output(ExecResult(exit_code=0, stdout=b"a\n",
-                                      stderr=b"")) == "a\n"
+
+    assert (
+        combined_output(ExecResult(exit_code=1, stdout=b"a", stderr=b"b"))
+        == "a\nb"
+    )
+    assert (
+        combined_output(ExecResult(exit_code=0, stdout=b"a\n", stderr=b""))
+        == "a\n"
+    )
 
 
 def test_an_approved_command_resumes_through_the_runner(scripted_model):
@@ -366,13 +392,12 @@ def test_an_approved_command_resumes_through_the_runner(scripted_model):
         client = MirageSandboxClient(_workspace())
         agent = SandboxAgent(
             name="gated",
-            model=scripted_model([("exec_command", {
-                "cmd": "echo resumed"
-            })]),
+            model=scripted_model([("exec_command", {"cmd": "echo resumed"})]),
             capabilities=[Shell(configure_tools=gate)],
         )
-        config = RunConfig(sandbox=SandboxRunConfig(client=client),
-                           tracing_disabled=True)
+        config = RunConfig(
+            sandbox=SandboxRunConfig(client=client), tracing_disabled=True
+        )
         paused = await Runner.run(agent, "go", run_config=config)
         assert [item.name for item in paused.interruptions] == ["exec_command"]
         state = await RunState.from_json(agent, paused.to_state().to_json())
@@ -387,9 +412,12 @@ def test_an_approved_command_resumes_through_the_runner(scripted_model):
 def test_commands_see_the_manifest_environment():
 
     async def _run():
-        session = await _make_client().create(manifest=Manifest(
-            root="/project", environment=Environment(value={"GREETING": "hi"}))
-                                              )
+        session = await _make_client().create(
+            manifest=Manifest(
+                root="/project",
+                environment=Environment(value={"GREETING": "hi"}),
+            )
+        )
         await session.start()
         assert (await session.exec("echo $GREETING")).stdout == b"hi\n"
         update = await session.pty_exec_start("echo $GREETING")
@@ -402,14 +430,14 @@ def test_a_background_command_raises_on_its_timeout():
 
     async def _run():
         session = await _make_client().create()
-        started = await session.pty_exec_start("sleep 5",
-                                               timeout=0.3,
-                                               yield_time_s=0.25)
+        started = await session.pty_exec_start(
+            "sleep 5", timeout=0.3, yield_time_s=0.25
+        )
         assert started.process_id is not None
         with pytest.raises(ExecTimeoutError):
-            await session.pty_write_stdin(session_id=started.process_id,
-                                          chars="",
-                                          yield_time_s=3)
+            await session.pty_write_stdin(
+                session_id=started.process_id, chars="", yield_time_s=3
+            )
 
     asyncio.run(_run())
 
@@ -427,11 +455,13 @@ def test_apply_patch_writes_inside_the_sandbox_session():
             await write(path, data, session_id=session_id)
 
         ws.vfs.write = recording_write
-        await WorkspaceEditor(session).apply_patch({
-            "type": "create_file",
-            "path": "pkg/new.py",
-            "diff": "+x = 1\n",
-        })
+        await WorkspaceEditor(session).apply_patch(
+            {
+                "type": "create_file",
+                "path": "pkg/new.py",
+                "diff": "+x = 1\n",
+            }
+        )
         assert seen == [f"openai-{session.state.session_id.hex}"]
 
     asyncio.run(_run())

@@ -4,11 +4,16 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.constants import C_SPACE
 from mirage.commands.builtin.utils.bre import BreError, search_bre
-from mirage.commands.builtin.utils.operands import (merge_split_errors,
-                                                    normalized_read,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (resolve_source, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    merge_split_errors,
+    normalized_read,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    resolve_source,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
@@ -46,7 +51,7 @@ _EOVERFLOW = "Value too large for defined data type"
 # The two type limits nl's four numeric options are bounded by.
 _INT_MAX = 2**31 - 1
 _INTMAX_MAX = 2**63 - 1
-_INTMAX_MIN = -2**63
+_INTMAX_MIN = -(2**63)
 
 # Where the sub-minimum side of `-w` and `-l` switches from the ERANGE
 # wording to the EOVERFLOW one, measured by bisection on coreutils 9.4 /
@@ -60,7 +65,7 @@ _INTMAX_MIN = -2**63
 # boundary instead (`-i -9223372036854775808` numbers happily and only
 # `-9223372036854775809` is refused), so they carry _INTMAX_MIN here and
 # the ERANGE clause is unreachable for them.
-_WIDTH_OVERFLOW_LOW = -2**30
+_WIDTH_OVERFLOW_LOW = -(2**30)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +83,9 @@ class NlFlags:
     no_renumber: bool = False
 
 
-def _number_error(label: str, raw: str | None, low: int, high: int,
-                  overflow_low: int) -> str | None:
+def _number_error(
+    label: str, raw: str | None, low: int, high: int, overflow_low: int
+) -> str | None:
     """GNU ``nl``'s refusal for one of its four numeric options.
 
     Each option has its own wording and -- unlike expand and cut -- the
@@ -139,14 +145,34 @@ def _number_error(label: str, raw: str | None, low: int, high: int,
 # EOVERFLOW wording. The order here is for reading only -- which option
 # gets to speak is decided by the command line, never by this tuple.
 _NUMERIC_OPTIONS: tuple[tuple[str, str, int, int, int], ...] = (
-    ("starting_line_number", "invalid starting line number", _INTMAX_MIN,
-     _INTMAX_MAX, _INTMAX_MIN),
-    ("line_increment", "invalid line number increment", _INTMAX_MIN,
-     _INTMAX_MAX, _INTMAX_MIN),
-    ("number_width", "invalid line number field width", 1, _INT_MAX,
-     _WIDTH_OVERFLOW_LOW),
-    ("join_blank_lines", "invalid line number of blank lines", 1, _INTMAX_MAX,
-     _WIDTH_OVERFLOW_LOW),
+    (
+        "starting_line_number",
+        "invalid starting line number",
+        _INTMAX_MIN,
+        _INTMAX_MAX,
+        _INTMAX_MIN,
+    ),
+    (
+        "line_increment",
+        "invalid line number increment",
+        _INTMAX_MIN,
+        _INTMAX_MAX,
+        _INTMAX_MIN,
+    ),
+    (
+        "number_width",
+        "invalid line number field width",
+        1,
+        _INT_MAX,
+        _WIDTH_OVERFLOW_LOW,
+    ),
+    (
+        "join_blank_lines",
+        "invalid line number of blank lines",
+        1,
+        _INTMAX_MAX,
+        _WIDTH_OVERFLOW_LOW,
+    ),
 )
 
 # The three style options and the message each one words its refusal
@@ -332,8 +358,9 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> NlFlags:
     )
 
 
-def _should_number(line: str, numbering: str,
-                   pattern: re.Pattern[str] | None) -> bool:
+def _should_number(
+    line: str, numbering: str, pattern: re.Pattern[str] | None
+) -> bool:
     if numbering == "n":
         return False
     if numbering == "a":
@@ -363,7 +390,7 @@ def _section_delimiters(delimiter: str) -> dict[str, str]:
     """
     if not delimiter:
         return {}
-    pair = (delimiter if len(delimiter.encode()) > 1 else delimiter + ":")
+    pair = delimiter if len(delimiter.encode()) > 1 else delimiter + ":"
     return {pair * 3: "header", pair * 2: "body", pair: "footer"}
 
 
@@ -470,8 +497,9 @@ def _render_line(line: str, config: NlConfig, state: NlState) -> bytes | None:
     if should_number:
         if state.overflowed:
             return None
-        prefix = _format_number(state.number, config.width,
-                                config.number_format)
+        prefix = _format_number(
+            state.number, config.width, config.number_format
+        )
         advanced = state.number + config.increment
         if not _INTMAX_MIN <= advanced <= _INTMAX_MAX:
             state.overflowed = True
@@ -586,10 +614,12 @@ async def nl(
     no_renumber: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     body_numbering, body_pattern = _parse_numbering(body_numbering_raw or "t")
-    footer_numbering, footer_pattern = _parse_numbering(footer_numbering_raw
-                                                        or "n")
-    header_numbering, header_pattern = _parse_numbering(header_numbering_raw
-                                                        or "n")
+    footer_numbering, footer_pattern = _parse_numbering(
+        footer_numbering_raw or "n"
+    )
+    header_numbering, header_pattern = _parse_numbering(
+        header_numbering_raw or "n"
+    )
     start = int(start_raw) if start_raw is not None else 1
     increment = int(increment_raw) if increment_raw is not None else 1
     width = int(width_raw) if width_raw is not None else 6
@@ -651,20 +681,24 @@ async def nl_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await nl(readable,
-                 read_stream=normalized_read(stream),
-                 stdin=opts.stdin,
-                 body_numbering_raw=parsed.body_numbering_raw,
-                 start_raw=parsed.start_raw,
-                 increment_raw=parsed.increment_raw,
-                 width_raw=parsed.width_raw,
-                 separator=parsed.separator,
-                 footer_numbering_raw=parsed.footer_numbering_raw,
-                 header_numbering_raw=parsed.header_numbering_raw,
-                 join_blank_lines_raw=parsed.join_blank_lines_raw,
-                 number_format=parsed.number_format,
-                 delimiter=parsed.delimiter,
-                 no_renumber=parsed.no_renumber), err)
+        await nl(
+            readable,
+            read_stream=normalized_read(stream),
+            stdin=opts.stdin,
+            body_numbering_raw=parsed.body_numbering_raw,
+            start_raw=parsed.start_raw,
+            increment_raw=parsed.increment_raw,
+            width_raw=parsed.width_raw,
+            separator=parsed.separator,
+            footer_numbering_raw=parsed.footer_numbering_raw,
+            header_numbering_raw=parsed.header_numbering_raw,
+            join_blank_lines_raw=parsed.join_blank_lines_raw,
+            number_format=parsed.number_format,
+            delimiter=parsed.delimiter,
+            no_renumber=parsed.no_renumber,
+        ),
+        err,
+    )
 
 
 __all__ = ["nl", "nl_generic"]

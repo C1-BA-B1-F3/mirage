@@ -23,7 +23,6 @@ from mirage.io.types import materialize
 
 
 class _Probe:
-
     def __init__(self) -> None:
         self.closed = False
 

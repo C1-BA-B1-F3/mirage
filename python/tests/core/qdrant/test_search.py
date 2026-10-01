@@ -7,15 +7,18 @@ from mirage.utils.key_prefix import mount_key
 
 
 async def _search(accessor, query: str, path: str, top_k: int = 1) -> str:
-    spec = PathSpec(vfs_path=mount_key(path, "/db"),
-                    virtual=path,
-                    directory=path)
-    out = await search_rows_output(TREE,
-                                   accessor,
-                                   query, [spec],
-                                   top_k=top_k,
-                                   threshold=0.0,
-                                   mount_prefix="/db")
+    spec = PathSpec(
+        vfs_path=mount_key(path, "/db"), virtual=path, directory=path
+    )
+    out = await search_rows_output(
+        TREE,
+        accessor,
+        query,
+        [spec],
+        top_k=top_k,
+        threshold=0.0,
+        mount_prefix="/db",
+    )
     return out.decode()
 
 

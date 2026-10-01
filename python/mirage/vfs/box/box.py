@@ -29,7 +29,6 @@ from mirage.watch.base import DeltaHook
 
 
 class BoxVFS(BaseVFS):
-
     accessor: BoxAccessor
     name: str = VFSName.BOX
     caches_reads: bool = True

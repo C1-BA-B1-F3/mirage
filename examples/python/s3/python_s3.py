@@ -36,7 +36,7 @@ ws = Workspace(
     {
         "/s3/": s3,
         # The demo scripts live under /work, so the mount carries x.
-        "/work/": (mem, MountMode.EXEC)
+        "/work/": (mem, MountMode.EXEC),
     },
     mode=MountMode.EXEC,
 )

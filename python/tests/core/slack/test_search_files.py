@@ -18,8 +18,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mirage.core.slack.config import SlackConfig
-from mirage.core.slack.formatters import (build_query, channel_dirname,
-                                          format_file_grep_results)
+from mirage.core.slack.formatters import (
+    build_query,
+    channel_dirname,
+    format_file_grep_results,
+)
 from mirage.core.slack.scope import SearchTarget
 from mirage.core.slack.search import search_files
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
@@ -30,13 +33,13 @@ async def test_search_files_calls_correct_endpoint():
     config = SlackConfig(token="xoxb", search_token="xoxp")
     fake_response = {
         "ok": True,
-        "files": {
-            "matches": []
-        },
+        "files": {"matches": []},
     }
-    with patch("mirage.core.slack.search.slack_get",
-               new_callable=AsyncMock,
-               return_value=fake_response) as mock:
+    with patch(
+        "mirage.core.slack.search.slack_get",
+        new_callable=AsyncMock,
+        return_value=fake_response,
+    ) as mock:
         await search_files(config, "report")
     args, kwargs = mock.call_args
     assert args[1] == "search.files"
@@ -60,9 +63,9 @@ def test_format_file_grep_results_renders_paths():
         },
     }
     raw = json.dumps(raw_payload).encode()
-    scope = SearchTarget(container="channels",
-                         channel_name="general",
-                         channel_id="C001")
+    scope = SearchTarget(
+        container="channels", channel_name="general", channel_id="C001"
+    )
     lines = format_file_grep_results(raw, scope, "/slack")
     assert len(lines) == 1
     line = lines[0]
@@ -73,52 +76,57 @@ def test_format_file_grep_results_renders_paths():
 
 
 def test_build_query_unchanged_for_files():
-    scope = SearchTarget(container="channels",
-                         channel_name="eng",
-                         channel_id="C1")
+    scope = SearchTarget(
+        container="channels", channel_name="eng", channel_id="C1"
+    )
     assert build_query("foo", scope) == "in:#eng foo"
 
 
 def test_format_file_grep_results_emits_exact_path():
     raw_payload = {
         "files": {
-            "matches": [{
-                "id": "F1ABC",
-                "name": "report.pdf",
-                "title": "Q4 Report",
-                "filetype": "pdf",
-                "channels": ["C001"],
-                "timestamp": 1712707200,
-            }],
+            "matches": [
+                {
+                    "id": "F1ABC",
+                    "name": "report.pdf",
+                    "title": "Q4 Report",
+                    "filetype": "pdf",
+                    "channels": ["C001"],
+                    "timestamp": 1712707200,
+                }
+            ],
         },
     }
     raw = json.dumps(raw_payload).encode()
-    scope = SearchTarget(container="channels",
-                         channel_name="general",
-                         channel_id="C001")
+    scope = SearchTarget(
+        container="channels", channel_name="general", channel_id="C001"
+    )
     lines = format_file_grep_results(raw, scope, "/slack")
     assert len(lines) == 1
-    expected_path = ("/slack/channels/general__C001/2024-04-10/files/"
-                     "report__F1ABC.pdf")
+    expected_path = (
+        "/slack/channels/general__C001/2024-04-10/files/report__F1ABC.pdf"
+    )
     assert lines[0].startswith(expected_path + ":"), lines[0]
 
 
 def test_format_file_grep_results_skips_when_no_scope_channel():
     raw_payload = {
         "files": {
-            "matches": [{
-                "id": "F1ABC",
-                "name": "report.pdf",
-                "title": "Q4 Report",
-                "channels": ["C001"],
-                "timestamp": 1712707200,
-            }],
+            "matches": [
+                {
+                    "id": "F1ABC",
+                    "name": "report.pdf",
+                    "title": "Q4 Report",
+                    "channels": ["C001"],
+                    "timestamp": 1712707200,
+                }
+            ],
         },
     }
     raw = json.dumps(raw_payload).encode()
-    scope = SearchTarget(container="channels",
-                         channel_name=None,
-                         channel_id=None)
+    scope = SearchTarget(
+        container="channels", channel_name=None, channel_id=None
+    )
     lines = format_file_grep_results(raw, scope, "/slack")
     assert lines == []
 
@@ -126,13 +134,15 @@ def test_format_file_grep_results_skips_when_no_scope_channel():
 def test_format_file_grep_results_preserves_special_chars():
     raw_payload = {
         "files": {
-            "matches": [{
-                "id": "F1ABC",
-                "name": "Q4 Report (final).pdf",
-                "title": "Q4",
-                "channels": ["C001"],
-                "timestamp": 1712707200,
-            }],
+            "matches": [
+                {
+                    "id": "F1ABC",
+                    "name": "Q4 Report (final).pdf",
+                    "title": "Q4",
+                    "channels": ["C001"],
+                    "timestamp": 1712707200,
+                }
+            ],
         },
     }
     raw = json.dumps(raw_payload).encode()
@@ -152,18 +162,22 @@ def test_format_file_grep_results_preserves_special_chars():
 def test_a_long_channel_name_reports_the_path_readdir_emits():
     """The file-hit formatter shares the message formatter's bug and fix."""
     name = "会議" * 100
-    raw = json.dumps({
-        "files": {
-            "matches": [{
-                "id": "F001",
-                "name": "report.pdf",
-                "timestamp": 1712707200
-            }],
-        },
-    }).encode()
-    scope = SearchTarget(container="channels",
-                         channel_name=name,
-                         channel_id="C001")
+    raw = json.dumps(
+        {
+            "files": {
+                "matches": [
+                    {
+                        "id": "F001",
+                        "name": "report.pdf",
+                        "timestamp": 1712707200,
+                    }
+                ],
+            },
+        }
+    ).encode()
+    scope = SearchTarget(
+        container="channels", channel_name=name, channel_id="C001"
+    )
     line = format_file_grep_results(raw, scope, "/slack")[0]
     dirname = line.split("/slack/channels/")[1].split("/")[0]
 

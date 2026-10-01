@@ -20,11 +20,22 @@ from typing import Any
 from gridfs.errors import NoFile
 
 from mirage.accessor.gridfs import GridFSAccessor
-from mirage.core.gridfs.client import (bucket, delete_all, files_coll,
-                                       iter_latest, latest_file, prefix_query)
+from mirage.core.gridfs.client import (
+    bucket,
+    delete_all,
+    files_coll,
+    iter_latest,
+    latest_file,
+    prefix_query,
+)
 from mirage.core.gridfs.constants import SCOPE_ERROR
-from mirage.core.object_store.driver import (ChildEntry, FindHints, ObjectMeta,
-                                             ObjectStoreDriver, TreeEntry)
+from mirage.core.object_store.driver import (
+    ChildEntry,
+    FindHints,
+    ObjectMeta,
+    ObjectStoreDriver,
+    TreeEntry,
+)
 from mirage.utils.dates import to_iso_z
 
 _COPY_CHUNK = 1024 * 1024
@@ -55,9 +66,14 @@ def glob_regex(pattern: str) -> str | None:
     return "".join(parts)
 
 
-def build_query(pfx: str, name: str | None, iname: str | None,
-                min_size: int | None, max_size: int | None,
-                pushdown: bool) -> dict[str, Any]:
+def build_query(
+    pfx: str,
+    name: str | None,
+    iname: str | None,
+    min_size: int | None,
+    max_size: int | None,
+    pushdown: bool,
+) -> dict[str, Any]:
     """Build the fs.files query, pushing filters server-side when exact.
 
     A pushed query selects files only, since pushdown is set for a
@@ -117,14 +133,8 @@ def subtree_query(stem: str) -> dict[str, Any]:
         return {}
     return {
         "$or": [
-            {
-                "filename": stem
-            },
-            {
-                "filename": {
-                    "$regex": "^" + re.escape(stem + "/")
-                }
-            },
+            {"filename": stem},
+            {"filename": {"$regex": "^" + re.escape(stem + "/")}},
         ]
     }
 
@@ -140,21 +150,24 @@ async def _connect(accessor: GridFSAccessor) -> AsyncIterator[GridFSAccessor]:
     yield accessor
 
 
-async def _list_children(conn: GridFSAccessor,
-                         pfx: str) -> AsyncIterator[ChildEntry]:
+async def _list_children(
+    conn: GridFSAccessor, pfx: str
+) -> AsyncIterator[ChildEntry]:
     async for doc in iter_latest(conn, prefix_query(pfx)):
         fname = doc["filename"]
         if fname == pfx:
             yield ChildEntry(key=fname, kind="marker")
             continue
-        relative = fname[len(pfx):]
+        relative = fname[len(pfx) :]
         slash = relative.find("/")
         if slash == -1:
             upload = doc.get("uploadDate")
-            yield ChildEntry(key=fname,
-                             kind="f",
-                             size=doc["length"],
-                             modified=to_iso_z(upload) if upload else "")
+            yield ChildEntry(
+                key=fname,
+                kind="f",
+                size=doc["length"],
+                modified=to_iso_z(upload) if upload else "",
+            )
         else:
             # A deeper filename or a "seg/" directory marker both imply
             # an immediate child directory (S3 CommonPrefixes
@@ -162,37 +175,53 @@ async def _list_children(conn: GridFSAccessor,
             yield ChildEntry(key=pfx + relative[:slash], kind="d")
 
 
-async def _list_tree(conn: GridFSAccessor,
-                     pfx: str) -> AsyncIterator[TreeEntry]:
+async def _list_tree(
+    conn: GridFSAccessor, pfx: str
+) -> AsyncIterator[TreeEntry]:
     async for doc in iter_latest(conn, prefix_query(pfx)):
         upload = doc.get("uploadDate")
-        yield TreeEntry(key=doc["filename"],
-                        size=doc["length"],
-                        modified=to_iso_z(upload) if upload else "")
+        yield TreeEntry(
+            key=doc["filename"],
+            size=doc["length"],
+            modified=to_iso_z(upload) if upload else "",
+        )
 
 
-async def _list_subtree(conn: GridFSAccessor,
-                        stem: str) -> AsyncIterator[TreeEntry]:
+async def _list_subtree(
+    conn: GridFSAccessor, stem: str
+) -> AsyncIterator[TreeEntry]:
     async for doc in iter_latest(conn, subtree_query(stem)):
         upload = doc.get("uploadDate")
-        yield TreeEntry(key=doc["filename"],
-                        size=doc["length"],
-                        modified=to_iso_z(upload) if upload else "")
+        yield TreeEntry(
+            key=doc["filename"],
+            size=doc["length"],
+            modified=to_iso_z(upload) if upload else "",
+        )
 
 
-async def _iter_query(conn: GridFSAccessor,
-                      query: dict[str, Any]) -> AsyncIterator[TreeEntry]:
+async def _iter_query(
+    conn: GridFSAccessor, query: dict[str, Any]
+) -> AsyncIterator[TreeEntry]:
     async for doc in iter_latest(conn, query):
         upload = doc.get("uploadDate")
-        yield TreeEntry(key=doc["filename"],
-                        size=doc["length"],
-                        modified=to_iso_z(upload) if upload else "")
+        yield TreeEntry(
+            key=doc["filename"],
+            size=doc["length"],
+            modified=to_iso_z(upload) if upload else "",
+        )
 
 
-def _find_tree(conn: GridFSAccessor, pfx: str,
-               hints: FindHints) -> tuple[AsyncIterator[TreeEntry], bool]:
-    query = build_query(pfx, hints.name, hints.iname, hints.min_size,
-                        hints.max_size, hints.pushdown)
+def _find_tree(
+    conn: GridFSAccessor, pfx: str, hints: FindHints
+) -> tuple[AsyncIterator[TreeEntry], bool]:
+    query = build_query(
+        pfx,
+        hints.name,
+        hints.iname,
+        hints.min_size,
+        hints.max_size,
+        hints.pushdown,
+    )
     return _iter_query(conn, query), query != prefix_query(pfx)
 
 
@@ -202,11 +231,13 @@ async def _head(conn: GridFSAccessor, key: str) -> ObjectMeta | None:
         return None
     revision = str(doc["_id"])
     upload = doc.get("uploadDate")
-    return ObjectMeta(size=doc["length"],
-                      modified=to_iso_z(upload) if upload else None,
-                      fingerprint=revision,
-                      revision=revision,
-                      extra={"file_id": revision})
+    return ObjectMeta(
+        size=doc["length"],
+        modified=to_iso_z(upload) if upload else None,
+        fingerprint=revision,
+        revision=revision,
+        extra={"file_id": revision},
+    )
 
 
 async def _get(conn: GridFSAccessor, key: str) -> bytes | None:
@@ -221,8 +252,9 @@ async def _get(conn: GridFSAccessor, key: str) -> bytes | None:
     return data
 
 
-async def _put(conn: GridFSAccessor, key: str,
-               data: bytes) -> ObjectMeta | None:
+async def _put(
+    conn: GridFSAccessor, key: str, data: bytes
+) -> ObjectMeta | None:
     # Uploads a new revision; older revisions stay in fs.files, so reads
     # pinned to an old revision _id keep working (GridFS-native
     # versioning). The new _id wins both keys of LATEST_SORT, so it is
@@ -270,15 +302,15 @@ async def _move_file(conn: GridFSAccessor, src_key: str, dst_key: str) -> bool:
         return False
     if dst_key != src_key:
         await delete_all(conn, {"filename": dst_key})
-    await files_coll(conn).update_many({"filename": src_key},
-                                       {"$set": {
-                                           "filename": dst_key
-                                       }})
+    await files_coll(conn).update_many(
+        {"filename": src_key}, {"$set": {"filename": dst_key}}
+    )
     return True
 
 
-async def _move_prefix(conn: GridFSAccessor, src_pfx: str,
-                       dst_pfx: str) -> bool:
+async def _move_prefix(
+    conn: GridFSAccessor, src_pfx: str, dst_pfx: str
+) -> bool:
     """Retag every revision under ``src_pfx`` to sit under ``dst_pfx``.
 
     A directory is a filename prefix plus the zero-byte ``key/`` marker
@@ -295,11 +327,9 @@ async def _move_prefix(conn: GridFSAccessor, src_pfx: str,
     """
     files = files_coll(conn)
     docs: list[dict[str, Any]] = []
-    async for doc in files.find(prefix_query(src_pfx),
-                                projection={
-                                    "_id": 1,
-                                    "filename": 1
-                                }):
+    async for doc in files.find(
+        prefix_query(src_pfx), projection={"_id": 1, "filename": 1}
+    ):
         docs.append(doc)
     if not docs:
         return False
@@ -309,17 +339,21 @@ async def _move_prefix(conn: GridFSAccessor, src_pfx: str,
         # and deleting first would drop what the retag is about to move.
         await delete_all(conn, prefix_query(dst_pfx))
     for doc in docs:
-        await files.update_one({"_id": doc["_id"]}, {
-            "$set": {
-                "filename": f"{dst_pfx}{doc['filename'][len(src_pfx):]}"
-            }
-        })
+        await files.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "filename": f"{dst_pfx}{doc['filename'][len(src_pfx) :]}"
+                }
+            },
+        )
     return True
 
 
 async def _probe_prefix(conn: GridFSAccessor, pfx: str) -> bool:
-    doc = await files_coll(conn).find_one(prefix_query(pfx),
-                                          projection={"_id": 1})
+    doc = await files_coll(conn).find_one(
+        prefix_query(pfx), projection={"_id": 1}
+    )
     return doc is not None
 
 

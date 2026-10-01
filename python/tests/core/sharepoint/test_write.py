@@ -31,10 +31,11 @@ async def test_write_small_file():
 
     with aioresponses() as m:
         m.put(url, callback=_cb)
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/a.txt",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/a.txt",
-                        directory="/sp/Engineering/Documents/a.txt")
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/a.txt", "/sp"),
+            virtual="/sp/Engineering/Documents/a.txt",
+            directory="/sp/Engineering/Documents/a.txt",
+        )
         await write_bytes(_accessor(), path, b"hello")
     assert captured["body"] == b"hello"
 
@@ -53,17 +54,19 @@ async def test_write_large_file_uses_upload_session(monkeypatch):
         ranges.append(kwargs["headers"]["Content-Range"])
         return CallbackResult(status=201, payload={"id": "X"})
 
-    session_url = (f"{_BASE}/drives/{_DRIVE_ID}"
-                   "/root:/big.bin:/createUploadSession")
+    session_url = (
+        f"{_BASE}/drives/{_DRIVE_ID}/root:/big.bin:/createUploadSession"
+    )
     upload_url = "https://upload.example/session1"
     with aioresponses() as m:
         m.post(session_url, payload={"uploadUrl": upload_url})
         m.put(upload_url, callback=_chunk_cb)
         m.put(upload_url, callback=_final_cb)
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/big.bin",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/big.bin",
-                        directory="/sp/Engineering/Documents/big.bin")
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/big.bin", "/sp"),
+            virtual="/sp/Engineering/Documents/big.bin",
+            directory="/sp/Engineering/Documents/big.bin",
+        )
         await write_bytes(_accessor(), path, b"abcdef")
     assert ranges == ["bytes 0-3/6", "bytes 4-5/6"]
 
@@ -78,16 +81,18 @@ async def test_upload_session_requests_replace(monkeypatch):
         captured.update(kwargs.get("json") or {})
         return CallbackResult(status=200, payload={"uploadUrl": upload_url})
 
-    session_url = (f"{_BASE}/drives/{_DRIVE_ID}"
-                   "/root:/big.bin:/createUploadSession")
+    session_url = (
+        f"{_BASE}/drives/{_DRIVE_ID}/root:/big.bin:/createUploadSession"
+    )
     upload_url = "https://upload.example/session2"
     with aioresponses() as m:
         m.post(session_url, callback=_session_cb)
         m.put(upload_url, status=201, payload={"id": "X"})
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/big.bin",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/big.bin",
-                        directory="/sp/Engineering/Documents/big.bin")
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/big.bin", "/sp"),
+            virtual="/sp/Engineering/Documents/big.bin",
+            directory="/sp/Engineering/Documents/big.bin",
+        )
         await write_bytes(_accessor(), path, b"abcdef")
     behavior = captured["item"]["@microsoft.graph.conflictBehavior"]
     assert behavior == "replace"
@@ -99,15 +104,19 @@ async def test_write_records_the_virtual_path():
     accessor = SharePointAccessor(SharePointConfig(access_token="tok"))
     accessor.site_cache["m"] = _SITE_ID
     accessor.drive_cache[(_SITE_ID, "Documents")] = _DRIVE_ID
-    spec = PathSpec(virtual="/m/m/Documents/k.txt",
-                    directory="/m/m/Documents/",
-                    vfs_path="m/Documents/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/Documents/k.txt",
+        directory="/m/m/Documents/",
+        vfs_path="m/Documents/k.txt",
+    )
     scope = RecordingScope()
     try:
         with aioresponses() as m:
-            m.put(f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
-                  status=201,
-                  payload={"id": "X"})
+            m.put(
+                f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
+                status=201,
+                payload={"id": "X"},
+            )
             await write_bytes(accessor, spec, b"hello")
     finally:
         scope.close()

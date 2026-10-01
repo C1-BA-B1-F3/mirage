@@ -29,33 +29,36 @@ def test_long_word_is_not_an_option_word():
 
 
 def test_minus_enables_and_plus_disables():
-    assert parse_option_word("-x", None).settings == (("xtrace", True), )
-    assert parse_option_word("+x", None).settings == (("xtrace", False), )
+    assert parse_option_word("-x", None).settings == (("xtrace", True),)
+    assert parse_option_word("+x", None).settings == (("xtrace", False),)
 
 
 def test_cluster_keeps_written_order():
     word = parse_option_word("-eux", None)
-    assert word.settings == (("errexit", True), ("nounset", True), ("xtrace",
-                                                                    True))
+    assert word.settings == (
+        ("errexit", True),
+        ("nounset", True),
+        ("xtrace", True),
+    )
     assert word.other == ""
 
 
 def test_letters_naming_no_option_come_back_as_other():
     word = parse_option_word("-xc", None)
-    assert word.settings == (("xtrace", True), )
+    assert word.settings == (("xtrace", True),)
     assert word.other == "c"
     assert word.consumed == 1
 
 
 def test_o_names_the_option_in_the_next_word():
     word = parse_option_word("-o", "pipefail")
-    assert word.settings == (("pipefail", True), )
+    assert word.settings == (("pipefail", True),)
     assert word.consumed == 2
 
 
 def test_plus_o_disables_the_named_option():
     word = parse_option_word("+o", "xtrace")
-    assert word.settings == (("xtrace", False), )
+    assert word.settings == (("xtrace", False),)
     assert word.consumed == 2
 
 

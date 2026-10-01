@@ -50,18 +50,17 @@ class ReadReconciler(Protocol):
     layer, not the other way round. The Reconciler satisfies it structurally.
     """
 
-    async def reconcile_read(self, mount: MountEntry, path: str) -> None:
-        ...
+    async def reconcile_read(self, mount: MountEntry, path: str) -> None: ...
 
-    async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
-        ...
+    async def may_serve_cached(self, mount: MountEntry, path: str) -> bool: ...
 
     async def on_gone(
-        self, gone: list[Evicted], excluded: tuple[str, ...] = ()) -> None:
-        ...
+        self, gone: list[Evicted], excluded: tuple[str, ...] = ()
+    ) -> None: ...
 
-    async def may_serve_listing(self, mount: MountEntry, folder: str) -> bool:
-        ...
+    async def may_serve_listing(
+        self, mount: MountEntry, folder: str
+    ) -> bool: ...
 
 
 class MountCommandUnsupported(Exception):
@@ -92,7 +91,8 @@ class MountRegistry:
         self._mounts: list[MountEntry] = []
         self.retiring_mounts: dict[int, asyncio.Task[None]] = {}
         self.retired_mounts: WeakValueDictionary[int, BaseVFS] = (
-            WeakValueDictionary())
+            WeakValueDictionary()
+        )
         self._root: MountEntry | None = None
         # Workspace-level command -> runtime bindings (first listed
         # capturer wins). The three runtime fields below are written
@@ -125,8 +125,8 @@ class MountRegistry:
         # Registry-hosted like runtime_bindings so the executor reaches
         # them without new parameter threading.
         self.policies = Policies(
-            [MountRootPolicy(),
-             OutputCapPolicy(self.limit_override)])
+            [MountRootPolicy(), OutputCapPolicy(self.limit_override)]
+        )
         # The decision ledger the executor takes an Ask to, hosted here
         # for the same reason as the policies: the workspace replaces
         # it with one bound to its session manager and ask handler.
@@ -148,11 +148,9 @@ class MountRegistry:
         # so its policy can only ever be bounded, and it keeps no index,
         # since a path-only index would expose one session's descriptors
         # to another.
-        self.mount(DEV_PREFIX,
-                   DevVFS(),
-                   MountMode.WRITE,
-                   ReadSpec(),
-                   store=NULL_INDEX)
+        self.mount(
+            DEV_PREFIX, DevVFS(), MountMode.WRITE, ReadSpec(), store=NULL_INDEX
+        )
 
     async def invalidate_after_external(self) -> None:
         """Refetch cached data after native code may have changed files."""
@@ -261,7 +259,9 @@ class MountRegistry:
                     gone,
                     tuple(
                         e.prefix.rstrip("/")
-                        for e in self.descendant_mounts(m.prefix)))
+                        for e in self.descendant_mounts(m.prefix)
+                    ),
+                )
 
         m.cache_manager = CacheManager(
             self._file_cache,
@@ -274,15 +274,17 @@ class MountRegistry:
             on_gone=cleanup,
             may_serve_listing=listing_gate,
             excluded_prefixes=lambda: tuple(
-                e.prefix.rstrip("/")
-                for e in self.descendant_mounts(m.prefix)))
+                e.prefix.rstrip("/") for e in self.descendant_mounts(m.prefix)
+            ),
+        )
 
     def check_vfs_available(self, vfs: BaseVFS) -> None:
         """A removed VFS instance cannot start a second lifecycle."""
-        if id(vfs) in self.retiring_mounts or any(m.vfs is vfs and m.retiring
-                                                  for m in self._mounts):
+        if id(vfs) in self.retiring_mounts or any(
+            m.vfs is vfs and m.retiring for m in self._mounts
+        ):
             raise ValueError("VFS is being unmounted")
-        if (vfs.is_closed or self.retired_mounts.get(id(vfs)) is vfs):
+        if vfs.is_closed or self.retired_mounts.get(id(vfs)) is vfs:
             raise ValueError("VFS is closed; create a new VFS instance")
 
     def mount(
@@ -319,11 +321,10 @@ class MountRegistry:
         """
         self.check_vfs_available(vfs)
         stripped = prefix.strip("/")
-        norm_prefix = ("/" + stripped + "/" if stripped else "/")
+        norm_prefix = "/" + stripped + "/" if stripped else "/"
         for existing in self._mounts:
             if existing.prefix == norm_prefix:
-                raise ValueError(f"duplicate mount prefix: "
-                                 f"{norm_prefix!r}")
+                raise ValueError(f"duplicate mount prefix: {norm_prefix!r}")
         alias = next((e for e in self._mounts if e.vfs is vfs), None)
         if alias is not None:
             store = alias.index_store
@@ -332,9 +333,15 @@ class MountRegistry:
             store = NULL_INDEX
         elif store is None:
             store = build_index(index, vfs.index_ttl)
-        m = MountEntry(norm_prefix, vfs, mode,
-                       read if read is not None else self._default_read, store,
-                       vfs_ref, index)
+        m = MountEntry(
+            norm_prefix,
+            vfs,
+            mode,
+            read if read is not None else self._default_read,
+            store,
+            vfs_ref,
+            index,
+        )
         if alias is not None:
             m.activity = alias.activity
         m.register_fns(vfs.commands())
@@ -359,10 +366,11 @@ class MountRegistry:
             prefix (str): mount prefix.
         """
         stripped = prefix.strip("/")
-        norm_prefix = ("/" + stripped + "/" if stripped else "/")
+        norm_prefix = "/" + stripped + "/" if stripped else "/"
         if norm_prefix == DEV_PREFIX:
-            raise ValueError(f"cannot unmount reserved prefix: "
-                             f"{norm_prefix!r}")
+            raise ValueError(
+                f"cannot unmount reserved prefix: {norm_prefix!r}"
+            )
         for i, m in enumerate(self._mounts):
             if m.prefix == norm_prefix:
                 del self._mounts[i]
@@ -379,7 +387,7 @@ class MountRegistry:
         m = self.mount_for(path)
         had_trailing = path.endswith("/")
         norm = "/" + path.strip("/")
-        vfs_path = "/" + norm[len(m.prefix):]
+        vfs_path = "/" + norm[len(m.prefix) :]
         if had_trailing and not vfs_path.endswith("/"):
             vfs_path += "/"
         return m.vfs, vfs_path, m.mode
@@ -502,8 +510,10 @@ class MountRegistry:
         like every mount, and letting it win would route pathless
         commands to the device mount (mirrors the TS scan).
         """
-        if (self._root is not None
-                and self._root.resolve_command(cmd_name) is not None):
+        if (
+            self._root is not None
+            and self._root.resolve_command(cmd_name) is not None
+        ):
             return self._root
         for m in self._mounts:
             if m.prefix == DEV_PREFIX:
@@ -571,8 +581,10 @@ class MountRegistry:
         if mount is not None and mount.resolve_command(cmd_name) is None:
             if path_scopes:
                 raise MountCommandUnsupported(
-                    cmd_name, mount.vfs.name, path_scopes[0].raw_path
-                    or path_scopes[0].virtual)
+                    cmd_name,
+                    mount.vfs.name,
+                    path_scopes[0].raw_path or path_scopes[0].virtual,
+                )
             mount = self.mount_for_command(cmd_name)
         elif mount is None:
             mount = self.mount_for_command(cmd_name)
@@ -587,10 +599,14 @@ class MountRegistry:
         # through the dispatcher, so this is where they reconcile against
         # backend truth: the shared Reconciler evicts a stale cache entry and
         # GCs an orphaned overlay when the backend reports the path gone.
-        if (self._reconciler is not None and path_scopes
-                and resolved is not None and not resolved.write
-                and mount.vfs.caches_reads
-                and mount.read.policy is ReadPolicy.FRESH):
+        if (
+            self._reconciler is not None
+            and path_scopes
+            and resolved is not None
+            and not resolved.write
+            and mount.vfs.caches_reads
+            and mount.read.policy is ReadPolicy.FRESH
+        ):
             for scope in path_scopes:
                 await self._reconciler.reconcile_read(mount, scope.virtual)
 
@@ -618,7 +634,8 @@ class MountRegistry:
                 mode=m.mode,
                 ops=m.vfs.ops(),
                 sizes_always_known=m.vfs.sizes_always_known,
-            ) for m in self._mounts
+            )
+            for m in self._mounts
         ]
 
     def find_vfs_by_name(

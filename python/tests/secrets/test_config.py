@@ -16,8 +16,15 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from mirage.accessor.s3 import S3Config
-from mirage.secrets.config import (AWSAuth, AWSSMConfig, DotenvConfig,
-                                   EnvConfig, EnvVar, SecretRef, SecretSource)
+from mirage.secrets.config import (
+    AWSAuth,
+    AWSSMConfig,
+    DotenvConfig,
+    EnvConfig,
+    EnvVar,
+    SecretRef,
+    SecretSource,
+)
 
 AUTH_KWARGS = {
     "region": "us-east-1",
@@ -50,8 +57,11 @@ def test_s3config_keeps_the_five_auth_fields_as_secretstr():
     # SecretStr so reprs and logs never leak them.
     config = S3Config(bucket="b", **AUTH_KWARGS)
     assert isinstance(config, AWSAuth)
-    for name in ("aws_access_key_id", "aws_secret_access_key",
-                 "aws_session_token"):
+    for name in (
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+    ):
         assert isinstance(getattr(config, name), SecretStr), name
     assert config.aws_profile == "agent"
     assert config.region == "us-east-1"
@@ -114,17 +124,14 @@ def test_unexporting_a_managed_entry_is_refused():
         EnvVar.model_validate({"from": "env", "export": False})
 
 
-@pytest.mark.parametrize("extra", [
-    {
-        "ref": "prod/agent"
-    },
-    {
-        "key": "TOKEN"
-    },
-    {
-        "fetch": "eager"
-    },
-])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"ref": "prod/agent"},
+        {"key": "TOKEN"},
+        {"fetch": "eager"},
+    ],
+)
 def test_managed_keys_on_a_literal_entry_are_refused(extra):
     with pytest.raises(ValidationError, match="managed entries"):
         EnvVar.model_validate({"value": "x", **extra})
@@ -142,40 +149,32 @@ def test_entry_is_frozen():
 
 
 def test_a_source_block_takes_a_type_and_a_config():
-    block = SecretSource.model_validate({
-        "source": "aws-sm",
-        "config": {
-            "region": "us-east-2"
-        }
-    })
+    block = SecretSource.model_validate(
+        {"source": "aws-sm", "config": {"region": "us-east-2"}}
+    )
     assert block.source == "aws-sm"
     assert block.config == {"region": "us-east-2"}
 
 
 def test_a_config_value_carrying_from_becomes_a_pointer():
-    block = SecretSource.model_validate({
-        "source": "aws-sm",
-        "config": {
-            "aws_access_key_id": {
-                "from": "env",
-                "key": "KEY_ID"
-            }
-        },
-    })
+    block = SecretSource.model_validate(
+        {
+            "source": "aws-sm",
+            "config": {"aws_access_key_id": {"from": "env", "key": "KEY_ID"}},
+        }
+    )
     ref = block.config["aws_access_key_id"]
     assert isinstance(ref, SecretRef)
     assert (ref.provider, ref.ref, ref.key) == ("env", "", "KEY_ID")
 
 
 def test_a_config_value_without_from_stays_a_literal():
-    block = SecretSource.model_validate({
-        "source": "aws-sm",
-        "config": {
-            "tags": {
-                "team": "infra"
-            }
-        },
-    })
+    block = SecretSource.model_validate(
+        {
+            "source": "aws-sm",
+            "config": {"tags": {"team": "infra"}},
+        }
+    )
     assert block.config["tags"] == {"team": "infra"}
 
 
@@ -186,43 +185,35 @@ def test_a_config_defaults_to_empty():
 @pytest.mark.parametrize("source", ["1password", "aws-sm", "auth0"])
 def test_only_a_bootstrap_source_can_back_a_config_value(source):
     with pytest.raises(ValidationError, match="needs no config of its own"):
-        SecretSource.model_validate({
-            "source": "aws-sm",
-            "config": {
-                "region": {
-                    "from": source,
-                    "key": "r"
-                }
-            },
-        })
+        SecretSource.model_validate(
+            {
+                "source": "aws-sm",
+                "config": {"region": {"from": source, "key": "r"}},
+            }
+        )
 
 
 @pytest.mark.parametrize("source", ["env", "dotenv"])
 def test_both_bootstrap_sources_are_accepted(source):
-    block = SecretSource.model_validate({
-        "source": "aws-sm",
-        "config": {
-            "region": {
-                "from": source,
-                "key": "r"
-            }
-        },
-    })
+    block = SecretSource.model_validate(
+        {
+            "source": "aws-sm",
+            "config": {"region": {"from": source, "key": "r"}},
+        }
+    )
     assert block.config["region"].provider == source
 
 
 def test_a_pointer_refuses_unknown_keys():
     with pytest.raises(ValidationError):
-        SecretSource.model_validate({
-            "source": "aws-sm",
-            "config": {
-                "region": {
-                    "from": "env",
-                    "key": "r",
-                    "sticky": True
-                }
-            },
-        })
+        SecretSource.model_validate(
+            {
+                "source": "aws-sm",
+                "config": {
+                    "region": {"from": "env", "key": "r", "sticky": True}
+                },
+            }
+        )
 
 
 def test_a_source_block_refuses_unknown_keys():
@@ -233,10 +224,10 @@ def test_a_source_block_refuses_unknown_keys():
 def test_a_source_config_keeps_a_dunder_key():
     """Free in python; the TypeScript twin had to drop `z.record`,
     which builds by keyed assignment and loses `__proto__` outright."""
-    block = SecretSource.model_validate({
-        "source": "demo",
-        "config": {
-            "__proto__": "kept"
-        },
-    })
+    block = SecretSource.model_validate(
+        {
+            "source": "demo",
+            "config": {"__proto__": "kept"},
+        }
+    )
     assert block.config == {"__proto__": "kept"}

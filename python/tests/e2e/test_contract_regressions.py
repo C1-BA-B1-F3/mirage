@@ -19,7 +19,6 @@ from mirage.workspace.store.ram import RAMWorkspaceStateStore
 
 
 class ProbeNamespaceStore(RAMNamespaceStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.close_calls = 0
@@ -29,7 +28,6 @@ class ProbeNamespaceStore(RAMNamespaceStore):
 
 
 class ProbeObserverStore(RAMObserverStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.close_calls = 0
@@ -39,7 +37,6 @@ class ProbeObserverStore(RAMObserverStore):
 
 
 class ProbeSessionStore(RAMSessionStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.close_calls = 0
@@ -49,7 +46,6 @@ class ProbeSessionStore(RAMSessionStore):
 
 
 class ProbeWorkspaceStateStore(RAMWorkspaceStateStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.namespace_probe = ProbeNamespaceStore()
@@ -74,7 +70,6 @@ class ProbeWorkspaceStateStore(RAMWorkspaceStateStore):
 
 
 class ProbeRAMVFS(RAMVFS):
-
     def __init__(self) -> None:
         super().__init__()
         self.close_calls = 0
@@ -86,7 +81,6 @@ class ProbeRAMVFS(RAMVFS):
 
 
 class ProbeRAMAccessor(RAMAccessor):
-
     def __init__(self, store: RAMStore) -> None:
         super().__init__(store)
         self.close_calls = 0
@@ -111,11 +105,11 @@ async def test_mounted_mktemp_preserves_virtual_and_vfs_paths():
         assert await stdout(ws, f"cat {virtual}") == ""
         assert virtual.removeprefix("/scratch") in vfs.accessor.store.files
 
-        directory = (await
-                     stdout(ws, "mktemp -d -p /scratch/tmp run.XXXX")).strip()
+        directory = (
+            await stdout(ws, "mktemp -d -p /scratch/tmp run.XXXX")
+        ).strip()
         assert directory.startswith("/scratch/tmp/run.")
-        assert directory.removeprefix("/scratch") \
-            in vfs.accessor.store.dirs
+        assert directory.removeprefix("/scratch") in vfs.accessor.store.dirs
     finally:
         await ws.close()
 
@@ -144,14 +138,18 @@ async def test_cache_tracks_overwrite_rename_and_unlink_commands():
 @pytest.mark.asyncio
 async def test_workspace_close_respects_store_ownership_end_to_end():
     shared = ProbeWorkspaceStateStore()
-    first = Workspace({"/": RAMVFS()},
-                      mode=MountMode.WRITE,
-                      store=shared,
-                      workspace_id="shared")
-    second = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       store=shared,
-                       workspace_id="shared")
+    first = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        store=shared,
+        workspace_id="shared",
+    )
+    second = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        store=shared,
+        workspace_id="shared",
+    )
 
     await first.shell("echo first")
     await first.close()
@@ -163,10 +161,9 @@ async def test_workspace_close_respects_store_ownership_end_to_end():
     await second.close()
 
     owned = ProbeWorkspaceStateStore()
-    owner = Workspace({"/": RAMVFS()},
-                      mode=MountMode.WRITE,
-                      store=owned,
-                      owns_store=True)
+    owner = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, store=owned, owns_store=True
+    )
     await owner.shell("echo owner")
     await owner.close()
     await owner.close()
@@ -195,10 +192,9 @@ async def test_close_leaves_mounts_shared_with_other_workspaces_open():
 def test_workspace_context_open_modes_and_cleanup():
     vfs = ProbeRAMVFS()
     store = ProbeWorkspaceStateStore()
-    ws = Workspace({"/data": vfs},
-                   mode=MountMode.WRITE,
-                   store=store,
-                   owns_store=True)
+    ws = Workspace(
+        {"/data": vfs}, mode=MountMode.WRITE, store=store, owns_store=True
+    )
     asyncio.run(ws.vfs.write("/data/input.txt", b"original"))
 
     with ws:

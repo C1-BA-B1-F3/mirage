@@ -20,18 +20,30 @@ from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
-from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
-                                    FD_STDOUT)
-from mirage.shell.descriptors import (bad_descriptor_line,
-                                      unsupported_descriptor)
+from mirage.shell.constants import (
+    FD_BOTH,
+    FD_CLOSE,
+    FD_STDERR,
+    FD_STDIN,
+    FD_STDOUT,
+)
+from mirage.shell.descriptors import (
+    bad_descriptor_line,
+    unsupported_descriptor,
+)
 from mirage.shell.helpers import get_redirects
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import Redirect, RedirectKind
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.exec.constants import (
-    CLOSED, EXEC_STREAM_FIELDS, OPEN_FOR_READING, TO_STDERR, TO_STDIN,
-    TO_STDOUT)
+    CLOSED,
+    EXEC_STREAM_FIELDS,
+    OPEN_FOR_READING,
+    TO_STDERR,
+    TO_STDIN,
+    TO_STDOUT,
+)
 from mirage.workspace.executor.builtins.scope import _to_scope
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.executor.create import create_file
@@ -61,12 +73,15 @@ async def handle_exec_command(
     """
     if not args:
         return None, IOResult(), ExecutionNode(command="exec", exit_code=0)
-    err = (f"mirage: exec: {args[0]}: process replacement is not supported "
-           "(no OS process to replace)\n").encode()
-    return None, IOResult(exit_code=2,
-                          stderr=err), ExecutionNode(command="exec",
-                                                     exit_code=2,
-                                                     stderr=err)
+    err = (
+        f"mirage: exec: {args[0]}: process replacement is not supported "
+        "(no OS process to replace)\n"
+    ).encode()
+    return (
+        None,
+        IOResult(exit_code=2, stderr=err),
+        ExecutionNode(command="exec", exit_code=2, stderr=err),
+    )
 
 
 async def install_exec_redirects(
@@ -105,8 +120,9 @@ async def install_exec_redirects(
     return await _roll_back(dispatch, session, saved, err)
 
 
-async def _install(dispatch: DispatchFn, session: SessionState,
-                   redirects: list[Redirect]) -> bytes | None:
+async def _install(
+    dispatch: DispatchFn, session: SessionState, redirects: list[Redirect]
+) -> bytes | None:
     """Bind the redirects onto the session's streams, in line order.
 
     Returns the diagnostic of the first redirect that fails, with every
@@ -119,8 +135,11 @@ async def _install(dispatch: DispatchFn, session: SessionState,
     """
     for r in redirects:
         if r.kind == RedirectKind.AMBIGUOUS:
-            word = (r.target.raw_path
-                    if isinstance(r.target, PathSpec) else str(r.target))
+            word = (
+                r.target.raw_path
+                if isinstance(r.target, PathSpec)
+                else str(r.target)
+            )
             return f"{word}: ambiguous redirect\n".encode()
         if isinstance(r.target, int):
             # Keyed on the descriptor claimed, not the operator's
@@ -171,8 +190,9 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 # A dup from a closed descriptor is refused, as bash's
                 # `exec 0<&-; exec 1<&0` is with `0: Bad file descriptor`.
                 return bad_descriptor_line(r.target)
-            _bind(session, r.fd, identity, append,
-                  _read_end(session, r.target))
+            _bind(
+                session, r.fd, identity, append, _read_end(session, r.target)
+            )
             continue
         scope = _to_scope(r.target) if isinstance(r.target, str) else r.target
         if r.kind == RedirectKind.STDIN:
@@ -186,8 +206,13 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 # (`echo: write error: Bad file descriptor`), a dup onto
                 # fd 0 (`exec 0<&1`) reads the file, and so does a
                 # transient `<&1`.
-                _bind(session, r.fd, OPEN_FOR_READING + scope.virtual, False,
-                      SharedInput(await materialize(data) or b""))
+                _bind(
+                    session,
+                    r.fd,
+                    OPEN_FOR_READING + scope.virtual,
+                    False,
+                    SharedInput(await materialize(data) or b""),
+                )
                 continue
             # fd 0 holds the file's read end, and says so: a dup from it
             # (`exec 1<&0`) keeps the file even after `exec 0<&-`, as
@@ -211,8 +236,11 @@ async def _install(dispatch: DispatchFn, session: SessionState,
             session.exec_stdin_unreadable = True
             session.exec_stdin_identity = path
             continue
-        streams = ((["stderr"] if r.fd == FD_STDERR else ["stdout"])
-                   if r.fd != FD_BOTH else ["stdout", "stderr"])
+        streams = (
+            (["stderr"] if r.fd == FD_STDERR else ["stdout"])
+            if r.fd != FD_BOTH
+            else ["stdout", "stderr"]
+        )
         for stream in streams:
             setattr(session, f"exec_{stream}", path)
             setattr(session, f"exec_{stream}_append", r.append)
@@ -245,13 +273,15 @@ async def _roll_back(
     partial = session.exec_stderr
     for name, value in saved.items():
         setattr(session, name, value)
-    out, err_bytes, _ = await _route(dispatch, session, partial, err,
-                                     TO_STDERR)
+    out, err_bytes, _ = await _route(
+        dispatch, session, partial, err, TO_STDERR
+    )
     return _exec_failure(err_bytes, out)
 
 
-async def _open_target(dispatch: DispatchFn, session: SessionState,
-                       scope: PathSpec, append: bool) -> bool:
+async def _open_target(
+    dispatch: DispatchFn, session: SessionState, scope: PathSpec, append: bool
+) -> bool:
     """Open an `exec` redirect target, the way bash does at `exec` time.
 
     Truncating creates the file empty; appending creates it only when it
@@ -294,10 +324,11 @@ def _exec_failure(
         out (bytes | None): the diagnostic again, when that redirect
             pointed at the terminal's stdout.
     """
-    return out, IOResult(exit_code=1,
-                         stderr=err), ExecutionNode(command="exec",
-                                                    exit_code=1,
-                                                    stderr=err or b"")
+    return (
+        out,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command="exec", exit_code=1, stderr=err or b""),
+    )
 
 
 def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
@@ -324,10 +355,14 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
         identity = session.exec_stdin_identity
         return (TO_STDIN if identity is None else identity), False
     if fd == FD_STDERR:
-        return (TO_STDERR if session.exec_stderr is None else
-                session.exec_stderr, session.exec_stderr_append)
-    return (TO_STDOUT if session.exec_stdout is None else session.exec_stdout,
-            session.exec_stdout_append)
+        return (
+            TO_STDERR if session.exec_stderr is None else session.exec_stderr,
+            session.exec_stderr_append,
+        )
+    return (
+        TO_STDOUT if session.exec_stdout is None else session.exec_stdout,
+        session.exec_stdout_append,
+    )
 
 
 def _read_end(session: SessionState, fd: int) -> SharedInput | None:
@@ -339,16 +374,23 @@ def _read_end(session: SessionState, fd: int) -> SharedInput | None:
         session (SessionState): shell session state.
         fd (int): the descriptor being copied.
     """
-    held = (session.exec_stdin if fd == FD_STDIN else session.exec_stderr_input
-            if fd == FD_STDERR else session.exec_stdout_input)
+    held = (
+        session.exec_stdin
+        if fd == FD_STDIN
+        else session.exec_stderr_input
+        if fd == FD_STDERR
+        else session.exec_stdout_input
+    )
     return held.dup() if held is not None else None
 
 
-def _bind(session: SessionState,
-          fd: int,
-          identity: str,
-          append: bool,
-          read_end: SharedInput | None = None) -> None:
+def _bind(
+    session: SessionState,
+    fd: int,
+    identity: str,
+    append: bool,
+    read_end: SharedInput | None = None,
+) -> None:
     """Point a writing stream at an identity.
 
     A stream on its own terminal end is stored as None, the undiverted
@@ -421,8 +463,11 @@ def stdout_to_stderr(node: Any) -> bool:
         return False
     _, redirects = get_redirects(node)
     return any(
-        isinstance(r.target, int) and r.target == FD_STDERR and r.fd in (
-            FD_STDOUT, FD_BOTH) for r in redirects)
+        isinstance(r.target, int)
+        and r.target == FD_STDERR
+        and r.fd in (FD_STDOUT, FD_BOTH)
+        for r in redirects
+    )
 
 
 async def divert_statement(
@@ -463,22 +508,25 @@ async def divert_statement(
     err_parts: list[bytes] = []
     failed = False
     if stdout:
-        out, err, failed = await _route(dispatch, session, session.exec_stdout,
-                                        stdout, TO_STDOUT)
-        out_parts.extend(x for x in (out, ) if x)
-        err_parts.extend(x for x in (err, ) if x)
+        out, err, failed = await _route(
+            dispatch, session, session.exec_stdout, stdout, TO_STDOUT
+        )
+        out_parts.extend(x for x in (out,) if x)
+        err_parts.extend(x for x in (err,) if x)
     stderr = (await materialize(io.stderr) or b"") if io.stderr else b""
     if failed:
         words = command.split()
-        stderr += (f"{words[0] if words else 'bash'}: write error: "
-                   "Bad file descriptor\n").encode()
+        stderr += (
+            f"{words[0] if words else 'bash'}: write error: "
+            "Bad file descriptor\n"
+        ).encode()
         io.exit_code = 1
     if stderr:
-        out, err, unwritable = await _route(dispatch, session,
-                                            session.exec_stderr, stderr,
-                                            TO_STDERR)
-        out_parts.extend(x for x in (out, ) if x)
-        err_parts.extend(x for x in (err, ) if x)
+        out, err, unwritable = await _route(
+            dispatch, session, session.exec_stderr, stderr, TO_STDERR
+        )
+        out_parts.extend(x for x in (out,) if x)
+        err_parts.extend(x for x in (err,) if x)
         if unwritable and stdout_diverted and io.exit_code == 0:
             # The statement's own output was what could not be written,
             # so the write error is its failure (bash's `echo hi >&2`
@@ -491,8 +539,9 @@ async def divert_statement(
     return b"".join(out_parts) or None
 
 
-async def _append(dispatch: DispatchFn, session: SessionState, target: str,
-                  data: bytes) -> None:
+async def _append(
+    dispatch: DispatchFn, session: SessionState, target: str, data: bytes
+) -> None:
     """Append bytes to an `exec` target, or drop them if it is closed.
 
     Args:

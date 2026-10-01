@@ -26,7 +26,8 @@ def documents(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stat_light_uses_index_entry_without_detail_call(
-        monkeypatch, dify_accessor, dify_index, guide_path):
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(stat, "get_document_detail", refuse_detail)
 
     item = await stat.stat_light(dify_accessor, guide_path, dify_index)
@@ -42,10 +43,12 @@ async def test_stat_light_uses_index_entry_without_detail_call(
 
 @pytest.mark.asyncio
 async def test_stat_of_a_directory_skips_the_detail_call(
-        monkeypatch, dify_accessor, dify_index):
+    monkeypatch, dify_accessor, dify_index
+):
     monkeypatch.setattr(stat, "get_document_detail", refuse_detail)
     guides = PathSpec.from_str_path(
-        "/knowledge/guides", mount_key("/knowledge/guides", "/knowledge"))
+        "/knowledge/guides", mount_key("/knowledge/guides", "/knowledge")
+    )
 
     item = await stat.stat(dify_accessor, guides, dify_index)
 
@@ -54,8 +57,9 @@ async def test_stat_of_a_directory_skips_the_detail_call(
 
 
 @pytest.mark.asyncio
-async def test_stat_fills_the_detail_fields(monkeypatch, dify_accessor,
-                                            dify_index, guide_path):
+async def test_stat_fills_the_detail_fields(
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(stat, "get_document_detail", get_detail)
 
     item = await stat.stat(dify_accessor, guide_path, dify_index)
@@ -70,7 +74,8 @@ async def test_stat_fills_the_detail_fields(monkeypatch, dify_accessor,
 
 @pytest.mark.asyncio
 async def test_stat_falls_back_to_the_listing_without_detail_times(
-        monkeypatch, dify_accessor, dify_index, guide_path):
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
 
     async def bare_detail(config, document_id):
         return {}

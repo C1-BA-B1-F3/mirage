@@ -28,10 +28,9 @@ def test_parse_flags_append_short_and_long():
 
 
 def test_parse_flags_i_and_p_are_noops():
-    assert parse_flags({
-        "ignore_interrupts": True,
-        "p": True
-    }) == TeeFlags(append=False)
+    assert parse_flags({"ignore_interrupts": True, "p": True}) == TeeFlags(
+        append=False
+    )
 
 
 def test_parse_flags_reads_the_exit_warn_axis():
@@ -39,11 +38,13 @@ def test_parse_flags_reads_the_exit_warn_axis():
     # axis is observable here: the -nopipe half distinguishes a pipe sink
     # from a file sink, and every operand tee writes is a file.
     for mode in ("warn", "warn-nopipe"):
-        assert parse_flags({"output_error":
-                            mode}) == TeeFlags(stop_on_error=False)
+        assert parse_flags({"output_error": mode}) == TeeFlags(
+            stop_on_error=False
+        )
     for mode in ("exit", "exit-nopipe"):
-        assert parse_flags({"output_error":
-                            mode}) == TeeFlags(stop_on_error=True)
+        assert parse_flags({"output_error": mode}) == TeeFlags(
+            stop_on_error=True
+        )
 
 
 def test_a_bare_output_error_means_warn():
@@ -52,12 +53,18 @@ def test_a_bare_output_error_means_warn():
 
 
 def test_bad_output_error_mode_is_reported_by_the_parser():
-    parsed = parse_command(SPECS["tee"], ["--output-error=bogus", "/f.txt"],
-                           cwd="/",
-                           cmd_name="tee")
+    parsed = parse_command(
+        SPECS["tee"],
+        ["--output-error=bogus", "/f.txt"],
+        cwd="/",
+        cmd_name="tee",
+    )
     assert parsed.invalid_value_options == [
-        ("--output-error", "bogus", ("warn", "warn-nopipe", "exit",
-                                     "exit-nopipe")),
+        (
+            "--output-error",
+            "bogus",
+            ("warn", "warn-nopipe", "exit", "exit-nopipe"),
+        ),
     ]
 
 
@@ -71,11 +78,14 @@ async def test_write_error_passes_stdout_and_exits_one():
         if False:
             yield b""
 
-    source, io = await tee([_spec("/out.txt")], (),
-                           read_stream=_read,
-                           write_bytes=_write,
-                           stdin=b"hello",
-                           flags={})
+    source, io = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=_read,
+        write_bytes=_write,
+        stdin=b"hello",
+        flags={},
+    )
     # GNU tee still copies stdin to stdout on a write error.
     assert await materialize(source) == b"hello"
     assert io.exit_code == 1
@@ -96,16 +106,20 @@ async def test_an_sdk_write_failure_is_diagnosed_not_raised():
         if False:
             yield b""
 
-    source, io = await tee([_spec("/a.txt"), _spec("/b.txt")], (),
-                           read_stream=_read,
-                           write_bytes=_write,
-                           stdin=b"hello",
-                           flags={})
+    source, io = await tee(
+        [_spec("/a.txt"), _spec("/b.txt")],
+        (),
+        read_stream=_read,
+        write_bytes=_write,
+        stdin=b"hello",
+        flags={},
+    )
     assert await materialize(source) == b"hello"
     assert io.exit_code == 1
-    assert await materialize(
-        io.stderr) == (b"tee: /a.txt: An error occurred (AccessDenied)\n"
-                       b"tee: /b.txt: An error occurred (AccessDenied)\n")
+    assert await materialize(io.stderr) == (
+        b"tee: /a.txt: An error occurred (AccessDenied)\n"
+        b"tee: /b.txt: An error occurred (AccessDenied)\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -122,15 +136,19 @@ async def test_unusable_destination_reports_the_gnu_strerror():
         if False:
             yield b""
 
-    source, io = await tee([_spec("/nodir/out.txt")], (),
-                           read_stream=_read,
-                           write_bytes=_write,
-                           stdin=b"hello",
-                           flags={})
+    source, io = await tee(
+        [_spec("/nodir/out.txt")],
+        (),
+        read_stream=_read,
+        write_bytes=_write,
+        stdin=b"hello",
+        flags={},
+    )
     assert await materialize(source) == b"hello"
     assert io.exit_code == 1
-    assert await materialize(
-        io.stderr) == (b"tee: /nodir/out.txt: No such file or directory\n")
+    assert await materialize(io.stderr) == (
+        b"tee: /nodir/out.txt: No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -144,11 +162,14 @@ async def test_writes_stdin_and_reports_cache():
         if False:
             yield b""
 
-    source, io = await tee([_spec("/out.txt")], (),
-                           read_stream=_read,
-                           write_bytes=_write,
-                           stdin=b"hello",
-                           flags={})
+    source, io = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=_read,
+        write_bytes=_write,
+        stdin=b"hello",
+        flags={},
+    )
     assert await materialize(source) == b"hello"
     assert io.exit_code == 0
     assert written["/out.txt"] == b"hello"
@@ -179,11 +200,13 @@ async def test_every_operand_is_written():
     # declared a variadic rest operand.
     written, write = _sink()
     source, io = await tee(
-        [_spec("/a"), _spec("/b"), _spec("/c")], (),
+        [_spec("/a"), _spec("/b"), _spec("/c")],
+        (),
         read_stream=_empty,
         write_bytes=write,
         stdin=b"hi",
-        flags={})
+        flags={},
+    )
     assert written == {"/a": b"hi", "/b": b"hi", "/c": b"hi"}
     assert await materialize(source) == b"hi"
     assert io.exit_code == 0
@@ -195,11 +218,13 @@ async def test_one_bad_operand_does_not_stop_the_others():
     # GNU pins: `tee p bad q` writes p and q, diagnoses bad, exits 1.
     written, write = _sink(frozenset({"/bad"}))
     source, io = await tee(
-        [_spec("/p"), _spec("/bad"), _spec("/q")], (),
+        [_spec("/p"), _spec("/bad"), _spec("/q")],
+        (),
         read_stream=_empty,
         write_bytes=write,
         stdin=b"x",
-        flags={})
+        flags={},
+    )
     assert written == {"/p": b"x", "/q": b"x"}
     assert io.exit_code == 1
     assert await materialize(io.stderr) == b"tee: /bad: disk full\n"
@@ -210,11 +235,13 @@ async def test_one_bad_operand_does_not_stop_the_others():
 async def test_output_error_exit_stops_at_the_first_failure():
     written, write = _sink(frozenset({"/bad"}))
     _source, io = await tee(
-        [_spec("/p"), _spec("/bad"), _spec("/q")], (),
+        [_spec("/p"), _spec("/bad"), _spec("/q")],
+        (),
         read_stream=_empty,
         write_bytes=write,
         stdin=b"x",
-        flags={"output_error": "exit"})
+        flags={"output_error": "exit"},
+    )
     assert written == {"/p": b"x"}
     assert io.exit_code == 1
 
@@ -222,13 +249,18 @@ async def test_output_error_exit_stops_at_the_first_failure():
 @pytest.mark.asyncio
 async def test_each_failing_operand_is_diagnosed():
     _written, write = _sink(frozenset({"/b1", "/b2"}))
-    _source, io = await tee([_spec("/b1"), _spec("/b2")], (),
-                            read_stream=_empty,
-                            write_bytes=write,
-                            stdin=b"x",
-                            flags={})
-    assert await materialize(io.stderr
-                             ) == b"tee: /b1: disk full\ntee: /b2: disk full\n"
+    _source, io = await tee(
+        [_spec("/b1"), _spec("/b2")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        stdin=b"x",
+        flags={},
+    )
+    assert (
+        await materialize(io.stderr)
+        == b"tee: /b1: disk full\ntee: /b2: disk full\n"
+    )
     assert io.exit_code == 1
 
 
@@ -240,11 +272,14 @@ async def test_append_to_a_missing_file_creates_it():
         raise FileNotFoundError(p.virtual)
         yield b""
 
-    _source, io = await tee([_spec("/new")], (),
-                            read_stream=_missing,
-                            write_bytes=write,
-                            stdin=b"hi",
-                            flags={"append": True})
+    _source, io = await tee(
+        [_spec("/new")],
+        (),
+        read_stream=_missing,
+        write_bytes=write,
+        stdin=b"hi",
+        flags={"append": True},
+    )
     assert written == {"/new": b"hi"}
     assert io.exit_code == 0
 
@@ -257,12 +292,15 @@ async def test_a_native_append_skips_the_read_modify_write():
     async def _append(p, d):
         appended[p.mount_path] = d
 
-    _source, io = await tee([_spec("/n")], (),
-                            read_stream=_empty,
-                            write_bytes=write,
-                            append_bytes=_append,
-                            stdin=b"add",
-                            flags={"append": True})
+    _source, io = await tee(
+        [_spec("/n")],
+        (),
+        read_stream=_empty,
+        write_bytes=write,
+        append_bytes=_append,
+        stdin=b"add",
+        flags={"append": True},
+    )
     assert appended == {"/n": b"add"}
     assert written == {}
     # Listed as written but not as cacheable: the resulting content is not
@@ -278,11 +316,14 @@ async def test_without_a_native_append_it_reads_and_rewrites():
     async def _old(_p):
         yield b"old"
 
-    _source, io = await tee([_spec("/n")], (),
-                            read_stream=_old,
-                            write_bytes=write,
-                            stdin=b"add",
-                            flags={"append": True})
+    _source, io = await tee(
+        [_spec("/n")],
+        (),
+        read_stream=_old,
+        write_bytes=write,
+        stdin=b"add",
+        flags={"append": True},
+    )
     assert written == {"/n": b"oldadd"}
     assert io.cache == ["/n"]
 
@@ -295,12 +336,17 @@ async def test_a_read_only_mount_runs_tee_and_refuses_its_file_operand():
     vfs = RAMVFS()
     ws = Workspace({"/ro/": (vfs, MountMode.READ)})
     bare = await ws.shell("cd /ro && tee", stdin=b"x\n")
-    assert (bare.exit_code, await
-            bare.materialize_stdout(), bare.stderr) == (0, b"x\n", None)
+    assert (bare.exit_code, await bare.materialize_stdout(), bare.stderr) == (
+        0,
+        b"x\n",
+        None,
+    )
     named = await ws.shell("tee /ro/out.txt", stdin=b"x\n")
-    assert (named.exit_code, await named.materialize_stdout(),
-            named.stderr) == (1, b"x\n",
-                              b"tee: /ro/out.txt: Read-only file system\n")
+    assert (
+        named.exit_code,
+        await named.materialize_stdout(),
+        named.stderr,
+    ) == (1, b"x\n", b"tee: /ro/out.txt: Read-only file system\n")
     assert vfs._store.files == {}
 
 

@@ -69,8 +69,9 @@ async def test_chgrp_refuses_read_only_mount():
     ws = _make_ws(MountMode.READ)
     code, _, err = await _run(ws, "chgrp staff /data/f.txt")
     assert code == 1
-    assert err == ("chgrp: changing group of '/data/f.txt': "
-                   "Read-only file system\n")
+    assert err == (
+        "chgrp: changing group of '/data/f.txt': Read-only file system\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -95,7 +96,8 @@ async def test_chgrp_recursive_reaches_links_and_files():
     code, _, err = await _run(ws, "chgrp -R dev /data/tree")
     assert code == 0, err
     _, out, _ = await _run(
-        ws, "stat -c '%G %n' /data/tree/a.txt /data/tree/link.txt")
+        ws, "stat -c '%G %n' /data/tree/a.txt /data/tree/link.txt"
+    )
     assert out.splitlines() == [
         "dev /data/tree/a.txt",
         "dev /data/tree/link.txt",

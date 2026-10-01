@@ -23,12 +23,14 @@ def test_echo_n(env):
 
 def test_echo_e_newline(env):
     assert env.mirage(r"echo -e 'hello\nworld'") == env.native(
-        r"printf '%s\n' 'hello' 'world'")
+        r"printf '%s\n' 'hello' 'world'"
+    )
 
 
 def test_echo_e_tab(env):
     assert env.mirage(r"echo -e 'col1\tcol2'") == env.native(
-        r"printf 'col1\tcol2\n'")
+        r"printf 'col1\tcol2\n'"
+    )
 
 
 def test_echo_e_backslash(env):
@@ -37,12 +39,14 @@ def test_echo_e_backslash(env):
 
 def test_echo_e_carriage_return(env):
     assert env.mirage(r"echo -e 'hello\rbye'") == env.native(
-        r"printf 'hello\rbye\n'")
+        r"printf 'hello\rbye\n'"
+    )
 
 
 def test_echo_e_mixed(env):
     assert env.mirage(r"echo -e 'a\tb\nc'") == env.native(
-        r"printf 'a\tb\nc\n'")
+        r"printf 'a\tb\nc\n'"
+    )
 
 
 def test_echo_e_no_escape(env):

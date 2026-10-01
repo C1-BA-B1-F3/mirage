@@ -4,7 +4,6 @@ from mirage.core.mem0.client import get_all_memories, search_memories
 
 
 class FakeClient:
-
     def __init__(self, pages):
         self.pages = pages
         self.calls = []
@@ -15,32 +14,17 @@ class FakeClient:
         return self.pages[page - 1]
 
     async def search(self, query, options=None):
-        self.calls.append({
-            "query": query,
-            **options.model_dump(exclude_unset=True)
-        })
+        self.calls.append(
+            {"query": query, **options.model_dump(exclude_unset=True)}
+        )
         return {"results": [{"id": "1", "memory": "m", "score": 0.9}]}
 
 
 @pytest.mark.asyncio
 async def test_get_all_paginates():
     pages = [
-        {
-            "count": 3,
-            "next": "x",
-            "results": [{
-                "id": "a"
-            }, {
-                "id": "b"
-            }]
-        },
-        {
-            "count": 3,
-            "next": None,
-            "results": [{
-                "id": "c"
-            }]
-        },
+        {"count": 3, "next": "x", "results": [{"id": "a"}, {"id": "b"}]},
+        {"count": 3, "next": None, "results": [{"id": "c"}]},
     ]
     client = FakeClient(pages)
     out = await get_all_memories(client, {"user_id": "alex"}, page_size=2)
@@ -53,10 +37,9 @@ async def test_get_all_paginates():
 @pytest.mark.asyncio
 async def test_search():
     client = FakeClient([])
-    out = await search_memories(client,
-                                "morning", {"agent_id": "a"},
-                                top_k=5,
-                                threshold=0.0)
+    out = await search_memories(
+        client, "morning", {"agent_id": "a"}, top_k=5, threshold=0.0
+    )
     assert out[0]["score"] == 0.9
     assert client.calls[0]["query"] == "morning"
     assert client.calls[0]["filters"] == {"agent_id": "a"}

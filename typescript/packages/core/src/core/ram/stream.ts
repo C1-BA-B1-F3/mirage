@@ -15,7 +15,7 @@
 import { recordStream } from '../../observe/context.ts'
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import { VFSName, type PathSpec } from '../../types.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 import { lookupError } from './dest.ts'
 
 // eslint-disable-next-line @typescript-eslint/require-await

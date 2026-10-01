@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { read as ramRead } from '../ram/read.ts'
-import { norm } from '../ram/utils.ts'
+import { norm } from '../../utils/path.ts'
 import type { PathSpec } from '../../types.ts'
 import { einval } from '../../utils/errors.ts'
 import { activeDevice } from './device.ts'

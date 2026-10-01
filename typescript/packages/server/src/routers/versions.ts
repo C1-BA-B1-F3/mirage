@@ -35,7 +35,7 @@ import {
 } from '../version/api.ts'
 import type { VersionBackend } from '../version/backend.ts'
 import { HeadMovedError, NoSuchBranchError } from '../version/errors.ts'
-import { toState } from '../version/stateTree.ts'
+import { toState } from '../version/state_tree.ts'
 import { VersionStore } from '../version/store.ts'
 
 export interface VersionRoutesDeps {

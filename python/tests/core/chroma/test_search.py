@@ -41,10 +41,3 @@ async def test_search_segments_empty_paths_searches_collection(
     assert result == (b"/knowledge/guides/quickstart:0.90\nquickstart chunk\n"
                       b"/knowledge/api/reference:0.75\napi chunk\n")
     assert "where" not in chroma_accessor.collection.queries[0]
-
-
-def test_validate_args():
-    with pytest.raises(ValueError, match="query is required"):
-        search.validate_args("", 10)
-    with pytest.raises(ValueError, match="top-k must be positive"):
-        search.validate_args("docs", 0)

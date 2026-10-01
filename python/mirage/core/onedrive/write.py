@@ -14,8 +14,7 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.msgraph.drive_ops import (SIMPLE_UPLOAD_MAX,
-                                           upload_session_write)
+from mirage.core.msgraph.drive import SIMPLE_UPLOAD_MAX, upload_session_write
 from mirage.core.onedrive.client import graph_put_bytes, item_url, split_path
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec

@@ -16,15 +16,14 @@ from typing import Any
 
 from mirage.accessor.box import BoxAccessor
 from mirage.commands.builtin.box import COMMANDS as BOX_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.box.client import BoxTokenManager
-from mirage.core.box.config import BoxConfig
 from mirage.core.box.watch import build_delta_hook
 from mirage.ops.box import OPS as BOX_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.box.config import BoxConfig
 from mirage.vfs.box.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 

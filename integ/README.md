@@ -73,6 +73,64 @@ and torn down after: S3 buckets `mirage-integ-<run>-...` (moto in-process by
 default), a Mongo database `mirage_integ_<run>`, redis key prefixes, and temp
 dirs for ssh.
 
+## What a pull request runs
+
+A push to main runs every job in `.github/workflows/test_integ.yml`. A pull
+request runs only the jobs whose path filter matches a changed file; the
+filters live in that workflow's `changes` job, and `typescript-build` runs
+whenever a job that needs the built packages does.
+
+```mermaid
+flowchart LR
+    PY["python/**"] --> core & data
+    TSX["typescript/**"] --> ts & data & database
+    IN["integ/**"] --> core & ts & data
+    D["data/**"] --> core
+    DB["mongodb · postgres · chroma · qdrant<br/>python layers, integ/vfs/&lt;name&gt;,<br/>integ/runners, targets.json"] --> database
+    OB["langfuse · jaeger layers<br/>integ/vfs/observability, seeds,<br/>integ/runners, targets.json"] --> observability
+    FS["fuse modules, workspace fuse wiring<br/>integ/fuse, check_json.py"] --> fuse
+    RT["python/** and typescript/**<br/>minus the runtime drop list<br/>integ/runtime, integ/fixtures/runtime"] --> runtime
+    core --> J1["integ"]
+    ts --> J2["integ-ts"]
+    core & ts --> J3["integ-shared-py · integ-shared-ts<br/>integ-shared-parity · integ-selftests<br/>integ-facets · integ-wandb"]
+    data --> J4["integ-data"]
+    database --> J5["integ-database"]
+    observability --> J6["integ-observability"]
+    fuse --> J7["integ-fuse · integ-fuse-windows<br/>integ-fskit-macos"]
+    runtime --> J8["integ-runtime"]
+```
+
+The same wiring from the side of a change. Every file under `python/` sets
+`core` and `data`, every file under `typescript/` sets `ts`, `data` and
+`database`, and every file under `integ/` sets `core`, `ts` and `data`. These
+set more:
+
+| Changed                                                                                                      | Also sets               |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------- |
+| python or typescript source, except the runtime drop list below                                              | runtime                 |
+| `integ/runtime/`, `integ/fixtures/runtime/`, `integ/tsconfig.json`                                           | runtime                 |
+| `integ/package.json`                                                                                         | runtime, fuse           |
+| the python mongodb, postgres, chroma and qdrant layers; their `integ/vfs/` cases                             | database                |
+| the langfuse and jaeger layers in either language; `integ/vfs/observability/`; the langfuse and jaeger seeds | observability           |
+| `integ/runners/`, `integ/targets.json`                                                                       | database, observability |
+| the FUSE modules and the workspace's FUSE wiring in either language; `integ/fuse/`, `integ/check_json.py`    | fuse                    |
+| `data/`                                                                                                      | core only               |
+| `test_integ.yml`                                                                                             | every filter            |
+
+The runtime drop list is the only subtraction in any filter, and it holds
+only what nothing integ-runtime loads can import, directly or not: unit
+tests, markdown, the python agent adapters, the browser, dsh and opencode
+packages, and the python layers of the backends and account CLIs no runtime
+case mounts or runs (the python VFS registry imports a backend only when one
+is mounted). A typescript backend stays in, since the core barrel imports
+every VFS, and so do FUSE and every command, which the workspace and the
+command tables import.
+
+Keep the filters and this section in step with the code: a new or moved
+backend, CLI or package belongs in the filter that tests it, a module joins
+the drop list only when nothing kept imports it, and a runtime case that
+starts mounting a dropped backend takes that name off the list.
+
 ## Running locally
 
 The `unix/cp` and `unix/mv` cases use GNU coreutils 9.7 as their transfer

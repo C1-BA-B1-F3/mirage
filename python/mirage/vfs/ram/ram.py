@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.commands.builtin.ram import COMMANDS as RAM_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.ram import OPS as RAM_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

@@ -18,8 +18,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import LINK_TARGET_KEY, FileStat, FileType, MountMode
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.path import ancestors, glob_prefix_match, resolve_symlinks
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.mount import MountEntry

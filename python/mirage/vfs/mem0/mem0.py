@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.mem0 import Mem0Accessor
 from mirage.commands.builtin.mem0 import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.mem0 import OPS as MEM0_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

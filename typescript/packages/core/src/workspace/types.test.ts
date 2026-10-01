@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { OpRecord } from '../observe/record.ts'
-import { ExecutionNode, ExecutionRecord } from './types.ts'
+import { ExecutionNode } from './types.ts'
 
 describe('ExecutionNode', () => {
   it('defaults are sensible', () => {
@@ -75,50 +75,5 @@ describe('ExecutionNode', () => {
     })
     expect(tree.children[0]?.children[0]?.exitCode).toBe(1)
     expect(tree.children[1]?.command).toBe('echo done')
-  })
-})
-
-describe('ExecutionRecord', () => {
-  it('defaults sessionId to empty when unattributed', () => {
-    const tree = new ExecutionNode()
-    const r = new ExecutionRecord({
-      agent: 'a',
-      command: 'cat /x',
-      stdout: new Uint8Array(),
-      exitCode: 0,
-      tree,
-      timestamp: 100,
-    })
-    expect(r.sessionId).toBe('')
-  })
-
-  it('toJSON decodes stdout and stdin', () => {
-    const tree = new ExecutionNode()
-    const r = new ExecutionRecord({
-      agent: 'a',
-      command: 'cmd',
-      stdout: new TextEncoder().encode('out'),
-      stdin: new TextEncoder().encode('in'),
-      exitCode: 0,
-      tree,
-      timestamp: 10,
-    })
-    const json = r.toJSON()
-    expect(json.stdout).toBe('out')
-    expect(json.stdin).toBe('in')
-    expect(json.command).toBe('cmd')
-  })
-
-  it('toJSON handles null stdin', () => {
-    const tree = new ExecutionNode()
-    const r = new ExecutionRecord({
-      agent: 'a',
-      command: 'cmd',
-      stdout: new Uint8Array(),
-      exitCode: 0,
-      tree,
-      timestamp: 10,
-    })
-    expect(r.toJSON().stdin).toBeNull()
   })
 })

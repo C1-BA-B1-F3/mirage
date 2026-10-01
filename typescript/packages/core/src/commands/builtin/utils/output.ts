@@ -50,10 +50,3 @@ export function formatOptionalRecords(records: readonly string[]): Uint8Array | 
   const output = formatRecords(records)
   return output.length > 0 ? output : null
 }
-
-export function formatRecordText(records: readonly string[]): string {
-  if (records.length === 0) {
-    return ''
-  }
-  return records.join('\n') + '\n'
-}

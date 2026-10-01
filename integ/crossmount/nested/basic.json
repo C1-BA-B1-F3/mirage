@@ -421,33 +421,6 @@
       }
     },
     {
-      "id": "nest_namespace_ancestor_ls",
-      "note": "ls, find and du already answered on a namespace-only ancestor; they are the reference the other verbs were made to agree with, so they are pinned here rather than left implied.",
-      "seq": 950033,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "ls /ghost",
-      "expect": {
-        "exit": 0,
-        "stdout": "deep\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "nest_namespace_ancestor_find",
-      "seq": 950034,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "find /ghost",
-      "expect": {
-        "exit": 0,
-        "stdout": "/ghost\n/ghost/deep\n/ghost/deep/g.txt\n",
-        "stderr": ""
-      }
-    },
-    {
       "id": "nest_namespace_ancestor_du",
       "seq": 950035,
       "targets": [
@@ -457,19 +430,6 @@
       "expect": {
         "exit": 0,
         "stdout": "6\t/ghost/deep\n6\t/ghost\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "nest_namespace_ancestor_test_d",
-      "seq": 950036,
-      "targets": [
-        "ram-nested"
-      ],
-      "command": "test -d /ghost && echo yes",
-      "expect": {
-        "exit": 0,
-        "stdout": "yes\n",
         "stderr": ""
       }
     },

@@ -13,48 +13,37 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
-import { eisdir } from '../../utils/errors.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { PathSpec } from '../../types.ts'
-import { iterPageChunks, metadataString, pageChunks } from './client.ts'
+import type { PathSpec } from '../../types.ts'
+import { eisdir } from '../../utils/errors.ts'
+import { fileEntry, joinLines } from '../slug_tree/read.ts'
+import { scalarString } from '../slug_tree/rows.ts'
+import { iterPageChunks, pageChunks } from './client.ts'
 import { renderPage } from './render.ts'
-import { resolvePath, type ResolvedChromaPath } from './path.ts'
+import { CHROMA_TREE } from './tree.ts'
 
-const ENC = new TextEncoder()
-
-function fileSlug(resolved: ResolvedChromaPath, virtual: string): string {
-  if (resolved.isDir) throw eisdir(virtual)
-  const slug = metadataString(resolved.entry?.extra.slug)
-  if (slug === null) throw eisdir(virtual)
+async function pageSlug(
+  accessor: ChromaAccessor,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<string> {
+  const slug = scalarString((await fileEntry(CHROMA_TREE, accessor, path, index)).extra.slug)
+  if (slug === null) throw eisdir(path.virtual)
   return slug
 }
 
 export async function readBytes(
   accessor: ChromaAccessor,
-  path: PathSpec | string,
+  path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  const resolved = await resolvePath(accessor, spec, index)
-  const chunks = await pageChunks(accessor, fileSlug(resolved, spec.virtual))
-  return renderPage(chunks)
+  return renderPage(await pageChunks(accessor, await pageSlug(accessor, path, index)))
 }
 
 export async function* readStream(
   accessor: ChromaAccessor,
-  path: PathSpec | string,
+  path: PathSpec,
   index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  const resolved = await resolvePath(accessor, spec, index)
-  const slug = fileSlug(resolved, spec.virtual)
-  let first = true
-  for await (const chunk of iterPageChunks(accessor, slug)) {
-    if (first) {
-      first = false
-    } else {
-      yield ENC.encode('\n')
-    }
-    yield ENC.encode(chunk)
-  }
+  yield* joinLines(iterPageChunks(accessor, await pageSlug(accessor, path, index)))
 }

@@ -143,17 +143,11 @@ class FakeAccessor:
     def __init__(self, config: QdrantConfig, client: FakeQdrantClient) -> None:
         self.config = config
         self._client = client
-        self._search_cache: dict = {}
-        self._indexes_ensured: set[str] = set()
+        self.search_cache: dict = {}
+        self.indexes_ensured: set[str] = set()
 
     async def client(self):
         return self._client
-
-    def cached_search(self, key):
-        return self._search_cache.get(key)
-
-    def store_search(self, key, rows):
-        self._search_cache[key] = rows
 
 
 @pytest.fixture

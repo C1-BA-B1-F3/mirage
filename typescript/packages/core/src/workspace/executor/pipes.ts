@@ -46,6 +46,7 @@ import { Channel } from '../../shell/console/types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { abortable, makeAbortError, mergeSignals } from '../abort.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -486,16 +487,4 @@ export async function handleSubshell(
   } finally {
     session.restore(saved)
   }
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }

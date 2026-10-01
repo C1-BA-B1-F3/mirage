@@ -77,3 +77,20 @@ def io_to_str(io: IOResult) -> str:
     if stderr:
         text = f"{stdout}\n{stderr}" if stdout else stderr
     return with_refusal(text, io.refusal)
+
+
+def replace_text(content: str, old: str, new: str,
+                 replace_all: bool) -> tuple[str, int]:
+    """The edit tools' one substitution: ``content`` with ``old``
+    replaced once, or everywhere under ``replace_all``, beside how many
+    times it occurs. A count other than one without ``replace_all`` is
+    the caller's refusal to word.
+
+    Args:
+        content (str): the file's text.
+        old (str): the text to find.
+        new (str): the text to put in its place.
+        replace_all (bool): True replaces every occurrence.
+    """
+    return content.replace(old, new,
+                           -1 if replace_all else 1), content.count(old)

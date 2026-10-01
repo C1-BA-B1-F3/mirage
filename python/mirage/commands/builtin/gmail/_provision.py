@@ -12,11 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind.provision import (
-    exact_zero_provision, make_file_read_provision)
+from mirage.commands.builtin.generic_bind.provision import \
+    make_file_read_provision
 from mirage.core.gmail.stat import stat as _stat
 
 file_read_provision = make_file_read_provision(_stat)
-metadata_provision = exact_zero_provision
 
-__all__ = ["file_read_provision", "metadata_provision"]
+__all__ = ["file_read_provision"]

@@ -323,19 +323,6 @@ def set_op_policies(policies: "Policies") -> Token[Any]:
     return _op_policies.set(policies)
 
 
-def suspend_op_policies() -> Token[Any]:
-    """Unbind the op policies for a delegated sub-command whose door
-    the caller has already cleared.
-
-    find's ``-delete`` admits each removal itself, in find's own
-    refusal voice, and then delegates the mutation to ``rm``; without
-    the suspension the delegated slot would admit the same deletion a
-    second time, so a counting or budget policy would see one removal
-    twice.
-    """
-    return _op_policies.set(None)
-
-
 def reset_op_policies(token: Token[Any]) -> None:
     """Restore the previous policies binding."""
     _op_policies.reset(token)

@@ -17,7 +17,7 @@ import asyncio
 import pytest
 
 from mirage.accessor.base import Accessor, NOOPAccessor
-from mirage.commands.registry import command
+from mirage.commands.config import command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
 from mirage.shell.console import Channel

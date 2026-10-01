@@ -30,6 +30,7 @@ import { planFlush } from './handles/index.ts'
 import { PrefixResolver, type MountResolver } from './resolver.ts'
 import type { BridgeDispatchFn } from './types.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
+import { concat } from '../io/cachable_iterator.ts'
 
 /** One directory entry as the mounts report it. */
 export interface VFSEntry {
@@ -119,13 +120,6 @@ function statRow(st: FileStat): VFSStat {
 function baseName(entry: string): string {
   const trimmed = rstripSlash(entry)
   return trimmed.slice(trimmed.lastIndexOf('/') + 1)
-}
-
-export function concatBytes(head: Uint8Array, tail: Uint8Array): Uint8Array {
-  const out = new Uint8Array(head.length + tail.length)
-  out.set(head, 0)
-  out.set(tail, head.length)
-  return out
 }
 
 /**
@@ -446,7 +440,7 @@ export class RuntimeVFS {
     } catch (err) {
       if (!isMissingPath(err)) throw err
     }
-    await this.write(path, concatBytes(base, tail))
+    await this.write(path, concat([base, tail]))
   }
 
   private async appendDelta(path: string, tail: Uint8Array): Promise<boolean> {

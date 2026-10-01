@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { stat as ramStat } from '../ram/stat.ts'
-import { basename, norm } from '../ram/utils.ts'
+import { gnuBasename, norm } from '../../utils/path.ts'
 import { DEVICE_NUMBERS_KEY, FileStat, FileType, type PathSpec } from '../../types.ts'
 import { DEV_RDEV } from './constants.ts'
 import { activeDevice } from './device.ts'
@@ -33,7 +33,7 @@ export function stat(
   if (numbers === undefined) return ramStat(accessor, path)
   return Promise.resolve(
     new FileStat({
-      name: basename(key),
+      name: gnuBasename(key),
       size: null,
       modified: accessor.store.modified.get(key) ?? null,
       type: FileType.CHAR_DEVICE,

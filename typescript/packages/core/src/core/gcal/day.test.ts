@@ -19,7 +19,6 @@ import {
   dayBounds,
   daysCovered,
   eventSpan,
-  isAllDay,
   localMidnight,
   slotInstant,
   validDay,
@@ -71,11 +70,6 @@ describe('gcal day bucketing', () => {
 
   it('brackets the day with the default window', () => {
     expect(windowBounds('2026-08-11', HK)).toEqual([null, '2026-11-10T00:00:00+08:00'])
-  })
-
-  it('reads the slot shape for all-day', () => {
-    expect(isAllDay({ date: '2026-08-11' })).toBe(true)
-    expect(isAllDay({ dateTime: '2026-08-11T09:00:00+08:00' })).toBe(false)
   })
 
   it('parses offsets and Z', () => {

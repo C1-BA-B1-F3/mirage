@@ -16,7 +16,7 @@ import type { FileStat, PathSpec } from '../../../../types.ts'
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { readBytesOp, statOp } from '../../generic/crossmount/utils.ts'
-import { tarGeneric } from '../../generic/tar.ts'
+import { tarGeneric } from '../../generic/tar/tar.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 import { isDirOf, relayIsDirOf, walkOf } from '../archive_io.ts'
 

@@ -2,9 +2,8 @@ from collections.abc import AsyncIterator
 
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import stream_item
+from mirage.core.msgraph.drive import stream_item
 from mirage.core.sharepoint.client import split_path
-from mirage.core.sharepoint.read import read_bytes
 from mirage.core.sharepoint.resolve import drive_loc, resolve
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -29,12 +28,3 @@ async def read_stream(
                                    chunk_size,
                                    session=accessor.pool):
         yield chunk
-
-
-async def range_read(accessor: SharePointAccessor, path: PathSpec, start: int,
-                     end: int) -> bytes:
-    return await read_bytes(accessor,
-                            path,
-                            offset=start,
-                            size=end - start,
-                            index=NULL_INDEX)

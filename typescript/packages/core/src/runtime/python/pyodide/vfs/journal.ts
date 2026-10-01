@@ -12,8 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { concatBytes, type RuntimeVFS } from '../../../vfs.ts'
+import { type RuntimeVFS } from '../../../vfs.ts'
 import type { SetAttrFields } from '../../../../types.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 /**
  * One guest mutation, recorded in the order the script performed it.
@@ -95,7 +96,7 @@ export function createJournal(): MutationJournal {
         journal[journal.length - 1] = {
           kind: last.kind,
           path,
-          bytes: concatBytes(last.bytes, owned),
+          bytes: concat([last.bytes, owned]),
         }
         return
       }

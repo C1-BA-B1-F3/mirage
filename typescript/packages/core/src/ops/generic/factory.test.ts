@@ -16,7 +16,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { Accessor } from '../../accessor/base.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
-import { makeGenericOps, type OpsTable } from './factory.ts'
+import { makeGenericOps } from './factory.ts'
+import type { OpsTable } from './types.ts'
 
 const PATH = PathSpec.fromStrPath('/x/a.txt', 'a.txt')
 const ACCESSOR = new Accessor()

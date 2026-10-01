@@ -25,7 +25,7 @@ import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { DIR_SIZE } from '../../utils/stat_view.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export interface FindOptions {
   name?: string | null

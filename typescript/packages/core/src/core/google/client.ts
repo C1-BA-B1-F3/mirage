@@ -221,19 +221,3 @@ export async function googleGetBytes(
   })
   return data as Uint8Array
 }
-
-export async function* googleGetStream(tm: TokenManager, url: string): AsyncIterable<Uint8Array> {
-  const headers = await googleHeaders(tm)
-  const r = await fetch(url, { headers, redirect: 'follow' })
-  if (!r.ok) {
-    const text = await r.text().catch(() => '')
-    throw new GoogleApiError(`Google GET ${url} → ${String(r.status)} ${text}`, r.status)
-  }
-  if (r.body === null) return
-  const reader = r.body.getReader()
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    yield value
-  }
-}

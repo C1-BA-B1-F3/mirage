@@ -16,7 +16,6 @@ export {
   acceptsLine,
   followDirectoryLinks,
   followPaths,
-  linkFlags,
   prepareMv,
   settleMoves,
   stripLinkOperands,

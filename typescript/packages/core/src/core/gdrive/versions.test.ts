@@ -22,19 +22,11 @@ vi.mock('../google/client.ts', async () => {
 
 import type { TokenManager } from '../google/client.ts'
 import { googleGet, googleGetBytes } from '../google/client.ts'
-import { captureFileMetadata, downloadRevision, listRevisions } from './versions.ts'
+import { captureFileMetadata, downloadRevision } from './versions.ts'
 
 const TM = { config: { clientId: 'cid', refreshToken: 'rt' } } as TokenManager
 
 describe('gdrive versions', () => {
-  it('listRevisions paginates', async () => {
-    vi.mocked(googleGet)
-      .mockResolvedValueOnce({ revisions: [{ id: 'r1' }], nextPageToken: 'next' })
-      .mockResolvedValueOnce({ revisions: [{ id: 'r2' }] })
-    const revs = await listRevisions(TM, 'f1')
-    expect(revs.map((r) => r.id)).toEqual(['r1', 'r2'])
-  })
-
   it('downloadRevision hits the revision URL', async () => {
     const enc = new TextEncoder()
     vi.mocked(googleGetBytes).mockResolvedValue(enc.encode('old'))

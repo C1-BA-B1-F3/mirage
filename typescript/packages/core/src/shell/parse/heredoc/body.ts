@@ -63,9 +63,8 @@ export function nextLine(text: string, lineStart: number): number | null {
  * comes once the source has run out has no body. `nested` says one line's
  * bodies stand innermost-first, the order tree-sitter-bash's grammar
  * closes them in, rather than in the order bash gathers them: the source
- * the parser reads is kept in that order (see relayout), so the shield
- * and bodyPrefix read it, while relayout reads the typed source as bash
- * does; a line with one operator reads the same either way. Returns
+ * the parser reads is kept in that order, so the shield and bodyPrefix
+ * read it that way; a line with one operator reads the same either way. Returns
  * `[bodyStart, bodyEnd]` per operator, in the order given; null when the
  * body never starts.
  */

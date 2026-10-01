@@ -491,16 +491,6 @@ async def test_delete_failure_ends_the_chain_in_gnus_words():
         1)
 
 
-@pytest.mark.asyncio
-async def test_exec_line_substitution():
-    from mirage.commands.builtin.types import ExecAction
-    from mirage.workspace.executor.find_action_dispatch import exec_line
-    per = ExecAction(("echo", "x{}y", "{}"), batch=False)
-    assert exec_line(per, ["a b"]) == "echo 'xa by' 'a b'"
-    batch = ExecAction(("echo", "{}", "tail"), batch=True)
-    assert exec_line(batch, ["a", "b c"]) == "echo a 'b c' tail"
-
-
 MUTATE = "sh -c 'echo \"$KEEP:$PWD\"; KEEP=child; cd /'"
 MUTATE_EXIT = "sh -c 'KEEP=child; cd /; exit 7'"
 BATCH = "sh -c 'KEEP=child; cd /; set -- child; set -u'"

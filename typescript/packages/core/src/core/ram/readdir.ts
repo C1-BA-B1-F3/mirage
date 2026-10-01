@@ -19,7 +19,7 @@ import { IndexEntry, type IndexCacheStore } from '../../cache/index/index.ts'
 import { ResourceType } from '../../cache/index/config.ts'
 import type { PathSpec } from '../../types.ts'
 import { readdirError } from '../../utils/errors.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 export async function readdir(

@@ -24,6 +24,7 @@ import { GitError, MissingRepositoryError, NoWorkspaceError } from './errors.ts'
 import { loadRefs, readHead } from './refs.ts'
 import { objectType, openRepo, repoArgs, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -362,16 +363,6 @@ export class HttpTransport implements Transport {
     }
     return concat(pack)
   }
-}
-
-function concat(parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
-  let at = 0
-  for (const part of parts) {
-    out.set(part, at)
-    at += part.length
-  }
-  return out
 }
 
 /** Split userinfo out of a URL into a basic Authorization header. */

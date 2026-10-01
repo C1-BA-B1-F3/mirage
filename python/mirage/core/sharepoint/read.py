@@ -1,6 +1,6 @@
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import read_item
+from mirage.core.msgraph.drive import read_item
 from mirage.core.sharepoint.client import split_path
 from mirage.core.sharepoint.resolve import drive_loc, resolve
 from mirage.types import PathSpec

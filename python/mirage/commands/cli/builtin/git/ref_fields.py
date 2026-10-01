@@ -94,7 +94,6 @@ UNSUPPORTED = frozenset({
 })
 
 PEOPLE = ("author", "committer", "tagger")
-PERSON_PARTS = ("name", "email", "date")
 DATE_FIELDS = frozenset(
     {"authordate", "committerdate", "taggerdate", "creatordate"})
 ALIGN_POSITIONS = ("left", "middle", "right")
@@ -105,7 +104,6 @@ SIGNATURE_MARKERS = ("-----BEGIN PGP SIGNATURE-----",
                      "-----BEGIN SIGNED MESSAGE-----",
                      "-----BEGIN SSH SIGNATURE-----")
 MINIMUM_ABBREV = 4
-C_SPACE = " \t\n\v\f\r"
 C_INTEGER = re.compile(r"[ \t\n\v\f\r]*([+-]?)([0-9]+)")
 INT_MAX = 2**31 - 1
 UINT_MAX = 2**32 - 1

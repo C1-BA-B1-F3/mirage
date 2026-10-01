@@ -68,14 +68,3 @@ export const ALTERNATE_FILLER = 'y'
 export const HEREDOC_START = 'heredoc_start'
 export const HEREDOC_BODY = 'heredoc_body'
 export const DASH_ARROW = '<<-'
-
-// Bash's metacharacters other than blanks: what ends an unquoted word, so
-// where tree-sitter's delimiter token has run past the delimiter (`EOF;`
-// is the word `EOF` and then a `;`).
-export const WORD_BREAKERS: ReadonlySet<string> = new Set(['|', '&', ';', '(', ')', '<', '>'])
-
-// The statement terminators an operator line keeps as bash reads them at
-// the start of a line, longest first so `;;&` is not read as `;;` and an
-// `&`. A lone `;` is not among them: bash refuses a line opening with one,
-// so the newline that precedes the moved body stands in for it.
-export const KEPT_TERMINATORS: readonly string[] = [';;&', ';;', ';&', ')']

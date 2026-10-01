@@ -32,5 +32,3 @@ IO = VFSAdapter(search=SearchOps(
                 native=NativeReadOps(read_stream=_read_stream),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
-
-resolve_glob = IO.resolve_glob

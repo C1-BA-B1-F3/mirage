@@ -15,9 +15,8 @@
 from mirage.policy.match.allow import (head_visible, line_allowed, line_tokens,
                                        node_visible)
 from mirage.policy.match.decide import decide, outranks, rule_at, source_of
-from mirage.policy.match.pattern import (intersect_patterns, pattern_matches,
-                                         pattern_names, pattern_reaches,
-                                         split_pattern)
+from mirage.policy.match.pattern import (pattern_matches, pattern_names,
+                                         pattern_reaches, split_pattern)
 from mirage.policy.match.reads import has_rules, reads_args, scopes_paths
 from mirage.policy.types import Outcome, Ruling
 from mirage.utils.hidden import anchor_depth
@@ -39,7 +38,6 @@ __all__ = [
     "has_rules",
     "hidden_depth",
     "head_visible",
-    "intersect_patterns",
     "io_refusal",
     "line_allowed",
     "line_tokens",

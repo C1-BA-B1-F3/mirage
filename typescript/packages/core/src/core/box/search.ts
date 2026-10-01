@@ -17,6 +17,7 @@ import type { BoxAccessor } from '../../accessor/box.ts'
 import { PathSpec } from '../../types.ts'
 import { respellRaw } from '../../utils/path.ts'
 import { searchContent, type BoxSearchItem } from './api.ts'
+import { BoxApiError } from './client.ts'
 import { mountRelativeKey, pathParts, resolveItem } from './resolve.ts'
 
 function compareComponents(a: string, b: string): number {
@@ -71,8 +72,9 @@ export async function narrowPaths(
       const out = await searchContent(accessor.tokenManager, query, folderId)
       if (out.truncated) return null
       results = out.items
-    } catch {
-      // Search is best-effort; an API failure falls back to the full scan.
+    } catch (err) {
+      if (!(err instanceof BoxApiError)) throw err
+      console.warn(`box search push-down failed (${String(err)}); falling back to per-file scan`)
       return null
     }
     const scoped: string[] = []

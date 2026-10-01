@@ -16,7 +16,7 @@ import asyncio
 
 import pytest
 
-from mirage.commands.registry import RegisteredCommand
+from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec import SPECS
 from mirage.io.types import IOResult
 from mirage.provision import Precision, ProvisionResult

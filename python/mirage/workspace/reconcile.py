@@ -18,8 +18,7 @@ from enum import Enum
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.cache.index.scope import command_started
-from mirage.types import ReadPolicy
+from mirage.types import FileStat, PathSpec, ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import ancestors
 from mirage.workspace.mount.mount import MountEntry
@@ -55,12 +54,14 @@ class Reconciler:
     (RAM local, Redis shared across runtimes), so this is a thin coordinator
     holding references, not config.
 
-    The gate and ``reconcile_read`` overlap deliberately: a warm named
-    operand is probed once at routing and again at the gate. Deduplicating
-    them needs a fact neither tier owns -- routing runs before any handler,
-    the gate inside one -- so the cheap version was a flag on the command
-    that went stale the moment a backend registered its own reader. Paying
-    the second probe is the honest price until the two tiers share a scope.
+    The gate and ``reconcile_read`` both run for a warm named operand, once
+    at routing and again at the gate, and they share one scope: the
+    command. The first probe's backend answer is kept on the mount's
+    ``CacheManager`` for the rest of the command, so the gate, and the
+    command's own stat of the operand, reuse it instead of asking again. A
+    write in the command, the clear after an external program, or a re-list
+    that finds the path gone retires it, and a read outside any command (FUSE,
+    the op door) never sees it.
     """
 
     def __init__(self, cache: FileCacheMixin, namespace: Namespace) -> None:
@@ -73,27 +74,40 @@ class Reconciler:
         A missing path GCs (evict cache + drop overlay); a fingerprint
         mismatch evicts the stale cache entry. Non-404 errors propagate.
 
+        Inside a command, what an earlier probe of the same command got
+        from the backend is reused (``CacheManager.probed_stat``) until a
+        write lands: the verdict and its reactions still run, only the
+        round trip is skipped.
+
         Args:
             mount (MountEntry): the resolved mount for ``path``.
             path (str): absolute virtual path to probe.
         """
-        # Resolve backend IDs without reusing cached metadata.
-        try:
-            remote_stat = await mount.execute_op("stat",
-                                                 path,
-                                                 index=RAMIndexCacheStore())
-        except (FileNotFoundError, NotADirectoryError):
-            await self.on_missing(path)
-            await mount.index.clear()
-            return Verdict.GONE
-        except OperationNotSupportedError:
-            # A backend that registers no stat op cannot be revalidated at
-            # all. `_probe_or_unknown` would reach the same verdict, but it
-            # would also log every read: this is a permanent capability of
-            # the mount, not an anomaly worth a log line each time.
-            await self._cache.remove(path)
-            await mount.index.clear()
-            return Verdict.UNKNOWN
+        manager = mount.cache_manager
+        spec = PathSpec.from_str_path(path)
+        remote_stat = None if manager is None else manager.probed_stat(spec)
+        if remote_stat is None:
+            generation = None if manager is None else manager.generation
+            # Resolve backend IDs without reusing cached metadata.
+            try:
+                remote_stat = await mount.execute_op(
+                    "stat", path, index=RAMIndexCacheStore())
+            except (FileNotFoundError, NotADirectoryError):
+                await self.on_missing(path)
+                await mount.index.clear()
+                return Verdict.GONE
+            except OperationNotSupportedError:
+                # A backend that registers no stat op cannot be revalidated
+                # at all. `_probe_or_unknown` would reach the same verdict,
+                # but it would also log every read: this is a permanent
+                # capability of the mount, not an anomaly worth a log line
+                # each time.
+                await self._cache.remove(path)
+                await mount.index.clear()
+                return Verdict.UNKNOWN
+            if (manager is not None and manager.generation == generation
+                    and isinstance(remote_stat, FileStat)):
+                manager.note_probed(spec, remote_stat)
         if remote_stat is None or remote_stat.fingerprint is None:
             await self._cache.remove(path)
             await mount.index.clear()
@@ -147,8 +161,8 @@ class Reconciler:
         """Gate a cached read: is the cached copy still valid to serve?
 
         Under ``bounded`` the cache is trusted within its bound. Under
-        ``fresh`` the backend is
-        re-stated: a matching fingerprint serves the cached copy, a
+        ``fresh`` a backend probe (reused within its command until a write)
+        supplies the fingerprint: a match serves the cached copy, a
         mismatch evicts it, a path the backend no longer has GCs and
         raises, and a backend that answers no fingerprint at all -- or no
         ``stat`` at all -- cannot be verified, so the copy is dropped and
@@ -194,8 +208,10 @@ class Reconciler:
         Under ``bounded`` the listing is trusted within its bound. Under
         ``fresh`` it is trusted only if the running command refreshed it
         itself, so one command re-lists a folder once however often it
-        reads it; anything older, and any read outside a command, lists
-        again. Task 1.3 replaces "list again" with a cheaper check.
+        reads it; a read outside any command trusts a listing written
+        within the last ``LISTING_TRUST_WINDOW`` seconds instead
+        (``CacheManager.listing_trusted``). Anything older lists again.
+        Task 1.3 replaces "list again" with a cheaper check.
 
         Args:
             mount (MountEntry): the mount holding the listing.
@@ -206,10 +222,8 @@ class Reconciler:
         """
         if mount.read.policy is not ReadPolicy.FRESH:
             return True
-        started = command_started()
         manager = mount.cache_manager
-        return (started is not None and manager is not None
-                and manager.listed_since(folder, started))
+        return manager is not None and manager.listing_trusted(folder)
 
     async def reconcile_read(self, mount: MountEntry, path: str) -> None:
         """Reconcile a single-mount shell read before the command runs.

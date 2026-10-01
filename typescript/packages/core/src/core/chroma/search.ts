@@ -12,22 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { SearchQuery } from '../../vfs/types.ts'
-import { validateOptions, intOption } from '../../vfs/search.ts'
-import { readdir } from './readdir.ts'
-import { makeResolveGlob } from '../../commands/builtin/generic_bind/adapter.ts'
-import { mountPrefixOf, rekey } from '../../utils/key_prefix.ts'
 import type { Where } from 'chromadb'
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
-import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { PathSpec } from '../../types.ts'
+import type { PathSpec } from '../../types.ts'
+import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { scoreFromDistance } from '../../utils/score.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { metadataString } from './client.ts'
-import { resolvePath } from './path.ts'
-import { walk } from './walk.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { intOption, validateOptions } from '../../vfs/search.ts'
+import type { SearchQuery } from '../../vfs/types.ts'
+import { scalarString } from '../slug_tree/rows.ts'
+import { hitLines, searchScope, targetEntries, validateQuery } from '../slug_tree/search.ts'
+import { CHROMA_TREE } from './tree.ts'
 
 const ENC = new TextEncoder()
 
@@ -39,7 +36,7 @@ export async function searchSegments(
   topK = 10,
   mountPrefix = '',
 ): Promise<Uint8Array> {
-  validateArgs(query, topK)
+  validateQuery(query, topK)
   if (mountPrefix === '' && paths.length > 0) {
     mountPrefix =
       (paths[0] === undefined ? undefined : mountPrefixOf(paths[0].virtual, paths[0].vfsPath)) ?? ''
@@ -47,7 +44,7 @@ export async function searchSegments(
   let scopedSlugs: Set<string> | null = null
   let where: Where | undefined
   if (paths.length > 0) {
-    scopedSlugs = new Set((await targetEntries(accessor, paths, index)).keys())
+    scopedSlugs = new Set((await targetEntries(CHROMA_TREE, accessor, paths, index)).keys())
     if (scopedSlugs.size === 0) return new Uint8Array(0)
     where = {
       [accessor.config.slugField]: { $in: [...scopedSlugs].sort(compareCodePoints) },
@@ -61,47 +58,6 @@ export async function searchSegments(
     ...(where !== undefined ? { where } : {}),
   })
   return queryResultToBytes(response, accessor.config.slugField, mountPrefix, scopedSlugs)
-}
-
-function validateArgs(query: string, topK: number): void {
-  if (query === '') {
-    throw new Error('search: query is required')
-  }
-  if (query.length > 250) {
-    throw new Error('search: query cannot exceed 250 characters')
-  }
-  if (topK <= 0) {
-    throw new Error('search: top-k must be positive')
-  }
-}
-
-async function targetEntries(
-  accessor: ChromaAccessor,
-  paths: readonly PathSpec[],
-  index?: IndexCacheStore,
-): Promise<Map<string, IndexEntry>> {
-  const targets = new Map<string, IndexEntry>()
-  for (const path of paths) {
-    const resolved = await resolvePath(accessor, path, index)
-    if (resolved.entry !== null && !resolved.isDir) {
-      targets.set(String(resolved.entry.extra.slug), resolved.entry)
-      continue
-    }
-    if (resolved.isDir) {
-      const children = await walk(accessor, path, index, {
-        includeRoot: false,
-        stripPrefix: false,
-      })
-      for (const child of children) {
-        const childSpec = PathSpec.fromStrPath(child, rekey(path.virtual, path.vfsPath, child))
-        const childResolved = await resolvePath(accessor, childSpec, index)
-        if (childResolved.entry !== null && !childResolved.isDir) {
-          targets.set(String(childResolved.entry.extra.slug), childResolved.entry)
-        }
-      }
-    }
-  }
-  return targets
 }
 
 interface ChromaQueryResponse {
@@ -124,7 +80,7 @@ function queryResultToBytes(
     const document = documents[i]
     const metadata = metadatas[i]
     if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) continue
-    const slug = metadataString((metadata as Record<string, unknown>)[slugField])
+    const slug = scalarString((metadata as Record<string, unknown>)[slugField])
     if (slug === null) continue
     const slugValue = stripSlash(slug)
     if (scopedSlugs !== null && !scopedSlugs.has(slugValue)) continue
@@ -153,13 +109,8 @@ export async function searchMany(
 ): Promise<string[]> {
   validateOptions(query, ['top_k'])
   const topK = intOption(query, 'top_k', 10)
-  const first = paths[0]
-  if (first === undefined) throw new Error('search: at least one scope is required')
-  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
-  const all = paths.some((p) => stripSlash(p.vfsPath) === '')
-  const targets = all ? [] : await makeResolveGlob(readdir)(accessor, paths, index)
-  const output = await searchSegments(accessor, query.query, targets, index, topK, prefix)
-  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
+  const [targets, prefix] = await searchScope(CHROMA_TREE, accessor, paths, index)
+  return hitLines(await searchSegments(accessor, query.query, targets, index, topK, prefix))
 }
 
 export function searchResource(

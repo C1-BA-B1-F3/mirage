@@ -506,6 +506,7 @@
       "max_du_entries": 10000,
       "max_glob_matches": 10000,
       "slots": [
+        "content_search",
         "copy",
         "create",
         "dir_copy",
@@ -624,6 +625,7 @@
       "max_du_entries": 10000,
       "max_glob_matches": 10000,
       "slots": [
+        "content_search",
         "copy",
         "create",
         "du",

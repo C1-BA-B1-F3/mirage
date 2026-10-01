@@ -14,8 +14,7 @@
 
 from mirage.accessor.history import HistoryAccessor
 from mirage.commands.builtin.history import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.history import OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.vfs.base import BaseVFS

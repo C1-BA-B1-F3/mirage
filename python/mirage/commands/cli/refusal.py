@@ -13,11 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from mirage.commands.cli.constants import CLAP_EXIT, USAGE_EXIT
 from mirage.commands.spec.help import operand_slot, option_metavar
 from mirage.commands.spec.types import CommandSpec, UsageStyle
-from mirage.workspace.executor.command.types import ParsedCommand
+
+if TYPE_CHECKING:
+    from mirage.workspace.executor.command.types import ParsedCommand
 
 ARGPARSE_EXIT = 2
 LONG_PREFIX = "--"
@@ -114,7 +117,7 @@ def clap_missing_operands(prog: str, spec: CommandSpec, missing: Sequence[str],
 
 
 def leaf_refusal(style: UsageStyle, argparse_message: bytes,
-                 parsed: ParsedCommand) -> tuple[bytes, int]:
+                 parsed: "ParsedCommand") -> tuple[bytes, int]:
     """The message and exit code a leaf answers a bad option with.
 
     A leaf usage error exits 2 under argparse's style regardless of the

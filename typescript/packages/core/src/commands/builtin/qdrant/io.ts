@@ -12,18 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { searchResource, searchMany } from '../../../core/qdrant/search.ts'
-import { VFSAdapter } from '../../../vfs/adapter.ts'
-
 import type { QdrantAccessor } from '../../../accessor/qdrant.ts'
-import { read as qdrantRead } from '../../../core/qdrant/read.ts'
-import { readdir as qdrantReaddir } from '../../../core/qdrant/readdir.ts'
-import { stat as qdrantStat } from '../../../core/qdrant/stat.ts'
+import { read, readdir, SEARCH, stat } from '../../../core/qdrant/tree.ts'
+import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
 export const QDRANT_IO: CommandIO<QdrantAccessor> = new VFSAdapter<QdrantAccessor>({
-  search: { search: searchResource, searchMany },
-  read: { readdir: qdrantReaddir, readBytes: qdrantRead, stat: qdrantStat },
+  search: SEARCH,
+  read: { readdir, readBytes: read, stat },
   isMounted: () => true,
   local: false,
 }).toCommandIO()

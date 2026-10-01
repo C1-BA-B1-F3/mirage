@@ -21,7 +21,6 @@ vi.mock('./client.ts', async () => {
     ...actual,
     googleGet: vi.fn(),
     googleGetBytes: vi.fn(),
-    googleGetStream: vi.fn(),
     googleDelete: vi.fn(),
   }
 })
@@ -31,7 +30,6 @@ import * as client from './client.ts'
 import {
   deleteFile,
   downloadFile,
-  downloadFileStream,
   getFile,
   listAllFiles,
   listFiles,
@@ -121,15 +119,6 @@ describe('shared-drive support flags', () => {
     vi.mocked(client.googleGetBytes).mockResolvedValue(new Uint8Array())
     await downloadFile(STUB_TOKEN_MANAGER, 'file123')
     expect(vi.mocked(client.googleGetBytes).mock.calls[0]?.[1]).toContain('supportsAllDrives=true')
-  })
-
-  it('downloadFileStream requests supportsAllDrives', async () => {
-    vi.mocked(client.googleGetStream).mockImplementation(async function* () {
-      await Promise.resolve()
-      yield new Uint8Array()
-    })
-    for await (const _chunk of downloadFileStream(STUB_TOKEN_MANAGER, 'file123')) void _chunk
-    expect(vi.mocked(client.googleGetStream).mock.calls[0]?.[1]).toContain('supportsAllDrives=true')
   })
 
   it('deleteFile requests supportsAllDrives', async () => {

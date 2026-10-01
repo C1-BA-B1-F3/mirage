@@ -12,7 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands import COMMANDS
+from mirage.commands.builtin.ram import COMMANDS
+from mirage.commands.config import CommandCatalog
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -33,5 +34,5 @@ def test_builtin_count_matches_commands_dict():
     ws = Workspace({"/tmp/": RAMVFS()}, mode=MountMode.READ)
     mount = ws._registry.mount_for("/tmp/a")
     names = {name for (name, _) in mount._cmds}
-    for name in COMMANDS:
-        assert name in names, f"{name} not registered"
+    for registered in CommandCatalog(COMMANDS):
+        assert registered.name in names, f"{registered.name} not registered"

@@ -25,10 +25,10 @@ from deepagents.backends.protocol import (EditResult, ExecuteResponse,
                                           ReadResult, SandboxBackendProtocol,
                                           WriteResult)
 
-from mirage.agents.io_text import with_refusal
-from mirage.agents.langchain._convert import (io_to_execute_response,
-                                              io_to_file_infos,
-                                              io_to_grep_matches)
+from mirage.agents.io_text import replace_text, with_refusal
+from mirage.agents.langchain.convert import (io_to_execute_response,
+                                             io_to_file_infos,
+                                             io_to_grep_matches)
 from mirage.bridge.sync import run_async_from_sync
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace
@@ -242,7 +242,8 @@ class LangchainWorkspace(SandboxBackendProtocol):
         except (FileNotFoundError, NotADirectoryError, ValueError):
             return EditResult(error=f"Error: file '{file_path}' not found")
         content = data.decode("utf-8", errors="replace")
-        count = content.count(old_string)
+        new_content, count = replace_text(content, old_string, new_string,
+                                          replace_all)
         if count == 0:
             return EditResult(
                 error=f"Error: string not found in file: '{old_string}'")
@@ -250,10 +251,6 @@ class LangchainWorkspace(SandboxBackendProtocol):
             return EditResult(
                 error=f"Error: string '{old_string}' appears {count} times. "
                 f"Use replace_all=True")
-        if replace_all:
-            new_content = content.replace(old_string, new_string)
-        else:
-            new_content = content.replace(old_string, new_string, 1)
         await ops.write(file_path, new_content.encode("utf-8"))
         return EditResult(path=file_path,
                           occurrences=count if replace_all else 1)

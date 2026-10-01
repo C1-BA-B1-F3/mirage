@@ -12,9 +12,26 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.base import BaseVFS
-from mirage.vfs.disk import DiskVFS
-from mirage.vfs.ram import RAMVFS
+import importlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mirage.vfs.base import BaseVFS
+    from mirage.vfs.disk import DiskVFS
+    from mirage.vfs.ram import RAMVFS
+    from mirage.vfs.redis import RedisVFS
+
+_EXPORTS: dict[str, tuple[str, ...]] = {
+    "mirage.vfs.base": ("BaseVFS", ),
+    "mirage.vfs.disk": ("DiskVFS", ),
+    "mirage.vfs.ram": ("RAMVFS", ),
+    "mirage.vfs.redis": ("RedisVFS", ),
+}
+_MODULE_OF = {
+    name: module
+    for module, names in _EXPORTS.items()
+    for name in names
+}
 
 __all__ = [
     "BaseVFS",
@@ -24,8 +41,10 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    if name == "RedisVFS":
-        from mirage.vfs.redis import RedisVFS
-        return RedisVFS
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+def __getattr__(name: str) -> Any:
+    module = _MODULE_OF.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value

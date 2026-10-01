@@ -30,6 +30,7 @@ import type {
 } from 'deepagents'
 import { ioToExecuteResponse, ioToFileInfos, ioToGrepMatches } from './convert.ts'
 import { gnuDirname } from '@struktoai/mirage-core/utils/path'
+import { replaceText } from '../io_text.ts'
 
 const TEXT_EXTENSIONS = new Set([
   'txt',
@@ -223,7 +224,7 @@ export class LangchainWorkspace implements SandboxBackendProtocol {
     } catch {
       return { error: `Error: file '${filePath}' not found` }
     }
-    const count = current.split(oldString).length - 1
+    const [next, count] = replaceText(current, oldString, newString, replaceAll)
     if (count === 0) {
       return { error: `Error: string not found in file: '${oldString}'` }
     }
@@ -232,9 +233,6 @@ export class LangchainWorkspace implements SandboxBackendProtocol {
         error: `Error: string '${oldString}' appears ${String(count)} times. Use replaceAll=true`,
       }
     }
-    const next = replaceAll
-      ? current.split(oldString).join(newString)
-      : current.replace(oldString, newString)
     await this.ws.vfs.writeFile(filePath, next)
     return { path: filePath, occurrences: replaceAll ? count : 1 }
   }

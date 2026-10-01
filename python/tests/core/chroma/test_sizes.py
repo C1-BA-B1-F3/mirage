@@ -2,7 +2,7 @@ import pytest
 
 from mirage.core.chroma.read import read_bytes
 from mirage.core.chroma.stat import stat, stat_light
-from mirage.core.chroma.tree import ensure_tree
+from mirage.core.chroma.tree import CHROMA_TREE
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_stat_size_matches_read(chroma_accessor, chroma_index,
 @pytest.mark.asyncio
 async def test_stat_sizes_the_whole_directory_in_one_scan(
         chroma_accessor, chroma_collection, chroma_index, quickstart_path):
-    await ensure_tree(chroma_accessor, chroma_index, "/knowledge")
+    await CHROMA_TREE.ensure(chroma_accessor, chroma_index, "/knowledge")
     before = len(chroma_collection.get_calls)
 
     await stat(chroma_accessor, quickstart_path, chroma_index)
@@ -35,7 +35,7 @@ async def test_stat_sizes_the_whole_directory_in_one_scan(
 async def test_stat_light_skips_the_size_scan(chroma_accessor,
                                               chroma_collection, chroma_index,
                                               quickstart_path):
-    await ensure_tree(chroma_accessor, chroma_index, "/knowledge")
+    await CHROMA_TREE.ensure(chroma_accessor, chroma_index, "/knowledge")
     before = len(chroma_collection.get_calls)
 
     result = await stat_light(chroma_accessor, quickstart_path, chroma_index)

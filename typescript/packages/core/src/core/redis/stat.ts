@@ -18,7 +18,7 @@ import type { PathSpec } from '../../types.ts'
 import { lookupError } from './dest.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { basename, norm } from './utils.ts'
+import { gnuBasename, norm } from '../../utils/path.ts'
 
 function decodeAttrs(raw: Record<string, string>): {
   mode?: number
@@ -46,7 +46,7 @@ export async function stat(
   if (await store.hasDir(p)) {
     const attrs = decodeAttrs(await store.getAttrs(p))
     return new FileStat({
-      name: basename(p),
+      name: gnuBasename(p),
       modified: await store.getModified(p),
       type: FileType.DIRECTORY,
       mode: attrs.mode ?? null,
@@ -59,7 +59,7 @@ export async function stat(
     const size = await store.fileLen(p)
     const attrs = decodeAttrs(await store.getAttrs(p))
     return new FileStat({
-      name: basename(p),
+      name: gnuBasename(p),
       size,
       modified: await store.getModified(p),
       type: FileType.FILE,

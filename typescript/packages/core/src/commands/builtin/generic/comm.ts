@@ -20,14 +20,10 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { extraOperandError, missingOperandError } from '../../spec/usage.ts'
 import { stdinStream } from '../utils/stream.ts'
 import { CommandName } from '../../spec/types.ts'
+import { splitLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
 
 type MergeEntry = [number, string]
 
@@ -115,8 +111,8 @@ export async function commGeneric(
   const data1 = DEC.decode(await materialize(stream(p1)))
   const data2 = DEC.decode(await materialize(stream(p2)))
   const zeroTerminated = fl.asBool('zero_terminated')
-  const lines1 = zeroTerminated ? data1.replace(/\0$/, '').split('\0') : splitLinesNoTrailing(data1)
-  const lines2 = zeroTerminated ? data2.replace(/\0$/, '').split('\0') : splitLinesNoTrailing(data2)
+  const lines1 = zeroTerminated ? data1.replace(/\0$/, '').split('\0') : splitLines(data1)
+  const lines2 = zeroTerminated ? data2.replace(/\0$/, '').split('\0') : splitLines(data2)
   let stderr = ''
   if (fl.asBool('check_order')) {
     if (!isSorted(lines1)) stderr = 'comm: file 1 is not in sorted order\n'

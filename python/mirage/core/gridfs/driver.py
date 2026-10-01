@@ -25,7 +25,7 @@ from mirage.core.gridfs.client import (bucket, delete_all, files_coll,
 from mirage.core.gridfs.constants import SCOPE_ERROR
 from mirage.core.object_store.driver import (ChildEntry, FindHints, ObjectMeta,
                                              ObjectStoreDriver, TreeEntry)
-from mirage.core.timeutil import to_iso_z
+from mirage.utils.dates import to_iso_z
 
 _COPY_CHUNK = 1024 * 1024
 

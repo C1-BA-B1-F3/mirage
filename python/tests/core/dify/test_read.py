@@ -37,12 +37,3 @@ async def test_read_stream_separates_pages_with_single_newline(
     ]
 
     assert chunks == [b"first", b"\n", b"second"]
-
-
-@pytest.mark.asyncio
-async def test_read_bytes_rejects_directories(monkeypatch, dify_accessor,
-                                              dify_index, knowledge_root):
-    monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
-
-    with pytest.raises(IsADirectoryError):
-        await read.read_bytes(dify_accessor, knowledge_root, dify_index)

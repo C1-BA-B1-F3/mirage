@@ -20,40 +20,30 @@ from mirage.shell.parse.heredoc.line import (construct_closer, construct_end,
                                              operator_line_end, quote_end,
                                              reserved_word)
 from mirage.shell.parse.heredoc.prefix import body_prefix, tree_root
-from mirage.shell.parse.heredoc.relayout import (block_end, delimiter_break,
-                                                 line_terminators, relaid_line,
-                                                 relayout, word_breaks)
 from mirage.shell.parse.heredoc.shield import (first_content_line,
                                                heredoc_operators,
                                                protected_source, same_shape,
                                                terminator_lookalikes)
-from mirage.shell.parse.heredoc.types import HeredocOperator, Terminator
+from mirage.shell.parse.heredoc.types import HeredocOperator
 
 __all__ = [
     "HeredocOperator",
-    "Terminator",
     "ansi_c_end",
-    "block_end",
     "body_prefix",
     "clean_delimiter",
     "construct_closer",
     "construct_end",
-    "delimiter_break",
     "delimiter_quoted",
     "first_content_line",
     "heredoc_bodies",
     "heredoc_operators",
-    "line_terminators",
     "next_line",
     "operator_line_end",
     "protected_source",
     "quote_end",
-    "relaid_line",
-    "relayout",
     "reserved_word",
     "same_shape",
     "terminator_line",
     "terminator_lookalikes",
     "tree_root",
-    "word_breaks",
 ]

@@ -30,6 +30,7 @@ import { toScope } from '../scope.ts'
 import type { EXEC_STREAM_FIELDS } from './constants.ts'
 import { CLOSED, OPEN_FOR_READING, TO_STDERR, TO_STDIN, TO_STDOUT } from './constants.ts'
 import type { BuiltinCall, Result } from '../types.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 /** The `exec` builtin without redirects: bare `exec` is a no-op that
  * succeeds; `exec CMD` has no OS-process referent and is refused. */
@@ -403,7 +404,7 @@ export async function divertStatement(
   if (failed) {
     const first = command.trim().split(/\s+/)[0]
     const name = first === undefined || first === '' ? 'bash' : first
-    stderr = joinBytes([
+    stderr = concat([
       stderr,
       new TextEncoder().encode(`${name}: write error: Bad file descriptor\n`),
     ])
@@ -427,18 +428,8 @@ export async function divertStatement(
     // the work.
     if (unwritable && stdoutDiverted && io.exitCode === 0) io.exitCode = 1
   }
-  io.stderr = errParts.length > 0 ? joinBytes(errParts) : null
-  return outParts.length > 0 ? joinBytes(outParts) : null
-}
-
-function joinBytes(parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0))
-  let offset = 0
-  for (const p of parts) {
-    out.set(p, offset)
-    offset += p.byteLength
-  }
-  return out
+  io.stderr = errParts.length > 0 ? concat(errParts) : null
+  return outParts.length > 0 ? concat(outParts) : null
 }
 
 async function appendTo(

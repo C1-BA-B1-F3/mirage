@@ -24,6 +24,10 @@ async def _no_read(path: PathSpec) -> bytes:
     raise AssertionError(f"read {path.virtual}: the input is stdin")
 
 
+async def _no_unlink(path: PathSpec) -> None:
+    raise AssertionError(f"unlink {path.virtual}: the run succeeds")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cwd,named", [
     ("/data", ["/data/xx00", "/data/xx01"]),
@@ -42,6 +46,7 @@ async def test_stdin_outputs_are_named_in_the_working_directory(
     _, io = await csplit([], ["2"],
                          read_bytes=_no_read,
                          write_bytes=write_bytes,
+                         unlink=_no_unlink,
                          stdin=b"a\nb\n",
                          mount_prefix="/data",
                          cwd=cwd)
@@ -62,6 +67,7 @@ async def test_a_prefix_path_is_named_on_the_executing_mount():
     _, io = await csplit([], ["2"],
                          read_bytes=_no_read,
                          write_bytes=write_bytes,
+                         unlink=_no_unlink,
                          stdin=b"a\nb\n",
                          prefix=prefix,
                          mount_prefix="/data")

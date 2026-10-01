@@ -17,18 +17,10 @@ export { ansiCEnd, cleanDelimiter, delimiterQuoted } from './delimiter.ts'
 export { constructCloser, constructEnd, operatorLineEnd, quoteEnd, reservedWord } from './line.ts'
 export { bodyPrefix, treeRoot } from './prefix.ts'
 export {
-  blockEnd,
-  delimiterBreak,
-  lineTerminators,
-  relaidLine,
-  relayout,
-  wordBreaks,
-} from './relayout.ts'
-export {
   firstContentLine,
   heredocOperators,
   protectedSource,
   sameShape,
   terminatorLookalikes,
 } from './shield.ts'
-export type { HeredocOperator, Terminator } from './types.ts'
+export type { HeredocOperator } from './types.ts'

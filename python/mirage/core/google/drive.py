@@ -51,8 +51,6 @@ MIME_TO_EXT = {
     "application/vnd.google-apps.presentation": GoogleFileSuffix.GSLIDE.value,
 }
 
-WORKSPACE_MIMES = set(MIME_TO_EXT.keys())
-
 
 def escape_query_value(value: str) -> str:
     """Escape a value for a Drive API query string literal.

@@ -166,6 +166,28 @@ export type SearchManyOp<A extends Accessor = Accessor> = (
 ) => Promise<string[] | null>
 
 /** Optional resource search. Consumers validate their own metadata namespace. */
+/**
+ * Files under the scopes that may hold the whole-word literal `query`. A
+ * superset is harmless, since the scan still runs over the answer; null
+ * means the index cannot answer and the scan walks everything.
+ */
+export type NarrowPathsOp<A extends Accessor = Accessor> = (
+  accessor: A,
+  query: string,
+  paths: PathSpec[],
+) => Promise<PathSpec[] | null>
+
+/**
+ * A content index that narrows a recursive grep/rg to candidate files. The
+ * scan still runs locally over the files it names, so an empty answer falls
+ * back to the full walk: a search index lags recent writes. Mirrors Python's
+ * `ContentSearchOps`.
+ */
+export interface ContentSearchOps<A extends Accessor = Accessor> {
+  narrowPaths: NarrowPathsOp<A>
+  enabled: (accessor: A) => boolean
+}
+
 export interface SearchOps<A extends Accessor = Accessor> {
   search: SearchOp<A>
   searchMany?: SearchManyOp<A>

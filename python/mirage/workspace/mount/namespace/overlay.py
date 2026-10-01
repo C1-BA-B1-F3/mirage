@@ -14,8 +14,8 @@
 
 from typing import Any
 
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import FileStat
+from mirage.utils.dates import epoch_to_iso
 from mirage.workspace.mount.namespace.namespace import NodeMeta
 
 

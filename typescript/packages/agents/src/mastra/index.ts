@@ -16,6 +16,7 @@ import { gnuDirname } from '@struktoai/mirage-core/utils/path'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { createTool } from '@mastra/core/tools'
 import { z } from 'zod'
+import { replaceText } from '../io_text.ts'
 
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
   const parent = gnuDirname(path)
@@ -135,7 +136,7 @@ export function mirageTools(ws: Workspace) {
         } catch {
           return { error: `Error: file '${path}' not found` }
         }
-        const count = current.split(oldString).length - 1
+        const [next, count] = replaceText(current, oldString, newString, replaceAll === true)
         if (count === 0) {
           return { error: `Error: string not found in file: '${oldString}'` }
         }
@@ -144,10 +145,6 @@ export function mirageTools(ws: Workspace) {
             error: `Error: string '${oldString}' appears ${String(count)} times. Use replaceAll=true`,
           }
         }
-        const next =
-          replaceAll === true
-            ? current.split(oldString).join(newString)
-            : current.replace(oldString, newString)
         await ws.vfs.writeFile(path, next)
         return { path, occurrences: replaceAll === true ? count : 1 }
       },

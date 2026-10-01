@@ -16,7 +16,6 @@ import asyncssh
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.core.ssh.client import _abs
-from mirage.core.ssh.read import read_bytes
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -39,16 +38,3 @@ async def read_stream(accessor: SSHAccessor,
                 yield chunk
     except asyncssh.SFTPNoSuchFile:
         raise enoent(virtual)
-
-
-async def range_read(accessor: SSHAccessor, path: PathSpec, start: int,
-                     end: int) -> bytes:
-    """Read a byte range, in the VFS API's end-exclusive spelling.
-
-    Args:
-        accessor (SSHAccessor): SSH accessor.
-        path (PathSpec): the path to read.
-        start (int): first byte to read.
-        end (int): one past the last byte to read.
-    """
-    return await read_bytes(accessor, path, offset=start, size=end - start)

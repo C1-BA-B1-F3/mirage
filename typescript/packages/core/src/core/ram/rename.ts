@@ -14,7 +14,8 @@
 
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { checkDestParents, lookupError } from './dest.ts'
 import { invalidateSubtree } from '../../cache/context.ts'

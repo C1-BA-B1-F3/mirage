@@ -28,7 +28,6 @@ import { size, entries } from '@struktoai/mirage-core/core/redis/du/index'
 import { exists } from '@struktoai/mirage-core/core/redis/exists'
 import { find } from '@struktoai/mirage-core/core/redis/find'
 import { mkdir } from '@struktoai/mirage-core/core/redis/mkdir'
-import { mkdirP } from '@struktoai/mirage-core/core/redis/mkdir_p'
 import { read } from '@struktoai/mirage-core/core/redis/read'
 import { readdir } from '@struktoai/mirage-core/core/redis/readdir'
 import { rename } from '@struktoai/mirage-core/core/redis/rename'
@@ -135,12 +134,6 @@ describe.skipIf(skip)('core/redis ops', () => {
   it('mkdir with parents=true creates chain', async () => {
     await mkdir(acc, spec('/a/b/c'), true)
     expect(await exists(acc, spec('/a/b/c'))).toBe(true)
-  })
-
-  it('mkdirP creates chain idempotently', async () => {
-    await mkdirP(acc, spec('/x/y'))
-    await mkdirP(acc, spec('/x/y'))
-    expect(await exists(acc, spec('/x/y'))).toBe(true)
   })
 
   it('rmdir refuses non-empty and removes empty', async () => {

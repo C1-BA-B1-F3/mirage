@@ -12,122 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { SearchQuery } from '../../vfs/types.ts'
-import { validateOptions, intOption, floatOption, textOption } from '../../vfs/search.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
-import type { LanceRow } from './_driver.ts'
-import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
-import type { PathSpec } from '../../types.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { PATH_SAFE } from '../hierarchy/codec.ts'
-import { renderCard } from './render.ts'
+import type { Row } from '../vector/types.ts'
+import { renderCard, toStr } from './render.ts'
 
-const ENC = new TextEncoder()
-const DEC = new TextDecoder()
-
-function toStr(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value as string | number | boolean | bigint)
-}
-
-function targetTable(paths: PathSpec[], config: LanceDBConfigResolved): string | null {
-  if (config.table !== null) return config.table
-  for (const path of paths) {
-    const key = stripSlash(path.mountPath)
-    if (key !== '') return key.split('/')[0] ?? null
-  }
-  return null
-}
-
-function canonicalPath(
-  row: LanceRow,
-  config: LanceDBConfigResolved,
-  table: string,
-  mountPrefix: string,
-): string {
-  const segs: string[] = []
-  if (config.table === null) segs.push(table)
+/** A ranked row's path below its table, and its card. */
+export function hit(accessor: LanceDBAccessor, row: Row): [string[], Uint8Array] {
+  const config = accessor.config
+  const segments: string[] = []
   for (const column of config.groupBy) {
     const value = row[column]
-    if (value !== null && value !== undefined) segs.push(PATH_SAFE.encode(toStr(value)))
+    if (value !== null && value !== undefined) segments.push(PATH_SAFE.encode(toStr(value)))
   }
-  segs.push(`${toStr(row[config.idColumn])}.md`)
-  const prefix = rstripSlash(mountPrefix)
-  return `${prefix}/${segs.join('/')}`
-}
-
-function block(
-  row: LanceRow,
-  config: LanceDBConfigResolved,
-  table: string,
-  mountPrefix: string,
-): string {
-  const path = canonicalPath(row, config, table, mountPrefix)
-  const distance = row._distance
-  const header =
-    distance === null || distance === undefined ? path : `${path}:${Number(distance).toFixed(4)}`
-  const bodyRow: LanceRow = { ...row }
-  delete bodyRow._distance
-  const content = DEC.decode(renderCard(bodyRow, config)).replace(/\n+$/, '')
-  return `${header}\n${content}`
-}
-
-export async function searchRowsOutput(
-  accessor: LanceDBAccessor,
-  query: string,
-  paths: PathSpec[],
-  topK: number,
-  threshold: number,
-  mountPrefix: string,
-): Promise<Uint8Array> {
-  if (query === '') throw new Error('search: query is required')
-  if (topK <= 0) throw new Error('search: top-k must be positive')
-  const table = targetTable(paths, accessor.config)
-  if (table === null) throw new Error('search: no table to search')
-  const rows = await accessor.searchRows(table, query, topK)
-  const blocks: string[] = []
-  for (const row of rows) {
-    const distance = row._distance
-    if (
-      threshold > 0 &&
-      distance !== null &&
-      distance !== undefined &&
-      Number(distance) > threshold
-    ) {
-      continue
-    }
-    blocks.push(block(row, accessor.config, table, mountPrefix))
-  }
-  if (blocks.length === 0) return new Uint8Array()
-  return ENC.encode(blocks.join('\n') + '\n')
-}
-
-export async function searchMany(
-  accessor: LanceDBAccessor,
-  paths: PathSpec[],
-  query: SearchQuery,
-  _index?: IndexCacheStore,
-): Promise<string[]> {
-  validateOptions(query, ['top_k', 'threshold', 'method'])
-  const topK = intOption(query, 'top_k', accessor.config.searchLimit)
-  const first = paths[0]
-  if (first === undefined) throw new Error('search: at least one scope is required')
-  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
-  const method = textOption(query, 'method', 'semantic')
-  const threshold = floatOption(query, 'threshold', 0)
-  if (method !== 'semantic') throw new Error("search: only the 'semantic' method is supported")
-  const output = await searchRowsOutput(accessor, query.query, paths, topK, threshold, prefix)
-  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
-}
-
-export function searchResource(
-  accessor: LanceDBAccessor,
-  path: PathSpec,
-  query: SearchQuery,
-  index?: IndexCacheStore,
-): Promise<string[]> {
-  return searchMany(accessor, [path], query, index)
+  return [[...segments, `${toStr(row[config.idColumn])}.md`], renderCard(row, config)]
 }

@@ -25,8 +25,7 @@ from mirage.commands.builtin.slack.grep import (RG_SEARCH_HONORED,
                                                 SEARCH_MAX_RESULTS)
 from mirage.commands.builtin.slack.io import resolve_glob
 from mirage.commands.builtin.utils.output import format_records
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.slack.formatters import (build_query,

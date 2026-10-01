@@ -42,6 +42,7 @@ import { envSnapshot } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { readScriptBytes } from '../script/script.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 const SYNOPSIS = 'xargs [OPTION]... COMMAND [INITIAL-ARGS]...'
 const PROCS_MAX = 2147483647
@@ -96,26 +97,6 @@ function refuse(stderr: string | Uint8Array, exitCode = 1): Result {
     new IOResult({ exitCode, stderr: data }),
     new ExecutionNode({ command: 'xargs', exitCode }),
   ]
-}
-
-function concat(head: string, tail: Uint8Array): Uint8Array {
-  const lead = ENCODER.encode(head)
-  const out = new Uint8Array(lead.length + tail.length)
-  out.set(lead)
-  out.set(tail, lead.length)
-  return out
-}
-
-function joinBytes(parts: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const part of parts) total += part.length
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.length
-  }
-  return out
 }
 
 /** GNU's parse_num refusal of a count, null for a valid one. */
@@ -499,7 +480,7 @@ class Builder {
       rest = rest.subarray(replace.length)
     }
     if (rest.length > 0) throw new Fatal('xargs: command too long\n')
-    this.push(cString(joinBytes(out)), length + 1)
+    this.push(cString(concat(out)), length + 1)
   }
 
   private execIfPossible(): void {
@@ -779,15 +760,15 @@ export async function handleXargs(
       parse.candidates.length > 0
         ? ambiguousOptionError('xargs', parse.invalid, parse.candidates)
         : unknownOptionError('xargs', parse.invalid)
-    return refuse(concat(warnings, stderr), code)
+    return refuse(concat([ENCODER.encode(warnings), stderr]), code)
   }
   if (parse.unexpectedValue !== null) {
     const [stderr, code] = unexpectedValueError('xargs', parse.unexpectedValue)
-    return refuse(concat(warnings, stderr), code)
+    return refuse(concat([ENCODER.encode(warnings), stderr]), code)
   }
   if (parse.needsValue !== null) {
     const [stderr, code] = missingValueError('xargs', parse.needsValue)
-    return refuse(concat(warnings, stderr), code)
+    return refuse(concat([ENCODER.encode(warnings), stderr]), code)
   }
   if (eof !== null && delim !== null) {
     warnings += 'xargs: warning: the -E option has no effect if -0 or -d is used.\n\n'

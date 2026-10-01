@@ -15,7 +15,6 @@
 export { JqCompileError } from './errors.ts'
 export {
   argsText,
-  halts,
   jqCheck,
   jqEval,
   jqRaised,
@@ -25,7 +24,6 @@ export {
   streamReads,
 } from './eval.ts'
 export {
-  concatBytes,
   errorReport,
   formatJqOutput,
   formatOne,

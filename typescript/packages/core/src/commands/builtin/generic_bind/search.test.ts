@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Accessor } from '../../../accessor/base.ts'
 import { JSON_NAME } from '../../../core/hierarchy/codec.ts'
 import { Slot, Scope, makeDetectScope } from '../../../core/hierarchy/scope.ts'
@@ -25,7 +25,7 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import type { ByteSource, IOResult } from '../../../io/types.ts'
 
 import type { CommandIO } from './adapter.ts'
-import { runSearch } from './search.ts'
+import { narrowScope, runSearch } from './search.ts'
 import { makeSearchOp } from '../../../core/hierarchy/search.ts'
 
 const SCOPES: readonly Scope[] = [
@@ -260,5 +260,91 @@ describe('adapter search', () => {
     const search = searchCommand({ room: recorder }, makeIO(), {})
     await search(new FakeAccessor(), [spec('/rooms/red')], ['ada'], opts({ i: true }))
     expect(seen[0]?.options?.grep).toMatchObject({ ignore_case: true, fixed_string: false })
+  })
+})
+
+describe('narrowScope', () => {
+  const scope = new PathSpec({ virtual: '/data', directory: '/data', vfsPath: '' })
+  const hit = (virtual: string): PathSpec =>
+    new PathSpec({
+      virtual,
+      directory: '',
+      vfsPath: virtual.replace(/^\/data\//, ''),
+      resolved: true,
+    })
+  const directory = new FileStat({ name: 'data', type: FileType.DIRECTORY })
+
+  function narrowing(
+    answer: PathSpec[] | null = [hit('/data/a.txt')],
+    stat: CommandIO<FakeAccessor>['stat'] = () => Promise.resolve(directory),
+    enabled = true,
+  ) {
+    const narrowPaths = vi.fn(() => Promise.resolve(answer))
+    const io = makeIO({ stat, contentSearch: { narrowPaths, enabled: () => enabled } })
+    return { io, narrowPaths }
+  }
+
+  async function run(
+    io: CommandIO<FakeAccessor>,
+    gates: Partial<{ recursive: boolean; exactFileSet: boolean; wholeWord: boolean }> = {},
+  ) {
+    return narrowScope(io, new FakeAccessor(), [scope], 'needle', {
+      fixedString: false,
+      recursive: true,
+      wholeWord: true,
+      exactFileSet: false,
+      index: undefined,
+      ...gates,
+    })
+  }
+
+  it('narrows a recursive whole-word literal to its candidates', async () => {
+    const { io, narrowPaths } = narrowing()
+    const r = await run(io)
+    expect(r.usedSearch).toBe(true)
+    expect(r.resolved.map((p) => p.virtual)).toEqual(['/data/a.txt'])
+    expect(narrowPaths).toHaveBeenCalledOnce()
+  })
+
+  it.each([{ recursive: false }, { exactFileSet: true }, { wholeWord: false }])(
+    'scans every file when a gate fails: %o',
+    async (gates) => {
+      const { io, narrowPaths } = narrowing()
+      const r = await run(io, gates)
+      expect([r.resolved.map((p) => p.virtual), r.usedSearch]).toEqual([['/data'], false])
+      expect(narrowPaths).not.toHaveBeenCalled()
+    },
+  )
+
+  it('scans every file on a mount that did not opt in', async () => {
+    const { io, narrowPaths } = narrowing(undefined, undefined, false)
+    expect((await run(io)).usedSearch).toBe(false)
+    expect(narrowPaths).not.toHaveBeenCalled()
+  })
+
+  it('scans every file for a file or missing operand', async () => {
+    for (const stat of [
+      () => Promise.resolve(new FileStat({ name: 'x.txt', type: FileType.FILE })),
+      () => Promise.reject(enoent('/data')),
+    ]) {
+      const { io, narrowPaths } = narrowing(undefined, stat)
+      expect((await run(io)).usedSearch).toBe(false)
+      expect(narrowPaths).not.toHaveBeenCalled()
+    }
+  })
+
+  it('scans every file when the index cannot answer or answers nothing', async () => {
+    for (const answer of [null, []]) {
+      expect((await run(narrowing(answer).io)).usedSearch).toBe(false)
+    }
+  })
+
+  it('drops binary candidates, possibly to none', async () => {
+    const some = await run(narrowing([hit('/data/a.parquet'), hit('/data/a.txt')]).io)
+    expect([some.usedSearch, some.resolved.map((p) => p.virtual)]).toEqual([true, ['/data/a.txt']])
+    expect(await run(narrowing([hit('/data/a.parquet')]).io)).toEqual({
+      resolved: [],
+      usedSearch: true,
+    })
   })
 })

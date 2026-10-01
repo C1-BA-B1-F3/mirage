@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.msgraph.drive_ops import make_truncate
+from mirage.core.msgraph.drive import make_truncate
 from mirage.core.onedrive.read import read_bytes
 from mirage.core.onedrive.write import write_bytes
 

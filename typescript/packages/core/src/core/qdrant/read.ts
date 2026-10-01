@@ -13,17 +13,16 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
-import type { QdrantRow } from './client.ts'
-import { PathSpec } from '../../types.ts'
+import type { PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
-import { perAccessor } from '../hierarchy/bind.ts'
-import { makeRead, type Reader } from '../hierarchy/read.ts'
+import type { Reader } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
-import { blobBytes, renderJson, renderText } from './render.ts'
-import { detectFor, tableOf } from './scope.ts'
+import { blobBytes } from '../vector/read.ts'
+import { tableOf } from '../vector/scope.ts'
 import { pointIdFromStem, rowStem } from './naming.ts'
 import { fieldValue } from './payload.ts'
+import { rowRecord, type QdrantRow } from './query.ts'
+import { renderJson, renderText } from './render.ts'
 
 async function rowOf(
   accessor: QdrantAccessor,
@@ -35,8 +34,9 @@ async function rowOf(
   // so an alias reads as absent rather than as the file.
   const config = accessor.config
   const stem = match.slots.row_id ?? ''
-  const row = await accessor.rowRecord(
-    tableOf(config, match),
+  const row = await rowRecord(
+    accessor,
+    tableOf(config.collection, match),
     config.idField,
     pointIdFromStem(stem, config),
   )
@@ -83,23 +83,8 @@ async function readBlob(
   return blobBytes(value)
 }
 
-const READERS: Record<string, Reader<QdrantAccessor>> = {
+export const READERS: Record<string, Reader<QdrantAccessor>> = {
   row_json: readJson,
   row_text: readText,
   row_blob: readBlob,
-}
-
-function buildRead(accessor: QdrantAccessor) {
-  return makeRead(detectFor(accessor), READERS)
-}
-
-const readFor = perAccessor(buildRead)
-
-export async function read(
-  accessor: QdrantAccessor,
-  path: PathSpec | string,
-  index?: IndexCacheStore,
-): Promise<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  return readFor(accessor)(accessor, spec, index)
 }

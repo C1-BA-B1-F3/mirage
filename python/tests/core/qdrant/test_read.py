@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mirage.core.qdrant.read import read
+from mirage.core.qdrant.tree import read
 from mirage.types import PathSpec
 
 

@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.registry import RegisteredCommand, command
+from mirage.commands.config import RegisteredCommand, command
 from mirage.commands.spec import CommandSpec
 from mirage.io.types import IOResult
 from mirage.provision import ProvisionResult

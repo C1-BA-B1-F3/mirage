@@ -19,8 +19,8 @@ from mirage.commands.builtin.generic.grep import labelled
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.github.pushdown import narrow_scope, scope_refusal
 from mirage.commands.builtin.grep_pattern import pattern_arg
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.builtin.grep_pushdown import grep_needs_every_file
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.constants import SCOPE_ERROR
@@ -108,12 +108,7 @@ async def grep(accessor: GitHubAccessor, paths: list[PathSpec],
             fixed_string=fl.as_bool("F"),
             recursive=recursive,
             whole_word=fl.as_bool("w"),
-            # A narrowing holds only files matching the searched literal:
-            # -v, -c and -L also print from the rest, and -f adds patterns
-            # code search never saw.
-            exact_file_set=fl.as_bool("v") or fl.as_bool("c")
-            or fl.as_bool("files_without_match") or bool(fl.raw("file"))
-            or fl.as_bool("text") or fl.as_str("binary_files") == "text",
+            exact_file_set=grep_needs_every_file(fl),
         )
         if used_search and not resolved:
             return b"", IOResult(exit_code=1)

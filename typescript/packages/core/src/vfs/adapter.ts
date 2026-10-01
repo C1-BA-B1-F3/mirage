@@ -2,13 +2,22 @@ import type { Accessor } from '../accessor/base.ts'
 import type { CommandIO } from '../commands/builtin/generic_bind/adapter.ts'
 import { streamFromBytes } from '../commands/builtin/utils/wrap.ts'
 import { isEnoent, isEnotdir } from '../utils/errors.ts'
-import type { NativeReadOps, ReadOps, WriteOps, SearchOps, ReadBytesOp, WriteOp } from './types.ts'
+import type {
+  ContentSearchOps,
+  NativeReadOps,
+  ReadOps,
+  WriteOps,
+  SearchOps,
+  ReadBytesOp,
+  WriteOp,
+} from './types.ts'
 
 export interface VFSAdapterOptions<A extends Accessor = Accessor> {
   read: ReadOps<A>
   native?: NativeReadOps<A>
   writes?: WriteOps<A>
   search?: SearchOps<A>
+  contentSearch?: ContentSearchOps<A>
   local?: boolean
   isMounted?: CommandIO<A>['isMounted']
   maxGlobMatches?: number

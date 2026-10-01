@@ -55,33 +55,3 @@ export async function* stream(accessor: SSHAccessor, p: PathSpec): AsyncIterable
     throw err
   }
 }
-
-export async function rangeRead(
-  accessor: SSHAccessor,
-  p: PathSpec,
-  start: number,
-  end: number,
-): Promise<Uint8Array> {
-  const sftp = await accessor.sftp()
-  const virtual = stripPrefix(p)
-  const remote = joinRoot(accessor.config.root ?? '/', virtual)
-  const rs = sftp.createReadStream(remote, { start, end: end - 1 })
-  const chunks: Uint8Array[] = []
-  let total = 0
-  try {
-    for await (const u8 of readChunks(rs)) {
-      chunks.push(u8)
-      total += u8.byteLength
-    }
-  } catch (err) {
-    if (isNoSuchFile(err)) throw enoent(p)
-    throw err
-  }
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
-}

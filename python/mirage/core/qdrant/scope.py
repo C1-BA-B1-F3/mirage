@@ -15,10 +15,10 @@
 from mirage.accessor.qdrant import QdrantAccessor
 from mirage.core.hierarchy.bind import per_accessor
 from mirage.core.hierarchy.codec import JSON_NAME, PATH_SAFE, RAW, Codec
-from mirage.core.hierarchy.scope import (DetectFn, Scope, ScopeMatch, Segment,
-                                         Slot, make_detect_scope)
+from mirage.core.hierarchy.scope import DetectFn, Scope, make_detect_scope
+from mirage.core.vector.scope import blob_leaf, row_scopes
+from mirage.core.vector.types import Leaf
 from mirage.types import ContentType
-from mirage.utils.filetype import content_type_for_extension
 from mirage.vfs.qdrant.config import QdrantConfig
 
 TXT = Codec(suffix=".txt")
@@ -27,53 +27,27 @@ TXT = Codec(suffix=".txt")
 def scopes_for(config: QdrantConfig) -> tuple[Scope, ...]:
     """The mount's scope table, shaped by its config.
 
-    The tree is a function of the mount config, not of the backend: a
-    pinned ``collection`` removes the leading collection segment, every
-    ``group_by`` column adds one directory level, and ``text_field`` /
-    ``blob_field`` each add a leaf suffix beside the ``.json`` row.
-    Group slots are named positionally (``g0``, ``g1``, ...) so a column
-    named ``table`` cannot collide with the collection slot;
-    ``filters_of`` maps them back to column names. A group slot decodes
-    through ``PATH_SAFE``, so its filter holds the exact value the
-    directory was rendered from; a ``basename_fields`` slot stays
-    ``RAW`` because its rendering drops the value's parents and the
-    lister resolves it against the payload instead. Every partial depth
-    shares the one ``group`` kind, and its lister derives the depth from
-    the slots, so the lister table stays static while the scope table
-    varies per mount.
+    A pinned ``collection`` removes the leading collection segment, and
+    ``text_field`` / ``blob_field`` each add a leaf suffix beside the
+    ``.json`` row. A group slot decodes through ``PATH_SAFE``, so its
+    filter holds the exact value the directory was rendered from; a
+    ``basename_fields`` slot stays ``RAW`` because its rendering drops
+    the value's parents and the lister resolves it against the payload
+    instead.
 
     Args:
         config (QdrantConfig): the mount's config.
     """
-    prefix: tuple[Segment,
-                  ...] = () if config.collection else (Slot("table"), )
-    groups = tuple(
-        Slot(f"g{i}", RAW if column in config.basename_fields else PATH_SAFE)
-        for i, column in enumerate(config.group_by))
-    scopes = [
-        Scope(kind="group", segments=prefix + groups[:depth])
-        for depth in range(len(groups) + 1) if depth or prefix
-    ]
-    full = prefix + groups
-    scopes.append(
-        Scope(kind="row_json",
-              segments=full + (Slot("row_id", JSON_NAME), ),
-              leaf=True,
-              filetype=ContentType.TEXT))
+    leaves: list[Leaf] = [("row_json", JSON_NAME, ContentType.TEXT)]
     if config.text_field:
-        scopes.append(
-            Scope(kind="row_text",
-                  segments=full + (Slot("row_id", TXT), ),
-                  leaf=True,
-                  filetype=ContentType.TEXT))
+        leaves.append(("row_text", TXT, ContentType.TEXT))
     if config.blob_field:
-        blob = Codec(suffix="." + config.blob_ext)
-        scopes.append(
-            Scope(kind="row_blob",
-                  segments=full + (Slot("row_id", blob), ),
-                  leaf=True,
-                  filetype=content_type_for_extension(config.blob_ext)))
-    return tuple(scopes)
+        leaves.append(blob_leaf(config.blob_ext))
+    groups = [
+        RAW if column in config.basename_fields else PATH_SAFE
+        for column in config.group_by
+    ]
+    return row_scopes(bool(config.collection), groups, leaves)
 
 
 def _detect(accessor: QdrantAccessor) -> DetectFn:
@@ -81,31 +55,3 @@ def _detect(accessor: QdrantAccessor) -> DetectFn:
 
 
 detect_for = per_accessor(_detect)
-
-
-def table_of(config: QdrantConfig, match: ScopeMatch) -> str:
-    """The collection a match addresses: pinned, or the path's first slot.
-
-    Args:
-        config (QdrantConfig): the mount's config.
-        match (ScopeMatch): a match from this mount's classifier.
-    """
-    if config.collection:
-        return config.collection
-    return match.slots["table"]
-
-
-def filters_of(config: QdrantConfig, match: ScopeMatch) -> dict[str, str]:
-    """The match's group filters, keyed back to column names.
-
-    Args:
-        config (QdrantConfig): the mount's config.
-        match (ScopeMatch): a match from this mount's classifier.
-    """
-    filters: dict[str, str] = {}
-    for i, column in enumerate(config.group_by):
-        value = match.slots.get(f"g{i}")
-        if value is None:
-            break
-        filters[column] = value
-    return filters

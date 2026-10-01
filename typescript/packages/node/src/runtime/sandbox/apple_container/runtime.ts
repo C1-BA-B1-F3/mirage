@@ -12,7 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { spawn } from 'node:child_process'
 import { getCurrentSession } from '@struktoai/mirage-core/context/session_context'
 import { PROCESS_EXECUTOR, type ProcessExecutor } from '@struktoai/mirage-core/runtime/mixin'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
@@ -34,12 +33,7 @@ import {
   noContainerHint,
   notRunningHint,
 } from './constants.ts'
-
-interface ContainerResult {
-  stdout: Uint8Array
-  stderr: Uint8Array
-  code: number
-}
+import { type CliResult, runCli } from '../cli.ts'
 
 /**
  * Containers under Apple's `container` tool as a whole-line runtime.
@@ -74,41 +68,13 @@ export class AppleContainerRuntime
     validateAppleContainerConfig(this.config)
   }
 
-  /**
-   * Run one container CLI invocation. EPIPE means the guest exited without
-   * draining stdin, matching Python communicate()'s BrokenPipeError handling.
-   */
+  /** Run one container CLI invocation; the seam tests override. */
   protected container(
     args: string[],
     stdin: Uint8Array | null = null,
     signal?: AbortSignal,
-  ): Promise<ContainerResult> {
-    return new Promise((resolve, reject) => {
-      const child = spawn('container', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        signal,
-        killSignal: 'SIGKILL',
-      })
-      const out: Buffer[] = []
-      const err: Buffer[] = []
-      child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
-      child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
-      child.on('error', (error: NodeJS.ErrnoException) => {
-        reject(error.code === 'ENOENT' ? new Error(APPLE_CONTAINER_CLI_HINT) : error)
-      })
-      child.on('close', (code) => {
-        resolve({
-          stdout: new Uint8Array(Buffer.concat(out)),
-          stderr: new Uint8Array(Buffer.concat(err)),
-          code: code ?? 1,
-        })
-      })
-      child.stdin.on('error', (error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EPIPE') reject(error)
-      })
-      if (stdin !== null) child.stdin.write(stdin)
-      child.stdin.end()
-    })
+  ): Promise<CliResult> {
+    return runCli('container', APPLE_CONTAINER_CLI_HINT, args, stdin, signal)
   }
 
   /**

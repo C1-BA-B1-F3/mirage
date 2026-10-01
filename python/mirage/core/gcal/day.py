@@ -114,15 +114,6 @@ def valid_day(day: str) -> bool:
     return True
 
 
-def is_all_day(slot: dict[str, JsonValue]) -> bool:
-    """Whether an event time slot is a floating all-day date.
-
-    Args:
-        slot (dict): an event's ``start`` or ``end`` object.
-    """
-    return "date" in slot and "dateTime" not in slot
-
-
 def slot_instant(slot: dict[str, JsonValue], tz: str) -> datetime | None:
     """Resolve one event time slot to an absolute instant.
 

@@ -12,8 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import re
-
 from mirage.types import FileType, PathSpec
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
@@ -52,9 +50,6 @@ DEFAULT_MODES = {
     FileType.SYMLINK: 0o777,
     FileType.CHAR_DEVICE: 0o666,
 }
-
-NUMERIC_PREFIX = re.compile(
-    r"^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?")
 
 # GNU ls's window of "recent" times: half a Gregorian year of 365.2425
 # days, in seconds (ls.c). findutils draws its own line (listfile.c):

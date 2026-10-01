@@ -30,20 +30,6 @@ export function mapLines(text: string, fn: (line: string) => string): string {
   return text.endsWith('\n') ? `${out}\n` : out
 }
 
-// Several files' contents as one, each file's last line ended. What GNU's
-// record readers see across a file boundary (sed, column): a file
-// whose last record lacks its separator still ends it where the next file
-// begins, so `ab` then `cd` are two lines, never `abcd`. The last file keeps
-// its own ending, which sed reproduces. Mirrors Python's join_file_lines.
-export function joinFileLines(chunks: readonly string[], sep = '\n'): string {
-  let out = ''
-  chunks.forEach((chunk, index) => {
-    out += chunk
-    if (index < chunks.length - 1 && chunk !== '' && !chunk.endsWith(sep)) out += sep
-  })
-  return out
-}
-
 // joinFileLines for readers that keep raw bytes (column). Mirrors Python's
 // join_file_lines over bytes.
 export function joinFileBytes(chunks: readonly Uint8Array[], sep: number): Uint8Array {

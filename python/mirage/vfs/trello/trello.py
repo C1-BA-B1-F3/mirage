@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.trello import TrelloAccessor
 from mirage.commands.builtin.trello import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.trello import OPS as TRELLO_VFS_OPS
 from mirage.types import VFSName

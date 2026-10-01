@@ -19,7 +19,6 @@ import {
   eventTitle,
   makeCalendarDirname,
   makeEventFilename,
-  parseCalendarDirname,
   parseEventFilename,
 } from './event_entry.ts'
 
@@ -94,17 +93,11 @@ describe('gcal event entry naming', () => {
 
   it('keeps the primary alias', () => {
     expect(makeCalendarDirname('integ@example.com', 'integ@example.com', true)).toBe(PRIMARY_DIR)
-    expect(parseCalendarDirname(PRIMARY_DIR)).toBe(PRIMARY_DIR)
   })
 
   it('embeds the calendar id verbatim', () => {
     const calId = 'en.usa#holiday@group.v.calendar.google.com'
     const name = makeCalendarDirname('US Holidays', calId)
     expect(name).toBe(`US_Holidays__${calId}`)
-    expect(parseCalendarDirname(name)).toBe(calId)
-  })
-
-  it('rejects a calendar dirname without an id', () => {
-    expect(() => parseCalendarDirname('Engineering')).toThrow()
   })
 })

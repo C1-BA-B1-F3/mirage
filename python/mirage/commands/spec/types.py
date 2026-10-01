@@ -64,6 +64,7 @@ class CommandName(StrEnum):
     BASE64 = "base64"
     CMP = "cmp"
     COMM = "comm"
+    CSPLIT = "csplit"
     DATE = "date"
     DIFF = "diff"
     FIND = "find"

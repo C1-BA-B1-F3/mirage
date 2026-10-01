@@ -32,11 +32,11 @@
       "targets": [
         "dify"
       ],
-      "command": "search --method hybrid --top-k 3 encrypted /knowledge",
+      "command": "search --method hybrid --top-k 3 encrypted /knowledge; search; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "/knowledge/policies/privacy:0.89\nCustomer data is stored encrypted at rest and in transit.\n",
-        "stderr": ""
+        "stdout": "/knowledge/policies/privacy:0.89\nCustomer data is stored encrypted at rest and in transit.\nrc=2\n",
+        "stderr": "search: query is required\n"
       }
     }
   ]

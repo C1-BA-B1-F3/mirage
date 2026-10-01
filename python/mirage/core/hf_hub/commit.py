@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.core.hf_hub.client import (HfHubError, api_url, hub_post,
-                                       hub_post_ndjson, rev_segment)
+from mirage.core.hf_hub.client import (api_url, hub_post, hub_post_ndjson,
+                                       rev_segment)
 from mirage.core.hf_hub.constants import (COMMIT_CHUNK, DEFAULT_COMMIT_MESSAGE,
                                           PREUPLOAD_SAMPLE_BYTES)
 from mirage.types import JsonValue
@@ -212,15 +212,3 @@ async def commit(
                                  params,
                                  session=accessor.pool)
     return data if isinstance(data, dict) else {}
-
-
-def is_absent(exc: HfHubError) -> bool:
-    """Whether a failed commit failed because the target was not there.
-
-    Args:
-        exc (HfHubError): the error the Hub answered with.
-
-    Returns:
-        bool: True when the status says the path or repo is missing.
-    """
-    return exc.status == 404

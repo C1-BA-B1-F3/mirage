@@ -30,7 +30,7 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     NoRestorePathsError, NoWorkspaceError, UnknownPathspecError,
     UnknownSwitchError, UnmergedPathError, UnreadableTreeError,
     UnresolvableSourceError)
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.io import (  # yapf: disable
     blocking_ancestor, drop_gitlink, keep_gitlink, refuse_replaced_mounts,
     remove_empty_parents, remove_file, remove_tree, restore_entry)

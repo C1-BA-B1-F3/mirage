@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.discord import DiscordAccessor
 from mirage.commands.builtin.discord import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.time_range import TimeRange
 from mirage.ops.discord import OPS as DISCORD_VFS_OPS
 from mirage.ops.registry import RegisteredOp

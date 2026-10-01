@@ -16,7 +16,7 @@ import { invalidateAfterUnlink } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { lookupError } from './dest.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function unlink(accessor: RedisAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.mountPath)

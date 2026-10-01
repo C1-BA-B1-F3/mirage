@@ -12,64 +12,57 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from functools import partial
 from typing import Any
 
 from qdrant_client import AsyncQdrantClient
 
 from mirage.accessor.base import Accessor
+from mirage.accessor.pool import LoopClientCache
 from mirage.vfs.qdrant.config import QdrantConfig
 from mirage.vfs.secrets import reveal_secret
+
+
+@asynccontextmanager
+async def _open(config: QdrantConfig) -> AsyncIterator[AsyncQdrantClient]:
+    kwargs: dict[str, Any] = {
+        "api_key":
+        reveal_secret(config.api_key) if config.api_key is not None else None,
+        "cloud_inference":
+        config.cloud_inference,
+    }
+    if config.url:
+        kwargs["url"] = config.url
+    else:
+        kwargs["host"] = config.host
+        kwargs["port"] = config.port
+        kwargs["https"] = config.https
+    client = AsyncQdrantClient(**kwargs)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 class QdrantAccessor(Accessor):
 
     def __init__(self, config: QdrantConfig) -> None:
         self.config = config
-        self._clients: dict[int, AsyncQdrantClient] = {}
-        self._search_cache: dict[tuple[str, str, int], list[dict[str,
-                                                                 Any]]] = {}
-        self._indexes_ensured: set[str] = set()
-
-    def _loop_key(self) -> int:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return 0
-        return id(loop)
+        self._clients = LoopClientCache("qdrant")
+        self.search_cache: dict[tuple[str, str, int], list[dict[str,
+                                                                Any]]] = {}
+        self.indexes_ensured: set[str] = set()
 
     async def client(self) -> AsyncQdrantClient:
-        key = self._loop_key()
-        client = self._clients.get(key)
-        if client is None:
-            api_key = (reveal_secret(self.config.api_key)
-                       if self.config.api_key is not None else None)
-            kwargs: dict[str, Any] = {
-                "api_key": api_key,
-                "cloud_inference": self.config.cloud_inference
-            }
-            if self.config.url:
-                kwargs["url"] = self.config.url
-            else:
-                kwargs["host"] = self.config.host
-                kwargs["port"] = self.config.port
-                kwargs["https"] = self.config.https
-            client = AsyncQdrantClient(**kwargs)
-            self._clients[key] = client
+        """Return this loop's client, opening one when there is none."""
+        client: AsyncQdrantClient = await self._clients.get(
+            partial(_open, self.config))
         return client
 
-    def cached_search(
-            self, key: tuple[str, str, int]) -> list[dict[str, Any]] | None:
-        return self._search_cache.get(key)
-
-    def store_search(self, key: tuple[str, str, int],
-                     rows: list[dict[str, Any]]) -> None:
-        self._search_cache[key] = rows
-
     async def close(self) -> None:
-        clients = list(self._clients.values())
-        self._clients.clear()
-        self._search_cache.clear()
-        self._indexes_ensured.clear()
-        for client in clients:
-            await client.close()
+        """Close every client this accessor opened, and drop its caches."""
+        self.search_cache.clear()
+        self.indexes_ensured.clear()
+        await self._clients.close()

@@ -24,6 +24,7 @@ import { CommandName, type FlagValue, type ParsedFlagValue } from '../../spec/ty
 import { FlagView } from '../../spec/flag_view.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { resolveSource } from '../utils/stream.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -134,20 +135,13 @@ function comparisonKey(line: Uint8Array, flags: UniqFlags): string {
   return flags.ignoreCase ? text.toLowerCase() : text
 }
 
-function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
-  const output = new Uint8Array(left.byteLength + right.byteLength)
-  output.set(left)
-  output.set(right, left.byteLength)
-  return output
-}
-
 async function* records(
   source: AsyncIterable<Uint8Array>,
   separator: number,
 ): AsyncIterable<Uint8Array> {
   let buffer: Uint8Array = new Uint8Array()
   for await (const chunk of source) {
-    buffer = concatBytes(buffer, chunk)
+    buffer = concat([buffer, chunk])
     let start = 0
     for (let index = 0; index < buffer.byteLength; index += 1) {
       if (buffer[index] !== separator) continue

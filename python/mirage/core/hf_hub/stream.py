@@ -19,25 +19,9 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hf_hub.client import hub_stream, resolve_url
 from mirage.core.hf_hub.constants import DEFAULT_CHUNK_SIZE, REFUSED_STATUSES
 from mirage.core.hf_hub.lookup import refusals_denied
-from mirage.core.hf_hub.read import read_bytes, resolve_entry, row_token
+from mirage.core.hf_hub.read import resolve_entry, row_token
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
-
-
-async def range_read(accessor: HfHubAccessor, path: PathSpec, start: int,
-                     end: int) -> bytes:
-    """Read a byte range, in the VFS API's end-exclusive spelling.
-
-    Args:
-        accessor (HfHubAccessor): backend handle.
-        path (PathSpec): the path to read.
-        start (int): first byte to read.
-        end (int): one past the last byte to read.
-
-    Returns:
-        bytes: the requested window.
-    """
-    return await read_bytes(accessor, path, offset=start, size=end - start)
 
 
 async def read_stream(

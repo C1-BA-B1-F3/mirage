@@ -268,6 +268,33 @@ class WriteOps:
     set_attrs: OperationFn | None = None
 
 
+class NarrowPathsOp(Protocol):
+    """Files under the scopes that may hold the whole-word literal *query*.
+
+    A superset is harmless, since the scan still runs over the answer;
+    None means the index cannot answer and the scan walks everything.
+    """
+
+    def __call__(self, accessor: Any, query: str, paths: list[PathSpec],
+                 /) -> Awaitable[list[PathSpec] | None]:
+        ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class ContentSearchOps:
+    """A content index that narrows a recursive grep/rg to candidate files.
+
+    The scan still runs locally over the files it names, so an empty
+    answer falls back to the full walk: a search index lags recent writes.
+
+    Args:
+        narrow_paths (NarrowPathsOp): candidate files under the scopes.
+        enabled (IsMountedOp): whether this mount opted in.
+    """
+    narrow_paths: NarrowPathsOp
+    enabled: IsMountedOp
+
+
 @dataclass(frozen=True, slots=True)
 class SearchQuery:
     """A resource query and its backend-specific arguments.

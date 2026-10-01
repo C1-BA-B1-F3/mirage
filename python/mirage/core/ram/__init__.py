@@ -19,7 +19,6 @@ from mirage.core.ram.du import size as du_size
 from mirage.core.ram.exists import exists
 from mirage.core.ram.find import find
 from mirage.core.ram.mkdir import mkdir
-from mirage.core.ram.mkdir_p import mkdir_p
 from mirage.core.ram.read import read_bytes
 from mirage.core.ram.readdir import readdir
 from mirage.core.ram.rename import rename
@@ -39,7 +38,6 @@ __all__ = [
     "exists",
     "find",
     "mkdir",
-    "mkdir_p",
     "read_bytes",
     "readdir",
     "rename",

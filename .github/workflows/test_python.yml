@@ -258,9 +258,8 @@ jobs:
           .venv-iso/bin/python - <<'PY'
           import importlib, sys
           mod = importlib.import_module("${{ matrix.module }}")
-          prompt = importlib.import_module("${{ matrix.module }}.prompt")
-          assert isinstance(prompt.MIRAGE_SYSTEM_PROMPT, str)
-          assert callable(prompt.build_system_prompt)
+          assert isinstance(mod.MIRAGE_SYSTEM_PROMPT, str)
+          assert callable(mod.build_system_prompt)
           assert "${{ matrix.blocked }}" not in sys.modules, \
               f"${{ matrix.blocked }} got imported transitively"
           print(f"OK: imported ${{ matrix.module }} cleanly without ${{ matrix.blocked }}")

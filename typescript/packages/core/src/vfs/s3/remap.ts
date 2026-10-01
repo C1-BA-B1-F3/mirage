@@ -41,8 +41,6 @@ export function remapCommandsVfs(
       fn: cmd.fn,
       provisionFn: cmd.provisionFn,
       aggregate: cmd.aggregate,
-      src: cmd.src,
-      dst: cmd.dst,
       write: cmd.write,
       pathGuarded: cmd.pathGuarded,
       limit: cmd.limit,

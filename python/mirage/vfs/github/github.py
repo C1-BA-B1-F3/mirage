@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.github import GitHubAccessor
 from mirage.commands.builtin.github import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.core.github.watch import build_delta_hook

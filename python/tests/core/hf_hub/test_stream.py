@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from mirage.core.hf_hub.client import HfHubError
-from mirage.core.hf_hub.stream import range_read, read_stream
+from mirage.core.hf_hub.stream import read_stream
 from mirage.observe.context import RecordingScope
 from tests.core.hf_hub.conftest import file_row, ps, seed
 
@@ -42,15 +42,6 @@ async def test_read_stream_of_a_directory_is_eisdir(mock_stream, loaded):
     with pytest.raises(IsADirectoryError):
         [c async for c in read_stream(loaded, ps("d"))]
     mock_stream.assert_not_called()
-
-
-@pytest.mark.asyncio
-@patch("mirage.core.hf_hub.read.hub_bytes_tagged")
-async def test_range_read_is_end_exclusive(mock_bytes, loaded):
-    mock_bytes.return_value = (b"abc", "")
-    await range_read(loaded, ps("a.txt"), 2, 5)
-    window = mock_bytes.await_args.args[2]
-    assert (window.offset, window.size) == (2, 3)
 
 
 @pytest.mark.asyncio

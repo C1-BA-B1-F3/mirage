@@ -15,57 +15,12 @@
 import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import type { OpKwargs, RegisteredOp } from '../registry.ts'
+import type { MakeGenericOpsOptions, OpsTable } from './types.ts'
 import { extractWriteData } from '../write_args.ts'
 import { isUnsatisfiableRange, sliceWindow } from '../../utils/ranges.ts'
 import { DEFAULT_MAX_GLOB_MATCHES, resolveGlobWith } from '../../utils/glob_walk.ts'
 import { eisdir, isMissingPath } from '../../utils/errors.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type OpCoreFn = (...args: any[]) => unknown
-
-/**
- * Structural subset of a backend's `CommandIO` the ops factory consumes.
- * The table in `commands/builtin/<b>/ops.ts` already carries every core
- * function the VFS/FUSE op wrappers forward to, so the same table feeds
- * both `makeGenericCommands` and `makeGenericOps`. Command-only fields
- * (`readStream`, `isMounted`, `find`, ...) are ignored.
- */
-export interface OpsTable<A extends Accessor = Accessor> {
-  readdir: (accessor: A, path: PathSpec, index?: OpKwargs['index']) => unknown
-  readBytes: (accessor: A, path: PathSpec, index?: OpKwargs['index']) => Promise<Uint8Array>
-  readRange?: (
-    accessor: A,
-    path: PathSpec,
-    index: OpKwargs['index'],
-    offset: number,
-    size: number | null,
-  ) => Promise<Uint8Array>
-  stat: (accessor: A, path: PathSpec, index?: OpKwargs['index']) => unknown
-  maxGlobMatches?: number
-  write?: OpCoreFn
-  mkdir?: OpCoreFn
-  unlink?: OpCoreFn
-  rmdir?: OpCoreFn
-  rename?: OpCoreFn
-  create?: OpCoreFn
-  truncate?: OpCoreFn
-  append?: OpCoreFn
-  setAttrs?: OpCoreFn
-}
-
-export interface MakeGenericOpsOptions {
-  /**
-   * Synthesize truncate from readBytes + write for a backend with no
-   * native partial write (dropbox is the only one; a table carrying a
-   * real `truncate` wins outright).
-   */
-  emulateTruncate?: boolean
-  /** Forward `parents=true` to the core mkdir (disk). */
-  mkdirParents?: boolean
-  /** Op names to skip because the backend registers an irregular wrapper. */
-  overrides?: ReadonlySet<string>
-}
 
 const expectPathSpec = (value: unknown, op: string): PathSpec => {
   if (value === null || typeof value !== 'object' || !('virtual' in value)) {

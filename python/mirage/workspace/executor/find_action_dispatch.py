@@ -62,20 +62,6 @@ def exec_words(action: ExecAction, paths: list[str]) -> list[str]:
     return words
 
 
-def exec_line(action: ExecAction, paths: list[str]) -> str:
-    """The shell line one ``-exec`` run becomes.
-
-    GNU execs the words directly, so every match must reach the command
-    as exactly one argv word: the line is built with ``shell_join``, and
-    a plain join would be re-parsed by the shell.
-
-    Args:
-        action (ExecAction): the action.
-        paths (list[str]): the match, or every match for a batched run.
-    """
-    return shell_join(exec_words(action, paths))
-
-
 async def _head_state(head: str, registry: MountRegistry, cwd: str,
                       stat_path: StatPath | None) -> tuple[bool, bool]:
     """Whether ``execvp`` would fail to find an ``-exec`` head word, and

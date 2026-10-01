@@ -70,7 +70,7 @@ async def test_unlink_virtual_dir_raises(accessor, index):
 @pytest.mark.asyncio
 async def test_unlink_missing_raises(accessor, index):
     files = []
-    with patch("mirage.core.gdocs.readdir.list_all_files",
+    with patch("mirage.core.google.readdir.list_all_files",
                new_callable=AsyncMock,
                return_value=(files, True)):
         with pytest.raises(FileNotFoundError):

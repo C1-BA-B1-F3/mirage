@@ -12,11 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import json
 
 from mirage.runtime.mixin import ProcessExecutorMixin
 from mirage.runtime.sandbox.base import RemoteSandbox
+from mirage.runtime.sandbox.cli import run_cli
 from mirage.runtime.sandbox.smolvm.config import SmolvmConfig
 from mirage.runtime.sandbox.smolvm.constants import (RUNNING_STATE,
                                                      SMOLVM_CLI_HINT,
@@ -51,26 +51,7 @@ class SmolvmRuntime(RemoteSandbox, ProcessExecutorMixin):
                       args: list[str],
                       stdin: bytes | None = None) -> tuple[bytes, bytes, int]:
         """One smolvm CLI invocation; the seam tests override."""
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "smolvm",
-                *args,
-                stdin=(asyncio.subprocess.PIPE
-                       if stdin is not None else asyncio.subprocess.DEVNULL),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError:
-            raise RuntimeError(SMOLVM_CLI_HINT) from None
-        try:
-            stdout, stderr = await process.communicate(stdin)
-        except asyncio.CancelledError:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            raise
-        code = process.returncode if process.returncode is not None else 1
-        return stdout, stderr, code
+        return await run_cli("smolvm", SMOLVM_CLI_HINT, args, stdin)
 
     async def connect(self) -> None:
         """Probe the machine, refusing any state that cannot take a line.

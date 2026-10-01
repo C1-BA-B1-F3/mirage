@@ -1,6 +1,6 @@
 import pytest
 
-from mirage.core.databricks_volume.stream import range_read, read_stream
+from mirage.core.databricks_volume.stream import read_stream
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
@@ -55,36 +55,6 @@ async def test_read_stream_chunks_file(accessor, files, remote_root):
     # Streaming should use one download body, not one Range GET per chunk.
     assert files.download_calls == [f"{remote_root}/reports/latest.md"]
     assert accessor.client.api_client.do_calls == []
-
-
-@pytest.mark.asyncio
-async def test_range_read_uses_end_exclusive(accessor, files, remote_root):
-    files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
-    path = PathSpec.from_str_path(
-        "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
-    result = await range_read(accessor, path, 1, 4)
-    assert result == b"bcd"
-
-
-@pytest.mark.asyncio
-async def test_range_read_uses_single_databricks_range_request(
-    accessor,
-    files,
-    remote_root,
-):
-    files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
-    path = PathSpec.from_str_path(
-        "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
-
-    result = await range_read(accessor, path, 1, 4)
-
-    assert result == b"bcd"
-    assert files.download_calls == []
-    assert len(accessor.client.api_client.do_calls) == 1
-    assert accessor.client.api_client.do_calls[0]["headers"]["Range"] == (
-        "bytes=1-3")
 
 
 @pytest.mark.asyncio

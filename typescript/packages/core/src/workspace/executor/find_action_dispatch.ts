@@ -48,6 +48,7 @@ import type { ExecAction, FindAction, PrintfAction } from '../../commands/builti
 import type { ExecuteFn } from '../expand/node.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
 import { rstripSlash } from '../../utils/slash.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 export interface FindActionDoors {
   // Runs an `-exec` line in the session; absent outside a workspace,
@@ -103,16 +104,6 @@ export function execWords(action: ExecAction, paths: readonly string[]): string[
     else words.push(word)
   }
   return words
-}
-
-/**
- * The shell line one `-exec` run becomes. GNU execs the words directly,
- * so every match must reach the command as exactly one argv word: the
- * line is built with `shellJoin`, and a plain join would be re-parsed by
- * the shell.
- */
-export function execLine(action: ExecAction, paths: readonly string[]): string {
-  return shellJoin(execWords(action, paths))
 }
 
 /**
@@ -550,16 +541,4 @@ export async function applyFindActions(
   // the actions report.
   const warned = warnings.map((line) => enc.encode(`${line}\n`))
   return [body.byteLength > 0 ? body : null, concat([...warned, ...errors]), exitCode]
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const merged = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    merged.set(c, offset)
-    offset += c.byteLength
-  }
-  return merged
 }

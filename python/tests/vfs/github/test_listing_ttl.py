@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.view import IndexView
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import fetch_tree
@@ -520,24 +521,29 @@ async def test_seven_fresh_sessions_share_one_refetch():
 
 
 @pytest.mark.asyncio
-async def test_an_unscoped_read_refetches_every_time():
-    # A FUSE or programmatic read belongs to no command, so nothing it
-    # listed is trusted; Task 1.3 is what makes this cheaper.
+async def test_an_unscoped_read_trusts_a_listing_for_the_window(monkeypatch):
+    # A FUSE or programmatic read belongs to no command, so it trusts a
+    # listing written within the window: a burst refetches once, not once
+    # per call. Task 1.3 is what makes the refetch itself cheaper.
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
+    readdir = PathSpec(virtual="/gh/d1", directory="/gh/d1", vfs_path="d1")
+    stat = PathSpec(virtual="/gh/d1/a.txt",
+                    directory="/gh/d1",
+                    vfs_path="d1/a.txt")
     with serve(_three()) as hub:
         ws = _fresh(hub)
         try:
             await _out(ws, "ls /gh")
             hub.log.clear()
-            listed, _ = await ws.dispatch(
-                "readdir",
-                PathSpec(virtual="/gh/d1", directory="/gh/d1", vfs_path="d1"))
+            listed, _ = await ws.dispatch("readdir", readdir)
             assert listed == ["/gh/d1/a.txt", "/gh/d1/b.txt", "/gh/d1/c.txt"]
-            await ws.dispatch(
-                "stat",
-                PathSpec(virtual="/gh/d1/a.txt",
-                         directory="/gh/d1",
-                         vfs_path="d1/a.txt"))
-            assert hub.counts() == (0, 2, 0)
+            await ws.dispatch("stat", stat)
+            assert hub.counts() == (0, 0, 0)
+            now[0] += LISTING_TRUST_WINDOW
+            await ws.dispatch("readdir", readdir)
+            await ws.dispatch("stat", stat)
+            assert hub.counts() == (0, 1, 0)
         finally:
             await ws.close()
 

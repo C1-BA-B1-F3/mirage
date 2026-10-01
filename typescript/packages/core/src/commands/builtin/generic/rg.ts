@@ -51,6 +51,7 @@ import { isStdin, stdinStream } from '../utils/stream.ts'
 import { RegexSyntax } from '../types.ts'
 import { PcreError, hostFlags, translatePcre } from '../utils/pcre.ts'
 import { RustRegexError, translateRust, wholeLine, wholeWord } from '../utils/rust_regex.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 // ripgrep's own words for a line with no pattern, exit 2 (14.1.1).
@@ -891,16 +892,6 @@ async function listFiles(
   const code = exitCodeFor(out.length > 0, warnings.length > 0, f.quiet)
   const body = f.quiet ? new Uint8Array(0) : concat(out)
   return [body, new IOResult({ exitCode: code, ...stderrOf(f.noMessages ? [] : warnings) })]
-}
-
-function concat(chunks: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
-  let at = 0
-  for (const c of chunks) {
-    out.set(c, at)
-    at += c.length
-  }
-  return out
 }
 
 /**

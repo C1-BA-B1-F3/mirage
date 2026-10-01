@@ -26,13 +26,14 @@ except ImportError as _err:
     raise ImportError("RedisIndexCacheStore requires the 'redis' extra. "
                       "Install with: pip install mirage-ai[redis]") from _err
 
+from mirage.cache.file.utils import glob_escape
 from mirage.cache.index.config import (Evicted, IndexDirectory, IndexEntry,
                                        ListResult, LookupResult, LookupStatus)
 from mirage.cache.index.constants import (CHILDREN_PREFIX, ENTRY_PREFIX,
                                           GENERATION_KEY, PATHS_KEY,
                                           TOMBSTONE_PREFIX)
 from mirage.cache.index.store import IndexCacheStore
-from mirage.core.timeutil import to_iso_z
+from mirage.utils.dates import to_iso_z
 from mirage.utils.ids import uuid7
 
 
@@ -250,25 +251,6 @@ prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
 """
 
 
-def _glob_escape(value: str) -> str:
-    """Escape redis MATCH metacharacters in a literal path.
-
-    A path may legally contain ``*?[]``, and SCAN's pattern is a glob, so
-    an unescaped path would match keys it does not name. The escaping is
-    a narrowing optimization only; the caller still filters the results
-    at a path boundary.
-
-    Args:
-        value (str): A literal path to embed in a MATCH pattern.
-    """
-    out: list[str] = []
-    for char in value:
-        if char in "*?[]\\":
-            out.append("\\")
-        out.append(char)
-    return "".join(out)
-
-
 class RedisIndexCacheStore(IndexCacheStore):
     """Redis-backed index cache for remote VFS metadata.
 
@@ -349,7 +331,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             while True:
                 cursor, keys = await self._client.scan(
                     cursor,
-                    match=f"{_glob_escape(self._key_prefix)}mirage:idx:*",
+                    match=f"{glob_escape(self._key_prefix)}mirage:idx:*",
                     count=128)
                 rows: list[str] = []
                 for raw in keys:
@@ -641,9 +623,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         cursor = 0
         while True:
             cursor, keys = await self._client.scan(
-                cursor,
-                match=f"{_glob_escape(self._entry_prefix)}*",
-                count=500)
+                cursor, match=f"{glob_escape(self._entry_prefix)}*", count=500)
             for key in keys:
                 key_text = _text(key)
                 raw = await self._client.get(key)

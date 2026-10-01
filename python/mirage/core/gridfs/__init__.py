@@ -25,7 +25,7 @@ from mirage.core.gridfs.rename import rename
 from mirage.core.gridfs.rm import rm_r
 from mirage.core.gridfs.rmdir import rmdir
 from mirage.core.gridfs.stat import stat
-from mirage.core.gridfs.stream import range_read, read_stream
+from mirage.core.gridfs.stream import read_stream
 from mirage.core.gridfs.truncate import truncate
 from mirage.core.gridfs.unlink import unlink
 from mirage.core.gridfs.write import write_bytes
@@ -38,7 +38,6 @@ __all__ = [
     "exists",
     "find",
     "mkdir",
-    "range_read",
     "read_bytes",
     "read_stream",
     "readdir",

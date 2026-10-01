@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { stream as ramStream } from '../ram/stream.ts'
-import { norm } from '../ram/utils.ts'
+import { norm } from '../../utils/path.ts'
 import type { PathSpec } from '../../types.ts'
 import { ZERO_CHUNK_SIZE } from './constants.ts'
 import { activeDevice } from './device.ts'

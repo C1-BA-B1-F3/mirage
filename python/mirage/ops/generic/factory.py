@@ -17,7 +17,7 @@ import os
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.ops.generic.table import OpFn, OpsTable
+from mirage.ops.generic.types import OpFn, OpsTable
 from mirage.ops.registry import RegisteredOp
 from mirage.types import FileType, PathSpec
 from mirage.utils.errors import enotsup

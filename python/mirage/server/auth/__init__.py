@@ -12,12 +12,30 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.server.auth.config import (AuthConfig, AuthMode, JWTConfig,
-                                       resolve_auth_config,
-                                       resolve_local_token)
-from mirage.server.auth.middleware import AuthMiddleware
-from mirage.server.auth.storage import (default_token_file, ensure_token_file,
-                                        read_token_file)
+import importlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mirage.server.auth.config import (AuthConfig, AuthMode, JWTConfig,
+                                           resolve_auth_config,
+                                           resolve_local_token)
+    from mirage.server.auth.middleware import AuthMiddleware
+    from mirage.server.auth.storage import (default_token_file,
+                                            ensure_token_file, read_token_file)
+
+_EXPORTS: dict[str, tuple[str, ...]] = {
+    "mirage.server.auth.config":
+    ("AuthConfig", "AuthMode", "JWTConfig", "resolve_auth_config",
+     "resolve_local_token"),
+    "mirage.server.auth.middleware": ("AuthMiddleware", ),
+    "mirage.server.auth.storage":
+    ("default_token_file", "ensure_token_file", "read_token_file"),
+}
+_MODULE_OF = {
+    name: module
+    for module, names in _EXPORTS.items()
+    for name in names
+}
 
 __all__ = [
     "AuthConfig",
@@ -30,3 +48,12 @@ __all__ = [
     "resolve_auth_config",
     "resolve_local_token",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module = _MODULE_OF.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value

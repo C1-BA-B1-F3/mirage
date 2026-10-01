@@ -12,70 +12,81 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 import lancedb
 
 from mirage.accessor.base import Accessor
+from mirage.accessor.pool import LoopClientCache
 from mirage.vfs.lancedb.config import LanceDBConfig
 from mirage.vfs.secrets import reveal_secret
+
+
+@dataclass
+class _Connection:
+    """One loop's open database and the tables opened on it.
+
+    Args:
+        db (Any): the open ``AsyncConnection``.
+        tables (dict[str, Any]): the tables opened so far, by name.
+    """
+    db: Any
+    tables: dict[str, Any] = field(default_factory=dict)
+
+
+@asynccontextmanager
+async def _open(config: LanceDBConfig) -> AsyncIterator[_Connection]:
+    kwargs: dict[str, Any] = {}
+    if config.api_key is not None:
+        kwargs["api_key"] = reveal_secret(config.api_key)
+    if config.storage_options:
+        kwargs["storage_options"] = config.storage_options
+    if config.uri.startswith("db://"):
+        kwargs["region"] = config.region
+        if config.host_override:
+            kwargs["host_override"] = config.host_override
+    db = await lancedb.connect_async(config.uri, **kwargs)
+    try:
+        yield _Connection(db=db)
+    finally:
+        db.close()
 
 
 class LanceDBAccessor(Accessor):
 
     def __init__(self, config: LanceDBConfig) -> None:
         self.config = config
-        self._dbs: dict[int, Any] = {}
-        self._tables: dict[tuple[int, str], Any] = {}
-        self._search_cache: dict[tuple[str, str, int], list[dict[str,
-                                                                 Any]]] = {}
+        self._connections = LoopClientCache("lancedb")
+        self.search_cache: dict[tuple[str, str, int], list[dict[str,
+                                                                Any]]] = {}
 
-    def _loop_key(self) -> int:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return 0
-        return id(loop)
+    async def _connection(self) -> _Connection:
+        conn: _Connection = await self._connections.get(
+            partial(_open, self.config))
+        return conn
 
     async def db(self) -> Any:
-        key = self._loop_key()
-        db = self._dbs.get(key)
-        if db is None:
-            kwargs: dict[str, Any] = {}
-            if self.config.api_key is not None:
-                kwargs["api_key"] = reveal_secret(self.config.api_key)
-            if self.config.storage_options:
-                kwargs["storage_options"] = self.config.storage_options
-            if self.config.uri.startswith("db://"):
-                kwargs["region"] = self.config.region
-                if self.config.host_override:
-                    kwargs["host_override"] = self.config.host_override
-            db = await lancedb.connect_async(self.config.uri, **kwargs)
-            self._dbs[key] = db
-        return db
+        """Return this loop's database, connecting when there is none."""
+        return (await self._connection()).db
 
     async def table(self, name: str) -> Any:
-        key = (self._loop_key(), name)
-        tbl = self._tables.get(key)
+        """Return one table, opened once per loop.
+
+        Args:
+            name (str): the table name.
+        """
+        conn = await self._connection()
+        tbl = conn.tables.get(name)
         if tbl is None:
-            db = await self.db()
-            tbl = await db.open_table(name)
-            self._tables[key] = tbl
+            tbl = await conn.db.open_table(name)
+            conn.tables[name] = tbl
         return tbl
 
-    def cached_search(
-            self, key: tuple[str, str, int]) -> list[dict[str, Any]] | None:
-        return self._search_cache.get(key)
-
-    def store_search(self, key: tuple[str, str, int],
-                     rows: list[dict[str, Any]]) -> None:
-        self._search_cache[key] = rows
-
     async def close(self) -> None:
-        dbs = list(self._dbs.values())
-        self._dbs.clear()
-        self._tables.clear()
-        self._search_cache.clear()
-        for db in dbs:
-            db.close()
+        """Close every database this accessor opened, and drop its cache."""
+        self.search_cache.clear()
+        await self._connections.close()

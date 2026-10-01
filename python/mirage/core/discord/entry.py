@@ -19,7 +19,7 @@ from typing import Any
 from mirage.cache.index.config import IndexEntry
 from mirage.core.discord.history import DISCORD_EPOCH
 from mirage.core.discord.render import member_json_bytes
-from mirage.core.timeutil import epoch_to_iso
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.naming import make_id_name
 
 

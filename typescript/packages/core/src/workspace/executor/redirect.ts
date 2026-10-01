@@ -44,6 +44,7 @@ import {
 import { drained, type ExecuteNodeFn, pump } from './jobs.ts'
 import { carried, isUnwinding, type Unwinding } from './control.ts'
 import { Channel, JobConsole } from '../../shell/console/index.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -635,16 +636,4 @@ function toScope(path: string): PathSpec {
   const lastSlash = path.lastIndexOf('/')
   const directory = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '/'
   return new PathSpec({ vfsPath: stripSlash(path), virtual: path, directory, resolved: true })
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }

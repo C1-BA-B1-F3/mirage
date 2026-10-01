@@ -23,7 +23,7 @@ from mirage.commands.cli.builtin.git.discover import is_bare, require_work_tree
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     AmbiguousArgumentError, BareResetError, GitError, NoWorkspaceError,
     RevisionResetError, UnknownSwitchError)
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened

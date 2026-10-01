@@ -23,7 +23,7 @@ from mirage.core.object_store.driver import (ChildEntry, ObjectMeta,
 from mirage.core.s3.client import (_client_kwargs, async_session, closing_body,
                                    is_not_found)
 from mirage.core.s3.constants import SCOPE_ERROR
-from mirage.core.timeutil import to_iso_z
+from mirage.utils.dates import to_iso_z
 
 DELETE_BATCH = 1000
 

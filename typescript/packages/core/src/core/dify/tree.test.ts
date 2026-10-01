@@ -14,14 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  buildDirEntries,
-  extractDocumentSize,
-  extractSlug,
-  normalizeSlug,
-  scalarString,
-  timestampToIso,
-} from './tree.ts'
+import { buildDirEntries, extractDocumentSize, extractSlug, timestampToIso } from './tree.ts'
 
 function doc(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -58,18 +51,6 @@ function entryFor(
   return (entries.get(dir) ?? []).find(([n]) => n === name)?.[1]
 }
 
-describe('normalizeSlug', () => {
-  it('normalizes a relative slug to an absolute path', () => {
-    expect(normalizeSlug('guides/quickstart')).toBe('/guides/quickstart')
-    expect(normalizeSlug('/CHANGELOG.md/')).toBe('/CHANGELOG.md')
-  })
-
-  it('rejects empty and dot segments', () => {
-    expect(() => normalizeSlug('')).toThrow('Invalid empty Dify document slug.')
-    expect(() => normalizeSlug('a/../b')).toThrow('Invalid Dify document slug segment')
-  })
-})
-
 describe('extractSlug', () => {
   it('reads the slug metadata field when present', () => {
     expect(extractSlug(QUICKSTART, 'slug')).toEqual(['guides/quickstart', true])
@@ -92,16 +73,6 @@ describe('extractDocumentSize', () => {
 
   it('returns null when no upload size is present', () => {
     expect(extractDocumentSize(CHANGELOG)).toBeNull()
-  })
-})
-
-describe('scalarString', () => {
-  it('coerces primitives and rejects objects', () => {
-    expect(scalarString('x')).toBe('x')
-    expect(scalarString(5)).toBe('5')
-    expect(scalarString(true)).toBe('true')
-    expect(scalarString(null)).toBeNull()
-    expect(scalarString({})).toBeNull()
   })
 })
 

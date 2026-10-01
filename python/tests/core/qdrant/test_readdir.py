@@ -2,8 +2,10 @@ import pytest
 
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.qdrant.naming import group_name
-from mirage.core.qdrant.readdir import _blob_size, readdir
-from mirage.core.qdrant.render import blob_bytes, render_json, render_text
+from mirage.core.qdrant.readdir import _blob_size
+from mirage.core.qdrant.render import render_json, render_text
+from mirage.core.qdrant.tree import readdir
+from mirage.core.vector.read import blob_bytes
 from mirage.types import PathSpec
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
 from tests.fixtures.index_spy import WindowSpy

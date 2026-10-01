@@ -14,7 +14,7 @@
 
 import type { PathSpec } from '../../types.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function exists(accessor: RedisAccessor, path: PathSpec): Promise<boolean> {
   const p = norm(path.mountPath)

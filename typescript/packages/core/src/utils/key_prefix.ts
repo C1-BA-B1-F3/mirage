@@ -150,13 +150,3 @@ export function respelled(path: PathSpec, rawPath: string): PathSpec {
     walkError: path.walkError,
   })
 }
-
-// A PathSpec for a mount-local key on the mount at `mountPrefix` ('' for the
-// root mount). For a handler that names an output only by its key (split's
-// `xaa`): the executing mount's prefix gives it the virtual path the user
-// sees, whether or not an operand is there to read a prefix from. Mirrors
-// Python's mount_spec.
-export function mountSpec(mountPrefix: string, mountPath: string): PathSpec {
-  const key = stripSlash(mountPath)
-  return PathSpec.fromStrPath(`${rstripSlash(mountPrefix)}/${key}`, key)
-}

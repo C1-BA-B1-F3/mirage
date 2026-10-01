@@ -14,21 +14,22 @@
 
 from datetime import date, datetime
 
-from mirage.accessor.base import Accessor
+from mirage.accessor.google_api import GoogleApiAccessor
 from mirage.core.gcal.day import zone
 from mirage.core.google.client import TokenManager
 from mirage.core.time_range import TimeRange
 from mirage.vfs.gcal.config import GCalConfig
 
 
-class GCalAccessor(Accessor):
+class GCalAccessor(GoogleApiAccessor):
+
+    config: GCalConfig
 
     def __init__(self, config: GCalConfig,
                  token_manager: TokenManager) -> None:
-        self.config = config
+        super().__init__(config, token_manager)
         self.time_range = TimeRange.from_strings(config.start_time,
                                                  config.end_time)
-        self.token_manager = token_manager
 
     def today(self, tz: str) -> date:
         """The day the default listing window centres on.

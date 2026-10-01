@@ -13,6 +13,5 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.bridge.sync import run_async_from_sync
-from mirage.bridge.thread import run_in_thread
 
-__all__ = ["run_async_from_sync", "run_in_thread"]
+__all__ = ["run_async_from_sync"]

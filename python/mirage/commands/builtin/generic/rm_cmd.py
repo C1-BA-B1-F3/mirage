@@ -18,9 +18,8 @@ from typing import Any
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import with_write_guards
 from mirage.commands.builtin.utils.output import format_optional_records
-from mirage.commands.config import CommandOpts
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
-from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult

@@ -16,7 +16,7 @@ import shlex
 from dataclasses import dataclass
 
 from mirage.agents.file_version import FileVersionTracker, StaleMirageFileError
-from mirage.agents.io_text import decode, io_to_str
+from mirage.agents.io_text import decode, io_to_str, replace_text
 from mirage.io.types import IOResult
 from mirage.utils.path import gnu_dirname
 from mirage.workspace.workspace import Workspace
@@ -181,7 +181,8 @@ class MirageToolOperations:
             if not await self._ws.vfs.exists(path):
                 return ToolResult(f"Error: file '{path}' not found", True)
             return ToolResult(f"Error: {exc}", True)
-        count = content.count(old_string)
+        new_content, count = replace_text(content, old_string, new_string,
+                                          replace_all)
         if count == 0:
             return ToolResult(
                 f"Error: string not found in file: '{old_string}'", True)
@@ -189,8 +190,6 @@ class MirageToolOperations:
             return ToolResult(
                 f"Error: string appears {count} times. Pass replace_all=true",
                 True)
-        new_content = content.replace(old_string, new_string,
-                                      -1 if replace_all else 1)
         try:
             await self._versions.write_edit(path, new_content)
         except StaleMirageFileError as exc:

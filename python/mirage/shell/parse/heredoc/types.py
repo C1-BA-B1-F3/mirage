@@ -68,19 +68,3 @@ class BodyRead:
     end: int
     terminated: bool
     eof_line: int
-
-
-@dataclass(frozen=True, slots=True)
-class Terminator:
-    """One statement terminator on a heredoc's operator line.
-
-    Attributes:
-        start (int): byte offset of the token.
-        resume (int): byte offset where the text that moves past the body
-            begins: after a ``;``, which the newline before the body
-            replaces, and at a ``;;``, ``;&``, ``;;&`` or ``)``, which
-            bash reads at the start of a line and so moves whole.
-    """
-
-    start: int
-    resume: int

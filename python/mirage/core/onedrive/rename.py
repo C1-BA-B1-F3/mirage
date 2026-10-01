@@ -14,7 +14,7 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.msgraph.drive_ops import rename_replace
+from mirage.core.msgraph.drive import rename_replace
 from mirage.core.onedrive.client import drive_loc, split_path
 from mirage.types import PathSpec
 

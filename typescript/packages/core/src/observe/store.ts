@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { concat } from '../io/cachable_iterator.ts'
+
 /**
  * Storage seam for the hidden recorder.
  *
@@ -58,20 +60,13 @@ export abstract class ObserverStoreBase implements ObserverStore {
   }
 }
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const merged = new Uint8Array(a.length + b.length)
-  merged.set(a, 0)
-  merged.set(b, a.length)
-  return merged
-}
-
 /** In-memory ObserverStore backed by a Map (the default). */
 export class RAMObserverStore extends ObserverStoreBase {
   readonly files = new Map<string, Uint8Array>()
 
   append(path: string, data: Uint8Array): Promise<void> {
     const existing = this.files.get(path)
-    this.files.set(path, existing === undefined ? data : concat(existing, data))
+    this.files.set(path, existing === undefined ? data : concat([existing, data]))
     return Promise.resolve()
   }
 

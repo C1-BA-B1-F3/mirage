@@ -14,6 +14,7 @@
 
 import type { VFSStat } from '../../vfs.ts'
 import type { OpenMode } from '../../handles/mode.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 interface FileNode {
   content: string | Uint8Array
@@ -96,13 +97,6 @@ function toText(content: string | Uint8Array): string {
 
 function toBytes(content: string | Uint8Array): Uint8Array {
   return typeof content === 'string' ? new TextEncoder().encode(content) : content
-}
-
-function concatBytes(head: Uint8Array, tail: Uint8Array): Uint8Array {
-  const out = new Uint8Array(head.length + tail.length)
-  out.set(head, 0)
-  out.set(tail, head.length)
-  return out
 }
 
 /**
@@ -236,7 +230,7 @@ export class ScratchTree {
       entry.content =
         typeof data === 'string'
           ? toText(entry.content) + data
-          : concatBytes(toBytes(entry.content), data)
+          : concat([toBytes(entry.content), data])
       entry.mtimeMs = Date.now()
       return
     }

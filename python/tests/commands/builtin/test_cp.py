@@ -14,13 +14,14 @@
 
 import asyncio
 
-from mirage.commands import COMMANDS as _CMDS
-from mirage.commands.config import CommandOpts
+from mirage.commands.builtin.ram import COMMANDS
+from mirage.commands.config import CommandCatalog, CommandOpts
 from mirage.core.ram.stream import read_stream
 from mirage.core.ram.write import write_bytes
 from mirage.types import PathSpec
 
-cp_cmd = _CMDS["cp"]
+_CMDS = CommandCatalog(COMMANDS)
+cp_cmd = _CMDS.require("cp").fn
 
 
 def _cat_sync(backend, path):

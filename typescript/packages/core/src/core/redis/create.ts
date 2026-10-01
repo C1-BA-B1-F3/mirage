@@ -18,7 +18,8 @@ import { VFSName } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { checkDestParents } from './dest.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function create(accessor: RedisAccessor, path: PathSpec): Promise<void> {
   const timer = startOp()

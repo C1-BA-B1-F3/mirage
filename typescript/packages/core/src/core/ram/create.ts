@@ -15,7 +15,8 @@
 import { record, startOp } from '../../observe/context.ts'
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import { VFSName, type PathSpec } from '../../types.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 import { invalidateAfterWrite } from '../../cache/context.ts'
 import { checkDestParents } from './dest.ts'
 

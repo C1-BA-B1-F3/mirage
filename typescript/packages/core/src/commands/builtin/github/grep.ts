@@ -22,6 +22,7 @@ import { type FileStat, VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { prefixAggregate } from '../aggregators.ts'
+import { grepNeedsEveryFile } from '../grep_pushdown.ts'
 import { patternArg } from '../grep_pattern.ts'
 import { grepGeneric, labelled } from '../generic/grep.ts'
 import { narrowScope, scopeRefusal } from './pushdown.ts'
@@ -51,15 +52,7 @@ async function grepCommand(
       recursive,
       fl.asBool('w'),
       opts.index ?? undefined,
-      // A narrowing holds only files matching the searched literal: -v, -c
-      // and -L also print from the rest, and -f adds patterns code search
-      // never saw.
-      fl.asBool('v') ||
-        fl.asBool('c') ||
-        fl.asBool('files_without_match') ||
-        Boolean(fl.raw('file')) ||
-        fl.asBool('text') ||
-        fl.asStr('binary_files') === 'text',
+      grepNeedsEveryFile(fl),
     )
     if (narrowed.usedSearch) opts = labelled(opts)
     resolved = narrowed.resolved

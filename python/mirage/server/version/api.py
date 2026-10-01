@@ -108,8 +108,7 @@ async def checkout(
 
 def _strip_meta(changes: dict[str, list[str]]) -> dict[str, list[str]]:
     # File-level diff/status stay content-only: the control-plane
-    # subtree changes on every command (history) and is surfaced by the
-    # structured state_diff instead.
+    # subtree changes on every command (history), so it is left out.
     return {
         kind: [p for p in paths if not p.startswith(CONTROL_PREFIX)]
         for kind, paths in changes.items()

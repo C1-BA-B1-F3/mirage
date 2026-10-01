@@ -53,6 +53,17 @@ def test_is_the_filters_alone_with_no_prefix_and_empty_with_neither():
     assert _predicate("", {}, "doc-1") == ""
 
 
+@pytest.mark.parametrize("value,clause", [
+    ("42", "`n` = 42"),
+    ("-5", "`n` = -5"),
+    ("--5", "`n` = '--5'"),
+    ("\u0663", "`n` = '\u0663'"),
+    ("4\n", "`n` = '4\n'"),
+])
+def test_only_an_ascii_integer_compares_unquoted(value, clause):
+    assert _predicate("id", {"n": value}, "") == clause
+
+
 @pytest.mark.asyncio
 async def test_a_kept_test_bounds_the_cap_by_matches(accessor):
     # Without a test the cap is a window over the table head; with one it

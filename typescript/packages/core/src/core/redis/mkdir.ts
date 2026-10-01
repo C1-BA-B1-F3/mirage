@@ -17,7 +17,8 @@ import type { PathSpec } from '../../types.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { checkDestParents, checkMkdirTarget } from './dest.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function mkdir(
   accessor: RedisAccessor,

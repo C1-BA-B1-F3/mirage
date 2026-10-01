@@ -12,20 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { QdrantRow } from './client.ts'
+import type { QdrantRow } from './query.ts'
 import type { QdrantConfigResolved } from '../../vfs/qdrant/config.ts'
-import { decodeBase64 } from '../../utils/base64.ts'
 import { compactJsonText, valueText } from '../render/json.ts'
 import { fieldValue, withoutField } from './payload.ts'
 
 const ENC = new TextEncoder()
 const SKIP_KEYS = new Set(['_score', '_rowid', '_distance'])
-
-export function blobBytes(value: unknown): Uint8Array {
-  if (value instanceof Uint8Array) return value
-  if (typeof value === 'string') return decodeBase64(value)
-  throw new Error('blob column is not bytes or base64 string')
-}
 
 export function renderJson(row: QdrantRow, config: QdrantConfigResolved): Uint8Array {
   let data: Record<string, unknown> = {}

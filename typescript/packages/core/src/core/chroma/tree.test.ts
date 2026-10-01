@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 import { encodeBase64 } from '../../utils/base64.ts'
 import { gzip } from '../../utils/compress.ts'
-import { buildDirEntries, normalizeSlug, parsePathTree, virtualPath } from './tree.ts'
+import { buildDirEntries, parsePathTree } from './tree.ts'
 
 const ENC = new TextEncoder()
 
@@ -57,21 +57,6 @@ describe('parsePathTree', () => {
   })
 })
 
-describe('normalizeSlug', () => {
-  it('normalizes slashes', () => {
-    expect(normalizeSlug('/guides//auth.md/')).toBe('/guides/auth.md')
-  })
-
-  it('rejects empty paths', () => {
-    expect(() => normalizeSlug('//')).toThrow('Invalid empty Chroma path')
-  })
-
-  it('rejects dot segments', () => {
-    expect(() => normalizeSlug('a/../b.md')).toThrow("Invalid Chroma path segment: '..'")
-    expect(() => normalizeSlug('./a.md')).toThrow("Invalid Chroma path segment: '.'")
-  })
-})
-
 describe('buildDirEntries', () => {
   it('builds directories and file entries', () => {
     const entries = buildDirEntries(
@@ -105,13 +90,5 @@ describe('buildDirEntries', () => {
 
   it('rejects file/directory collisions', () => {
     expect(() => buildDirEntries({ a: {}, 'a/b.md': {} }, '')).toThrow('Path collision')
-  })
-})
-
-describe('virtualPath', () => {
-  it('maps tree paths under the mount root', () => {
-    expect(virtualPath('/', '/knowledge/')).toBe('/knowledge')
-    expect(virtualPath('/guides', '/knowledge/')).toBe('/knowledge/guides')
-    expect(virtualPath('/guides', '')).toBe('/guides')
   })
 })

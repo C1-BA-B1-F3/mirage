@@ -18,7 +18,8 @@ import { enoent } from '../../utils/errors.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 import { checkDestParents, lookupError } from './dest.ts'
 
 // Re-key every descendant of a renamed directory. A synthetic-directory

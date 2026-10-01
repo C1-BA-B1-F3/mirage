@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.hf_hub.admin import (create_repo, create_tag, delete_repo,
-                                      delete_tag, list_tags, split_repo_id)
+from mirage.core.hf_hub.admin import (create_repo, create_tag, delete_tag,
+                                      list_tags, split_repo_id)
 from mirage.core.hf_hub.config import HfConfig
 
 CONFIG = HfConfig(token="t")
@@ -58,17 +58,6 @@ async def test_create_repo_carries_a_space_sdk(mock_post):
     mock_post.return_value = {}
     await create_repo(CONFIG, "a/b", "space", space_sdk="gradio")
     assert mock_post.await_args.args[2]["sdk"] == "gradio"
-
-
-@pytest.mark.asyncio
-@patch("mirage.core.hf_hub.admin.hub_request")
-async def test_delete_repo_posts_the_same_shape(mock_request):
-    await delete_repo(CONFIG, "acme/widget", "space")
-    method, url = mock_request.await_args.args[
-        1], mock_request.await_args.args[2]
-    assert method == "DELETE"
-    assert url.endswith("/api/repos/delete")
-    assert mock_request.await_args.args[3]["type"] == "space"
 
 
 @pytest.mark.asyncio

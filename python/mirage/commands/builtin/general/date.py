@@ -17,10 +17,9 @@ from datetime import datetime, timezone
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.strftime import gnu_strftime
-from mirage.commands.config import CommandOpts
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
-from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName

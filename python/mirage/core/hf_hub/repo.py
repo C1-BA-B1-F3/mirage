@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from enum import Enum
-from typing import Any
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.core.hf_hub.client import HfHubError, api_url, hub_get, rev_segment
@@ -26,21 +25,6 @@ class Absence(Enum):
     PRESENT = "present"
     REPO = "repo"
     REVISION = "revision"
-
-
-async def fetch_refs(accessor: HfHubAccessor) -> dict[str, Any]:
-    """The repository's branches, tags and conversion refs.
-
-    Args:
-        accessor (HfHubAccessor): the mount's accessor.
-
-    Returns:
-        dict[str, Any]: the decoded /refs object.
-    """
-    url = api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                  "/refs")
-    data: JsonValue = await hub_get(accessor.token, url, session=accessor.pool)
-    return data if isinstance(data, dict) else {}
 
 
 async def head_commit(accessor: HfHubAccessor) -> str:

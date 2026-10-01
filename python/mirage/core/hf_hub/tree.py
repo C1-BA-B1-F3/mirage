@@ -496,11 +496,11 @@ def _is_folder(entry: TreeEntry) -> bool:
     return entry.is_dir
 
 
-async def ensure_live_index(
+async def ensure_live_snapshot(
     accessor: HfHubAccessor,
     index: IndexCacheStore,
     prefix: str,
-) -> bool:
+) -> IndexSnapshot | None:
     """Refetch when the root listing is missing or expired.
 
     Every reader treats a missing listing as a real absence, which is
@@ -508,24 +508,6 @@ async def ensure_live_index(
     filled or has been dropped. The root listing is what tells the two
     apart, in one lookup and no request: the tree is written whole, so
     while the index is live the mount root always has a row.
-
-    Args:
-        accessor (HfHubAccessor): the mount's accessor.
-        index (IndexCacheStore): the index to check and fill.
-        prefix (str): the mount prefix the index keys are built against.
-
-    Returns:
-        bool: whether the index was filled.
-    """
-    return await ensure_live_snapshot(accessor, index, prefix) is not None
-
-
-async def ensure_live_snapshot(
-    accessor: HfHubAccessor,
-    index: IndexCacheStore,
-    prefix: str,
-) -> IndexSnapshot | None:
-    """``ensure_live_index``, returning the rows of the refill it made.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
@@ -555,7 +537,7 @@ async def ensure_tree(
     The mount is constructed without touching the network, so readers
     that consult ``accessor.tree`` directly rather than through the index
     -- find and du -- have to hydrate it first. Readers that go through
-    the index do not call this; :func:`ensure_live_index` refetches for
+    the index do not call this; :func:`ensure_live_snapshot` refetches for
     them.
 
     Hydration is tracked by ``tree_loaded``, never by whether the tree

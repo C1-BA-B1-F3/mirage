@@ -14,7 +14,7 @@
 
 from mirage.core.google.client import (TokenManager, docs_base, drive_base,
                                        google_get, google_get_bytes,
-                                       google_headers, google_post, google_put,
+                                       google_headers, google_post,
                                        refresh_access_token)
 from mirage.core.google.constants import DOCS_API_BASE  # noqa: F401
 from mirage.core.google.constants import (DRIVE_API_BASE, TOKEN_BUFFER_SECONDS,
@@ -32,6 +32,5 @@ __all__ = [
     "google_get_bytes",
     "google_headers",
     "google_post",
-    "google_put",
     "refresh_access_token",
 ]

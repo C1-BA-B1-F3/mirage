@@ -16,16 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.hf_hub.repo import fetch_refs, head_commit
-
-
-@pytest.mark.asyncio
-@patch("mirage.core.hf_hub.repo.hub_get")
-async def test_fetch_refs_reads_the_refs_endpoint(mock_get, accessor):
-    mock_get.return_value = {"branches": [{"name": "main"}], "tags": []}
-    refs = await fetch_refs(accessor)
-    assert refs["branches"][0]["name"] == "main"
-    assert mock_get.await_args.args[1].endswith("/refs")
+from mirage.core.hf_hub.repo import head_commit
 
 
 @pytest.mark.asyncio

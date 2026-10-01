@@ -1,7 +1,7 @@
 import pytest
 from aioresponses import CallbackResult, aioresponses
 
-import mirage.core.msgraph.drive_ops as drive_ops
+import mirage.core.msgraph.drive as drive_ops
 import mirage.core.onedrive.write as write_mod
 from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
 from mirage.core.onedrive.write import write_bytes

@@ -12,9 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.langchain._convert import (io_to_execute_response,
-                                              io_to_file_infos,
-                                              io_to_grep_matches)
+from mirage.agents.langchain.convert import (io_to_execute_response,
+                                             io_to_file_infos,
+                                             io_to_grep_matches)
 from mirage.io.types import IOResult
 
 

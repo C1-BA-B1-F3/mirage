@@ -120,7 +120,7 @@ export function terminatorLookalikes(
  * bodyPrefix. It also ends a body one line early, at any line that merely
  * opens with the delimiter (see terminatorLookalikes); one character of
  * each such line is masked the same way. Bodies are read innermost-first
- * per line, the order the parser's source keeps them in (see relayout).
+ * per line, the order the parser's source keeps them in.
  * Returns null when every body already lexes as bash reads it.
  */
 export function protectedSource(text: string, root: Node): string | null {

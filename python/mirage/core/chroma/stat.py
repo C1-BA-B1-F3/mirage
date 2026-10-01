@@ -1,11 +1,13 @@
+from mirage.accessor.chroma import ChromaAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.chroma.path import resolve_path
 from mirage.core.chroma.sizes import ensure_dir_sizes
+from mirage.core.chroma.tree import CHROMA_TREE
+from mirage.core.slug_tree.stat import directory_stat
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.path import parent
 
 
-async def stat_light(accessor,
+async def stat_light(accessor: ChromaAccessor,
                      path: PathSpec,
                      index: IndexCacheStore = NULL_INDEX) -> FileStat:
     # Never triggers the directory size scan: callers that only need the
@@ -13,17 +15,13 @@ async def stat_light(accessor,
     return await stat(accessor, path, index, sizes=False)
 
 
-async def stat(accessor,
+async def stat(accessor: ChromaAccessor,
                path: PathSpec,
                index: IndexCacheStore = NULL_INDEX,
                sizes: bool = True) -> FileStat:
-    resolved = await resolve_path(accessor, path, index)
+    resolved = await CHROMA_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
-        return FileStat(
-            name=stat_name(resolved.virtual_key, resolved.mount_prefix),
-            type=FileType.DIRECTORY,
-            extra={"children_count": 0},
-        )
+        return directory_stat(resolved)
     entry = resolved.entry
     if sizes and entry.size is None:
         # One scan for the whole directory, paid the first time anything in
@@ -42,10 +40,3 @@ async def stat(accessor,
         revision=None,
         extra=dict(entry.extra),
     )
-
-
-def stat_name(virtual_key: str, mount_prefix: str) -> str:
-    root = mount_prefix.rstrip("/") or "/"
-    if virtual_key == root:
-        return "/"
-    return virtual_key.rstrip("/").rsplit("/", 1)[-1]

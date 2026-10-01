@@ -14,18 +14,21 @@
 
 import pytest
 
+from mirage import Workspace
 from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index.scope import command_scope
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.config import command
 from mirage.commands.spec.types import CommandSpec
 from mirage.context import reset_admission, set_admission
 from mirage.io.types import IOResult
-from mirage.types import MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, ReadSpec
 from mirage.utils.errors import NoMountError, ebusy
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.ssh import SSHVFS, SSHConfig
 from mirage.workspace.mount import MountCommandUnsupported, MountRegistry
+from tests.fixtures.versioned_vfs import VersionedVFS
 
 # ── mount_for ──────────────────────────────────
 
@@ -690,3 +693,24 @@ async def test_listing_gate_propagates_any_other_oserror():
     registry, mount = _gated_registry(rec)
     with pytest.raises(OSError, match="backend down"):
         await registry._may_serve_listing(mount, "/data/d", None)
+
+
+@pytest.mark.asyncio
+async def test_listing_gate_sends_no_version_check_for_a_retiring_mount():
+    vfs = VersionedVFS("mount")
+    ws = Workspace({"/m/": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
+    try:
+        mount = ws.namespace.mount_for("/m/a")
+        await mount.index_store.set_dir("/m/a", [], version="v1")
+        mount.retiring = True
+        async with command_scope():
+            assert (
+                await ws.namespace.registry._may_serve_listing(
+                    mount, "/m/a", "v1"
+                )
+                is False
+            )
+        assert vfs.stats == []
+    finally:
+        mount.retiring = False
+        await ws.close()

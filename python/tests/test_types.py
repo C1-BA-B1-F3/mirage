@@ -186,7 +186,8 @@ def test_read_spec_is_frozen():
 
 
 def test_cache_facts_is_frozen():
-    facts = CacheFacts(cacheable=True, ttl=30)
-    assert (facts.cacheable, facts.ttl) == (True, 30)
+    facts = CacheFacts(cacheable=True, ttl=30, keeps_writes=False)
+    assert (facts.cacheable, facts.ttl, facts.keeps_writes) == (True, 30,
+                                                                False)
     with pytest.raises(FrozenInstanceError):
         facts.ttl = 1

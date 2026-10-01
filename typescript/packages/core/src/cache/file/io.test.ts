@@ -564,8 +564,8 @@ describe('the token describes the bytes stored', () => {
 
 // ── the mount's staleness bound reaches the entry ───────────────────────
 
-function facts(ttl: number, cacheable = true): (path: string) => CacheFacts {
-  return () => ({ cacheable, ttl })
+function facts(ttl: number, cacheable = true, keepsWrites = true): (path: string) => CacheFacts {
+  return () => ({ cacheable, ttl, keepsWrites })
 }
 
 // The value, not just its presence. `isUnbounded` alone would stay green
@@ -610,5 +610,66 @@ describe('applyIo bound stamping', () => {
     const io = new IOResult({ reads: { '/s3/f.txt': ENC.encode('hello') }, cache: ['/s3/f.txt'] })
     await applyIo(cache, io, facts(30, false))
     expect(await cache.exists('/s3/f.txt')).toBe(false)
+  })
+})
+
+// ── written bytes the mount does not keep ───────────────────────────────
+
+describe('applyIo on a mount that keeps no written bytes', () => {
+  // A backend that rewrites uploads stores something other than what the
+  // command wrote, so the stale entry goes and the next read fetches what
+  // the backend holds.
+  it('drops written bytes', async () => {
+    const cache = new RAMFileCacheStore()
+    await cache.set('/sp/a.docx', ENC.encode('before'))
+    const io = new IOResult({
+      writes: { '/sp/a.docx': ENC.encode('written') },
+      cache: ['/sp/a.docx'],
+    })
+    await applyIo(cache, io, facts(30, true, false))
+    expect(await cache.exists('/sp/a.docx')).toBe(false)
+  })
+
+  it('drops an exhausted written stream', async () => {
+    const cache = new RAMFileCacheStore()
+    await cache.set('/sp/a.docx', ENC.encode('before'))
+    const stream = makeStream('written')
+    for await (const _ of stream) void _
+    const io = new IOResult({ writes: { '/sp/a.docx': stream }, cache: ['/sp/a.docx'] })
+    await applyIo(cache, io, facts(30, true, false))
+    expect(await cache.exists('/sp/a.docx')).toBe(false)
+  })
+
+  it('never drains a written stream', async () => {
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({
+      writes: { '/sp/a.docx': makeStream('written') },
+      cache: ['/sp/a.docx'],
+    })
+    await applyIo(cache, io, facts(30, true, false))
+    await sleep(50)
+    expect(await cache.exists('/sp/a.docx')).toBe(false)
+  })
+
+  // The rule is about what a write leaves behind; a read's bytes are what
+  // the backend serves, so they are cached as before.
+  it('still caches reads', async () => {
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({
+      reads: { '/sp/a.docx': ENC.encode('served') },
+      cache: ['/sp/a.docx'],
+    })
+    await applyIo(cache, io, facts(30, true, false))
+    expect(DEC.decode((await cache.get('/sp/a.docx')) ?? undefined)).toBe('served')
+  })
+
+  it('keeps written bytes by default', async () => {
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({
+      writes: { '/s3/a.txt': ENC.encode('written') },
+      cache: ['/s3/a.txt'],
+    })
+    await applyIo(cache, io, facts(30))
+    expect(DEC.decode((await cache.get('/s3/a.txt')) ?? undefined)).toBe('written')
   })
 })

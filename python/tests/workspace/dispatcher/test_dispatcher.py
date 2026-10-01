@@ -1016,3 +1016,57 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
             reset_current_session(token)
         assert not ws.namespace.is_link("/data/d/old")
         assert ws.namespace.readlink("/data/d/late") == "nowhere"
+
+
+class _CachingRAM(RAMVFS):
+    caches_reads = True
+
+
+class _RewritingRAM(_CachingRAM):
+    keeps_written_bytes = False
+
+
+async def _run(ws: Workspace, line: str) -> bytes:
+    result = await ws.shell(line)
+    out = await result.materialize_stdout()
+    assert result.exit_code == 0, (line, await result.stderr_str())
+    return out
+
+
+WRITES_THAT_KEEP_BYTES = {
+    "tee": "echo STORED | tee {path}",
+    "sed": "sed -i s/R/X/ {path}",
+    "sort": "sort -o {path} /data/in.txt",
+    "uniq": "uniq /data/in.txt {path}",
+}
+
+
+async def _seeded(vfs: RAMVFS) -> Workspace:
+    ws = Workspace({"/data/": vfs}, mode=MountMode.WRITE)
+    await ws.vfs.write("/data/a.docx", b"STORED\n")
+    await ws.vfs.write("/data/in.txt", b"b\na\n")
+    return ws
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line",
+                         WRITES_THAT_KEEP_BYTES.values(),
+                         ids=WRITES_THAT_KEEP_BYTES.keys())
+async def test_a_write_keeps_its_bytes_by_default(line):
+    ws = await _seeded(_CachingRAM())
+    await _run(ws, line.format(path="/data/a.docx"))
+    kept = await ws.cache.get("/data/a.docx")
+    assert kept is not None
+    assert await _run(ws, "cat /data/a.docx") == kept
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line",
+                         WRITES_THAT_KEEP_BYTES.values(),
+                         ids=WRITES_THAT_KEEP_BYTES.keys())
+async def test_a_backend_that_rewrites_uploads_keeps_no_written_bytes(line):
+    # The backend stores something other than what was sent, so the entry
+    # goes and the next read fetches what the backend holds.
+    ws = await _seeded(_RewritingRAM())
+    await _run(ws, line.format(path="/data/a.docx"))
+    assert not await ws.cache.exists("/data/a.docx")

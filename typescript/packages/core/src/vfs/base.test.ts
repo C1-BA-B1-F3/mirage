@@ -331,6 +331,14 @@ describe('BaseVFS wires a backend from one CommandIO table', () => {
     expect(reads[0]?.fn).toBe(myRead.fn)
   })
 
+  it('keeps written bytes by default', () => {
+    expect(makeVfs().keepsWrittenBytes).toBe(true)
+  })
+
+  it('declares that it keeps no written bytes when told', () => {
+    expect(makeVfs({ keepsWrittenBytes: false }).keepsWrittenBytes).toBe(false)
+  })
+
   it('declares the FSKit and snapshot flags it was given', () => {
     const vfs = makeVfs({ sizesAlwaysKnown: true, supportsSnapshot: true })
     expect(vfs.sizesAlwaysKnown).toBe(true)

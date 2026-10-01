@@ -650,8 +650,9 @@ def test_latest_fingerprint_does_not_size_check_a_read():
 # ── the mount's staleness bound reaches the entry ───────────────────────
 
 
-def _facts(ttl: int, cacheable: bool = True):
-    return lambda _path: CacheFacts(cacheable=cacheable, ttl=ttl)
+def _facts(ttl: int, cacheable: bool = True, keeps_writes: bool = True):
+    return lambda _path: CacheFacts(
+        cacheable=cacheable, ttl=ttl, keeps_writes=keeps_writes)
 
 
 @pytest.mark.asyncio
@@ -695,3 +696,59 @@ async def test_apply_io_skips_a_path_its_mount_does_not_cache():
     io = IOResult(reads={"/s3/f.txt": b"hello"}, cache=["/s3/f.txt"])
     await cache_io.apply_io(cache, io, _facts(30, cacheable=False))
     assert not await cache.exists("/s3/f.txt")
+
+
+# ── written bytes the mount does not keep ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_apply_io_drops_written_bytes_its_mount_does_not_keep():
+    """A backend that rewrites uploads, or a path a filetype op renders,
+    stores something other than what the command wrote, so the stale
+    entry goes and the next read fetches what the backend holds."""
+    cache = RAMFileCacheStore()
+    await cache.set("/sp/a.docx", b"before")
+    io = IOResult(writes={"/sp/a.docx": b"written"}, cache=["/sp/a.docx"])
+    await cache_io.apply_io(cache, io, _facts(30, keeps_writes=False))
+    assert not await cache.exists("/sp/a.docx")
+
+
+@pytest.mark.asyncio
+async def test_apply_io_drops_an_exhausted_written_stream_it_does_not_keep():
+    cache = RAMFileCacheStore()
+    await cache.set("/sp/a.docx", b"before")
+    stream = CachableAsyncIterator(_one_chunk(b"written"))
+    async for _ in stream:
+        pass
+    io = IOResult(writes={"/sp/a.docx": stream}, cache=["/sp/a.docx"])
+    await cache_io.apply_io(cache, io, _facts(30, keeps_writes=False))
+    assert not await cache.exists("/sp/a.docx")
+
+
+@pytest.mark.asyncio
+async def test_apply_io_never_drains_a_written_stream_it_does_not_keep():
+    cache = RAMFileCacheStore()
+    stream = CachableAsyncIterator(_one_chunk(b"written"))
+    io = IOResult(writes={"/sp/a.docx": stream}, cache=["/sp/a.docx"])
+    await cache_io.apply_io(cache, io, _facts(30, keeps_writes=False))
+    await asyncio.sleep(0.05)
+    assert not await cache.exists("/sp/a.docx")
+    assert "/sp/a.docx" not in cache._drain_tasks
+
+
+@pytest.mark.asyncio
+async def test_apply_io_still_caches_reads_where_writes_are_not_kept():
+    """The rule is about what a write leaves behind; a read's bytes are
+    what the backend serves, so they are cached as before."""
+    cache = RAMFileCacheStore()
+    io = IOResult(reads={"/sp/a.docx": b"served"}, cache=["/sp/a.docx"])
+    await cache_io.apply_io(cache, io, _facts(30, keeps_writes=False))
+    assert await cache.get("/sp/a.docx") == b"served"
+
+
+@pytest.mark.asyncio
+async def test_apply_io_keeps_written_bytes_by_default():
+    cache = RAMFileCacheStore()
+    io = IOResult(writes={"/s3/a.txt": b"written"}, cache=["/s3/a.txt"])
+    await cache_io.apply_io(cache, io, _facts(30))
+    assert await cache.get("/s3/a.txt") == b"written"

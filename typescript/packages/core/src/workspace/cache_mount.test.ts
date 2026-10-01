@@ -322,3 +322,60 @@ describe('a guarded cp reads past the cache without refilling it', () => {
     }
   })
 })
+
+describe('what a write leaves in the file cache', () => {
+  const WRITES_THAT_KEEP_BYTES: [string, string][] = [
+    ['tee', 'echo STORED | tee /data/a.docx'],
+    ['sed', 'sed -i s/R/X/ /data/a.docx'],
+    ['sort', 'sort -o /data/a.docx /data/in.txt'],
+    ['uniq', 'uniq /data/in.txt /data/a.docx'],
+  ]
+
+  async function seeded(keepsWrittenBytes: boolean): Promise<Workspace> {
+    const ram = new RAMVFS()
+    Object.assign(ram, { cachesReads: true, keepsWrittenBytes })
+    const ws = new Workspace(
+      { '/data': ram },
+      {
+        mode: MountMode.WRITE,
+        shellParserFactory: async () => createShellParser({ engineWasm, grammarWasm }),
+      },
+    )
+    await ops(ram).write(PathSpec.fromStrPath('/a.docx'), ENC.encode('STORED\n'))
+    await ops(ram).write(PathSpec.fromStrPath('/in.txt'), ENC.encode('b\na\n'))
+    return ws
+  }
+
+  async function run(ws: Workspace, line: string): Promise<string> {
+    const result = await ws.shell(line)
+    expect([result.exitCode, DEC.decode(result.stderr)], line).toEqual([0, ''])
+    return DEC.decode(result.stdout)
+  }
+
+  it.each(WRITES_THAT_KEEP_BYTES)('keeps the bytes %s wrote by default', async (_name, line) => {
+    const ws = await seeded(true)
+    try {
+      await run(ws, line)
+      const kept = await ws.cache.get('/data/a.docx')
+      expect(kept).not.toBeNull()
+      expect(await run(ws, 'cat /data/a.docx')).toBe(DEC.decode(kept ?? undefined))
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // The backend stores something other than what was sent, so the entry
+  // goes and the next read fetches what the backend holds.
+  it.each(WRITES_THAT_KEEP_BYTES)(
+    'keeps nothing %s wrote on a backend that rewrites uploads',
+    async (_name, line) => {
+      const ws = await seeded(false)
+      try {
+        await run(ws, line)
+        expect(await ws.cache.exists('/data/a.docx')).toBe(false)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+})

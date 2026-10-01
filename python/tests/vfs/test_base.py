@@ -37,6 +37,7 @@ from mirage.types import (CapacityState, ContentType, FileStat, FileType,
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.ram.ram import RAMVFS
 from mirage.vfs.ram.store import RAMStore
+from mirage.vfs.registry import known_vfs_names, resolve_class, resolve_entry
 from mirage.workspace.mount.read_policy import check_read_capability
 from tests.fixtures.driver_ops import ops
 
@@ -285,6 +286,14 @@ def test_declaration_flags_default_off():
     assert vfs.read_revalidatable is False
 
 
+def test_written_bytes_are_kept_by_default():
+    assert make_vfs().keeps_written_bytes is True
+
+
+def test_keeps_written_bytes_forwarded():
+    assert make_vfs(keeps_written_bytes=False).keeps_written_bytes is False
+
+
 def test_prompts_set():
     vfs = make_vfs(prompt="wiki files", write_prompt="writable")
     assert vfs.prompt == "wiki files"
@@ -493,3 +502,18 @@ async def test_custom_driver_serves_cli_namespace_and_runtime():
         assert not row.is_dir
     finally:
         await ws.close()
+
+
+REWRITE_UPLOADS = {"onedrive", "sharepoint"}
+
+
+@pytest.mark.parametrize("name", known_vfs_names())
+def test_only_backends_that_rewrite_uploads_drop_written_bytes(name):
+    # SharePoint property promotion (OneDrive for Business is a SharePoint
+    # library) rewrites an uploaded Office file; every other backend was
+    # read back byte for byte, so it keeps what a write sent.
+    try:
+        cls = resolve_class(resolve_entry(name).vfs_path)
+    except ImportError as exc:
+        pytest.skip(f"{name}: {exc}")
+    assert cls.keeps_written_bytes is (name not in REWRITE_UPLOADS)

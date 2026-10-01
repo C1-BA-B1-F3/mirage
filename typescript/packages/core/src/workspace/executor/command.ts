@@ -59,8 +59,9 @@ import { handleDisown, handleFg, handleJobs, handleKill, handlePs, handleWait } 
 import { standardRequest } from '../../commands/config.ts'
 
 import { dropsMountCaches, handleCli } from './command/cli.ts'
-import { pathStat } from './builtins/links/index.ts'
-import { dropMountCaches, namespaceViewOf } from './command/run.ts'
+import { pathStat } from '../mount/namespace/probe.ts'
+import { namespaceViewOf } from '../mount/namespace/view.ts'
+import { dropMountCaches } from './command/run.ts'
 import type { NamespaceView, SessionView, StatPath } from '../../ops/types.ts'
 import { applyFindActions } from './find_action_dispatch.ts'
 import { sessionView } from '../session/state.ts'

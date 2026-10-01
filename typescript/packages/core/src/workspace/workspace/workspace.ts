@@ -90,7 +90,7 @@ import {
   runWithSession,
   runAsProgram,
 } from '../../context/session_context.ts'
-import { namespaceViewOf } from '../executor/command/run.ts'
+import { namespaceViewOf } from '../mount/namespace/view.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { makeVar, VarAttr } from '../../shell/variable.ts'
 import { enoent } from '../../utils/errors.ts'

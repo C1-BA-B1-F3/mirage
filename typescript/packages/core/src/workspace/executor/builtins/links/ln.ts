@@ -52,7 +52,12 @@ import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { absPath, fail, result } from '../shared.ts'
 import { posixRelative } from './links.ts'
-import { linkTargetStat, missStrerror, pathReaddir, resolvePathStat } from './probe.ts'
+import {
+  linkTargetStat,
+  missStrerror,
+  pathReaddir,
+  resolvePathStat,
+} from '../../../mount/namespace/probe.ts'
 import type { Result } from '../types.ts'
 
 const TARGET_DIR_LONG = '--target-directory'

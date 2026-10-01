@@ -82,6 +82,7 @@ from mirage.workspace.lookup.types import Consumer
 from mirage.workspace.mount import MountEntry, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.store import NamespaceStore
+from mirage.workspace.mount.namespace.view import namespace_view_of
 from mirage.workspace.mount.read_policy import check_read_capability
 from mirage.workspace.mount.spec import Mount
 from mirage.workspace.node.explain import explain_line
@@ -705,8 +706,6 @@ class Workspace:
         With no id, use this workspace's active session or its default.
         Calling a runtime directly remains a host API, outside shell admission.
         """
-        from mirage.workspace.executor.command.run import namespace_view_of
-
         session = (self._session_mgr.get(session_id)
                    if session_id is not None else self._op_session())
         token = set_current_session(session, self._session_mgr)

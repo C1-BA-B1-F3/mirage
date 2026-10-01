@@ -21,12 +21,4 @@ export {
   stripLinkOperands,
 } from './links.ts'
 export { handleLn } from './ln.ts'
-export {
-  linkTargetStat,
-  resolveLink,
-  pathExists,
-  pathReaddir,
-  pathStat,
-  resolvePathStat,
-} from './probe.ts'
 export { handleReadlink } from './readlink.ts'

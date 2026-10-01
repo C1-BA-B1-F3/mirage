@@ -11,16 +11,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
-"""Run one shard of a facet's targets as several runner processes.
+"""Run one shard of the facets' targets as several runner processes.
 
 A runner is one process whose `--target-jobs` lanes share a single core,
 and the battery is CPU-bound there, so a 4-core runner sat mostly idle.
-This driver splits the facet across the shard jobs by case count, then
-runs each target as its own runner process, `--procs` at a time, largest
-first, and prints each log whole as it finishes with the target's time.
+This driver splits the targets the host runs across the shard jobs by case
+count, then runs each target as its own runner process, `--procs` at a
+time, largest first, and prints each log whole as it finishes with the
+target's time.
 
-Usage: shard.py --shard I --shards N --procs P [--facet F]
-       [--emit-dir DIR] -- <runner command and its flags>
+Usage: shard.py --shard I --shards N --procs P --host python|typescript
+       [--facet F]... [--allow-skip SERVICES] [--emit-dir DIR]
+       -- <runner command and its flags>
 """
 
 import argparse
@@ -62,23 +64,40 @@ def case_counts(root: Path) -> Counter:
     return counts
 
 
-def work_items(manifest: dict, facet: str,
-               counts: Counter) -> list[tuple[list[str], int]]:
-    """The facet's targets as (ids, weight), one runner process each.
+def runs_on(target: dict, host: str) -> bool:
+    """Whether the runner for `host` runs this target at all.
 
-    A target on a `shared` service shares one world with every other target
-    on it, so those travel together as one item, the way the runner gives
-    them one lane.
+    Args:
+        target (dict): the target manifest entry.
+        host (str): `python` or `typescript`, the runner's language.
+    """
+    return any(h == host or h.startswith(f"{host}-") for h in target["hosts"])
+
+
+def work_items(manifest: dict, facets: list[str], host: str, skip: set[str],
+               counts: Counter) -> list[tuple[list[str], int]]:
+    """The facets' targets as (ids, weight), one runner process each.
+
+    A target the host does not run, or one on a service this job leaves to
+    another, is left out: it would cost a process that only prints a skip,
+    and its cases would weigh on the split as if they ran. A target on a
+    `shared` service shares one world with every other target on it, so
+    those travel together as one item, the way the runner gives them one
+    lane.
 
     Args:
         manifest (dict): targets.json.
-        facet (str): the facet to run.
+        facets (list[str]): the facets to run.
+        host (str): `python` or `typescript`, the runner's language.
+        skip (set[str]): services another job provisions.
         counts (Counter): cases per target.
     """
     services = manifest.get("services", {})
     lanes: dict[str, list[str]] = {}
     for target in manifest["targets"]:
-        if target.get("facet", "core") != facet:
+        if target.get("facet", "core") not in facets:
+            continue
+        if not runs_on(target, host) or target.get("service") in skip:
             continue
         service = target.get("service")
         shared = service is not None and services.get(service, {}).get(
@@ -135,7 +154,11 @@ def main() -> None:
     parser.add_argument("--shard", type=int, required=True)
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--procs", type=int, required=True)
-    parser.add_argument("--facet", default="core")
+    parser.add_argument("--host",
+                        required=True,
+                        choices=("python", "typescript"))
+    parser.add_argument("--facet", action="append", dest="facets")
+    parser.add_argument("--allow-skip", dest="allow_skip", default="")
     parser.add_argument("--emit-dir", dest="emit_dir")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -144,7 +167,12 @@ def main() -> None:
         parser.error("needs 0 <= --shard < --shards, --procs >= 1 and a "
                      "runner command after --")
     manifest = json.loads((INTEG / "targets.json").read_text())
-    items = work_items(manifest, args.facet, case_counts(INTEG))
+    skip = {name for name in args.allow_skip.split(",") if name}
+    unknown = skip - set(manifest.get("services", {}))
+    if unknown:
+        parser.error(f"--allow-skip names no service: {', '.join(unknown)}")
+    items = work_items(manifest, args.facets or ["core"], args.host, skip,
+                       case_counts(INTEG))
     mine = split(items, args.shards)[args.shard]
     if not mine:
         print(f"shard {args.shard} of {args.shards} got no targets",

@@ -299,6 +299,10 @@ jobs:
         image: nextcloud:30-apache
         ports:
           - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
         env:
           SQLITE_DATABASE: nextcloud
           NEXTCLOUD_ADMIN_USER: admin
@@ -518,9 +522,13 @@ jobs:
 
       # One runner process per target, four at a time: a runner's
       # --target-jobs lanes share one core, and the battery is CPU-bound
-      # there. shard.py splits the facet across the shard jobs by case count
-      # and prints each target's time at the end, which is what to read
-      # before changing --procs or the shard count.
+      # there. shard.py splits the targets this host runs across the shard
+      # jobs by case count, leaving out the services --allow-skip names
+      # (other jobs provision and run those), and prints each target's time
+      # at the end, which is what to read before changing --procs or the
+      # shard count. The http facet rides the same split: its fixture server
+      # is a TypeScript kit fake the adapter starts, and this python-host job
+      # already has node for it.
       - name: Run declarative battery (python hosts)
         env:
           SHARD_INDEX: ${{ matrix.shard }}
@@ -528,9 +536,10 @@ jobs:
         run: >-
           ./python/.venv/bin/python integ/runners/tools/shard.py
           --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --host python --facet core --facet http
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
           --emit-dir "$GITHUB_WORKSPACE/emit/python"
           -- ./python/.venv/bin/python integ/runners/python/main.py --strict
-          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
       # integ-shared-parity diffs these against the typescript shards'
       # instead of running both hosts over the same targets a second time.
       - name: Keep the battery outputs for the parity diff
@@ -540,14 +549,6 @@ jobs:
           path: emit/python
           if-no-files-found: error
           retention-days: 1
-      # Moved here from the `integ` job when the HTTP fixture server became a
-      # TypeScript kit fake: the adapter still starts it, but the interpreter is
-      # tsx now, and this is the python-host job that already has node for
-      # exactly that reason.
-      # HTTP is independent of the core shards and runs once per language.
-      - name: Run curl/wget battery (HTTP fixture started by the adapter)
-        if: matrix.shard == 0
-        run: ./python/.venv/bin/python integ/runners/python/main.py --facet http --strict
 
   # Keep self-tests off the battery's critical path and timeout budget. These
   # checks start their own fakes; they do not need the shared service fleet.
@@ -716,6 +717,9 @@ jobs:
           build-packages: "false"
           typescript-build-artifact: integ-typescript-dist
 
+      # The http facet rides the same split: its fixture server is python
+      # (the adapter's startPythonServer), which this job has and integ-ts
+      # does not.
       - name: Run declarative battery (typescript hosts)
         working-directory: integ
         env:
@@ -724,9 +728,10 @@ jobs:
         run: >-
           ../python/.venv/bin/python runners/tools/shard.py
           --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --host typescript --facet core --facet http
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
           --emit-dir "$GITHUB_WORKSPACE/emit/typescript"
           -- pnpm exec tsx runners/typescript/main.ts --strict
-          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
       - name: Keep the battery outputs for the parity diff
         uses: actions/upload-artifact@v7
         with:
@@ -734,15 +739,6 @@ jobs:
           path: emit/typescript
           if-no-files-found: error
           retention-days: 1
-
-      # The fixture server is python (started by the adapter through
-      # startPythonServer), so this runs here rather than in integ-ts, which
-      # has no python toolchain.
-      # HTTP is independent of the core shards and runs once per language.
-      - name: Run curl/wget battery (typescript host)
-        if: matrix.shard == 0
-        working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --facet http --strict
 
   # The shared battery jobs prove each language passes its own battery. This one
   # runs both emitters and diffs them case by case, so a change that breaks
@@ -901,6 +897,66 @@ jobs:
         image: nextcloud:30-apache
         ports:
           - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
+        env:
+          SQLITE_DATABASE: nextcloud
+          NEXTCLOUD_ADMIN_USER: admin
+          NEXTCLOUD_ADMIN_PASSWORD: admin123
+          NEXTCLOUD_TRUSTED_DOMAINS: localhost
+    env:
+      NEXTCLOUD_URL: http://localhost:8080/remote.php/dav/files/admin/
+      NEXTCLOUD_USERNAME: admin
+      NEXTCLOUD_PASSWORD: admin123
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: ./.github/actions/setup-uv
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Wait for Nextcloud and tune it for the battery
+        uses: ./.github/actions/nextcloud-tune
+        # A composite step cannot carry timeout-minutes, so the bound goes on
+        # the caller, where it covers the whole action.
+        timeout-minutes: 10
+        with:
+          container-id: ${{ job.services.nextcloud.id }}
+          # Read from the job env the battery itself authenticates with, so
+          # the reset and the battery cannot disagree about the password.
+          admin-password: ${{ env.NEXTCLOUD_PASSWORD }}
+
+      - name: Run declarative battery on nextcloud
+        run: ./python/.venv/bin/python integ/runners/python/main.py --target nextcloud --strict
+
+  # The watch batteries poll and wait on deliveries, so they get a runner of
+  # their own rather than queueing behind the nextcloud corpus battery in
+  # integ-data; the path filter is the same one. The notion battery rides
+  # here because its fake needs the node toolchain this job sets up anyway,
+  # which leaves integ-data a python-only job.
+  integ-watch:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.data == 'true') }}
+    runs-on: ubuntu-latest
+    services:
+      nextcloud:
+        image: nextcloud:30-apache
+        ports:
+          - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
         env:
           SQLITE_DATABASE: nextcloud
           NEXTCLOUD_ADMIN_USER: admin
@@ -936,7 +992,8 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       # integ/generated/ is gitignored, so every kit fake this job starts
-      # (dropbox, box, onedrive) fails to import its client until this runs.
+      # (notion, dropbox, box, onedrive) fails to import its client until this
+      # runs.
       # The battery jobs get it from the integ-battery-setup action; this job
       # does not use that action and has to ask for it itself.
       - name: Generate integ Prisma clients
@@ -966,9 +1023,6 @@ jobs:
           # Read from the job env the battery itself authenticates with, so
           # the reset and the battery cannot disagree about the password.
           admin-password: ${{ env.NEXTCLOUD_PASSWORD }}
-
-      - name: Run declarative battery on nextcloud
-        run: ./python/.venv/bin/python integ/runners/python/main.py --target nextcloud --strict
 
       # disk and ssh need nothing (tempdir, in-process SFTP server);
       # dropbox is an out-of-process fake started below; s3 and gridfs need a
@@ -1916,7 +1970,7 @@ jobs:
   gate:
     name: integ-gate
     runs-on: ubuntu-latest
-    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-selftests, integ-shared-parity, integ-database, integ-data, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
+    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-selftests, integ-shared-parity, integ-database, integ-data, integ-watch, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
     if: always()
     steps:
       - name: Check required jobs

@@ -734,7 +734,25 @@
             "SLACK_TOKEN": "xoxb-integ",
             "ROLE": "analyst"
           }
-        },
+        }
+      }
+    },
+    {
+      "id": "s3-walled",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "s3",
+      "mounts": [
+        {
+          "path": "/data",
+          "vfs": "s3",
+          "backend": "s3",
+          "bucket": "data"
+        }
+      ],
+      "sessions": {
         "walled": {
           "commands": {
             "deny": [

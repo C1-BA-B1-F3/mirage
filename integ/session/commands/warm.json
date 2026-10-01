@@ -1,6 +1,6 @@
 {
   "targets": [
-    "s3"
+    "s3-walled"
   ],
   "cases": [
     {

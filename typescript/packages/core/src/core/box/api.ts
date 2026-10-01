@@ -264,7 +264,7 @@ export async function uploadNewFile(
 ): Promise<BoxItem> {
   return (await boxUploadMultipart(
     tm,
-    `${tm.apiBase}/files/content`,
+    `${tm.uploadBase}/files/content`,
     { name, parent: { id: parentId } },
     name,
     data,
@@ -279,7 +279,7 @@ export async function uploadFileVersion(
 ): Promise<BoxItem> {
   return (await boxUploadMultipart(
     tm,
-    `${tm.apiBase}/files/${fileId}/content`,
+    `${tm.uploadBase}/files/${fileId}/content`,
     { name },
     name,
     data,

@@ -22,8 +22,8 @@ class BoxConfig(BaseModel):
                               arbitrary_types_allowed=True,
                               extra="forbid")
 
-    # API origin override (e.g. an integ fake: http://127.0.0.1:5096). Token
-    # and API URLs derive from it; defaults to the real api.box.com endpoints.
+    # API origin override (e.g. an integ fake: http://127.0.0.1:5096). Token,
+    # API and upload URLs derive from it; defaults to the real Box hosts.
     endpoint: str | None = None
     client_id: str | None = None
     client_secret: SecretStr | None = None

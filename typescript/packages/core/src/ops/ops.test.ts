@@ -528,6 +528,29 @@ describe('Ops is one door with the dispatcher', () => {
     await expect(ws.vfs.readFileText('/m/books.tally')).rejects.toThrow()
   })
 
+  // Only whether an entry is there (and still fresh) matters to a user
+  // renderer; its bytes are never served, so they are never transferred.
+  it('never fetches the cached bytes for a user renderer read', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    })
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    Object.assign(ws.cache, {
+      get: (path: string) => Promise.reject(new Error(`fetched the cached bytes of ${path}`)),
+    })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
+  })
+
   it('refuses a write to a read-only mount at the door', async () => {
     const vfs = new RAMVFS()
     const ops = new OpsRegistry()

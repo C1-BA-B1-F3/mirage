@@ -230,3 +230,17 @@ async def test_a_user_renderer_still_renders_under_fresh():
     ws = _fresh_rendering_workspace(_CachingRAM())
     await _seed(ws, "/data/books.tally")
     assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+@pytest.mark.asyncio
+async def test_a_user_renderer_read_never_fetches_the_cached_bytes():
+    # Only whether an entry is there (and still fresh) matters to a user
+    # renderer; its bytes are never served, so they are never transferred.
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/books.tally")
+
+    async def no_fetch(path, *args, **kwargs):
+        raise AssertionError(f"fetched the cached bytes of {path}")
+
+    ws.cache.get = no_fetch
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"

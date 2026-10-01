@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   epochToIso,
+  epochToIsoZ,
   inMtimeWindow,
   isoToEpoch,
   parseDateExpr,
@@ -47,6 +48,15 @@ describe('epochToIso', () => {
   })
   it('truncates sub-second input (parity with the Python converter)', () => {
     expect(epochToIso(1609459200.987)).toBe('2021-01-01T00:00:00Z')
+  })
+})
+
+describe('epochToIsoZ', () => {
+  it('spells a whole second the way toIsoZ does', () => {
+    expect(epochToIsoZ(1609459200)).toBe('2021-01-01T00:00:00Z')
+  })
+  it('keeps the fraction (parity with the Python converter)', () => {
+    expect(epochToIsoZ(1609459200.5)).toBe('2021-01-01T00:00:00.500000Z')
   })
 })
 

@@ -35,6 +35,13 @@ export function epochToIso(seconds: number): string {
   return new Date(Math.floor(seconds) * 1000).toISOString().replace('.000Z', 'Z')
 }
 
+// Epoch seconds in toIsoZ's spelling, the fraction kept, matching Python
+// epoch_to_iso_z: what an attribute overlay renders a time it holds as, since
+// `touch -d` stores a fraction and a backend that keeps its own times keeps it.
+export function epochToIsoZ(seconds: number): string {
+  return toIsoZ(new Date(Math.round(seconds * 1000)))
+}
+
 // Inverse of epochToIso; a naive stamp (no Z/offset, e.g. a `touch -t`
 // overlay time) is read as UTC so this matches the Python isoToEpoch. JS
 // interprets an offset-less date-time as local, so append Z when absent.

@@ -23,7 +23,8 @@ from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic_bind.adapter import (CommandIO, Operation,
                                                           dir_aware_stat,
                                                           dir_aware_stream,
-                                                          with_dir_guard)
+                                                          with_dir_guard,
+                                                          with_settled_writes)
 from mirage.commands.config import CommandOpts
 from mirage.context import (reset_admission, reset_current_session,
                             reset_mount_gate, reset_op_policies, set_admission,
@@ -1125,3 +1126,61 @@ async def test_dir_guard_distinguishes_empty_files_from_directory_eof(is_dir):
         assert await ops.read_bytes(None, path) == b""
         assert await _drain(ops.read_stream(None, path)) == [b""]
         assert await ops.read_range(None, path) == b""
+
+
+async def _done(*_args, **_kwargs) -> None:
+    return None
+
+
+async def _missing(*_args, **_kwargs) -> None:
+    raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+
+
+@pytest.mark.asyncio
+async def test_settled_writes_settle_each_write_as_the_dispatcher_names_it():
+    settled: list[tuple[str, str, bool]] = []
+
+    async def settle(op: str, path: str, parents: bool) -> None:
+        settled.append((op, path, parents))
+
+    io = CommandIO(write=_done,
+                   mkdir=_done,
+                   copy=_done,
+                   rm_r=_done,
+                   readdir=_done,
+                   read_bytes=_done,
+                   read_stream=_done,
+                   stat=_done,
+                   is_mounted=lambda _a: True)
+    ops = with_settled_writes(io, settle)
+    accessor = NOOPAccessor()
+    await ops.write(accessor, PathSpec.from_str_path("/data/f"), b"")
+    await ops.mkdir(accessor,
+                    PathSpec.from_str_path("/data/a/b"),
+                    parents=True)
+    await ops.copy(accessor, PathSpec.from_str_path("/data/f"),
+                   PathSpec.from_str_path("/data/g"))
+    await ops.rm_r(accessor, PathSpec.from_str_path("/data/a"))
+    assert settled == [
+        ("write", "/data/f", False), ("mkdir", "/data/a/b", True),
+        ("write", "/data/g", False), ("rmdir", "/data/a", False)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_settled_writes_settle_nothing_when_the_op_fails():
+    settled: list[str] = []
+
+    async def settle(op: str, _path: str, _parents: bool) -> None:
+        settled.append(op)
+
+    ops = with_settled_writes(
+        CommandIO(write=_missing,
+                  readdir=_done,
+                  read_bytes=_done,
+                  read_stream=_done,
+                  stat=_done,
+                  is_mounted=lambda _a: True), settle)
+    with pytest.raises(FileNotFoundError):
+        await ops.write(NOOPAccessor(), PathSpec.from_str_path("/data/f"), b"")
+    assert settled == []

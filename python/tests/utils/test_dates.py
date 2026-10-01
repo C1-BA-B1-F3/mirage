@@ -3,9 +3,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from mirage.utils.dates import (epoch_to_iso, iso_timestamp, iso_to_epoch,
-                                now_iso, ns_to_iso, parse_date_expr,
-                                parse_posix_time, timestamp_iso, to_iso_z)
+from mirage.utils.dates import (epoch_to_iso, epoch_to_iso_z, iso_timestamp,
+                                iso_to_epoch, now_iso, ns_to_iso,
+                                parse_date_expr, parse_posix_time,
+                                timestamp_iso, to_iso_z)
 from mirage.utils.timezone import resolve_tz
 
 NOW = datetime(2026, 8, 16, 13, 45, 30)
@@ -254,6 +255,14 @@ def test_epoch_to_iso_whole_second():
 
 def test_epoch_to_iso_truncates_sub_second():
     assert epoch_to_iso(1609459200.987) == "2021-01-01T00:00:00Z"
+
+
+def test_epoch_to_iso_z_whole_second():
+    assert epoch_to_iso_z(1609459200) == "2021-01-01T00:00:00Z"
+
+
+def test_epoch_to_iso_z_keeps_the_fraction():
+    assert epoch_to_iso_z(1609459200.5) == "2021-01-01T00:00:00.500000Z"
 
 
 def test_iso_to_epoch_inverts_epoch_to_iso():

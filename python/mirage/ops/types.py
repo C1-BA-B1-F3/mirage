@@ -61,6 +61,14 @@ LinkTargetStat = Callable[[str], Awaitable["FileStat | None"]]
 # is handed the names from above, the same names the ops surface merges
 # into its own readdir.
 ChildMounts = Callable[[str], list[str]]
+# Settle the overlay half of a write a command's backend slot made, as
+# the dispatcher settles its own ops: ``(op, path, parents)``, ``op``
+# named the way the dispatcher names it (``write``, ``mkdir``,
+# ``unlink``, ``rmdir``).
+SettleWrite = Callable[[str, str, bool], Awaitable[None]]
+# Whether the attr overlay holds a time at or under a path, which a
+# backend's native find cannot see.
+TimesUnder = Callable[[str], bool]
 # One session variable's value, None when unset. Sync: expansion-grade
 # reads must stay dict lookups.
 EnvGet = Callable[[str], "str | None"]
@@ -233,7 +241,7 @@ class NamespaceView:
     field it wants, so there is no signature for the dispatcher to
     inspect and no registry to keep in step. Fields default to None so
     a unit test constructs only what it exercises; inside a workspace
-    the dispatcher fills all five.
+    the dispatcher fills them all.
     """
 
     # The symlink facts; None when the namespace holds no links, which
@@ -245,6 +253,13 @@ class NamespaceView:
     stat_overlay: StatOverlay | None = None
     # Child names the namespace owes a directory (mounts and links).
     child_mounts: ChildMounts | None = None
+    # Where a command's slot writes settle in the attr overlay, so a
+    # write drops a stale ``touch -d`` time and a removal its mode,
+    # whichever door the write came through.
+    settle_write: SettleWrite | None = None
+    # Whether the overlay holds a time at or under a path, so find
+    # judges its time tests by the overlay instead of the backend's.
+    times_under: TimesUnder | None = None
     # The workspace user (what whoami prints), None when no agent ever
     # claimed the workspace. What an owner-rendering command prints in
     # the owner column for an entry whose backend reports no uid.

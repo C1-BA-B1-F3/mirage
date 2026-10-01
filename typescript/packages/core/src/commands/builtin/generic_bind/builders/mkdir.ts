@@ -33,7 +33,8 @@ import { mountPrefixOf } from '../../../../utils/key_prefix.ts'
 import { CycleError, walkNodes } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { MkdirOp } from '../../../../vfs/types.ts'
-import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
+import { type Builder, type CommandIO, requireOp, resolveGlobOf } from '../adapter.ts'
+import type { CommandOpts } from '../../../config.ts'
 
 /**
  * Make one name of a walk a directory, or say why it is not one.
@@ -153,6 +154,54 @@ export async function makeDirectory<A extends Accessor>(
   return null
 }
 
+/** How a mkdir sets the mode of a directory it made. */
+export type ApplyMode = (path: PathSpec, bits: number) => Promise<unknown>
+
+/**
+ * The mode a mkdir gives each directory it names, and how it sets one.
+ *
+ * The mode goes through the op door, the way chmod's does: the door applies
+ * what the backend holds natively and keeps the rest in the attr overlay,
+ * where a bare setattr slot drops what its store cannot hold. The slot
+ * answers only outside a workspace, with no door. Shared by the generic
+ * builder and the keyed-store override, so a mode means the same on every
+ * backend.
+ *
+ * Throws the refusal GNU words for a mode it cannot read, and for one this
+ * mount has no way to set.
+ */
+export function mkdirMode<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
+  opts: CommandOpts,
+  modeText: string | null,
+): [number | null, ApplyMode | undefined] {
+  const { setAttrs } = ops
+  const { dispatch } = opts
+  const apply: ApplyMode | undefined =
+    dispatch !== undefined
+      ? (path, bits) => dispatch('setattr', path, [], { mode: bits })
+      : setAttrs !== undefined
+        ? (path, bits) => Promise.resolve(setAttrs(accessor, path, { mode: bits }))
+        : undefined
+  if (modeText !== null) {
+    // Symbolic clauses build on what mirage renders for a new directory;
+    // `-m` is applied after the create, so the session's umask does not
+    // reach it, which is GNU's rule too.
+    const mode = parseChmod(modeText, DEFAULT_DIR_MODE)
+    if (mode === null) throw new Error(`mkdir: invalid mode '${modeText}'`)
+    if (apply === undefined) throw new Error('mkdir: --mode is not supported on this backend')
+    return [mode, apply]
+  }
+  if (apply === undefined) return [null, undefined]
+  // A new directory is 0777 masked by the session's umask. Only a mask away
+  // from bash's default costs a setattr, since 755 is what every backend
+  // already renders for a fresh directory; parents made by `-p` keep that
+  // default.
+  const umask = sessionUmask()
+  return [umask !== DEFAULT_UMASK ? 0o777 & ~umask : null, apply]
+}
+
 export const MKDIR_BUILDER: Builder = {
   name: 'mkdir',
   write: true,
@@ -171,26 +220,8 @@ export const MKDIR_BUILDER: Builder = {
       ]
     }
     const idx = opts.index ?? undefined
-    const { setAttrs } = ops
     const mkdir = requireOp(ops.mkdir, 'mkdir')
-    let mode: number | null = null
-    if (modeText !== null) {
-      // Symbolic clauses build on what mirage renders for a new
-      // directory; `-m` is applied after the create, so the session's
-      // umask does not reach it, which is GNU's rule too.
-      mode = parseChmod(modeText, DEFAULT_DIR_MODE)
-      if (mode === null) throw new Error(`mkdir: invalid mode '${modeText}'`)
-      if (setAttrs === undefined) {
-        throw new Error('mkdir: --mode is not supported on this backend')
-      }
-    } else if (setAttrs !== undefined) {
-      // A new directory is 0777 masked by the session's umask. Only a
-      // mask away from bash's default costs a setattr, since 755 is what
-      // every backend already renders for a fresh directory; parents
-      // made by `-p` keep that default.
-      const umask = sessionUmask()
-      if (umask !== DEFAULT_UMASK) mode = 0o777 & ~umask
-    }
+    const [mode, applyMode] = mkdirMode(ops, accessor, opts, modeText)
     const resolved = await resolveGlobOf(ops)(accessor, paths, idx)
     const lines: string[] = []
     const errors: string[] = []
@@ -208,7 +239,7 @@ export const MKDIR_BUILDER: Builder = {
       }
       // -m applies to the named directory only; any parents made by -p keep
       // the default mode (GNU).
-      if (mode !== null && setAttrs !== undefined) await setAttrs(accessor, p, { mode })
+      if (mode !== null && applyMode !== undefined) await applyMode(p, mode)
       if (verbose) lines.push(`mkdir: created directory '${p.virtual}'`)
     }
     const out = lines.length > 0 ? new TextEncoder().encode(lines.join('\n') + '\n') : null

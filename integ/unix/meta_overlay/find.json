@@ -1,8 +1,8 @@
 {
   "cases": [
     {
-      "id": "ometa_stat_type_survives_touch",
-      "seq": 201015,
+      "id": "ometa_find_newer_compares_overlay_times",
+      "seq": 201023,
       "targets": [
         "opfs",
         "s3",
@@ -20,16 +20,16 @@
         "sharepoint-prefix",
         "box"
       ],
-      "command": "touch -t 202401010000 /data/metao/f.txt && stat -c %F /data/metao/f.txt",
+      "command": "echo a > /data/metao/nwa && echo b > /data/metao/nwb && touch -d '2024-01-01 00:00:00' /data/metao/nwa && touch -d '2025-01-01 00:00:00' /data/metao/nwb && find /data/metao -name 'nw?' -newer /data/metao/nwa",
       "expect": {
         "exit": 0,
-        "stdout": "regular file\n",
+        "stdout": "/data/metao/nwb\n",
         "stderr": ""
       }
     },
     {
-      "id": "ometa_stat_c_mtime",
-      "seq": 201016,
+      "id": "ometa_find_newermt_judges_overlay_times",
+      "seq": 201024,
       "targets": [
         "opfs",
         "s3",
@@ -47,16 +47,16 @@
         "sharepoint-prefix",
         "box"
       ],
-      "command": "touch -t 202401010000 /data/metao/sc.txt && stat -c \"%y|%Y\" /data/metao/sc.txt",
+      "command": "find /data/metao -name 'nw?' -newermt 2024-06-01",
       "expect": {
         "exit": 0,
-        "stdout": "2024-01-01 00:00:00.000000000 +0000|1704067200\n",
+        "stdout": "/data/metao/nwb\n",
         "stderr": ""
       }
     },
     {
-      "id": "ometa_stat_c_mode",
-      "seq": 201017,
+      "id": "ometa_find_mtime_judges_overlay_times",
+      "seq": 201025,
       "targets": [
         "opfs",
         "s3",
@@ -74,10 +74,10 @@
         "sharepoint-prefix",
         "box"
       ],
-      "command": "chmod 640 /data/metao/sc.txt && stat -c \"%a|%A\" /data/metao/sc.txt",
+      "command": "find /data/metao -name 'nw?' -mtime -1",
       "expect": {
         "exit": 0,
-        "stdout": "640|-rw-r-----\n",
+        "stdout": "",
         "stderr": ""
       }
     }

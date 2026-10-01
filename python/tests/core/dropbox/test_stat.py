@@ -155,29 +155,29 @@ _FALLBACK_CASES = [
         "id": "id:x",
         "name": "f.txt",
         "size": 3,
-    }, "id:x", 3, "", None),
+    }, "id:x", 3, None, None),
     ({
         ".tag": "file",
         "name": "f.txt",
         "path_display": "/d/f.txt",
         "size": 3,
-    }, "/d/f.txt", 3, "", None),
+    }, "/d/f.txt", 3, None, None),
     ({
         ".tag": "file",
         "name": "f.txt",
         "size": 3,
-    }, "f.txt", 3, "", None),
+    }, "f.txt", 3, None, None),
     ({
         ".tag": "file",
         "id": "id:x",
         "name": "f.txt",
-    }, "id:x", None, "", None),
+    }, "id:x", None, None, None),
     ({
         ".tag": "file",
         "id": "id:x",
         "name": "f.txt",
         "size": "big",
-    }, "id:x", None, "", None),
+    }, "id:x", None, None, None),
 ]
 
 
@@ -186,7 +186,7 @@ _FALLBACK_CASES = [
                          _FALLBACK_CASES)
 async def test_stat_entry_field_fallbacks(dropbox_accessor, entry, dropbox_id,
                                           size, modified, fingerprint):
-    # _stat_from_entry's fallbacks: server_modified→client_modified→"",
+    # _stat_from_entry's fallbacks: server_modified→client_modified→None,
     # id→path_display→name, and a non-int/absent size renders as None
     # (the unknown-size machinery, never a fabricated number).
     rpc = FakeDropboxRpc(metadata=entry)

@@ -25,7 +25,8 @@ from mirage.cache.read_through import (cache_aware_read_bytes,
 from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
                                                           with_dir_guard,
                                                           with_path_guards,
-                                                          with_policy_guard)
+                                                          with_policy_guard,
+                                                          with_settled_writes)
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts, command
@@ -292,9 +293,13 @@ async def _run_with_namespace_globs(ops: CommandIO,
     # coded pre_ops deny fires before a warm serve, the dispatcher's
     # own order at the op door. A probe answer is served below the path
     # guards (`with_probe_answers` on the raw adapter), so they still
-    # judge every path before it.
-    bound = with_dir_guard(with_policy_guard(finish(
-        with_path_guards(stamped))))
+    # judge every path before it. Writes settle in the attr overlay
+    # innermost, once the backend op succeeded and on the path it was
+    # handed.
+    settle = opts.ns.settle_write if opts.ns is not None else None
+    bound = with_dir_guard(
+        with_policy_guard(
+            finish(with_path_guards(with_settled_writes(stamped, settle)))))
     return await fn(bound, accessor, paths, texts, opts)
 
 

@@ -207,6 +207,29 @@ describe('removeRuntime', () => {
     }
   })
 
+  it('refuses a repl call that waited out the removal behind a line', async () => {
+    const alpha = new Engine('alpha')
+    const gate = latch()
+    alpha.release = gate.promise
+    const ws = await workspace(alpha)
+    try {
+      const line = python3(ws)
+      await alpha.entered.promise
+      const repl = ws.executePythonRepl('x')
+      const removing = ws.removeRuntime('alpha')
+      gate.open()
+      await line
+      await removing
+      const result = await repl
+      expect([result.exitCode, DEC.decode(result.stderr ?? new Uint8Array())]).toEqual([
+        1,
+        'python3: alpha: runtime was removed from the workspace\n',
+      ])
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('refuses the removed python workspace option', () => {
     expect(() => new Workspace({}, { python: { denyPackages: ['requests'] } } as never)).toThrow(
       /'python' workspace option was removed/,

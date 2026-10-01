@@ -1594,11 +1594,15 @@ export class Workspace {
     if (bound === undefined || !isEvaluator(bound)) {
       throw new Error('no evaluator runtime bound for the repl')
     }
-    const release = bound.admit()
     try {
-      return await this.serializeLine(sessionId, undefined, () =>
-        bound.eval(code, { session: sessionId }),
-      )
+      return await this.serializeLine(sessionId, undefined, async () => {
+        const release = bound.admit()
+        try {
+          return await bound.eval(code, { session: sessionId })
+        } finally {
+          release()
+        }
+      })
     } catch (err) {
       const unavailable =
         err instanceof PyodideUnavailableError || err instanceof MontyUnavailableError
@@ -1610,8 +1614,6 @@ export class Workspace {
         exitCode: unavailable ? 127 : 1,
         status: 'complete',
       }
-    } finally {
-      release()
     }
   }
 

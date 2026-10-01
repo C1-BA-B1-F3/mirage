@@ -142,9 +142,11 @@ class Runtimes:
         identity = id(entry)
         closing = asyncio.create_task(_retire(entry))
         self._retiring[identity] = closing
-        closing.add_done_callback(
-            lambda _task: self._retiring.pop(identity, None))
-        await asyncio.shield(closing)
+        try:
+            await asyncio.shield(closing)
+        finally:
+            if closing.done():
+                self._retiring.pop(identity, None)
 
     async def close(self) -> None:
         """Close every entry, including the ones still being removed."""

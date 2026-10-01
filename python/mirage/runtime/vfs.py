@@ -22,6 +22,7 @@ from mirage.runtime.handles import plan_flush
 from mirage.runtime.resolver import MountResolver
 from mirage.runtime.types import DispatchFn, RuntimeContext, VFSEntry, VFSStat
 from mirage.types import FileStat, PathSpec
+from mirage.utils.context_scope import ContextScope
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import norm
 from mirage.utils.stat_view import (content_size, device_rdev, is_dir, is_link,
@@ -53,10 +54,10 @@ class RuntimeVFS:
     that caller. The hop cannot carry the launching task's contextvars:
     what travels is the calling thread's context, and the threads guest
     calls arrive on (monty's tokio workers, wasmtime's run thread) never
-    had the session bound. The dispatch it is given carries them
-    instead: a runtime builds its VFS with ``RuntimeVFS.of(context)``,
-    over the context's scoped dispatch, which replays the launching
-    task's session and op recorder around every op. Session mount modes are
+    had the session bound. So the VFS replays the context it was built
+    in (a ``ContextScope``: the session, the op recorder, every
+    contextvar) around each dispatched op, the same bracket FUSE's
+    ``MountCore`` puts around its ops. Session mount modes are
     then enforced inside the op exactly as they are for a shell command,
     and a guest's file I/O lands on the typed line's ledger exactly as
     a shell command's does.
@@ -72,7 +73,7 @@ class RuntimeVFS:
                  dispatch: DispatchFn,
                  loop: asyncio.AbstractEventLoop,
                  resolver: MountResolver | None = None) -> None:
-        self._dispatch = dispatch
+        self._dispatch = ContextScope().wrap_async(dispatch)
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()

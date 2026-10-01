@@ -14,9 +14,10 @@
 
 import { describe, expect, it } from 'vitest'
 import { Runtime } from '../../runtime/base.ts'
-import { LINE_EXECUTOR, type LineExecutor } from '../../runtime/mixin.ts'
+import { EVALUATOR, LINE_EXECUTOR, type Evaluator, type LineExecutor } from '../../runtime/mixin.ts'
 import { PythonRuntime } from '../../runtime/python/base.ts'
-import type { RunArgs, RunResult } from '../../runtime/types.ts'
+import { evalWithCtx } from '../../runtime/script.ts'
+import type { EvalResult, RunArgs, RunResult } from '../../runtime/types.ts'
 import { MountMode } from '../../types.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
@@ -38,7 +39,8 @@ function latch(): Latch {
   return { promise, open }
 }
 
-class Engine extends PythonRuntime {
+class Engine extends PythonRuntime implements Evaluator {
+  readonly [EVALUATOR] = true as const
   closed = 0
   entered = latch()
   release: Promise<void> = Promise.resolve()
@@ -56,6 +58,18 @@ class Engine extends PythonRuntime {
       })
     })
     return { stdout: ENC.encode(`${this.name}\n`), stderr: null, exitCode: 0 }
+  }
+
+  async eval(): Promise<EvalResult> {
+    this.entered.open()
+    await this.release
+    return {
+      value: this.name,
+      stdout: new Uint8Array(),
+      stderr: null,
+      exitCode: 0,
+      status: 'complete',
+    }
   }
 
   override close(): Promise<void> {
@@ -168,5 +182,34 @@ describe('removeRuntime', () => {
     await removing
     expect(await line).toBe('AbortError')
     expect(alpha.closed).toBe(1)
+  })
+
+  it('waits for a running evaluation too', async () => {
+    const alpha = new Engine('alpha')
+    const gate = latch()
+    alpha.release = gate.promise
+    const ws = await workspace(alpha)
+    try {
+      const evaluating = evalWithCtx('x', {}, alpha, 5, 'test')
+      await alpha.entered.promise
+      let removed = false
+      const removing = ws.removeRuntime('alpha').then(() => {
+        removed = true
+      })
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect([removed, alpha.closed]).toEqual([false, 0])
+      gate.open()
+      expect(await evaluating).toBe('alpha')
+      await removing
+      expect(alpha.closed).toBe(1)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('refuses the removed python workspace option', () => {
+    expect(() => new Workspace({}, { python: { denyPackages: ['requests'] } } as never)).toThrow(
+      /'python' workspace option was removed/,
+    )
   })
 })

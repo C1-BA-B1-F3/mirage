@@ -19,17 +19,19 @@ import pytest
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.io.types import materialize
 from mirage.runtime.base import Runtime
-from mirage.runtime.mixin import LineExecutorMixin
+from mirage.runtime.mixin import EvaluatorMixin, LineExecutorMixin
 from mirage.runtime.python.base import PythonRuntime
-from mirage.runtime.types import RunArgs, RunResult
+from mirage.runtime.script import eval_with_ctx
+from mirage.runtime.types import EvalResult, RunArgs, RunResult
 
 
-class Engine(PythonRuntime):
+class Engine(PythonRuntime, EvaluatorMixin):
     """A python3 engine that answers its own name and records closing."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, close_error: str | None = None) -> None:
         super().__init__()
         self.name = name
+        self.close_error = close_error
         self.closed = 0
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
@@ -42,8 +44,15 @@ class Engine(PythonRuntime):
                          stderr=None,
                          exit_code=0)
 
+    async def eval(self, code, *, inputs=None, session=None) -> EvalResult:
+        self.entered.set()
+        await self.release.wait()
+        return EvalResult(value=self.name, stdout=b"")
+
     async def close(self) -> None:
         self.closed += 1
+        if self.close_error is not None:
+            raise RuntimeError(self.close_error)
 
 
 class Gate(Runtime, LineExecutorMixin):
@@ -140,3 +149,38 @@ async def test_close_settles_a_removal_and_closes_the_runtime_once():
     assert line.cancelled()
     assert removing.done() and removing.exception() is None
     assert alpha.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_waits_for_a_running_evaluation_too():
+    alpha = Engine("alpha")
+    alpha.release.clear()
+    ws = workspace(alpha)
+    try:
+        evaluating = asyncio.create_task(eval_with_ctx("x", {}, alpha, 5))
+        await alpha.entered.wait()
+        removing = asyncio.create_task(ws.remove_runtime("alpha"))
+        await asyncio.sleep(0.01)
+        assert not removing.done() and alpha.closed == 0
+        alpha.release.set()
+        assert await evaluating == "alpha"
+        await asyncio.wait_for(removing, 5)
+        assert alpha.closed == 1
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_removal_still_reports_its_close_failure():
+    alpha = Engine("alpha", close_error="close failed")
+    alpha.release.clear()
+    ws = workspace(alpha)
+    line = asyncio.create_task(python3(ws))
+    await alpha.entered.wait()
+    removing = asyncio.create_task(ws.remove_runtime("alpha"))
+    await asyncio.sleep(0)
+    removing.cancel()
+    alpha.release.set()
+    await line
+    with pytest.raises(RuntimeError, match="close failed"):
+        await ws.close()

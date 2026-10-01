@@ -294,14 +294,16 @@ def vfs_read_on_a_bare_thread(vfs):
 
 
 @pytest.mark.asyncio
-async def test_context_vfs_replays_the_launch_session_and_recorder():
+@pytest.mark.parametrize("door", ["context", "raw"])
+async def test_a_file_door_replays_the_launch_session_and_recorder(door):
     dispatch = SessionSpyDispatch()
     binding = WorkspaceBinding(dispatch, PrefixResolver(lambda: []))
     sess = SessionState(session_id="agent")
     scope = RecordingScope()
     token = set_current_session(sess)
     try:
-        vfs = RuntimeVFS.of(capture_binding(binding))
+        vfs = (RuntimeVFS.of(capture_binding(binding)) if door == "context"
+               else RuntimeVFS(dispatch, asyncio.get_running_loop()))
     finally:
         reset_current_session(token)
     try:

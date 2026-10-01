@@ -127,12 +127,7 @@ class Runtime(ABC):
         This is the engine door. Workspace.shell remains the shell admission
         and routing door, as it was for callers of run and run_line.
         """
-        if self._retired:
-            raise RuntimeError(
-                f"{self.name}: runtime was removed from the workspace")
-        if self._activity is None:
-            self._activity = Activity()
-        release = self._activity.acquire()
+        release = self.admit()
         try:
             if context is None and self._binding is not None:
                 context = self._binding.capture()
@@ -145,6 +140,15 @@ class Runtime(ABC):
             return await self._execute(request, None)
         finally:
             release()
+
+    def admit(self) -> Callable[[], None]:
+        """Count one unit of work, refused once the runtime is retired."""
+        if self._retired:
+            raise RuntimeError(
+                f"{self.name}: runtime was removed from the workspace")
+        if self._activity is None:
+            self._activity = Activity()
+        return self._activity.acquire()
 
     async def retire(self) -> None:
         """Refuse new executions and binds, then wait for running ones."""

@@ -49,8 +49,8 @@ class MirageOSAccess(OSAccess):
     1s-I/O runs finish in ~2s at 64 workers versus ~8s at 14).
 
     Args:
-        core (RuntimeVFS | None): the execution's file door
-            (``RuntimeContext.vfs``), None outside a workspace.
+        core (RuntimeVFS | None): the execution's file door, built with
+            ``RuntimeVFS.of(context)``; None outside a workspace.
         environ (dict[str, str]): the guest's environment.
     """
 

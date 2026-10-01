@@ -212,6 +212,12 @@ export class Workspace {
   // can't mount), so the core Workspace carries no FUSE state.
 
   constructor(mounts: Record<string, MountSpec>, options: WorkspaceOptions = {}) {
+    if ('python' in options) {
+      throw new Error(
+        "the 'python' workspace option was removed: configure the engine on its runtimes entry, " +
+          'e.g. new PyodideRuntime({ config: { denyPackages } })',
+      )
+    }
     // The workspace-level default a mount overrides, as `mode` is.
     this.readDefault = options.read ?? DEFAULT_READ_SPEC
     const normalized = normalizeMounts(mounts, this.readDefault, options.index)
@@ -1588,6 +1594,7 @@ export class Workspace {
     if (bound === undefined || !isEvaluator(bound)) {
       throw new Error('no evaluator runtime bound for the repl')
     }
+    const release = bound.admit()
     try {
       return await this.serializeLine(sessionId, undefined, () =>
         bound.eval(code, { session: sessionId }),
@@ -1603,6 +1610,8 @@ export class Workspace {
         exitCode: unavailable ? 127 : 1,
         status: 'complete',
       }
+    } finally {
+      release()
     }
   }
 

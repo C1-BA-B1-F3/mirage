@@ -112,8 +112,7 @@ export abstract class Runtime {
 
   /** Engine entry point; Workspace.shell still owns shell admission and routing. */
   async execute(request: ExecutionRequest, context?: RuntimeContext): Promise<RunResult> {
-    if (this.retired) throw new Error(`${this.name}: runtime was removed from the workspace`)
-    const release = this.activity.acquire()
+    const release = this.admit()
     try {
       const current = context ?? this.captureContext()
       if (current !== undefined) {
@@ -125,6 +124,12 @@ export abstract class Runtime {
     } finally {
       release()
     }
+  }
+
+  /** Count one unit of work, refused once the runtime is retired. */
+  admit(): () => void {
+    if (this.retired) throw new Error(`${this.name}: runtime was removed from the workspace`)
+    return this.activity.acquire()
   }
 
   /** Refuse new executions and binds, then wait for running ones. */

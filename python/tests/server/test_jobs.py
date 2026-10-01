@@ -73,6 +73,23 @@ async def test_cancel_before_start_does_not_invoke_factory():
 
 
 @pytest.mark.asyncio
+async def test_cancel_after_work_settles_keeps_the_result():
+    settled = asyncio.Event()
+
+    async def work():
+        settled.set()
+        return "value"
+
+    table = JobTable()
+    job = submit(table, work)
+    await settled.wait()
+    assert job.finished_at is None
+    assert not table.cancel(job.id)
+    finished = await table.wait(job.id)
+    assert (finished.status, finished.result) == (JobStatus.DONE, "value")
+
+
+@pytest.mark.asyncio
 async def test_retention_bounds_completed_jobs_but_keeps_active(monkeypatch):
     table = JobTable(max_completed=2, retention_seconds=10)
     release = asyncio.Event()

@@ -646,6 +646,10 @@ it('releases later resources after multiple teardown failures and retains the fa
   const ws = buildWs()
   const vfs = ws.mount('/m').vfs
   const closed: string[] = []
+  vi.spyOn(ws.processes, 'stop').mockImplementation(() => {
+    closed.push('processes')
+    throw new Error('process cancellation failed')
+  })
   vi.spyOn(vfs, 'close').mockImplementation(() => {
     closed.push('vfs')
     return Promise.reject(new Error('vfs close failed'))
@@ -654,8 +658,8 @@ it('releases later resources after multiple teardown failures and retains the fa
     closed.push('store')
     return Promise.reject(new Error('store close failed'))
   })
+  await expect(ws.close()).rejects.toMatchObject({ errors: { length: 3 } })
+  expect(closed).toEqual(['processes', 'vfs', 'store'])
   await expect(ws.close()).rejects.toBeInstanceOf(AggregateError)
-  expect(closed).toEqual(['vfs', 'store'])
-  await expect(ws.close()).rejects.toBeInstanceOf(AggregateError)
-  expect(closed).toEqual(['vfs', 'store'])
+  expect(closed).toEqual(['processes', 'vfs', 'store'])
 })

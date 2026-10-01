@@ -123,7 +123,7 @@ async function writeFile(
     accessor.revision,
     repoPath,
   )
-  const data = await hubBytes(accessor.token, url)
+  const data = await hubBytes(accessor.token, url, undefined, accessor.timeoutMs)
   const target = `${localDir}/${repoPath}`
   await ensureDir(dispatch, parent(target))
   await dispatch('write', PathSpec.fromStrPath(target), [data])
@@ -169,7 +169,7 @@ async function cacheFile(
       accessor.revision,
       entry.path,
     )
-    const data = await hubBytes(accessor.token, url)
+    const data = await hubBytes(accessor.token, url, undefined, accessor.timeoutMs)
     await ensureDir(dispatch, parent(blob))
     await dispatch('write', PathSpec.fromStrPath(blob), [data])
   }

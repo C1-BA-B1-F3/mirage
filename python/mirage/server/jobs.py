@@ -52,7 +52,9 @@ class JobEntry:
         self.started_at: float | None = None
         self.finished_at: float | None = None
         self._task: asyncio.Task[Any] | None = None
-        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+        self._canceled = False
+        self._settled = False
         self._done_event: asyncio.Event = asyncio.Event()
 
 
@@ -140,10 +142,12 @@ class JobTable:
         factory: Callable[[], Awaitable[Any]],
         owner: asyncio.AbstractEventLoop,
     ) -> None:
-        entry._task = asyncio.current_task()
+        with entry._lock:
+            entry._task = asyncio.current_task()
+            canceled = entry._canceled
         status, result, error = JobStatus.DONE, None, None
         try:
-            if entry._cancel.is_set():
+            if canceled:
                 raise asyncio.CancelledError()
             result = await factory()
         except asyncio.CancelledError:
@@ -151,6 +155,10 @@ class JobTable:
         except Exception as exc:
             status, error = JobStatus.FAILED, f"{type(exc).__name__}: {exc}"
         finally:
+            with entry._lock:
+                entry._settled = True
+                if entry._canceled:
+                    status = JobStatus.CANCELED
             owner.call_soon_threadsafe(
                 self._finish, entry, status, result, error
             )
@@ -162,8 +170,8 @@ class JobTable:
         result: Any,
         error: str | None,
     ) -> None:
-        entry.status = JobStatus.CANCELED if entry._cancel.is_set() else status
-        entry.result = result if entry.status == JobStatus.DONE else None
+        entry.status = status
+        entry.result = result if status == JobStatus.DONE else None
         entry.error = error
         entry._task = None
         entry.finished_at = time.time()
@@ -187,10 +195,11 @@ class JobTable:
         entry = self.get(job_id)
         if entry.finished_at is not None:
             return False
-        if entry._cancel.is_set():
-            return False
-        entry._cancel.set()
-        task = entry._task
+        with entry._lock:
+            if entry._settled or entry._canceled:
+                return False
+            entry._canceled = True
+            task = entry._task
         if task is not None:
             task.get_loop().call_soon_threadsafe(task.cancel)
         return True

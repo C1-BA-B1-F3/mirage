@@ -301,6 +301,7 @@ export async function hubBytes(
   token: string | undefined,
   url: string,
   window?: ByteWindow,
+  timeoutMs?: number,
 ): Promise<Uint8Array> {
   return (await apiRequest('GET', url, {
     errorOf,
@@ -308,6 +309,7 @@ export async function hubBytes(
     retry: RETRY,
     read: 'bytes',
     window,
+    fetchFn: fetchFor(timeoutMs),
   })) as Uint8Array
 }
 

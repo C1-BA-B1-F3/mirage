@@ -52,7 +52,11 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   }
   await settle([() => deps.watch.detach()])
   await settle([() => deps.jobTable.killAll()])
-  deps.jobTable.processes.stop()
+  try {
+    deps.jobTable.processes.stop()
+  } catch (err) {
+    failures.push(err)
+  }
   for (const closer of deps.closers.splice(0)) await settle([closer])
   await settle([
     async () => {

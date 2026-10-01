@@ -92,3 +92,36 @@ async def test_ssh_owns_connections_during_initialization(monkeypatch, fail):
     conn.close.assert_called_once()
     conn.wait_closed.assert_awaited_once()
 
+
+@pytest.mark.asyncio
+async def test_ssh_joins_a_failed_start_through_repeated_cancellation(
+    monkeypatch,
+):
+    entered, closing, release = (asyncio.Event() for _ in range(3))
+
+    async def start():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def wait_closed():
+        closing.set()
+        await release.wait()
+
+    conn = Mock(
+        start_sftp_client=AsyncMock(side_effect=start),
+        wait_closed=AsyncMock(side_effect=wait_closed),
+    )
+    monkeypatch.setattr(
+        "mirage.accessor.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+    )
+    task = asyncio.create_task(SSHAccessor(SSHConfig(host="unused")).sftp())
+    await entered.wait()
+    task.cancel()
+    await closing.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    conn.close.assert_called_once()

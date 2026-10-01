@@ -15,8 +15,7 @@
 from mirage.accessor.history import HistoryAccessor
 from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.history.read import read as history_read
 from mirage.core.history.readdir import readdir as _readdir

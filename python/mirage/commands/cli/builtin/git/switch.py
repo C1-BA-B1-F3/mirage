@@ -28,7 +28,8 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     InvalidBranchNameError, InvalidReferenceError, MissingBranchArgumentError,
     NoWorkspaceError, OneReferenceError, RefLockError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.format import short, subject
-from mirage.commands.cli.builtin.git.index import read_index, refuse_unresolved
+from mirage.commands.cli.builtin.git.index_file import (read_index,
+                                                        refuse_unresolved)
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.refs import (BRANCH_PREFIX, TAG_PREFIX,
                                                   blocking_ref, read_head,

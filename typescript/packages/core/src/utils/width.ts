@@ -56,6 +56,13 @@ export function charWidth(cp: number): number {
   return inRanges(cp, WIDE) ? 2 : 1
 }
 
+/** How many terminal columns `text` occupies. Mirrors Python's `text_width`. */
+export function textWidth(text: string): number {
+  let width = 0
+  for (const ch of text) width += charWidth(ch.codePointAt(0) ?? 0)
+  return width
+}
+
 /**
  * Whether the character at `cp` separates words for `wc -w`.
  *

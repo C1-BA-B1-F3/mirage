@@ -14,7 +14,8 @@
 
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
-import { norm, nowIso } from './utils.ts'
+import { nowIso } from '../../utils/dates.ts'
+import { norm } from '../../utils/path.ts'
 import { checkDestParents, lookupError } from './dest.ts'
 import { invalidateAfterWrite } from '../../cache/context.ts'
 

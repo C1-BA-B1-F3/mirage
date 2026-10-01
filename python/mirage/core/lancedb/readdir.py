@@ -15,31 +15,18 @@
 from typing import Any
 
 from mirage.accessor.lancedb import LanceDBAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.hierarchy.bind import per_accessor
+from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.codec import PATH_SAFE
-from mirage.core.hierarchy.probe import ReaddirFn
-from mirage.core.hierarchy.readdir import (DirListing, Listed, Lister,
-                                           make_readdir)
-from mirage.core.hierarchy.scope import ROOT, ScopeMatch
-from mirage.core.lancedb.query import (ValueTest, distinct_values, list_tables,
+from mirage.core.hierarchy.readdir import DirListing, Listed
+from mirage.core.hierarchy.scope import ScopeMatch
+from mirage.core.lancedb.query import (ValueTest, distinct_values,
                                        rows_matching, table_columns,
                                        table_exists)
 from mirage.core.lancedb.render import render_card
-from mirage.core.lancedb.scope import detect_for, filters_of, table_of
-from mirage.types import PathSpec
-from mirage.utils.glob_walk import (glob_prefix, glob_stem_prefix,
-                                    has_glob_prefix)
+from mirage.core.vector.readdir import dir_entry
+from mirage.core.vector.scope import filters_of, table_of
+from mirage.utils.glob_walk import glob_prefix, glob_stem_prefix
 from mirage.vfs.lancedb.config import LanceDBConfig
-
-GROUP_TYPE = "lancedb/group"
-
-
-def _dir_entry(name: str) -> IndexEntry:
-    return IndexEntry(id=name,
-                      name=name,
-                      resource_type=GROUP_TYPE,
-                      vfs_name=name)
 
 
 def _row_entries(rows: list[dict[str, Any]],
@@ -99,11 +86,17 @@ def _row_prefix(pattern: str | None, config: LanceDBConfig) -> str:
     return glob_stem_prefix(pattern, suffixes)
 
 
-async def _children(accessor: LanceDBAccessor,
-                    match: ScopeMatch) -> Listed | None:
+async def children(accessor: LanceDBAccessor,
+                   match: ScopeMatch) -> Listed | None:
+    """The entries under a table or a group.
+
+    Args:
+        accessor (LanceDBAccessor): the mount's accessor.
+        match (ScopeMatch): the directory's match.
+    """
     config = accessor.config
-    table = table_of(config, match)
-    filters = filters_of(config, match)
+    table = table_of(config.table, match)
+    filters = filters_of(config.group_by, match)
     pattern = match.pattern
     if not await table_exists(accessor, table):
         return None
@@ -120,7 +113,8 @@ async def _children(accessor: LanceDBAccessor,
             PATH_SAFE.prefix_value(display_prefix),
             _rendered_prefix_test(display_prefix) if display_prefix else None)
         names = sorted(map(PATH_SAFE.encode, values))
-        return DirListing(entries=[(name, _dir_entry(name)) for name in names],
+        return DirListing(entries=[(name, dir_entry("lancedb", name))
+                                   for name in names],
                           partial=bool(display_prefix),
                           window=True)
     # Select every column except the vector and blob ones (schema order, so
@@ -139,44 +133,3 @@ async def _children(accessor: LanceDBAccessor,
     return DirListing(entries=_row_entries(rows, config),
                       partial=bool(prefix),
                       window=True)
-
-
-async def _list_root(accessor: LanceDBAccessor,
-                     match: ScopeMatch) -> Listed | None:
-    config = accessor.config
-    if not config.table:
-        # Table names come from the catalog, not from a capped query, so
-        # a glob here has nothing to narrow.
-        return [(name, _dir_entry(name))
-                for name in await list_tables(accessor)]
-    return await _children(accessor, match)
-
-
-async def _list_group(accessor: LanceDBAccessor,
-                      match: ScopeMatch) -> Listed | None:
-    return await _children(accessor, match)
-
-
-LISTERS: dict[str, Lister[LanceDBAccessor]] = {
-    ROOT: _list_root,
-    "group": _list_group,
-}
-
-PATTERN_KINDS = {ROOT: has_glob_prefix, "group": has_glob_prefix}
-
-
-def _build(accessor: LanceDBAccessor) -> ReaddirFn[LanceDBAccessor]:
-    return make_readdir(detect_for(accessor),
-                        listers=LISTERS,
-                        pattern_kinds=PATTERN_KINDS)
-
-
-readdir_for = per_accessor(_build)
-
-
-async def readdir(
-    accessor: LanceDBAccessor,
-    path: PathSpec,
-    index: IndexCacheStore = NULL_INDEX,
-) -> list[str]:
-    return await readdir_for(accessor)(accessor, path, index)

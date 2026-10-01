@@ -19,8 +19,7 @@ from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           dir_aware_stat,
                                                           resolve_or_empty)
 from mirage.commands.builtin.history.io import IO
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec

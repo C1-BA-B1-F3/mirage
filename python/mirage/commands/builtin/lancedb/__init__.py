@@ -12,11 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.commands.builtin.generic.search import make_search
 from mirage.commands.builtin.generic_bind import make_generic_commands
 from mirage.commands.builtin.lancedb.io import IO as _IO
-from mirage.commands.builtin.lancedb.search import search
 
 COMMANDS = [
     *make_generic_commands("lancedb", _IO),
-    search,
+    make_search("lancedb", _IO.search),
 ]

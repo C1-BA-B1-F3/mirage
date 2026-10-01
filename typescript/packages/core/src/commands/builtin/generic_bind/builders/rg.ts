@@ -12,9 +12,22 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { runSearch } from '../search.ts'
+import { narrowScope, runSearch } from '../search.ts'
 
-import { rgGeneric } from '../../generic/rg.ts'
+import { IOResult } from '../../../../io/types.ts'
+import type { PathSpec } from '../../../../types.ts'
+import { specOf } from '../../../spec/builtins.ts'
+import { FlagView } from '../../../spec/flag_view.ts'
+import {
+  filtersFiles,
+  labelled,
+  needsEveryFile,
+  parseFlags,
+  rgGeneric,
+  walkFilter,
+} from '../../generic/rg.ts'
+import { patternArg } from '../../grep_pattern.ts'
+import { walkCandidates } from '../../rg_scan.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
 export const RG_BUILDER: Builder = {
@@ -23,11 +36,40 @@ export const RG_BUILDER: Builder = {
   fn: async (ops, accessor, paths, texts, opts) => {
     if (ops.search !== undefined) return runSearch(ops, 'rg', accessor, paths, texts, opts)
     const idx = opts.index ?? undefined
-    const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
+    let resolved: PathSpec[] = []
+    let runOpts = opts
+    if (paths.length > 0 && ops.contentSearch === undefined) {
+      resolved = await resolveGlobOf(ops)(accessor, paths, idx)
+    } else if (paths.length > 0) {
+      const fl = new FlagView(opts.flags, specOf('rg'))
+      const f = parseFlags(fl)
+      // -v and the rest of needsEveryFile need the walk (a narrowed superset
+      // hides the files they answer for); -g/-t keep the walk so their file
+      // filtering stays in one place.
+      const narrowed = await narrowScope(
+        ops,
+        accessor,
+        paths,
+        patternArg(texts, opts.flags, 'regexp'),
+        {
+          fixedString: f.fixedString,
+          recursive: true,
+          wholeWord: f.wholeWord,
+          exactFileSet: needsEveryFile(fl, f) || filtersFiles(f),
+          index: idx,
+        },
+      )
+      resolved = narrowed.resolved
+      if (narrowed.usedSearch) {
+        resolved = walkCandidates(resolved, paths, walkFilter(f), opts.cwd)
+        if (resolved.length === 0) return [new Uint8Array(), new IOResult({ exitCode: 1 })]
+        runOpts = labelled(opts)
+      }
+    }
     return rgGeneric(
       resolved,
       texts,
-      opts,
+      runOpts,
       (p) => ops.stat(accessor, p, idx),
       (p) => ops.readdir(accessor, p, idx),
       (p) => ops.readStream(accessor, p, idx),

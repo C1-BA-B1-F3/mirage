@@ -60,7 +60,7 @@ import { xargsBuiltin } from './xargs/xargs.ts'
 // dispatcher does a single lookup here instead of one arm per word. Two
 // ShellBuiltin groups are deliberately absent: the job builtins (wait, fg,
 // kill, jobs, disown, ps) route through JOB_HANDLERS in
-// executor/command.ts because they need the job table, and
+// executor/command/command.ts because they need the job table, and
 // python/python3/node/js are general mount commands
 // (commands/builtin/general), reserved in ShellBuiltin only so no CLI can
 // take the name. table.test.ts pins that everything else is here.

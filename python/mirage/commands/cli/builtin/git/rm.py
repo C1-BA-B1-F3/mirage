@@ -25,7 +25,7 @@ from mirage.commands.cli.builtin.git.errors import GitError  # yapf: disable
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     NoPathspecRemoveError, NotRecursiveError, NoWorkspaceError, PathspecError,
     RemovalRefusedError, RemovePathError, UnknownSwitchError)
-from mirage.commands.cli.builtin.git.index import read_index, write_index
+from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.io import (remove_empty_parents,
                                                 remove_file)
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative

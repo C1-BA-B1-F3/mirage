@@ -17,7 +17,7 @@ import { OpsRegistry } from '@struktoai/mirage-core/ops/registry'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { MountMode } from '@struktoai/mirage-core/types'
 import { Workspace } from '@struktoai/mirage-node'
-import { MirageToolOperations } from '../tool-operations.ts'
+import { MirageToolOperations } from '../tool_operations.ts'
 
 function mkWs(): Workspace {
   const ram = new RAMVFS()

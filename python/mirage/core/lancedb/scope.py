@@ -15,10 +15,10 @@
 from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.core.hierarchy.bind import per_accessor
 from mirage.core.hierarchy.codec import PATH_SAFE, Codec
-from mirage.core.hierarchy.scope import (DetectFn, Scope, ScopeMatch, Segment,
-                                         Slot, make_detect_scope)
+from mirage.core.hierarchy.scope import DetectFn, Scope, make_detect_scope
+from mirage.core.vector.scope import blob_leaf, row_scopes
+from mirage.core.vector.types import Leaf
 from mirage.types import ContentType
-from mirage.utils.filetype import content_type_for_extension
 from mirage.vfs.lancedb.config import LanceDBConfig
 
 CARD = Codec(suffix=".md")
@@ -27,42 +27,19 @@ CARD = Codec(suffix=".md")
 def scopes_for(config: LanceDBConfig) -> tuple[Scope, ...]:
     """The mount's scope table, shaped by its config.
 
-    The tree is a function of the mount config, not of the backend: a
-    pinned ``table`` removes the leading table segment, every
-    ``group_by`` column adds one directory level, and ``blob_column``
-    adds a second leaf suffix beside the ``.md`` card. Group slots are
-    named positionally (``g0``, ``g1``, ...) so a column named ``table``
-    cannot collide with the table slot; ``filters_of`` maps them back to
-    column names. A group slot decodes through ``PATH_SAFE``, so a value
-    holding ``/`` keeps its own directory and the WHERE clause holds the
-    exact value. Every partial depth shares the one ``group`` kind, and
-    its lister derives the depth from the slots, so the lister table
-    stays static while the scope table varies per mount.
+    A pinned ``table`` removes the leading table segment, and
+    ``blob_column`` adds a second leaf suffix beside the ``.md`` card. A
+    group slot decodes through ``PATH_SAFE``, so a value holding ``/``
+    keeps its own directory and the WHERE clause holds the exact value.
 
     Args:
         config (LanceDBConfig): the mount's config.
     """
-    prefix: tuple[Segment, ...] = () if config.table else (Slot("table"), )
-    groups = tuple(
-        Slot(f"g{i}", PATH_SAFE) for i in range(len(config.group_by)))
-    scopes = [
-        Scope(kind="group", segments=prefix + groups[:depth])
-        for depth in range(len(groups) + 1) if depth or prefix
-    ]
-    full = prefix + groups
-    scopes.append(
-        Scope(kind="row_card",
-              segments=full + (Slot("row_id", CARD), ),
-              leaf=True,
-              filetype=ContentType.TEXT))
+    leaves: list[Leaf] = [("row_card", CARD, ContentType.TEXT)]
     if config.blob_column:
-        blob = Codec(suffix="." + config.blob_ext)
-        scopes.append(
-            Scope(kind="row_blob",
-                  segments=full + (Slot("row_id", blob), ),
-                  leaf=True,
-                  filetype=content_type_for_extension(config.blob_ext)))
-    return tuple(scopes)
+        leaves.append(blob_leaf(config.blob_ext))
+    return row_scopes(bool(config.table), [PATH_SAFE] * len(config.group_by),
+                      leaves)
 
 
 def _detect(accessor: LanceDBAccessor) -> DetectFn:
@@ -70,31 +47,3 @@ def _detect(accessor: LanceDBAccessor) -> DetectFn:
 
 
 detect_for = per_accessor(_detect)
-
-
-def table_of(config: LanceDBConfig, match: ScopeMatch) -> str:
-    """The table a match addresses: pinned, or the path's first slot.
-
-    Args:
-        config (LanceDBConfig): the mount's config.
-        match (ScopeMatch): a match from this mount's classifier.
-    """
-    if config.table:
-        return config.table
-    return match.slots["table"]
-
-
-def filters_of(config: LanceDBConfig, match: ScopeMatch) -> dict[str, str]:
-    """The match's group filters, keyed back to column names.
-
-    Args:
-        config (LanceDBConfig): the mount's config.
-        match (ScopeMatch): a match from this mount's classifier.
-    """
-    filters: dict[str, str] = {}
-    for i, column in enumerate(config.group_by):
-        value = match.slots.get(f"g{i}")
-        if value is None:
-            break
-        filters[column] = value
-    return filters

@@ -14,8 +14,6 @@
 
 from mirage.core.dropbox.copy import copy as _copy
 from mirage.core.dropbox.create import create as _create
-from mirage.core.dropbox.du import entries as _du_entries
-from mirage.core.dropbox.du import size as _du_size
 from mirage.core.dropbox.exists import exists as _exists
 from mirage.core.dropbox.mkdir import mkdir as _mkdir
 from mirage.core.dropbox.read import read as _read
@@ -24,19 +22,20 @@ from mirage.core.dropbox.readdir import readdir as _readdir
 from mirage.core.dropbox.rename import rename as _rename
 from mirage.core.dropbox.rm import rm_r as _rm_r
 from mirage.core.dropbox.rmdir import rmdir as _rmdir
+from mirage.core.dropbox.search import narrow_paths
 from mirage.core.dropbox.stat import stat as _stat
 from mirage.core.dropbox.unlink import unlink as _unlink
 from mirage.core.dropbox.write import write_bytes as _write
+from mirage.core.generic.du import make_walked_du
 from mirage.vfs.adapter import VFSAdapter
-from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
+from mirage.vfs.types import ContentSearchOps, NativeReadOps, ReadOps, WriteOps
 
 # copy_v2 copies folder subtrees server-side, so dir_copy is the same
 # call as copy.
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 native=NativeReadOps(read_range=_read,
                                      read_stream=_stream,
-                                     du=DuOps(size=_du_size,
-                                              entries=_du_entries),
+                                     du=make_walked_du(_stat, _readdir),
                                      exists=_exists),
                 writes=WriteOps(write=_write,
                                 mkdir=_mkdir,
@@ -46,6 +45,9 @@ IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                                 rename=_rename,
                                 copy=_copy,
                                 create=_create),
+                content_search=ContentSearchOps(
+                    narrow_paths=narrow_paths,
+                    enabled=lambda a: a.config.content_search),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
 

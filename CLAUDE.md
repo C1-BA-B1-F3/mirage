@@ -54,6 +54,12 @@ only), `errors.py`, `config.py` (knobs; fail loud on unknown fields),
   `asyncio.run()` where a loop may already be running.
 - Imports at the top of the file. A cycle means the dependency direction is
   wrong; fix the design.
+- Package `__init__.py` barrels resolve names on first use (PEP 562
+  `__getattr__` over an `_EXPORTS` table, `TYPE_CHECKING` imports for the
+  checker), so importing a leaf never loads its package. The `mirage` CLI
+  loads only its HTTP client and imports a heavy verb's code inside that
+  verb (`mcp`, `workspace create`), as the TypeScript CLI awaits it;
+  `scripts/check_cli_cold_start.py` gates both hosts.
 - Never swallow an exception. Log it with `logger.debug` or let it
   propagate.
 - Never annotate as `object`. Use `FlagValue`, `JsonValue`, `str | PathSpec`,

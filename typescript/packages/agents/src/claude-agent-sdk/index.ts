@@ -22,4 +22,4 @@ export {
   LS_DESCRIPTION,
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
-} from './descriptions.ts'
+} from '../tool_descriptions.ts'

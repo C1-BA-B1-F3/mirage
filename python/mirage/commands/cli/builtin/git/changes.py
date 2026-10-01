@@ -24,7 +24,7 @@ from dulwich.objectspec import parse_commit
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD_REF
-from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import entry_bytes
 from mirage.commands.cli.builtin.git.types import (IndexState, RepoLocation,
                                                    StatusEntry, WorkTree)

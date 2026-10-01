@@ -23,7 +23,7 @@ import type {
 } from '@struktoai/mirage-core/workspace/store/base'
 import { RedisObserverStore } from '../../observe/redis_store.ts'
 import { loadOptionalPeer } from '../../optional_peer.ts'
-import { RedisNamespaceStore } from '../namespace/redis.ts'
+import { RedisNamespaceStore } from '../mount/namespace/redis.ts'
 import { CAS_SCRIPT, RedisSessionStore } from '../session/redis.ts'
 
 export interface RedisWorkspaceStateStoreOptions extends WorkspaceStateStoreOverrides {

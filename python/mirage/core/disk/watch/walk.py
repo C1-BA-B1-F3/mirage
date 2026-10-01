@@ -20,8 +20,8 @@ from pathlib import Path
 from mirage.accessor.disk import DiskAccessor
 from mirage.core.disk.errors import disk_errors
 from mirage.core.disk.utils import resolve_inside_sync, walk_entries
-from mirage.core.timeutil import ns_to_iso
 from mirage.types import PathSpec, WalkEntry
+from mirage.utils.dates import ns_to_iso
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.watch.base import DeltaHook
 from mirage.watch.delta import ListingDeltaHook

@@ -18,9 +18,9 @@ import pytest
 
 from mirage.accessor.box import BoxAccessor
 from mirage.core.box.client import BoxApiError, BoxTokenManager
-from mirage.core.box.config import BoxConfig
 from mirage.core.box.search import narrow_paths
 from mirage.types import PathSpec
+from mirage.vfs.box.config import BoxConfig
 
 
 def make_accessor(root_folder_id: str | None = None) -> BoxAccessor:

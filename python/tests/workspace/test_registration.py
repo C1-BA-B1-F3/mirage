@@ -15,8 +15,7 @@
 import pytest
 
 from mirage import MountMode, Workspace
-from mirage.commands.config import command
-from mirage.commands.registry import RegisteredCommand
+from mirage.commands.config import RegisteredCommand, command
 from mirage.commands.spec import SPECS
 from mirage.io.types import IOResult
 from mirage.ops.registry import op

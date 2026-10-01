@@ -47,6 +47,7 @@ async function runCsplit(
       specs.push(p)
       return Promise.resolve()
     },
+    (p) => Promise.reject(new Error(`unlink ${p.virtual}: the run succeeds`)),
   )
   const [, io] = result as [unknown, IOResult]
   return [specs, io]

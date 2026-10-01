@@ -1,0 +1,45 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
+import { makeRead } from '../vector/read.ts'
+import { makeReaddir } from '../vector/readdir.ts'
+import { makeSearch } from '../vector/search.ts'
+import { makeStat } from '../vector/stat.ts'
+import type { VectorTree } from '../vector/types.ts'
+import { searchRows, tableExists } from './query.ts'
+import { READERS } from './read.ts'
+import { children } from './readdir.ts'
+import { detectFor } from './scope.ts'
+import { hit } from './search.ts'
+
+export const TREE: VectorTree<LanceDBAccessor> = {
+  vfs: 'lancedb',
+  detect: detectFor,
+  pinned: (accessor) => accessor.config.table,
+  searchLimit: (accessor) => accessor.config.searchLimit,
+  listTables: (accessor) => accessor.driver.listTables(),
+  tableExists,
+  children,
+  readers: READERS,
+  searchRows,
+  rankKey: '_distance',
+  drops: (rank, threshold) => rank > threshold,
+  hit,
+}
+
+export const readdir = makeReaddir(TREE)
+export const read = makeRead(TREE)
+export const stat = makeStat(TREE, readdir, read)
+export const SEARCH = makeSearch(TREE)

@@ -2,8 +2,7 @@ from typing import Any
 
 from mirage.accessor.chroma import ChromaAccessor
 from mirage.commands.builtin.chroma import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.chroma import OPS as CHROMA_VFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

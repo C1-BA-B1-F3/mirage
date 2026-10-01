@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.onedrive import OneDriveAccessor
-from mirage.core.msgraph.drive_ops import copy_tree
+from mirage.core.msgraph.drive import copy_tree
 from mirage.core.onedrive.client import drive_loc, split_path
 from mirage.types import PathSpec
 

@@ -1,5 +1,4 @@
 from mirage.agents import tool_descriptions as shared
-from mirage.agents.claude_agent_sdk import prompt as cas
 
 NAMES = [
     "EXECUTE_DESCRIPTION",
@@ -15,14 +14,6 @@ def test_every_tool_has_a_description():
     assert sorted(shared.__all__) == sorted(NAMES)
     for name in NAMES:
         assert getattr(shared, name).strip()
-
-
-def test_claude_agent_sdk_reexports_the_shared_table():
-    # The point of the extraction: the SDK integration and the MCP server
-    # describe the same tools because they read the same strings, not
-    # because someone kept two copies in step.
-    for name in NAMES:
-        assert getattr(cas, name) is getattr(shared, name)
 
 
 def test_edit_description_documents_the_stale_check():

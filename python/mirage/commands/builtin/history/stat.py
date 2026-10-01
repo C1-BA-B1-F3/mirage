@@ -15,8 +15,7 @@
 from mirage.accessor.history import HistoryAccessor
 from mirage.commands.builtin.generic.stat import stat_generic
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.history.stat import stat as history_stat
 from mirage.io.types import ByteSource, IOResult

@@ -17,8 +17,8 @@ import { gnuDirname } from '@struktoai/mirage-core/utils/path'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import { replaceText } from '../io-text.ts'
-import { readWorkspaceFile } from '../read-file.ts'
+import { replaceText } from '../io_text.ts'
+import { readWorkspaceFile } from '../read_file.ts'
 
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
   const parent = gnuDirname(path)

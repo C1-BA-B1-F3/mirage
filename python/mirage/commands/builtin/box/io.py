@@ -14,8 +14,6 @@
 
 from mirage.core.box.copy import copy as _copy
 from mirage.core.box.create import create as _create
-from mirage.core.box.du import entries as _du_entries
-from mirage.core.box.du import size as _du_size
 from mirage.core.box.exists import exists as _exists
 from mirage.core.box.mkdir import mkdir as _mkdir
 from mirage.core.box.read import read as _read
@@ -24,20 +22,21 @@ from mirage.core.box.readdir import readdir as _readdir
 from mirage.core.box.rename import rename as _rename
 from mirage.core.box.rmdir import rm_r as _rm_r
 from mirage.core.box.rmdir import rmdir as _rmdir
+from mirage.core.box.search import narrow_paths
 from mirage.core.box.stat import stat as _stat
 from mirage.core.box.truncate import truncate as _truncate
 from mirage.core.box.unlink import unlink as _unlink
 from mirage.core.box.write import write_bytes as _write
+from mirage.core.generic.du import make_walked_du
 from mirage.vfs.adapter import VFSAdapter
-from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
+from mirage.vfs.types import ContentSearchOps, NativeReadOps, ReadOps, WriteOps
 
 # Box exposes the full write surface (upload/overwrite, mkdir, unlink, rmdir,
 # mv, cp) alongside reads.
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 native=NativeReadOps(read_range=_read,
                                      read_stream=_stream,
-                                     du=DuOps(size=_du_size,
-                                              entries=_du_entries),
+                                     du=make_walked_du(_stat, _readdir),
                                      exists=_exists),
                 writes=WriteOps(write=_write,
                                 mkdir=_mkdir,
@@ -49,6 +48,9 @@ IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                                 dir_copy=_copy,
                                 create=_create,
                                 truncate=_truncate),
+                content_search=ContentSearchOps(
+                    narrow_paths=narrow_paths,
+                    enabled=lambda a: a.config.content_search),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
 

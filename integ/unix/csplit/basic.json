@@ -29,9 +29,9 @@
       ],
       "command": "csplit",
       "expect": {
-        "exit": 0,
+        "exit": 1,
         "stdout": "",
-        "stderr": ""
+        "stderr": "csplit: missing operand\nTry 'csplit --help' for more information.\n"
       }
     }
   ]

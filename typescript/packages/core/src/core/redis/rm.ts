@@ -16,7 +16,7 @@ import { invalidateSubtree } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { norm } from './utils.ts'
+import { norm } from '../../utils/path.ts'
 
 export async function rmR(accessor: RedisAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.mountPath)

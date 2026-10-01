@@ -39,12 +39,9 @@ def _build_join_map(
     result: dict[str, list[list[str]]] = {}
     for line in lines:
         parts = _split_fields(line, delimiter)
-        if field_idx < len(parts):
-            key = parts[field_idx].casefold(
-            ) if ignore_case else parts[field_idx]
-            if key not in result:
-                result[key] = []
-            result[key].append(parts)
+        key = _field_at(parts, field_idx)
+        result.setdefault(key.casefold() if ignore_case else key,
+                          []).append(parts)
     return result
 
 
@@ -103,9 +100,7 @@ def _join_lines(
 
     for line in lines1:
         parts = _split_fields(line, sep)
-        if field1 >= len(parts):
-            continue
-        key = parts[field1]
+        key = _field_at(parts, field1)
         lookup_key = key.casefold() if ignore_case else key
         if lookup_key in map2:
             matched_keys2.add(lookup_key)
@@ -122,9 +117,7 @@ def _join_lines(
     if also_unpairable == "2" or only_unpairable == "2":
         for line in lines2:
             parts = _split_fields(line, sep)
-            if field2 >= len(parts):
-                continue
-            key = parts[field2]
+            key = _field_at(parts, field2)
             lookup_key = key.casefold() if ignore_case else key
             if lookup_key not in matched_keys2:
                 out_lines.append(

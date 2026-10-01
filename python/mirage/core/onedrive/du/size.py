@@ -14,7 +14,7 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import du_tree_total
+from mirage.core.msgraph.drive import du_tree_total
 from mirage.core.onedrive.client import drive_loc, split_path
 from mirage.core.onedrive.stat import stat
 from mirage.types import FileType, PathSpec

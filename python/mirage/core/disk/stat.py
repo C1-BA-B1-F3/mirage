@@ -20,8 +20,8 @@ from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.disk.errors import disk_errors
 from mirage.core.disk.utils import resolve_inside
-from mirage.core.timeutil import ns_to_iso
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.dates import ns_to_iso
 from mirage.utils.filetype import content_type_for_path
 
 

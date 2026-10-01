@@ -44,7 +44,7 @@ import mirage.core.hf_buckets.read as hf_buckets_read
 import mirage.core.hf_buckets.stream as hf_buckets_stream
 import mirage.core.hf_hub.read as hf_read
 import mirage.core.hf_hub.stream as hf_stream
-import mirage.core.msgraph.drive_ops as drive_ops
+import mirage.core.msgraph.drive as drive_ops
 import mirage.core.s3.read as s3_read
 import mirage.core.s3.stream as s3_stream
 from mirage.cache.index import IndexCacheStore, RAMIndexCacheStore

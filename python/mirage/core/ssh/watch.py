@@ -19,8 +19,8 @@ import asyncssh
 from mirage.accessor.ssh import SSHAccessor
 from mirage.core.ssh.client import _abs
 from mirage.core.ssh.config import SSHConfig
-from mirage.core.timeutil import epoch_to_iso
 from mirage.types import PathSpec, WalkEntry
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.watch.base import DeltaHook
 from mirage.watch.delta import ListingDeltaHook

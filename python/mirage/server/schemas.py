@@ -1,0 +1,154 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from mirage.config import WorkspaceConfig
+
+
+class MountSummary(BaseModel):
+    prefix: str
+    vfs: str
+    mode: str
+    description: str = ""
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    cwd: str
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+    workspaces: int
+    uptime_s: float
+
+
+class WorkspaceInternals(BaseModel):
+    cache_bytes: int | None
+    cache_entries: int | None
+    history_length: int
+    in_flight_jobs: int
+
+
+class WorkspaceBrief(BaseModel):
+    id: str
+    mode: str
+    mount_count: int
+    session_count: int
+    created_at: float
+
+
+class WorkspaceDetail(BaseModel):
+    id: str
+    mode: str
+    created_at: float
+    fuse_mountpoints: dict[str, str] = Field(default_factory=dict)
+    sessions: list[SessionSummary] = Field(default_factory=list)
+    mounts: list[MountSummary] = Field(default_factory=list)
+    internals: WorkspaceInternals | None = None
+
+
+class CreateWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    config: WorkspaceConfig
+    id: str | None = None
+
+
+class CloneWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    override: dict[str, Any] | None = None
+
+
+class SnapshotWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+
+
+class SnapshotWorkspaceResponse(BaseModel):
+    id: str
+    path: str
+    size: int
+
+
+class LoadWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    id: str | None = None
+    override: dict[str, Any] | None = None
+
+
+class DeleteWorkspaceResponse(BaseModel):
+    id: str
+    closed_at: float
+
+
+class CommitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    branch: str = "main"
+    message: str = ""
+
+
+class CommitResponse(BaseModel):
+    version: str
+    branch: str
+
+
+class VersionLogItem(BaseModel):
+    id: str
+    message: str
+
+
+class CheckoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ref: str
+
+
+class CloneRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    at: str | None = None
+    id: str | None = None
+    # A version store holds no `secrets:` block, and the live source
+    # may be gone (a restart), so a historical clone that restores
+    # managed pointers names their declarations here.
+    secrets: dict[str, Any] | None = None
+
+
+class DiffResponse(BaseModel):
+    added: list[str]
+    modified: list[str]
+    deleted: list[str]
+
+
+class BranchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    from_branch: str = "main"
+
+
+class BranchResponse(BaseModel):
+    branch: str
+    version: str

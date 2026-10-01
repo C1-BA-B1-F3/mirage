@@ -16,8 +16,7 @@ import json
 
 from mirage.accessor.trello import TrelloAccessor
 from mirage.commands.builtin.trello._scope import require_card, require_list
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandSpec, Option
 from mirage.context import require_mount_writable

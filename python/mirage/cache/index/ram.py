@@ -19,7 +19,7 @@ from mirage.cache.index.config import (Evicted, IndexEntry, ListResult,
                                        ResourceType)
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.lock import KeyLockMixin
-from mirage.core.timeutil import to_iso_z
+from mirage.utils.dates import to_iso_z
 from mirage.utils.key_prefix import under_path
 
 

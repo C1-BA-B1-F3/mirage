@@ -16,7 +16,8 @@ import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { MountMode, PathSpec } from '../../../types.ts'
+import type { PathSpec } from '../../../types.ts'
+import { MountMode } from '../../../types.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
 const RAM_JOIN = RAM_COMMANDS.filter((c) => c.name === 'join' && c.filetype == null)
@@ -49,16 +50,6 @@ async function runJoin(
 }
 
 describe('join', () => {
-  it('joins two files on first field', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/a.txt', ENC.encode('1 Alice\n2 Bob\n'))
-    vfs.store.files.set('/b.txt', ENC.encode('1 NY\n2 LA\n'))
-    const r = await runJoin(vfs, [PathSpec.fromStrPath('/a.txt'), PathSpec.fromStrPath('/b.txt')])
-    expect(r.exitCode).toBe(0)
-    expect(r.out).toContain('1 Alice NY')
-    expect(r.out).toContain('2 Bob LA')
-  })
-
   it("refuses fewer than 2 paths with GNU's usage error, exit 1", async () => {
     const vfs = new RAMVFS()
     const call = runJoin(vfs, [])

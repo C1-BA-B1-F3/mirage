@@ -17,8 +17,8 @@ export {
   MirageToolOperations,
   type MirageToolOperationsOptions,
   type ToolResult,
-} from '../tool-operations.ts'
-export { FileVersionTracker, StaleMirageFileError } from '../file-version.ts'
+} from '../tool_operations.ts'
+export { FileVersionTracker, StaleMirageFileError } from '../file_version.ts'
 export {
   EDIT_DESCRIPTION,
   EXECUTE_DESCRIPTION,
@@ -26,4 +26,4 @@ export {
   LS_DESCRIPTION,
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
-} from '../tool-descriptions.ts'
+} from '../tool_descriptions.ts'

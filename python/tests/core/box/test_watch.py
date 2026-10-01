@@ -21,9 +21,9 @@ import pytest
 
 from mirage.accessor.box import BoxAccessor
 from mirage.core.box.client import BoxApiError, BoxTokenManager
-from mirage.core.box.config import BoxConfig
 from mirage.core.box.watch import BoxDeltaHook, BoxEventHook
 from mirage.types import FileChangeKind, PathSpec
+from mirage.vfs.box.config import BoxConfig
 
 ALL_FILES = {"type": "folder", "id": "0", "name": "All Files"}
 TEAM = {"type": "folder", "id": "10", "name": "team"}

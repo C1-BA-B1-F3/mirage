@@ -18,8 +18,7 @@ from mirage.accessor.history import HistoryAccessor
 from mirage.commands.builtin.generic.find import (find_generic,
                                                   find_walk_generic)
 from mirage.commands.builtin.history.io import IO
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.core.history.find import find as find_core

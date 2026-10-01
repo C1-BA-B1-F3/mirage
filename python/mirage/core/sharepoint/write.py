@@ -1,7 +1,6 @@
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.msgraph.drive_ops import (SIMPLE_UPLOAD_MAX,
-                                           upload_session_write)
+from mirage.core.msgraph.drive import SIMPLE_UPLOAD_MAX, upload_session_write
 from mirage.core.sharepoint.client import graph_put_bytes, item_url
 from mirage.core.sharepoint.resolve import resolve
 from mirage.observe.context import record, start_op

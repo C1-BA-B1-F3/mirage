@@ -20,10 +20,10 @@ import { MountRegistry } from '../mount/registry.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import { SessionState } from '../session/session.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
-import type { DispatchFn } from './cross_mount.ts'
-import { handleCommand } from './command.ts'
+import type { DispatchFn } from '../../runtime/types.ts'
+import { handleCommand } from './command/command.ts'
 import { fanOutTraversal, filterUnderPrefixes } from './fanout.ts'
-import { basename } from '../../core/ram/utils.ts'
+import { gnuBasename } from '../../utils/path.ts'
 import { OpsRegistry } from '../../ops/registry.ts'
 import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace.ts'
@@ -42,7 +42,7 @@ const NEVER_EXECUTE: ExecuteNodeFn = () => {
 const STAT_ONLY_DISPATCH: DispatchFn = ((op: string, path: PathSpec) => {
   if (op !== 'stat') throw new Error(`dispatch(${op}) should not have been called`)
   return Promise.resolve([
-    new FileStat({ name: basename(path.virtual), type: FileType.DIRECTORY }),
+    new FileStat({ name: gnuBasename(path.virtual), type: FileType.DIRECTORY }),
     new IOResult(),
   ])
 }) as unknown as DispatchFn
@@ -145,7 +145,7 @@ describe('fanOutTraversal mount-entry synthesis honors the expression tree', () 
       if (op !== 'stat') throw new Error(`dispatch(${op}) should not have been called`)
       return Promise.resolve([
         new FileStat({
-          name: basename(path.virtual),
+          name: gnuBasename(path.virtual),
           type: FileType.DIRECTORY,
           modified: stamps[path.virtual] ?? '2026-01-01T00:00:00Z',
         }),
@@ -184,7 +184,7 @@ describe('fanOutTraversal mount-entry synthesis honors the expression tree', () 
       if (path.virtual.startsWith('/w/skip/')) throw new Error(`statted ${path.virtual}`)
       return Promise.resolve([
         new FileStat({
-          name: basename(path.virtual),
+          name: gnuBasename(path.virtual),
           type: FileType.DIRECTORY,
           modified: '2026-01-01T00:00:00Z',
         }),
@@ -862,7 +862,7 @@ function duProbe(refused: string): StatPath {
   return (path: string) => {
     if (path === refused) return Promise.reject(eacces(path))
     const type = path === '/empty' || path === '/data' ? FileType.DIRECTORY : FileType.FILE
-    return Promise.resolve(new FileStat({ name: basename(path), type }))
+    return Promise.resolve(new FileStat({ name: gnuBasename(path), type }))
   }
 }
 

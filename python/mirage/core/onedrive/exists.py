@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.msgraph.drive_ops import make_exists
+from mirage.core.msgraph.drive import make_exists
 from mirage.core.onedrive.stat import stat
 
 exists = make_exists(stat)

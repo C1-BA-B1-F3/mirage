@@ -14,7 +14,7 @@
 
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import du_tree_total
+from mirage.core.msgraph.drive import du_tree_total
 from mirage.core.sharepoint.resolve import drive_loc, resolve
 from mirage.core.sharepoint.stat import stat
 from mirage.types import FileType, PathSpec

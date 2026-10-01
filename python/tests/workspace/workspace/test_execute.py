@@ -18,7 +18,7 @@ import pytest
 
 from mirage import MountMode, Workspace
 from mirage.commands.cli.types import CLISpec
-from mirage.commands.registry import command
+from mirage.commands.config import command
 from mirage.commands.spec import CommandSpec
 from mirage.io.types import IOResult
 from mirage.observe.store import RAMObserverStore

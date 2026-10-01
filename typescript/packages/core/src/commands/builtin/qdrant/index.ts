@@ -15,11 +15,11 @@
 import type { QdrantAccessor } from '../../../accessor/qdrant.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
+import { makeSearch } from '../generic/search.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { QDRANT_IO } from './io.ts'
-import { QDRANT_SEARCH } from './search.ts'
 
 export const QDRANT_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<QdrantAccessor>(VFSName.QDRANT, QDRANT_IO),
-  ...QDRANT_SEARCH,
+  ...makeSearch(VFSName.QDRANT, QDRANT_IO.search),
 ]

@@ -1,7 +1,7 @@
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import drive_root_empty
+from mirage.core.msgraph.drive import drive_root_empty
 from mirage.core.sharepoint.client import graph_delete, item_url, split_path
 from mirage.core.sharepoint.resolve import drive_loc, resolve
 from mirage.types import PathSpec

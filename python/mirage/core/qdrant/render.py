@@ -12,23 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import base64
 from typing import Any
 
 from mirage.core.qdrant.payload import field_value, without_field
 from mirage.core.render.json import compact_json_text, value_text
-from mirage.types import JsonValue
 from mirage.vfs.qdrant.config import QdrantConfig
 
 _SKIP_KEYS = {"_distance", "_rowid", "_score"}
-
-
-def blob_bytes(value: JsonValue) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    if isinstance(value, str):
-        return base64.b64decode(value)
-    raise ValueError("blob column is not bytes or base64 str")
 
 
 def render_json(row: dict[str, Any], config: QdrantConfig) -> bytes:

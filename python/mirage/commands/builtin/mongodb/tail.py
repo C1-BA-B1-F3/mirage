@@ -20,8 +20,7 @@ from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
 from mirage.commands.builtin.mongodb.io import IO
 from mirage.commands.builtin.utils.limit import row_cap_notice
-from mirage.commands.config import CommandOpts
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.mongodb.read import stream_any
 from mirage.core.mongodb.readdir import documents_exist

@@ -1,26 +1,36 @@
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
+import asyncio
 
 from mirage.accessor.qdrant import QdrantAccessor
 from mirage.vfs.qdrant.config import QdrantConfig
 
 
-@pytest.mark.asyncio
-async def test_close_releases_all_clients_and_caches():
-    accessor = QdrantAccessor(QdrantConfig())
-    first = MagicMock()
-    first.close = AsyncMock()
-    second = MagicMock()
-    second.close = AsyncMock()
-    accessor._clients = {1: first, 2: second}
-    accessor._search_cache = {("collection", "query", 10): [{"id": 1}]}
-    accessor._indexes_ensured = {"collection"}
+class _Client:
 
-    await accessor.close()
+    def __init__(self, **kwargs) -> None:
+        self.kwargs = kwargs
+        self.closed = False
 
-    first.close.assert_awaited_once_with()
-    second.close.assert_awaited_once_with()
-    assert accessor._clients == {}
-    assert accessor._search_cache == {}
-    assert accessor._indexes_ensured == set()
+    async def close(self) -> None:
+        self.closed = True
+
+
+def test_each_loop_opens_its_own_client_and_close_releases_it(monkeypatch):
+    # Keyed by the loop object, not id(loop): a second asyncio.run must
+    # not reach the client the first run's closed loop opened.
+    monkeypatch.setattr("mirage.accessor.qdrant.AsyncQdrantClient", _Client)
+    accessor = QdrantAccessor(QdrantConfig(url="http://qdrant:6333"))
+
+    async def twice() -> _Client:
+        client = await accessor.client()
+        assert await accessor.client() is client
+        return client
+
+    first = asyncio.run(twice())
+    second = asyncio.run(twice())
+    assert second is not first and first.closed
+    assert second.kwargs["url"] == "http://qdrant:6333"
+    accessor.search_cache[("c", "q", 1)] = []
+    accessor.indexes_ensured.add("c")
+    asyncio.run(accessor.close())
+    assert second.closed
+    assert accessor.search_cache == {} and accessor.indexes_ensured == set()

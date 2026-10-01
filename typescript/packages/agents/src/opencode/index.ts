@@ -16,9 +16,9 @@ import { tool, type Plugin, type ToolContext, type ToolDefinition } from '@openc
 import type { Workspace } from '@struktoai/mirage-node'
 import { encodeBase64 } from '@struktoai/mirage-core/utils/base64'
 import { gnuDirname } from '@struktoai/mirage-core/utils/path'
-import { FileVersionTracker } from '../file-version.ts'
-import { readWorkspaceFile } from '../read-file.ts'
-import { replaceText, withRefusal } from '../io-text.ts'
+import { FileVersionTracker } from '../file_version.ts'
+import { readWorkspaceFile } from '../read_file.ts'
+import { replaceText, withRefusal } from '../io_text.ts'
 
 const z = tool.schema
 
@@ -244,4 +244,4 @@ export function miragePlugin(ws: WsLike, options: MirageOpenCodeOptions = {}): P
   return () => Promise.resolve({ tool: mirageTools(ws, options) })
 }
 
-export { StaleMirageFileError } from '../file-version.ts'
+export { StaleMirageFileError } from '../file_version.ts'

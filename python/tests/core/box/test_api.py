@@ -21,7 +21,7 @@ from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404, create_folder,
                                  realtime_server, search_content,
                                  upload_file_version, upload_new_file)
 from mirage.core.box.client import BoxApiError, BoxTokenManager
-from mirage.core.box.config import BoxConfig
+from mirage.vfs.box.config import BoxConfig
 
 
 @pytest.fixture

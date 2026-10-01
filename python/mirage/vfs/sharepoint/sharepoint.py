@@ -2,8 +2,7 @@ from typing import Any
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
 from mirage.commands.builtin.sharepoint import COMMANDS as SHAREPOINT_COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.sharepoint.watch import build_delta_hook
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.sharepoint import OPS as SHAREPOINT_OPS

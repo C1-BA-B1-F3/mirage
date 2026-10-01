@@ -21,9 +21,9 @@ from pydantic_ai_backends.types import (EditResult, ExecuteResponse, FileInfo,
                                         GrepMatch, WriteResult)
 
 from mirage.agents.io_text import replace_text
-from mirage.agents.pydantic_ai._convert import (io_to_execute_response,
-                                                io_to_file_infos,
-                                                io_to_grep_matches)
+from mirage.agents.pydantic_ai.convert import (io_to_execute_response,
+                                               io_to_file_infos,
+                                               io_to_grep_matches)
 from mirage.bridge.sync import run_async_from_sync
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace

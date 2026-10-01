@@ -26,8 +26,7 @@ from mirage.commands.builtin.generic_bind.provision import (
     make_search_provision, make_transform_provision, metadata_provision,
     pure_provision, with_default_provisions, write_metadata_provision)
 from mirage.commands.builtin.ram import COMMANDS as RAM_COMMANDS
-from mirage.commands.config import CommandOpts, RegisteredCommand
-from mirage.commands.registry import command
+from mirage.commands.config import CommandOpts, RegisteredCommand, command
 from mirage.commands.spec import SPECS
 from mirage.provision import Precision
 from mirage.types import ContentType, FileStat, FileType, PathSpec

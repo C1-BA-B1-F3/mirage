@@ -37,7 +37,7 @@ import type { MountEntry } from '../mount/mount.ts'
 import { Namespace } from '../mount/namespace/namespace.ts'
 import { SessionState } from '../session/session.ts'
 import type { ResolveFn } from '../dispatcher/index.ts'
-import type { DispatchFn } from './cross_mount.ts'
+import type { DispatchFn } from '../../runtime/types.ts'
 import {
   handleCd,
   handleEcho,

@@ -18,7 +18,7 @@ import type { PathSpec } from '../../../../../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import { rstripSlash } from '../../../../../utils/slash.ts'
 import { relayIsDirOf, relayWalkOf } from '../../../generic_bind/archive_io.ts'
-import { parseTarFlags, tarGeneric } from '../../tar.ts'
+import { parseTarFlags, tarGeneric } from '../../tar/tar.ts'
 import { crossOpts, flatten, statOp, streamOp } from '../utils.ts'
 import type { CrossResult, DispatchFn } from '../types.ts'
 

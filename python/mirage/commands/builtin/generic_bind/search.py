@@ -16,6 +16,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from mirage.accessor.base import Accessor
+from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic.rg import folds_case
 from mirage.commands.builtin.generic.rg import parse_flags as parse_rg_flags
@@ -24,19 +25,19 @@ from mirage.commands.builtin.generic.rg import rg_syntax
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, bound_op
 from mirage.commands.builtin.grep_pattern import (PATTERN_KEYS, matcher_syntax,
                                                   pattern_arg)
-from mirage.commands.builtin.grep_pushdown import (grep_search_meta,
-                                                   literal_pushdown_operand,
-                                                   pushdown_operand,
-                                                   text_search_results)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import JsonValue, PathSpec
+from mirage.types import FileType, JsonValue, PathSpec
 from mirage.utils.errors import FileTooLargeError
 from mirage.vfs.types import SearchQuery
+
+from mirage.commands.builtin.grep_pushdown import (  # isort: skip
+    grep_search_meta, literal_pushdown_operand, pushdown_operand,
+    text_candidates, text_search_results, whole_word_literal)
 
 logger = logging.getLogger(__name__)
 
@@ -166,3 +167,72 @@ async def run_search(
             bound_op(io.read_bytes, accessor, opts.index)) if stream else None,
         stdin=opts.stdin,
     )
+
+
+async def _all_directories(io: CommandIO, accessor: Accessor,
+                           index: IndexCacheStore,
+                           paths: list[PathSpec]) -> bool:
+    """Whether every scope operand stats as a directory.
+
+    File operands keep the exact single-file output shape (no walk-style
+    labels), and missing operands must surface the walk's error message,
+    so both fall back to the generic scan.
+    """
+    for path in paths:
+        try:
+            info = await io.stat(accessor, path, index)
+        except (OSError, ValueError):
+            return False
+        if info.type != FileType.DIRECTORY:
+            return False
+    return True
+
+
+async def narrow_scope(
+    io: CommandIO,
+    accessor: Accessor,
+    index: IndexCacheStore,
+    paths: list[PathSpec],
+    pattern: str | None,
+    *,
+    fixed_string: bool,
+    recursive: bool,
+    whole_word: bool,
+    exact_file_set: bool,
+) -> tuple[list[PathSpec], bool]:
+    """Resolve grep/rg scope paths, narrowing through the content index.
+
+    Push-down needs every gate to hold: the mount opted in, the scan is
+    recursive, a whole-word literal can be pushed down (which is what
+    makes a word-based search complete), the output mode tolerates a
+    narrowed superset (``exact_file_set`` covers flags such as -v that
+    must see every file), and every scope operand is a directory. There
+    is no scope-size gate: one search call plus targeted reads beats a
+    full walk at every size. Binary-extension candidates are dropped,
+    since the walk they replace skips them.
+
+    Args:
+        io (CommandIO): the backend table; its ``content_search`` is set.
+        accessor (Accessor): backend handle.
+        index (IndexCacheStore): index for the stat and glob fallback.
+        paths (list[PathSpec]): scope paths, possibly mount-prefixed.
+        pattern (str | None): the search pattern, or None for -f runs.
+        fixed_string (bool): -F is set.
+        recursive (bool): the scan walks directories.
+        whole_word (bool): -w is set; required for push-down.
+        exact_file_set (bool): the output must see every file in scope.
+
+    Returns:
+        tuple[list[PathSpec], bool]: the resolved paths and whether the
+            index narrowed them. A narrowed set may be empty (every
+            candidate was binary), which is not a stdin run.
+    """
+    search = io.content_search
+    query = whole_word_literal(pattern, fixed_string, whole_word)
+    if (search is not None and query is not None and recursive
+            and not exact_file_set and search.enabled(accessor)
+            and await _all_directories(io, accessor, index, paths)):
+        narrowed = await search.narrow_paths(accessor, query, paths)
+        if narrowed:
+            return text_candidates(narrowed), True
+    return await io.resolve_glob(accessor, paths, index), False

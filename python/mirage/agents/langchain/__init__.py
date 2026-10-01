@@ -12,10 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.langchain._messages import extract_text
 from mirage.agents.langchain.backend import LangchainWorkspace
-from mirage.agents.langchain.prompt import (MIRAGE_SYSTEM_PROMPT,
-                                            build_system_prompt)
+from mirage.agents.langchain.messages import extract_text
+from mirage.agents.prompt import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 
 __all__ = [
     "LangchainWorkspace",

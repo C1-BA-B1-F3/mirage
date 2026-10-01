@@ -6,7 +6,7 @@ from dulwich.objects import Commit, ObjectID, ShaFile, Tag, Tree
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.errors import GitError
-from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import (file_size, read_file,
                                                 read_names, read_optional,
                                                 read_range)

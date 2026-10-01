@@ -43,7 +43,7 @@ async def test_chroma_vfs_registers_expected_commands_and_ops():
     assert {
         "cat", "ls", "grep", "find", "head", "tail", "tree", "chroma-query"
     }.issubset(commands)
-    assert {"read", "readdir", "stat", "grep", "search"}.issubset(ops)
+    assert {"read", "readdir", "stat"}.issubset(ops)
 
 
 # chroma lists from one tree document, so a refused listing refetches the

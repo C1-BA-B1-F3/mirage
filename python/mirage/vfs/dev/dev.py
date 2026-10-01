@@ -16,8 +16,7 @@ from typing import TypeVar, overload
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.commands.builtin.dev import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.context import get_current_session
 from mirage.ops.dev import OPS as DEV_OPS
 from mirage.ops.registry import RegisteredOp

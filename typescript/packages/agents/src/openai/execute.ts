@@ -16,7 +16,7 @@ import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/works
 import { tool } from '@openai/agents'
 import { z } from 'zod'
 import type { Refusal } from '@struktoai/mirage-core/types'
-import { withRefusal } from '../io-text.ts'
+import { withRefusal } from '../io_text.ts'
 
 function formatExecuteOutput(
   stdout: string,

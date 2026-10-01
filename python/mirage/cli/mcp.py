@@ -17,7 +17,6 @@ from pathlib import Path
 
 import typer
 
-from mirage.agents.mcp.server import serve_mirage_mcp
 from mirage.server.workspace_config import (build_workspace_from_config,
                                             resolve_workspace_config)
 
@@ -55,6 +54,11 @@ async def run_mcp_server(config: str | None,
         stale_write_protection (bool): False lets an agent overwrite a
             file that changed since it read it.
     """
+    # Imported here, as the TypeScript twin awaits mirage-agents/mcp:
+    # every other `mirage` verb would otherwise pay for the agents
+    # package and the whole workspace on each spawn.
+    from mirage.agents.mcp.server import serve_mirage_mcp
+
     workspace = await build_workspace_from_config(resolve_mcp_config(config))
     try:
         await serve_mirage_mcp(workspace, stale_write_protection)

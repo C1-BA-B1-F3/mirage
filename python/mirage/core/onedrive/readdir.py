@@ -14,7 +14,7 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive_ops import readdir_items
+from mirage.core.msgraph.drive import readdir_items
 from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of

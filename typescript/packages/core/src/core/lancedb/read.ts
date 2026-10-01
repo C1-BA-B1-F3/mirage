@@ -13,16 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
-import type { LanceRow } from './_driver.ts'
-import { PathSpec } from '../../types.ts'
-import { decodeBase64 } from '../../utils/base64.ts'
+import type { PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
-import { perAccessor } from '../hierarchy/bind.ts'
-import { makeRead, type Reader } from '../hierarchy/read.ts'
+import type { Reader } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
+import { blobBytes } from '../vector/read.ts'
+import { tableOf } from '../vector/scope.ts'
+import type { LanceRow } from './query.ts'
 import { renderCard } from './render.ts'
-import { detectFor, tableOf } from './scope.ts'
 
 async function rowOf(
   accessor: LanceDBAccessor,
@@ -31,18 +29,12 @@ async function rowOf(
 ): Promise<LanceRow> {
   const config = accessor.config
   const row = await accessor.driver.rowRecord(
-    tableOf(config, match),
+    tableOf(config.table, match),
     config.idColumn,
     match.slots.row_id ?? '',
   )
   if (row === null) throw enoent(virtual)
   return row
-}
-
-function blobBytes(value: unknown): Uint8Array {
-  if (value instanceof Uint8Array) return value
-  if (typeof value === 'string') return decodeBase64(value)
-  throw new Error('blob column is not bytes or base64 string')
 }
 
 async function readCard(
@@ -65,22 +57,7 @@ async function readBlob(
   return blobBytes(row[config.blobColumn])
 }
 
-const READERS: Record<string, Reader<LanceDBAccessor>> = {
+export const READERS: Record<string, Reader<LanceDBAccessor>> = {
   row_card: readCard,
   row_blob: readBlob,
-}
-
-function buildRead(accessor: LanceDBAccessor) {
-  return makeRead(detectFor(accessor), READERS)
-}
-
-const readFor = perAccessor(buildRead)
-
-export async function read(
-  accessor: LanceDBAccessor,
-  path: PathSpec | string,
-  index?: IndexCacheStore,
-): Promise<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  return readFor(accessor)(accessor, spec, index)
 }

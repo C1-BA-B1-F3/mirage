@@ -15,7 +15,8 @@
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
-import { metadataString, pagesChunks } from './client.ts'
+import { scalarString } from '../slug_tree/rows.ts'
+import { pagesChunks } from './client.ts'
 import { renderPage } from './render.ts'
 
 /**
@@ -44,12 +45,12 @@ export async function ensureDirSizes(
   if (pending.size === 0) return
   const slugs: string[] = []
   for (const entry of pending.values()) {
-    const slug = metadataString(entry.extra.slug)
+    const slug = scalarString(entry.extra.slug)
     if (slug !== null) slugs.push(slug)
   }
   const grouped = await pagesChunks(accessor, slugs)
   for (const [child, entry] of pending) {
-    const chunks = grouped.get(metadataString(entry.extra.slug) ?? '')
+    const chunks = grouped.get(scalarString(entry.extra.slug) ?? '')
     if (chunks === undefined || chunks.length === 0) continue
     await index.put(child, entry.copyWith({ size: renderPage(chunks).byteLength }))
   }

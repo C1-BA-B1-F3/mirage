@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.core.msgraph.config import MsGraphConfig
-from mirage.core.msgraph.drive_ops import DriveLoc
+from mirage.core.msgraph.drive import DriveLoc
 from mirage.core.sharepoint.client import (drive_ref_path, graph_api,
                                            graph_list, id_segment, item_url)
 from mirage.types import PathSpec

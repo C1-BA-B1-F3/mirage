@@ -15,11 +15,11 @@
 import type { LanceDBAccessor } from '../../../accessor/lancedb.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
+import { makeSearch } from '../generic/search.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { LANCEDB_IO } from './io.ts'
-import { LANCEDB_SEARCH } from './search.ts'
 
 export const LANCEDB_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<LanceDBAccessor>(VFSName.LANCEDB, LANCEDB_IO),
-  ...LANCEDB_SEARCH,
+  ...makeSearch(VFSName.LANCEDB, LANCEDB_IO.search),
 ]

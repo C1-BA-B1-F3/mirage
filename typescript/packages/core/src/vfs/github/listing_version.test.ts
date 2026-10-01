@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shiftPerformanceNow } from '../../cache/_test_util.ts'
 import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { RedisIndexCacheStore } from '../../cache/index/redis.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { runInCommandScope } from '../../cache/index/scope.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
@@ -121,6 +122,25 @@ describe('github versions a listing by its head commit', () => {
     },
   )
 
+  // A mount that has not listed yet asks the head for a root stat, one
+  // request; once it has listed, the root answers from the listing for none.
+  it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
+    'asks the head once for a root stat before the first listing (%s)',
+    async (policy) => {
+      const w = await wsOf(await vfsOf(), policy)
+      try {
+        expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
+        expect(gh.counts()).toEqual([1, 0, 0])
+        await out(w, 'ls /gh')
+        gh.log.length = 0
+        expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
+        expect(gh.counts()).toEqual([0, 0, 0])
+      } finally {
+        await w.close()
+      }
+    },
+  )
+
   // An expired root listing names no version and asks nothing.
   it('names no version for an expired root listing', async () => {
     const vfs = await vfsOf()
@@ -176,26 +196,36 @@ describe('github versions a listing by its head commit', () => {
   // A second workspace refills the index both share, so the first one's
   // in-memory tree is older than its index. ls answers from the index and
   // pays nothing for that; find and grep walk the tree, so they refill it.
-  it('refills a tree older than a shared index before walking it', async () => {
-    const shared = new RAMIndexCacheStore()
-    const one = await wsOf(await vfsOf(), ReadPolicy.FRESH, shared)
-    const two = await wsOf(await vfsOf(), ReadPolicy.FRESH, shared)
-    try {
-      await out(one, 'ls /gh')
-      gh.set('d1/new.txt', 'new x\n')
-      await out(two, 'ls /gh/d1')
-      gh.log.length = 0
-      expect(await out(one, 'ls /gh/d1')).toBe(GROWN)
-      expect(gh.counts()).toEqual([1, 0, 0])
-      gh.log.length = 0
-      expect(await out(one, 'find /gh -name new.txt')).toBe('/gh/d1/new.txt\n')
-      expect(gh.counts()).toEqual([1, 1, 0])
-      expect(await out(one, 'grep -rl x /gh')).toContain('/gh/d1/new.txt')
-    } finally {
-      await one.close()
-      await two.close()
-    }
-  })
+  // Shared as one RAM store, or as two Redis stores over one server.
+  const backends = process.env.REDIS_URL === undefined ? ['ram'] : ['ram', 'redis']
+  it.each(backends)(
+    'refills a tree older than a shared index before walking it (%s)',
+    async (backend) => {
+      const shared = new RAMIndexCacheStore()
+      const keyPrefix = `shared:${crypto.randomUUID()}:`
+      const store = (): IndexCacheStore =>
+        backend === 'ram'
+          ? shared
+          : new RedisIndexCacheStore({ url: process.env.REDIS_URL ?? '', keyPrefix })
+      const one = await wsOf(await vfsOf(), ReadPolicy.FRESH, store())
+      const two = await wsOf(await vfsOf(), ReadPolicy.FRESH, store())
+      try {
+        await out(one, 'ls /gh')
+        gh.set('d1/new.txt', 'new x\n')
+        await out(two, 'ls /gh/d1')
+        gh.log.length = 0
+        expect(await out(one, 'ls /gh/d1')).toBe(GROWN)
+        expect(gh.counts()).toEqual([1, 0, 0])
+        gh.log.length = 0
+        expect(await out(one, 'find /gh -name new.txt')).toBe('/gh/d1/new.txt\n')
+        expect(gh.counts()).toEqual([1, 1, 0])
+        expect(await out(one, 'grep -rl x /gh')).toContain('/gh/d1/new.txt')
+      } finally {
+        await one.close()
+        await two.close()
+      }
+    },
+  )
 
   // A full-hex ref pins every listing: the stored version is the pin, so the
   // next command serves it with no request. Compared lowercased.

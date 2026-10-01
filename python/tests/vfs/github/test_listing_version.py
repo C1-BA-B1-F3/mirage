@@ -126,6 +126,24 @@ async def test_a_root_stat_through_the_mount_index_reads_it_ungated(
             await ws.close()
 
 
+# A mount that has not listed yet asks the head for a root stat, one
+# request; once it has listed, the root answers from the listing for none.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
+async def test_a_root_stat_before_the_first_listing_asks_once(policy):
+    with serve(_three()) as hub:
+        ws = _ws(_vfs(hub), policy=policy)
+        try:
+            assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
+            assert hub.counts() == (1, 0, 0)
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
+            assert hub.counts() == (0, 0, 0)
+        finally:
+            await ws.close()
+
+
 # An expired root listing names no version and asks nothing; a refused
 # head names none either, and never falls into a refill of the index.
 @pytest.mark.asyncio
@@ -194,11 +212,20 @@ async def test_a_commit_after_the_tree_response_is_caught_next_command():
 # A second workspace refills the index both share, so the first one's
 # in-memory tree is older than its index. ls answers from the index and pays
 # nothing for that; find and grep walk the tree, so they refill it first.
+# Shared as one RAM store, or as two Redis stores over one server.
 @pytest.mark.asyncio
-async def test_a_tree_older_than_a_shared_index_is_refilled_for_walks():
+@pytest.mark.parametrize("backend", ["ram", "redis"])
+async def test_a_tree_older_than_a_shared_index_is_refilled_for_walks(backend):
+    client = FakeRedis() if backend == "redis" else None
+    shared = RAMIndexCacheStore()
+
+    def store():
+        if client is None:
+            return shared
+        return RedisIndexCacheStore(client=client, key_prefix="shared:")
+
     with serve(_three()) as hub:
-        shared = RAMIndexCacheStore()
-        one, two = _ws(_vfs(hub), index=shared), _ws(_vfs(hub), index=shared)
+        one, two = _ws(_vfs(hub), index=store()), _ws(_vfs(hub), index=store())
         try:
             await _out(one, "ls /gh")
             hub.files["d1/new.txt"] = b"new x\n"
@@ -214,6 +241,8 @@ async def test_a_tree_older_than_a_shared_index_is_refilled_for_walks():
         finally:
             await one.close()
             await two.close()
+            if client is not None:
+                await client.aclose()
 
 
 SHA = "0123456789abcdef0123456789abcdef01234567"

@@ -3,7 +3,7 @@
     {
       "id": "grep_bre_plus_is_literal",
       "seq": 500300,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\naab\\n' > /data/bre.txt && grep 'a+b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -14,7 +14,7 @@
     {
       "id": "grep_bre_escaped_plus_is_the_quantifier",
       "seq": 500301,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\naab\\n' > /data/bre.txt && grep 'a\\+b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -25,7 +25,7 @@
     {
       "id": "grep_bre_question_is_literal",
       "seq": 500302,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a?b\\nab\\n' > /data/bre.txt && grep 'a?b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -36,7 +36,7 @@
     {
       "id": "grep_bre_pipe_is_literal",
       "seq": 500303,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a|b\\nab\\n' > /data/bre.txt && grep 'a|b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -47,7 +47,7 @@
     {
       "id": "grep_bre_escaped_pipe_alternates",
       "seq": 500304,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'xa\\nyb\\nzc\\n' > /data/bre.txt && grep 'a\\|b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -58,7 +58,7 @@
     {
       "id": "grep_bre_braces_are_literal",
       "seq": 500305,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a{2}\\naa\\n' > /data/bre.txt && grep 'a{2}' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -69,7 +69,7 @@
     {
       "id": "grep_bre_escaped_braces_are_the_interval",
       "seq": 500306,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a{2}\\naa\\n' > /data/bre.txt && grep 'a\\{2\\}' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -80,7 +80,7 @@
     {
       "id": "grep_bre_parens_are_literal",
       "seq": 500307,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf '(ab)\\nab\\n' > /data/bre.txt && grep '(ab)' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -91,7 +91,7 @@
     {
       "id": "grep_bre_caret_mid_pattern_is_literal",
       "seq": 500308,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a^b\\nab\\n' > /data/bre.txt && grep 'a^b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -102,7 +102,7 @@
     {
       "id": "grep_bre_dollar_mid_pattern_is_literal",
       "seq": 500309,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a$b\\nab\\n' > /data/bre.txt && grep 'a$b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -113,7 +113,7 @@
     {
       "id": "grep_bre_star_with_nothing_to_repeat_is_literal",
       "seq": 500310,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf '*abc\\nabc\\n' > /data/bre.txt && grep '*abc' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -124,7 +124,7 @@
     {
       "id": "grep_bre_backreference",
       "seq": 500311,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'aa\\nab\\n' > /data/bre.txt && grep '\\(a\\)\\1' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -135,7 +135,7 @@
     {
       "id": "grep_G_is_the_default_spelled_out",
       "seq": 500312,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\naab\\n' > /data/bre.txt && grep -G 'a+b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -146,7 +146,7 @@
     {
       "id": "grep_E_still_reads_extended",
       "seq": 500313,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\naab\\n' > /data/bre.txt && grep -E 'a+b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -157,7 +157,7 @@
     {
       "id": "grep_bre_anchors_still_anchor",
       "seq": 500314,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'ab\\nxab\\n' > /data/bre.txt && grep '^ab' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -168,7 +168,7 @@
     {
       "id": "grep_bre_files_only_reads_the_same_dialect",
       "seq": 500315,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\n' > /data/bhit.txt && printf 'aab\\n' > /data/bmiss.txt && grep -l 'a+b' /data/bhit.txt /data/bmiss.txt",
       "expect": {
         "exit": 0,
@@ -179,7 +179,7 @@
     {
       "id": "grep_bre_files_only_recursive_reads_the_same_dialect",
       "seq": 500316,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "mkdir -p /data2/bre && printf 'a+b\\n' > /data2/bre/hit.txt && printf 'aab\\n' > /data2/bre/miss.txt && grep -rl 'a+b' /data2/bre",
       "expect": {
         "exit": 0,
@@ -190,7 +190,7 @@
     {
       "id": "grep_E_files_only_still_reads_extended",
       "seq": 500317,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'a+b\\n' > /data/bhit.txt && printf 'aab\\n' > /data/bmiss.txt && grep -lE 'a+b' /data/bhit.txt /data/bmiss.txt",
       "expect": {
         "exit": 0,
@@ -201,7 +201,7 @@
     {
       "id": "grep_bre_posix_class_is_expanded_not_passed_through",
       "seq": 500318,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'abc\\n123\\n' > /data/bre.txt && grep '[[:alpha:]]' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -212,7 +212,7 @@
     {
       "id": "grep_bre_word_escape_is_the_ascii_set",
       "seq": 500319,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'abc\\n---\\n' > /data/bre.txt && grep '\\w\\+' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -223,7 +223,7 @@
     {
       "id": "grep_bre_plus_with_nothing_to_repeat_is_literal",
       "seq": 500320,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf '+\\nx\\n' > /data/bre.txt && grep '\\+' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -234,7 +234,7 @@
     {
       "id": "grep_bre_interval_with_nothing_to_repeat_is_literal",
       "seq": 500321,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf '{1}\\nx\\n' > /data/bre.txt && grep '\\{1\\}' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -245,7 +245,7 @@
     {
       "id": "grep_bre_interval_with_no_low_bound_is_zero",
       "seq": 500322,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'b\\nc\\n' > /data/bre.txt && grep 'a\\{,3\\}b' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -256,7 +256,7 @@
     {
       "id": "grep_bre_collating_element_is_a_legal_range_end",
       "seq": 500323,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'm\\n1\\n' > /data/bre.txt && grep '[[.a.]-z]' /data/bre.txt",
       "expect": {
         "exit": 0,
@@ -267,7 +267,7 @@
     {
       "id": "grep_bre_unmatched_open_group_is_glibcs_wording",
       "seq": 500324,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'x\\n' > /data/bre.txt && grep '\\(' /data/bre.txt",
       "expect": {
         "exit": 2,
@@ -278,7 +278,7 @@
     {
       "id": "grep_bre_inverted_range_is_refused",
       "seq": 500325,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'x\\n' > /data/bre.txt && grep '[z-a]' /data/bre.txt",
       "expect": {
         "exit": 2,
@@ -289,7 +289,7 @@
     {
       "id": "grep_bre_backreference_without_a_group_is_refused",
       "seq": 500326,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'x\\n' > /data/bre.txt && grep '\\1' /data/bre.txt",
       "expect": {
         "exit": 2,
@@ -300,7 +300,7 @@
     {
       "id": "grep_bre_unknown_character_class_is_refused",
       "seq": 500327,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "printf 'x\\n' > /data/bre.txt && grep '[[:bogus:]]' /data/bre.txt",
       "expect": {
         "exit": 2,
@@ -313,6 +313,7 @@
       "seq": 1287002,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; grep -c 'needle\\|other' /data/prefilter.txt",

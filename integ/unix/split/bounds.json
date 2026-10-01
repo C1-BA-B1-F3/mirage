@@ -3,7 +3,7 @@
     {
       "id": "split_bounds_suffix_length_overflow",
       "seq": 910051,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "mkdir -p /data/t2splita && printf 'ab' > /data/t2splita/in && split -a 18446744073709551616 /data/t2splita/in /data/t2splita/x",
       "expect": {
         "exit": 1,
@@ -15,7 +15,7 @@
     {
       "id": "split_bounds_byte_count_saturates",
       "seq": 910052,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "mkdir -p /data/t2splity && printf 'hello' > /data/t2splity/in && split -b 1Y /data/t2splity/in /data/t2splity/x- && cat /data/t2splity/x-aa",
       "expect": {
         "exit": 0,
@@ -27,7 +27,7 @@
     {
       "id": "split_bounds_numeric_suffix_auto_growth",
       "seq": 910055,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "mkdir -p /data/t2sgrow && printf 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq' > /data/t2sgrow/in && split -b 1 -d /data/t2sgrow/in /data/t2sgrow/x- && cat /data/t2sgrow/x-89 /data/t2sgrow/x-9000 && ls /data/t2sgrow | grep -c '^x-'",
       "expect": {
         "exit": 0,
@@ -39,7 +39,7 @@
     {
       "id": "split_bounds_explicit_start_exhausts",
       "seq": 910056,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "mkdir -p /data/t2sex && printf 'qqq' > /data/t2sex/in && split -b 1 --numeric-suffixes=98 /data/t2sex/in /data/t2sex/x-",
       "expect": {
         "exit": 1,
@@ -51,7 +51,7 @@
     {
       "id": "split_b_quotes_a_multibyte_word",
       "seq": 960013,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "split -b '1é' /data/a.txt",
       "expect": {
         "exit": 1,
@@ -63,7 +63,7 @@
     {
       "id": "split_l_quotes_a_carriage_return",
       "seq": 960014,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "split -l $'1\\r' /data/a.txt",
       "expect": {
         "exit": 1,
@@ -75,7 +75,7 @@
     {
       "id": "split_n_quotes_a_multibyte_word",
       "seq": 960015,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "split -n '1é' /data/a.txt",
       "expect": {
         "exit": 1,
@@ -87,7 +87,7 @@
     {
       "id": "split_a_escapes_a_single_quote",
       "seq": 960016,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "opfs", "disk"],
       "command": "split -a \"1'\" /data/a.txt",
       "expect": {
         "exit": 1,

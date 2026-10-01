@@ -5,6 +5,7 @@
       "seq": 916700,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cat -)",
@@ -19,6 +20,7 @@
       "seq": 916701,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | wc -l -)",
@@ -33,6 +35,7 @@
       "seq": 916702,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | sort -)",
@@ -47,6 +50,7 @@
       "seq": 916703,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | grep a -)",
@@ -61,6 +65,7 @@
       "seq": 916704,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cut -c1 -)",
@@ -75,6 +80,7 @@
       "seq": 916705,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | head -n1 -)",
@@ -89,6 +95,7 @@
       "seq": 916706,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | tail -n1 -)",
@@ -103,6 +110,7 @@
       "seq": 916707,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | sed 's/a/A/' -)",
@@ -117,6 +125,7 @@
       "seq": 916708,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | uniq -)",
@@ -131,6 +140,7 @@
       "seq": 916709,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | awk '{print $1}' -)",
@@ -145,6 +155,7 @@
       "seq": 916710,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | paste -sd, -)",
@@ -159,6 +170,7 @@
       "seq": 916711,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cat - -)",
@@ -173,6 +185,7 @@
       "seq": 916712,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | tr a A < /dev/stdin)",
@@ -187,6 +200,7 @@
       "seq": 916713,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cat /data/stdin-file - /data/stdin-file)",
@@ -201,6 +215,7 @@
       "seq": 916714,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cat - 2>&1)",
@@ -215,6 +230,7 @@
       "seq": 916715,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | cat /dev/stdin)",
@@ -229,6 +245,7 @@
       "seq": 916716,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | paste - -)",
@@ -243,6 +260,7 @@
       "seq": 916600,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo a - 2>&1)",
@@ -257,6 +275,7 @@
       "seq": 916601,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(dash_args() { echo \"argc=$#\"; }; dash_args a - 2>&1)",
@@ -271,6 +290,7 @@
       "seq": 916800,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(mkdir -p /data/archive-dir; echo hi > /data/archive-dir/a; d=/data/archive-dir; (cd \"$d\" && tar -cf /data/shell.tar . && zip -qr /data/shell.zip .); echo rc=$?)",
@@ -285,6 +305,7 @@
       "seq": 916801,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo before; tar -cf /data/root.tar /data; echo after)",
@@ -299,6 +320,7 @@
       "seq": 916900,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(mkdir -p /tmp; cd /data; d=$(mktemp -d /tmp/operand.XXXXXX); echo hi > \"$d/a\"; cat \"$d/a\"; rm -r \"$d\")",
@@ -313,6 +335,7 @@
       "seq": 916901,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /; f=$(mktemp /data/operand.XXXXXX); test -f \"$f\" && echo exists; rm \"$f\")",
@@ -327,6 +350,7 @@
       "seq": 916730,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf '' | cat -)",
@@ -341,6 +365,7 @@
       "seq": 916731,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf '' | paste -s -)",
@@ -355,6 +380,7 @@
       "seq": 916732,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' | paste -s - -)",
@@ -369,6 +395,7 @@
       "seq": 916733,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\na\\nb\\n' | uniq - -)",
@@ -383,6 +410,7 @@
       "seq": 916734,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | paste /data/stdin-file -)",
@@ -397,6 +425,7 @@
       "seq": 916735,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo c > /data/stdin-file; printf 'b\\na\\n' | sort /data/stdin-file -)",
@@ -411,6 +440,7 @@
       "seq": 916736,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo a > /data/stdin-file; printf 'a\\nb\\n' | grep a /data/stdin-file -)",
@@ -425,6 +455,7 @@
       "seq": 916737,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | head -n1 /data/stdin-file -)",
@@ -439,6 +470,7 @@
       "seq": 916738,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | tail -n1 /data/stdin-file -)",
@@ -453,6 +485,7 @@
       "seq": 916739,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(echo file > /data/-; cd /data; printf pipe | cat - ./-)",
@@ -467,6 +500,7 @@
       "seq": 916740,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data; d=$(mktemp -d ./relative.XXXXXX); echo hi > \"$d/a\"; cat \"$d/a\"; rm -r \"$d\")",
@@ -481,6 +515,7 @@
       "seq": 916741,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(mkdir -p /tmp; cd /data; f=$(mktemp /tmp/relative.XXXXXX); test -f \"$f\" && echo exists; rm \"$f\")",
@@ -495,6 +530,7 @@
       "seq": 916902,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data; d=$(mktemp -d); test -d \"$d\" && echo exists; rm -r \"$d\")",
@@ -509,6 +545,7 @@
       "seq": 916903,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | grep -H b /dev/stdin",
@@ -523,6 +560,7 @@
       "seq": 916904,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | grep -l b /dev/stdin",
@@ -537,6 +575,7 @@
       "seq": 916905,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | grep b /dev/stdin /data/a.txt",
@@ -551,6 +590,7 @@
       "seq": 916906,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | head -v /dev/stdin",
@@ -565,6 +605,7 @@
       "seq": 916907,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | tail -v /dev/stdin",
@@ -579,6 +620,7 @@
       "seq": 916908,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | tail -v -",
@@ -593,6 +635,7 @@
       "seq": 916909,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | head -v",
@@ -607,6 +650,7 @@
       "seq": 916910,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\n' | tail -v",
@@ -621,6 +665,7 @@
       "seq": 916920,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' | sha256sum -",
@@ -635,6 +680,7 @@
       "seq": 916921,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' | md5sum /dev/stdin",
@@ -649,6 +695,7 @@
       "seq": 916922,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' | sha1sum - /dev/stdin",
@@ -663,6 +710,7 @@
       "seq": 916923,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data && printf 'hi\\n' > sio-sum && sha256sum sio-sum | sha256sum -c)",
@@ -677,6 +725,7 @@
       "seq": 916924,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'junk\\n' | sha256sum -c -",
@@ -691,6 +740,7 @@
       "seq": 916925,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hellO\\n' | cmp - /data/sio-cmp)",
@@ -705,6 +755,7 @@
       "seq": 916926,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hel' | cmp /data/sio-cmp)",
@@ -719,6 +770,7 @@
       "seq": 916927,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hello\\nworld\\n' | cmp /data/sio-cmp -)",
@@ -733,6 +785,7 @@
       "seq": 916928,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'x' | cmp - -",
@@ -747,6 +800,7 @@
       "seq": 916929,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp",
@@ -761,6 +815,7 @@
       "seq": 916930,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'hello\\nworld\\nfoo\\n' > /data/sio-cmpl; printf 'hello\\nx\\n' | cmp -l - /data/sio-cmpl)",
@@ -775,6 +830,7 @@
       "seq": 916931,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' > /data/sio-diff; printf 'a\\nc\\n' | diff - /data/sio-diff)",
@@ -789,6 +845,7 @@
       "seq": 916932,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' > /data/sio-diff; printf 'x\\n' | diff -q /dev/stdin /data/sio-diff)",
@@ -803,6 +860,7 @@
       "seq": 916933,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'x\\n' | diff - -",
@@ -817,6 +875,7 @@
       "seq": 916934,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'x\\n' | diff - /data",
@@ -831,6 +890,7 @@
       "seq": 916935,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\n' > /data/sio-diff; diff /data/sio-diff)",
@@ -845,6 +905,7 @@
       "seq": 916936,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' > /data/sio-diff; cd /data && printf 'x\\n' | diff -q sio-diff -)",
@@ -859,6 +920,7 @@
       "seq": 916937,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'apple\\nbanana\\n' > /data/sio-comm; printf 'apple\\nzebra\\n' | comm - /data/sio-comm)",
@@ -873,6 +935,7 @@
       "seq": 916938,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\n' > /data/sio-comm; comm /data/sio-comm)",
@@ -887,6 +950,7 @@
       "seq": 916939,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'alice 30\\nbob 25\\n' > /data/sio-join; printf 'alice 1\\nbob 2\\n' | join - /data/sio-join)",
@@ -901,6 +965,7 @@
       "seq": 916940,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\n' | join - -",
@@ -915,6 +980,7 @@
       "seq": 916941,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' | tac -",
@@ -929,6 +995,7 @@
       "seq": 916942,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' | nl /dev/stdin",
@@ -943,6 +1010,7 @@
       "seq": 916943,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abcdef\\n' | fold -w 2 -",
@@ -957,6 +1025,7 @@
       "seq": 916944,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\tb\\n' | expand -t 2 /dev/stdin",
@@ -971,6 +1040,7 @@
       "seq": 916945,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '        x\\n' | unexpand -",
@@ -985,6 +1055,7 @@
       "seq": 916946,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a b\\n' | fmt -",
@@ -999,6 +1070,7 @@
       "seq": 916947,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello world\\n' | strings -n 3 /dev/stdin",
@@ -1013,6 +1085,7 @@
       "seq": 916948,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\n' | rev /dev/stdin",
@@ -1027,6 +1100,7 @@
       "seq": 916949,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\n' | shuf -",
@@ -1041,6 +1115,7 @@
       "seq": 916950,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'caf\\n' | iconv -f utf-8 -t ascii /dev/stdin",
@@ -1055,6 +1130,7 @@
       "seq": 916951,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a b\\n' | tsort -",
@@ -1069,6 +1145,7 @@
       "seq": 916952,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\n' | tsort -",
@@ -1083,6 +1160,7 @@
       "seq": 916953,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\n' | base64 -w 4 -",
@@ -1097,6 +1175,7 @@
       "seq": 916954,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc' | xxd -p /dev/stdin",
@@ -1111,6 +1190,7 @@
       "seq": 916955,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\n' | od -An -tx1 -",
@@ -1125,6 +1205,7 @@
       "seq": 916956,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '{\"a\":1}\\n' | jq -c .a -",
@@ -1139,6 +1220,7 @@
       "seq": 916957,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data && printf 'a\\nb\\n' | split -l 1 - sio-sp && cat sio-spaa sio-spab)",
@@ -1153,6 +1235,7 @@
       "seq": 916958,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data && printf 'a\\nb\\nc\\n' | csplit -f sio-cs - 2 && cat sio-cs01)",
@@ -1167,6 +1250,7 @@
       "seq": 916959,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello\\n' | gzip | zgrep -H hello -",
@@ -1181,6 +1265,7 @@
       "seq": 916960,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello\\n' | gzip | zgrep -l hello /dev/stdin",
@@ -1195,6 +1280,7 @@
       "seq": 916961,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello\\n' | gzip | zcat -",
@@ -1209,6 +1295,7 @@
       "seq": 916962,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello\\n' | gzip | gunzip -",
@@ -1223,6 +1310,7 @@
       "seq": 916963,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'hello\\n' | gzip -c /dev/stdin | zcat",
@@ -1237,6 +1325,7 @@
       "seq": 916964,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data && printf 'f\\n' > sio-gzin && printf 'hi\\n' | gzip - sio-gzin | gzip -dc && ls sio-gzin*)",

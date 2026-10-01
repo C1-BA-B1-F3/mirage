@@ -270,6 +270,17 @@ export class InputReader {
   }
 
   /**
+   * Close the input the reader stopped in, as jq's exit closes its file: a
+   * parse error, a halt, or a program that takes one `input` leaves it part
+   * read, and an iterator nobody returns keeps its backend stream open.
+   */
+  async close(): Promise<void> {
+    const chunks = this.chunks
+    this.chunks = null
+    await chunks?.return?.()
+  }
+
+  /**
    * The JSON text of the next value of the stream, the parse error that stops
    * it, or NO_VALUE once it is used up (jq_util_input_next_input). Under -s
    * the one value is the whole stream; a parse error comes back instead of

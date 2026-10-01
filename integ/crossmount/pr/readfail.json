@@ -5,6 +5,7 @@
       "seq": 963100,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'b\\na\\n' > /data/xrf.txt && mkdir -p /data2/xrf_dir && echo inner > /data2/xrf_dir/inner.txt && echo ok",
@@ -19,6 +20,7 @@
       "seq": 963101,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/xrf.txt /data2/xrf_nope.txt",
@@ -33,6 +35,7 @@
       "seq": 963102,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/xrf.txt /data2/xrf_nope.txt",
@@ -47,6 +50,7 @@
       "seq": 963103,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "awk '{print}' /data/xrf.txt /data2/xrf_nope.txt",
@@ -61,6 +65,7 @@
       "seq": 963104,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/xrf.txt /data2/xrf_nope.txt",
@@ -75,6 +80,7 @@
       "seq": 963105,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "wc -l /data/xrf.txt /data2/xrf_nope.txt",
@@ -89,6 +95,7 @@
       "seq": 963106,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/xrf.txt /data2/xrf_dir",
@@ -103,6 +110,7 @@
       "seq": 963107,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/xrf.txt /data2/xrf_dir",
@@ -117,6 +125,7 @@
       "seq": 963108,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/xrf.txt /data2/xrf_dir",
@@ -131,6 +140,7 @@
       "seq": 963109,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p '/data2/No such file or directory' && echo ok",
@@ -145,6 +155,7 @@
       "seq": 963110,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/xrf.txt '/data2/No such file or directory'",

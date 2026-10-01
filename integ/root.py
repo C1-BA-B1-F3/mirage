@@ -21,6 +21,7 @@ from mirage import MountMode, Workspace
 from mirage.config import load_config
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
+from mirage.workspace.mount import MountEntry
 
 _fail = 0
 
@@ -39,14 +40,16 @@ async def _out(ws: Workspace, cmd: str, stdin: bytes | None = None) -> str:
     return await res.stdout_str()
 
 
+def _root(ws: Workspace) -> MountEntry | None:
+    return next((m for m in ws.mounts() if m.prefix == "/"), None)
+
+
 async def default_root_is_ram() -> None:
     ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
-    root = ws._registry.root_mount
-    check("default: root mounted at /", root is not None
-          and root.prefix == "/")
-    check("default: root backed by ram", type(root.vfs).__name__ == "RAMVFS")
-    check("default: root is a normal mount entry", root
-          in ws._registry.mounts())
+    root = _root(ws)
+    check("default: root is a normal mount entry at /", root is not None)
+    check("default: root backed by ram", root is not None
+          and isinstance(root.vfs, RAMVFS))
     ls = await _out(ws, "ls /")
     check("default: ls / lists child mounts", "data" in ls and "dev" in ls)
     check("default: ls / hides dotfile mounts", ".bash_history" not in ls)
@@ -60,11 +63,8 @@ async def default_root_is_ram() -> None:
 
 async def ram_root_override() -> None:
     ws = Workspace({"/": RAMVFS(), "/sub/": RAMVFS()}, mode=MountMode.WRITE)
-    root = ws._registry.root_mount
-    check(
-        "ram-root: / is the user mount (not duplicated)", root is not None
-        and root.prefix == "/"
-        and len([m for m in ws._registry.mounts() if m.prefix == "/"]) == 1)
+    check("ram-root: / is the user mount (not duplicated)",
+          len([m for m in ws.mounts() if m.prefix == "/"]) == 1)
     await ws.shell("echo hi > /top.txt")
     await ws.shell("echo deep > /sub/inner.txt")
     check("ram-root: read file written at root",
@@ -80,9 +80,9 @@ async def ram_root_override() -> None:
 async def disk_root_override() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ws = Workspace({"/": DiskVFS(root=tmp)}, mode=MountMode.WRITE)
-        root = ws._registry.root_mount
-        check("disk-root: root backed by disk",
-              type(root.vfs).__name__ == "DiskVFS")
+        root = _root(ws)
+        check("disk-root: root backed by disk", root is not None
+              and isinstance(root.vfs, DiskVFS))
         await ws.shell("echo persisted > /file.txt")
         check("disk-root: read file back through root",
               (await _out(ws, "cat /file.txt")).strip() == "persisted")
@@ -110,9 +110,9 @@ async def yaml_controls_root() -> None:
         kwargs = cfg.to_workspace_kwargs()
         check("yaml: '/' mount present in mounts", "/" in kwargs["mounts"])
         ws = Workspace(**kwargs)
-        root = ws._registry.root_mount
-        check("yaml: root overridden to disk via config",
-              type(root.vfs).__name__ == "DiskVFS")
+        root = _root(ws)
+        check("yaml: root overridden to disk via config", root is not None
+              and isinstance(root.vfs, DiskVFS))
         await ws.shell("echo fromyaml > /y.txt")
         check("yaml: write at / persisted to disk",
               os.path.exists(os.path.join(tmp, "y.txt")))
@@ -125,9 +125,9 @@ async def yaml_controls_root() -> None:
             }
         }
     }).to_workspace_kwargs())
-    root = ws._registry.root_mount
-    check("yaml: no '/' mount falls back to ram root",
-          type(root.vfs).__name__ == "RAMVFS")
+    root = _root(ws)
+    check("yaml: no '/' mount falls back to ram root", root is not None
+          and isinstance(root.vfs, RAMVFS))
     await ws.close()
 
 

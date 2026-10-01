@@ -624,8 +624,64 @@
           "vfs": "opfs",
           "backend": "memory",
           "fixture": "columnar/v1"
+        },
+        {
+          "path": "/ro",
+          "vfs": "opfs",
+          "backend": "memory",
+          "mode": "read"
         }
-      ]
+      ],
+      "sessions": {
+        "reader": {
+          "mounts": {
+            "/data": "read"
+          },
+          "paths": {
+            "hide": [
+              "/data2"
+            ]
+          }
+        },
+        "writer": {
+          "mounts": {
+            "/data": "write"
+          }
+        },
+        "unnamed": {
+          "mounts": {
+            "/data2": "read"
+          }
+        },
+        "capped": {
+          "mounts": {
+            "/ro": "write"
+          }
+        },
+        "narrowed": {
+          "mounts": {
+            "/data": "write",
+            "/data2": "write",
+            "/res": "read",
+            "/ro": "read"
+          },
+          "paths": {
+            "hide": [
+              "/data/sessvis/vault",
+              "*.key"
+            ]
+          },
+          "vars": {
+            "hide": [
+              "SLACK_TOKEN"
+            ]
+          },
+          "env": {
+            "SLACK_TOKEN": "xoxb-integ",
+            "ROLE": "analyst"
+          }
+        }
+      }
     },
     {
       "id": "s3",

@@ -5,6 +5,7 @@
       "seq": 910009,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2paste && printf 'a\\0b\\0' > /data/t2paste/a && printf '1\\02\\0' > /data/t2paste/b && paste --zero-terminated --delimiters=, /data/t2paste/a /data/t2paste/b",
@@ -23,6 +24,7 @@
       "seq": 910010,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "paste --serial --delimiters=: /data/b.txt",
@@ -41,6 +43,7 @@
       "seq": 910046,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2pasten && printf 'a\\nb\\n' > /data/t2pasten/x && printf '1\\n2\\n' > /data/t2pasten/y && paste -d '\\0' /data/t2pasten/x /data/t2pasten/y",

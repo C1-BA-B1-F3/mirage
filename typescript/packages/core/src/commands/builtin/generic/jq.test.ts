@@ -72,6 +72,7 @@ async function ranOver(
   paths: readonly string[],
   program: string,
   flags: CommandOpts['flags'] = {},
+  stream: typeof read = read,
 ): Promise<Ran> {
   const opts = {
     stdin: null,
@@ -81,7 +82,7 @@ async function ranOver(
     vfs: { kind: 'ram' } as never,
   } as CommandOpts
   const specs = paths.map((path) => PathSpec.fromStrPath(path))
-  const result = await jqGeneric(specs, [program], opts, read)
+  const result = await jqGeneric(specs, [program], opts, stream)
   if (result === null) throw new Error('jq returned no result')
   const [out, io] = result
   return {
@@ -823,6 +824,20 @@ describe('jqGeneric over malformed input', () => {
   it('exits five under -e too', async () => {
     const result = await ran('/d/bad.json', '.a', { exit_status: true })
     expect([result.stdout, result.exitCode]).toEqual(['1\n2\n', 5])
+  })
+
+  it('closes the input it stopped in at a parse error', async () => {
+    const closed: string[] = []
+    async function* tracked(path: PathSpec): AsyncIterable<Uint8Array> {
+      try {
+        yield* read(path)
+      } finally {
+        closed.push(path.virtual)
+      }
+    }
+    const result = await ranOver(['/d/mid.json', '/d/a.json'], '.', {}, tracked)
+    expect([result.stdout, result.exitCode]).toEqual(['1\n', 5])
+    expect(closed).toEqual(['/d/mid.json'])
   })
 
   it('prints nothing for a slurp that meets a parse error', async () => {

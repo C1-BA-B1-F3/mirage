@@ -6,7 +6,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/qlst && printf 'x' > /data/qlst/old.txt && printf 'x' > /data/qlst/mid.txt && printf 'x' > /data/qlst/new.txt && touch -d '2021-01-01T00:00:00' /data/qlst/old.txt && touch -d '2022-01-01T00:00:00' /data/qlst/mid.txt && touch -d '2023-01-01T00:00:00' /data/qlst/new.txt && ls -1t /data/qlst",
       "expect": {
@@ -24,7 +25,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "ls -1rt /data/qlst",
       "expect": {

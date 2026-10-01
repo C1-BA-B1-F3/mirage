@@ -13,21 +13,35 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { clearTenants } from '../../kit/typescript/index.ts'
-import type { Dmmf } from '../../kit/typescript/index.ts'
+import type { Dmmf, DmmfModel } from '../../kit/typescript/index.ts'
 import type { C } from './client.ts'
 import type { GwsState } from './state.ts'
 import type { DocTab } from './types.ts'
 
 // The tenant's world, written back whole.
 //
-// It is a clear-and-rewrite rather than a diff for the reason stated on
-// GwsState: a diff needs every mutation site to declare itself, and a site that
-// forgets is silent until the NEXT request. Clearing through the kit's own
-// `clearTenants` rather than a hand-written delete list means a model added to
-// the schema is cleared without anyone remembering to say so, and means the
-// delete order is the DMMF's -- `relationMode = "prisma"` moves referential
-// integrity into the client, which refuses to delete a row a required relation
-// still points at.
+// The rows are always a function of the whole world rather than of what a
+// handler says it changed, for the reason stated on GwsState: a diff needs
+// every mutation site to declare itself, and a site that forgets is silent
+// until the NEXT request.
+//
+// What reaches SQLite is a diff against the rows the previous flush wrote,
+// when the caller still holds them. Rewriting every row cost each write the
+// whole world -- every file's content and every revision's -- so a battery
+// that creates files paid more for each one than for the last: 55ms an
+// upload and climbing, against 2ms for a read. The diff is computed from
+// those two whole-world row sets, so it inherits the property above rather
+// than trading it away, and the rows it leaves are the rows a rewrite would
+// have written.
+//
+// A table is diffed row by row only when loadState reads it back ORDER BY
+// seq under a natural key: there, a row deleted and inserted again lands in
+// the same place, and a row whose seq alone moved (inserting a revision
+// renumbers every later one) is renumbered in place instead of having its
+// content written again. Any other table -- read in storage order, or keyed
+// by an autoincrement no world names -- is rewritten whole when anything in
+// it changed, in the order a rewrite writes, so its storage order is the
+// rewrite's too.
 //
 // Writes are batched, which is only possible because no table
 // here is keyed by an autoincrement the next table has to read back. That is
@@ -38,75 +52,231 @@ import type { DocTab } from './types.ts'
 // throws half way is answered as a 500 either way, but without the transaction
 // it would also leave the tenant holding a world that is partly the new state
 // and partly nothing at all, which the next request would serve as if it were
-// real.
-export async function saveState(db: C, dmmf: Dmmf, tenant: string, st: GwsState): Promise<void> {
+// real. Deletes go through raw SQL, as `clearTenants` does: `relationMode =
+// "prisma"` checks a required relation only from the client, and a row that is
+// deleted here and inserted again in the same transaction is never missing
+// once it commits.
+export async function saveState(
+  db: C,
+  dmmf: Dmmf,
+  tenant: string,
+  st: GwsState,
+  flushed?: Rows,
+): Promise<Rows> {
   const rows = buildRows(tenant, st)
   await db.$transaction(
     async (tx) => {
-      await clearTenants(tx, dmmf, [tenant])
-      await tx.meta.create({
-        data: { tenant, epochMs: BigInt(st.epochMs), ticks: st.ticks },
-      })
-      if (rows.counters.length > 0) await tx.counter.createMany({ data: rows.counters })
-      if (rows.drives.length > 0) await tx.drive.createMany({ data: rows.drives })
-      if (rows.files.length > 0) await tx.driveFile.createMany({ data: rows.files })
-      if (rows.parents.length > 0) await tx.driveParent.createMany({ data: rows.parents })
-      if (rows.revisions.length > 0) await tx.revision.createMany({ data: rows.revisions })
-      if (rows.permissions.length > 0) await tx.permission.createMany({ data: rows.permissions })
-      if (rows.docs.length > 0) await tx.doc.createMany({ data: rows.docs })
-      if (rows.docTabs.length > 0) await tx.docTab.createMany({ data: rows.docTabs })
-      if (rows.spreadsheets.length > 0) await tx.spreadsheet.createMany({ data: rows.spreadsheets })
-      if (rows.tabs.length > 0) await tx.sheetTab.createMany({ data: rows.tabs })
-      for (let offset = 0; offset < rows.cells.length; offset += 10_000) {
-        const cells = JSON.stringify(
-          rows.cells
-            .slice(offset, offset + 10_000)
-            .map((cell) => [
-              cell.tenant,
-              cell.spreadsheetId,
-              cell.sheetId,
-              cell.row,
-              cell.col,
-              cell.text,
-              cell.props,
-            ]),
-        )
-        // One bound JSON value avoids constructing a Prisma query node for
-        // each field of every cell. SQLite still enforces the composite key.
-        await tx.$executeRaw`
-        INSERT INTO "SheetCell" ("tenant", "spreadsheetId", "sheetId", "row", "col", "text", "props")
-        SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
-               json_extract(value, '$[2]'), json_extract(value, '$[3]'),
-               json_extract(value, '$[4]'), json_extract(value, '$[5]'),
-               json_extract(value, '$[6]')
-        FROM json_each(${cells})`
+      if (flushed === undefined) {
+        await clearTenants(tx, dmmf, [tenant])
+        for (const [name, model] of TABLES) await insert(tx, model, rows[name])
+        return
       }
-      if (rows.presentations.length > 0) {
-        await tx.presentation.createMany({ data: rows.presentations })
+      const inserts: [string, readonly Row[]][] = []
+      for (const [name, model] of TABLES) {
+        const def = modelOf(dmmf, model)
+        const change = diffTable(def, flushed[name], rows[name])
+        if (change === null) continue
+        await remove(tx, def, tenant, change.gone)
+        await renumber(tx, def, change.moved)
+        inserts.push([model, change.put])
       }
-      if (rows.slides.length > 0) await tx.slide.createMany({ data: rows.slides })
-      if (rows.elements.length > 0) await tx.slideElement.createMany({ data: rows.elements })
-      if (rows.labels.length > 0) await tx.label.createMany({ data: rows.labels })
-      if (rows.messages.length > 0) await tx.message.createMany({ data: rows.messages })
-      if (rows.headers.length > 0) await tx.messageHeader.createMany({ data: rows.headers })
-      if (rows.messageLabels.length > 0) {
-        await tx.messageLabel.createMany({ data: rows.messageLabels })
-      }
-      if (rows.attachments.length > 0) await tx.attachment.createMany({ data: rows.attachments })
-      if (rows.calendars.length > 0) await tx.calendar.createMany({ data: rows.calendars })
-      if (rows.events.length > 0) await tx.event.createMany({ data: rows.events })
-      if (rows.forms.length > 0) await tx.form.createMany({ data: rows.forms })
-      if (rows.formItems.length > 0) await tx.formItem.createMany({ data: rows.formItems })
-      if (rows.formResponses.length > 0) {
-        await tx.formResponse.createMany({ data: rows.formResponses })
-      }
+      for (const [model, put] of inserts) await insert(tx, model, put)
     },
     // Large workbooks can outlive Prisma's five-second interactive default.
     { timeout: 120_000 },
   )
+  return rows
 }
 
-interface Rows {
+type Row = Readonly<Record<string, unknown>>
+
+interface Change {
+  gone: readonly Row[] | 'all'
+  moved: readonly Row[]
+  put: readonly Row[]
+}
+
+// The order rows have to be CREATED in, which is the order every flush has
+// written them in.
+export const TABLES: readonly (readonly [keyof Rows, string])[] = [
+  ['meta', 'Meta'],
+  ['counters', 'Counter'],
+  ['drives', 'Drive'],
+  ['files', 'DriveFile'],
+  ['parents', 'DriveParent'],
+  ['revisions', 'Revision'],
+  ['permissions', 'Permission'],
+  ['docs', 'Doc'],
+  ['docTabs', 'DocTab'],
+  ['spreadsheets', 'Spreadsheet'],
+  ['tabs', 'SheetTab'],
+  ['cells', 'SheetCell'],
+  ['presentations', 'Presentation'],
+  ['slides', 'Slide'],
+  ['elements', 'SlideElement'],
+  ['labels', 'Label'],
+  ['messages', 'Message'],
+  ['headers', 'MessageHeader'],
+  ['messageLabels', 'MessageLabel'],
+  ['attachments', 'Attachment'],
+  ['calendars', 'Calendar'],
+  ['events', 'Event'],
+  ['forms', 'Form'],
+  ['formItems', 'FormItem'],
+  ['formResponses', 'FormResponse'],
+]
+
+const SEQ = 'seq'
+
+function modelOf(dmmf: Dmmf, name: string): DmmfModel {
+  const model = dmmf.datamodel.models.find((m) => m.name === name)
+  if (model === undefined) throw new Error(`gws store: no model ${name} in the schema`)
+  return model
+}
+
+function keyOf(model: DmmfModel): readonly string[] {
+  return model.primaryKey?.fields ?? model.fields.filter((f) => f.isId === true).map((f) => f.name)
+}
+
+function rowKeyed(model: DmmfModel): boolean {
+  const generated = model.fields.some(
+    (f) =>
+      f.isId === true &&
+      typeof f.default === 'object' &&
+      'name' in f.default &&
+      f.default.name === 'autoincrement',
+  )
+  return !generated && model.fields.some((f) => f.name === SEQ)
+}
+
+function sameExcept(a: Row, b: Row, skip: string | null): boolean {
+  for (const field of Object.keys(b)) {
+    if (field === skip) continue
+    const x = a[field]
+    const y = b[field]
+    if (x === y) continue
+    if (x instanceof Uint8Array && y instanceof Uint8Array && Buffer.compare(x, y) === 0) continue
+    return false
+  }
+  return true
+}
+
+function diffTable(model: DmmfModel, before: readonly Row[], after: readonly Row[]): Change | null {
+  if (!rowKeyed(model)) {
+    const same =
+      before.length === after.length && after.every((r, i) => sameExcept(before[i]!, r, null))
+    return same ? null : { gone: 'all', moved: [], put: after }
+  }
+  const key = keyOf(model)
+  const identity = (r: Row): string => JSON.stringify(key.map((f) => r[f]))
+  const old = new Map(before.map((r) => [identity(r), r]))
+  const gone: Row[] = []
+  const moved: Row[] = []
+  const put: Row[] = []
+  for (const row of after) {
+    const id = identity(row)
+    const was = old.get(id)
+    old.delete(id)
+    if (was === undefined) put.push(row)
+    else if (!sameExcept(was, row, SEQ)) {
+      gone.push(was)
+      put.push(row)
+    } else if (was[SEQ] !== row[SEQ]) moved.push(row)
+  }
+  gone.push(...old.values())
+  return gone.length + moved.length + put.length === 0 ? null : { gone, moved, put }
+}
+
+interface RawClient {
+  $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>
+}
+
+function quoted(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`
+}
+
+function column(model: DmmfModel, field: string): string {
+  const def = model.fields.find((f) => f.name === field)
+  return quoted(def?.dbName ?? field)
+}
+
+const DELETE_BATCH = 200
+
+async function remove(
+  tx: RawClient,
+  model: DmmfModel,
+  tenant: string,
+  gone: Change['gone'],
+): Promise<void> {
+  const table = quoted(model.dbName ?? model.name)
+  if (gone === 'all') {
+    await tx.$executeRawUnsafe(`DELETE FROM ${table} WHERE ${column(model, 'tenant')} = ?`, tenant)
+    return
+  }
+  const key = keyOf(model)
+  const columns = key.map((f) => column(model, f)).join(', ')
+  const tuple = `(${key.map(() => '?').join(', ')})`
+  for (let offset = 0; offset < gone.length; offset += DELETE_BATCH) {
+    const batch = gone.slice(offset, offset + DELETE_BATCH)
+    await tx.$executeRawUnsafe(
+      `DELETE FROM ${table} WHERE (${columns}) IN (VALUES ${batch.map(() => tuple).join(', ')})`,
+      ...batch.flatMap((r) => key.map((f) => r[f])),
+    )
+  }
+}
+
+async function renumber(tx: RawClient, model: DmmfModel, moved: readonly Row[]): Promise<void> {
+  const key = keyOf(model)
+  const where = key.map((f) => `${column(model, f)} = ?`).join(' AND ')
+  const sql = `UPDATE ${quoted(model.dbName ?? model.name)} SET ${column(model, SEQ)} = ? WHERE ${where}`
+  for (const row of moved) await tx.$executeRawUnsafe(sql, row[SEQ], ...key.map((f) => row[f]))
+}
+
+interface CreateManyClient {
+  createMany(args: { data: readonly Row[] }): Promise<unknown>
+}
+
+async function insert(tx: RawClient, model: string, rows: readonly Row[]): Promise<void> {
+  if (rows.length === 0) return
+  if (model === 'SheetCell') {
+    await insertCells(tx, rows)
+    return
+  }
+  const delegate = model.charAt(0).toLowerCase() + model.slice(1)
+  await (tx as unknown as Record<string, CreateManyClient>)[delegate]!.createMany({ data: rows })
+}
+
+async function insertCells(tx: RawClient, rows: readonly Row[]): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += 10_000) {
+    const cells = JSON.stringify(
+      rows
+        .slice(offset, offset + 10_000)
+        .map((cell) => [
+          cell.tenant,
+          cell.spreadsheetId,
+          cell.sheetId,
+          cell.row,
+          cell.col,
+          cell.text,
+          cell.props,
+        ]),
+    )
+    // One bound JSON value avoids constructing a Prisma query node for
+    // each field of every cell. SQLite still enforces the composite key.
+    await tx.$executeRawUnsafe(
+      `INSERT INTO "SheetCell" ("tenant", "spreadsheetId", "sheetId", "row", "col", "text", "props")
+       SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
+              json_extract(value, '$[2]'), json_extract(value, '$[3]'),
+              json_extract(value, '$[4]'), json_extract(value, '$[5]'),
+              json_extract(value, '$[6]')
+       FROM json_each(?)`,
+      cells,
+    )
+  }
+}
+
+export interface Rows {
+  meta: { tenant: string; epochMs: bigint; ticks: number }[]
   counters: { tenant: string; kind: string; n: number }[]
   drives: { tenant: string; id: string; name: string; seq: number }[]
   files: {
@@ -268,8 +438,9 @@ function orNull(value: string | undefined): string | null {
   return value === undefined ? null : value
 }
 
-function buildRows(tenant: string, st: GwsState): Rows {
+export function buildRows(tenant: string, st: GwsState): Rows {
   const rows: Rows = {
+    meta: [{ tenant, epochMs: BigInt(st.epochMs), ticks: st.ticks }],
     counters: [],
     drives: [],
     files: [],

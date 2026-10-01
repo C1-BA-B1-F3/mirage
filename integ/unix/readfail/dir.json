@@ -5,6 +5,7 @@
       "seq": 963000,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/rfdir && echo inner > /data/rfdir/inner.txt && echo ok",
@@ -19,6 +20,7 @@
       "seq": 963001,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "base64 /data/rfdir",
@@ -33,6 +35,7 @@
       "seq": 963002,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "base64 /data/rfnope.txt",
@@ -47,6 +50,7 @@
       "seq": 963003,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "od /data/rfdir",
@@ -61,6 +65,7 @@
       "seq": 963004,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "od /data/rfnope.txt",
@@ -75,6 +80,7 @@
       "seq": 963005,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "xxd /data/rfdir",
@@ -89,6 +95,7 @@
       "seq": 963006,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "xxd /data/rfnope.txt",
@@ -103,6 +110,7 @@
       "seq": 963007,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/rfdir",
@@ -117,6 +125,7 @@
       "seq": 963008,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/rfnope.txt",
@@ -131,6 +140,7 @@
       "seq": 963009,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "awk '{print}' /data/rfdir",
@@ -145,6 +155,7 @@
       "seq": 963010,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "awk '{print}' /data/rfnope.txt",
@@ -159,6 +170,7 @@
       "seq": 963011,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfdir",
@@ -173,6 +185,7 @@
       "seq": 963012,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfnope.txt",
@@ -187,6 +200,7 @@
       "seq": 963013,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "jq . /data/rfdir",
@@ -201,6 +215,7 @@
       "seq": 963014,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "jq . /data/rfnope.txt",
@@ -215,6 +230,7 @@
       "seq": 963015,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "uniq /data/rfdir",
@@ -229,6 +245,7 @@
       "seq": 963016,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "uniq /data/rfnope.txt",
@@ -243,6 +260,7 @@
       "seq": 963017,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "paste /data/rfdir",
@@ -257,6 +275,7 @@
       "seq": 963018,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "paste /data/rfnope.txt",
@@ -271,6 +290,7 @@
       "seq": 963019,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "tsort /data/rfdir",
@@ -285,6 +305,7 @@
       "seq": 963020,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "tsort /data/rfnope.txt",
@@ -299,6 +320,7 @@
       "seq": 963021,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "shuf /data/rfdir",
@@ -313,6 +335,7 @@
       "seq": 963022,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "shuf /data/rfnope.txt",
@@ -327,6 +350,7 @@
       "seq": 963023,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "split /data/rfdir",
@@ -341,6 +365,7 @@
       "seq": 963024,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "split /data/rfnope.txt",
@@ -355,6 +380,7 @@
       "seq": 963025,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "csplit /data/rfdir 1",
@@ -369,6 +395,7 @@
       "seq": 963026,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "csplit /data/rfnope.txt 1",
@@ -383,6 +410,7 @@
       "seq": 963027,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "column /data/rfdir",
@@ -397,6 +425,7 @@
       "seq": 963028,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "column /data/rfnope.txt",
@@ -411,6 +440,7 @@
       "seq": 963029,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "look x /data/rfdir",
@@ -425,6 +455,7 @@
       "seq": 963030,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "look x /data/rfnope.txt",
@@ -439,6 +470,7 @@
       "seq": 963031,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "comm /data/rfdir /data/rfdir",
@@ -453,6 +485,7 @@
       "seq": 963032,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "comm /data/rfnope.txt /data/rfnope.txt",
@@ -467,6 +500,7 @@
       "seq": 963033,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "join /data/rfdir /data/rfdir",
@@ -481,6 +515,7 @@
       "seq": 963034,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "join /data/rfnope.txt /data/rfnope.txt",
@@ -495,6 +530,7 @@
       "seq": 963035,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "iconv -f utf-8 -t utf-8 /data/rfdir",
@@ -509,6 +545,7 @@
       "seq": 963036,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "iconv -f utf-8 -t utf-8 /data/rfnope.txt",
@@ -523,6 +560,7 @@
       "seq": 963037,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "gzip -c /data/rfdir",
@@ -537,6 +575,7 @@
       "seq": 963038,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "gzip -c /data/rfnope.txt",
@@ -551,6 +590,7 @@
       "seq": 963039,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "gunzip -c /data/rfdir",
@@ -565,6 +605,7 @@
       "seq": 963040,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "gunzip -c /data/rfnope.txt",
@@ -579,6 +620,7 @@
       "seq": 963041,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zcat /data/rfdir",
@@ -593,6 +635,7 @@
       "seq": 963042,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zcat /data/rfnope.txt",
@@ -607,6 +650,7 @@
       "seq": 963043,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zgrep x /data/rfdir",
@@ -621,6 +665,7 @@
       "seq": 963044,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zgrep x /data/rfnope.txt",
@@ -635,6 +680,7 @@
       "seq": 963045,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp /data/rfdir /data/rfdir/inner.txt",
@@ -649,6 +695,7 @@
       "seq": 963046,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp /data/rfnope.txt /data/rfnope.txt",
@@ -663,6 +710,7 @@
       "seq": 963047,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/rfdir",
@@ -677,6 +725,7 @@
       "seq": 963048,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/rfnope.txt",
@@ -691,6 +740,7 @@
       "seq": 963049,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "wc /data/rfdir",
@@ -705,6 +755,7 @@
       "seq": 963050,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "wc /data/rfnope.txt",
@@ -719,6 +770,7 @@
       "seq": 963051,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "tac /data/rfdir",
@@ -733,6 +785,7 @@
       "seq": 963052,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "tac /data/rfnope.txt",
@@ -747,6 +800,7 @@
       "seq": 963053,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "stat /data/rfnope.txt",
@@ -761,6 +815,7 @@
       "seq": 963054,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "truncate -s 0 /data/rfdir",
@@ -775,6 +830,7 @@
       "seq": 963060,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'a\\nb\\n' > /data/rfok.txt && printf 'c\\nd\\n' > /data/rfok2.txt && echo ok",
@@ -789,6 +845,7 @@
       "seq": 963061,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfnope /data/rfok.txt",
@@ -803,6 +860,7 @@
       "seq": 963062,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfdir /data/rfok.txt",
@@ -817,6 +875,7 @@
       "seq": 963063,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfok.txt /data/rfdir /data/rfok2.txt",
@@ -831,6 +890,7 @@
       "seq": 963064,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfok.txt /data/rfnope /data/rfok2.txt",
@@ -845,6 +905,7 @@
       "seq": 963065,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfdir /data/rfdir",
@@ -859,6 +920,7 @@
       "seq": 963066,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sed -n p /data/rfnope /data/rfdir",
@@ -873,6 +935,7 @@
       "seq": 963067,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/rfok.txt /data/rfdir /data/rfok2.txt",
@@ -887,6 +950,7 @@
       "seq": 963068,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/rfok.txt /data/rfdir /data/rfok2.txt",
@@ -901,6 +965,7 @@
       "seq": 963069,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zcat /data/rfdir /data/rfnope",
@@ -915,6 +980,7 @@
       "seq": 963070,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zcat /data/rfnope /data/rfdir",
@@ -929,6 +995,7 @@
       "seq": 963071,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "zcat /data/rfdir /data/rfdir",
@@ -943,6 +1010,7 @@
       "seq": 963072,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "tac /data/rfok.txt /data/rfdir /data/rfok2.txt",
@@ -957,6 +1025,7 @@
       "seq": 1299050,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort /data/rfdir /data/rfnope.txt",
@@ -971,6 +1040,7 @@
       "seq": 1299051,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort -c /data/rfnope.txt",
@@ -985,6 +1055,7 @@
       "seq": 1299052,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort -o /data/rfdir /data/rfok.txt",
@@ -999,6 +1070,7 @@
       "seq": 1299053,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sort -o /data/rfnodir/out.txt /data/rfok.txt",
@@ -1013,6 +1085,7 @@
       "seq": 1301040,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp -s /data/sub /data/a.txt",
@@ -1027,6 +1100,7 @@
       "seq": 1301041,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp -s /data/sub /data/nope1301; echo rc=$?",
@@ -1041,6 +1115,7 @@
       "seq": 1301042,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp /data/sub /data/nope1301",
@@ -1055,6 +1130,7 @@
       "seq": 1301043,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cmp /data/sub /data/sub; echo rc=$?",
@@ -1069,6 +1145,7 @@
       "seq": 1301044,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(cd /data && gunzip -c sub1301; echo rc=$?; mkdir sub1301.gz && gunzip -c sub1301; echo rc=$?; rmdir sub1301.gz)",
@@ -1083,6 +1160,7 @@
       "seq": 9960301,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -n '$p' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
@@ -1097,6 +1175,7 @@
       "seq": 9960302,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -n '$p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
@@ -1111,6 +1190,7 @@
       "seq": 9960303,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed n /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
@@ -1125,6 +1205,7 @@
       "seq": 9960304,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed '$!N' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
@@ -1139,6 +1220,7 @@
       "seq": 9960305,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -s -n '$p' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
@@ -1153,6 +1235,7 @@
       "seq": 9960306,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed '$F' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
@@ -1167,6 +1250,7 @@
       "seq": 9960307,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -n 'n;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
@@ -1181,6 +1265,7 @@
       "seq": 9960308,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -n 'N;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
@@ -1195,6 +1280,7 @@
       "seq": 9960309,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -s -n 'n;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",

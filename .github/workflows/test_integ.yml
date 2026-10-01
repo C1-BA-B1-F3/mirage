@@ -43,10 +43,14 @@ jobs:
       data: ${{ steps.filter.outputs.data }}
       fuse: ${{ steps.filter.outputs.fuse }}
       observability: ${{ steps.filter.outputs.observability }}
+      runtime: ${{ steps.filter.outputs.runtime }}
     steps:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # A filter with no '!' rule matches exactly as under 'some'; a '!'
+          # rule drops a file even when another rule of its filter matched it.
+          predicate-quantifier: some-with-excludes
           filters: |
             core:
               - 'integ/**'
@@ -132,10 +136,42 @@ jobs:
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
+            # integ-runtime mounts only ram, s3, redis and mongodb, and runs
+            # no account CLI and none of the text, archive or network
+            # commands dropped below, so a change confined to another
+            # backend's four layers, one of those commands, an account CLI,
+            # an agent adapter, FUSE, the browser package or a unit test
+            # cannot reach it. The list names what to drop, so a new module
+            # runs the job until it is added here; a case that starts calling
+            # a dropped command takes that command off the list.
+            runtime:
+              - 'integ/runtime/**'
+              - 'integ/fixtures/runtime/**'
+              - 'integ/package.json'
+              - 'integ/tsconfig.json'
+              - 'python/**'
+              - 'typescript/**'
+              - '.github/workflows/test_integ.yml'
+              - '.github/actions/setup-node-pnpm/action.yml'
+              - '!**/*.md'
+              - '!python/tests/**'
+              - '!typescript/**/*.test.ts'
+              - '!python/mirage/fuse/**'
+              - '!python/mirage/agents/{agno,camel,claude_agent_sdk,langchain,openai_agents,openhands,pydantic_ai}/**'
+              - '!typescript/packages/{browser,dsh,opencode}/**'
+              - '!typescript/packages/node/src/fuse/**'
+              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{airtable,aliyun,backblaze,box,ceph,chroma,databricks_volume,dify,digitalocean,discord,dropbox,email,gcal,gcs}{.py,.ts,/**}'
+              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{gdocs,gdrive,gh,git,github,gmail,google,google_api,gridfs,gsheets,gslides,gws,hf,hf_buckets,hf_datasets}{.py,.ts,/**}'
+              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{hf_hub,hf_models,hf_spaces,himalaya,jaeger,lancedb,langfuse,linear,mem0,minio,msgraph,nextcloud,notion,ntn}{.py,.ts,/**}'
+              - '!{python/mirage,typescript/packages/core/src,typescript/packages/node/src}/{accessor,core,ops,vfs,commands/builtin,commands/cli/builtin}/{oci,onedrive,postgres,qdrant,qingstor,r2,scaleway,seaweedfs,sharepoint,slack,supabase,tencent,trello,wandb,wasabi}{.py,.ts,/**}'
+              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/{generic,generic_bind/builders,generic/crossmount/relay}/{archive,awk,awk_types,cmp,column,comm,csplit,cut,decompress,diff,gunzip,gzip,jq,join,rg,sed,sort,tar,unzip,zcat,zgrep,zip_cmd}{.py,.ts,/**}'
+              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/{cut_ranges,diff_format,diff_types,rg_filetypes,rg_glob,rg_scan,rg_search,sed_exec,sed_script,sort_keys,tar_helper}.{py,ts}'
+              - '!{python/mirage,typescript/packages/core/src}/commands/builtin/general/{curl,curl_write_out,wget}.{py,ts}'
+              - '!{python/mirage,typescript/packages/core/src}/core/{awk,jq}/**'
 
   typescript-build:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true' || needs.changes.outputs.database == 'true' || needs.changes.outputs.fuse == 'true' || needs.changes.outputs.observability == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true' || needs.changes.outputs.database == 'true' || needs.changes.outputs.fuse == 'true' || needs.changes.outputs.observability == 'true' || needs.changes.outputs.runtime == 'true') }}
     name: TypeScript build bootstrap
     runs-on: ubuntu-latest
     steps:
@@ -1329,7 +1365,7 @@ jobs:
   # is left, so a new integ/runtime/*.json joins a leg instead of leaving CI.
   integ-runtime:
     needs: [changes, typescript-build]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:

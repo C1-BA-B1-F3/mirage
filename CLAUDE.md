@@ -40,6 +40,9 @@ semantics.
 - `scripts/check_barrel_surface.py`: every `core` export has a consumer.
 - `integ/`: one JSON case corpus runs on both hosts against the same targets
   and goldens. Any change in observable shell behavior adds a case.
+  A pull request runs only the integ jobs whose path filter matches (charted
+  in `integ/README.md`), so adding, moving or renaming a module updates the
+  filters in `test_integ.yml` and that chart.
 
 ### Patterns
 

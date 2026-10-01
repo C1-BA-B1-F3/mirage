@@ -73,6 +73,57 @@ and torn down after: S3 buckets `mirage-integ-<run>-...` (moto in-process by
 default), a Mongo database `mirage_integ_<run>`, redis key prefixes, and temp
 dirs for ssh.
 
+## What a pull request runs
+
+A push to main runs every job in `.github/workflows/test_integ.yml`. A pull
+request runs only the jobs whose path filter matches a changed file; the
+filters live in that workflow's `changes` job, and `typescript-build` runs
+whenever a job that needs the built packages does.
+
+```mermaid
+flowchart LR
+    PY["python/**"] --> core & data
+    TSX["typescript/**"] --> ts & data & database
+    IN["integ/**"] --> core & ts & data
+    D["data/**"] --> core
+    DB["mongodb · postgres · chroma · qdrant<br/>python layers, integ/vfs/&lt;name&gt;,<br/>integ/runners, targets.json"] --> database
+    OB["langfuse · jaeger layers<br/>integ/vfs/observability, seeds,<br/>integ/runners, targets.json"] --> observability
+    FS["python and node fuse modules<br/>integ/fuse"] --> fuse
+    RT["python/** and typescript/** minus<br/>what the runtime filter drops<br/>integ/runtime, integ/fixtures/runtime"] --> runtime
+    core --> J1["integ"]
+    ts --> J2["integ-ts"]
+    core & ts --> J3["integ-shared-py · integ-shared-ts<br/>integ-shared-parity · integ-selftests<br/>integ-facets · integ-wandb"]
+    data --> J4["integ-data"]
+    database --> J5["integ-database"]
+    observability --> J6["integ-observability"]
+    fuse --> J7["integ-fuse · integ-fuse-windows<br/>integ-fskit-macos"]
+    runtime --> J8["integ-runtime"]
+```
+
+The same wiring from the side of a change (`core` for a python file, `ts`
+for a typescript file; a typescript file also sets `database`):
+
+| Changed                                                                                                                                                                     | Filters set                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| shared code: shell, workspace, executor, generic commands (cat, ls, grep, ...), runtime, CLI, server, policy, cache; the ram, disk, s3, redis, mongodb, ssh backends        | core or ts, data, runtime                                                                                            |
+| another backend's four layers (github, notion, gdrive, ...), an account CLI (gh, git, ntn, gws, ...), or jq, sed, awk, tar, gzip, zip, diff, cmp, sort, cut, rg, curl, wget | core or ts, data                                                                                                     |
+| mongodb, postgres, chroma, qdrant                                                                                                                                           | core or ts, data, database (mongodb also runtime)                                                                    |
+| langfuse, jaeger                                                                                                                                                            | core or ts, data, observability                                                                                      |
+| `mirage/fuse/`, `node/src/fuse/`                                                                                                                                            | core or ts, data, fuse                                                                                               |
+| python agent adapters, the browser, dsh and opencode packages, unit tests, markdown                                                                                         | core or ts, data                                                                                                     |
+| `integ/runtime/`, `integ/fixtures/runtime/`                                                                                                                                 | core, ts, data, runtime                                                                                              |
+| the rest of `integ/`: corpus, fakes, runners, goldens                                                                                                                       | core, ts, data (`runners/` and `targets.json` also database and observability; `package.json` also fuse and runtime) |
+| `data/`                                                                                                                                                                     | core                                                                                                                 |
+| `test_integ.yml`                                                                                                                                                            | every filter                                                                                                         |
+
+The `runtime` filter is the only one that subtracts: it takes all of
+`python/` and `typescript/` and drops what integ-runtime cannot reach, so a
+new module runs the job until someone adds it to the drop list. Keep the
+filters and this section in step with the code: a new or moved backend,
+CLI or package belongs in the filter that tests it, and a runtime case that
+starts mounting a dropped backend or calling a dropped command takes that
+name off the drop list.
+
 ## Running locally
 
 The `unix/cp` and `unix/mv` cases use GNU coreutils 9.7 as their transfer

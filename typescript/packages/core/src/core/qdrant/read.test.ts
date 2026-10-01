@@ -12,63 +12,57 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { expect, it } from 'vitest'
+import type { QdrantClient } from '@qdrant/js-client-rest'
+import { expect, it, vi } from 'vitest'
 
-import type { QdrantAccessor } from '../../accessor/qdrant.ts'
+import { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { resolveQdrantConfig } from '../../vfs/qdrant/config.ts'
 import { PathSpec } from '../../types.ts'
-import { read } from './read.ts'
+import { read } from './tree.ts'
+
+function lineageAccessor(requested: unknown[]): QdrantAccessor {
+  const accessor = new QdrantAccessor(
+    resolveQdrantConfig({
+      collection: 'docs',
+      groupBy: ['metadata.source'],
+      basenameFields: ['metadata.source'],
+      nameField: 'metadata.page',
+      textField: 'page_content',
+    }),
+  )
+  const client = {
+    retrieve: (_collection: string, opts: { ids: unknown[] }) => {
+      requested.push(...opts.ids)
+      return Promise.resolve([
+        {
+          id: 17,
+          payload: {
+            page_content: 'Refunds are processed within 14 days',
+            metadata: { source: 's3://docs/refund.pdf', page: '004' },
+          },
+        },
+      ])
+    },
+  }
+  vi.spyOn(accessor, 'client').mockResolvedValue(client as unknown as QdrantClient)
+  return accessor
+}
+
+function spec(path: string): PathSpec {
+  return new PathSpec({ virtual: path, directory: path, vfsPath: path.slice(1) })
+}
 
 it('reads a payload-named chunk by its embedded point id', async () => {
-  const config = resolveQdrantConfig({
-    collection: 'docs',
-    groupBy: ['metadata.source'],
-    basenameFields: ['metadata.source'],
-    nameField: 'metadata.page',
-    textField: 'page_content',
-  })
-  let requested = ''
-  const accessor = {
-    config,
-    rowRecord: (_table: string, _idField: string, rowId: string) => {
-      requested = rowId
-      return Promise.resolve({
-        id: 17,
-        page_content: 'Refunds are processed within 14 days',
-        metadata: { source: 's3://docs/refund.pdf', page: '004' },
-      })
-    },
-  } as unknown as QdrantAccessor
-  const path = '/refund.pdf/004__17.txt'
-  const spec = new PathSpec({ virtual: path, directory: path, vfsPath: path.slice(1) })
-
-  expect(new TextDecoder().decode(await read(accessor, spec))).toBe(
-    'Refunds are processed within 14 days\n',
-  )
-  expect(requested).toBe('17')
+  const requested: unknown[] = []
+  const data = await read(lineageAccessor(requested), spec('/refund.pdf/004__17.txt'))
+  expect(new TextDecoder().decode(data)).toBe('Refunds are processed within 14 days\n')
+  expect(requested).toEqual([17])
 })
 
 it('rejects a stem the listing never published', async () => {
   // The label is stripped before the retrieve, so any spelling that ends in
   // __<id> fetches the point; only the stem readdir publishes opens.
-  const config = resolveQdrantConfig({
-    collection: 'docs',
-    groupBy: ['metadata.source'],
-    basenameFields: ['metadata.source'],
-    nameField: 'metadata.page',
-    textField: 'page_content',
-  })
-  const accessor = {
-    config,
-    rowRecord: () =>
-      Promise.resolve({
-        id: 17,
-        page_content: 'Refunds are processed within 14 days',
-        metadata: { source: 's3://docs/refund.pdf', page: '004' },
-      }),
-  } as unknown as QdrantAccessor
   for (const path of ['/refund.pdf/wrong__17.txt', '/refund.pdf/17.txt']) {
-    const spec = new PathSpec({ virtual: path, directory: path, vfsPath: path.slice(1) })
-    await expect(read(accessor, spec)).rejects.toHaveProperty('code', 'ENOENT')
+    await expect(read(lineageAccessor([]), spec(path))).rejects.toHaveProperty('code', 'ENOENT')
   }
 })

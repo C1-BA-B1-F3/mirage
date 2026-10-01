@@ -14,6 +14,7 @@
 
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
 import { enoent } from '../../utils/errors.ts'
+import { scalarString } from '../slug_tree/rows.ts'
 
 const PATH_TREE_ID = '__path_tree__'
 const PAGE_CHUNK_BATCH_SIZE = 100
@@ -21,12 +22,6 @@ const PAGE_CHUNK_BATCH_SIZE = 100
 export interface ChromaChunk {
   document: string
   metadata: Record<string, unknown>
-}
-
-export function metadataString(value: unknown): string | null {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return null
 }
 
 export async function fetchPathTree(accessor: ChromaAccessor): Promise<string> {
@@ -95,7 +90,7 @@ export async function pagesChunks(
     const metadatas = result.metadatas
     for (let i = 0; i < documents.length; i++) {
       const metadata = metadatas[i] ?? {}
-      const bucket = grouped.get(metadataString(metadata[slugField]) ?? '')
+      const bucket = grouped.get(scalarString(metadata[slugField]) ?? '')
       if (bucket === undefined) continue
       bucket.push({ document: documents[i] ?? '', metadata })
     }

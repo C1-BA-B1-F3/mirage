@@ -49,6 +49,8 @@ def test_candidate_ids_by_type():
     uid = "11111111-1111-1111-1111-111111111111"
     assert query._candidate_ids(uid) == [uid]
     assert query._candidate_ids("__nf_missing__") == []
+    assert query._candidate_ids("-3") == [-3]
+    assert query._candidate_ids("--5") == []
 
 
 class _StrictClient:
@@ -105,7 +107,7 @@ class _StrictAccessor:
                                    id_field="id",
                                    max_rows=1000)
         self._client = client
-        self._indexes_ensured: set[str] = set()
+        self.indexes_ensured: set[str] = set()
 
     async def client(self):
         return self._client
@@ -121,7 +123,7 @@ async def test_creates_indexes_on_index_required_then_retries(holds):
     assert [r["id"] for r in rows] == [1]
     assert client.filtered_calls == 1
     assert client.index_calls == 1
-    assert "c" in accessor._indexes_ensured
+    assert "c" in accessor.indexes_ensured
 
 
 @pytest.mark.asyncio

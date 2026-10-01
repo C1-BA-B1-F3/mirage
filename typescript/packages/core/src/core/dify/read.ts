@@ -14,28 +14,17 @@
 
 import type { DifyAccessor } from '../../accessor/dify.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { PathSpec } from '../../types.ts'
-import { eisdir } from '../../utils/errors.ts'
+import type { PathSpec } from '../../types.ts'
 import { sliceWindow } from '../../utils/ranges.ts'
+import { fileEntry, joinLines } from '../slug_tree/read.ts'
+import { scalarString } from '../slug_tree/rows.ts'
 import { getDocumentSegments, iterSegmentPages } from './client.ts'
-import { resolvePath, type ResolvedDifyPath } from './path.ts'
+import { DIFY_TREE } from './tree.ts'
 
 const ENC = new TextEncoder()
 
-function fileId(resolved: ResolvedDifyPath, virtual: string): string {
-  if (resolved.isDir || resolved.entry === null) throw eisdir(virtual)
-  return resolved.entry.id
-}
-
 export function segmentText(segment: Record<string, unknown>): string {
-  const value = segment.content
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return ''
-}
-
-function segmentsToBytes(segments: Record<string, unknown>[]): Uint8Array {
-  return ENC.encode(segments.map((segment) => segmentText(segment)).join('\n'))
+  return scalarString(segment.content) ?? ''
 }
 
 /**
@@ -53,33 +42,27 @@ function segmentsToBytes(segments: Record<string, unknown>[]): Uint8Array {
  */
 export async function readBytes(
   accessor: DifyAccessor,
-  path: PathSpec | string,
+  path: PathSpec,
   index?: IndexCacheStore,
   options?: { offset?: number; size?: number },
 ): Promise<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  const resolved = await resolvePath(accessor, spec, index)
-  const segments = await getDocumentSegments(accessor, fileId(resolved, spec.virtual))
-  return sliceWindow(segmentsToBytes(segments), options?.offset ?? 0, options?.size ?? null)
+  const entry = await fileEntry(DIFY_TREE, accessor, path, index)
+  const segments = await getDocumentSegments(accessor, entry.id)
+  const rendered = ENC.encode(segments.map((segment) => segmentText(segment)).join('\n'))
+  return sliceWindow(rendered, options?.offset ?? 0, options?.size ?? null)
 }
 
 export async function* readStream(
   accessor: DifyAccessor,
-  path: PathSpec | string,
+  path: PathSpec,
   index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
-  const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
-  const resolved = await resolvePath(accessor, spec, index)
-  const documentId = fileId(resolved, spec.virtual)
-  let first = true
-  for await (const pageSegments of iterSegmentPages(accessor, documentId)) {
-    for (const segment of pageSegments) {
-      if (first) {
-        first = false
-      } else {
-        yield ENC.encode('\n')
-      }
-      yield ENC.encode(segmentText(segment))
-    }
+  const entry = await fileEntry(DIFY_TREE, accessor, path, index)
+  yield* joinLines(segmentTexts(accessor, entry.id))
+}
+
+async function* segmentTexts(accessor: DifyAccessor, documentId: string): AsyncIterable<string> {
+  for await (const page of iterSegmentPages(accessor, documentId)) {
+    for (const segment of page) yield segmentText(segment)
   }
 }

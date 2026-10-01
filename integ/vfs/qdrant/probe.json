@@ -6,11 +6,11 @@
       "targets": [
         "qdrant"
       ],
-      "command": "cat /db/__nf_missing__.txt",
+      "command": "cat /db/__nf_missing__.txt; echo rc=$?; search; echo rc=$?; search --method hybrid dog /db/cat; echo rc=$?; search '' /db; echo rc=$?",
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "cat: /db/__nf_missing__.txt: Is a directory\n"
+        "exit": 0,
+        "stdout": "rc=1\nrc=2\nrc=2\nrc=2\n",
+        "stderr": "cat: /db/__nf_missing__.txt: Is a directory\nsearch: query is required\nsearch: only the 'semantic' method is supported\nsearch: query is required\n"
       }
     },
     {

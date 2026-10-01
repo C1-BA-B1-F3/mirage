@@ -12,21 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.chroma.find import find
 from mirage.commands.builtin.chroma.io import IO as _IO
 from mirage.commands.builtin.chroma.search import search
 from mirage.commands.builtin.generic_bind import make_generic_commands
 from mirage.commands.builtin.generic_bind.provision import \
     with_default_provisions
-
-_CHROMA_OVERRIDES = {"find"}
+from mirage.commands.builtin.slug_tree.find import make_find
+from mirage.core.chroma.stat import stat, stat_light
+from mirage.core.chroma.tree import CHROMA_TREE
 
 COMMANDS = [
-    *make_generic_commands(
-        "chroma",
-        _IO,
-        overrides=_CHROMA_OVERRIDES,
-    ),
-    *with_default_provisions([find, search], _IO.stat, _IO.resolve_glob,
-                             _IO.readdir),
+    *make_generic_commands("chroma", _IO, overrides={"find"}),
+    *with_default_provisions(
+        [make_find("chroma", _IO, CHROMA_TREE, stat, stat_light), search],
+        _IO.stat, _IO.resolve_glob, _IO.readdir),
 ]

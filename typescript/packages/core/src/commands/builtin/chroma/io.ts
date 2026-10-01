@@ -12,19 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { searchResource, searchMany } from '../../../core/chroma/search.ts'
-import { VFSAdapter } from '../../../vfs/adapter.ts'
-
+import { readBytes, readStream } from '../../../core/chroma/read.ts'
+import { searchMany, searchResource } from '../../../core/chroma/search.ts'
+import { stat } from '../../../core/chroma/stat.ts'
+import { CHROMA_TREE } from '../../../core/chroma/tree.ts'
 import type { ChromaAccessor } from '../../../accessor/chroma.ts'
-import { readBytes as chromaRead, readStream as chromaStream } from '../../../core/chroma/read.ts'
-import { readdir as chromaReaddir } from '../../../core/chroma/readdir.ts'
-import { stat as chromaStat } from '../../../core/chroma/stat.ts'
+import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
 export const CHROMA_IO: CommandIO<ChromaAccessor> = new VFSAdapter<ChromaAccessor>({
   search: { search: searchResource, searchMany },
-  read: { readdir: chromaReaddir, readBytes: chromaRead, stat: chromaStat },
-  native: { readStream: chromaStream },
+  read: { readdir: CHROMA_TREE.readdir, readBytes, stat },
+  native: { readStream },
   isMounted: () => true,
   local: false,
 }).toCommandIO()

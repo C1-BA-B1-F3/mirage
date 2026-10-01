@@ -3,21 +3,17 @@ from datetime import datetime, timezone
 from mirage.accessor.dify import DifyAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.dify.client import get_document_detail
-from mirage.core.dify.path import resolve_path
-from mirage.core.dify.tree import extract_document_size
+from mirage.core.dify.tree import DIFY_TREE, extract_document_size
+from mirage.core.slug_tree.stat import directory_stat
 from mirage.types import ContentType, FileStat, FileType, JsonValue, PathSpec
 
 
 async def stat_light(accessor: DifyAccessor,
                      path: PathSpec,
                      index: IndexCacheStore = NULL_INDEX) -> FileStat:
-    resolved = await resolve_path(accessor, path, index)
+    resolved = await DIFY_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
-        return FileStat(
-            name=stat_name(resolved.virtual_key, resolved.mount_prefix),
-            type=FileType.DIRECTORY,
-            extra={"children_count": 0},
-        )
+        return directory_stat(resolved)
     # size stays None: the entry size is the uploaded source file (e.g. the
     # original PDF), not the rendered segment text this mount serves
     # (FileStat.size must be render-derived or None, see the CLAUDE.md FUSE
@@ -40,13 +36,9 @@ async def stat_light(accessor: DifyAccessor,
 async def stat(accessor: DifyAccessor,
                path: PathSpec,
                index: IndexCacheStore = NULL_INDEX) -> FileStat:
-    resolved = await resolve_path(accessor, path, index)
+    resolved = await DIFY_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
-        return FileStat(
-            name=stat_name(resolved.virtual_key, resolved.mount_prefix),
-            type=FileType.DIRECTORY,
-            extra={"children_count": 0},
-        )
+        return directory_stat(resolved)
     detail = await get_document_detail(accessor, resolved.entry.id)
     source_size = extract_document_size(detail)
     if source_size is None:
@@ -82,10 +74,3 @@ def timestamp_to_zulu(value: JsonValue) -> str | None:
         return datetime.fromtimestamp(
             value, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return str(value)
-
-
-def stat_name(virtual_key: str, mount_prefix: str) -> str:
-    root = mount_prefix.rstrip("/") or "/"
-    if virtual_key == root:
-        return "/"
-    return virtual_key.rstrip("/").rsplit("/", 1)[-1]

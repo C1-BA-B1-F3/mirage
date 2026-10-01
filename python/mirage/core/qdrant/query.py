@@ -14,6 +14,7 @@
 
 import json
 import logging
+import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -97,7 +98,7 @@ def _point_to_row(point: Any, id_field: str) -> dict[str, Any]:
 
 
 def _candidate_ids(row_id: str) -> list[Any]:
-    if row_id.lstrip("-").isdigit():
+    if re.fullmatch(r"-?[0-9]+", row_id):
         return [int(row_id)]
     try:
         uuid.UUID(row_id)
@@ -202,7 +203,7 @@ def _is_index_required(exc: UnexpectedResponse) -> bool:
 
 async def _ensure_indexes(client: Any, accessor: QdrantAccessor,
                           collection: str) -> None:
-    if collection in accessor._indexes_ensured:
+    if collection in accessor.indexes_ensured:
         return
     for field in accessor.config.group_by:
         await client.create_payload_index(
@@ -210,7 +211,7 @@ async def _ensure_indexes(client: Any, accessor: QdrantAccessor,
             field_name=field,
             field_schema="keyword",
         )
-    accessor._indexes_ensured.add(collection)
+    accessor.indexes_ensured.add(collection)
 
 
 async def _scroll_all(accessor: QdrantAccessor,
@@ -325,7 +326,7 @@ async def row_record(accessor: QdrantAccessor, table: str, id_field: str,
 async def search_rows(accessor: QdrantAccessor, table: str, query_text: str,
                       limit: int) -> list[dict[str, Any]]:
     key = (table, query_text, limit)
-    cached = accessor.cached_search(key)
+    cached = accessor.search_cache.get(key)
     if cached is not None:
         return cached
     client = await accessor.client()
@@ -341,5 +342,5 @@ async def search_rows(accessor: QdrantAccessor, table: str, query_text: str,
         row = _point_to_row(point, accessor.config.id_field)
         row["_score"] = point.score
         rows.append(row)
-    accessor.store_search(key, rows)
+    accessor.search_cache[key] = rows
     return rows

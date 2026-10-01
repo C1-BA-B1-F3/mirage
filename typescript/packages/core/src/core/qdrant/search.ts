@@ -12,129 +12,29 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { SearchQuery } from '../../vfs/types.ts'
-import { validateOptions, intOption, floatOption, textOption } from '../../vfs/search.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
-import type { QdrantRow } from './client.ts'
-import type { QdrantConfigResolved } from '../../vfs/qdrant/config.ts'
-import type { PathSpec } from '../../types.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { renderJson, renderText } from './render.ts'
+import type { Row } from '../vector/types.ts'
 import { groupName, rowStem } from './naming.ts'
 import { fieldValue } from './payload.ts'
+import { renderJson, renderText } from './render.ts'
 
-const ENC = new TextEncoder()
-const DEC = new TextDecoder()
-
-function contentExt(row: QdrantRow, config: QdrantConfigResolved): string {
-  if (
-    config.textField !== null &&
-    fieldValue(row, config.textField) !== null &&
-    fieldValue(row, config.textField) !== undefined
-  ) {
-    return 'txt'
-  }
-  return 'json'
-}
-
-function targetTable(paths: PathSpec[], config: QdrantConfigResolved): string | null {
-  if (config.collection !== null) return config.collection
-  for (const path of paths) {
-    const key = stripSlash(path.mountPath)
-    if (key !== '') return key.split('/')[0] ?? null
-  }
-  return null
-}
-
-function canonicalPath(
-  row: QdrantRow,
-  config: QdrantConfigResolved,
-  table: string,
-  mountPrefix: string,
-): string {
-  const segs: string[] = []
-  if (config.collection === null) segs.push(table)
+/**
+ * A ranked point's path below its collection, and its body: the source text
+ * when the point has one, its `.json` otherwise.
+ */
+export function hit(accessor: QdrantAccessor, row: Row): [string[], Uint8Array] {
+  const config = accessor.config
+  const segments: string[] = []
   for (const column of config.groupBy) {
     const value = fieldValue(row, column)
     if (value !== null && value !== undefined) {
-      segs.push(groupName(value, config.basenameFields.includes(column)))
+      segments.push(groupName(value, config.basenameFields.includes(column)))
     }
   }
-  segs.push(`${rowStem(row, config)}.${contentExt(row, config)}`)
-  const prefix = rstripSlash(mountPrefix)
-  return `${prefix}/${segs.join('/')}`
-}
-
-function block(
-  row: QdrantRow,
-  config: QdrantConfigResolved,
-  table: string,
-  mountPrefix: string,
-): string {
-  const path = canonicalPath(row, config, table, mountPrefix)
-  const score = row._score
-  const header =
-    score === null || score === undefined ? path : `${path}:${Number(score).toFixed(4)}`
-  const bodyRow: QdrantRow = { ...row }
-  delete bodyRow._score
-  const rendered =
-    contentExt(bodyRow, config) === 'txt'
-      ? renderText(bodyRow, config)
-      : renderJson(bodyRow, config)
-  const content = DEC.decode(rendered).replace(/\n+$/, '')
-  return `${header}\n${content}`
-}
-
-export async function searchRowsOutput(
-  accessor: QdrantAccessor,
-  query: string,
-  paths: PathSpec[],
-  topK: number,
-  threshold: number,
-  mountPrefix: string,
-): Promise<Uint8Array> {
-  if (query === '') throw new Error('search: query is required')
-  if (topK <= 0) throw new Error('search: top-k must be positive')
-  const table = targetTable(paths, accessor.config)
-  if (table === null) throw new Error('search: no table to search')
-  const rows = await accessor.searchRows(table, query, topK)
-  const blocks: string[] = []
-  for (const row of rows) {
-    const score = row._score
-    if (threshold > 0 && score !== null && score !== undefined && Number(score) < threshold) {
-      continue
-    }
-    blocks.push(block(row, accessor.config, table, mountPrefix))
+  const stem = rowStem(row, config)
+  const text = config.textField !== null ? fieldValue(row, config.textField) : null
+  if (text !== null && text !== undefined) {
+    return [[...segments, `${stem}.txt`], renderText(row, config)]
   }
-  if (blocks.length === 0) return new Uint8Array()
-  return ENC.encode(blocks.join('\n') + '\n')
-}
-
-export async function searchMany(
-  accessor: QdrantAccessor,
-  paths: PathSpec[],
-  query: SearchQuery,
-  _index?: IndexCacheStore,
-): Promise<string[]> {
-  validateOptions(query, ['top_k', 'threshold', 'method'])
-  const topK = intOption(query, 'top_k', accessor.config.searchLimit)
-  const first = paths[0]
-  if (first === undefined) throw new Error('search: at least one scope is required')
-  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
-  const method = textOption(query, 'method', 'semantic')
-  const threshold = floatOption(query, 'threshold', 0)
-  if (method !== 'semantic') throw new Error("search: only the 'semantic' method is supported")
-  const output = await searchRowsOutput(accessor, query.query, paths, topK, threshold, prefix)
-  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
-}
-
-export function searchResource(
-  accessor: QdrantAccessor,
-  path: PathSpec,
-  query: SearchQuery,
-  index?: IndexCacheStore,
-): Promise<string[]> {
-  return searchMany(accessor, [path], query, index)
+  return [[...segments, `${stem}.json`], renderJson(row, config)]
 }

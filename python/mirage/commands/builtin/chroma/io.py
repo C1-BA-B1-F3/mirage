@@ -14,9 +14,9 @@
 
 from mirage.core.chroma.read import read_bytes as _read
 from mirage.core.chroma.read import read_stream as _read_stream
-from mirage.core.chroma.readdir import readdir as _readdir
 from mirage.core.chroma.search import search_many, search_resource
 from mirage.core.chroma.stat import stat as _stat
+from mirage.core.chroma.tree import CHROMA_TREE
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import NativeReadOps, ReadOps, SearchOps
 
@@ -26,9 +26,9 @@ from mirage.vfs.types import NativeReadOps, ReadOps, SearchOps
 # intentionally absent (no write op wired).
 IO = VFSAdapter(search=SearchOps(search=search_resource,
                                  search_many=search_many),
-                read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                read=ReadOps(readdir=CHROMA_TREE.readdir,
+                             read_bytes=_read,
+                             stat=_stat),
                 native=NativeReadOps(read_stream=_read_stream),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
-
-resolve_glob = IO.resolve_glob

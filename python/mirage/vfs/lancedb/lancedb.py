@@ -16,8 +16,7 @@ from typing import Any
 
 from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.commands.builtin.lancedb import COMMANDS
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.registry import registered_commands
+from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.lancedb import OPS as LANCEDB_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName

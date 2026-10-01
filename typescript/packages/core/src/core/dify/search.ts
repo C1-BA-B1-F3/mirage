@@ -12,23 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { SearchQuery } from '../../vfs/types.ts'
-import { validateOptions, intOption, floatOption, textOption } from '../../vfs/search.ts'
-import { readdir } from './readdir.ts'
-import { makeResolveGlob } from '../../commands/builtin/generic_bind/adapter.ts'
-import { mountPrefixOf, rekey } from '../../utils/key_prefix.ts'
 import type { DifyAccessor } from '../../accessor/dify.ts'
-import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { PathSpec } from '../../types.ts'
+import type { PathSpec } from '../../types.ts'
+import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { formatScore } from '../../utils/score.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { difyPost } from './client.ts'
-import { resolvePath } from './path.ts'
-import { segmentText } from './read.ts'
-import { normalizeSlug, scalarString } from './tree.ts'
-import { walk } from './walk.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { floatOption, intOption, textOption, validateOptions } from '../../vfs/search.ts'
+import type { SearchQuery } from '../../vfs/types.ts'
+import { normalizeSlug, scalarString } from '../slug_tree/rows.ts'
+import { hitLines, searchScope, targetEntries, validateQuery } from '../slug_tree/search.ts'
+import { difyPost } from './client.ts'
+import { segmentText } from './read.ts'
+import { DIFY_TREE, SLUG_NOUN } from './tree.ts'
 
 const ENC = new TextEncoder()
 
@@ -85,9 +82,7 @@ export async function searchSegments(
 }
 
 function validateArgs(query: string, method: string, topK: number, threshold: number): string {
-  if (query === '') throw new Error('search: query is required')
-  if (query.length > 250) throw new Error('search: query cannot exceed 250 characters')
-  if (topK <= 0) throw new Error('search: top-k must be positive')
+  validateQuery(query, topK)
   if (threshold < 0 || threshold > 1) throw new Error('search: threshold must be in [0, 1]')
   const searchMethod = METHODS[method]
   if (searchMethod === undefined) {
@@ -101,7 +96,7 @@ async function metadataConditions(
   paths: readonly PathSpec[],
   index?: IndexCacheStore,
 ): Promise<Record<string, unknown>[]> {
-  const targets = await targetEntries(accessor, paths, index)
+  const targets = await targetEntries(DIFY_TREE, accessor, paths, index)
   const slugValues: string[] = []
   const nameValues: string[] = []
   for (const entry of targets.values()) {
@@ -127,35 +122,6 @@ async function metadataConditions(
     })
   }
   return conditions
-}
-
-async function targetEntries(
-  accessor: DifyAccessor,
-  paths: readonly PathSpec[],
-  index?: IndexCacheStore,
-): Promise<Map<string, IndexEntry>> {
-  const targets = new Map<string, IndexEntry>()
-  for (const path of paths) {
-    const resolved = await resolvePath(accessor, path, index)
-    if (resolved.entry !== null && !resolved.isDir) {
-      targets.set(resolved.entry.id, resolved.entry)
-      continue
-    }
-    if (resolved.isDir) {
-      const children = await walk(accessor, path, index, {
-        includeRoot: false,
-        stripPrefix: false,
-      })
-      for (const child of children) {
-        const childSpec = PathSpec.fromStrPath(child, rekey(path.virtual, path.vfsPath, child))
-        const childResolved = await resolvePath(accessor, childSpec, index)
-        if (childResolved.entry !== null && !childResolved.isDir) {
-          targets.set(childResolved.entry.id, childResolved.entry)
-        }
-      }
-    }
-  }
-  return targets
 }
 
 function responseRecords(value: unknown): Record<string, unknown>[] {
@@ -214,8 +180,9 @@ function recordPath(
   if (rawPath === null) return null
   let normalized: string
   try {
-    normalized = normalizeSlug(rawPath)
-  } catch {
+    normalized = normalizeSlug(rawPath, SLUG_NOUN)
+  } catch (err) {
+    console.warn(`Skipping Dify record with invalid slug/name: ${rawPath}: ${String(err)}`)
     return null
   }
   const prefix = rstripSlash(mountPrefix)
@@ -250,20 +217,16 @@ export async function searchMany(
 ): Promise<string[]> {
   validateOptions(query, ['top_k', 'threshold', 'method'])
   const topK = intOption(query, 'top_k', 10)
-  const first = paths[0]
-  if (first === undefined) throw new Error('search: at least one scope is required')
-  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
   const method = textOption(query, 'method', 'semantic')
   const threshold = floatOption(query, 'threshold', 0)
-  const all = paths.some((p) => stripSlash(p.vfsPath) === '')
-  const targets = all ? [] : await makeResolveGlob(readdir)(accessor, paths, index)
+  const [targets, prefix] = await searchScope(DIFY_TREE, accessor, paths, index)
   const output = await searchSegments(accessor, query.query, targets, index, {
     method,
     topK,
     threshold,
     mountPrefix: prefix,
   })
-  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
+  return hitLines(output)
 }
 
 export function searchResource(

@@ -20,40 +20,7 @@ import { connect } from '@lancedb/lancedb'
 import { resolveLanceDBConfig } from '@struktoai/mirage-core/vfs/lancedb/config'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { LanceDBStore, predicate } from './store.ts'
-
-describe('lancedb where clause', () => {
-  it('narrows on a name prefix, cast so a numeric id column takes one', () => {
-    expect(predicate('id', {}, 'doc-1')).toBe("CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'")
-  })
-
-  it('escapes LIKE metacharacters in the prefix', () => {
-    // An unescaped `_` is LIKE's single-character wildcard, so docX1 would
-    // ride along and could crowd a real match out of the row cap.
-    expect(predicate('id', {}, 'doc_')).toBe("CAST(`id` AS STRING) LIKE 'doc\\_%' ESCAPE '\\'")
-    expect(predicate('id', {}, 'a%')).toBe("CAST(`id` AS STRING) LIKE 'a\\%%' ESCAPE '\\'")
-  })
-
-  it('ands the group filters with the prefix', () => {
-    expect(predicate('id', { label: 'cat' }, 'doc-1')).toBe(
-      "`label` = 'cat' AND CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'",
-    )
-  })
-
-  it('quotes a column name a bare word could not spell', () => {
-    // A space or a reserved word only parses quoted, and lance reads a
-    // double-quoted word as a string literal, so the quotes are backticks.
-    expect(predicate('document id', { select: 'cat' }, 'doc-1')).toBe(
-      "`select` = 'cat' AND CAST(`document id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'",
-    )
-  })
-
-  it('is the filters alone with no prefix, and empty with neither', () => {
-    expect(predicate('id', { label: 'cat' }, '')).toBe("`label` = 'cat'")
-    expect(predicate('id', {}, '')).toBe('')
-    expect(predicate('', {}, 'doc-1')).toBe('')
-  })
-})
+import { LanceDBStore } from './store.ts'
 
 const CAP = 5
 const WIDE = 40

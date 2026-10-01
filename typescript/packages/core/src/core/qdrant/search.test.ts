@@ -12,56 +12,65 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { QdrantClient } from '@qdrant/js-client-rest'
 import { expect, it, vi } from 'vitest'
 
+import { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { QDRANT_IO } from '../../commands/builtin/qdrant/io.ts'
 import { searchResources } from '../../vfs/search.ts'
-import type { QdrantAccessor } from '../../accessor/qdrant.ts'
-import { resolveQdrantConfig } from '../../vfs/qdrant/config.ts'
+import { resolveQdrantConfig, type QdrantConfig } from '../../vfs/qdrant/config.ts'
 import { PathSpec } from '../../types.ts'
-import { searchRowsOutput } from './search.ts'
+import { searchRowsOutput } from '../vector/search.ts'
+import type { QdrantPoint } from './query.ts'
+import { TREE } from './tree.ts'
+
+function accessorOf(config: QdrantConfig, points: QdrantPoint[]) {
+  const query = vi.fn((_collection: string, _opts: { limit: number }) =>
+    Promise.resolve({ points }),
+  )
+  const accessor = new QdrantAccessor(resolveQdrantConfig(config))
+  vi.spyOn(accessor, 'client').mockResolvedValue({ query } as unknown as QdrantClient)
+  return { accessor, query }
+}
 
 it('returns the canonical nested document lineage path', async () => {
-  const config = resolveQdrantConfig({
-    collection: 'docs',
-    groupBy: ['metadata.source'],
-    basenameFields: ['metadata.source'],
-    nameField: 'metadata.page',
-    textField: 'page_content',
-  })
-  const accessor = {
-    config,
-    searchRows: () =>
-      Promise.resolve([
-        {
-          id: 17,
-          _score: 0.81,
+  const { accessor } = accessorOf(
+    {
+      collection: 'docs',
+      groupBy: ['metadata.source'],
+      basenameFields: ['metadata.source'],
+      nameField: 'metadata.page',
+      textField: 'page_content',
+    },
+    [
+      {
+        id: 17,
+        score: 0.81,
+        payload: {
           page_content: 'Refunds are processed within 14 days',
           metadata: { source: 's3://docs/refund.pdf', page: '004' },
         },
-      ]),
-  } as unknown as QdrantAccessor
+      },
+    ],
+  )
   const path = new PathSpec({ virtual: '/db', directory: '/db', vfsPath: '' })
   const output = new TextDecoder().decode(
-    await searchRowsOutput(accessor, 'refund', [path], 1, 0, '/db'),
+    await searchRowsOutput(TREE, accessor, 'refund', [path], 1, 0, '/db'),
   )
-
-  expect(output).toMatch(/^\/db\/refund\.pdf\/004__17\.txt:0\.8100\n/)
+  expect(output).toBe('/db/refund.pdf/004__17.txt:0.8100\nRefunds are processed within 14 days\n')
 })
 
 it('uses one native ranking for a batch and carries the requested limit', async () => {
-  const searchRows = vi.fn(() => Promise.resolve([{ id: 17, _score: 0.81, text: 'answer' }]))
-  const accessor = {
-    config: resolveQdrantConfig({ collection: 'docs', textField: 'text' }),
-    searchRows,
-  } as unknown as QdrantAccessor
+  const { accessor, query } = accessorOf({ collection: 'docs', textField: 'text' }, [
+    { id: 17, score: 0.81, payload: { text: 'answer' } },
+  ])
   const root = new PathSpec({ virtual: '/data', directory: '/', vfsPath: '' })
   const result = await searchResources(QDRANT_IO.search, accessor, [root, root], {
     query: 'question',
     options: { top_k: 2, threshold: 0.5 },
   })
-  expect(new TextDecoder().decode(result)).toContain('/data/')
-  expect(searchRows).toHaveBeenCalledOnce()
-  expect(searchRows).toHaveBeenCalledWith('docs', 'question', 2)
+  expect(new TextDecoder().decode(result)).toBe('/data/17.txt:0.8100\nanswer\n')
+  expect(query).toHaveBeenCalledOnce()
+  expect(query.mock.calls[0]?.[1]).toMatchObject({ limit: 2 })
   expect(QDRANT_IO.search?.meta?.grep).toBeUndefined()
 })

@@ -16,7 +16,6 @@ class FakeCollection:
         self.chunks: dict[str, list[dict]] = {}
         self.get_calls: list[dict] = []
         self.queries: list[dict] = []
-        self.contains_queries: list[dict] = []
 
     async def get(self, **kwargs):
         self.get_calls.append(kwargs)
@@ -25,7 +24,6 @@ class FakeCollection:
             return {"documents": [self.documents["__path_tree__"]]}
 
         where = kwargs.get("where") or {}
-        where_document = kwargs.get("where_document") or {}
         selector = where.get("page_slug")
         slugs: list[str] | None = None
         if isinstance(selector, dict):
@@ -35,7 +33,7 @@ class FakeCollection:
                 slugs = [selector["$eq"]]
         elif selector is not None:
             slugs = [selector]
-        if slugs is not None and not where_document:
+        if slugs is not None:
             chunks = [
                 item for slug in slugs for item in self.chunks.get(slug, [])
             ]
@@ -49,20 +47,6 @@ class FakeCollection:
                 "documents": [item["document"] for item in chunks],
                 "metadatas": [item["metadata"] for item in chunks],
             }
-
-        if "$contains" in where_document or "$regex" in where_document:
-            self.contains_queries.append(kwargs)
-            candidates = where.get("page_slug", {}).get("$in", [])
-            pattern = where_document.get("$contains") or where_document.get(
-                "$regex")
-            docs: list[str] = []
-            metadatas: list[dict] = []
-            for slug_item in candidates:
-                for chunk in self.chunks.get(slug_item, []):
-                    if pattern in chunk["document"]:
-                        docs.append(chunk["document"])
-                        metadatas.append(chunk["metadata"])
-            return {"documents": docs, "metadatas": metadatas}
 
         return {"documents": [], "metadatas": []}
 

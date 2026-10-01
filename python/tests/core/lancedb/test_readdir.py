@@ -17,7 +17,7 @@ import pytest
 
 from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.lancedb.readdir import readdir
+from mirage.core.lancedb.tree import read, readdir
 from mirage.types import PathSpec
 from mirage.vfs.lancedb.config import LanceDBConfig
 from tests.fixtures.index_spy import WindowSpy
@@ -53,6 +53,22 @@ async def test_group_lists_next_level(accessor):
 async def test_leaf_lists_row_files(accessor):
     out = await readdir(accessor, _ps("/animals/cat/big"))
     assert _names(out) == {"1.md", "1.png"}
+
+
+@pytest.mark.asyncio
+async def test_leaf_seeds_the_card_size_its_read_renders(accessor):
+    # The widened select must render the card byte-identically to the full
+    # row read() fetches; blob values are not fetched, so the blob stays
+    # unsized.
+    index = RAMIndexCacheStore()
+    await readdir(accessor, _ps("/animals/cat/big"), index)
+    card = await index.get("/animals/cat/big/1.md")
+    assert card.entry is not None
+    data = await read(accessor, _ps("/animals/cat/big/1.md"))
+    assert card.entry.size == len(data)
+    blob = await index.get("/animals/cat/big/1.png")
+    assert blob.entry is not None
+    assert blob.entry.size is None
 
 
 def _globbed(path: str, pattern: str) -> PathSpec:

@@ -23,7 +23,9 @@ import { driveLoc } from './client.ts'
  *
  * The whole destination subtree is invalidated here, under its own path:
  * a folder copy that merges into an existing folder changes listings below
- * `dst`, and only the op knows the mount-absolute spelling of `dst`.
+ * `dst`, and only the op knows the mount-absolute spelling of `dst`. A
+ * failed copy invalidates too, since a merge may have landed some children
+ * before one failed.
  *
  * Args:
  *   accessor: OneDrive accessor.
@@ -36,6 +38,9 @@ export async function copy(
   dst: PathSpec,
 ): Promise<void> {
   const config = accessor.config
-  await copyTree(config, driveLoc(config, src.vfsPath), driveLoc(config, dst.vfsPath))
-  await invalidateSubtree(dst)
+  try {
+    await copyTree(config, driveLoc(config, src.vfsPath), driveLoc(config, dst.vfsPath))
+  } finally {
+    await invalidateSubtree(dst)
+  }
 }

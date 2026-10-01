@@ -44,25 +44,31 @@ function recorder(): [CacheInvalidator, string[]] {
 }
 
 describe('OneDrive copy', () => {
-  it('invalidates the destination subtree under its mount-absolute path', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: unknown, init?: RequestInit) =>
-        Promise.resolve(
-          init?.method === 'POST'
-            ? new Response(null, { status: 202, headers: { Location: 'https://monitor.test/1' } })
-            : new Response(JSON.stringify({ status: 'completed' }), { status: 200 }),
+  // A key named like its mount: the mount-relative `/m/k.txt` names another
+  // file under a `/m` mount. A failed copy invalidates too: a merge may have
+  // landed some children first.
+  it.each(['completed', 'failed'])(
+    'invalidates the destination subtree under its mount-absolute path (%s)',
+    async (status) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((_input: unknown, init?: RequestInit) =>
+          Promise.resolve(
+            init?.method === 'POST'
+              ? new Response(null, { status: 202, headers: { Location: 'https://monitor.test/1' } })
+              : new Response(JSON.stringify({ status, error: {} }), { status: 200 }),
+          ),
         ),
-      ),
-    )
-    // A key named like its mount: the mount-relative `/m/k.txt` names
-    // another file under a `/m` mount.
-    const src = new PathSpec({ virtual: '/m/a.txt', vfsPath: 'a.txt', directory: '/m/' })
-    const dst = new PathSpec({ virtual: '/m/m/k.txt', vfsPath: 'm/k.txt', directory: '/m/m/' })
-    const [manager, seen] = recorder()
-    await runWithCacheManager(manager, () =>
-      copy(new OneDriveAccessor({ accessToken: 'token' }), src, dst),
-    )
-    expect(seen).toEqual(['subtree /m/m/k.txt'])
-  })
+      )
+      const src = new PathSpec({ virtual: '/m/a.txt', vfsPath: 'a.txt', directory: '/m/' })
+      const dst = new PathSpec({ virtual: '/m/m/k.txt', vfsPath: 'm/k.txt', directory: '/m/m/' })
+      const [manager, seen] = recorder()
+      const outcome = runWithCacheManager(manager, () =>
+        copy(new OneDriveAccessor({ accessToken: 'token' }), src, dst),
+      )
+      if (status === 'failed') await expect(outcome).rejects.toThrow()
+      else await outcome
+      expect(seen).toEqual(['subtree /m/m/k.txt'])
+    },
+  )
 })

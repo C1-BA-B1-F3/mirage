@@ -67,14 +67,16 @@ async function normalizeFindOutput(
 }
 
 const TIME_TESTS = new Set(['-mtime', '-newer', '-newermt'])
-const TIME_DIRECTIVE = /%[aAcCtTBW]/
+const SIZE_TESTS = new Set(['-size', '-empty'])
 
-/** Whether the expression reads a timestamp, which the light stat only approximates from the listing. */
+/** Whether the expression tests a timestamp. `-printf` and `-ls` are not tests: they stat through the dispatcher. */
 export function readsTimes(texts: readonly string[]): boolean {
-  return texts.some(
-    (word, i) =>
-      TIME_TESTS.has(word) || (word === '-printf' && TIME_DIRECTIVE.test(texts[i + 1] ?? '')),
-  )
+  return texts.some((word) => TIME_TESTS.has(word))
+}
+
+/** Whether the expression tests a file size (`-empty` compares one with zero). */
+export function readsSizes(texts: readonly string[]): boolean {
+  return texts.some((word) => SIZE_TESTS.has(word))
 }
 
 /**
@@ -84,9 +86,12 @@ export function readsTimes(texts: readonly string[]): boolean {
  *   vfs: the backend the command registers for.
  *   io: the backend's command IO.
  *   tree: the backend's tree.
- *   stat: the full stat, paid only when the expression reads times
- *     (-mtime, -newer, a -printf time).
- *   statLight: the index-only stat used otherwise.
+ *   stat: the full stat.
+ *   statLight: the index-only stat, used unless the expression tests a
+ *     field it lacks.
+ *   needsFull: whether an expression tests a field `statLight` lacks:
+ *     `readsSizes` where the size costs a content scan, `readsTimes` where
+ *     the listing carries no modified time.
  */
 export function makeFind<A extends Accessor>(
   vfs: VFSName,
@@ -94,9 +99,15 @@ export function makeFind<A extends Accessor>(
   tree: SlugTree<A>,
   stat: StatOp<A>,
   statLight: StatOp<A>,
+  needsFull: (texts: readonly string[]) => boolean,
 ): RegisteredCommand[] {
   const resolveGlob = resolveGlobOf(io)
-  const findCore = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
+  const findFull = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
+  const findLight = makeSearchBackedFind<A>({
+    resolvePath: tree.resolve,
+    stat: statLight,
+    walk: tree.walk,
+  })
   const walkFull = withPolicyGuard(withPathGuards(io))
   const walkLight = withPolicyGuard(withPathGuards({ ...io, stat: statLight }))
   return command({
@@ -113,21 +124,21 @@ export function makeFind<A extends Accessor>(
       const resolved = paths.length > 0 ? await resolveGlob(accessor, paths, index) : []
       const searchPath = resolved[0]
       // Push-down choices: a bare word acts as the -name filter, and the
-      // heavier per-document stat is only paid when the expression reads
-      // times.
+      // heavier stat is only paid when a test needs what it adds.
       const fl = new FlagView(opts.flags, specOf('find'))
       const bag: Record<string, FlagValue> = { ...opts.flags }
       const name = defaultName(fl.asStr('name'), texts)
       if (name !== undefined) bag.name = name
-      const timed = readsTimes(texts)
-      const statFn = timed ? stat : statLight
+      const full = needsFull(texts)
+      const findCore = full ? findFull : findLight
+      const statFn = full ? stat : statLight
       // A tree walk classifies on the raw backend tree, so under hidden
       // paths or a path rule it would answer for entries the session cannot
       // see; the walk classifies through the guarded readdir/stat, the fork
       // the factory builder takes.
       const result =
         pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
-          ? await findWalk(timed ? walkFull : walkLight, accessor, resolved, texts, {
+          ? await findWalk(full ? walkFull : walkLight, accessor, resolved, texts, {
               ...opts,
               flags: bag,
             })

@@ -26,7 +26,8 @@ async def copy(accessor: SharePointAccessor, src: PathSpec,
     The whole destination subtree is invalidated here, under its own
     path: a folder copy that merges into an existing folder changes
     listings below ``dst``, and only the op knows the mount-absolute
-    spelling of ``dst``.
+    spelling of ``dst``. A failed copy invalidates too, since a merge
+    may have landed some children before one failed.
 
     Args:
         accessor (SharePointAccessor): SharePoint accessor.
@@ -36,8 +37,10 @@ async def copy(accessor: SharePointAccessor, src: PathSpec,
     config = accessor.config
     src_resolved = await resolve_item(accessor, src)
     dst_resolved = await resolve_item(accessor, dst)
-    await copy_tree(config,
-                    drive_loc(config, src_resolved, src.vfs_path),
-                    drive_loc(config, dst_resolved, dst.vfs_path),
-                    session=accessor.pool)
-    await invalidate_subtree(dst)
+    try:
+        await copy_tree(config,
+                        drive_loc(config, src_resolved, src.vfs_path),
+                        drive_loc(config, dst_resolved, dst.vfs_path),
+                        session=accessor.pool)
+    finally:
+        await invalidate_subtree(dst)

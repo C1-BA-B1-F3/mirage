@@ -78,8 +78,7 @@ def path_tree_document() -> str:
     })
 
 
-@pytest.fixture
-def chroma_collection() -> FakeCollection:
+def seeded_collection() -> FakeCollection:
     collection = FakeCollection()
     collection.documents["__path_tree__"] = path_tree_document()
     collection.chunks["guides/quickstart"] = [
@@ -112,13 +111,21 @@ async def _get_collection(collection):
     return collection
 
 
+def accessor_for(collection: FakeCollection) -> SimpleNamespace:
+    return SimpleNamespace(config=SimpleNamespace(
+        slug_field="page_slug", chunk_index_field="chunk_index"),
+                           collection=collection,
+                           get_collection=partial(_get_collection, collection))
+
+
+@pytest.fixture
+def chroma_collection() -> FakeCollection:
+    return seeded_collection()
+
+
 @pytest.fixture
 def chroma_accessor(chroma_collection) -> SimpleNamespace:
-    return SimpleNamespace(
-        config=SimpleNamespace(slug_field="page_slug",
-                               chunk_index_field="chunk_index"),
-        collection=chroma_collection,
-        get_collection=partial(_get_collection, chroma_collection))
+    return accessor_for(chroma_collection)
 
 
 @pytest.fixture

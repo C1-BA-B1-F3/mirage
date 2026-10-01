@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import re
 from collections.abc import Callable
 from dataclasses import replace
 from functools import partial
@@ -38,19 +37,27 @@ from mirage.utils.key_prefix import mount_prefix_of
 from mirage.vfs.types import StatOp
 
 _TIME_TESTS = frozenset({"-mtime", "-newer", "-newermt"})
-_TIME_DIRECTIVE = re.compile(r"%[aAcCtTBW]")
+_SIZE_TESTS = frozenset({"-size", "-empty"})
 
 
-def _reads_times(texts: list[str]) -> bool:
-    """Whether the expression reads a timestamp, which the light stat
-    only approximates from the listing.
+def reads_times(texts: list[str]) -> bool:
+    """Whether the expression tests a timestamp. ``-printf`` and ``-ls``
+    are not tests: they stat through the dispatcher.
 
     Args:
         texts (list[str]): the raw expression words.
     """
-    return any(word in _TIME_TESTS or (
-        word == "-printf" and _TIME_DIRECTIVE.search(value) is not None)
-               for word, value in zip(texts, [*texts[1:], ""]))
+    return any(word in _TIME_TESTS for word in texts)
+
+
+def reads_sizes(texts: list[str]) -> bool:
+    """Whether the expression tests a file size (``-empty`` compares one
+    with zero).
+
+    Args:
+        texts (list[str]): the raw expression words.
+    """
+    return any(word in _SIZE_TESTS for word in texts)
 
 
 def _is_bare_name(texts: list[str]) -> bool:
@@ -87,18 +94,24 @@ async def _normalize_find_output(
 
 
 def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
-              stat_light: StatOp) -> Callable[..., Any]:
+              stat_light: StatOp,
+              needs_full: Callable[[list[str]], bool]) -> Callable[..., Any]:
     """Build ``find`` for a slug-tree backend, filtered over one tree walk.
 
     Args:
         vfs (str): the backend the command registers for.
         io (CommandIO): the backend's command IO.
         tree (SlugTree[A]): the backend's tree.
-        stat (StatOp): the full stat, paid only when the expression
-            reads times (``-mtime``, ``-newer``, a ``-printf`` time).
-        stat_light (StatOp): the index-only stat used otherwise.
+        stat (StatOp): the full stat.
+        stat_light (StatOp): the index-only stat, used unless the
+            expression tests a field it lacks.
+        needs_full (Callable[[list[str]], bool]): whether an expression
+            tests a field ``stat_light`` lacks: ``reads_sizes`` where the
+            size costs a content scan, ``reads_times`` where the listing
+            carries no modified time.
     """
-    find_core = make_search_backed_find(tree.resolve, stat, tree.walk)
+    find_full = make_search_backed_find(tree.resolve, stat, tree.walk)
+    find_light = make_search_backed_find(tree.resolve, stat_light, tree.walk)
     walk_full = with_policy_guard(with_path_guards(io))
     walk_light = with_policy_guard(
         with_path_guards(replace(io, stat=stat_light)))
@@ -116,23 +129,19 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
 
         fl = FlagView(opts.flags, spec=SPECS["find"])
         # Push-down choices: a bare word acts as the -name filter, and the
-        # heavier per-document stat is only paid when the expression reads
-        # times.
+        # heavier stat is only paid when a test needs what it adds.
         bag = dict(opts.flags)
         default_name = _default_name(fl.as_str("name"), texts)
         if default_name is not None:
             bag["name"] = default_name
-        reads_times = _reads_times(texts)
-        stat_fn = partial(stat if reads_times else stat_light,
-                          accessor,
-                          index=opts.index)
+        full = needs_full(texts)
         # A native find op classifies on the raw backend tree, so under
         # hidden paths or a path rule it would answer for entries the
         # session cannot see; the walk classifies through the guarded
         # readdir/stat, the same fork the factory builder takes (rung 0).
         if (path_rules_active()
                 or any(hidden_paths_intersect(p.virtual) for p in paths)):
-            walk_io = walk_full if reads_times else walk_light
+            walk_io = walk_full if full else walk_light
             stdout, result = await find_walk_generic(
                 paths,
                 _expr_texts(texts),
@@ -140,14 +149,16 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
                 readdir=partial(walk_io.readdir, accessor),
                 stat=partial(walk_io.stat, accessor))
             return await _normalize_find_output(stdout, search_path), result
-        stdout, result = await find_generic(paths,
-                                            _expr_texts(texts),
-                                            replace(opts, flags=bag),
-                                            find_core=partial(
-                                                find_core,
-                                                accessor,
-                                                index=opts.index),
-                                            stat=stat_fn)
+        stdout, result = await find_generic(
+            paths,
+            _expr_texts(texts),
+            replace(opts, flags=bag),
+            find_core=partial(find_full if full else find_light,
+                              accessor,
+                              index=opts.index),
+            stat=partial(stat if full else stat_light,
+                         accessor,
+                         index=opts.index))
         return await _normalize_find_output(stdout, search_path), result
 
     return cast(Callable[..., Any], find)

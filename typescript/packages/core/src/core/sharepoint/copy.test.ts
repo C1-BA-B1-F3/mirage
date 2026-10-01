@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { SharePointAccessor } from '../../accessor/sharepoint.ts'
+import { runWithCacheManager, type CacheInvalidator } from '../../cache/context.ts'
 import { PathSpec } from '../../types.ts'
 import { copy } from './copy.ts'
 
@@ -43,5 +44,43 @@ describe('SharePoint copy', () => {
     ).catch((e: unknown) => e)
     expect(error).toMatchObject({ code: 'ENOENT', virtualPath: named })
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('/drives/'))).toBe(true)
+  })
+
+  it('invalidates the destination even when the copy fails', async () => {
+    // A merge may have landed some children before one failed.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown, init?: RequestInit) => {
+        const url = String(input)
+        if (init?.method === 'POST') {
+          return Promise.resolve(
+            new Response(null, { status: 202, headers: { Location: 'https://monitor.test/sp' } }),
+          )
+        }
+        if (url.startsWith('https://monitor.test/')) {
+          return Promise.resolve(new Response(JSON.stringify({ status: 'failed', error: {} })))
+        }
+        const value = url.includes('/sites?')
+          ? [{ id: 'site-id', displayName: 'Team' }]
+          : [{ id: 'drive-id', name: 'Documents' }]
+        return Promise.resolve(new Response(JSON.stringify({ value })))
+      }),
+    )
+    const seen: string[] = []
+    const manager = {
+      invalidateSubtree: (path: string | PathSpec) => {
+        seen.push(typeof path === 'string' ? path : path.virtual)
+        return Promise.resolve()
+      },
+    } as unknown as CacheInvalidator
+    const outcome = runWithCacheManager(manager, () =>
+      copy(
+        new SharePointAccessor({ accessToken: 'token' }),
+        PathSpec.fromStrPath('/sp/Team/Documents/a.txt', 'Team/Documents/a.txt'),
+        PathSpec.fromStrPath('/sp/Team/Documents/b.txt', 'Team/Documents/b.txt'),
+      ),
+    )
+    await expect(outcome).rejects.toThrow()
+    expect(seen).toEqual(['/sp/Team/Documents/b.txt'])
   })
 })

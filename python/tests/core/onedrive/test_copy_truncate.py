@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 from yarl import URL
@@ -56,9 +58,12 @@ class _Invalidations:
 
 
 @pytest.mark.asyncio
-async def test_copy_invalidates_the_destination_subtree_under_its_own_path():
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_copy_invalidates_the_destination_subtree_under_its_own_path(
+        status):
     # A key named like its mount: the mount-relative `/m/k.txt` names
-    # another file under a `/m` mount.
+    # another file under a `/m` mount. A failed copy invalidates too: a
+    # merge may have landed some children first.
     monitor = "https://monitor.example/op/inv"
     manager = _Invalidations()
     previous = push_cache_manager(manager)
@@ -67,14 +72,17 @@ async def test_copy_invalidates_the_destination_subtree_under_its_own_path():
             m.post(_BASE + "/root:/a.txt:/copy",
                    status=202,
                    headers={"Location": monitor})
-            m.get(monitor, payload={"status": "completed"})
-            await copy(
-                _accessor(),
-                PathSpec(virtual="/m/a.txt", directory="/m/",
-                         vfs_path="a.txt"),
-                PathSpec(virtual="/m/m/k.txt",
-                         directory="/m/m/",
-                         vfs_path="m/k.txt"))
+            m.get(monitor, payload={"status": status, "error": {}})
+            with (pytest.raises(GraphError)
+                  if status == "failed" else contextlib.nullcontext()):
+                await copy(
+                    _accessor(),
+                    PathSpec(virtual="/m/a.txt",
+                             directory="/m/",
+                             vfs_path="a.txt"),
+                    PathSpec(virtual="/m/m/k.txt",
+                             directory="/m/m/",
+                             vfs_path="m/k.txt"))
     finally:
         push_cache_manager(previous)
     assert manager.seen == ["subtree /m/m/k.txt"]

@@ -23,7 +23,9 @@ import { driveLoc, resolveItem } from './resolve.ts'
  *
  * The whole destination subtree is invalidated here, under its own path:
  * a folder copy that merges into an existing folder changes listings below
- * `dst`, and only the op knows the mount-absolute spelling of `dst`.
+ * `dst`, and only the op knows the mount-absolute spelling of `dst`. A
+ * failed copy invalidates too, since a merge may have landed some children
+ * before one failed.
  *
  * Args:
  *   accessor: SharePoint accessor.
@@ -38,10 +40,13 @@ export async function copy(
   const config = accessor.config
   const srcResolved = await resolveItem(accessor, src)
   const dstResolved = await resolveItem(accessor, dst)
-  await copyTree(
-    config,
-    driveLoc(config, srcResolved, src.vfsPath),
-    driveLoc(config, dstResolved, dst.vfsPath),
-  )
-  await invalidateSubtree(dst)
+  try {
+    await copyTree(
+      config,
+      driveLoc(config, srcResolved, src.vfsPath),
+      driveLoc(config, dstResolved, dst.vfsPath),
+    )
+  } finally {
+    await invalidateSubtree(dst)
+  }
 }

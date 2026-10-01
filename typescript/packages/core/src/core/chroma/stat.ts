@@ -20,7 +20,7 @@ import { directoryStat } from '../slug_tree/stat.ts'
 import { ensureDirSizes } from './sizes.ts'
 import { CHROMA_TREE } from './tree.ts'
 
-/** The index-only stat `ls` and a `find` without -mtime use: no size scan. */
+/** The index-only stat `ls` and a `find` without a size test use: no size scan. */
 export function statLight(
   accessor: ChromaAccessor,
   path: PathSpec,

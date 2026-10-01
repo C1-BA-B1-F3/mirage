@@ -18,7 +18,7 @@ import { DIFY_TREE } from '../../../core/dify/tree.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { makeFind } from '../slug_tree/find.ts'
+import { makeFind, readsTimes } from '../slug_tree/find.ts'
 import { DIFY_IO } from './io.ts'
 import { DIFY_SEARCH } from './search.ts'
 
@@ -29,6 +29,6 @@ export const DIFY_COMMANDS: readonly RegisteredCommand[] = [
     // of paying one document-detail call per row, as python does.
     opsOverrides: { ls: { ...DIFY_IO, stat: statLight } },
   }),
-  ...makeFind(VFSName.DIFY, DIFY_IO, DIFY_TREE, stat, statLight),
+  ...makeFind(VFSName.DIFY, DIFY_IO, DIFY_TREE, stat, statLight, readsTimes),
   ...DIFY_SEARCH,
 ]

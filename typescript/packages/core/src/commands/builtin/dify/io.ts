@@ -24,7 +24,7 @@ import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 // commands are intentionally absent. stat is the full document-detail stat;
 // the commands that would multiply that per-entry API call stay cheap
 // through lighter routes instead (ls receives a light-stat adapter from the
-// package factory, the find wrapper threads statLight unless -mtime needs
+// package factory, the find wrapper threads statLight unless a time test needs
 // detail timestamps), mirroring the Python wiring.
 export const DIFY_IO: CommandIO<DifyAccessor> = new VFSAdapter<DifyAccessor>({
   search: { search: searchResource, searchMany },

@@ -29,6 +29,7 @@ vi.mock('../../../core/dify/client.ts', async () => {
   }
 })
 
+import type { ChromaAccessor } from '../../../accessor/chroma.ts'
 import type { DifyAccessor } from '../../../accessor/dify.ts'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
 import { runWithSession } from '../../../context/session_context.ts'
@@ -37,7 +38,8 @@ import { PathSpec } from '../../../types.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
 import { DIFY_COMMANDS } from '../dify/index.ts'
-import { readsTimes } from './find.ts'
+import { CHROMA_COMMANDS } from '../chroma/index.ts'
+import { readsSizes, readsTimes } from './find.ts'
 
 function doc(id: string, name: string, slug: string): Record<string, unknown> {
   return {
@@ -54,16 +56,17 @@ function doc(id: string, name: string, slug: string): Record<string, unknown> {
   }
 }
 
-describe('readsTimes', () => {
+describe('readsTimes and readsSizes', () => {
   it.each([
-    [['-name', '*.md'], false],
-    [['-mtime', '-1'], true],
-    [['-newer', '/knowledge/README.md'], true],
-    [['-newermt', '2024-01-01'], true],
-    [['-printf', '%p %s\n'], false],
-    [['-printf', '%TY %p\n'], true],
-  ])('only an expression that reads times pays the full stat: %j', (texts, reads) => {
-    expect(readsTimes(texts)).toBe(reads)
+    [['-name', '*.md'], false, false],
+    [['-mtime', '-1'], true, false],
+    [['-newer', '/knowledge/README.md'], true, false],
+    [['-newermt', '2024-01-01'], true, false],
+    [['-size', '+1k'], false, true],
+    [['-empty'], false, true],
+    [['-printf', '%TY %s\n'], false, false],
+  ])('which fields %j tests', (texts, times, sizes) => {
+    expect([readsTimes(texts), readsSizes(texts)]).toEqual([times, sizes])
   })
 })
 
@@ -93,4 +96,77 @@ describe('slug-tree find under a hide', () => {
     expect(new TextDecoder().decode(await materialize(stdout))).toBe('/knowledge/guides/deep\n')
     expect(io?.exitCode).toBe(0)
   })
+})
+
+function chromaAccessor(gets: Record<string, unknown>[]): ChromaAccessor {
+  const tree = {
+    'guides/quickstart': {
+      size: 12,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-02-01T00:00:00Z',
+    },
+    'api/reference': { size: null, created_at: null, updated_at: null },
+  }
+  const collection = {
+    get: (args: Record<string, unknown>) => {
+      gets.push(args)
+      if (args.ids !== undefined) return Promise.resolve({ documents: [JSON.stringify(tree)] })
+      const slugs = (args.where as { page_slug: { $in: string[] } }).page_slug.$in
+      const chunks = slugs.map((slug) => ({
+        document: slug,
+        metadata: { page_slug: slug, chunk_index: 0 },
+      }))
+      return Promise.resolve({
+        documents: chunks.map((c) => c.document),
+        metadatas: chunks.map((c) => c.metadata),
+      })
+    },
+  }
+  return {
+    config: { slugField: 'page_slug', chunkIndexField: 'chunk_index' },
+    getCollection: () => Promise.resolve(collection),
+  } as unknown as ChromaAccessor
+}
+
+const SIZED = ['-type', 'f', '-size', '+0']
+const NEWER = ['-type', 'f', '-newermt', '2026-01-15']
+const QUICKSTART = '/knowledge/guides/quickstart'
+const REFERENCE = '/knowledge/api/reference'
+
+describe('chroma find', () => {
+  it.each([
+    [QUICKSTART, SIZED, [REFERENCE], true],
+    [null, SIZED, [REFERENCE, QUICKSTART], true],
+    [REFERENCE, NEWER, [QUICKSTART], false],
+    [null, NEWER, [QUICKSTART], false],
+  ])(
+    'hiding %s, %j prints its rows and scans chunks only for a size test',
+    async (hidden, texts, rows, scans) => {
+      const find = CHROMA_COMMANDS.find((c) => c.name === 'find')
+      if (find === undefined) throw new Error('chroma registers no find')
+      const gets: Record<string, unknown>[] = []
+      const root = new PathSpec({
+        virtual: '/knowledge',
+        directory: '/knowledge',
+        vfsPath: mountKey('/knowledge', '/knowledge'),
+      })
+      const sess = new SessionState({ sessionId: 'veiled' })
+      sess.hiddenPaths = { paths: hidden === null ? [] : [hidden] }
+      const opts = {
+        stdin: null,
+        flags: {},
+        filetypeFns: null,
+        cwd: '/',
+        index: new RAMIndexCacheStore(),
+      }
+      const [stdout, io] = await runWithSession(sess, async () => {
+        const result = await find.fn(chromaAccessor(gets), [root], texts, opts)
+        const [bytes, ioResult] = result ?? [null, null]
+        return [new TextDecoder().decode(await materialize(bytes)), ioResult] as const
+      })
+      expect(stdout.split('\n').filter(Boolean)).toEqual(rows)
+      expect(io?.exitCode).toBe(0)
+      expect(gets.some((args) => args.where !== undefined)).toBe(scans)
+    },
+  )
 })

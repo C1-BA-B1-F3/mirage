@@ -19,7 +19,7 @@ from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.cachable_iterator import CachableAsyncIterator
-from mirage.io.stream import async_chain, chain_cachables
+from mirage.io.stream import async_chain, chain_cachables, ensure_stream
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import (
     FileStat,
@@ -30,7 +30,6 @@ from mirage.types import (
     StatFn,
 )
 from mirage.utils.errors import FS_ERRORS, fs_error_line
-from mirage.utils.stream import ensure_stream
 
 
 @dataclass(frozen=True, slots=True)

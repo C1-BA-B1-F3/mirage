@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.s3.watch import build_delta_hook
@@ -22,6 +22,7 @@ from mirage.ops.registry import RegisteredOp
 from mirage.ops.s3 import OPS as S3_OPS
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.s3.config import S3Config
 from mirage.vfs.s3.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 

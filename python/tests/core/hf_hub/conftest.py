@@ -14,10 +14,11 @@
 
 import pytest
 
-from mirage.accessor.hf_hub import HfHubAccessor, HfRepoConfig
+from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.core.api.client import ApiResponse
 from mirage.core.hf_hub.tree import parse_entry
 from mirage.types import PathSpec
+from mirage.vfs.hf_buckets.config import HfRepoConfig
 
 
 class FakeAccessor(HfHubAccessor):

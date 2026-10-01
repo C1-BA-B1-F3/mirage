@@ -1,5 +1,6 @@
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
+from mirage.core.nextcloud.util import nextcloud_key
 from mirage.types import PathSpec
 
 
@@ -21,7 +22,7 @@ async def mkdir(
         path (PathSpec): collection to create.
         parents (bool): ignored; opendal always creates parents.
     """
-    key = path.mount_path.strip("/") + "/"
+    key = nextcloud_key(path).rstrip("/") + "/"
     op = accessor.operator()
     await op.create_dir(key)
     await invalidate_after_write(path)

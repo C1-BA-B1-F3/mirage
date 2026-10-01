@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.hf_buckets.hf_buckets import HfBucketsConfig, HfBucketsVFS
+from typing import TYPE_CHECKING
+
+from mirage.vfs.hf_buckets.config import HfBucketsConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.hf_buckets.hf_buckets import HfBucketsVFS
 
 __all__ = ["HfBucketsConfig", "HfBucketsVFS"]
+
+
+def __getattr__(name: str) -> "type[HfBucketsVFS]":
+    if name == "HfBucketsVFS":
+        from mirage.vfs.hf_buckets.hf_buckets import HfBucketsVFS
+
+        return HfBucketsVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

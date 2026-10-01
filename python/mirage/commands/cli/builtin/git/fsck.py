@@ -8,6 +8,7 @@ from dulwich.repo import BaseRepo
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import (
+    basename,
     file_size,
     read_file,
     read_names,
@@ -76,7 +77,7 @@ async def check_packs(dispatch: DispatchFn, commondir: str) -> None:
     """
     root = f"{commondir}/objects/pack"
     for entry in await read_names(dispatch, root):
-        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        name = basename(entry)
         if not name.endswith(".idx"):
             continue
         path = f"{root}/{name}"
@@ -104,7 +105,7 @@ async def log_roots(
     """
     found: set[bytes] = set()
     for entry in await read_names(dispatch, path):
-        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        name = basename(entry)
         target = f"{path}/{name}"
         info = await stat_path(target)
         if info is not None and info.type is FileType.DIRECTORY:

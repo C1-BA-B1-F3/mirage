@@ -16,7 +16,6 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.accessor.hf_hub import HfRepoConfig
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX, Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
@@ -36,6 +35,7 @@ from mirage.core.hf_hub.tree import (
     refill_snapshot,
     tree_url,
 )
+from mirage.vfs.hf_buckets.config import HfRepoConfig
 from tests.core.hf_hub.conftest import FakeAccessor, dir_row, file_row, page
 
 

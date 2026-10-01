@@ -53,10 +53,10 @@ import { type FileStat, MountMode, PathSpec } from '@struktoai/mirage-core/types
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import type { GridFSAccessor } from '../accessor/gridfs.ts'
-import type { HfBucketsAccessor } from '../accessor/hf.ts'
+import type { HfBucketsAccessor } from '../accessor/hf_buckets.ts'
 import type { HfHubAccessor } from '../accessor/hf_hub.ts'
-import { HF_IO } from '../commands/builtin/hf/io.ts'
-import { fakeHfOperator } from '../core/hf/mock.ts'
+import { HF_BUCKETS_IO } from '../commands/builtin/hf_buckets/io.ts'
+import { fakeHfOperator } from '../core/hf_buckets/mock.ts'
 import { HF_HUB_IO } from '../commands/builtin/hf_hub/io.ts'
 import { FakeHub, blobOid, serveHub, xetHash } from '../core/hf_hub/_test_util.ts'
 import {
@@ -933,9 +933,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         op.files.set(stored, Buffer.from(next))
       },
-      readBytes: (p) => HF_IO.readBytes(accessor, p),
-      readStream: (p) => HF_IO.readStream(accessor, p),
-      stat: (p) => HF_IO.stat(accessor, p),
+      readBytes: (p) => HF_BUCKETS_IO.readBytes(accessor, p),
+      readStream: (p) => HF_BUCKETS_IO.readStream(accessor, p),
+      stat: (p) => HF_BUCKETS_IO.stat(accessor, p),
       streamSlot: 'stream',
     }
   }

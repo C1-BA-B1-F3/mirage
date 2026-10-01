@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from mirage.accessor.s3 import S3Config
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.session.s3 import S3SessionStore
 from tests.workspace.s3_fake import FakeConditionalS3Client, patch_record_s3
 

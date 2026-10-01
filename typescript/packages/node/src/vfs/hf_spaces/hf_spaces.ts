@@ -15,31 +15,27 @@
 import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import { HfSpacesHubAccessor } from '../../accessor/hf_hub.ts'
-import {
-  assertHfRepoRef,
-  type HfRepoConfig,
-  type HfRepoConfigRedacted,
-  redactHfRepoConfig,
-} from '../hf_buckets/config.ts'
+import { assertHfRepoRef } from '../hf_buckets/config.ts'
 import { HfHubVFS } from '../hf_hub/base.ts'
+import { type HfSpacesConfig, type HfSpacesConfigRedacted, redactHfSpacesConfig } from './config.ts'
 import { HF_SPACES_PROMPT } from './prompt.ts'
 
 export interface HfSpacesVFSState {
   type: string
-  config: HfRepoConfigRedacted
+  config: HfSpacesConfigRedacted
 }
 
 export class HfSpacesVFS extends HfHubVFS {
   override readonly name: string = VFSName.HF_SPACES
   readonly prompt: string = HF_SPACES_PROMPT
-  readonly config: HfRepoConfig
+  readonly config: HfSpacesConfig
   readonly accessor: HfSpacesHubAccessor
 
-  constructor(config: HfRepoConfig) {
+  constructor(config: HfSpacesConfig) {
     super()
     assertHfRepoRef(config.repoId, 'repo_id')
     const normalized = normalizeKeyPrefix(config.keyPrefix)
-    const cfg: HfRepoConfig = { ...config }
+    const cfg: HfSpacesConfig = { ...config }
     if (normalized !== undefined) {
       cfg.keyPrefix = normalized
     } else {
@@ -52,7 +48,7 @@ export class HfSpacesVFS extends HfHubVFS {
   getState(): Promise<HfSpacesVFSState> {
     return Promise.resolve({
       type: this.name,
-      config: redactHfRepoConfig(this.config),
+      config: redactHfSpacesConfig(this.config),
     })
   }
 }

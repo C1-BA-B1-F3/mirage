@@ -13,9 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import pytest
+from dulwich.object_store import MemoryObjectStore
+from dulwich.objects import Blob, Tree
 
 from mirage import Workspace
 from mirage.commands.cli.builtin.git import GIT
+from mirage.commands.cli.builtin.git.tree import tree_entries
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -179,3 +182,26 @@ async def test_bare_status_uses_the_session_cwd():
         result = await ws.shell("cd /data/repo && git status")
     assert result.exit_code == 0
     assert result.stdout == ON_MAIN
+
+
+def test_tree_entries_flattens_subtrees_and_keeps_a_submodule_whole():
+    blob = Blob.from_string(b"x\n")
+    commit = b"1" * 40
+    sub = Tree()
+    sub.add(b"b.txt", 0o100644, blob.id)
+    root = Tree()
+    root.add(b"a.txt", 0o100755, blob.id)
+    root.add(b"dir", 0o040000, sub.id)
+    root.add(b"vendor", 0o160000, commit)
+    store = MemoryObjectStore()
+    for obj in (blob, sub, root):
+        store.add_object(obj)
+    assert tree_entries(store, root.id) == {
+        b"a.txt": (0o100755, blob.id),
+        b"dir/b.txt": (0o100644, blob.id),
+        b"vendor": (0o160000, commit),
+    }
+
+
+def test_tree_entries_of_no_tree_is_empty():
+    assert tree_entries(MemoryObjectStore(), None) == {}

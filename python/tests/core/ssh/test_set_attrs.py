@@ -18,9 +18,9 @@ import asyncssh
 import pytest
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.set_attrs import set_attrs
 from mirage.types import PathSpec
+from mirage.vfs.ssh.config import SSHConfig
 
 _MTIME = 1_750_000_000
 

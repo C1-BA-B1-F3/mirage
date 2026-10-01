@@ -23,6 +23,7 @@ from mirage.io.stream import (
     close_quietly,
     discard_streams,
     drain,
+    ensure_stream,
     exit_on_empty,
 )
 from mirage.io.types import IOResult
@@ -298,3 +299,16 @@ async def test_shared_stdin_preserves_unread_bytes_and_serializes_readers():
     with pytest.raises(StopAsyncIteration):
         await anext(second)
     assert pulls == [b"", b"abc", b"", b"def"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_stream_from_bytes():
+    chunks = [c async for c in ensure_stream(b"hello")]
+    assert chunks == [b"hello"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_stream_returns_the_iterator_itself():
+    source = _make_stream(b"foo", b"bar")
+    assert ensure_stream(source) is source
+    assert [c async for c in ensure_stream(source)] == [b"foo", b"bar"]

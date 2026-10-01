@@ -6,9 +6,9 @@ import asyncssh
 import pytest
 
 from mirage import RAMVFS, Workspace
-from mirage.core.ssh.config import SSHConfig
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ssh import SSHVFS
+from mirage.vfs.ssh.config import SSHConfig
 
 
 @pytest.fixture(params=["disk", "ssh"])

@@ -65,8 +65,8 @@ async def test_stat_and_read_stamp_the_same_token(monkeypatch):
         lambda *a, **kw: records.append(kw.get("fingerprint")),
     )
 
-    from mirage.accessor.gridfs import GridFSConfig
     from mirage.types import PathSpec
+    from mirage.vfs.gridfs.config import GridFSConfig
 
     accessor = type(
         "A", (), {"config": GridFSConfig(uri="mongodb://h", database="d")}

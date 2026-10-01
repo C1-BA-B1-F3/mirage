@@ -19,6 +19,7 @@ from dulwich.refs import DictRefsContainer, Ref, read_packed_refs_with_peeled
 
 from mirage.commands.cli.builtin.git.constants import HEAD_REF
 from mirage.commands.cli.builtin.git.io import (
+    basename,
     read_file,
     read_names,
     read_optional,
@@ -75,7 +76,7 @@ async def _walk_loose_refs(
         refs (dict[Ref, bytes]): ref table, updated in place.
     """
     for entry in await read_names(dispatch, root):
-        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        name = basename(entry)
         if not name:
             continue
         child = posixpath.join(root, name)

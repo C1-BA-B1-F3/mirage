@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
+from mirage.accessor.hf_buckets import HfBucketsAccessor
 from mirage.commands.builtin.hf_buckets import COMMANDS as HF_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.hf_buckets.watch import build_delta_hook
@@ -22,6 +22,7 @@ from mirage.ops.hf_buckets import OPS as HF_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.hf_buckets.config import HfBucketsConfig
 from mirage.vfs.hf_buckets.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 

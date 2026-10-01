@@ -113,7 +113,7 @@ export {
   type SupabaseConfigRedacted,
 } from './vfs/supabase/config.ts'
 export { SUPABASE_PROMPT } from './vfs/supabase/prompt.ts'
-export { HfBucketsAccessor } from './accessor/hf.ts'
+export { HfBucketsAccessor } from './accessor/hf_buckets.ts'
 export { HfBucketsVFS, type HfBucketsVFSState } from './vfs/hf_buckets/hf_buckets.ts'
 export {
   assertHfRepoId,
@@ -129,6 +129,12 @@ export {
 } from './vfs/hf_buckets/config.ts'
 export { HF_BUCKETS_PROMPT } from './vfs/hf_buckets/prompt.ts'
 export { HfDatasetsVFS, type HfDatasetsVFSState } from './vfs/hf_datasets/hf_datasets.ts'
+export {
+  normalizeHfDatasetsConfig,
+  redactHfDatasetsConfig,
+  type HfDatasetsConfig,
+  type HfDatasetsConfigRedacted,
+} from './vfs/hf_datasets/config.ts'
 export { HF_DATASETS_PROMPT } from './vfs/hf_datasets/prompt.ts'
 export { HfModelsVFS, type HfModelsVFSState } from './vfs/hf_models/hf_models.ts'
 export {
@@ -139,9 +145,15 @@ export {
 } from './vfs/hf_models/config.ts'
 export { HF_MODELS_PROMPT } from './vfs/hf_models/prompt.ts'
 export { HfSpacesVFS, type HfSpacesVFSState } from './vfs/hf_spaces/hf_spaces.ts'
+export {
+  normalizeHfSpacesConfig,
+  redactHfSpacesConfig,
+  type HfSpacesConfig,
+  type HfSpacesConfigRedacted,
+} from './vfs/hf_spaces/config.ts'
 export { HF_SPACES_PROMPT } from './vfs/hf_spaces/prompt.ts'
-export { HF_COMMANDS } from './commands/builtin/hf/index.ts'
-export { HF_OPS } from './ops/hf/index.ts'
+export { HF_BUCKETS_COMMANDS } from './commands/builtin/hf_buckets/index.ts'
+export { HF_BUCKETS_OPS } from './ops/hf_buckets/index.ts'
 export { HF_HUB_COMMANDS } from './commands/builtin/hf_hub/index.ts'
 export { HF_HUB_OPS } from './ops/hf_hub/index.ts'
 export { MinIOVFS, type MinIOVFSState } from './vfs/minio/minio.ts'

@@ -32,10 +32,9 @@ from mirage.commands.spec.usage import (
 )
 from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
-from mirage.io.stream import materialize, yield_bytes
+from mirage.io.stream import ensure_stream, materialize, yield_bytes
 from mirage.io.types import ByteSource
 from mirage.shell.join import shell_join
-from mirage.utils.stream import ensure_stream
 from mirage.workspace.executor.builtins.timeout.constants import (
     CONTINUE_SIGNALS,
     SELF_KILLING_SIGNALS,

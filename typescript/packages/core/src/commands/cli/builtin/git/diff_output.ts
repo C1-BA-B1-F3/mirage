@@ -4,7 +4,7 @@ import { pairRenames, kindOf } from './changes.ts'
 import { combinedLines } from './combined.ts'
 import { GitError } from './errors.ts'
 import type { CommitFacts } from './format.ts'
-import { filePatch, shortOid } from './patch.ts'
+import { blobData, filePatch, shortOid } from './patch.ts'
 import { quotePath } from './render.ts'
 import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import { similarityScore } from './similarity.ts'
@@ -180,11 +180,6 @@ function renameName(old: string, fresh: string, fully = true): string {
   return prefix.length || suffix.length ? [...prefix, `{${middle}}`, ...suffix].join('/') : middle
 }
 
-async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
-  if (!entry) return new Uint8Array()
-  if (entry.mode === '160000') return new TextEncoder().encode(`Subproject commit ${entry.oid}\n`)
-  return (await git.readBlob({ ...repoArgs(repo), oid: entry.oid })).blob
-}
 function lines(data: Uint8Array): string[] {
   const text = new TextDecoder().decode(data)
   return text === '' ? [] : text.split(/(?<=\n)/)

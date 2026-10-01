@@ -13,18 +13,68 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
-import { IOResult, materialize } from '../../../io/types.ts'
+import { type ByteSource, IOResult, materialize } from '../../../io/types.ts'
+import { QuickJsUnavailableError } from '../../../runtime/js/quickjs/errors.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 import { PathSpec } from '../../../types.ts'
-import { handleJs } from '../../../workspace/executor/js/handle.ts'
+import type { ExecutionNode } from '../../../workspace/types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { LanguageRuntime } from '../../../runtime/language.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { resolveScript } from '../utils/operands.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { runtimeVersion, STDIN_OPERAND } from './interpreter.ts'
+import { makeInterpreterHandler, runtimeVersion, STDIN_OPERAND } from './interpreter.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
+
+type Result = [ByteSource | null, IOResult, ExecutionNode]
+
+export interface HandleJsDeps {
+  runtime: LanguageRuntime
+}
+
+const runJs = makeInterpreterHandler({
+  label: 'js',
+  payloadFlag: '-e',
+  isUnavailable: (err: unknown) => err instanceof QuickJsUnavailableError,
+})
+
+export async function handleJs(
+  dispatch: DispatchFn,
+  pathScope: PathSpec | null,
+  args: string[],
+  opts: {
+    command?: string
+    stdin: ByteSource | null
+    env: Record<string, string>
+    cwd?: PathSpec
+    code: string | null
+    module: boolean
+    signal?: AbortSignal
+    timeoutSeconds?: number
+  },
+  deps: HandleJsDeps,
+): Promise<Result> {
+  // A .mjs script is a module whatever the flag said (Python's js.py).
+  const module = opts.module || (pathScope?.virtual.endsWith('.mjs') ?? false)
+  return runJs(
+    dispatch,
+    pathScope,
+    args,
+    {
+      command: opts.command ?? 'js',
+      stdin: opts.stdin,
+      env: opts.env,
+      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      code: opts.code,
+      flags: { module },
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts.timeoutSeconds !== undefined ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+    },
+    deps,
+  )
+}
 
 async function jsCommand(
   _accessor: Accessor,

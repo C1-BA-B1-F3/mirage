@@ -20,7 +20,8 @@ import pytest
 from moto.server import ThreadedMotoServer
 
 from mirage.types import MountMode
-from mirage.vfs.s3.s3 import S3VFS, S3Config
+from mirage.vfs.s3.config import S3Config
+from mirage.vfs.s3.s3 import S3VFS
 from mirage.workspace import Workspace
 
 CREDS = dict(

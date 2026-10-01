@@ -29,11 +29,13 @@ const DEV_NULL = '/dev/null'
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
-async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
+/** An entry's bytes: a blob's contents, a submodule's commit line, empty for a missing side. */
+export async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
   if (!entry) return new Uint8Array()
   if (entry.mode === '160000') return ENC.encode(`Subproject commit ${entry.oid}\n`)
   return (await git.readBlob({ ...repoArgs(repo), oid: entry.oid })).blob
 }
+
 function lines(data: Uint8Array): string[] {
   const text = DEC.decode(data)
   return text === '' ? [] : text.split(/(?<=\n)/)

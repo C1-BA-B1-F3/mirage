@@ -13,45 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import opendal
-from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
+from pydantic import SecretStr
 
 from mirage.accessor.base import SessionAccessor
 from mirage.core.hf_hub.client import stall_timeout
-from mirage.utils import key_prefix as kp
+from mirage.vfs.hf_buckets.config import HfBucketsConfig
 from mirage.vfs.secrets import reveal_secret
-
-
-class HfBucketsConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    bucket: str
-    token: SecretStr | None = None
-    endpoint: str = "https://huggingface.co"
-    timeout: int = 30
-    key_prefix: str | None = None
-
-    @field_validator("bucket")
-    @classmethod
-    def _validate_bucket(cls, v: str) -> str:
-        parts = v.split("/")
-        if len(parts) != 2 or not parts[0] or not parts[1]:
-            raise ValueError(
-                f"bucket must be in 'namespace/name' form; got {v!r}"
-            )
-        return v
-
-    @field_validator("key_prefix")
-    @classmethod
-    def _normalize_key_prefix(cls, v: str | None) -> str | None:
-        return kp.normalize(v) or None
-
-    @property
-    def namespace(self) -> str:
-        return self.bucket.split("/", 1)[0]
-
-    @property
-    def bucket_name(self) -> str:
-        return self.bucket.split("/", 1)[1]
 
 
 class HfBucketsAccessor(SessionAccessor):

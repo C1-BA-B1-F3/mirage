@@ -11,6 +11,7 @@ permissions:
       - typescript/**
       - .github/workflows/test_install.yml
       - .github/actions/setup-node-pnpm/action.yml
+      - .github/actions/setup-uv/action.yml
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -37,6 +38,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_install.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
 
   python-install:
     needs: changes
@@ -46,10 +48,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
+          save-cache: "false"
 
       - name: Base install (no extras) on 3.11 and 3.12
         working-directory: python

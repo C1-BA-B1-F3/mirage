@@ -47,10 +47,14 @@ class IndexEntry(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class IndexSnapshot:
-    """Entry rows and directory children from one refill."""
+    """Entry rows and directory children from one refill.
+
+    ``version`` is the backend's version the rows were read at, or None.
+    """
 
     entries: dict[str, IndexEntry]
     children: dict[str, list[str]]
+    version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +78,7 @@ class ListResult(BaseModel):
     entries: list[str] | None = None
     partial_entries: list[str] | None = None
     status: LookupStatus | None = None
+    version: str | None = None
 
 
 class IndexDirectory(BaseModel):
@@ -81,6 +86,7 @@ class IndexDirectory(BaseModel):
     expires_at: float
     generation: str
     partial: bool = False
+    version: str | None = None
 
 
 class IndexConfig(BaseModel):

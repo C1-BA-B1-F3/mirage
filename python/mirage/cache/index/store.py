@@ -55,10 +55,20 @@ class IndexCacheStore:
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
         """Merge a snapshot; flush deferred writes before operations or close.
 
         Repeated seeds merge by path. Clear discards queued snapshots.
+
+        Args:
+            entries (dict[str, IndexEntry]): rows by path.
+            children (dict[str, list[str]]): each listed folder's children.
+            expires_at (datetime): when the listings expire.
+            version (str | None): the backend version the snapshot was read
+                at; it replaces the version of every listed folder, and
+                None clears it.
         """
         raise NotImplementedError
 
@@ -76,6 +86,7 @@ class IndexCacheStore:
         *,
         window: bool = False,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         """Cache a complete directory listing.
 
@@ -93,6 +104,8 @@ class IndexCacheStore:
             window (bool): the entries are a capped window, not every
                 child.
             excluded (tuple[str, ...]): nested mount roots to preserve.
+            version (str | None): the backend version the listing was read
+                at; it replaces the stored one, and None clears it.
 
         Returns:
             list[Evicted]: the children the previous listing named and
@@ -122,8 +135,9 @@ class IndexCacheStore:
         """Cache observed children without claiming a complete directory.
 
         Stores supporting partial freshness return these keys under
-        ``ListResult.partial_entries`` until expiry or invalidation. The
-        default preserves the conservative put-only behavior for custom
+        ``ListResult.partial_entries`` until expiry or invalidation. A
+        partial listing proves nothing complete, so it carries no version.
+        The default preserves the conservative put-only behavior for custom
         stores: their next lookup refreshes the parent.
 
         Args:

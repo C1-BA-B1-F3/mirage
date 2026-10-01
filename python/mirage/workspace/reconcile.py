@@ -206,7 +206,9 @@ class Reconciler:
             raise FileNotFoundError(path)
         return verdict is Verdict.FRESH
 
-    async def may_serve_listing(self, mount: MountEntry, folder: str) -> bool:
+    async def may_serve_listing(
+        self, mount: MountEntry, folder: str, version: str | None
+    ) -> bool:
         """Gate a cached listing: may it be served without re-listing?
 
         Under ``bounded`` the listing is trusted within its bound. Under
@@ -220,6 +222,8 @@ class Reconciler:
         Args:
             mount (MountEntry): the mount holding the listing.
             folder (str): mount-absolute listing key.
+            version (str | None): the version stored with the listing, for
+                the cheaper check; not consulted yet.
 
         Returns:
             bool: True when the cached listing may be served.

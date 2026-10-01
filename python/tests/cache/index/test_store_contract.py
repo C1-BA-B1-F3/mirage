@@ -449,7 +449,11 @@ async def test_repeated_partial_invalidation_preserves_folder_evidence(
 async def test_a_seed_stamps_every_folder_it_writes(store, store_factory):
     future = datetime.now(timezone.utc) + timedelta(hours=1)
     store.seed(
-        {"/repo/a": entry(), "/repo/sub/b": entry("b")},
+        {
+            "/repo/a": entry(),
+            "/repo/sub": folder("sub"),
+            "/repo/sub/b": entry("b"),
+        },
         {"/repo": ["/repo/a", "/repo/sub"], "/repo/sub": ["/repo/sub/b"]},
         future,
         version="v1",

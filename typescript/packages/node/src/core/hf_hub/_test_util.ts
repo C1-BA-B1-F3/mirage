@@ -502,9 +502,15 @@ export class ExpiredOnArrival extends RAMIndexCacheStore {
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version: string | null = null,
   ): void {
     const live = [...children].filter(([path]) => path === this.live)
-    super.seed(entries, new Map([...children].filter(([path]) => path !== this.live)), new Date(0))
-    super.seed(new Map(), new Map(live), expiresAt)
+    super.seed(
+      entries,
+      new Map([...children].filter(([path]) => path !== this.live)),
+      new Date(0),
+      version,
+    )
+    super.seed(new Map(), new Map(live), expiresAt, version)
   }
 }

@@ -221,11 +221,23 @@ class _SpyStore(RAMIndexCacheStore):
         self.asked: list[datetime | None] = []
 
     async def set_dir(
-        self, vfs_path, entries, expired_at=None, *, window=False, excluded=()
+        self,
+        vfs_path,
+        entries,
+        expired_at=None,
+        *,
+        window=False,
+        excluded=(),
+        version=None,
     ) -> list[Evicted]:
         self.asked.append(expired_at)
         return await super().set_dir(
-            vfs_path, entries, expired_at, window=window, excluded=excluded
+            vfs_path,
+            entries,
+            expired_at,
+            window=window,
+            excluded=excluded,
+            version=version,
         )
 
     async def set_partial_dir(
@@ -597,7 +609,7 @@ def _gate(
 ) -> tuple[list[str], Callable[[str, str | None], Awaitable[bool]]]:
     asked: list[str] = []
 
-    async def may_serve(key: str, version: str | None = None) -> bool:
+    async def may_serve(key: str, version: str | None) -> bool:
         asked.append(key)
         return answer
 
@@ -609,7 +621,7 @@ class _VersionGate:
         self.answer = answer
         self.asked: list[tuple[str, str | None]] = []
 
-    async def __call__(self, key: str, version: str | None = None) -> bool:
+    async def __call__(self, key: str, version: str | None) -> bool:
         self.asked.append((key, version))
         return self.answer
 
@@ -749,7 +761,7 @@ async def test_the_gate_runs_outside_the_fence():
     cache = RAMFileCacheStore()
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def slow_gate(_key: str, _version: str | None = None) -> bool:
+    async def slow_gate(_key: str, _version: str | None) -> bool:
         entered.set()
         await release.wait()
         return True

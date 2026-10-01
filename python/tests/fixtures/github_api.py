@@ -529,8 +529,10 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
         entries: dict[str, IndexEntry],
         children: dict[str, list[str]],
         expires_at: datetime,
+        *,
+        version: str | None = None,
     ) -> None:
-        super().seed(entries, children, expires_at)
+        super().seed(entries, children, expires_at, version=version)
         for path in children:
             if path not in self.live:
                 self._expiry[path] = _EPOCH
@@ -544,6 +546,7 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
         partial: bool,
         evict: bool,
         excluded: tuple[str, ...] = (),
+        version: str | None = None,
     ) -> list[Evicted]:
         return await super()._set_dir(
             vfs_path,
@@ -552,6 +555,7 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
             partial=partial,
             evict=evict,
             excluded=excluded,
+            version=version,
         )
 
 

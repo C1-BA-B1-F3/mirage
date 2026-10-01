@@ -272,7 +272,7 @@ export interface RedisClientLike {
   del: (key: string | string[]) => Promise<unknown>
   multi: () => RedisPipeline
   eval: (script: string, options: { keys: string[]; arguments: string[] }) => Promise<unknown>
-  exists: (key: string) => Promise<number>
+  exists: (keys: string | string[]) => Promise<number>
   scanIterator: (options: { MATCH: string; COUNT?: number }) => AsyncIterable<string | string[]>
   isOpen: boolean
   quit: () => Promise<unknown>
@@ -306,6 +306,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: Map<string, IndexEntry>
     children: Map<string, string[]>
     expiresAt: number
+    version: string | null
   }[] = []
   private closed = false
 
@@ -355,6 +356,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version: string | null = null,
   ): void {
     const nowIso = toIsoZ(new Date())
     this.pendingSeeds.push({
@@ -366,6 +368,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       ),
       children: new Map([...children].map(([path, keys]) => [path, [...keys]])),
       expiresAt: expiresAt.getTime() / 1000,
+      version,
     })
   }
 
@@ -518,6 +521,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
               expires_at: seed.expiresAt,
               generation: `${generation}:${directories.get(path) ?? ''}`,
               partial: false,
+              version: seed.version,
             }
             pipe.set(this.childrenKey(path), JSON.stringify(listing))
           }
@@ -577,7 +581,17 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       Date.now() / 1000 >= listing.expires_at
     )
       return { status: LookupStatus.EXPIRED }
-    return listing.partial ? { partialEntries: listing.entries } : { entries: listing.entries }
+    if (listing.partial) return { partialEntries: listing.entries, version: listing.version }
+    // Eviction can drop a child's row while its listing survives. An
+    // unversioned listing is re-listed by its gate anyway; a versioned one may
+    // be served on the version alone, so it must be whole.
+    if (
+      listing.version !== null &&
+      listing.entries.length > 0 &&
+      (await c.exists(listing.entries.map((path) => this.entryKey(path)))) < listing.entries.length
+    )
+      return { status: LookupStatus.EXPIRED }
+    return { entries: listing.entries, version: listing.version }
   }
 
   async setDir(
@@ -593,6 +607,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       false,
       options.window !== true,
       options.excluded ?? [],
+      options.version ?? null,
     )
   }
 
@@ -611,6 +626,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     partial: boolean,
     evict: boolean,
     excluded: readonly string[] = [],
+    version: string | null = null,
   ): Promise<Evicted[]> {
     await this.flushSeed()
     const c = await this.client()
@@ -629,6 +645,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       generation: `${generation}:${directory}`,
       expires_at: (expiredAt?.getTime() ?? now.getTime() + this.ttl * 1000) / 1000,
       partial,
+      version: partial ? null : version,
     }
     if (!evict) {
       const pipe = c.multi()

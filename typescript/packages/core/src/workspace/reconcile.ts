@@ -202,9 +202,10 @@ export class Reconciler {
    * any command trusts a listing written within the last
    * `LISTING_TRUST_WINDOW` seconds instead (`CacheManager.listingTrusted`).
    * Anything older lists again. Task 1.3 replaces "list again" with a
-   * cheaper check.
+   * cheaper check against `version`, the one stored with the listing,
+   * which is not consulted yet.
    */
-  mayServeListing(mount: MountEntry, folder: string): Promise<boolean> {
+  mayServeListing(mount: MountEntry, folder: string, _version: string | null): Promise<boolean> {
     if (mount.read.policy !== ReadPolicy.FRESH) return Promise.resolve(true)
     return Promise.resolve(mount.cacheManager?.listingTrusted(folder) === true)
   }

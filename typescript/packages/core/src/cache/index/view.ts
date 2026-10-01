@@ -41,7 +41,7 @@ interface IndexViewOptions {
    * The mount's listing gate, asked before a cached listing is served;
    * unset serves every cached listing.
    */
-  readonly mayServeListing?: (folder: string) => Promise<boolean>
+  readonly mayServeListing?: (folder: string, version: string | null) => Promise<boolean>
   /** Told each folder whose listing this view has just written. */
   readonly noteWritten?: (folder: string) => void
 }
@@ -51,7 +51,9 @@ export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
   private readonly readTtl: number | undefined
   private readonly onGone: ((gone: readonly Evicted[]) => Promise<void>) | undefined
-  private readonly mayServeListing: ((folder: string) => Promise<boolean>) | undefined
+  private readonly mayServeListing:
+    | ((folder: string, version: string | null) => Promise<boolean>)
+    | undefined
   private readonly excludedPrefixes: () => readonly string[]
   private readonly noteWritten: ((folder: string) => void) | undefined
 
@@ -106,6 +108,7 @@ export class IndexView extends IndexCacheStore {
           .filter(([path]) => this.owns(path))
           .map(([path, keys]) => [path, keys.filter((key) => this.owns(key))]),
       ),
+      version: snapshot.version ?? null,
     }
   }
 
@@ -113,10 +116,16 @@ export class IndexView extends IndexCacheStore {
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
+    version: string | null = null,
   ): void {
     if (!this.owns(this.prefix)) return
-    const snapshot = this.scopeSnapshot({ entries, children })
-    this.inner.seed(snapshot.entries, snapshot.children, this.cap(expiresAt))
+    const snapshot = this.scopeSnapshot({ entries, children, version })
+    this.inner.seed(
+      snapshot.entries,
+      snapshot.children,
+      this.cap(expiresAt),
+      snapshot.version ?? null,
+    )
     for (const folder of snapshot.children.keys()) this.noted(folder)
   }
 
@@ -145,7 +154,7 @@ export class IndexView extends IndexCacheStore {
     if (
       this.mayServeListing !== undefined &&
       (result.entries != null || result.partialEntries != null) &&
-      !(await this.mayServeListing(path))
+      !(await this.mayServeListing(path, result.version ?? null))
     ) {
       return { status: LookupStatus.EXPIRED }
     }
@@ -188,6 +197,7 @@ export class IndexView extends IndexCacheStore {
       false,
       options.window === true,
       options.excluded ?? [],
+      options.version ?? null,
     ).then(async (gone) => {
       await this.reportGone(gone)
       return gone
@@ -209,6 +219,7 @@ export class IndexView extends IndexCacheStore {
     partial: boolean,
     window: boolean,
     excluded: readonly string[] = [],
+    version: string | null = null,
   ): Promise<Evicted[]> {
     return this.fence(async () => {
       if (!this.owns(path)) return []
@@ -223,6 +234,7 @@ export class IndexView extends IndexCacheStore {
       const gone = await this.inner.setDir(path, owned, deadline, {
         window,
         excluded: [...excluded, ...this.excludedPrefixes()],
+        version,
       })
       this.noted(path)
       return gone.filter((child) => this.owns(child.path))

@@ -78,7 +78,7 @@ export class CacheManager {
     private readonly onGone?: (gone: readonly Evicted[]) => Promise<void>,
     // The listing gate every view of this mount asks before serving a
     // cached listing; undefined serves them all.
-    private readonly mayServeListing?: (folder: string) => Promise<boolean>,
+    private readonly mayServeListing?: (folder: string, version: string | null) => Promise<boolean>,
     private readonly excludedPrefixes: () => readonly string[] = () => [],
   ) {
     this.fileCache = fileCache
@@ -153,7 +153,7 @@ export class CacheManager {
     excludedPrefixes: () => readonly string[]
     readTtl: number
     onGone?: (gone: readonly Evicted[]) => Promise<void>
-    mayServeListing?: (folder: string) => Promise<boolean>
+    mayServeListing?: (folder: string, version: string | null) => Promise<boolean>
     noteWritten: (folder: string) => void
   } {
     return {

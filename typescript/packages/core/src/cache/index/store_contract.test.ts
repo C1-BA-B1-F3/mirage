@@ -480,6 +480,7 @@ for (const backend of ['ram', 'redis']) {
         store.seed(
           new Map([
             ['/repo/a', entry()],
+            ['/repo/sub', folder('sub')],
             ['/repo/sub/b', entry('b')],
           ]),
           new Map([

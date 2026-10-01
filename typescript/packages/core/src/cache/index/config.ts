@@ -149,12 +149,19 @@ export interface SetDirOptions {
   readonly window?: boolean
   /** Nested mount roots whose rows and descendants must survive. */
   readonly excluded?: readonly string[]
+  /**
+   * The backend version the listing was read at. It replaces the stored
+   * one, and null or unset clears it.
+   */
+  readonly version?: string | null
 }
 
 /** Entry rows and directory children from one refill. */
 export interface IndexSnapshot {
   readonly entries: ReadonlyMap<string, IndexEntry>
   readonly children: ReadonlyMap<string, readonly string[]>
+  /** The backend version the rows were read at, or null. */
+  readonly version?: string | null
 }
 
 export interface LookupResult {
@@ -166,6 +173,7 @@ export interface ListResult {
   entries?: string[] | null
   partialEntries?: string[] | null
   status?: LookupStatus | null
+  version?: string | null
 }
 
 /** The directory row, the twin of the pydantic `IndexDirectory`. */
@@ -174,6 +182,7 @@ export const IndexDirectorySchema = z.object({
   expires_at: z.number(),
   generation: z.string(),
   partial: z.boolean().default(false),
+  version: z.string().nullable().default(null),
 })
 
 export type IndexDirectory = z.output<typeof IndexDirectorySchema>

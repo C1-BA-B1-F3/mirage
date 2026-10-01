@@ -137,7 +137,7 @@ async def test_may_serve_listing_trusts_the_index_under_bounded():
     ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
     mount = ws.namespace.mount_for("/data/d")
     rec = Reconciler(ws.cache, ws.namespace)
-    assert await rec.may_serve_listing(mount, "/data/d") is True
+    assert await rec.may_serve_listing(mount, "/data/d", None) is True
     await ws.close()
 
 
@@ -155,14 +155,14 @@ async def test_may_serve_listing_under_fresh_trusts_only_this_commands_writes(
     mount.read = ReadSpec(policy=ReadPolicy.FRESH)
     rec = Reconciler(ws.cache, ws.namespace)
     await mount.index.set_dir("/data/d", [])
-    assert await rec.may_serve_listing(mount, "/data/d") is True
+    assert await rec.may_serve_listing(mount, "/data/d", None) is True
     now[0] += LISTING_TRUST_WINDOW
-    assert await rec.may_serve_listing(mount, "/data/d") is False
+    assert await rec.may_serve_listing(mount, "/data/d", None) is False
     async with command_scope():
-        assert await rec.may_serve_listing(mount, "/data/d") is False
+        assert await rec.may_serve_listing(mount, "/data/d", None) is False
         await mount.index.set_dir("/data/d", [])
-        assert await rec.may_serve_listing(mount, "/data/d") is True
-        assert await rec.may_serve_listing(mount, "/data/other") is False
+        assert await rec.may_serve_listing(mount, "/data/d", None) is True
+        assert await rec.may_serve_listing(mount, "/data/other", None) is False
     await ws.close()
 
 

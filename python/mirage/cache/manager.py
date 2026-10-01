@@ -69,7 +69,8 @@ class CacheManager:
         may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
         read_ttl: int = DEFAULT_READ_TTL,
         on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
-        may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+        may_serve_listing: Callable[[str, str | None], Awaitable[bool]]
+        | None = None,
         excluded_prefixes: Callable[[], tuple[str, ...]] = tuple,
     ) -> None:
         """Args:
@@ -93,9 +94,10 @@ class CacheManager:
         on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
             cleanup for children a re-list found gone. This keeps the
             dependency one-way, like the read gate; None cleans nothing.
-        may_serve_listing (Callable[[str], Awaitable[bool]] | None):
-            the listing gate every view of this mount asks before
-            serving a cached listing; None serves them all.
+        may_serve_listing (Callable[[str, str | None], Awaitable[bool]]
+            | None): the listing gate every view of this mount asks,
+            with the folder and its stored version, before serving a
+            cached listing; None serves them all.
         excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
             mount roots protected from recursive deletion.
         """

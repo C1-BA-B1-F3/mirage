@@ -151,7 +151,7 @@ describe('Reconciler', () => {
     const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
     const mount = mountOf(ws, '/data/d')
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-    expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+    expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
     await ws.close()
   })
 
@@ -166,14 +166,14 @@ describe('Reconciler', () => {
       const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
       const index = mount.index
       await index.setDir('/data/d', [])
-      expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+      expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
       clock.advance(LISTING_TRUST_WINDOW * 1000)
-      expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+      expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(false)
       await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+        expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(false)
         await index.setDir('/data/d', [])
-        expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
-        expect(await rec.mayServeListing(mount, '/data/other')).toBe(false)
+        expect(await rec.mayServeListing(mount, '/data/d', null)).toBe(true)
+        expect(await rec.mayServeListing(mount, '/data/other', null)).toBe(false)
       })
     } finally {
       clock.spy.mockRestore()

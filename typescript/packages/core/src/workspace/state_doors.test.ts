@@ -2276,7 +2276,7 @@ describe('a walk below the operand meets the rule guard', () => {
 
 describe('a relayed walk meets the command rules', () => {
   const RELAY_DOC: SessionProfile = parseSessionProfile({
-    paths: { hide: ['/data/r/ghost'] },
+    paths: { hide: ['/data/r/ghost', '/data/hd'] },
     commands: {
       allow: [
         'mkdir',
@@ -2291,6 +2291,7 @@ describe('a relayed walk meets the command rules', () => {
         'csplit',
         'mktemp',
         'unzip',
+        'sed',
       ],
       deny: [
         {
@@ -2301,6 +2302,7 @@ describe('a relayed walk meets the command rules', () => {
             awk: ['/data/out/locked'],
             mktemp: ['/data/tmpd/*'],
             unzip: ['/data/uz/*'],
+            sed: ['/data/hd/x'],
           },
         },
         { reason: 'tarred', commands: { tar: ['/data/r/sec', '/data/r/ghost'] } },
@@ -2417,15 +2419,17 @@ describe('a relayed walk meets the command rules', () => {
     expect((await line(ws, 'find /data/tmpd /data/uz'))[1]).toBe('/data/tmpd\n/data/uz\n')
   })
 
-  // A rule on a hidden path stays silent: the relayed walk passes the
-  // hidden entry by as missing, never as refused.
-  it('never names a hidden entry', async () => {
+  // A rule on a hidden path stays silent: a write the dispatcher carries
+  // into a hidden directory is missing, as the door answers it, never
+  // refused, which would say the directory is there.
+  it('never names a hidden entry a write reaches', async () => {
     const ws = await relayWs()
-    for (const text of ['tar -cf - /data/r | tar -tf -', 'cp -r /data/r /other/h; find /other/h']) {
-      const [, out, err] = await line(ws, text)
-      expect(out).not.toContain('ghost')
-      expect(err).not.toContain('ghost')
-    }
+    await ws.shell('mkdir -p /data/hd')
+    expect(await line(ws, "sed -n 'w /data/hd/x' /data/r/open")).toEqual([
+      4,
+      '',
+      "sed: couldn't open file /data/hd/x: No such file or directory\n",
+    ])
   })
 })
 

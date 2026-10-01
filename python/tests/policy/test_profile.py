@@ -2037,12 +2037,12 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
 
 RELAY_DOC = {
     "paths": {
-        "hide": ["/data/r/ghost"]
+        "hide": ["/data/r/ghost", "/data/hd"]
     },
     "commands": {
         "allow": [
             "mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls", "awk",
-            "csplit", "mktemp", "unzip"
+            "csplit", "mktemp", "unzip", "sed"
         ],
         "deny": [{
             "reason": "cut",
@@ -2051,7 +2051,8 @@ RELAY_DOC = {
                 "csplit": ["/data/out/xx01"],
                 "awk": ["/data/out/locked"],
                 "mktemp": ["/data/tmpd/*"],
-                "unzip": ["/data/uz/*"]
+                "unzip": ["/data/uz/*"],
+                "sed": ["/data/hd/x"]
             }
         }, {
             "reason": "tarred",
@@ -2337,16 +2338,18 @@ async def test_a_create_through_the_command_dispatcher_meets_the_rules():
 
 
 @pytest.mark.asyncio
-async def test_a_relayed_walk_never_names_a_hidden_entry():
-    # A rule on a hidden path stays silent: the relayed walk passes the
-    # hidden entry by as missing, never as refused.
+async def test_a_write_through_the_dispatcher_never_names_a_hidden_entry():
+    # A rule on a hidden path stays silent: a write the dispatcher carries
+    # into a hidden directory is missing, as the door answers it, never
+    # refused, which would say the directory is there.
     ws = _relay_ws()
     try:
         await _seed_relay_tree(ws)
-        for line in ("tar -cf - /data/r | tar -tf -",
-                     "cp -r /data/r /other/h; find /other/h"):
-            _, out, err = await _line(ws, line, "g")
-            assert "ghost" not in out and "ghost" not in err
+        await ws.shell("mkdir -p /data/hd")
+        assert await _line(ws, "sed -n 'w /data/hd/x' /data/r/open",
+                           "g") == (4, "",
+                                    "sed: couldn't open file /data/hd/x: "
+                                    "No such file or directory\n")
     finally:
         await ws.close()
 

@@ -14,16 +14,14 @@
 
 import { classify } from '../../../errors/index.ts'
 import { normDir } from '../../../utils/slash.ts'
-import { DIR_MODE } from '../../../utils/stat_view.ts'
 import { parseMode } from '../../handles/mode.ts'
 import { applyOpen } from '../../open.ts'
 import type { RuntimeVFS } from '../../vfs.ts'
 import type { MontyBindingBits } from './binding.ts'
 import { MAX_URANDOM_BYTES, NOT_A_LINK } from './constants.ts'
 import { asGuestError, guestError } from './errors.ts'
-import { mergeEntries } from './list.ts'
+import { childPaths } from './list.ts'
 import { isDirRow, isRegularRow, statResult } from './stat.ts'
-import { ScratchTree } from './tree.ts'
 
 function pathArg(value: unknown): string | null {
   if (typeof value === 'string') return value
@@ -123,38 +121,48 @@ function dateMarker(): Record<string, unknown> {
   }
 }
 
-/** The parent directory of an absolute guest path. */
-function parentOf(path: string): string {
-  const slash = path.replace(/\/+$/, '').lastIndexOf('/')
-  return slash <= 0 ? '/' : path.slice(0, slash)
-}
+// The calls that read or change content: only a path in the runtime's
+// view may reach the door with one. Structural questions ask of any
+// path; a mkdir checks the view itself, after its existence probe.
+const CONTENT = new Set([
+  'open',
+  'Path.read_text',
+  'Path.read_bytes',
+  'Path.write_text',
+  'Path.write_bytes',
+  'Path.append_text',
+  'Path.append_bytes',
+  'Path.rmdir',
+  'Path.unlink',
+  'Path.rename',
+])
 
 /**
- * Monty's OS door: a mounted path is the workspace's, any other scratch.
+ * Monty's OS door: every path a guest names is the workspace's.
  *
  * This is monty's tier of the interception taxonomy: the binding calls
  * one host callback per operation and takes back a value (or a promise
  * of one) or NOT_HANDLED, which the sandbox raises as the call's
- * default refusal. Every call routes on the path. One a mount serves is
- * answered by the file door alone, with the mount's own rows and
- * CPython's wording for its refusals; any other path is guest scratch
- * space, served by a per-run `ScratchTree`, so `/tmp` really does
- * behave like `/tmp`. The python twin routes the same way over the
- * binding's own in-memory tree. Declining is reserved for what neither
- * half can serve: an operation this door does not implement.
+ * default refusal. Every path goes to the file door, and nothing is
+ * kept aside: structure is open (a listing, whether a name is a
+ * directory or a link) and content goes only through the runtime's
+ * view (`RuntimeVFS.serves`: the announced mounts and what a link
+ * reaches), so a guest lists what a shell lists and reads and writes
+ * nothing the view withholds. The python twin answers the same way.
+ * Declining is reserved for an operation this door does not implement.
  *
  * Monty hands the door whole-file calls: an open, then reads of the
  * whole file and appends of each new write. So an open applies its
- * mode's effect on the mount (`applyOpen`) and nothing else, and
- * each write after it ships only its own bytes.
+ * mode's effect on the mount (`applyOpen`) and nothing else, and each
+ * write after it ships only its own bytes.
  *
  * Args:
  *   binding: the loaded binding's door pieces (NOT_HANDLED sentinel
  *     and the MontyFileHandle an `open` answer must be).
  *   env: the run's environment, readable both ways python's monty
  *     spells it (`os.getenv` and `os.environ`).
- *   door: the execution's file door, or null when no workspace is
- *     attached.
+ *   door: the execution's file door, or null outside a workspace,
+ *     where every path is out of view.
  */
 export class MirageOSAccess {
   private readonly bits: MontyBindingBits
@@ -162,7 +170,6 @@ export class MirageOSAccess {
   private readonly fileHandle: MontyBindingBits['MontyFileHandle']
   private readonly env: Record<string, string>
   private readonly door: RuntimeVFS | null
-  private readonly tree = new ScratchTree()
 
   constructor(binding: MontyBindingBits, env: Record<string, string>, door: RuntimeVFS | null) {
     this.bits = binding
@@ -188,8 +195,8 @@ export class MirageOSAccess {
       // The engine asks for the whole mapping as one call; a plain
       // object arrives in the guest as a dict, so `.get`, `[...]`,
       // `in`, iteration and len all work, and a missing key raises
-      // KeyError. A copy, like python's OSAccess(environ=dict(environ)):
-      // a guest that mutates it cannot reach the session's own env.
+      // KeyError. A copy, like python's environ: a guest that mutates
+      // it cannot reach the session's own env.
       return { ...this.env }
     }
     // The clock doors: python's binding defaults these to the host
@@ -201,30 +208,55 @@ export class MirageOSAccess {
     // Everything below serves a path; the doors above need none.
     const path = pathArg(args[0])
     if (path === null) return this.notHandled
-    // Lexical questions need no mount and no tree entry: monty's own
-    // tree resolves no symlinks, so resolve() is absolute() and '/' is
-    // the working directory, which is also what python's binding
+    // Lexical questions need no mount: resolve() is absolute() and '/'
+    // is the working directory, which is also what python's binding
     // answers (a str, on both hosts).
     if (name === 'Path.resolve' || name === 'Path.absolute') {
       return path.startsWith('/') ? path : '/' + path
     }
     const door = this.door
+    if (door === null) return this.unbound(name, path)
     const out =
-      door?.serves(path) === true
-        ? this.mountedOp(name, path, args, kwargs, door)
-        : this.scratchOp(name, path, args, kwargs)
+      CONTENT.has(name) && !door.serves(path)
+        ? Promise.reject(guestError('ENOENT', path))
+        : this.op(name, path, args, kwargs, door)
     if (!(out instanceof Promise)) return out
     // A mount words its refusals its own way; the guest catches the
-    // builtin CPython raises and may print its message. The tree's own
-    // errors are already that shape and pass through.
+    // builtin CPython raises and may print its message.
     const target = name === 'Path.rename' ? (pathArg(args[1]) ?? undefined) : undefined
     return out.catch((caught: unknown) => {
       throw asGuestError(caught, path, target)
     })
   }
 
-  /** A path some mount serves: every answer is the workspace's. */
-  private mountedOp(
+  /** Outside a workspace there is no filesystem: probes answer false, the rest refuse. */
+  private unbound(name: string, path: string): unknown {
+    switch (name) {
+      case 'Path.exists':
+      case 'Path.is_file':
+      case 'Path.is_dir':
+      case 'Path.is_symlink':
+        return false
+      case 'open':
+      case 'Path.read_text':
+      case 'Path.read_bytes':
+      case 'Path.write_text':
+      case 'Path.write_bytes':
+      case 'Path.append_text':
+      case 'Path.append_bytes':
+      case 'Path.mkdir':
+      case 'Path.rmdir':
+      case 'Path.unlink':
+      case 'Path.rename':
+      case 'Path.iterdir':
+      case 'Path.stat':
+        throw guestError('ENOENT', path)
+      default:
+        return this.notHandled
+    }
+  }
+
+  private op(
     name: string,
     path: string,
     args: unknown[],
@@ -233,19 +265,19 @@ export class MirageOSAccess {
   ): unknown {
     switch (name) {
       case 'open':
-        return this.openMounted(path, typeof args[1] === 'string' ? args[1] : 'r', door)
+        return this.open(path, typeof args[1] === 'string' ? args[1] : 'r', door)
       case 'Path.read_bytes':
         return door.read(path)
       case 'Path.read_text':
         return door.read(path).then((b) => new TextDecoder().decode(b))
       case 'Path.write_bytes':
       case 'Path.write_text':
-        return this.writeMounted(path, args[1], door)
+        return this.write(path, args[1], door)
       case 'Path.append_bytes':
       case 'Path.append_text':
-        return this.appendMounted(path, args[1], door)
+        return this.append(path, args[1], door)
       case 'Path.mkdir':
-        return this.mkdirMounted(path, kwargs, door)
+        return this.mkdir(path, kwargs, door)
       case 'Path.rmdir':
         return door.rmdir(path).then(() => null)
       case 'Path.unlink':
@@ -253,168 +285,43 @@ export class MirageOSAccess {
       case 'Path.rename': {
         const dst = pathArg(args[1])
         if (dst === null) return this.notHandled
-        // A destination outside the workspace crosses out of the
-        // mount world; EXDEV is what POSIX answers for a rename
-        // across filesystems and what python raises here.
-        if (!door.serves(dst)) throw guestError('EXDEV', path, dst)
         return door.rename(path, dst).then(() => null)
       }
       case 'Path.iterdir':
         return door.readdir(normDir(path), false).then((entries) =>
-          mergeEntries(
+          childPaths(
             path,
-            [],
             entries.map((e) => e.path),
           ),
         )
-      // The mount's own row answers the predicates whenever it has
-      // one. The listing stays for the one path with no row of its
-      // own, a directory the mount only implies.
+      // The predicates read the row the view shows: the mount's own,
+      // or a directory the workspace lists.
       case 'Path.is_dir':
-        return door
-          .statOrNull(path)
-          .then((st) => (st !== null ? isDirRow(st) : this.listable(path)))
+        return door.viewStat(path).then((st) => st !== null && isDirRow(st))
       case 'Path.is_symlink':
-        return this.isLink(path)
+        return this.isLink(path, door)
       case 'Path.is_file':
-        return door.statOrNull(path).then((st) => st !== null && isRegularRow(st))
+        return door.viewStat(path).then((st) => st !== null && isRegularRow(st))
       case 'Path.exists':
-        return door.statOrNull(path).then((st) => st !== null || this.listable(path))
+        return door.viewStat(path).then((st) => st !== null)
       case 'Path.stat':
-        return door
-          .statOrNull(path)
-          .then((st) => (st === null ? this.scratchStat(path) : statResult(this.bits, st)))
+        return door.viewStat(path).then((st) => {
+          if (st === null) throw guestError('ENOENT', path)
+          return statResult(this.bits, st)
+        })
       default:
         return this.notHandled
     }
-  }
-
-  /** A path no mount serves: the guest's scratch space, answered from the tree. */
-  private scratchOp(
-    name: string,
-    path: string,
-    args: unknown[],
-    kwargs: Record<string, unknown>,
-  ): unknown {
-    switch (name) {
-      case 'open': {
-        const mode = typeof args[1] === 'string' ? args[1] : 'r'
-        const handle = new this.fileHandle(path, mode)
-        const facts = parseMode(mode)
-        const open = (): unknown => {
-          this.tree.open(path, facts)
-          return handle
-        }
-        return facts.writable ? this.creating(path, open) : open()
-      }
-      case 'Path.read_text':
-        return this.tree.readText(path)
-      case 'Path.read_bytes':
-        return this.tree.readBytes(path)
-      case 'Path.write_text':
-        return this.creating(path, () => {
-          this.tree.write(path, String(args[1]))
-          return textLength(args[1])
-        })
-      case 'Path.write_bytes': {
-        const data = payloadBytes(args[1])
-        return this.creating(path, () => {
-          this.tree.write(path, data)
-          return data.length
-        })
-      }
-      case 'Path.append_text':
-        return this.creating(path, () => {
-          this.tree.append(path, String(args[1]))
-          return textLength(args[1])
-        })
-      case 'Path.append_bytes': {
-        const data = payloadBytes(args[1])
-        return this.creating(path, () => {
-          this.tree.append(path, data)
-          return data.length
-        })
-      }
-      case 'Path.mkdir':
-        return this.creating(path, () => {
-          this.tree.mkdir(path, kwargs.parents === true, kwargs.exist_ok === true)
-          return null
-        })
-      case 'Path.unlink':
-        this.tree.unlink(path)
-        return null
-      case 'Path.rmdir':
-        this.tree.rmdir(path)
-        return null
-      case 'Path.rename': {
-        const dst = pathArg(args[1])
-        if (dst === null) return this.notHandled
-        // Crossing into a mount is the same filesystem boundary as
-        // crossing out of one.
-        if (this.door?.serves(dst) === true) throw guestError('EXDEV', path, dst)
-        return this.creating(dst, () => {
-          this.tree.rename(path, dst)
-          return null
-        })
-      }
-      case 'Path.exists':
-      case 'Path.is_dir':
-        if (name === 'Path.exists' ? this.tree.exists(path) : this.tree.isDir(path)) return true
-        return this.listable(path)
-      case 'Path.is_file':
-        return this.tree.isFile(path)
-      case 'Path.is_symlink':
-        // The tree holds no links, but the name plane may hold one at
-        // an unmounted path; python asks the workspace the same way.
-        return this.isLink(path)
-      case 'Path.iterdir':
-        return this.scratchIterdir(path)
-      case 'Path.stat':
-        return this.scratchStat(path)
-      default:
-        return this.notHandled
-    }
-  }
-
-  /**
-   * Run a scratch create once its parent is a tree directory, making it
-   * one when only the workspace has it. A directory the workspace lists
-   * but no mount claims (the root above nested mounts) is one the guest
-   * sees as a directory, so a scratch file may be created in it like in
-   * any other; the tree holds it from then on, and its listing merges
-   * both.
-   */
-  private creating(path: string, run: () => unknown): unknown {
-    const parent = parentOf(path)
-    if (this.tree.exists(parent)) return run()
-    const listed = this.listable(parent)
-    if (listed === false) return run()
-    return Promise.resolve(listed).then((found) => {
-      if (found) this.tree.mkdir(parent, true, true)
-      return run()
-    })
-  }
-
-  /**
-   * Whether the workspace lists `path`, served or not: the root above
-   * nested mounts, `/parent` when only `/parent/child` is mounted, and
-   * a directory a mount lists but has no row for.
-   */
-  private listable(path: string): boolean | Promise<boolean> {
-    if (this.door === null) return false
-    return this.door.listingOrNull(path).then((entries) => entries !== null)
   }
 
   /**
    * Whether the name plane holds a symlink at `path`, asked through
-   * readlink on either route: the tree holds no links, and the name
-   * plane may hold one at an unmounted path. A refusal the backend did
-   * not mean as "no link here" comes out as itself (NOT_A_LINK), which
-   * is what CPython's own `Path.is_symlink` does.
+   * readlink. A refusal the backend did not mean as "no link here"
+   * comes out as itself (NOT_A_LINK), which is what CPython's own
+   * `Path.is_symlink` does.
    */
-  private isLink(path: string): boolean | Promise<boolean> {
-    if (this.door === null) return false
-    return this.door.readlink(path).then(
+  private isLink(path: string, door: RuntimeVFS): Promise<boolean> {
+    return door.readlink(path).then(
       () => true,
       (caught: unknown) => {
         const condition = classify(caught)
@@ -424,52 +331,16 @@ export class MirageOSAccess {
     )
   }
 
-  /**
-   * The scratch tree's row for `path`, as the guest's `os.stat_result`.
-   * A directory the workspace lists but has no row for is not in the
-   * tree, and stats as monty's default directory, what python's
-   * `StatResult.dir_stat()` answers.
-   */
-  private scratchStat(path: string): unknown {
-    if (this.tree.exists(path)) return statResult(this.bits, this.tree.stat(path))
-    return Promise.resolve(this.listable(path)).then((listed) =>
-      statResult(
-        this.bits,
-        listed
-          ? { size: 0, isDir: true, mtimeMs: Date.now(), mode: DIR_MODE }
-          : this.tree.stat(path),
-      ),
-    )
-  }
-
-  /**
-   * List a scratch directory, folding in whatever the workspace lists
-   * under the same name: `iterdir('/')` must show the mount roots
-   * beside the guest's own scratch entries. A path neither side can
-   * list raises the tree's own FileNotFoundError.
-   */
-  private scratchIterdir(path: string): unknown {
-    if (this.door === null) return this.tree.iterdir(path)
-    return this.door.listingOrNull(path).then((entries) => {
-      if (entries === null) return this.tree.iterdir(path)
-      return mergeEntries(
-        path,
-        this.tree.isDir(path) ? this.tree.iterdir(path) : [],
-        entries.map((entry) => entry.path),
-      )
-    })
-  }
-
-  private async openMounted(path: string, mode: string, door: RuntimeVFS): Promise<unknown> {
-    // Handle first, mirroring monty's own tree: a malformed mode must
+  private async open(path: string, mode: string, door: RuntimeVFS): Promise<unknown> {
+    // Handle first, as monty's own binding does: a malformed mode must
     // raise before any side effect lands on the mount.
     const handle = new this.fileHandle(path, mode)
     await applyOpen(door, path, parseMode(mode))
     return handle
   }
 
-  /** Replace a mounted file; the return is python's: characters for text, bytes for bytes. */
-  private async writeMounted(path: string, data: unknown, door: RuntimeVFS): Promise<number> {
+  /** Replace a file; the return is python's: characters for text, bytes for bytes. */
+  private async write(path: string, data: unknown, door: RuntimeVFS): Promise<number> {
     const bytes = payloadBytes(data)
     await door.write(path, bytes)
     return typeof data === 'string' ? textLength(data) : bytes.length
@@ -482,31 +353,32 @@ export class MirageOSAccess {
    * door falls back to a whole-file write only for the mount without
    * one. The return is python's: characters for text, bytes for bytes.
    */
-  private async appendMounted(path: string, data: unknown, door: RuntimeVFS): Promise<number> {
+  private async append(path: string, data: unknown, door: RuntimeVFS): Promise<number> {
     const tail = payloadBytes(data)
     await door.append(path, tail)
     return typeof data === 'string' ? textLength(data) : tail.length
   }
 
   /**
-   * Create a mounted directory, keeping pathlib's flags: `parents`
-   * rides through to the backend op, which takes it; `exist_ok` is
-   * answered here, since the op has no such argument and backends
-   * differ on whether creating an existing directory raises at all.
-   * `exist_ok` forgives an existing directory only — a file at the
-   * target still raises, pathlib's own rule.
+   * Create a directory, keeping pathlib's flags: `parents` rides through
+   * to the backend op, which takes it; `exist_ok` is answered here,
+   * since the op has no such argument and backends differ on whether
+   * creating an existing directory raises at all. `exist_ok` forgives
+   * an existing directory only — a file at the target still raises,
+   * pathlib's own rule.
    */
-  private async mkdirMounted(
+  private async mkdir(
     path: string,
     kwargs: Record<string, unknown>,
     door: RuntimeVFS,
   ): Promise<null> {
-    const row = await door.statOrNull(path)
+    const row = await door.viewStat(path)
     if (row !== null && !isDirRow(row)) throw guestError('EEXIST', path)
-    if (row !== null || (await this.listable(path))) {
+    if (row !== null) {
       if (kwargs.exist_ok === true) return null
       throw guestError('EEXIST', path)
     }
+    if (!door.serves(path)) throw guestError('ENOENT', path)
     await door.mkdir(path, kwargs.parents === true)
     return null
   }

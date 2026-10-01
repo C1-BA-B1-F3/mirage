@@ -190,6 +190,41 @@ def test_serves_a_path_reached_through_a_link_outside_every_mount():
 F = "/data/f"
 
 
+class ViewVFS(RuntimeVFS):
+    """Core over /data, with a withheld file and a listed-only directory."""
+
+    def __init__(self):
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(lambda: ["/data/"]),
+        )
+        self.stats = []
+
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
+        if op == "stat":
+            self.stats.append(path)
+            if path in ("/data/a.txt", "/.bash_history"):
+                return FileStat(name=path, size=1, type=FileType.FILE)
+            raise FileNotFoundError(path)
+        if op == "readdir" and path in ("/", "/parent"):
+            return []
+        raise FileNotFoundError(path)
+
+
+def test_view_stat_opens_structure_and_withholds_content():
+    vfs = ViewVFS()
+    assert vfs.view_stat("/data/a.txt").is_dir is False
+    implied = vfs.view_stat("/parent")
+    assert (implied.is_dir, implied.mode) == (True, DIR_MODE)
+    # A withheld surface's file is never asked about at all.
+    assert vfs.view_stat("/.bash_history") is None
+    assert vfs.stats == ["/data/a.txt"]
+
+
 def test_a_refusal_is_not_read_as_an_absence():
     # A backend that will not answer has said nothing about whether the
     # path is there, and "not there" is the one answer a guest cannot

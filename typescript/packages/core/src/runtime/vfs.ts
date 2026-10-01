@@ -17,6 +17,7 @@ import { classify } from '../errors/index.ts'
 import { isMissingOp, isMissingPath } from '../utils/errors.ts'
 import {
   contentSize,
+  DIR_MODE,
   deviceRdev,
   isCharDevice,
   isDir,
@@ -269,6 +270,25 @@ export class RuntimeVFS {
       if (isAbsent(err)) return null
       throw err
     }
+  }
+
+  /**
+   * `path`'s row as a runtime may see it, or null.
+   *
+   * Structure is open and content is not. A path in the view (`serves`)
+   * answers with its mount's own row; any path the workspace lists
+   * answers as a directory, so the root above nested mounts and the
+   * directories above a link are directories here as they are in a
+   * shell, while a withheld surface's files (history, the program view)
+   * stay unseen. 0 is the door's spelling of an unknown mtime.
+   */
+  async viewStat(path: string): Promise<VFSStat | null> {
+    if (this.serves(path)) {
+      const row = await this.statOrNull(path)
+      if (row !== null) return row
+    }
+    if ((await this.listingOrNull(path)) === null) return null
+    return { size: 0, isDir: true, mode: DIR_MODE, mtimeMs: 0 }
   }
 
   /**

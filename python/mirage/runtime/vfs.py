@@ -28,6 +28,7 @@ from mirage.utils.context_scope import ContextScope
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import norm
 from mirage.utils.stat_view import (
+    DIR_MODE,
     content_size,
     device_rdev,
     is_dir,
@@ -259,6 +260,28 @@ class RuntimeVFS:
             return self.stat(path, nofollow=nofollow)
         except ABSENT_PATH:
             return None
+
+    def view_stat(self, path: str) -> VFSStat | None:
+        """`path`'s row as a runtime may see it, or None.
+
+        Structure is open and content is not. A path in the view
+        (``serves``) answers with its mount's own row; any path the
+        workspace lists answers as a directory, so the root above nested
+        mounts and the directories above a link are directories here as
+        they are in a shell, while a withheld surface's files (history,
+        the program view) stay unseen. 0 is the door's spelling of an
+        unknown mtime.
+
+        Args:
+            path (str): guest-absolute virtual path.
+        """
+        if self.serves(path):
+            row = self.stat_or_none(path)
+            if row is not None:
+                return row
+        if self.listing_or_none(path) is None:
+            return None
+        return VFSStat(size=0, is_dir=True, mode=DIR_MODE, mtime_ns=0)
 
     def listing_or_none(self, path: str) -> list[VFSEntry] | None:
         """The directory's unclassified rows, or None when it is not one.

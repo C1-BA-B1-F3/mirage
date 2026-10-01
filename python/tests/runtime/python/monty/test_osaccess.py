@@ -647,3 +647,22 @@ def test_monty_a_refused_readlink_is_not_read_as_not_a_link():
     assert b"PermissionError: [Errno 13] Permission denied: '/s3/x'" in (
         result.stderr
     )
+
+
+def test_monty_refuses_content_outside_the_view_without_dispatching():
+    # The only filesystem a guest sees is the workspace's: /tmp is under
+    # no announced mount, so a write there is refused before the door,
+    # and nothing is created or written anywhere.
+    dispatch = FakeDispatch({"/s3/a.txt": b"1"})
+    runtime = MontyRuntime()
+    runtime.bind(WorkspaceBinding(dispatch, PrefixResolver(lambda: ["/s3/"])))
+    code = (
+        "from pathlib import Path\n"
+        "print(Path('/tmp').exists())\n"
+        "open('/tmp/x.txt', 'w').write('hi')"
+    )
+    result = asyncio.run(runtime.run(RunArgs(code=code)))
+    assert result.exit_code == 1
+    assert result.stdout == b"False\n"
+    assert b"FileNotFoundError" in result.stderr
+    assert dispatch.created == [] and dispatch.writes == []

@@ -25,7 +25,7 @@ export async function readdir(
 ): Promise<QuickJSHandle> {
   const names: string[] = []
   let errno = 0
-  if (!vfs?.mountOf(path)) {
+  if (vfs === null) {
     errno = WASI.ENOENT
   } else {
     try {

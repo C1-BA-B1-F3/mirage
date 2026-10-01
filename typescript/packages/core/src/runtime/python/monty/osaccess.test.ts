@@ -148,9 +148,9 @@ describe('MirageOSAccess environment', () => {
   it('answers the environment doors even with no workspace attached', () => {
     const access = new MirageOSAccess(BITS, { A: '1' }, null)
     expect(access.handle('os.getenv', ['A'])).toBe('1')
-    // A read now reaches the scratch tree, whose miss is a typed
-    // FileNotFoundError — the JS binding has no tree of its own, so
-    // declining raised PermissionError where python raised this.
+    // With no workspace every path is out of view and refused with a
+    // typed FileNotFoundError; declining instead raised PermissionError
+    // where python raises this.
     expect(() => access.handle('Path.read_text', ['/tmp/x'])).toThrow('No such file or directory')
   })
 })
@@ -197,98 +197,46 @@ describe('MirageOSAccess entropy', () => {
   })
 })
 
-describe('MirageOSAccess scratch paths', () => {
-  it('serves a path outside every mount from the scratch tree, like python', async () => {
-    // The tree starts holding only '/', exactly like python's: a guest
-    // makes its scratch directories before writing under them.
-    const access = accessOn(noop)
-    await expect(Promise.resolve(access.handle('Path.exists', ['/tmp/x']))).resolves.toBe(false)
-    await expect(
-      Promise.resolve(access.handle('Path.write_text', ['/tmp/x', 'hi'])),
-    ).rejects.toThrow('No such file or directory')
-    access.handle('Path.mkdir', ['/tmp'], {})
-    expect(access.handle('Path.write_text', ['/tmp/x', 'hi'])).toBe(2)
-    expect(access.handle('Path.read_text', ['/tmp/x'])).toBe('hi')
-    expect(access.handle('Path.exists', ['/tmp/x'])).toBe(true)
-    expect(access.handle('Path.is_file', ['/tmp/x'])).toBe(true)
-  })
-
-  it('write_text reports code points, the way python len counts', () => {
-    const access = accessOn(noop)
-    access.handle('Path.mkdir', ['/tmp'], {})
-    expect(access.handle('Path.write_text', ['/tmp/g.txt', '\u{1d11e}'])).toBe(1)
-  })
-
-  it('opens a scratch file and answers the handle follow-ups from the tree', () => {
-    const access = accessOn(noop)
-    access.handle('Path.mkdir', ['/tmp'], {})
-    const handle = access.handle('open', ['/tmp/log.txt', 'w']) as FakeHandle
-    expect(handle).toBeInstanceOf(FakeHandle)
-    expect(handle.mode).toBe('w')
-    expect(access.handle('Path.append_text', ['/tmp/log.txt', 'abc'])).toBe(3)
-    expect(access.handle('Path.read_text', ['/tmp/log.txt'])).toBe('abc')
-  })
-
-  it("open 'r' on a missing scratch file raises python's own FileNotFoundError", () => {
-    expect(() => accessOn(noop).handle('open', ['/tmp/nope', 'r'])).toThrow(
-      "[Errno 2] No such file or directory: '/tmp/nope'",
-    )
-  })
-
-  it('mkdir honors parents and exist_ok in the tree', async () => {
-    const access = accessOn(noop)
-    await expect(Promise.resolve(access.handle('Path.mkdir', ['/tmp/a/b'], {}))).rejects.toThrow(
-      'No such file or directory',
-    )
-    await expect(
-      Promise.resolve(
-        access.handle('Path.mkdir', ['/tmp/a/b'], { parents: true, exist_ok: false }),
-      ),
-    ).resolves.toBeNull()
-    expect(() => access.handle('Path.mkdir', ['/tmp/a/b'], {})).toThrow('File exists')
-    expect(access.handle('Path.mkdir', ['/tmp/a/b'], { parents: false, exist_ok: true })).toBeNull()
-  })
-
-  it('a rename crossing into a mount raises EXDEV, as a cross-filesystem move', () => {
-    const access = accessOn(noop)
-    access.handle('Path.mkdir', ['/tmp'], {})
-    access.handle('Path.write_text', ['/tmp/x', 'hi'])
-    expect(() => access.handle('Path.rename', ['/tmp/x', '/ram/y'])).toThrow(
-      '[Errno 18] Invalid cross-device link',
-    )
-  })
-
-  // A directory the workspace lists but no mount claims is one the guest
-  // sees, so a scratch file may be created in it.
-  it('creates a scratch file under a directory only the workspace lists', async () => {
-    const access = accessOn(listing(['/parent/child'], ['/parent/child']), {}, ['/parent/child'])
-    await expect(
-      Promise.resolve(access.handle('Path.write_text', ['/parent/new.txt', 'hi'])),
-    ).resolves.toBe(2)
-    expect(access.handle('Path.read_text', ['/parent/new.txt'])).toBe('hi')
-    await expect(Promise.resolve(access.handle('Path.iterdir', ['/parent']))).resolves.toEqual([
-      '/parent/child',
-      '/parent/new.txt',
-    ])
-  })
-
-  it('merges the workspace listing into a scratch iterdir, so / shows the mounts', async () => {
-    const dispatch = vi.fn<BridgeDispatchFn>((op, path) => {
-      if (op === 'readdir' && path === '/') return Promise.resolve(['/ram/'])
+// The only filesystem a guest sees is the workspace's: a path outside
+// the runtime's view is refused, never kept aside in a scratch tree.
+describe('MirageOSAccess outside the view', () => {
+  it('answers the probes false and refuses content without reaching the bridge', async () => {
+    const seen: string[] = []
+    const bridge = vi.fn<BridgeDispatchFn>((op, path) => {
+      seen.push(`${op} ${path}`)
       return Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' }))
     })
-    const access = accessOn(dispatch)
-    access.handle('Path.mkdir', ['/tmp'], {})
-    expect(await access.handle('Path.iterdir', ['/'])).toEqual(['/ram', '/tmp'])
+    const access = accessOn(bridge)
+    for (const probe of ['Path.exists', 'Path.is_file', 'Path.is_dir']) {
+      await expect(Promise.resolve(access.handle(probe, ['/tmp/x']))).resolves.toBe(false)
+    }
+    for (const [name, args] of [
+      ['Path.mkdir', ['/tmp']],
+      ['Path.write_text', ['/tmp/x', 'hi']],
+      ['Path.read_text', ['/tmp/x']],
+      ['open', ['/tmp/x', 'w']],
+      ['Path.stat', ['/tmp/x']],
+      ['Path.iterdir', ['/tmp']],
+    ] as const) {
+      await expect(Promise.resolve(access.handle(name, [...args], {}))).rejects.toThrow(
+        "No such file or directory: '/tmp",
+      )
+    }
+    // Only structural questions were asked: no row, no bytes, no change.
+    expect(seen.filter((call) => !call.startsWith('readdir '))).toEqual([])
   })
 
-  it('answers is_symlink false for a scratch path, whose tree holds no links', async () => {
-    const access = accessOn(
-      vi.fn<BridgeDispatchFn>((_op, path) =>
-        Promise.reject(Object.assign(new Error(`gone: ${path}`), { code: 'ENOENT' })),
-      ),
+  it('refuses every path with no workspace attached', () => {
+    const access = new MirageOSAccess(BITS, {}, null)
+    expect(access.handle('Path.exists', ['/ram/x'])).toBe(false)
+    expect(() => access.handle('open', ['/ram/x', 'r'])).toThrow(
+      '[Errno 2] No such file or directory',
     )
-    expect(await access.handle('Path.is_symlink', ['/tmp/l'])).toBe(false)
+  })
+
+  it('lists the root through the door, so / shows the mounts', async () => {
+    const access = accessOn(listing(['/ram'], ['/ram']))
+    await expect(Promise.resolve(access.handle('Path.iterdir', ['/']))).resolves.toEqual(['/ram'])
   })
 })
 
@@ -297,12 +245,12 @@ describe('MirageOSAccess declining', () => {
     expect(accessOn(noop).handle('Path.chmod', ['/ram/x'])).toBe(NOT_HANDLED)
   })
 
-  it('a rename whose destination leaves the workspace raises EXDEV', () => {
-    // python routes it to the dispatcher, whose resolver answers
-    // CrossMountError; half-applying the move would lose the file.
-    expect(() => accessOn(noop).handle('Path.rename', ['/ram/x', '/tmp/y'])).toThrow(
-      '[Errno 18] Invalid cross-device link',
-    )
+  it('a rename whose destination leaves the mount raises EXDEV', async () => {
+    // The door refuses a pair on different mounts (CrossMountError);
+    // half-applying the move would lose the file.
+    await expect(
+      Promise.resolve(accessOn(noop).handle('Path.rename', ['/ram/x', '/tmp/y'])),
+    ).rejects.toThrow("[Errno 18] Invalid cross-device link: '/ram/x' -> '/tmp/y'")
   })
 
   it('accepts a path object as well as a string', async () => {
@@ -333,15 +281,6 @@ describe('MirageOSAccess stat', () => {
     expect(st.st_nlink).toBe(2)
   })
 
-  it('falls back to the scratch tree for a path no mount holds', () => {
-    const access = accessOn(noop)
-    access.handle('Path.mkdir', ['/tmp'], {})
-    access.handle('Path.write_text', ['/tmp/x', 'hello'])
-    const st = (access.handle('Path.stat', ['/tmp/x']) as FakeClassInstance).instance as GuestStat
-    expect(st.st_size).toBe(5)
-    expect(st.st_mode).toBe(0o100644)
-  })
-
   it('raises the guest FileNotFoundError when neither half has the path', async () => {
     const access = accessOn(listing([]))
     await expect(Promise.resolve(access.handle('Path.stat', ['/ram/nope']))).rejects.toThrow(
@@ -350,10 +289,10 @@ describe('MirageOSAccess stat', () => {
   })
 
   it('stats a directory the workspace lists although no mount claims it', async () => {
-    // Only /parent/child is mounted, so /parent is served by neither
-    // the mount view nor the scratch tree, yet exists and is_dir both
-    // answer True for it through the listing. A stat that read only
-    // the tree reported it missing, which python does not.
+    // Only /parent/child is mounted, so /parent is a directory the
+    // workspace implies: it has no row, yet exists and is_dir answer
+    // True through the listing, and a stat reports a directory, as
+    // python's does.
     const access = accessOn(listing(['/parent/child']), {}, ['/parent/child'])
     expect(await access.handle('Path.is_dir', ['/parent'])).toBe(true)
     const wrapped = (await access.handle('Path.stat', ['/parent'])) as FakeClassInstance

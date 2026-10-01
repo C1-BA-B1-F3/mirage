@@ -915,10 +915,17 @@
           }
         },
         {
-          "command": "python3 -c \"from pathlib import Path; open('/parent/new.txt', 'w').write('s'); print(open('/parent/new.txt').read(), sorted(p.name for p in Path('/parent').iterdir()))\"",
+          "command": "python3 -c \"open('/parent/new.txt', 'w')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(sorted(p.name for p in Path('/parent').iterdir()))\"",
           "expect": {
             "exit": 0,
-            "stdout": "s ['child', 'new.txt']\n"
+            "stdout": "['child']\n"
           }
         }
       ]

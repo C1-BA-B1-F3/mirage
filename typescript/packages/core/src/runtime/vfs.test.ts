@@ -430,6 +430,26 @@ describe('RuntimeVFS guest rules', () => {
     expect(door.serves('/tmp/a.txt')).toBe(false)
   })
 
+  it('opens structure to view_stat and withholds content', async () => {
+    const stats: string[] = []
+    const dispatch = vi.fn<BridgeDispatchFn>((op, path) => {
+      if (op === 'stat') {
+        stats.push(path)
+        if (path === '/data/a.txt' || path === '/.bash_history') {
+          return Promise.resolve(new FileStat({ name: path, size: 1, type: FileType.FILE }))
+        }
+      }
+      if (op === 'readdir' && (path === '/' || path === '/parent/')) return Promise.resolve([])
+      return Promise.reject(Object.assign(new Error(path), { code: 'ENOENT' }))
+    })
+    const vfs = new RuntimeVFS(dispatch, new PrefixResolver(() => ['/data/']))
+    expect((await vfs.viewStat('/data/a.txt'))?.isDir).toBe(false)
+    expect(await vfs.viewStat('/parent')).toMatchObject({ isDir: true, mode: DIR_MODE })
+    // A withheld surface's file is never asked about at all.
+    expect(await vfs.viewStat('/.bash_history')).toBeNull()
+    expect(stats).toEqual(['/data/a.txt'])
+  })
+
   // A backend that will not answer has said nothing about whether the
   // path is there, and "not there" is the one answer a guest cannot
   // tell from the truth.

@@ -24,11 +24,12 @@ export async function stat(
 ): Promise<QuickJSHandle> {
   let st: VFSStat | null = null
   let errno = 0
-  if (!vfs?.mountOf(path)) {
+  if (vfs === null) {
     errno = WASI.ENOENT
   } else {
     try {
-      st = await vfs.stat(path)
+      st = await vfs.viewStat(path)
+      if (st === null) errno = WASI.ENOENT
     } catch (err) {
       errno = wasiErrno(err)
     }

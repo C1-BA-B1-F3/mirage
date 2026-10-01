@@ -37,8 +37,12 @@ function sortPaths(paths: string[]): string[] {
     .map(([, p]) => p)
 }
 
-export function mergeEntries(path: string, local: string[], remote: string[]): string[] {
-  const merged = new Set(local)
-  for (const name of remote) merged.add(joinEntry(path, name))
-  return sortPaths([...merged])
+/**
+ * A listing's entries as the guest's paths, sorted as pathlib sorts.
+ * Backends spell entries differently (bare names, slash-marked
+ * directories, full paths); joining each onto the directory takes all
+ * three to one path.
+ */
+export function childPaths(path: string, names: string[]): string[] {
+  return sortPaths([...new Set(names.map((name) => joinEntry(path, name)))])
 }

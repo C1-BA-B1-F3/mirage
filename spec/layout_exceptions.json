@@ -46,11 +46,6 @@
     "pool": "One open client per event loop, keyed by the loop object. Only python has the hazard: an aiobotocore client binds to the loop that opened it, and a process runs many loops over its lifetime (every asyncio.run makes one), so a cached client outlives the loop it belongs to and has to be released against a loop that is already closed. Node has one loop and an AWS SDK v3 client that is not bound to it, so S3Accessor there holds config and opens nothing -- there is no lifetime to manage and nothing to mirror."
    }
   },
-  "runtime/python/monty": {
-   "typescript_only": {
-    "tree": "The guest's scratch filesystem for unmounted paths. Python needs no twin: its binding hands monty an OSAccess subclass whose base class (pydantic_monty.os_access) already carries this tree, while the JS binding is a bare callback with no tree behind it, so the TypeScript side implements the same semantics itself (message spellings pinned to the python binding's)."
-   }
-  },
   "runtime/js/quickjs": {
    "typescript_only": {
     "list": "Encodes directory entries as QuickJS Emscripten handles. Python QuickJS uses the shared WASI host callbacks instead.",

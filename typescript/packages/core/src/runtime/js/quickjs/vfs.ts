@@ -52,10 +52,6 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
     return path === '' ? '' : resolvePath(path, cwd.virtual)
   }
 
-  const mountOf = (path: string): string | null => (vfs === null ? null : vfs.mountOf(path))
-
-  const underMount = (path: string): boolean => mountOf(path) !== null
-
   const defineAsync = (
     name: string,
     fn: (...args: QuickJSHandle[]) => Promise<QuickJSHandle>,
@@ -76,9 +72,11 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   defineAsync('__mirage_chdir', async (pathH) => {
     const path = absolute(pathH)
     if (path !== '/') {
-      if (vfs === null || path === '') return ctx.newNumber(-ENOENT)
+      if (path === '' || vfs === null) return ctx.newNumber(-ENOENT)
       try {
-        if (!(await vfs.stat(path)).isDir) return ctx.newNumber(-WASI.ENOTDIR)
+        const st = await vfs.viewStat(path)
+        if (st === null) return ctx.newNumber(-ENOENT)
+        if (!st.isDir) return ctx.newNumber(-WASI.ENOTDIR)
       } catch (err) {
         return ctx.newNumber(-wasiErrno(err))
       }
@@ -101,7 +99,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
     } catch {
       return ctx.newNumber(-2)
     }
-    if (vfs === null || !underMount(path)) return ctx.newNumber(-1)
+    if (vfs?.serves(path) !== true) return ctx.newNumber(-1)
     // The open's effect lands through the mount at open, by the rule
     // every door shares, so write modes and a read-narrowed session
     // refuse here (the guest gets null), the ledger records the real
@@ -179,7 +177,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   // files and empty directories; os.stat answers [obj, errno].
   defineAsync('__mirage_remove', async (pathH) => {
     const path = absolute(pathH)
-    if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
+    if (vfs?.serves(path) !== true) return ctx.newNumber(-ENOENT)
     try {
       const st = await vfs.stat(path)
       if (st.isDir) {
@@ -195,7 +193,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
 
   defineAsync('__mirage_mkdir', async (pathH) => {
     const path = absolute(pathH)
-    if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
+    if (vfs?.serves(path) !== true) return ctx.newNumber(-ENOENT)
     try {
       await vfs.mkdir(path)
       return ctx.newNumber(0)
@@ -206,7 +204,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
 
   defineAsync('__mirage_utimes', async (pathH, atimeH, mtimeH) => {
     const path = absolute(pathH)
-    if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
+    if (vfs?.serves(path) !== true) return ctx.newNumber(-ENOENT)
     // The engine's stamps are milliseconds (qjs-libc splits them into
     // tv_sec/tv_nsec at 1000), and the op takes ISO text.
     const atime = epochToIso(ctx.getNumber(atimeH) / 1000)
@@ -222,12 +220,10 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   defineAsync('__mirage_rename', async (srcH, dstH) => {
     const src = absolute(srcH)
     const dst = absolute(dstH)
-    if (vfs === null || !underMount(src) || !underMount(dst)) return ctx.newNumber(-ENOENT)
-    // The dispatcher addresses the rename's endpoints against the
-    // source's mount, so a cross-mount pair would land inside the
-    // wrong tree; the real engine answers -44 (pinned live: each
-    // mount is its own preopen and the destination never resolves).
-    if (mountOf(src) !== mountOf(dst)) return ctx.newNumber(-ENOENT)
+    if (vfs?.serves(src) !== true || !vfs.serves(dst)) return ctx.newNumber(-ENOENT)
+    // The door refuses a pair on different mounts (CROSS_MOUNT), which
+    // this engine numbers -44, the real engine's answer (pinned live:
+    // each mount is its own preopen and the destination never resolves).
     try {
       await vfs.rename(src, dst)
       return ctx.newNumber(0)

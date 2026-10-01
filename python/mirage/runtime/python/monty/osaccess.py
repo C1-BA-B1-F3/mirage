@@ -22,9 +22,8 @@ from mirage.errors import FsCondition, classify
 from mirage.runtime.handles import parse_mode
 from mirage.runtime.open import apply_open
 from mirage.runtime.python.monty.binding import (
+    AbstractOS,
     MontyFileHandle,
-    OSAccess,
-    StatResult,
     path_from_arg,
 )
 from mirage.runtime.python.monty.constants import (
@@ -32,9 +31,9 @@ from mirage.runtime.python.monty.constants import (
     NOT_A_LINK,
 )
 from mirage.runtime.python.monty.errors import guest_error
-from mirage.runtime.python.monty.list import merge_entries
+from mirage.runtime.python.monty.list import child_paths
 from mirage.runtime.python.monty.stat import stat_result
-from mirage.runtime.types import VFSEntry, VFSStat
+from mirage.runtime.types import VFSStat
 from mirage.runtime.vfs import RuntimeVFS
 
 
@@ -60,23 +59,23 @@ def _as_guest(path: str, target: str | None = None) -> Iterator[None]:
         raise guest_error(condition, path, target) from exc
 
 
-class MirageOSAccess(OSAccess):
-    """Monty's OS door: a mounted path is the workspace's, any other scratch.
+class MirageOSAccess(AbstractOS):
+    """Monty's OS door: every path a guest names is the workspace's.
 
     This is monty's tier of the interception taxonomy: the binding hands
     the interpreter a host OS object and calls its methods, so mirage
-    subclasses that object rather than hooking a syscall layer. Every
-    call routes on the path. One a mount serves is answered by the
-    file door alone, with the mount's own rows and CPython's wording
-    for its refusals. Any other path is guest scratch space, served by
-    the binding's own in-memory tree, which is also where the
-    environment, the clocks and ``urandom`` come from. The TypeScript
-    twin routes the same way over its ``ScratchTree``.
+    implements that object rather than hooking a syscall layer. Every
+    path goes to the file door, and nothing is kept aside: structure is
+    open (a listing, whether a name is a directory or a link) and
+    content goes only through the runtime's view (``RuntimeVFS.serves``:
+    the announced mounts and what a link reaches), so a guest lists what
+    a shell lists and reads and writes nothing the view withholds. The
+    environment, the clocks and ``urandom`` are the binding's own.
 
     Monty hands the door whole-file calls: an open, then reads of the
     whole file and appends of each new write. So an open applies its
-    mode's effect on the mount (``apply_open``) and nothing else,
-    and each write after it ships only its own bytes.
+    mode's effect on the mount (``apply_open``) and nothing else, and
+    each write after it ships only its own bytes.
 
     The bridge uses synchronous callbacks, so the core's hop parks the
     tokio worker for the whole I/O wait. That caps concurrent
@@ -87,100 +86,74 @@ class MirageOSAccess(OSAccess):
 
     Args:
         core (RuntimeVFS | None): the execution's file door, built with
-            ``RuntimeVFS.of(context)``; None outside a workspace.
+            ``RuntimeVFS.of(context)``; None outside a workspace, where
+            every path is out of view.
         environ (dict[str, str]): the guest's environment.
     """
 
     def __init__(
         self, core: RuntimeVFS | None, environ: dict[str, str]
     ) -> None:
-        super().__init__(
-            [], environ=dict(environ), max_urandom_bytes=MAX_URANDOM_BYTES
-        )
+        self.max_urandom_bytes = MAX_URANDOM_BYTES
+        self._environ = dict(environ)
         self._core = core
 
-    def _door(self, path: PurePosixPath) -> RuntimeVFS | None:
-        """The file door when a mount serves `path`, None for scratch.
+    def getenv(self, key: str, default: str | None = None) -> str | None:
+        return self._environ.get(key, default)
+
+    def get_environ(self) -> dict[str, str]:
+        return self._environ
+
+    def path_absolute(self, path: PurePosixPath) -> str:
+        # '/' is the working directory, as monty's own tree answers.
+        return str(PurePosixPath("/") / path)
+
+    def path_resolve(self, path: PurePosixPath) -> str:
+        return self.path_absolute(path)
+
+    def _door(self, path: PurePosixPath) -> RuntimeVFS:
+        """The file door for a content call on `path`, in the view only.
 
         Args:
             path (PurePosixPath): the guest path.
         """
         core = self._core
         if core is None or not core.serves(str(path)):
-            return None
+            raise guest_error(FsCondition.ENOENT, str(path))
         return core
 
-    def _row(self, door: RuntimeVFS, path: PurePosixPath) -> VFSStat | None:
-        with _as_guest(str(path)):
-            return door.stat_or_none(str(path))
-
-    def _listing(self, path: PurePosixPath) -> list[VFSEntry] | None:
-        """What the workspace lists at `path`, served or not.
-
-        A directory the workspace lists but no mount claims (the root
-        above nested mounts, `/parent` when only `/parent/child` is
-        mounted) has no row anywhere, and a mount may serve a listing
-        for a directory it has no row for, so the predicates fall back
-        to this on both routes.
+    def _structure(self, path: PurePosixPath) -> RuntimeVFS:
+        """The file door for a structural question, asked of any path.
 
         Args:
             path (PurePosixPath): the guest path.
         """
         if self._core is None:
+            raise guest_error(FsCondition.ENOENT, str(path))
+        return self._core
+
+    def _row(self, path: PurePosixPath) -> VFSStat | None:
+        if self._core is None:
             return None
         with _as_guest(str(path)):
-            return self._core.listing_or_none(str(path))
-
-    def _scratch_parent(self, path: PurePosixPath) -> None:
-        """Make a scratch path's parent a tree directory when only the
-        workspace has it.
-
-        A directory the workspace lists but no mount claims (the root
-        above nested mounts) is one the guest sees as a directory, so a
-        scratch file may be created in it like in any other; the tree
-        holds it from then on, and its listing merges both.
-
-        Args:
-            path (PurePosixPath): the scratch path about to be created.
-        """
-        parent = path.parent
-        if super().path_exists(parent) or self._listing(parent) is None:
-            return
-        super().path_mkdir(parent, True, True)
+            return self._core.view_stat(str(path))
 
     def path_exists(self, path: PurePosixPath) -> bool:
-        door = self._door(path)
-        if door is not None:
-            if self._row(door, path) is not None:
-                return True
-        elif super().path_exists(path):
-            return True
-        return self._listing(path) is not None
+        return self._row(path) is not None
 
     def path_is_file(self, path: PurePosixPath) -> bool:
-        door = self._door(path)
-        if door is None:
-            return bool(super().path_is_file(path))
-        row = self._row(door, path)
+        row = self._row(path)
         return row is not None and S_ISREG(row.mode)
 
     def path_is_dir(self, path: PurePosixPath) -> bool:
-        door = self._door(path)
-        if door is not None:
-            row = self._row(door, path)
-            if row is not None:
-                return row.is_dir
-        elif super().path_is_dir(path):
-            return True
-        return self._listing(path) is not None
+        row = self._row(path)
+        return row is not None and row.is_dir
 
     def path_is_symlink(self, path: PurePosixPath) -> bool:
-        """Whether the name plane holds a symlink at `path`.
+        """Whether the name plane holds a symlink at `path`, via readlink.
 
-        Asked through readlink, on either route: monty's tree holds no
-        links, and the name plane may hold one at an unmounted path.
         Creation stays out of reach, because the binding has no symlink
-        verb to override.
+        verb to serve.
 
         Args:
             path (PurePosixPath): the guest path to test.
@@ -197,76 +170,43 @@ class MirageOSAccess(OSAccess):
         return True
 
     def path_stat(self, path: PurePosixPath) -> Any:
-        """The path's stat: the mount's own row whenever it has one.
-
-        A mounted file's mode and mtime are the mount's, so a chmod the
-        shell made shows. A path with no row is monty's own, or a
-        directory the workspace only implies, which stats as monty's
-        default directory.
+        """The path's stat: the mount's own row, so a chmod shows.
 
         Args:
             path (PurePosixPath): the guest path to stat.
         """
-        door = self._door(path)
-        row = self._row(door, path) if door is not None else None
-        if row is not None:
-            return stat_result(row)
-        if super().path_exists(path) or self._listing(path) is None:
-            return super().path_stat(path)
-        return StatResult.dir_stat()
+        row = self._row(path)
+        if row is None:
+            raise guest_error(FsCondition.ENOENT, str(path))
+        return stat_result(row)
 
     def path_iterdir(self, path: PurePosixPath) -> list[PurePosixPath]:
-        """List a directory, folding the workspace's names into scratch.
-
-        `iterdir('/')` must show the mount roots beside the guest's own
-        scratch entries, so an unmounted directory merges the two.
-
-        Args:
-            path (PurePosixPath): the directory to list.
-        """
-        door = self._door(path)
-        if door is not None:
-            with _as_guest(str(path)):
-                entries = door.readdir(str(path), classify=False)
-            return merge_entries(path, [], [entry.path for entry in entries])
-        listed = self._listing(path)
-        if listed is None:
-            return super().path_iterdir(path)
-        local = super().path_iterdir(path) if super().path_is_dir(path) else []
-        return merge_entries(path, local, [entry.path for entry in listed])
+        door = self._structure(path)
+        with _as_guest(str(path)):
+            entries = door.readdir(str(path), classify=False)
+        return child_paths(path, [entry.path for entry in entries])
 
     def path_open(self, path: PurePosixPath, mode: str) -> MontyFileHandle:
-        door = self._door(path)
-        if door is None:
-            if MontyFileHandle(str(path), mode).writable:
-                self._scratch_parent(path)
-            return super().path_open(path, mode)
-        # Built first, as monty's own tree does: a malformed mode must
-        # raise before any effect lands on the mount.
+        # Built first: a malformed mode must raise before any effect
+        # lands on the mount.
         handle = MontyFileHandle(str(path), mode)
+        door = self._door(path)
         with _as_guest(str(path)):
             apply_open(door, str(path), parse_mode(mode))
         return handle
 
     def path_read_text(self, path: PurePosixPath | MontyFileHandle) -> str:
-        if self._door(path_from_arg(path)) is None:
-            return str(super().path_read_text(path))
         return self.path_read_bytes(path).decode()
 
     def path_read_bytes(self, path: PurePosixPath | MontyFileHandle) -> bytes:
         target = path_from_arg(path)
         door = self._door(target)
-        if door is None:
-            return bytes(super().path_read_bytes(path))
         with _as_guest(str(target)):
             return door.read(str(target))
 
     def path_write_text(
         self, path: PurePosixPath | MontyFileHandle, data: str
     ) -> int:
-        if self._door(path_from_arg(path)) is None:
-            self._scratch_parent(path_from_arg(path))
-            return int(super().path_write_text(path, data))
         self.path_write_bytes(path, data.encode())
         return len(data)
 
@@ -275,9 +215,6 @@ class MirageOSAccess(OSAccess):
     ) -> int:
         target = path_from_arg(path)
         door = self._door(target)
-        if door is None:
-            self._scratch_parent(target)
-            return int(super().path_write_bytes(path, data))
         with _as_guest(str(target)):
             door.write(str(target), bytes(data))
         return len(data)
@@ -285,9 +222,6 @@ class MirageOSAccess(OSAccess):
     def path_append_text(
         self, path: PurePosixPath | MontyFileHandle, data: str
     ) -> int:
-        if self._door(path_from_arg(path)) is None:
-            self._scratch_parent(path_from_arg(path))
-            return int(super().path_append_text(path, data))
         self.path_append_bytes(path, data.encode())
         return len(data)
 
@@ -307,9 +241,6 @@ class MirageOSAccess(OSAccess):
         """
         target = path_from_arg(path)
         door = self._door(target)
-        if door is None:
-            self._scratch_parent(target)
-            return int(super().path_append_bytes(path, data))
         with _as_guest(str(target)):
             door.append(str(target), bytes(data))
         return len(data)
@@ -317,7 +248,7 @@ class MirageOSAccess(OSAccess):
     def path_mkdir(
         self, path: PurePosixPath, parents: bool, exist_ok: bool
     ) -> None:
-        """Create a directory on the mount, keeping pathlib's flags.
+        """Create a directory, keeping pathlib's flags.
 
         `parents` rides through to the backend op, which takes it;
         `exist_ok` is answered here, since the op has no such argument
@@ -330,84 +261,40 @@ class MirageOSAccess(OSAccess):
             parents (bool): create missing ancestors too.
             exist_ok (bool): stay quiet when it already exists.
         """
-        door = self._door(path)
-        if door is None:
-            self._scratch_parent(path)
-            super().path_mkdir(path, parents, exist_ok)
-            return
-        row = self._row(door, path)
+        row = self._row(path)
         if row is not None and not row.is_dir:
             raise guest_error(FsCondition.EEXIST, str(path))
-        if row is not None or self._listing(path) is not None:
+        if row is not None:
             if exist_ok:
                 return
             raise guest_error(FsCondition.EEXIST, str(path))
+        door = self._door(path)
         with _as_guest(str(path)):
             door.mkdir(str(path), parents=parents)
 
     def path_rmdir(self, path: PurePosixPath) -> None:
         door = self._door(path)
-        if door is None:
-            super().path_rmdir(path)
-            return
         with _as_guest(str(path)):
             door.rmdir(str(path))
 
     def path_unlink(self, path: PurePosixPath) -> None:
         door = self._door(path)
-        if door is None:
-            super().path_unlink(path)
-            return
         with _as_guest(str(path)):
             door.unlink(str(path))
 
     def path_rename(self, path: PurePosixPath, target: PurePosixPath) -> None:
-        """Rename within one mount or within scratch, never across.
+        """Rename within one mount; across mounts it is EXDEV.
 
-        The dispatcher picks the mount from the source alone and hands
-        the destination to that same backend, which reads it against
-        its own keyspace, so a rename between two mounts, or between a
-        mount and scratch, is refused with EXDEV, POSIX's answer for a
-        rename across filesystems. Monty ships no `shutil`, so guest
-        code writes the copy-and-delete fallback by hand, and the errno
-        is what tells it to.
+        The dispatcher picks the mount from the source alone, so the
+        door refuses a pair on different mounts, and EXDEV is POSIX's
+        answer for a rename across filesystems. Monty ships no `shutil`,
+        so guest code writes the copy-and-delete fallback by hand, and
+        the errno is what tells it to.
 
         Args:
             path (PurePosixPath): the source path.
             target (PurePosixPath): the destination path.
-
-        Raises:
-            OSError: EXDEV when the two ends live apart.
         """
         door = self._door(path)
-        if (door is None) != (self._door(target) is None):
-            raise guest_error(FsCondition.CROSS_MOUNT, str(path), str(target))
-        if door is None:
-            self._scratch_parent(target)
-            super().path_rename(path, target)
-            self._restamp(target)
-            return
         with _as_guest(str(path), str(target)):
             door.rename(str(path), str(target))
-
-    def _restamp(self, target: PurePosixPath) -> None:
-        """Re-point a renamed scratch file at the name it now has.
-
-        monty's `path_rename` moves a file between directory dicts
-        without updating the file's own `path`/`name`, which it does do
-        for the directory branch (`_update_paths_recursive`).
-        `path_unlink` then deletes by `file.name`, so renaming a.txt to
-        b.txt and removing b.txt raises `KeyError: 'a.txt'`, which is
-        not an OSError and so cannot be caught by guest code.
-        Reproduces on a bare `OSAccess` with no mirage in the picture,
-        so it belongs upstream; drop this once a release carries the
-        fix.
-
-        Args:
-            target (PurePosixPath): the path the file now has.
-        """
-        entry = self._get_entry(target)
-        if entry is None or isinstance(entry, dict):
-            return
-        entry.path = target
-        entry.name = target.name

@@ -14,22 +14,33 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.file import file_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def file(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def file(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor) or not paths:
         raise ValueError("file: missing operand")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
-    return await file_generic(resolved, list(texts), opts,
-                              bound_op(ops.read_bytes, accessor, opts.index),
-                              bound_op(ops.stat, accessor, opts.index))
+    return await file_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(ops.read_bytes, accessor, opts.index),
+        bound_op(ops.stat, accessor, opts.index),
+    )
 
 
-BUILDER = Builder('file', file, None, False, None, read=True)
+BUILDER = Builder("file", file, read=True)

@@ -17,7 +17,8 @@ import pathlib
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PY_LUA = sorted((REPO / "python" / "mirage").rglob("*.lua"))
 TS_LUA = sorted(
-    (REPO / "typescript" / "packages" / "node" / "src").rglob("*.lua"))
+    (REPO / "typescript" / "packages" / "node" / "src").rglob("*.lua")
+)
 
 
 def _by_name(paths: list[pathlib.Path]) -> dict[str, pathlib.Path]:
@@ -54,4 +55,5 @@ def test_each_lua_pair_is_byte_identical():
     for path in PY_LUA:
         twin = ts[path.name]
         assert path.read_text(encoding="utf-8") == twin.read_text(
-            encoding="utf-8"), f"{path.name} differs between python and ts"
+            encoding="utf-8"
+        ), f"{path.name} differs between python and ts"

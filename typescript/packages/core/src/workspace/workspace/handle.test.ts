@@ -20,8 +20,7 @@ import { RAMSessionStore } from '../session/ram.ts'
 import { MountMode } from '../../types.ts'
 import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
 import { Session, type SessionExecuteOptions } from './handle.ts'
-import type { ExecuteOptions, ExecuteResult } from './types.ts'
-import type { ProvisionResult } from '../../provision/types.ts'
+import type { ExecuteOptions } from './types.ts'
 import { Workspace } from './workspace.ts'
 
 const open: Workspace[] = []
@@ -112,8 +111,6 @@ describe('Session', () => {
     const reviewer = await ws.session('reviewer', { profile: 'reviewer' })
     expect(stdoutStr(await reviewer.shell('pwd', { cwd: '/repo' }))).toBe('/repo\n')
     expect(reviewer.state.cwd).not.toBe('/repo')
-    const plan = await reviewer.shell('cat /repo/README.md', { provision: true })
-    expect(plan).toBeDefined()
     await runWithSession(ws.getSession(ws.defaultSessionId), async () => {
       // A session already bound is kept by the op door, so a handle
       // reached from inside the default session's own command reads
@@ -138,17 +135,5 @@ describe('handle parity with the workspace door', () => {
     const parity: Forwarded = {} as SessionExecuteOptions
     expect(parity).toBeDefined()
     expectTypeOf<SessionExecuteOptions>().toEqualTypeOf<Omit<ExecuteOptions, 'sessionId'>>()
-  })
-
-  it('accepts the same three call shapes the workspace does', () => {
-    // Each overload answers a different return type, and the handle
-    // dropped the widening one, so `shell(line, opts)` with an unknown
-    // `provision` type-checked on the workspace and not on a handle.
-    expectTypeOf<Parameters<Session['shell']>>().toEqualTypeOf<
-      [command: string, options: SessionExecuteOptions]
-    >()
-    expectTypeOf<ReturnType<Session['shell']>>().toEqualTypeOf<
-      Promise<ExecuteResult | ProvisionResult>
-    >()
   })
 })

@@ -15,10 +15,12 @@
 import pytest
 
 from mirage import MountMode, Workspace
-from tests.vfs.databricks_volume.test_databricks_volume import (FakeFiles,
-                                                                make_vfs,
-                                                                seed_directory,
-                                                                seed_file)
+from tests.vfs.databricks_volume.test_databricks_volume import (
+    FakeFiles,
+    make_vfs,
+    seed_directory,
+    seed_file,
+)
 
 ROOT = "/Volumes/main/default/agent_files/root"
 

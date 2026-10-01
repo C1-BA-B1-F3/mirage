@@ -34,8 +34,9 @@ async def test_rmdir_deletes_an_empty_folder():
 @pytest.mark.asyncio
 async def test_rmdir_refuses_a_folder_holding_a_file():
     with aioresponses() as m:
-        m.get(_BASE + "/root:/dir:/children" + _PROBE,
-              payload={"value": [_FILE]})
+        m.get(
+            _BASE + "/root:/dir:/children" + _PROBE, payload={"value": [_FILE]}
+        )
         with pytest.raises(OSError) as excinfo:
             await rmdir(_accessor(), PathSpec.from_str_path("/dir"))
     assert excinfo.value.errno == errno.ENOTEMPTY
@@ -44,8 +45,10 @@ async def test_rmdir_refuses_a_folder_holding_a_file():
 @pytest.mark.asyncio
 async def test_rmdir_refuses_a_folder_holding_a_subfolder():
     with aioresponses() as m:
-        m.get(_BASE + "/root:/dir:/children" + _PROBE,
-              payload={"value": [_FOLDER]})
+        m.get(
+            _BASE + "/root:/dir:/children" + _PROBE,
+            payload={"value": [_FOLDER]},
+        )
         with pytest.raises(OSError) as excinfo:
             await rmdir(_accessor(), PathSpec.from_str_path("/dir"))
     assert excinfo.value.errno == errno.ENOTEMPTY
@@ -54,8 +57,9 @@ async def test_rmdir_refuses_a_folder_holding_a_subfolder():
 @pytest.mark.asyncio
 async def test_rmdir_sends_no_delete_when_it_refuses():
     with aioresponses() as m:
-        m.get(_BASE + "/root:/dir:/children" + _PROBE,
-              payload={"value": [_FILE]})
+        m.get(
+            _BASE + "/root:/dir:/children" + _PROBE, payload={"value": [_FILE]}
+        )
         with pytest.raises(OSError):
             await rmdir(_accessor(), PathSpec.from_str_path("/dir"))
         sent = [key[0] for key in m.requests]

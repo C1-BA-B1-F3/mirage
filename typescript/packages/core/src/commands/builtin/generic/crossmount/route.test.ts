@@ -310,14 +310,13 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
   })
 
   it('sort relays independent inputs without native cat sub-runs', async () => {
-    const dispatch = vi.fn(
-      (op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
-        Promise.resolve([
-          op === 'stat'
-            ? fileStat(path.virtual)
-            : new TextEncoder().encode(path.virtual === '/ram/a' ? 'b' : 'a'),
-          new IOResult(),
-        ]),
+    const dispatch = vi.fn((op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
+      Promise.resolve([
+        op === 'stat'
+          ? fileStat(path.virtual)
+          : new TextEncoder().encode(path.virtual === '/ram/a' ? 'b' : 'a'),
+        new IOResult(),
+      ]),
     )
     const native = vi.fn(runSingleNoop)
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
@@ -335,12 +334,11 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
       calls,
     )
     const sizes: Record<string, number> = { '/ram/a': 8, '/disk/b': 2 }
-    const dispatch = vi.fn(
-      (op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
-        Promise.resolve([
-          new FileStat({ name: path.virtual, size: sizes[path.virtual] ?? 0, type: FileType.FILE }),
-          new IOResult(),
-        ]),
+    const dispatch = vi.fn((op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
+      Promise.resolve([
+        new FileStat({ name: path.virtual, size: sizes[path.virtual] ?? 0, type: FileType.FILE }),
+        new IOResult(),
+      ]),
     )
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
     const [out] = await handleCrossMount('wc', paths, [], {}, dispatch, rs, null)

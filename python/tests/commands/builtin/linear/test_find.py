@@ -24,15 +24,15 @@ from mirage.core.linear.config import LinearConfig
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
-TEAMS = [{
-    "id": "TEAM1",
-    "key": "ENG",
-    "name": "Engineering",
-    "updatedAt": "2026-04-05T00:00:00Z",
-    "states": {
-        "nodes": []
-    },
-}]
+TEAMS = [
+    {
+        "id": "TEAM1",
+        "key": "ENG",
+        "name": "Engineering",
+        "updatedAt": "2026-04-05T00:00:00Z",
+        "states": {"nodes": []},
+    }
+]
 
 TEAM_DIR = "/teams/ENG__Engineering__TEAM1"
 
@@ -46,20 +46,25 @@ def _find_command():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 async def _run(paths, *texts: str, **flags) -> list[str]:
     accessor = LinearAccessor(LinearConfig(api_key="lin_api_test"))
     find = _find_command()
-    with patch("mirage.core.linear.readdir.list_teams",
-               new_callable=AsyncMock,
-               return_value=TEAMS):
+    with patch(
+        "mirage.core.linear.readdir.list_teams",
+        new_callable=AsyncMock,
+        return_value=TEAMS,
+    ):
         stdout, _io = await find(
-            accessor, paths, list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
+            accessor,
+            paths,
+            list(texts),
+            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
+        )
         data = await materialize(stdout)
     return data.decode().splitlines()
 

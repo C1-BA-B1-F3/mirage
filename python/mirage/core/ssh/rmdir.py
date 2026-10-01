@@ -41,9 +41,9 @@ async def _holds_entries(sftp: asyncssh.SFTPClient, remote: str) -> bool:
     return any(name not in (".", "..") for name in names)
 
 
-async def rmdir(accessor: SSHAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: SSHAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> None:
     """Remove an empty directory over SFTP.
 
     The server enforces emptiness, so the work here is naming its

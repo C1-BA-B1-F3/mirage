@@ -41,17 +41,20 @@ def ops_summary() -> str:
 
 async def main():
     print(
-        f"=== SeaweedFS at {config.endpoint_url} (bucket {config.bucket}) ===")
+        f"=== SeaweedFS at {config.endpoint_url} (bucket {config.bucket}) ==="
+    )
 
     # Seed a few objects so the demo is self-contained (WRITE mode).
     await ws.vfs.write(
         "/seaweedfs/data/example.jsonl",
         b'{"event":"queue-operation","tool":"mirage"}\n'
         b'{"event":"read","tool":"mirage"}\n'
-        b'{"event":"queue-operation","tool":"other"}\n')
+        b'{"event":"queue-operation","tool":"other"}\n',
+    )
     await ws.vfs.write(
         "/seaweedfs/data/config.json",
-        b'{"name":"mirage","version":1,"tags":["s3","seaweedfs"]}')
+        b'{"name":"mirage","version":1,"tags":["s3","seaweedfs"]}',
+    )
     await ws.vfs.write("/seaweedfs/notes.txt", b"hello from seaweedfs\n")
 
     # chmod/chown/touch never hit the SeaweedFS API: attrs land in the
@@ -61,12 +64,16 @@ async def main():
     meta_res = await ws.shell(
         'chmod 640 "/seaweedfs/notes.txt"'
         ' && chown 500:dev "/seaweedfs/notes.txt"'
-        ' && touch -t 202601021530 "/seaweedfs/notes.txt"')
+        ' && touch -t 202601021530 "/seaweedfs/notes.txt"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/seaweedfs/notes.txt"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/seaweedfs/notes.txt")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("\n--- ls /seaweedfs/ ---")
     r = await ws.shell("ls /seaweedfs/")
@@ -100,17 +107,12 @@ async def main():
     r = await ws.shell("jq .tags /seaweedfs/data/config.json")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print("\n--- PROVISION: cat (plan only) vs head -c (byte budget) ---")
-    dr = await ws.shell("cat /seaweedfs/data/example.jsonl", provision=True)
-    print(f"  cat: network_read={dr.network_read} precision={dr.precision}")
-    dr = await ws.shell("head -c 20 /seaweedfs/data/example.jsonl",
-                        provision=True)
-    print(f"  head -c 20: network_read={dr.network_read} "
-          f"precision={dr.precision}")
-
     print("\n--- rm seeded objects ---")
-    for key in ("/seaweedfs/data/example.jsonl", "/seaweedfs/data/config.json",
-                "/seaweedfs/notes.txt"):
+    for key in (
+        "/seaweedfs/data/example.jsonl",
+        "/seaweedfs/data/config.json",
+        "/seaweedfs/notes.txt",
+    ):
         await ws.shell(f"rm {key}")
     print("  cleaned")
 

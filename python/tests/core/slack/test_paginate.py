@@ -24,18 +24,8 @@ from mirage.core.slack.paginate import cursor_pages
 async def test_cursor_pages_walks_until_empty_cursor():
     cfg = SlackConfig(token="xoxb-t")
     pages = [
-        {
-            "items": [1, 2],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            }
-        },
-        {
-            "items": [3],
-            "response_metadata": {
-                "next_cursor": ""
-            }
-        },
+        {"items": [1, 2], "response_metadata": {"next_cursor": "cur1"}},
+        {"items": [3], "response_metadata": {"next_cursor": ""}},
     ]
     calls = []
 
@@ -45,13 +35,12 @@ async def test_cursor_pages_walks_until_empty_cursor():
 
     with patch("mirage.core.slack.paginate.slack_get", new=fake_get):
         result = []
-        async for page in cursor_pages(cfg,
-                                       "conversations.list",
-                                       base_params={
-                                           "types": "x",
-                                           "limit": 100
-                                       },
-                                       items_key="items"):
+        async for page in cursor_pages(
+            cfg,
+            "conversations.list",
+            base_params={"types": "x", "limit": 100},
+            items_key="items",
+        ):
             result.append(page)
     assert result == [[1, 2], [3]]
     assert calls[0] == {"types": "x", "limit": 100}
@@ -62,24 +51,9 @@ async def test_cursor_pages_walks_until_empty_cursor():
 async def test_cursor_pages_propagates_cancellation():
     cfg = SlackConfig(token="xoxb-t")
     pages = [
-        {
-            "items": [1],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            }
-        },
-        {
-            "items": [2],
-            "response_metadata": {
-                "next_cursor": "cur2"
-            }
-        },
-        {
-            "items": [3],
-            "response_metadata": {
-                "next_cursor": ""
-            }
-        },
+        {"items": [1], "response_metadata": {"next_cursor": "cur1"}},
+        {"items": [2], "response_metadata": {"next_cursor": "cur2"}},
+        {"items": [3], "response_metadata": {"next_cursor": ""}},
     ]
     calls = []
 
@@ -88,10 +62,12 @@ async def test_cursor_pages_propagates_cancellation():
         return pages[len(calls) - 1]
 
     with patch("mirage.core.slack.paginate.slack_get", new=fake_get):
-        gen = cursor_pages(cfg,
-                           "conversations.list",
-                           base_params={"limit": 1},
-                           items_key="items")
+        gen = cursor_pages(
+            cfg,
+            "conversations.list",
+            base_params={"limit": 1},
+            items_key="items",
+        )
         first = await gen.__anext__()
         await gen.aclose()
     assert first == [1]

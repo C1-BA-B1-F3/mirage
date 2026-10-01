@@ -6,8 +6,9 @@ def test_leaves_safe_tokens_unquoted():
 
 
 def test_quotes_whitespace_and_metacharacters():
-    assert shell_join(["echo", "a b", "$(rm -rf /)",
-                       "*.txt"]) == ("echo 'a b' '$(rm -rf /)' '*.txt'")
+    assert shell_join(["echo", "a b", "$(rm -rf /)", "*.txt"]) == (
+        "echo 'a b' '$(rm -rf /)' '*.txt'"
+    )
 
 
 def test_represents_an_empty_token():
@@ -15,8 +16,9 @@ def test_represents_an_empty_token():
 
 
 def test_writes_a_raw_byte_as_an_ansi_c_escape():
-    assert shell_join(["printf", "%s",
-                       "a\udcffb"]) == ("printf %s 'a'$'\\xff''b'")
+    assert shell_join(["printf", "%s", "a\udcffb"]) == (
+        "printf %s 'a'$'\\xff''b'"
+    )
     assert shell_join(["\udc80"]) == "''$'\\x80'''"
 
 

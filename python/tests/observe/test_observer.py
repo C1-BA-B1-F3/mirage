@@ -48,10 +48,10 @@ def test_log_execution_writes_jsonl():
     obs = Observer(store=store)
     io = IOResult(stdout=b"file.csv\n")
     asyncio.run(
-        obs.log_execution("ls /data",
-                          io, [],
-                          agent="agent-1",
-                          session="sess-1"))
+        obs.log_execution(
+            "ls /data", io, [], agent="agent-1", session="sess-1"
+        )
+    )
     data = store.files[f"/{utc_date_folder()}/sess-1.jsonl"]
     parsed = json.loads(data.decode().strip())
     assert parsed["type"] == "command"
@@ -225,10 +225,7 @@ def test_load_events_skips_foreign_format_entries():
         "agent": "default",
         "command": "cat /a | wc -l",
         "stdout": b"5\n",
-        "tree": {
-            "command": "cat /a | wc -l",
-            "children": []
-        },
+        "tree": {"command": "cat /a | wc -l", "children": []},
         "session_id": "default",
     }
     native = {"type": EVENT_COMMAND, "session": "s1", "command": "echo hi"}

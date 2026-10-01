@@ -21,9 +21,11 @@ from mirage.utils.errors import enotempty
 from mirage.utils.path import norm
 
 
-async def rmdir(accessor: RAMAccessor,
-                path_spec: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: RAMAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     path = path_spec.mount_path
     store = accessor.store
     p = norm(path)
@@ -31,7 +33,8 @@ async def rmdir(accessor: RAMAccessor,
         raise lookup_error(store, path_spec, p)
     prefix = p.rstrip("/") + "/"
     children = [
-        k for k in list(store.files) + list(store.dirs)
+        k
+        for k in list(store.files) + list(store.dirs)
         if k.startswith(prefix) and k != p
     ]
     if children:

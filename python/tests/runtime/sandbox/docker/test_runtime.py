@@ -18,7 +18,6 @@ from mirage.runtime.sandbox.docker import DockerRuntime
 
 
 class FakeDockerRuntime(DockerRuntime):
-
     def __init__(self, running: bool = True, **options):
         super().__init__(**options)
         self.running = running
@@ -55,14 +54,23 @@ def test_container_is_required():
 @pytest.mark.asyncio
 async def test_exec_line_threads_cwd_env_stdin_and_real_stderr():
     runtime = FakeDockerRuntime(config={"container": "cid-42"})
-    result = await runtime.exec_line("wc -l", b"a\nb\n", {"E": "1"},
-                                     "/root/workspace")
+    result = await runtime.exec_line(
+        "wc -l", b"a\nb\n", {"E": "1"}, "/root/workspace"
+    )
     assert result.exit_code == 0
     assert result.stdout == b"out:wc -l"
     assert result.stderr == b"warn"
     args, stdin = runtime.calls[-1]
     assert args == [
-        "exec", "-i", "-w", "/root/workspace", "-e", "E=1", "cid-42", "sh",
-        "-c", "wc -l"
+        "exec",
+        "-i",
+        "-w",
+        "/root/workspace",
+        "-e",
+        "E=1",
+        "cid-42",
+        "sh",
+        "-c",
+        "wc -l",
     ]
     assert stdin == b"a\nb\n"

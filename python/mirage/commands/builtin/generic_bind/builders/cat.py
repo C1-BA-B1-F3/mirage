@@ -15,25 +15,34 @@
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.aggregators import concat_aggregate
 from mirage.commands.builtin.generic.cat import cat_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          dir_aware_stat,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    dir_aware_stat,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def cat(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-              texts: list[str],
-              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def cat(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     resolved = await resolve_or_empty(ops, accessor, paths, opts.index)
-    return await cat_generic(resolved,
-                             list(texts),
-                             opts,
-                             dir_aware_stat(ops, accessor, opts),
-                             bound_op(ops.read_stream, accessor, opts.index),
-                             local=ops.local)
+    return await cat_generic(
+        resolved,
+        list(texts),
+        opts,
+        dir_aware_stat(ops, accessor, opts),
+        bound_op(ops.read_stream, accessor, opts.index),
+        local=ops.local,
+    )
 
 
-BUILDER = Builder('cat', cat, None, False, concat_aggregate, read=True)
+BUILDER = Builder("cat", cat, aggregate=concat_aggregate, read=True)

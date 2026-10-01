@@ -16,16 +16,29 @@ import re
 from dataclasses import dataclass, replace
 from functools import cache
 
-from mirage.commands.builtin.utils.charset import (ALL, CharSet, host_char,
-                                                   host_class)
+from mirage.commands.builtin.utils.charset import (
+    ALL,
+    CharSet,
+    host_char,
+    host_class,
+)
 from mirage.commands.builtin.utils.types import HostRegex
-from mirage.commands.builtin.utils.unicode_tables import (  # yapf: disable
-    ASCII_CLASSES, ASCII_DIGIT, ASCII_SPACE, ASCII_WORD, WHITE_SPACE, category,
-    fold, rust_word, unicode_property)
+from mirage.commands.builtin.utils.unicode_tables import (
+    ASCII_CLASSES,
+    ASCII_DIGIT,
+    ASCII_SPACE,
+    ASCII_WORD,
+    WHITE_SPACE,
+    category,
+    fold,
+    rust_word,
+    unicode_property,
+)
 
 # regex-syntax's error kinds, worded as ripgrep 14.1.1 prints them.
-LOOK_AROUND = ("look-around, including look-ahead and look-behind, "
-               "is not supported")
+LOOK_AROUND = (
+    "look-around, including look-ahead and look-behind, is not supported"
+)
 BACKREFERENCE = "backreferences are not supported"
 GROUP_UNCLOSED = "unclosed group"
 GROUP_UNOPENED = "unopened group"
@@ -33,15 +46,15 @@ CLASS_UNCLOSED = "unclosed character class"
 REPETITION_MISSING = "repetition operator missing expression"
 REPETITION_DECIMAL = "repetition quantifier expects a valid decimal"
 REPETITION_UNCLOSED = "unclosed counted repetition"
-REPETITION_INVALID = ("invalid repetition count range, "
-                      "the start must be <= the end")
+REPETITION_INVALID = (
+    "invalid repetition count range, the start must be <= the end"
+)
 DECIMAL_INVALID = "decimal literal invalid"
 ESCAPE_UNRECOGNIZED = "unrecognized escape sequence"
 ESCAPE_EOF = "incomplete escape sequence, reached end of pattern prematurely"
 ESCAPE_IN_CLASS = "invalid escape sequence found in character class"
 RANGE_LITERAL = "invalid range boundary, must be a literal"
-RANGE_INVALID = ("invalid character class range, "
-                 "the start must be <= the end")
+RANGE_INVALID = "invalid character class range, the start must be <= the end"
 HEX_DIGIT = "invalid hexadecimal digit"
 HEX_EMPTY = "hexadecimal literal empty"
 HEX_SCALAR = "hexadecimal literal is not a Unicode scalar value"
@@ -55,8 +68,10 @@ GROUP_NAME_INVALID = "invalid capture group character"
 GROUP_NAME_EOF = "unclosed capture group name"
 GROUP_NAME_DUPLICATE = "duplicate capture group name"
 PROPERTY_UNSUPPORTED = "Unicode property not supported in mirage"
-PCRE2_HINT = ("Consider enabling PCRE2 with the --pcre2 flag, which can "
-              "handle backreferences\nand look-around.")
+PCRE2_HINT = (
+    "Consider enabling PCRE2 with the --pcre2 flag, which can "
+    "handle backreferences\nand look-around."
+)
 
 FLAG_LETTERS = "imsUuxR"
 # An inline flag group that could change case folding: `i` itself, or
@@ -64,18 +79,18 @@ FLAG_LETTERS = "imsUuxR"
 # caseless throughout, and the host engine folds it.
 INLINE_CASE = re.compile(r"\(\?[a-zA-Z-]*[iu]")
 META_ESCAPES = frozenset("\\.+*?()|[]{}^$#&-~")
-NAME_START = frozenset("_abcdefghijklmnopqrstuvwxyz"
-                       "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+NAME_START = frozenset("_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 NAME_CHARS = NAME_START | frozenset("0123456789.[]")
-HOST_NAME = frozenset("_abcdefghijklmnopqrstuvwxyz"
-                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+HOST_NAME = frozenset(
+    "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
 SIMPLE_ESCAPES = {
     "a": 0x07,
     "f": 0x0C,
     "t": 0x09,
     "n": 0x0A,
     "r": 0x0D,
-    "v": 0x0B
+    "v": 0x0B,
 }
 HEX_WIDTH = {"x": 2, "u": 4, "U": 8}
 
@@ -93,11 +108,13 @@ class RustRegexError(Exception):
             ripgrep follows with its ``--pcre2`` hint.
     """
 
-    def __init__(self,
-                 display: str,
-                 spans: tuple[tuple[int, int], ...],
-                 message: str,
-                 hint: bool = False) -> None:
+    def __init__(
+        self,
+        display: str,
+        spans: tuple[tuple[int, int], ...],
+        message: str,
+        hint: bool = False,
+    ) -> None:
         self.display = display
         self.spans = spans
         self.message = message
@@ -111,8 +128,10 @@ class RustRegexError(Exception):
             for i in range(start, max(end, start + 1)):
                 marks[i] = "^"
         carets = "".join(marks).rstrip()
-        text = (f"regex parse error:\n    {self.display}\n    {carets}\n"
-                f"error: {self.message}")
+        text = (
+            f"regex parse error:\n    {self.display}\n    {carets}\n"
+            f"error: {self.message}"
+        )
         return text + "\n\n" + PCRE2_HINT if self.hint else text
 
 
@@ -129,6 +148,7 @@ class Flags:
         x (bool): whitespace and ``#`` comments are ignored.
         R (bool): CRLF mode, where ``.`` also excludes ``\\r``.
     """
+
     i: bool = False
     m: bool = False
     s: bool = False
@@ -216,8 +236,10 @@ def whole_word(source: str) -> str:
     Args:
         source (str): the host source.
     """
-    return (f"{boundary('start-half', True)}(?:{source})"
-            f"{boundary('end-half', True)}")
+    return (
+        f"{boundary('start-half', True)}(?:{source})"
+        f"{boundary('end-half', True)}"
+    )
 
 
 def display_of(patterns: list[str]) -> str:
@@ -238,6 +260,7 @@ class Frame:
         out_start (int): where its source begins in ``out``.
         flags (Flags): the flags in force before it opened.
     """
+
     open_at: int
     out_start: int
     flags: Flags
@@ -271,8 +294,9 @@ class RustTranslator:
         self.stack: list[Frame] = []
         self.names: dict[str, tuple[int, int]] = {}
 
-    def fail(self, start: int, end: int, message: str, *more:
-             tuple[int, int]) -> RustRegexError:
+    def fail(
+        self, start: int, end: int, message: str, *more: tuple[int, int]
+    ) -> RustRegexError:
         """An error over one span (and any auxiliary ones).
 
         Args:
@@ -290,7 +314,7 @@ class RustTranslator:
         Args:
             offset (int): how far ahead.
         """
-        return self.src[self.pos + offset:self.pos + offset + 1]
+        return self.src[self.pos + offset : self.pos + offset + 1]
 
     def skip_space(self) -> None:
         """Skip whitespace and ``#`` comments under ``x``."""
@@ -345,8 +369,11 @@ class RustTranslator:
             self.escape()
         elif ch == ".":
             self.pos += 1
-            excluded = CharSet.chars(
-                0x0A, 0x0D) if self.flags.R else (CharSet.chars(0x0A))
+            excluded = (
+                CharSet.chars(0x0A, 0x0D)
+                if self.flags.R
+                else (CharSet.chars(0x0A))
+            )
             self.atom(host_class(ALL if self.flags.s else ALL.minus(excluded)))
         elif ch == "^":
             self.pos += 1
@@ -458,7 +485,7 @@ class RustTranslator:
             if ch not in allowed:
                 raise self.fail(self.pos, self.pos + 1, GROUP_NAME_INVALID)
             self.pos += 1
-        name = self.src[begin:self.pos]
+        name = self.src[begin : self.pos]
         if not name:
             raise self.fail(self.pos, self.pos + 1, GROUP_NAME_EMPTY)
         span = (begin, self.pos)
@@ -489,16 +516,21 @@ class RustTranslator:
                 return flags, ch == ":"
             if ch == "-":
                 if negate is not None:
-                    raise self.fail(self.pos, self.pos + 1,
-                                    FLAG_REPEATED_NEGATION)
+                    raise self.fail(
+                        self.pos, self.pos + 1, FLAG_REPEATED_NEGATION
+                    )
                 negate = self.pos
                 self.pos += 1
                 continue
             if ch not in FLAG_LETTERS:
                 raise self.fail(self.pos, self.pos + 1, FLAG_UNRECOGNIZED)
             if ch in seen:
-                raise self.fail(self.pos, self.pos + 1, FLAG_DUPLICATE,
-                                (seen[ch], seen[ch] + 1))
+                raise self.fail(
+                    self.pos,
+                    self.pos + 1,
+                    FLAG_DUPLICATE,
+                    (seen[ch], seen[ch] + 1),
+                )
             seen[ch] = self.pos
             flags = replace(flags, **{ch: negate is None})
             self.pos += 1
@@ -574,7 +606,7 @@ class RustTranslator:
             self.pos += 1
         if begin == self.pos:
             raise self.fail(self.pos, self.pos, REPETITION_DECIMAL)
-        digits = self.src[begin:self.pos]
+        digits = self.src[begin : self.pos]
         if int(digits) > 0xFFFFFFFF:
             raise self.fail(begin, self.pos, DECIMAL_INVALID)
         self.skip_space()
@@ -616,7 +648,7 @@ class RustTranslator:
             raise self.fail(start, self.pos, BACKREFERENCE)
         if ch == "b" and self.peek() == "{":
             close = self.src.find("}", self.pos)
-            kind = self.src[self.pos + 1:close] if close > 0 else ""
+            kind = self.src[self.pos + 1 : close] if close > 0 else ""
             if kind in ("start", "end", "start-half", "end-half"):
                 self.pos = close + 1
                 self.assertion(boundary(kind, self.flags.u))
@@ -673,7 +705,7 @@ class RustTranslator:
             close = self.src.find("}", self.pos)
             if close < 0:
                 raise self.fail(len(self.src), len(self.src), ESCAPE_EOF)
-            name = self.src[self.pos + 1:close]
+            name = self.src[self.pos + 1 : close]
             self.pos = close + 1
         else:
             name = self.src[self.pos]
@@ -694,8 +726,9 @@ class RustTranslator:
             return SIMPLE_ESCAPES[ch]
         if ch in HEX_WIDTH:
             return self.hex_escape(ch)
-        if ch in META_ESCAPES or (ch.isascii() and not ch.isalnum()
-                                  and ch not in "<>"):
+        if ch in META_ESCAPES or (
+            ch.isascii() and not ch.isalnum() and ch not in "<>"
+        ):
             return ord(ch)
         raise self.fail(start, self.pos, ESCAPE_UNRECOGNIZED)
 
@@ -729,7 +762,7 @@ class RustTranslator:
             if d not in "0123456789abcdefABCDEF":
                 raise self.fail(self.pos, self.pos + 1, HEX_DIGIT)
             self.pos += 1
-        cp = int(self.src[begin:self.pos], 16)
+        cp = int(self.src[begin : self.pos], 16)
         if cp > 0x10FFFF or 0xD800 <= cp <= 0xDFFF:
             raise self.fail(begin, self.pos, HEX_SCALAR)
         return cp
@@ -754,8 +787,9 @@ class RustTranslator:
         while True:
             self.skip_space()
             if self.pos >= len(self.src):
-                end = opener_end + (1 if self.src[opener_end:opener_end +
-                                                  1] == "]" else 0)
+                end = opener_end + (
+                    1 if self.src[opener_end : opener_end + 1] == "]" else 0
+                )
                 raise self.fail(open_at, end, CLASS_UNCLOSED)
             ch = self.src[self.pos]
             if ch == "]" and not first:
@@ -763,8 +797,9 @@ class RustTranslator:
                 break
             first = False
             if ch in "&-~" and self.src.startswith(ch * 2, self.pos):
-                result = current if result is None else combine(
-                    result, current, op)
+                result = (
+                    current if result is None else combine(result, current, op)
+                )
                 op = ch
                 current = CharSet()
                 self.pos += 2
@@ -788,8 +823,11 @@ class RustTranslator:
         low = self.class_char()
         low_end = self.pos
         self.skip_space()
-        ranged = (self.peek() == "-" and self.peek(1) not in ("]", "")
-                  and not self.src.startswith("--", self.pos))
+        ranged = (
+            self.peek() == "-"
+            and self.peek(1) not in ("]", "")
+            and not self.src.startswith("--", self.pos)
+        )
         if isinstance(low, CharSet):
             if ranged:
                 raise self.fail(low_at, low_end, RANGE_LITERAL)
@@ -813,7 +851,7 @@ class RustTranslator:
         close = self.src.find(":]", self.pos + 2)
         if close < 0:
             return None
-        name = self.src[self.pos + 2:close]
+        name = self.src[self.pos + 2 : close]
         negated = name.startswith("^")
         cs = ASCII_CLASSES.get(name[1:] if negated else name)
         if cs is None:
@@ -857,9 +895,9 @@ def combine(left: CharSet, right: CharSet, op: str | None) -> CharSet:
     return left.xor(right)
 
 
-def translate_rust(patterns: list[str],
-                   ignore_case: bool = False,
-                   multi_line: bool = False) -> HostRegex:
+def translate_rust(
+    patterns: list[str], ignore_case: bool = False, multi_line: bool = False
+) -> HostRegex:
     """Translate a ripgrep pattern list into this host's regex dialect.
 
     Args:

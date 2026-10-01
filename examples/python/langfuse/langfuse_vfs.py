@@ -97,8 +97,7 @@ async def main():
 
         records = ws.vfs.records
         total = sum(r.bytes for r in records)
-        print(f"\nStats: {len(records)} ops, "
-              f"{total} bytes transferred")
+        print(f"\nStats: {len(records)} ops, {total} bytes transferred")
 
 
 asyncio.run(main())

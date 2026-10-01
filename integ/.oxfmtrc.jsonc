@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "arrowParens": "always",
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "node_modules/",
+    "generated/",
+    "prisma/generated/",
+    // Formats CODE here, not data. The case corpus is ~500 JSON files read by
+    // the battery and by the case-targets gate, and reflowing them would rewrite
+    // every one of them so that a behaviour diff is no longer legible next to a
+    // formatting diff -- targets.json is part of that corpus. The compose files
+    // are read by docker, which does not care.
+    "*.json",
+    "!package.json",
+    "!tsconfig.json",
+    "!tsconfig.check.json",
+    "*.yml",
+    "*.yaml",
+    "*.md"
+  ]
+}

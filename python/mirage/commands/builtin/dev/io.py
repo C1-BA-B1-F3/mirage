@@ -25,9 +25,8 @@ from mirage.types import PathSpec
 
 
 async def _finite_read_stream(
-        accessor: RAMAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> AsyncIterator[bytes]:
+    accessor: RAMAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> AsyncIterator[bytes]:
     data = await _read(accessor, path, index)
     if data:
         yield data

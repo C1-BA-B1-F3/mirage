@@ -8,7 +8,6 @@ def test_client_is_lazy(monkeypatch):
     built = {"n": 0}
 
     class FakeClient:
-
         def __init__(self, **kwargs):
             built["n"] += 1
             self.kwargs = kwargs

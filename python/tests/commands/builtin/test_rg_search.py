@@ -18,11 +18,17 @@ from unittest.mock import patch
 import pytest
 
 from mirage.commands.builtin.generic.rg import parse_flags, rg_matcher
-from mirage.commands.builtin.rg_search import (ByteCursor, NonmatchStop,
-                                               RgFlags, Tally, expand,
-                                               replace_all, rust_matches,
-                                               search_haystack,
-                                               smart_case_folds)
+from mirage.commands.builtin.rg_search import (
+    ByteCursor,
+    NonmatchStop,
+    RgFlags,
+    Tally,
+    expand,
+    replace_all,
+    rust_matches,
+    search_haystack,
+    smart_case_folds,
+)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -37,15 +43,16 @@ async def _source(data: bytes):
     yield data
 
 
-async def _search(data: bytes,
-                  pattern: str,
-                  label: str | None = None,
-                  **flags) -> tuple[str, bool]:
+async def _search(
+    data: bytes, pattern: str, label: str | None = None, **flags
+) -> tuple[str, bool]:
     f = _flags(**flags)
     tally = Tally()
     chunks = [
-        c async for c in search_haystack(_source(
-            data), rg_matcher(pattern, False, f), f, "f", label, tally)
+        c
+        async for c in search_haystack(
+            _source(data), rg_matcher(pattern, False, f), f, "f", label, tally
+        )
     ]
     return b"".join(chunks).decode(), tally.selected
 
@@ -57,15 +64,18 @@ def test_rust_matches_skip_the_empty_match_a_match_ends_at():
     assert spans == [(0, 0), (1, 2), (3, 3)]
 
 
-@pytest.mark.parametrize("template, want", [
-    ("<$1>", "<b>"),
-    ("<${1}>", "<b>"),
-    ("<$name>", "<b>"),
-    ("<$1x>", "<>"),
-    ("<$$>", "<$>"),
-    ("<$>", "<$>"),
-    ("<$9>", "<>"),
-])
+@pytest.mark.parametrize(
+    "template, want",
+    [
+        ("<$1>", "<b>"),
+        ("<${1}>", "<b>"),
+        ("<$name>", "<b>"),
+        ("<$1x>", "<>"),
+        ("<$$>", "<$>"),
+        ("<$>", "<$>"),
+        ("<$9>", "<>"),
+    ],
+)
 def test_expand_reads_groups_as_rusts_captures_expand(template, want):
     m = re.search("a(?P<name>b)", "ab")
     assert m is not None
@@ -77,16 +87,19 @@ def test_replace_all_reports_where_each_replacement_landed():
     assert (text, spans) == ("fXYXY", [(1, 3), (3, 5)])
 
 
-@pytest.mark.parametrize("pattern, fixed, folds", [
-    ("hello", False, True),
-    ("Hello", False, False),
-    (r"\w+", False, False),
-    (r"\Whello", False, True),
-    ("[A-Z]", False, False),
-    ("a{2}", False, True),
-    (r"\x41", False, False),
-    ("H.llo", True, False),
-])
+@pytest.mark.parametrize(
+    "pattern, fixed, folds",
+    [
+        ("hello", False, True),
+        ("Hello", False, False),
+        (r"\w+", False, False),
+        (r"\Whello", False, True),
+        ("[A-Z]", False, False),
+        ("a{2}", False, True),
+        (r"\x41", False, False),
+        ("H.llo", True, False),
+    ],
+)
 def test_smart_case_folds_only_an_all_lowercase_pattern(pattern, fixed, folds):
     assert smart_case_folds(pattern, fixed) is folds
 
@@ -112,27 +125,21 @@ def test_an_inverted_nonmatch_stop_passes_one_line_over():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags, want", [
-    ({}, "a1\na2\n"),
-    ({
-        "after_context": "1"
-    }, "a1\na2\nb\n"),
-    ({
-        "count": True
-    }, "2\n"),
-    ({
-        "passthru": True
-    }, "a1\na2\nb\n"),
-    ({
-        "invert_match": True
-    }, "b\nc\n"),
-])
+@pytest.mark.parametrize(
+    "flags, want",
+    [
+        ({}, "a1\na2\n"),
+        ({"after_context": "1"}, "a1\na2\nb\n"),
+        ({"count": True}, "2\n"),
+        ({"passthru": True}, "a1\na2\nb\n"),
+        ({"invert_match": True}, "b\nc\n"),
+    ],
+)
 async def test_stop_on_nonmatch_ends_the_file_where_ripgrep_does(flags, want):
     # ripgrep 14.1.1 over `a1 a2 b a3 c` with --stop-on-nonmatch.
-    out, _ = await _search(b"a1\na2\nb\na3\nc\n",
-                           "a",
-                           stop_on_nonmatch=True,
-                           **flags)
+    out, _ = await _search(
+        b"a1\na2\nb\na3\nc\n", "a", stop_on_nonmatch=True, **flags
+    )
     assert out == want
 
 
@@ -157,28 +164,27 @@ async def test_the_later_of_w_and_x_bounds_the_pattern():
 async def test_vimgrep_prints_a_record_per_match_with_its_column():
     out, _ = await _search(b"ab ab\n", "ab", "/m", vimgrep=True)
     assert out == "/m:1:1:ab ab\n/m:1:4:ab ab\n"
-    out, _ = await _search(b"ab ab\n",
-                           "ab",
-                           "/m",
-                           vimgrep=True,
-                           no_column=True)
+    out, _ = await _search(
+        b"ab ab\n", "ab", "/m", vimgrep=True, no_column=True
+    )
     assert out == "/m:1:ab ab\n/m:1:ab ab\n"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags, want", [
-    ({
-        "max_columns": "3"
-    }, "[Omitted long matching line]\n"),
-    ({
-        "max_columns": "3",
-        "column": True
-    }, "1:1:[Omitted long line with 2 matches]\n"),
-    ({
-        "max_columns": "3",
-        "max_columns_preview": True
-    }, "ab  [... omitted end of long line]\n"),
-])
+@pytest.mark.parametrize(
+    "flags, want",
+    [
+        ({"max_columns": "3"}, "[Omitted long matching line]\n"),
+        (
+            {"max_columns": "3", "column": True},
+            "1:1:[Omitted long line with 2 matches]\n",
+        ),
+        (
+            {"max_columns": "3", "max_columns_preview": True},
+            "ab  [... omitted end of long line]\n",
+        ),
+    ],
+)
 async def test_max_columns_words_what_it_left_out(flags, want):
     out, _ = await _search(b"ab ab\n", "ab", **flags)
     assert out == want
@@ -186,41 +192,28 @@ async def test_max_columns_words_what_it_left_out(flags, want):
 
 @pytest.mark.asyncio
 async def test_only_matching_offsets_count_bytes():
-    out, _ = await _search("café abc abc\n".encode(),
-                           "abc",
-                           only_matching=True,
-                           byte_offset=True)
+    out, _ = await _search(
+        "café abc abc\n".encode(), "abc", only_matching=True, byte_offset=True
+    )
     assert out == "6:abc\n10:abc\n"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags, expected", [
-    ({
-        "line_number": True,
-        "byte_offset": True
-    }, "1:0:a\0"
-     "5:8:a\0"),
-    ({
-        "count": True
-    }, "2\0"),
-    ({
-        "files_with_matches": True
-    }, "f\0"),
-    ({
-        "after_context": "1"
-    }, "a\0b\0--\0a\0"),
-    ({
-        "only_matching": True
-    }, "a\0a\0"),
-    ({
-        "max_count": "1"
-    }, "a\0"),
-])
+@pytest.mark.parametrize(
+    "flags, expected",
+    [
+        ({"line_number": True, "byte_offset": True}, "1:0:a\x005:8:a\x00"),
+        ({"count": True}, "2\0"),
+        ({"files_with_matches": True}, "f\0"),
+        ({"after_context": "1"}, "a\0b\0--\0a\0"),
+        ({"only_matching": True}, "a\0a\0"),
+        ({"max_count": "1"}, "a\0"),
+    ],
+)
 async def test_null_data_records(flags, expected):
-    actual, selected = await _search(b"a\0b\0c\0d\0a",
-                                     "a",
-                                     null_data=True,
-                                     **flags)
+    actual, selected = await _search(
+        b"a\0b\0c\0d\0a", "a", null_data=True, **flags
+    )
     assert actual == expected
     assert selected
 
@@ -236,31 +229,23 @@ async def test_null_data_anchors_match_embedded_newlines(flags):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pattern",
-    ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle|other)+"])
-@pytest.mark.parametrize("flags", [{
-    "count": True
-}, {
-    "files_with_matches": True
-}, {}, {
-    "ignore_case": True,
-    "count": True
-}, {
-    "ignore_case": True,
-    "files_with_matches": True
-}, {
-    "ignore_case": True
-}, {
-    "word_regexp": True,
-    "count": True
-}, {
-    "line_regexp": True,
-    "count": True
-}, {
-    "null_data": True,
-    "count": True
-}, {
-    "null_data": True
-}])
+    ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle|other)+"],
+)
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {"count": True},
+        {"files_with_matches": True},
+        {},
+        {"ignore_case": True, "count": True},
+        {"ignore_case": True, "files_with_matches": True},
+        {"ignore_case": True},
+        {"word_regexp": True, "count": True},
+        {"line_regexp": True, "count": True},
+        {"null_data": True, "count": True},
+        {"null_data": True},
+    ],
+)
 async def test_block_search_skips_records(pattern, flags, monkeypatch):
     reads = 0
     read_until = AsyncLineIterator.read_until
@@ -279,104 +264,88 @@ async def test_block_search_skips_records(pattern, flags, monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("size", [1, 7, 16384, 65536])
 async def test_block_search_preserves_records(size):
-    data = (("abcdefg\n" *
-             (200 if size < 10 else 9000)) + "é NEEDLE\nother\n" +
-            ("abcdefg\n" * (200 if size < 10 else 9000)) + "needle").encode()
+    data = (
+        ("abcdefg\n" * (200 if size < 10 else 9000))
+        + "é NEEDLE\nother\n"
+        + ("abcdefg\n" * (200 if size < 10 else 9000))
+        + "needle"
+    ).encode()
 
     async def source():
         for at in range(0, len(data), size):
-            yield data[at:at + size]
+            yield data[at : at + size]
 
-    for flags in [{
-            "line_number": True,
-            "byte_offset": True,
-            "ignore_case": True
-    }, {
-            "count": True,
-            "ignore_case": True
-    }, {
-            "files_with_matches": True,
-            "ignore_case": True
-    }, {
-            "after_context": 1,
-            "before_context": 1,
-            "ignore_case": True
-    }, {
-            "invert_match": True,
-            "count": True
-    }, {
-            "stop_on_nonmatch": True,
-            "ignore_case": True
-    }]:
+    for flags in [
+        {"line_number": True, "byte_offset": True, "ignore_case": True},
+        {"count": True, "ignore_case": True},
+        {"files_with_matches": True, "ignore_case": True},
+        {"after_context": 1, "before_context": 1, "ignore_case": True},
+        {"invert_match": True, "count": True},
+        {"stop_on_nonmatch": True, "ignore_case": True},
+    ]:
         f = _flags(**flags)
         pat = rg_matcher("needle|other", False, f)
         fast, slow = Tally(), Tally()
-        actual = b"".join([
-            c async for c in search_haystack(source(), pat, f, "f", None, fast)
-        ])
-        with patch.object(AsyncLineIterator,
-                          "skip_nonmatching_lines",
-                          return_value=(0, 0)):
-            expected = b"".join([
-                c async for c in search_haystack(source(), pat, f, "f", None,
-                                                 slow)
-            ])
+        actual = b"".join(
+            [
+                c
+                async for c in search_haystack(
+                    source(), pat, f, "f", None, fast
+                )
+            ]
+        )
+        with patch.object(
+            AsyncLineIterator, "skip_nonmatching_lines", return_value=(0, 0)
+        ):
+            expected = b"".join(
+                [
+                    c
+                    async for c in search_haystack(
+                        source(), pat, f, "f", None, slow
+                    )
+                ]
+            )
         assert (actual, fast) == (expected, slow)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags", [
-    {},
-    {
-        "count": True
-    },
-    {
-        "count_matches": True
-    },
-    {
-        "files_with_matches": True
-    },
-    {
-        "files_without_match": True
-    },
-    {
-        "quiet": True
-    },
-    {
-        "max_count": 1
-    },
-    {
-        "invert_match": True
-    },
-    {
-        "context": 2
-    },
-    {
-        "passthru": True
-    },
-    {
-        "stop_on_nonmatch": True
-    },
-    {
-        "null_data": True
-    },
-    {
-        "only_matching": True
-    },
-    {
-        "word_regexp": True
-    },
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {},
+        {"count": True},
+        {"count_matches": True},
+        {"files_with_matches": True},
+        {"files_without_match": True},
+        {"quiet": True},
+        {"max_count": 1},
+        {"invert_match": True},
+        {"context": 2},
+        {"passthru": True},
+        {"stop_on_nonmatch": True},
+        {"null_data": True},
+        {"only_matching": True},
+        {"word_regexp": True},
+    ],
+)
 async def test_rg_prefilter_preserves_output_and_offsets(flags):
-    data = ("abc\n" * 200 + "NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n" +
-            "abc\n" * 200 + "needle").encode()
+    data = (
+        "abc\n" * 200
+        + "NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n"
+        + "abc\n" * 200
+        + "needle"
+    ).encode()
     opts = dict(flags, ignore_case=True, line_number=True, byte_offset=True)
     for pattern in [
-            "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle)?", "s|k|i"
+        "needle|qqzzyy",
+        "nee.le",
+        r"\bneedle\b",
+        "(?:needle)?",
+        "s|k|i",
     ]:
-        with patch.object(AsyncLineIterator,
-                          "skip_nonmatching_lines",
-                          return_value=(0, 0)):
+        with patch.object(
+            AsyncLineIterator, "skip_nonmatching_lines", return_value=(0, 0)
+        ):
             expected = await _search(data, pattern, **opts)
         assert await _search(data, pattern, **opts) == expected
 
@@ -384,48 +353,42 @@ async def test_rg_prefilter_preserves_output_and_offsets(flags):
 # ripgrep 14.1.1 through PCRE2: `rg -oP`, `-r`, `-b` and `--column`
 # report the match from its last `\K`.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pattern,flags,out", [
-    (r"a\Ka", {
-        "only_matching": True,
-        "pcre2": True
-    }, "a\n"),
-    (r"a\Kbc", {
-        "only_matching": True,
-        "byte_offset": True,
-        "pcre2": True
-    }, "1:bc\n"),
-    (r"a\Kbc", {
-        "column": True,
-        "pcre2": True
-    }, "1:2:abc\n"),
-    (r"a\Kb", {
-        "replace": "X",
-        "pcre2": True
-    }, "aXc\n"),
-    (r"a\K(b)", {
-        "replace": "[$1]",
-        "pcre2": True
-    }, "a[b]c\n"),
-    ("(?<=id=)[0-9]+", {
-        "only_matching": True,
-        "pcre2": True
-    }, "42\n"),
-])
+@pytest.mark.parametrize(
+    "pattern,flags,out",
+    [
+        (r"a\Ka", {"only_matching": True, "pcre2": True}, "a\n"),
+        (
+            r"a\Kbc",
+            {"only_matching": True, "byte_offset": True, "pcre2": True},
+            "1:bc\n",
+        ),
+        (r"a\Kbc", {"column": True, "pcre2": True}, "1:2:abc\n"),
+        (r"a\Kb", {"replace": "X", "pcre2": True}, "aXc\n"),
+        (r"a\K(b)", {"replace": "[$1]", "pcre2": True}, "a[b]c\n"),
+        ("(?<=id=)[0-9]+", {"only_matching": True, "pcre2": True}, "42\n"),
+    ],
+)
 async def test_pcre2_reports_the_kept_part(pattern, flags, out):
-    data = b"id=42\n" if "id" in pattern else (
-        b"aaa\n" if pattern == r"a\Ka" else b"abc\n")
+    data = (
+        b"id=42\n"
+        if "id" in pattern
+        else (b"aaa\n" if pattern == r"a\Ka" else b"abc\n")
+    )
     assert (await _search(data, pattern, **flags))[0] == out
 
 
 def test_the_engine_is_the_last_one_the_line_names():
     assert _flags().engine == "default"
-    assert parse_flags(FlagView({"pcre2": True},
-                                spec=SPECS["rg"])).engine == "pcre2"
+    assert (
+        parse_flags(FlagView({"pcre2": True}, spec=SPECS["rg"])).engine
+        == "pcre2"
+    )
     assert _flags(engine="auto").engine == "auto"
     with pytest.raises(UsageError) as caught:
         _flags(engine="foo")
-    assert str(caught.value) == ("rg: error parsing flag --engine: "
-                                 "unrecognized regex engine 'foo'")
+    assert str(caught.value) == (
+        "rg: error parsing flag --engine: unrecognized regex engine 'foo'"
+    )
 
 
 def test_auto_falls_back_to_pcre2_only_when_the_default_refuses():

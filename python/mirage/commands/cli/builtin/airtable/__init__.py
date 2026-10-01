@@ -17,37 +17,43 @@ from mirage.commands.cli.types import CLISpec
 from mirage.commands.spec.types import Operand, Option
 from mirage.core.airtable.config import AirtableConfig
 
-BASE_OPTION = Option(long="--base",
-                     type="str",
-                     required=True,
-                     description="Base ID (app...)")
+BASE_OPTION = Option(
+    long="--base", type="str", required=True, description="Base ID (app...)"
+)
 
-TABLE_OPTION = Option(long="--table",
-                      type="str",
-                      required=True,
-                      description="Table ID or name")
+TABLE_OPTION = Option(
+    long="--table", type="str", required=True, description="Table ID or name"
+)
 
-FIELDS_OPTION = Option(long="--fields",
-                       type="str",
-                       description="Cell values as a JSON object keyed by "
-                       "field name")
+FIELDS_OPTION = Option(
+    long="--fields",
+    type="str",
+    description="Cell values as a JSON object keyed by field name",
+)
 
-TYPECAST_OPTION = Option(long="--typecast",
-                         description="Let Airtable convert string values to "
-                         "the field types")
+TYPECAST_OPTION = Option(
+    long="--typecast",
+    description="Let Airtable convert string values to the field types",
+)
 
 RECORD = Operand(type="str", name="RECORD")
 
-CREATE_EPILOG = ("Without --fields, reads records.jsonl lines from stdin "
-                 "and creates one\nrecord per line from its \"fields\"; "
-                 "computed fields are dropped.")
+CREATE_EPILOG = (
+    "Without --fields, reads records.jsonl lines from stdin "
+    'and creates one\nrecord per line from its "fields"; '
+    "computed fields are dropped."
+)
 
-UPDATE_EPILOG = ("Without RECORD --fields, reads records.jsonl lines from "
-                 "stdin and patches\neach \"record_id\" with its "
-                 "\"fields\"; computed fields are dropped.")
+UPDATE_EPILOG = (
+    "Without RECORD --fields, reads records.jsonl lines from "
+    'stdin and patches\neach "record_id" with its '
+    '"fields"; computed fields are dropped.'
+)
 
-DELETE_EPILOG = ("Without RECORD operands, reads records.jsonl lines from "
-                 "stdin and deletes\neach \"record_id\".")
+DELETE_EPILOG = (
+    "Without RECORD operands, reads records.jsonl lines from "
+    'stdin and deletes\neach "record_id".'
+)
 
 # The airtable program tree. Bases, tables and records are addressed by
 # the ids the mount prints after the last "__" of a directory name; a
@@ -71,20 +77,22 @@ AIRTABLE = CLISpec(
                     name="get",
                     description="Get one base and its tables (base.json)",
                     fn=reads.base_get,
-                    positional=(Operand(type="str", name="BASE"), ),
+                    positional=(Operand(type="str", name="BASE"),),
                 ),
             ),
         ),
         CLISpec(
             name="table",
             description="Read table schemas",
-            subcommands=(CLISpec(
-                name="get",
-                description="Get one table's fields and views (table.json)",
-                fn=reads.table_get,
-                options=(BASE_OPTION, ),
-                positional=(Operand(type="str", name="TABLE"), ),
-            ), ),
+            subcommands=(
+                CLISpec(
+                    name="get",
+                    description="Get one table's fields and views (table.json)",
+                    fn=reads.table_get,
+                    options=(BASE_OPTION,),
+                    positional=(Operand(type="str", name="TABLE"),),
+                ),
+            ),
         ),
         CLISpec(
             name="record",
@@ -97,17 +105,23 @@ AIRTABLE = CLISpec(
                     options=(
                         BASE_OPTION,
                         TABLE_OPTION,
-                        Option(long="--view",
-                               type="str",
-                               description="View ID or name; its filter "
-                               "and sort apply"),
-                        Option(long="--formula",
-                               type="str",
-                               description="Only the records this formula "
-                               "is true for (filterByFormula)"),
-                        Option(long="--max-records",
-                               type="int",
-                               description="Stop after N records"),
+                        Option(
+                            long="--view",
+                            type="str",
+                            description="View ID or name; its filter "
+                            "and sort apply",
+                        ),
+                        Option(
+                            long="--formula",
+                            type="str",
+                            description="Only the records this formula "
+                            "is true for (filterByFormula)",
+                        ),
+                        Option(
+                            long="--max-records",
+                            type="int",
+                            description="Stop after N records",
+                        ),
                     ),
                 ),
                 CLISpec(
@@ -115,15 +129,19 @@ AIRTABLE = CLISpec(
                     description="Get one record as a JSONL line",
                     fn=reads.record_get,
                     options=(BASE_OPTION, TABLE_OPTION),
-                    positional=(RECORD, ),
+                    positional=(RECORD,),
                 ),
                 CLISpec(
                     name="create",
                     description="Create records from --fields or stdin",
                     fn=writes.record_create,
                     write=True,
-                    options=(BASE_OPTION, TABLE_OPTION, FIELDS_OPTION,
-                             TYPECAST_OPTION),
+                    options=(
+                        BASE_OPTION,
+                        TABLE_OPTION,
+                        FIELDS_OPTION,
+                        TYPECAST_OPTION,
+                    ),
                     epilog=CREATE_EPILOG,
                 ),
                 CLISpec(
@@ -132,9 +150,13 @@ AIRTABLE = CLISpec(
                     "RECORD --fields or stdin",
                     fn=writes.record_update,
                     write=True,
-                    options=(BASE_OPTION, TABLE_OPTION, FIELDS_OPTION,
-                             TYPECAST_OPTION),
-                    positional=(RECORD, ),
+                    options=(
+                        BASE_OPTION,
+                        TABLE_OPTION,
+                        FIELDS_OPTION,
+                        TYPECAST_OPTION,
+                    ),
+                    positional=(RECORD,),
                     epilog=UPDATE_EPILOG,
                 ),
                 CLISpec(
@@ -157,7 +179,7 @@ AIRTABLE = CLISpec(
                     description="List a record's comments, newest first",
                     fn=reads.comment_list,
                     options=(BASE_OPTION, TABLE_OPTION),
-                    positional=(RECORD, ),
+                    positional=(RECORD,),
                 ),
                 CLISpec(
                     name="add",
@@ -167,12 +189,13 @@ AIRTABLE = CLISpec(
                     options=(
                         BASE_OPTION,
                         TABLE_OPTION,
-                        Option(long="--text",
-                               type="str",
-                               description="Comment text (or pipe via "
-                               "stdin)"),
+                        Option(
+                            long="--text",
+                            type="str",
+                            description="Comment text (or pipe via stdin)",
+                        ),
                     ),
-                    positional=(RECORD, ),
+                    positional=(RECORD,),
                 ),
             ),
         ),

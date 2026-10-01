@@ -7,6 +7,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -26,6 +27,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -45,6 +47,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -64,6 +67,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -83,6 +87,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -102,6 +107,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -121,6 +127,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -140,6 +147,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -159,6 +167,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"
@@ -178,6 +187,7 @@
         "ram",
         "disk",
         "redis",
+        "opfs",
         "s3",
         "s3-prefix",
         "gridfs"

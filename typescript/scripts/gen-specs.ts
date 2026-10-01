@@ -135,24 +135,22 @@ function collectRegistrations(modules: ModuleBag[]): Record<string, RegisteredCo
   return out
 }
 
-// The union flags below cannot say *which* VFS carries a provision, an
-// aggregate, the write flag or a filetype, so dropping one backend's
-// provision while another keeps it leaves every union unchanged. Key the same
-// facts by VFS so the parity check sees that difference.
+// The union flags below cannot say *which* VFS carries an aggregate, the
+// write flag or a filetype, so dropping one backend's aggregate while another
+// keeps it leaves every union unchanged. Key the same facts by VFS so the
+// parity check sees that difference.
 function byVfs(rcs: RegisteredCommand[]): Record<string, unknown> {
   const out: Record<
     string,
-    { has_provision: boolean; has_aggregate: boolean; has_write: boolean; filetypes: Set<string> }
+    { has_aggregate: boolean; has_write: boolean; filetypes: Set<string> }
   > = {}
   for (const rc of rcs) {
     const key = rc.vfs ?? ''
     const entry = (out[key] ??= {
-      has_provision: false,
       has_aggregate: false,
       has_write: false,
       filetypes: new Set<string>(),
     })
-    entry.has_provision ||= rc.provisionFn !== null
     entry.has_aggregate ||= rc.aggregate !== null
     entry.has_write ||= rc.write
     if (rc.filetype !== null) entry.filetypes.add(rc.filetype)
@@ -176,7 +174,6 @@ function metaFor(rcs: RegisteredCommand[]): Record<string, unknown> {
     by_vfs: byVfs(rcs),
     filetypes,
     has_aggregate: rcs.some((r) => r.aggregate !== null),
-    has_provision: rcs.some((r) => r.provisionFn !== null),
     has_write: rcs.some((r) => r.write),
     vfs_names: vfsNames,
   }

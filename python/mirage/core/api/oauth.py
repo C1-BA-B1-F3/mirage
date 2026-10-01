@@ -74,9 +74,12 @@ class TokenManager:
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None,
-                        exc: BaseException | None,
-                        tb: TracebackType | None) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
     async def refresh_pair(self) -> tuple[str, float]:
@@ -101,6 +104,5 @@ class TokenManager:
                 return self._access_token
             token, expires_in = await self.refresh_pair()
             self._access_token = token
-            self._expires_at = (time.time() + expires_in -
-                                self._buffer_seconds)
+            self._expires_at = time.time() + expires_in - self._buffer_seconds
             return token

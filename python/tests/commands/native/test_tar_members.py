@@ -51,7 +51,8 @@ def test_tar_t_dir_selector_takes_the_subtree(env):
 def test_tar_t_selector_matches_stored_spelling_only(env):
     _seed_archive(env)
     result = asyncio.run(
-        env.ws.shell("tar -tzf /data/files.tar.gz memory/memory.json"))
+        env.ws.shell("tar -tzf /data/files.tar.gz memory/memory.json")
+    )
     assert result.exit_code == 2
     stderr = result.stderr.decode()
     assert "tar: memory/memory.json: Not found in archive" in stderr
@@ -69,7 +70,8 @@ def test_tar_xO_streams_member_bytes_to_stdout(env):
 def test_tar_xvO_lists_names_on_stderr(env):
     _seed_archive(env)
     result = asyncio.run(
-        env.ws.shell("tar -xvOzf /data/files.tar.gz ./memory/memory.json"))
+        env.ws.shell("tar -xvOzf /data/files.tar.gz ./memory/memory.json")
+    )
     assert result.exit_code == 0
     assert result.stderr.decode() == "./memory/memory.json\n"
 
@@ -87,7 +89,9 @@ def test_tar_x_mixed_hit_and_miss_extracts_and_exits_2(env):
     env.mirage("mkdir -p /data/out2")
     result = asyncio.run(
         env.ws.shell(
-            "tar -xzf /data/files.tar.gz -C /data/out2 ./other.txt nope"))
+            "tar -xzf /data/files.tar.gz -C /data/out2 ./other.txt nope"
+        )
+    )
     assert result.exit_code == 2
     assert "tar: nope: Not found in archive" in result.stderr.decode()
     assert env.mirage("cat /data/out2/other.txt") == "content:./other.txt\n"
@@ -96,6 +100,8 @@ def test_tar_x_mixed_hit_and_miss_extracts_and_exits_2(env):
 def test_tar_x_extracts_into_cwd_with_dot_components_cleaned(env):
     _seed_archive(env)
     env.mirage("tar -xzf /data/files.tar.gz")
-    assert env.mirage(
-        "cat /data/memory/memory.json") == "content:./memory/memory.json\n"
+    assert (
+        env.mirage("cat /data/memory/memory.json")
+        == "content:./memory/memory.json\n"
+    )
     assert "/data/./memory" not in env.mirage("find /data")

@@ -46,7 +46,8 @@ async def rename(
             # Refuse before either side effect.
             raise ValueError(
                 f"cannot move '{src.virtual}' to a subdirectory of "
-                f"itself, '{dst.virtual}'")
+                f"itself, '{dst.virtual}'"
+            )
         await copy(accessor, src, dst, index, recursive=True)
         await rm_recursive(accessor, src, index)
     else:

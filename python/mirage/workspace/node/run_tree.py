@@ -20,8 +20,13 @@ from mirage.commands.builtin.utils.limit import guard_output
 from mirage.context import reset_admission, set_admission
 from mirage.io import IOResult
 from mirage.io.stream import materialize
-from mirage.policy import (ExecuteResultContext, HandOff, post_execute_gate,
-                           refusal_of, render_deny)
+from mirage.policy import (
+    ExecuteResultContext,
+    HandOff,
+    post_execute_gate,
+    refusal_of,
+    render_deny,
+)
 from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
@@ -105,40 +110,55 @@ async def run_command_tree(
         handed=handed,
         sink=sink,
     )
-    redirect = input_substitution_redirect(
-        ast) if command_substitution else None
+    redirect = (
+        input_substitution_redirect(ast) if command_substitution else None
+    )
     if redirect is None:
         stdout, io, exec_node = await run(ast, session, stdin)
     else:
-        redirects, _ = await expand_redirects([redirect],
-                                              session,
-                                              execute_fn,
-                                              registry,
-                                              view=session_view(
-                                                  session, registry.policies))
+        redirects, _ = await expand_redirects(
+            [redirect],
+            session,
+            execute_fn,
+            registry,
+            view=session_view(session, registry.policies),
+        )
         # Bash's implicit file read has cat's policy identity, without
         # invoking a function/alias or expanding the filename a second time.
         target = redirects[0].target
-        paths = ([target] if isinstance(target, PathSpec) else
-                 [_to_scope(target)] if isinstance(target, str) else [])
-        verdict = await admit("cat", [], [],
-                              session,
-                              registry,
-                              namespace,
-                              agent_id,
-                              redirects=paths,
-                              cancel=cancel,
-                              claimant=claimant_for(ast, handed),
-                              intrinsic=True)
+        paths = (
+            [target]
+            if isinstance(target, PathSpec)
+            else [_to_scope(target)]
+            if isinstance(target, str)
+            else []
+        )
+        verdict = await admit(
+            "cat",
+            [],
+            [],
+            session,
+            registry,
+            namespace,
+            agent_id,
+            redirects=paths,
+            cancel=cancel,
+            claimant=claimant_for(ast, handed),
+            intrinsic=True,
+        )
         if isinstance(verdict, Refused):
             stdout = None
-            io = IOResult(exit_code=verdict.exit_code,
-                          stderr=verdict.stderr,
-                          refusal=verdict.refusal)
-            exec_node = ExecutionNode(command="cat",
-                                      exit_code=verdict.exit_code,
-                                      stderr=verdict.stderr,
-                                      refused=True)
+            io = IOResult(
+                exit_code=verdict.exit_code,
+                stderr=verdict.stderr,
+                refusal=verdict.refusal,
+            )
+            exec_node = ExecutionNode(
+                command="cat",
+                exit_code=verdict.exit_code,
+                stderr=verdict.stderr,
+                refused=True,
+            )
         else:
             token = set_admission(verdict)
             try:
@@ -149,15 +169,17 @@ async def run_command_tree(
                     redirects,
                     session,
                     stdin,
-                    capture_input=True)
+                    capture_input=True,
+                )
             finally:
                 reset_admission(token)
     stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
     # The boundary consultation: the envelope's producer facts become
     # the post_execute context; the built-in cap and any user policies
     # answer with Limits (tightest merged), enforced by guard_output.
-    ctx = ExecuteResultContext(producer=io.producer or Producer(command=""),
-                               exit_code=io.exit_code)
+    ctx = ExecuteResultContext(
+        producer=io.producer or Producer(command=""), exit_code=io.exit_code
+    )
     deny, bound = await post_execute_gate(registry.policies, ctx)
     if deny is not None:
         existing = await materialize(io.stderr) if io.stderr else b""
@@ -168,6 +190,7 @@ async def run_command_tree(
         io.refusal = refusal_of(deny)
         return io, exec_node
     stdout, io.stderr, io.exit_code = await guard_output(
-        stdout, io.stderr, io.exit_code, bound)
+        stdout, io.stderr, io.exit_code, bound
+    )
     io.stdout = stdout
     return io, exec_node

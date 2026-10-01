@@ -17,8 +17,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.commands.cli.builtin.hf.download import (download_cmd, ensure_dir,
-                                                     refuse_variadic, selected)
+from mirage.commands.cli.builtin.hf.download import (
+    download_cmd,
+    ensure_dir,
+    refuse_variadic,
+    selected,
+)
 from mirage.commands.errors import UsageError
 from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.repo import Absence
@@ -60,25 +64,34 @@ def test_exclude_drops_matches():
 
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
-@pytest.mark.parametrize("refusal", [
-    HfHubError("nope", 401),
-    HfHubError("nope", 403),
-    HfHubError("nope", 404, "RepoNotFound"),
-    HfHubError("nope", 404, "RevisionNotFound"),
-])
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        HfHubError("nope", 401),
+        HfHubError("nope", 403),
+        HfHubError("nope", 404, "RepoNotFound"),
+        HfHubError("nope", 404, "RevisionNotFound"),
+    ],
+)
 async def test_download_still_names_the_absence_when_the_tree_refuses(
-        mock_tree, doors, refusal):
+    mock_tree, doors, refusal
+):
     # The tree walk raises for a repo it cannot see; download reads that as
     # nothing listed, so the message upstream prints is unchanged.
     record, _, _, _ = doors
     mock_tree.side_effect = refusal
-    with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
-               AsyncMock(return_value=Absence.REPO)):
+    with patch(
+        "mirage.commands.cli.builtin.hf.download.classify_absence",
+        AsyncMock(return_value=Absence.REPO),
+    ):
         with pytest.raises(HfHubError, match="Repository Not Found"):
             await download_cmd(
-                inv(texts=("acme/widget", ),
+                inv(
+                    texts=("acme/widget",),
                     flags={"local_dir": "/work/out"},
-                    doors=record))
+                    doors=record,
+                )
+            )
 
 
 @pytest.mark.asyncio
@@ -87,13 +100,17 @@ async def test_download_lets_a_server_failure_through(mock_tree, doors):
     record, _, _, _ = doors
     mock_tree.side_effect = HfHubError("boom", 500)
     classify = AsyncMock(return_value=Absence.REPO)
-    with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
-               classify):
+    with patch(
+        "mirage.commands.cli.builtin.hf.download.classify_absence", classify
+    ):
         with pytest.raises(HfHubError, match="boom"):
             await download_cmd(
-                inv(texts=("acme/widget", ),
+                inv(
+                    texts=("acme/widget",),
                     flags={"local_dir": "/work/out"},
-                    doors=record))
+                    doors=record,
+                )
+            )
     classify.assert_not_awaited()
 
 
@@ -101,14 +118,18 @@ async def test_download_lets_a_server_failure_through(mock_tree, doors):
 @patch("mirage.commands.cli.builtin.hf.download.hub_bytes")
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
 async def test_download_writes_through_the_workspace_door(
-        mock_tree, mock_bytes, doors):
+    mock_tree, mock_bytes, doors
+):
     record, calls, tree, _ = doors
     mock_tree.return_value = TREE
     mock_bytes.return_value = b"payload"
     await download_cmd(
-        inv(texts=("acme/widget", "a.txt"),
+        inv(
+            texts=("acme/widget", "a.txt"),
             flags={"local_dir": "/work/out"},
-            doors=record))
+            doors=record,
+        )
+    )
     assert tree["/work/out/a.txt"] == b"payload"
     assert ("write", "/work/out/a.txt", {"data": b"payload"}) in calls
 
@@ -116,8 +137,9 @@ async def test_download_writes_through_the_workspace_door(
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.hub_bytes")
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
-async def test_download_creates_every_nested_level(mock_tree, mock_bytes,
-                                                   doors):
+async def test_download_creates_every_nested_level(
+    mock_tree, mock_bytes, doors
+):
     """The dispatcher's mkdir is single-level, so a nested repo path
     needs one call per missing segment; a level that is already there is
     left alone, which is why /work is absent from the list."""
@@ -125,9 +147,12 @@ async def test_download_creates_every_nested_level(mock_tree, mock_bytes,
     mock_tree.return_value = TREE
     mock_bytes.return_value = b"x"
     await download_cmd(
-        inv(texts=("acme/widget", "sub/b.json"),
+        inv(
+            texts=("acme/widget", "sub/b.json"),
             flags={"local_dir": "/work/out"},
-            doors=record))
+            doors=record,
+        )
+    )
     made = [path for op, path, _ in calls if op == "mkdir"]
     assert made == ["/work/out", "/work/out/sub"]
     assert "/work/out/sub/b.json" in tree
@@ -140,7 +165,7 @@ async def test_download_requires_a_local_dir(doors):
     agent cannot see."""
     record, _, _, _ = doors
     with pytest.raises(UsageError, match="--local-dir"):
-        await download_cmd(inv(texts=("acme/widget", ), doors=record))
+        await download_cmd(inv(texts=("acme/widget",), doors=record))
 
 
 @pytest.mark.asyncio
@@ -154,7 +179,8 @@ async def test_download_requires_a_repo_id(doors):
 async def test_download_needs_a_workspace():
     with pytest.raises(UsageError, match="workspace"):
         await download_cmd(
-            inv(texts=("acme/widget", ), flags={"local_dir": "/work"}))
+            inv(texts=("acme/widget",), flags={"local_dir": "/work"})
+        )
 
 
 @pytest.mark.asyncio
@@ -165,16 +191,18 @@ async def test_download_refuses_when_nothing_matched(mock_tree, doors):
     refusal names the line rather than inventing an absence."""
     record, _, _, _ = doors
     mock_tree.return_value = TREE
-    with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
-               AsyncMock(return_value=Absence.PRESENT)):
+    with patch(
+        "mirage.commands.cli.builtin.hf.download.classify_absence",
+        AsyncMock(return_value=Absence.PRESENT),
+    ):
         with pytest.raises(HfHubError, match="matched the line"):
             await download_cmd(
-                inv(texts=("acme/widget", ),
-                    flags={
-                        "local_dir": "/work/out",
-                        "include": ["zzz*"]
-                    },
-                    doors=record))
+                inv(
+                    texts=("acme/widget",),
+                    flags={"local_dir": "/work/out", "include": ["zzz*"]},
+                    doors=record,
+                )
+            )
 
 
 @pytest.mark.asyncio
@@ -185,17 +213,24 @@ async def test_download_tells_the_three_absences_apart(mock_tree, doors):
     files matched", so the CLI asks the Hub which one it was."""
     record, _, _, _ = doors
     mock_tree.return_value = {}
-    cases = [(Absence.REPO, (), "Repository Not Found"),
-             (Absence.REVISION, (), "Invalid rev id"),
-             (Absence.PRESENT, ("nope.txt", ), "Entry Not Found")]
+    cases = [
+        (Absence.REPO, (), "Repository Not Found"),
+        (Absence.REVISION, (), "Invalid rev id"),
+        (Absence.PRESENT, ("nope.txt",), "Entry Not Found"),
+    ]
     for absence, names, expected in cases:
-        with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
-                   AsyncMock(return_value=absence)):
+        with patch(
+            "mirage.commands.cli.builtin.hf.download.classify_absence",
+            AsyncMock(return_value=absence),
+        ):
             with pytest.raises(HfHubError, match=expected):
                 await download_cmd(
-                    inv(texts=("acme/widget", *names),
+                    inv(
+                        texts=("acme/widget", *names),
                         flags={"local_dir": "/work/out"},
-                        doors=record))
+                        doors=record,
+                    )
+                )
 
 
 @pytest.mark.asyncio
@@ -205,13 +240,15 @@ async def test_quiet_prints_only_the_directory(mock_tree, mock_bytes, doors):
     record, _, _, _ = doors
     mock_tree.return_value = TREE
     mock_bytes.return_value = b"x"
-    text = await _text(await download_cmd(
-        inv(texts=("acme/widget", "a.txt"),
-            flags={
-                "local_dir": "/work/out",
-                "quiet": True
-            },
-            doors=record)))
+    text = await _text(
+        await download_cmd(
+            inv(
+                texts=("acme/widget", "a.txt"),
+                flags={"local_dir": "/work/out", "quiet": True},
+                doors=record,
+            )
+        )
+    )
     assert text == "/work/out\n"
 
 
@@ -226,32 +263,34 @@ def test_refuse_variadic_accepts_real_filenames():
 def test_refuse_variadic_names_the_spelling_that_works():
     with pytest.raises(UsageError) as caught:
         refuse_variadic(["*.txt"], "--include", ["*.json"])
-    assert ("write --include '*.json' --include '*.txt'" in str(caught.value))
+    assert "write --include '*.json' --include '*.txt'" in str(caught.value)
 
 
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.hub_bytes")
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
 async def test_download_refuses_the_upstream_variadic_line(
-        mock_tree, mock_bytes, doors):
+    mock_tree, mock_bytes, doors
+):
     record, _, _, _ = doors
     mock_tree.return_value = TREE
     mock_bytes.return_value = b"x"
     with pytest.raises(UsageError, match="--include"):
         await download_cmd(
-            inv(texts=("acme/widget", "*.json"),
-                flags={
-                    "include": ["*.txt"],
-                    "local_dir": "/work/out"
-                },
-                doors=record))
+            inv(
+                texts=("acme/widget", "*.json"),
+                flags={"include": ["*.txt"], "local_dir": "/work/out"},
+                doors=record,
+            )
+        )
 
 
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.hub_bytes")
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
-async def test_download_fetches_with_a_bounded_pool(mock_tree, mock_bytes,
-                                                    doors):
+async def test_download_fetches_with_a_bounded_pool(
+    mock_tree, mock_bytes, doors
+):
     """The bound is the point, not the parallelism: the Hub rate-limits
     its resolvers, so a repository of many small files must not fan out
     without one."""
@@ -259,12 +298,12 @@ async def test_download_fetches_with_a_bounded_pool(mock_tree, mock_bytes,
     mock_tree.return_value = TREE
     mock_bytes.return_value = b"x"
     await download_cmd(
-        inv(texts=("acme/widget", ),
-            flags={
-                "local_dir": "/work/out",
-                "max_workers": 2
-            },
-            doors=record))
+        inv(
+            texts=("acme/widget",),
+            flags={"local_dir": "/work/out", "max_workers": 2},
+            doors=record,
+        )
+    )
     assert "/work/out/a.txt" in tree
     assert "/work/out/sub/b.json" in tree
 
@@ -293,6 +332,7 @@ async def test_ensure_dir_tolerates_a_parent_another_worker_just_made():
             return None, None
         raise AssertionError(f"unexpected op {op}")
 
-    await asyncio.gather(ensure_dir(dispatch, "/work/out"),
-                         ensure_dir(dispatch, "/work/out"))
+    await asyncio.gather(
+        ensure_dir(dispatch, "/work/out"), ensure_dir(dispatch, "/work/out")
+    )
     assert dirs == {"/work", "/work/out"}

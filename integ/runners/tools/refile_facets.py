@@ -45,8 +45,9 @@ def resolve_stems(facets: list[str]) -> dict[str, str]:
             stems[members[0]] = members[0]
             continue
         for facet in members:
-            stems[facet] = facet if facet == facet.lower(
-            ) else f"{facet}.upper"
+            stems[facet] = (
+                facet if facet == facet.lower() else f"{facet}.upper"
+            )
     return stems
 
 
@@ -65,7 +66,7 @@ def command_flags(command: str, name: str) -> list[str] | None:
             i += 1
         if i >= len(toks) or toks[i] != name:
             continue
-        return parse_flag_tokens(toks[i + 1:], name)
+        return parse_flag_tokens(toks[i + 1 :], name)
     return None
 
 
@@ -100,8 +101,9 @@ def parse_flag_tokens(args: list[str], name: str) -> list[str]:
 
 
 def is_command_file(name: str, cases: list[dict]) -> bool:
-    hits = sum(1 for c in cases
-               if command_flags(c["command"], name) is not None)
+    hits = sum(
+        1 for c in cases if command_flags(c["command"], name) is not None
+    )
     return hits * 2 >= len(cases)
 
 
@@ -136,10 +138,9 @@ def feature_facet(case: dict, prefix_len: int) -> str:
 
 def plan_file(path: Path) -> tuple[str, list[tuple[str, dict, list[str]]]]:
     data = json.loads(path.read_text())
-    cases = [{
-        "targets": data.get("targets", []),
-        **case
-    } for case in data["cases"]]
+    cases = [
+        {"targets": data.get("targets", []), **case} for case in data["cases"]
+    ]
     name = path.stem
     category = path.parent.name
     rows: list[tuple[str, dict, list[str]]] = []
@@ -160,8 +161,9 @@ def plan_file(path: Path) -> tuple[str, list[tuple[str, dict, list[str]]]]:
     return strategy, rows
 
 
-def write_tree(path: Path, rows: list[tuple[str, dict, list[str]]],
-               populate_flags: bool) -> dict[str, int]:
+def write_tree(
+    path: Path, rows: list[tuple[str, dict, list[str]]], populate_flags: bool
+) -> dict[str, int]:
     name = path.stem
     dest_dir = path.parent / name
     buckets: dict[str, list[dict]] = defaultdict(list)
@@ -174,7 +176,8 @@ def write_tree(path: Path, rows: list[tuple[str, dict, list[str]]],
     for facet, cases in buckets.items():
         out = dest_dir / f"{stems[facet]}.json"
         out.write_text(
-            json.dumps({"cases": cases}, indent=2, ensure_ascii=False) + "\n")
+            json.dumps({"cases": cases}, indent=2, ensure_ascii=False) + "\n"
+        )
     path.unlink()
     return {facet: len(cases) for facet, cases in buckets.items()}
 
@@ -207,14 +210,18 @@ def main() -> None:
             raise SystemExit(f"case-insensitive stem collision in {rel}")
         total_cases += len(rows)
         total_files += len(buckets)
-        print(f"{rel}.json  [{strategy}]  {len(rows)} cases -> "
-              f"{len(buckets)} facets")
+        print(
+            f"{rel}.json  [{strategy}]  {len(rows)} cases -> "
+            f"{len(buckets)} facets"
+        )
         for facet in sorted(buckets):
             print(f"    {stems[facet]:16} {buckets[facet]}")
         if args.apply:
             write_tree(path, rows, not args.no_flags)
-    print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
-          f"{total_cases} cases -> {total_files} facet files")
+    print(
+        f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+        f"{total_cases} cases -> {total_files} facet files"
+    )
 
 
 if __name__ == "__main__":

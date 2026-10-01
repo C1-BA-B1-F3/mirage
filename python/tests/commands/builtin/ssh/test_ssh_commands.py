@@ -26,27 +26,28 @@ from mirage.workspace import Workspace
 
 
 class MockSFTPAttrs:
-
     def __init__(self, *, is_dir=False, size=0, mtime=None):
-        self.type = (asyncssh.FILEXFER_TYPE_DIRECTORY
-                     if is_dir else asyncssh.FILEXFER_TYPE_REGULAR)
+        self.type = (
+            asyncssh.FILEXFER_TYPE_DIRECTORY
+            if is_dir
+            else asyncssh.FILEXFER_TYPE_REGULAR
+        )
         self.size = size
         self.mtime = mtime or int(
-            datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp())
+            datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        )
         # Real asyncssh SFTPAttrs always carry these (default None).
         self.permissions = None
         self.atime = None
 
 
 class MockSFTPName:
-
     def __init__(self, filename, *, is_dir=False, size=0, mtime=None):
         self.filename = filename
         self.attrs = MockSFTPAttrs(is_dir=is_dir, size=size, mtime=mtime)
 
 
 class MockSFTPFile:
-
     def __init__(self, store, path, mode):
         self._store = store
         self._path = path
@@ -81,7 +82,6 @@ class MockSFTPFile:
 
 
 class MockSFTPClient:
-
     def __init__(self, files: dict[str, bytes], dirs: set[str]):
         self.files = files
         self.dirs = dirs
@@ -111,20 +111,23 @@ class MockSFTPClient:
         for key in sorted(self.files):
             if not key.startswith(prefix):
                 continue
-            rel = key[len(prefix):]
+            rel = key[len(prefix) :]
             name = rel.split("/")[0]
             if name not in seen:
                 seen.add(name)
                 child_path = prefix + name
                 is_dir = child_path in self.dirs
                 entries.append(
-                    MockSFTPName(name,
-                                 is_dir=is_dir,
-                                 size=0 if is_dir else len(self.files[key])))
+                    MockSFTPName(
+                        name,
+                        is_dir=is_dir,
+                        size=0 if is_dir else len(self.files[key]),
+                    )
+                )
         for d in sorted(self.dirs):
             if not d.startswith(prefix):
                 continue
-            rel = d[len(prefix):]
+            rel = d[len(prefix) :]
             name = rel.split("/")[0]
             if name and name not in seen:
                 seen.add(name)
@@ -165,10 +168,13 @@ class MockSFTPClient:
         elif src in self.dirs:
             self.dirs.discard(src)
             self.dirs.add(dst)
-            to_move = [(k, v) for k, v in self.files.items()
-                       if k.startswith(src + "/")]
+            to_move = [
+                (k, v)
+                for k, v in self.files.items()
+                if k.startswith(src + "/")
+            ]
             for k, v in to_move:
-                new_key = dst + k[len(src):]
+                new_key = dst + k[len(src) :]
                 self.files[new_key] = v
                 del self.files[k]
         else:
@@ -186,7 +192,6 @@ class MockSFTPClient:
 
 
 class SSHTestEnv:
-
     def __init__(self):
         self.config = SSHConfig(host="mock", root="/data", known_hosts=None)
         self.vfs = SSHVFS(self.config)
@@ -220,9 +225,6 @@ class SSHTestEnv:
 
     def run_io(self, cmd: str, stdin: bytes | None = None):
         return asyncio.run(self.ws.shell(cmd, stdin=stdin))
-
-    def run_io_provision(self, cmd: str):
-        return asyncio.run(self.ws.shell(cmd, provision=True))
 
 
 async def _drain(ait):
@@ -266,24 +268,15 @@ def test_cat(env):
     assert env.run("cat /ssh/f.txt") == "hello world\n"
 
 
-def test_cat_populates_cache_and_provision_sees_hit(env):
+def test_cat_populates_cache(env):
     """Regression: ssh cat must wrap its stream in CachableAsyncIterator
-    so apply_io can populate the cache. Then provision should report
-    cache_hits=1 instead of network_read on the second call."""
+    so apply_io can populate the cache."""
     env.create_file("f.txt", b"hello world\n")
     env.run("cat /ssh/f.txt")
     cache_keys = list(env.ws._cache._entries)
     assert "/ssh/f.txt" in cache_keys, (
-        f"cache should have /ssh/f.txt after cat; got {cache_keys}")
-
-    pr = env.run_io_provision("cat /ssh/f.txt")
-    leaf = pr.children[0] if pr.children else pr
-    assert leaf.cache_hits == 1, (
-        f"expected cache_hits=1 after warm cat, got {leaf.cache_hits}")
-    assert leaf.network_read_low == 0, (
-        f"expected network_read=0 after warm cat, got {leaf.network_read_low}")
-    assert leaf.cache_read_low > 0, (
-        f"expected cache_read>0 after warm cat, got {leaf.cache_read_low}")
+        f"cache should have /ssh/f.txt after cat; got {cache_keys}"
+    )
 
 
 def test_head(env):

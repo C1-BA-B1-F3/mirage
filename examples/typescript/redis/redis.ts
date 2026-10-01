@@ -15,26 +15,13 @@
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PathSpec, ProvisionResult, type CommandOpts } from '@struktoai/mirage-core'
-import {
-  fileReadProvision,
-  headTailProvision,
-  metadataProvision,
-  MountMode,
-  RedisVFS,
-  Workspace,
-} from '@struktoai/mirage-node'
+import { MountMode, RedisVFS, Workspace } from '@struktoai/mirage-node'
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379/0'
 const vfs = new RedisVFS({ url: REDIS_URL })
 
 function print(bytes: Uint8Array): void {
   process.stdout.write(new TextDecoder().decode(bytes) + '\n')
-}
-
-// Mirrors Python's `CommandOpts(command="cat")`, whose other fields default.
-function provisionOpts(command: string): CommandOpts {
-  return { stdin: null, flags: {}, filetypeFns: null, cwd: '/', command }
 }
 
 async function runLabeled(ws: Workspace, label: string, cmd: string): Promise<void> {
@@ -123,45 +110,6 @@ async function main(): Promise<void> {
   console.log('')
   const log = await ws.shell('tail -n 5 /.bash_history')
   process.stdout.write(log.stdoutText + '\n')
-
-  console.log('')
-  console.log('=== PROVISION (cost estimates before execution) ===')
-  console.log('')
-  console.log('  Redis ops have no ranged GET — every read fetches the full value.')
-  console.log('  Provision lets the agent budget IO / compute before running.')
-  console.log('')
-
-  // 1. Workspace-level — mirrors Python's ws.shell(cmd, provision=True)
-  const wsProv = await ws.shell('cat /data/hello.txt', { provision: true })
-  if (!(wsProv instanceof ProvisionResult)) throw new Error('expected ProvisionResult')
-  console.log(`  ws.shell('cat /data/hello.txt', { provision: true }):`)
-  console.log(`    command        = ${wsProv.command ?? '(none)'}`)
-  console.log(`    networkRead    = ${wsProv.networkRead}`)
-  console.log(`    readOps        = ${String(wsProv.readOps)}`)
-  console.log(`    precision      = ${wsProv.precision}`)
-  console.log('')
-
-  // 2. Redis-specific helpers — use these when you want exact cost for Redis.
-  const paths = [
-    PathSpec.fromStrPath('/data/hello.txt', 'hello.txt'),
-    PathSpec.fromStrPath('/data/user.json', 'user.json'),
-  ]
-
-  const readCost = await fileReadProvision(vfs.accessor, paths, [], provisionOpts('cat'))
-  console.log(`  fileReadProvision(VFS.accessor, [hello.txt, user.json]):`)
-  console.log(
-    `    networkRead    = ${readCost.networkRead} bytes (${String(readCost.readOps)} reads)`,
-  )
-  console.log(`    precision      = ${readCost.precision}`)
-
-  const headCost = await headTailProvision(vfs.accessor, paths, [], provisionOpts('head -n 1'))
-  console.log(`  headTailProvision(...) — Redis fetches full value regardless of -n:`)
-  console.log(`    networkRead    = ${headCost.networkRead} bytes`)
-
-  const metaCost = metadataProvision(vfs.accessor, paths, [], provisionOpts('stat'))
-  console.log(`  metadataProvision(...) — stat/ls/find cost zero network bytes:`)
-  console.log(`    networkRead    = ${metaCost.networkRead} bytes`)
-  console.log(`    readOps        = ${String(metaCost.readOps)}`)
 
   console.log('')
   console.log('=== PERSISTENCE ===')

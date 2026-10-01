@@ -22,9 +22,14 @@ from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.stat import make_stat
 from mirage.types import ContentType, FileStat, FileType, PathSpec
-from tests.core.hierarchy.conftest import (FakeAccessor, detect_scope,
-                                           list_notes, list_rooms, room_guard,
-                                           spec)
+from tests.core.hierarchy.conftest import (
+    FakeAccessor,
+    detect_scope,
+    list_notes,
+    list_rooms,
+    room_guard,
+    spec,
+)
 
 READDIR = make_readdir(
     detect_scope,
@@ -32,7 +37,7 @@ READDIR = make_readdir(
         "rooms": list_rooms,
         "room": list_notes,
     },
-    static_root=("rooms", ),
+    static_root=("rooms",),
     guards={"room": room_guard},
 )
 
@@ -90,12 +95,15 @@ def test_invalid_shapes_are_enoent(accessor):
 
 def test_override_replaces_the_whole_shape(accessor):
 
-    async def bespoke(accessor: FakeAccessor, match: ScopeMatch,
-                      path: PathSpec, index: IndexCacheStore) -> FileStat:
-        return FileStat(name="custom",
-                        type=FileType.FILE,
-                        content=ContentType.TEXT,
-                        size=1)
+    async def bespoke(
+        accessor: FakeAccessor,
+        match: ScopeMatch,
+        path: PathSpec,
+        index: IndexCacheStore,
+    ) -> FileStat:
+        return FileStat(
+            name="custom", type=FileType.FILE, content=ContentType.TEXT, size=1
+        )
 
     stat = make_stat(detect_scope, READDIR, overrides={"note": bespoke})
     st = asyncio.run(stat(accessor, spec("/rooms/red/a.json")))
@@ -106,11 +114,13 @@ def test_override_replaces_the_whole_shape(accessor):
 def test_entry_stat_builds_from_the_resolved_entry(accessor):
 
     def from_entry(match, path, entry) -> FileStat:
-        return FileStat(name=entry.vfs_name,
-                        type=FileType.FILE,
-                        content=ContentType.JSON,
-                        size=entry.size,
-                        extra={"doc_id": entry.id})
+        return FileStat(
+            name=entry.vfs_name,
+            type=FileType.FILE,
+            content=ContentType.JSON,
+            size=entry.size,
+            extra={"doc_id": entry.id},
+        )
 
     stat = make_stat(detect_scope, READDIR, entry_stats={"note": from_entry})
     index = RAMIndexCacheStore()

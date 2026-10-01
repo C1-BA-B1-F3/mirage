@@ -87,9 +87,9 @@ class WorkspaceRunner:
         fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
         return await asyncio.wrap_future(fut)
 
-    def call_sync(self,
-                  coro: Coroutine[Any, Any, T],
-                  timeout: float | None = None) -> T:
+    def call_sync(
+        self, coro: Coroutine[Any, Any, T], timeout: float | None = None
+    ) -> T:
         """Run ``coro`` on the workspace loop and block until done.
 
         Use from synchronous callers (tests, blocking scripts). Do

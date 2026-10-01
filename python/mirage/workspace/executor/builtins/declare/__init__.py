@@ -13,8 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.workspace.executor.builtins.declare.declare import (
-    handle_declare_functions, handle_declare_print, note_local_array,
-    store_staged_arrays)
+    handle_declare_functions,
+    handle_declare_print,
+    note_local_array,
+    store_staged_arrays,
+)
 from mirage.workspace.executor.builtins.declare.export import handle_export
 from mirage.workspace.executor.builtins.declare.local import handle_local
 from mirage.workspace.executor.builtins.declare.readonly import handle_readonly

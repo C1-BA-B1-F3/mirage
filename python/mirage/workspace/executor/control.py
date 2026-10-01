@@ -27,8 +27,12 @@ from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
-from mirage.shell.errors import (ArithError, ExitSignal, ReadonlyError,
-                                 ReturnSignal)
+from mirage.shell.errors import (
+    ArithError,
+    ExitSignal,
+    ReadonlyError,
+    ReturnSignal,
+)
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import TSNodeLike
@@ -36,8 +40,11 @@ from mirage.types import PathSpec, word_text
 from mirage.utils.fnmatch import fnmatch
 from mirage.workspace.executor.builtins.read.read import read_reply
 from mirage.workspace.executor.jobs import run_statement
-from mirage.workspace.executor.statement import (fd0_binding, finish_statement,
-                                                 record_status)
+from mirage.workspace.executor.statement import (
+    fd0_binding,
+    finish_statement,
+    record_status,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view, visible_env
 from mirage.workspace.types import ExecutionNode
@@ -73,8 +80,17 @@ async def _execute_body(
     for cmd in body:
         try:
             stdout, io, last_exec = await run_statement(
-                execute_node, cmd, session, stdin, bound, call_stack,
-                job_table, agent_id, handed, decisions)
+                execute_node,
+                cmd,
+                session,
+                stdin,
+                bound,
+                call_stack,
+                job_table,
+                agent_id,
+                handed,
+                decisions,
+            )
         except UNWINDING as sig:
             # The control builtin is a statement the loop leaves through
             # rather than closes, so its own status (0) is recorded here:
@@ -85,16 +101,18 @@ async def _execute_body(
         stdout = await finish_statement(stdout, io, session, cmd)
         all_stdout.append(stdout)
         merged_io = await merged_io.merge(io)
-        if (io.exit_code != 0 and session.shell_options.get("errexit")
-                and cmd.type not in ERREXIT_EXEMPT_TYPES
-                and not session.errexit_immune):
+        if (
+            io.exit_code != 0
+            and session.shell_options.get("errexit")
+            and cmd.type not in ERREXIT_EXEMPT_TYPES
+            and not session.errexit_immune
+        ):
             merged_io.exit_code = io.exit_code
             break
     return _chain_streams(all_stdout), merged_io, last_exec
 
 
 class BreakSignal(Exception):
-
     def __init__(self, stdout=None, io=None, levels: int = 1):
         self.stdout = stdout
         self.io = io if io is not None else IOResult()
@@ -102,7 +120,6 @@ class BreakSignal(Exception):
 
 
 class ContinueSignal(Exception):
-
     def __init__(self, stdout=None, io=None, levels: int = 1):
         self.stdout = stdout
         self.io = io if io is not None else IOResult()
@@ -117,8 +134,9 @@ def _chain_streams(all_stdout: list[ByteSource | None]) -> ByteSource | None:
 UNWINDING = (BreakSignal, ContinueSignal, ReturnSignal, ExitSignal)
 
 
-async def carried(sig: Exception, stdout: ByteSource | None,
-                  io: IOResult) -> Exception:
+async def carried(
+    sig: Exception, stdout: ByteSource | None, io: IOResult
+) -> Exception:
     """An unwinding ``break``, ``continue``, ``return`` or ``exit`` with
     the output the construct it leaves had produced put in front of its
     own, which that construct would otherwise drop on the way out (bash
@@ -135,15 +153,19 @@ async def carried(sig: Exception, stdout: ByteSource | None,
         return sig
     if isinstance(sig, (ReturnSignal, ExitSignal)):
         sig.stderr = (await materialize(io.stderr) or b"") + sig.stderr
-        sig.stdout = ((await materialize(stdout) or b"") +
-                      (sig.stdout or b"") if isinstance(sig, ExitSignal) else
-                      _chain_streams([stdout, sig.stdout]))
+        sig.stdout = (
+            (await materialize(stdout) or b"") + (sig.stdout or b"")
+            if isinstance(sig, ExitSignal)
+            else _chain_streams([stdout, sig.stdout])
+        )
     return sig
 
 
-async def _absorbed(sig: BreakSignal | ContinueSignal,
-                    all_stdout: list[ByteSource | None],
-                    merged_io: IOResult) -> IOResult:
+async def _absorbed(
+    sig: BreakSignal | ContinueSignal,
+    all_stdout: list[ByteSource | None],
+    merged_io: IOResult,
+) -> IOResult:
     """Fold a ``break`` or ``continue`` into the loop it reached; one
     aimed further out (``break 2``) goes on with a level spent and the
     loop's output in front of its own.
@@ -186,23 +208,48 @@ async def handle_if(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     bound = fd0_binding(session)
     for condition, body in branches:
-        cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
-                                                      session, stdin, bound,
-                                                      call_stack, job_table,
-                                                      agent_id, handed,
-                                                      decisions)
+        cond_stdout, cond_io, _ = await run_statement(
+            execute_node,
+            condition,
+            session,
+            stdin,
+            bound,
+            call_stack,
+            job_table,
+            agent_id,
+            handed,
+            decisions,
+        )
         await apply_barrier(cond_stdout, cond_io, BarrierPolicy.STATUS)
-        record_status(session,
-                      cond_io.exit_code,
-                      transparent=pipeline_transparent(condition))
+        record_status(
+            session,
+            cond_io.exit_code,
+            transparent=pipeline_transparent(condition),
+        )
         if cond_io.exit_code == 0:
-            return await _execute_body(execute_node, body, session, stdin,
-                                       call_stack, job_table, agent_id, handed,
-                                       decisions)
+            return await _execute_body(
+                execute_node,
+                body,
+                session,
+                stdin,
+                call_stack,
+                job_table,
+                agent_id,
+                handed,
+                decisions,
+            )
     if else_body is not None:
-        return await _execute_body(execute_node, else_body, session, stdin,
-                                   call_stack, job_table, agent_id, handed,
-                                   decisions)
+        return await _execute_body(
+            execute_node,
+            else_body,
+            session,
+            stdin,
+            call_stack,
+            job_table,
+            agent_id,
+            handed,
+            decisions,
+        )
     return None, IOResult(), ExecutionNode(exit_code=0)
 
 
@@ -233,8 +280,9 @@ async def handle_for(
     # refuses `for x` on a readonly x before the first iteration.
     if view.is_readonly(variable):
         err = f"bash: {variable}: readonly variable\n".encode()
-        return _collect_loop_result([], IOResult(exit_code=1, stderr=err),
-                                    "for")
+        return _collect_loop_result(
+            [], IOResult(exit_code=1, stderr=err), "for"
+        )
 
     for val in values:
         if session.shell_options.get("noexec"):
@@ -248,12 +296,21 @@ async def handle_for(
             await view.set(variable, text_val)
         except PolicyDenied as exc:
             merged_io = await merged_io.merge(
-                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
+                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode())
+            )
             break
         try:
-            stdout, io, _ = await _execute_body(execute_node, body, session,
-                                                stdin, call_stack, job_table,
-                                                agent_id, handed, decisions)
+            stdout, io, _ = await _execute_body(
+                execute_node,
+                body,
+                session,
+                stdin,
+                call_stack,
+                job_table,
+                agent_id,
+                handed,
+                decisions,
+            )
         except (BreakSignal, ContinueSignal) as sig:
             merged_io = await _absorbed(sig, all_stdout, merged_io)
             if isinstance(sig, BreakSignal):
@@ -289,25 +346,42 @@ async def _condition_loop(
         if session.shell_options.get("noexec"):
             hit_limit = False
             break
-        cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
-                                                      session, stdin, bound,
-                                                      call_stack, job_table,
-                                                      agent_id, handed,
-                                                      decisions)
+        cond_stdout, cond_io, _ = await run_statement(
+            execute_node,
+            condition,
+            session,
+            stdin,
+            bound,
+            call_stack,
+            job_table,
+            agent_id,
+            handed,
+            decisions,
+        )
         await apply_barrier(cond_stdout, cond_io, BarrierPolicy.STATUS)
-        record_status(session,
-                      cond_io.exit_code,
-                      transparent=pipeline_transparent(condition))
+        record_status(
+            session,
+            cond_io.exit_code,
+            transparent=pipeline_transparent(condition),
+        )
         if break_on_zero and cond_io.exit_code == 0:
             hit_limit = False
             break
-        if (not break_on_zero and cond_io.exit_code != 0):
+        if not break_on_zero and cond_io.exit_code != 0:
             hit_limit = False
             break
         try:
-            stdout, io, _ = await _execute_body(execute_node, body, session,
-                                                stdin, call_stack, job_table,
-                                                agent_id, handed, decisions)
+            stdout, io, _ = await _execute_body(
+                execute_node,
+                body,
+                session,
+                stdin,
+                call_stack,
+                job_table,
+                agent_id,
+                handed,
+                decisions,
+            )
         except (BreakSignal, ContinueSignal) as sig:
             merged_io = await _absorbed(sig, all_stdout, merged_io)
             if isinstance(sig, BreakSignal):
@@ -317,8 +391,9 @@ async def _condition_loop(
         merged_io = await merged_io.merge(io)
         all_stdout.append(stdout)
     if hit_limit:
-        warn = (f"warning: {label} loop terminated after "
-                f"{_MAX_WHILE} iterations\n").encode()
+        warn = (
+            f"warning: {label} loop terminated after {_MAX_WHILE} iterations\n"
+        ).encode()
         existing = merged_io.stderr
         if isinstance(existing, bytes) and existing:
             merged_io.stderr = existing + warn
@@ -376,10 +451,17 @@ async def handle_cfor(
                 hit_limit = False
                 break
             try:
-                stdout, io, _ = await _execute_body(execute_node, body,
-                                                    session, stdin, call_stack,
-                                                    job_table, agent_id,
-                                                    handed, decisions)
+                stdout, io, _ = await _execute_body(
+                    execute_node,
+                    body,
+                    session,
+                    stdin,
+                    call_stack,
+                    job_table,
+                    agent_id,
+                    handed,
+                    decisions,
+                )
             except (BreakSignal, ContinueSignal) as sig:
                 merged_io = await _absorbed(sig, all_stdout, merged_io)
                 if isinstance(sig, BreakSignal):
@@ -406,8 +488,9 @@ async def handle_cfor(
         merged_io.exit_code = 1
         return _collect_loop_result(all_stdout, merged_io, "for")
     if hit_limit:
-        warn = (f"warning: for loop terminated after "
-                f"{_MAX_WHILE} iterations\n").encode()
+        warn = (
+            f"warning: for loop terminated after {_MAX_WHILE} iterations\n"
+        ).encode()
         existing = merged_io.stderr
         if isinstance(existing, bytes) and existing:
             merged_io.stderr = existing + warn
@@ -428,18 +511,20 @@ async def handle_while(
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
-    return await _condition_loop(execute_node,
-                                 condition,
-                                 body,
-                                 session,
-                                 stdin,
-                                 call_stack,
-                                 "while",
-                                 break_on_zero=False,
-                                 job_table=job_table,
-                                 agent_id=agent_id,
-                                 handed=handed,
-                                 decisions=decisions)
+    return await _condition_loop(
+        execute_node,
+        condition,
+        body,
+        session,
+        stdin,
+        call_stack,
+        "while",
+        break_on_zero=False,
+        job_table=job_table,
+        agent_id=agent_id,
+        handed=handed,
+        decisions=decisions,
+    )
 
 
 async def handle_until(
@@ -454,18 +539,20 @@ async def handle_until(
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
-    return await _condition_loop(execute_node,
-                                 condition,
-                                 body,
-                                 session,
-                                 stdin,
-                                 call_stack,
-                                 "until",
-                                 break_on_zero=True,
-                                 job_table=job_table,
-                                 agent_id=agent_id,
-                                 handed=handed,
-                                 decisions=decisions)
+    return await _condition_loop(
+        execute_node,
+        condition,
+        body,
+        session,
+        stdin,
+        call_stack,
+        "until",
+        break_on_zero=True,
+        job_table=job_table,
+        agent_id=agent_id,
+        handed=handed,
+        decisions=decisions,
+    )
 
 
 async def handle_case(
@@ -493,11 +580,21 @@ async def handle_case(
         for stmt in body:
             try:
                 stdout, io, last_exec = await run_statement(
-                    execute_node, stmt, session, stdin, bound, call_stack,
-                    job_table, agent_id, handed, decisions)
+                    execute_node,
+                    stmt,
+                    session,
+                    stdin,
+                    bound,
+                    call_stack,
+                    job_table,
+                    agent_id,
+                    handed,
+                    decisions,
+                )
             except UNWINDING as sig:
-                raise await carried(sig, _chain_streams(list(all_stdout)),
-                                    merged_io)
+                raise await carried(
+                    sig, _chain_streams(list(all_stdout)), merged_io
+                )
             stdout = await finish_statement(stdout, io, session, stmt)
             if stdout is not None:
                 all_stdout.append(stdout)
@@ -527,8 +624,11 @@ def _select_menu(words: list[str], columns: str) -> str:
         words (list[str]): the menu entries.
         columns (str): ``$COLUMNS`` as set.
     """
-    width = int(match.group()) if (match := re.match(r"\s*[+-]?\d+",
-                                                     columns)) else 0
+    width = (
+        int(match.group())
+        if (match := re.match(r"\s*[+-]?\d+", columns))
+        else 0
+    )
     index_len = len(str(len(words)))
     cell = max(map(len, words)) + index_len + 4
     rows = -(-len(words) // max((width if width > 0 else 80) // cell, 1))
@@ -539,8 +639,11 @@ def _select_menu(words: list[str], columns: str) -> str:
         line = ""
         for pos, ind in enumerate(range(row, len(words), rows)):
             while len(line.expandtabs()) < pos * cell:
-                line += "\t" if (pos * cell) // 8 > len(
-                    line.expandtabs()) // 8 else " "
+                line += (
+                    "\t"
+                    if (pos * cell) // 8 > len(line.expandtabs()) // 8
+                    else " "
+                )
             label = len(str(rows)) if pos == 0 else index_len
             line += f"{ind + 1:>{label}}) {words[ind]}"
         lines.append(line + "\n")
@@ -599,7 +702,8 @@ async def handle_select(
         env = visible_env(session)
         menu = _select_menu(words, env.get("COLUMNS", "")) if show_menu else ""
         merged_io = await merged_io.merge(
-            IOResult(stderr=(menu + env.get("PS3", "#? ")).encode() or None))
+            IOResult(stderr=(menu + env.get("PS3", "#? ")).encode() or None)
+        )
         reply = await read_reply(lines) if lines is not None else None
         # A failed choice read (end of input, a readonly REPLY) ends the
         # prompt line; a readonly loop variable fails after it.
@@ -616,7 +720,8 @@ async def handle_select(
         if reply is None or frozen is not None:
             err = f"bash: {frozen}: readonly variable\n" if frozen else ""
             merged_io = await merged_io.merge(
-                IOResult(exit_code=1, stderr=err.encode() or None))
+                IOResult(exit_code=1, stderr=err.encode() or None)
+            )
             break
         number = re.fullmatch(r"\s*([+-]?\d+)[ \t]*", reply)
         index = int(number.group(1)) if number else 0
@@ -626,15 +731,25 @@ async def handle_select(
             if show_menu:
                 continue
             await view.set(
-                variable, words[index - 1] if 1 <= index <= len(words) else "")
+                variable, words[index - 1] if 1 <= index <= len(words) else ""
+            )
         except PolicyDenied as exc:
             merged_io = await merged_io.merge(
-                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
+                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode())
+            )
             break
         try:
-            stdout, io, _ = await _execute_body(execute_node, body, session,
-                                                stdin, call_stack, job_table,
-                                                agent_id, handed, decisions)
+            stdout, io, _ = await _execute_body(
+                execute_node,
+                body,
+                session,
+                stdin,
+                call_stack,
+                job_table,
+                agent_id,
+                handed,
+                decisions,
+            )
         except (BreakSignal, ContinueSignal) as sig:
             merged_io = await _absorbed(sig, all_stdout, merged_io)
             if isinstance(sig, BreakSignal):

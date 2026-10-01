@@ -20,8 +20,9 @@ from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 
 
-async def copy(accessor: RAMAccessor, src_spec: PathSpec,
-               dst_spec: PathSpec) -> None:
+async def copy(
+    accessor: RAMAccessor, src_spec: PathSpec, dst_spec: PathSpec
+) -> None:
     src = src_spec.mount_path
     dst = dst_spec.mount_path
     store = accessor.store

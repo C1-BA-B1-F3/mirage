@@ -37,8 +37,8 @@ print("Seeded Redis with sample files")
 vfs = RedisVFS(url=REDIS_URL, key_prefix=KEY_PREFIX)
 
 with Workspace(
-    {"/data/": Mount(vfs, mode=MountMode.WRITE,
-                     backend=MountBackend.FUSE)}) as ws:
+    {"/data/": Mount(vfs, mode=MountMode.WRITE, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"\n=== FUSE MODE: mounted at {mp} ===\n")

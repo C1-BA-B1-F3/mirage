@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.errors import (CommandTimeoutError, FindParseError,
-                                    UsageError)
+from mirage.commands.errors import (
+    CommandTimeoutError,
+    FindParseError,
+    UsageError,
+)
 from mirage.runtime.routing import RouteDeny
 from mirage.types import Refusal
 from mirage.workspace.workspace.failure import failure_result
@@ -45,8 +48,9 @@ def test_find_parse_error_exits_1():
 
 
 def test_os_error_is_formatted_as_a_filesystem_diagnostic():
-    io = failure_result(FileNotFoundError(2, "No such file or directory"),
-                        "cat /gone")
+    io = failure_result(
+        FileNotFoundError(2, "No such file or directory"), "cat /gone"
+    )
     assert io.exit_code == 1
     assert io.stderr.startswith(b"cat: ")
 

@@ -44,28 +44,33 @@ def _seeded() -> Workspace:
             "/a": (RAMVFS(), MountMode.WRITE),
             "/b": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
 
     async def seed():
-        io = await ws.shell("mkdir -p /a/sub /b/deep && "
-                            "printf 'needle a\\n' > /a/x.txt && "
-                            "printf 'plain\\n' > /a/sub/inner.txt && "
-                            "printf 'needle b\\n' > /b/deep/y.txt")
+        io = await ws.shell(
+            "mkdir -p /a/sub /b/deep && "
+            "printf 'needle a\\n' > /a/x.txt && "
+            "printf 'plain\\n' > /a/sub/inner.txt && "
+            "printf 'needle b\\n' > /b/deep/y.txt"
+        )
         assert io.exit_code == 0, io.stderr
 
     asyncio.run(seed())
     return ws
 
 
-def _outputs(ws: Workspace,
-             session_id: str) -> list[tuple[str, int, bytes, bytes]]:
+def _outputs(
+    ws: Workspace, session_id: str
+) -> list[tuple[str, int, bytes, bytes]]:
 
     async def go():
         out = []
         for line in BATTERY:
             io = await ws.shell(line, session_id=session_id)
-            out.append((line, io.exit_code, io.stdout or b"", io.stderr
-                        or b""))
+            out.append(
+                (line, io.exit_code, io.stdout or b"", io.stderr or b"")
+            )
         return out
 
     return asyncio.run(go())

@@ -18,7 +18,6 @@ from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class OCIVFS(S3AliasVFS):
-
     prompt: str = PROMPT
 
     def __init__(self, config: OCIConfig) -> None:

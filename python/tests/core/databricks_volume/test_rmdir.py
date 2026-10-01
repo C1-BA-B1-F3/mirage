@@ -33,11 +33,13 @@ def _seed_directory(files, path: str) -> None:
 def _seed_file(files, path: str, data: bytes = b"x") -> None:
     parent = path.rsplit("/", 1)[0]
     files.downloads[path] = data
-    files.metadata[path] = SimpleNamespace(is_directory=False,
-                                           file_size=len(data))
+    files.metadata[path] = SimpleNamespace(
+        is_directory=False, file_size=len(data)
+    )
     files.directories.setdefault(parent, [])
     files.directories[parent].append(
-        SimpleNamespace(path=path, is_directory=False, file_size=len(data)))
+        SimpleNamespace(path=path, is_directory=False, file_size=len(data))
+    )
 
 
 @pytest.mark.asyncio

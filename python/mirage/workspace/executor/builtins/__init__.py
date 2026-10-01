@@ -16,43 +16,84 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mirage.workspace.executor.builtins.alias import (handle_alias,
-                                                          handle_unalias)
-    from mirage.workspace.executor.builtins.command import \
-        handle_command_builtin
+    from mirage.workspace.executor.builtins.alias import (
+        handle_alias,
+        handle_unalias,
+    )
+    from mirage.workspace.executor.builtins.command import (
+        handle_command_builtin,
+    )
     from mirage.workspace.executor.builtins.condition import handle_test
+    from mirage.workspace.executor.builtins.control import (
+        handle_colon,
+        handle_exit,
+        handle_false,
+        handle_return,
+        handle_true,
+        loop_levels,
+    )
+    from mirage.workspace.executor.builtins.declare import (
+        handle_declare_functions,
+        handle_declare_print,
+        handle_export,
+        handle_local,
+        handle_readonly,
+        note_local_array,
+    )
     from mirage.workspace.executor.builtins.df import handle_df
     from mirage.workspace.executor.builtins.dirs import handle_cd
-    from mirage.workspace.executor.builtins.echo import (handle_echo,
-                                                         interpret_escapes)
+    from mirage.workspace.executor.builtins.echo import (
+        handle_echo,
+        interpret_escapes,
+    )
     from mirage.workspace.executor.builtins.env import handle_env
     from mirage.workspace.executor.builtins.eval import handle_eval
     from mirage.workspace.executor.builtins.exec import handle_exec_command
     from mirage.workspace.executor.builtins.getopts import handle_getopts
     from mirage.workspace.executor.builtins.history import handle_history
     from mirage.workspace.executor.builtins.let import handle_let
-    from mirage.workspace.executor.builtins.lookup import (handle_type,
-                                                           handle_which)
-    from mirage.workspace.executor.builtins.man import (_command_entry,
-                                                        _render_man_index,
-                                                        _render_page,
-                                                        handle_man)
+    from mirage.workspace.executor.builtins.links import (
+        accepts_line,
+        follow_directory_links,
+        follow_paths,
+        handle_ln,
+        handle_readlink,
+        prepare_mv,
+        settle_moves,
+        strip_link_operands,
+    )
+    from mirage.workspace.executor.builtins.lookup import (
+        handle_type,
+        handle_which,
+    )
+    from mirage.workspace.executor.builtins.man import (
+        _command_entry,
+        _render_man_index,
+        _render_page,
+        handle_man,
+    )
     from mirage.workspace.executor.builtins.mapfile import handle_mapfile
-    from mirage.workspace.executor.builtins.metadata import (handle_chgrp,
-                                                             handle_chmod,
-                                                             handle_chown,
-                                                             handle_touch)
-    from mirage.workspace.executor.builtins.metadata.getfattr import \
-        handle_getfattr
-    from mirage.workspace.executor.builtins.metadata.setfattr import \
-        handle_setfattr
+    from mirage.workspace.executor.builtins.metadata import (
+        handle_chgrp,
+        handle_chmod,
+        handle_chown,
+        handle_touch,
+    )
+    from mirage.workspace.executor.builtins.metadata.getfattr import (
+        handle_getfattr,
+    )
+    from mirage.workspace.executor.builtins.metadata.setfattr import (
+        handle_setfattr,
+    )
     from mirage.workspace.executor.builtins.printenv import handle_printenv
     from mirage.workspace.executor.builtins.printf import handle_printf
     from mirage.workspace.executor.builtins.read import handle_read
     from mirage.workspace.executor.builtins.scope import _scope_path, _to_scope
-    from mirage.workspace.executor.builtins.script import (handle_bash,
-                                                           handle_exec_path,
-                                                           handle_source)
+    from mirage.workspace.executor.builtins.script import (
+        handle_bash,
+        handle_exec_path,
+        handle_source,
+    )
     from mirage.workspace.executor.builtins.set import handle_set
     from mirage.workspace.executor.builtins.shift import handle_shift
     from mirage.workspace.executor.builtins.shopt import handle_shopt
@@ -64,140 +105,164 @@ if TYPE_CHECKING:
     from mirage.workspace.executor.builtins.whoami import handle_whoami
     from mirage.workspace.executor.builtins.xargs import handle_xargs
 
-    from mirage.workspace.executor.builtins.links import (  # isort: skip
-        accepts_line, follow_directory_links, follow_paths, handle_ln,
-        handle_readlink, prepare_mv, settle_moves, strip_link_operands)
-    from mirage.workspace.executor.builtins.control import (  # isort: skip
-        handle_colon, handle_exit, handle_false, handle_return, handle_true,
-        loop_levels)
-    from mirage.workspace.executor.builtins.declare import (  # isort: skip
-        handle_declare_functions, handle_declare_print, handle_export,
-        handle_local, handle_readonly, note_local_array)
-
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.workspace.executor.builtins.alias": ("handle_alias",
-                                                 "handle_unalias"),
-    "mirage.workspace.executor.builtins.command": ("handle_command_builtin", ),
-    "mirage.workspace.executor.builtins.condition": ("handle_test", ),
-    "mirage.workspace.executor.builtins.df": ("handle_df", ),
-    "mirage.workspace.executor.builtins.dirs": ("handle_cd", ),
-    "mirage.workspace.executor.builtins.echo": ("handle_echo",
-                                                "interpret_escapes"),
-    "mirage.workspace.executor.builtins.env": ("handle_env", ),
-    "mirage.workspace.executor.builtins.eval": ("handle_eval", ),
-    "mirage.workspace.executor.builtins.exec": ("handle_exec_command", ),
-    "mirage.workspace.executor.builtins.getopts": ("handle_getopts", ),
-    "mirage.workspace.executor.builtins.history": ("handle_history", ),
-    "mirage.workspace.executor.builtins.let": ("handle_let", ),
-    "mirage.workspace.executor.builtins.lookup": ("handle_type",
-                                                  "handle_which"),
-    "mirage.workspace.executor.builtins.man":
-    ("_command_entry", "_render_man_index", "_render_page", "handle_man"),
-    "mirage.workspace.executor.builtins.mapfile": ("handle_mapfile", ),
-    "mirage.workspace.executor.builtins.metadata":
-    ("handle_chgrp", "handle_chmod", "handle_chown", "handle_touch"),
-    "mirage.workspace.executor.builtins.metadata.getfattr":
-    ("handle_getfattr", ),
-    "mirage.workspace.executor.builtins.metadata.setfattr":
-    ("handle_setfattr", ),
-    "mirage.workspace.executor.builtins.printenv": ("handle_printenv", ),
-    "mirage.workspace.executor.builtins.printf": ("handle_printf", ),
-    "mirage.workspace.executor.builtins.read": ("handle_read", ),
+    "mirage.workspace.executor.builtins.alias": (
+        "handle_alias",
+        "handle_unalias",
+    ),
+    "mirage.workspace.executor.builtins.command": ("handle_command_builtin",),
+    "mirage.workspace.executor.builtins.condition": ("handle_test",),
+    "mirage.workspace.executor.builtins.df": ("handle_df",),
+    "mirage.workspace.executor.builtins.dirs": ("handle_cd",),
+    "mirage.workspace.executor.builtins.echo": (
+        "handle_echo",
+        "interpret_escapes",
+    ),
+    "mirage.workspace.executor.builtins.env": ("handle_env",),
+    "mirage.workspace.executor.builtins.eval": ("handle_eval",),
+    "mirage.workspace.executor.builtins.exec": ("handle_exec_command",),
+    "mirage.workspace.executor.builtins.getopts": ("handle_getopts",),
+    "mirage.workspace.executor.builtins.history": ("handle_history",),
+    "mirage.workspace.executor.builtins.let": ("handle_let",),
+    "mirage.workspace.executor.builtins.lookup": (
+        "handle_type",
+        "handle_which",
+    ),
+    "mirage.workspace.executor.builtins.man": (
+        "_command_entry",
+        "_render_man_index",
+        "_render_page",
+        "handle_man",
+    ),
+    "mirage.workspace.executor.builtins.mapfile": ("handle_mapfile",),
+    "mirage.workspace.executor.builtins.metadata": (
+        "handle_chgrp",
+        "handle_chmod",
+        "handle_chown",
+        "handle_touch",
+    ),
+    "mirage.workspace.executor.builtins.metadata.getfattr": (
+        "handle_getfattr",
+    ),
+    "mirage.workspace.executor.builtins.metadata.setfattr": (
+        "handle_setfattr",
+    ),
+    "mirage.workspace.executor.builtins.printenv": ("handle_printenv",),
+    "mirage.workspace.executor.builtins.printf": ("handle_printf",),
+    "mirage.workspace.executor.builtins.read": ("handle_read",),
     "mirage.workspace.executor.builtins.scope": ("_scope_path", "_to_scope"),
-    "mirage.workspace.executor.builtins.script":
-    ("handle_bash", "handle_exec_path", "handle_source"),
-    "mirage.workspace.executor.builtins.set": ("handle_set", ),
-    "mirage.workspace.executor.builtins.shift": ("handle_shift", ),
-    "mirage.workspace.executor.builtins.shopt": ("handle_shopt", ),
-    "mirage.workspace.executor.builtins.sleep": ("handle_sleep", ),
-    "mirage.workspace.executor.builtins.timeout": ("handle_timeout", ),
-    "mirage.workspace.executor.builtins.trap": ("handle_trap", ),
-    "mirage.workspace.executor.builtins.umask": ("handle_umask", ),
-    "mirage.workspace.executor.builtins.unset": ("handle_unset", ),
-    "mirage.workspace.executor.builtins.whoami": ("handle_whoami", ),
-    "mirage.workspace.executor.builtins.xargs": ("handle_xargs", ),
-    "mirage.workspace.executor.builtins.links":
-    ("accepts_line", "follow_directory_links", "follow_paths", "handle_ln",
-     "handle_readlink", "prepare_mv", "settle_moves", "strip_link_operands"),
-    "mirage.workspace.executor.builtins.control":
-    ("handle_colon", "handle_exit", "handle_false", "handle_return",
-     "handle_true", "loop_levels"),
-    "mirage.workspace.executor.builtins.declare":
-    ("handle_declare_functions", "handle_declare_print", "handle_export",
-     "handle_local", "handle_readonly", "note_local_array"),
+    "mirage.workspace.executor.builtins.script": (
+        "handle_bash",
+        "handle_exec_path",
+        "handle_source",
+    ),
+    "mirage.workspace.executor.builtins.set": ("handle_set",),
+    "mirage.workspace.executor.builtins.shift": ("handle_shift",),
+    "mirage.workspace.executor.builtins.shopt": ("handle_shopt",),
+    "mirage.workspace.executor.builtins.sleep": ("handle_sleep",),
+    "mirage.workspace.executor.builtins.timeout": ("handle_timeout",),
+    "mirage.workspace.executor.builtins.trap": ("handle_trap",),
+    "mirage.workspace.executor.builtins.umask": ("handle_umask",),
+    "mirage.workspace.executor.builtins.unset": ("handle_unset",),
+    "mirage.workspace.executor.builtins.whoami": ("handle_whoami",),
+    "mirage.workspace.executor.builtins.xargs": ("handle_xargs",),
+    "mirage.workspace.executor.builtins.links": (
+        "accepts_line",
+        "follow_directory_links",
+        "follow_paths",
+        "handle_ln",
+        "handle_readlink",
+        "prepare_mv",
+        "settle_moves",
+        "strip_link_operands",
+    ),
+    "mirage.workspace.executor.builtins.control": (
+        "handle_colon",
+        "handle_exit",
+        "handle_false",
+        "handle_return",
+        "handle_true",
+        "loop_levels",
+    ),
+    "mirage.workspace.executor.builtins.declare": (
+        "handle_declare_functions",
+        "handle_declare_print",
+        "handle_export",
+        "handle_local",
+        "handle_readonly",
+        "note_local_array",
+    ),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = [
-    '_command_entry',
-    'handle_alias',
-    'handle_unalias',
-    '_render_man_index',
-    '_render_page',
-    '_scope_path',
-    '_to_scope',
-    'handle_bash',
-    'handle_cd',
-    'handle_colon',
-    'handle_command_builtin',
-    'handle_echo',
-    'handle_env',
-    'handle_eval',
-    'handle_exit',
-    'handle_false',
-    'handle_exec_command',
-    'handle_declare_functions',
-    'handle_declare_print',
-    'handle_export',
-    'handle_history',
-    'handle_let',
-    'handle_ln',
-    'handle_local',
-    'handle_readlink',
-    'accepts_line',
-    'follow_directory_links',
-    'follow_paths',
-    'handle_df',
-    'handle_chgrp',
-    'handle_chmod',
-    'handle_chown',
-    'handle_getfattr',
-    'handle_setfattr',
-    'handle_touch',
-    'prepare_mv',
-    'settle_moves',
-    'strip_link_operands',
-    'handle_man',
-    'handle_mapfile',
-    'handle_printenv',
-    'handle_printf',
-    'handle_read',
-    'handle_readonly',
-    'handle_return',
-    'handle_getopts',
-    'handle_set',
-    'handle_shift',
-    'handle_shopt',
-    'handle_sleep',
-    'handle_exec_path',
-    'handle_source',
-    'handle_test',
-    'handle_timeout',
-    'handle_trap',
-    'handle_true',
-    'handle_unset',
-    'handle_type',
-    'handle_umask',
-    'handle_which',
-    'handle_whoami',
-    'note_local_array',
-    'handle_xargs',
-    'interpret_escapes',
-    'loop_levels',
+    "_command_entry",
+    "handle_alias",
+    "handle_unalias",
+    "_render_man_index",
+    "_render_page",
+    "_scope_path",
+    "_to_scope",
+    "handle_bash",
+    "handle_cd",
+    "handle_colon",
+    "handle_command_builtin",
+    "handle_echo",
+    "handle_env",
+    "handle_eval",
+    "handle_exit",
+    "handle_false",
+    "handle_exec_command",
+    "handle_declare_functions",
+    "handle_declare_print",
+    "handle_export",
+    "handle_history",
+    "handle_let",
+    "handle_ln",
+    "handle_local",
+    "handle_readlink",
+    "accepts_line",
+    "follow_directory_links",
+    "follow_paths",
+    "handle_df",
+    "handle_chgrp",
+    "handle_chmod",
+    "handle_chown",
+    "handle_getfattr",
+    "handle_setfattr",
+    "handle_touch",
+    "prepare_mv",
+    "settle_moves",
+    "strip_link_operands",
+    "handle_man",
+    "handle_mapfile",
+    "handle_printenv",
+    "handle_printf",
+    "handle_read",
+    "handle_readonly",
+    "handle_return",
+    "handle_getopts",
+    "handle_set",
+    "handle_shift",
+    "handle_shopt",
+    "handle_sleep",
+    "handle_exec_path",
+    "handle_source",
+    "handle_test",
+    "handle_timeout",
+    "handle_trap",
+    "handle_true",
+    "handle_unset",
+    "handle_type",
+    "handle_umask",
+    "handle_which",
+    "handle_whoami",
+    "note_local_array",
+    "handle_xargs",
+    "interpret_escapes",
+    "loop_levels",
 ]
 
 

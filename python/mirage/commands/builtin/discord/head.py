@@ -12,15 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
-
 from mirage.accessor.discord import DiscordAccessor
-from mirage.commands.builtin.discord._provision import file_read_provision
 from mirage.commands.builtin.discord.io import IO
 from mirage.commands.builtin.generic.head import head as generic_head
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
-from mirage.commands.builtin.generic_bind.adapter import (bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.discord.client import discord_get
@@ -30,7 +29,6 @@ from mirage.core.discord.render import history_jsonl_bytes
 from mirage.core.discord.scope import detect_scope
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 
 
@@ -53,18 +51,13 @@ def _chat_match(path: PathSpec) -> ScopeMatch | None:
     return match
 
 
-async def head_provision(accessor: DiscordAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "head " + " ".join(p.virtual for p in paths)
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("head", vfs="discord", spec=SPECS["head"], provision=head_provision)
-async def head(accessor: DiscordAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("head", vfs="discord", spec=SPECS["head"])
+async def head(
+    accessor: DiscordAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:
@@ -77,20 +70,22 @@ async def head(accessor: DiscordAccessor, paths: list[PathSpec],
         # counts one API page can honor (Discord caps limit at 100) take
         # the shortcut; zero, negative (all-but-last-N) and larger counts,
         # -v headers, byte counts and -z all keep the generic path.
-        if (match is not None and parsed.bytes_ is None
-                and not parsed.zero_terminated and not parsed.verbose
-                and 0 < lines <= 100):
+        if (
+            match is not None
+            and parsed.bytes_ is None
+            and not parsed.zero_terminated
+            and not parsed.verbose
+            and 0 < lines <= 100
+        ):
             day = match.slots["day"]
             after = date_to_snowflake(day)
             before_int = int(date_to_snowflake(day, end=True))
             msgs = await discord_get(
                 accessor.config,
                 f"/channels/{match.slots['channel_id']}/messages",
-                params={
-                    "after": after,
-                    "limit": lines
-                },
-                session=accessor.pool)
+                params={"after": after, "limit": lines},
+                session=accessor.pool,
+            )
             assert isinstance(msgs, list)
             # With `after`, a short day spills into the next one: the API
             # keeps returning messages past midnight until `limit` is met,
@@ -100,6 +95,10 @@ async def head(accessor: DiscordAccessor, paths: list[PathSpec],
             msgs.sort(key=lambda m: int(m["id"]))
             return generic_head(history_jsonl_bytes(msgs), n=lines), IOResult()
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
-    return await head_generic(resolved, list(texts), opts,
-                              bound_op(IO.stat, accessor, opts.index),
-                              bound_op(discord_read, accessor, opts.index))
+    return await head_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(IO.stat, accessor, opts.index),
+        bound_op(discord_read, accessor, opts.index),
+    )

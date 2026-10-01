@@ -24,11 +24,14 @@ from mirage.shell.join import shell_join
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.path import resolve_path
 from mirage.vfs.bin import BinViewVFS
-from mirage.workspace.executor.builtins.command.command import \
-    handle_command_builtin
+from mirage.workspace.executor.builtins.command.command import (
+    handle_command_builtin,
+)
 from mirage.workspace.executor.builtins.script.bash import handle_bash
-from mirage.workspace.executor.builtins.script.script import (read_script_text,
-                                                              script_error)
+from mirage.workspace.executor.builtins.script.script import (
+    read_script_text,
+    script_error,
+)
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
@@ -54,7 +57,7 @@ def _env_split_string(words: list[str]) -> list[str]:
     if head in ("-S", "--split-string"):
         return words[1:]
     if head.startswith("--split-string="):
-        head = head[len("--split-string="):]
+        head = head[len("--split-string=") :]
     elif head.startswith("-S"):
         head = head[2:]
     else:
@@ -138,22 +141,36 @@ async def handle_exec_path(
         token = clear_program_invocation()
         try:
             return await handle_command_builtin(
-                execute_fn, ["--", key.strip("/"), *args], session, registry,
-                stdin)
+                execute_fn,
+                ["--", key.strip("/"), *args],
+                session,
+                registry,
+                stdin,
+            )
         finally:
             reset_program_invocation(token)
             session.restore(saved)
     words = shebang_words(script)
     interp = words[0] if words else "sh"
     if interp in ("sh", "bash"):
-        return await handle_bash(dispatch, execute_fn,
-                                 [*words[1:], path, *args], session, stdin,
-                                 interp, sink)
+        return await handle_bash(
+            dispatch,
+            execute_fn,
+            [*words[1:], path, *args],
+            session,
+            stdin,
+            interp,
+            sink,
+        )
     line = shell_join([*words, path, *args])
-    io = await execute_fn(line,
-                          session_id=session.session_id,
-                          stdin=stdin,
-                          sink=sink)
-    return io.stdout, io, ExecutionNode(command=f"{path} " +
-                                        " ".join(args) if args else path,
-                                        exit_code=io.exit_code)
+    io = await execute_fn(
+        line, session_id=session.session_id, stdin=stdin, sink=sink
+    )
+    return (
+        io.stdout,
+        io,
+        ExecutionNode(
+            command=f"{path} " + " ".join(args) if args else path,
+            exit_code=io.exit_code,
+        ),
+    )

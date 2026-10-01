@@ -37,7 +37,7 @@ export function registerExecuteCommand(program: Command): void {
         runtime?: string
         bg?: boolean
       }) => {
-        const body: Record<string, unknown> = { command: opts.command, provision: false }
+        const body: Record<string, unknown> = { command: opts.command }
         if (opts.session !== undefined) body.sessionId = opts.session
         if (opts.cwd !== undefined) body.cwd = opts.cwd
         if (opts.runtime !== undefined) body.runtime = opts.runtime

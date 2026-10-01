@@ -16,8 +16,13 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.hf_hub.admin import (create_repo, create_tag, delete_tag,
-                                      list_tags, split_repo_id)
+from mirage.core.hf_hub.admin import (
+    create_repo,
+    create_tag,
+    delete_tag,
+    list_tags,
+    split_repo_id,
+)
 from mirage.core.hf_hub.config import HfConfig
 
 CONFIG = HfConfig(token="t")
@@ -40,7 +45,7 @@ async def test_create_repo_sends_name_organization_and_type(mock_post):
     assert body == {
         "name": "widget",
         "organization": "acme",
-        "type": "dataset"
+        "type": "dataset",
     }
 
 
@@ -80,14 +85,8 @@ async def test_delete_tag_targets_the_tag_not_a_revision(mock_request):
 @patch("mirage.core.hf_hub.admin.hub_get")
 async def test_list_tags_reads_refs_because_there_is_no_tag_listing(mock_get):
     mock_get.return_value = {
-        "branches": [{
-            "name": "main"
-        }],
-        "tags": [{
-            "name": "v1"
-        }, {
-            "name": "v2"
-        }],
+        "branches": [{"name": "main"}],
+        "tags": [{"name": "v1"}, {"name": "v2"}],
     }
     assert await list_tags(CONFIG, "a/b") == ["v1", "v2"]
     assert mock_get.await_args.args[1].endswith("/refs")

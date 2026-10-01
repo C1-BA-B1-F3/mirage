@@ -29,7 +29,6 @@ TRACE_ID_RE = re.compile(r"^[0-9a-f]{16}$|^[0-9a-f]{32}$", re.IGNORECASE)
 
 
 class JaegerApiError(Exception):
-
     def __init__(self, message: str, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
@@ -97,9 +96,11 @@ def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
     return JaegerApiError(message, resp.status)
 
 
-async def _get(accessor: JaegerAccessor,
-               endpoint: str,
-               params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def _get(
+    accessor: JaegerAccessor,
+    endpoint: str,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Call the Jaeger query API and return the decoded body.
 
     Args:
@@ -114,11 +115,9 @@ async def _get(accessor: JaegerAccessor,
         JaegerApiError: the API reported an error status.
     """
     url = f"{accessor.config.host.rstrip('/')}{endpoint}"
-    payload = await api_request("GET",
-                                url,
-                                error_of=_error_of,
-                                params=params,
-                                session=accessor.pool)
+    payload = await api_request(
+        "GET", url, error_of=_error_of, params=params, session=accessor.pool
+    )
     if not isinstance(payload, dict):
         raise JaegerApiError("Jaeger response must be a JSON object")
     return payload
@@ -142,8 +141,9 @@ async def fetch_services(accessor: JaegerAccessor) -> list[str]:
     return [str(name) for name in _data_list(payload)]
 
 
-async def fetch_operations(accessor: JaegerAccessor,
-                           service: str) -> list[dict[str, Any]]:
+async def fetch_operations(
+    accessor: JaegerAccessor, service: str
+) -> list[dict[str, Any]]:
     """List operations recorded for a service.
 
     An unknown service yields an empty list rather than an error, so callers
@@ -192,8 +192,9 @@ async def fetch_traces(
     return [row for row in _data_list(payload) if isinstance(row, dict)]
 
 
-async def fetch_trace(accessor: JaegerAccessor,
-                      trace_id: str) -> dict[str, Any]:
+async def fetch_trace(
+    accessor: JaegerAccessor, trace_id: str
+) -> dict[str, Any]:
     """Fetch one trace by id.
 
     Args:

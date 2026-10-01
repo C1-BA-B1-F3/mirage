@@ -44,14 +44,16 @@ def test_uniq_stdin(env):
 
 def test_uniq_i(env):
     data = b"Hello\nhello\nWorld\n"
-    assert env.mirage("uniq -i", stdin=data) == env.native("uniq -i",
-                                                           stdin=data)
+    assert env.mirage("uniq -i", stdin=data) == env.native(
+        "uniq -i", stdin=data
+    )
 
 
 def test_uniq_f(env):
     data = b"a 1\nb 1\nc 2\n"
-    assert env.mirage("uniq -f 1", stdin=data) == env.native("uniq -f 1",
-                                                             stdin=data)
+    assert env.mirage("uniq -f 1", stdin=data) == env.native(
+        "uniq -f 1", stdin=data
+    )
 
 
 def test_uniq_w(env):
@@ -61,5 +63,6 @@ def test_uniq_w(env):
 
 def test_uniq_s(env):
     data = b"xxhello\nyyhello\nzzworld\n"
-    assert env.mirage("uniq -s 2", stdin=data) == env.native("uniq -s 2",
-                                                             stdin=data)
+    assert env.mirage("uniq -s 2", stdin=data) == env.native(
+        "uniq -s 2", stdin=data
+    )

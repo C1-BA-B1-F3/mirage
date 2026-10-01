@@ -192,22 +192,7 @@ export function literalWord(node: TSNodeLike, home: string | null = null): strin
   return null
 }
 
-/**
- * Split FOO=1 BAR=2 cmd parts into [assignments, remaining].
- *
- * The single structural rule for env-prefixed commands, shared by the
- * executor (which expands and applies the assignments) and the
- * provision planner (which only needs the command parts).
- */
-export function hasCommandSubstitution(node: TSNodeLike): boolean {
-  // The provision planner suppresses substitution execution, so any
-  // word carrying one expands to empty during a plan walk and the
-  // affected estimate must degrade to UNKNOWN instead of trusting the
-  // incomplete expansion.
-  if (node.type === NT.COMMAND_SUBSTITUTION || node.type === NT.PROCESS_SUBSTITUTION) return true
-  return node.namedChildren.some((c) => hasCommandSubstitution(c))
-}
-
+/** Split FOO=1 BAR=2 cmd parts into [assignments, remaining]. */
 export function splitEnvPrefix(parts: TSNodeLike[]): [TSNodeLike[], TSNodeLike[]] {
   const assignments: TSNodeLike[] = []
   const remaining: TSNodeLike[] = []
@@ -392,10 +377,6 @@ export function getCforParts(node: TSNodeLike): [TSNodeLike[][], TSNodeLike[]] {
     if (child.type === NT.DO_GROUP) body = [...child.namedChildren]
   }
   return [exprs, body]
-}
-
-export function getSubshellBody(node: TSNodeLike): TSNodeLike[] {
-  return [...node.namedChildren]
 }
 
 /**

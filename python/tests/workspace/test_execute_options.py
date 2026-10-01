@@ -225,8 +225,9 @@ async def test_cancel_inside_command_substitution(monkeypatch):
         finally:
             exited.set()
 
-    monkeypatch.setitem(handle_sleep.__globals__, "cancellable_sleep",
-                        tracked_sleep)
+    monkeypatch.setitem(
+        handle_sleep.__globals__, "cancellable_sleep", tracked_sleep
+    )
     task = asyncio.create_task(ws.shell('echo "$(sleep 3600)"', cancel=cancel))
     try:
         # Synchronize on the inner command, not parsing/runner wall time.
@@ -271,8 +272,9 @@ async def _tool_call(ws, cmd, cwd_v, env_v, timeout):
 async def test_agent_pattern_parallel_tool_calls_each_with_own_options():
     ws = _make_ws()
     a, b = await asyncio.gather(
-        _tool_call(ws, "pwd; printenv DEBUG", "/ram/subdir", {"DEBUG": "one"},
-                   5.0),
+        _tool_call(
+            ws, "pwd; printenv DEBUG", "/ram/subdir", {"DEBUG": "one"}, 5.0
+        ),
         _tool_call(ws, "pwd; printenv DEBUG", "/ram", {"DEBUG": "two"}, 5.0),
     )
     assert "/ram/subdir" in a.stdout.decode()

@@ -18,8 +18,8 @@ from mirage.types import ContentType
 
 GMAIL_JSON = Codec(suffix=".gmail.json")
 
-_LABEL = (Slot("label"), )
-_DAY = _LABEL + (Slot("day", DATE), )
+_LABEL = (Slot("label"),)
+_DAY = _LABEL + (Slot("day", DATE),)
 
 # One description of the tree: readdir, stat, read and the search
 # push-down all classify through it, so the file surface and the command
@@ -29,16 +29,22 @@ _DAY = _LABEL + (Slot("day", DATE), )
 SCOPES = (
     Scope(kind="label", segments=_LABEL),
     Scope(kind="day", segments=_DAY),
-    Scope(kind="message",
-          segments=_DAY + (Slot("message", GMAIL_JSON, id_key="message_id"), ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="attachment_dir",
-          segments=_DAY + (Slot("attachment_dir", id_key="message_id"), )),
-    Scope(kind="attachment",
-          segments=_DAY +
-          (Slot("attachment_dir", id_key="message_id"), Slot("filename")),
-          leaf=True),
+    Scope(
+        kind="message",
+        segments=_DAY + (Slot("message", GMAIL_JSON, id_key="message_id"),),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="attachment_dir",
+        segments=_DAY + (Slot("attachment_dir", id_key="message_id"),),
+    ),
+    Scope(
+        kind="attachment",
+        segments=_DAY
+        + (Slot("attachment_dir", id_key="message_id"), Slot("filename")),
+        leaf=True,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

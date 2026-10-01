@@ -83,12 +83,10 @@ function codeOf(err: unknown): string {
   return String((err as { code?: string }).code ?? err);
 }
 
-type PlainExecute = SessionExecuteOptions & { provision?: false };
-
 interface Doors {
   shell(
     cmd: string,
-    options?: PlainExecute,
+    options?: SessionExecuteOptions,
   ): Promise<{
     stdout: Uint8Array | null;
     stderr: Uint8Array | null;
@@ -102,7 +100,7 @@ async function line(
   handle: Doors,
   cmd: string,
   note: string,
-  options: PlainExecute = {},
+  options: SessionExecuteOptions = {},
 ): Promise<void> {
   const res = await handle.shell(cmd, options);
   const out = res.stdout === null ? "" : dec.decode(res.stdout);

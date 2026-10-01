@@ -28,7 +28,6 @@ _REMOTE_SCHEMES = ("s3://", "gs://", "az://", "hf://", "db://")
 
 
 class LanceDBVFS(BaseVFS):
-
     accessor: LanceDBAccessor
     name: str = VFSName.LANCEDB
     # readdir seeds exact card sizes from the widened select and stat falls

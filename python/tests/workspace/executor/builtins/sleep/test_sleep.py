@@ -3,8 +3,8 @@ import time
 
 import pytest
 
-from mirage.commands.config import help_page, version_line
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.workspace.executor.builtins.sleep import handle_sleep
 
 
@@ -21,8 +21,9 @@ async def _stdout(source) -> bytes:
 async def test_sleep_missing_operand_exits_1():
     _, io, node = await handle_sleep([])
     assert io.exit_code == 1
-    assert io.stderr == (b"sleep: missing operand\n"
-                         b"Try 'sleep --help' for more information.\n")
+    assert io.stderr == (
+        b"sleep: missing operand\nTry 'sleep --help' for more information.\n"
+    )
     assert node.exit_code == 1
 
 
@@ -35,8 +36,10 @@ async def test_sleep_missing_operand_exits_1():
 async def test_sleep_unknown_long_option_exits_1(args):
     _, io, node = await handle_sleep(args)
     assert io.exit_code == 1
-    assert io.stderr == (b"sleep: unrecognized option '--zzz'\n"
-                         b"Try 'sleep --help' for more information.\n")
+    assert io.stderr == (
+        b"sleep: unrecognized option '--zzz'\n"
+        b"Try 'sleep --help' for more information.\n"
+    )
     assert node.exit_code == 1
 
 
@@ -46,9 +49,17 @@ async def test_sleep_unknown_long_option_exits_1(args):
 # line they sit, and the first dash word decides (`sleep --help --zzz` is
 # help, `sleep --zzz --help` is the refusal).
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args",
-                         [["--help"], ["--h"], ["--hel"], ["0", "--help"],
-                          ["--help", "--zzz"], ["--help", "0"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--help"],
+        ["--h"],
+        ["--hel"],
+        ["0", "--help"],
+        ["--help", "--zzz"],
+        ["--help", "0"],
+    ],
+)
 async def test_sleep_help_prints_to_stdout_and_exits_0(args):
     out, io, node = await handle_sleep(args)
     assert io.exit_code == 0
@@ -79,7 +90,8 @@ async def test_sleep_help_documents_both_options_under_gnus_synopsis():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "args", [["--version"], ["--v"], ["--ver"], ["0", "--version"]])
+    "args", [["--version"], ["--v"], ["--ver"], ["0", "--version"]]
+)
 async def test_sleep_version_prints_to_stdout_and_exits_0(args):
     out, io, _ = await handle_sleep(args)
     assert io.exit_code == 0
@@ -94,9 +106,13 @@ async def test_sleep_standard_option_with_a_value_is_refused(arg):
     canonical = "--version" if arg.startswith("--vers") else "--help"
     _, io, _ = await handle_sleep([arg])
     assert io.exit_code == 1
-    assert io.stderr == (
-        f"sleep: option '{canonical}' doesn't allow an argument\n"
-        f"Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (
+            f"sleep: option '{canonical}' doesn't allow an argument\n"
+            f"Try 'sleep --help' for more information.\n"
+        ).encode()
+    )
 
 
 # An empty long name prefixes both standard options, and getopt_long
@@ -106,9 +122,11 @@ async def test_sleep_standard_option_with_a_value_is_refused(arg):
 async def test_sleep_empty_long_name_is_ambiguous():
     _, io, _ = await handle_sleep(["--=x"])
     assert io.exit_code == 1
-    assert io.stderr == (b"sleep: option '--=x' is ambiguous; "
-                         b"possibilities: '--help' '--version'\n"
-                         b"Try 'sleep --help' for more information.\n")
+    assert io.stderr == (
+        b"sleep: option '--=x' is ambiguous; "
+        b"possibilities: '--help' '--version'\n"
+        b"Try 'sleep --help' for more information.\n"
+    )
 
 
 # Prefix matching is byte-exact: a longer dash run and a different case
@@ -118,9 +136,13 @@ async def test_sleep_empty_long_name_is_ambiguous():
 async def test_sleep_near_miss_spellings_are_unrecognized(arg):
     _, io, _ = await handle_sleep([arg])
     assert io.exit_code == 1
-    assert io.stderr == (
-        f"sleep: unrecognized option '{arg}'\n"
-        f"Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (
+            f"sleep: unrecognized option '{arg}'\n"
+            f"Try 'sleep --help' for more information.\n"
+        ).encode()
+    )
 
 
 # `--` ends the scan, so the word after it is an interval, not a help
@@ -129,16 +151,20 @@ async def test_sleep_near_miss_spellings_are_unrecognized(arg):
 async def test_sleep_help_after_end_of_options_is_an_interval():
     _, io, _ = await handle_sleep(["--", "--help"])
     assert io.exit_code == 1
-    assert io.stderr == (b"sleep: invalid time interval '--help'\n"
-                         b"Try 'sleep --help' for more information.\n")
+    assert io.stderr == (
+        b"sleep: invalid time interval '--help'\n"
+        b"Try 'sleep --help' for more information.\n"
+    )
 
 
 # A short one names the offending character, GNU's other wording.
 @pytest.mark.asyncio
 async def test_sleep_unknown_short_option_names_the_character():
     _, io, _ = await handle_sleep(["-Q"])
-    assert io.stderr == (b"sleep: invalid option -- 'Q'\n"
-                         b"Try 'sleep --help' for more information.\n")
+    assert io.stderr == (
+        b"sleep: invalid option -- 'Q'\n"
+        b"Try 'sleep --help' for more information.\n"
+    )
 
 
 # The page this arm prints heads with GNU's own
@@ -150,9 +176,15 @@ async def test_sleep_unknown_short_option_names_the_character():
 # then dropping the multiplier would satisfy any check of the exit code
 # alone.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw,seconds", [("0.3s", 0.3), ("0.005m", 0.3),
-                                         ("0.0001h", 0.36),
-                                         ("0.0000035d", 0.3024)])
+@pytest.mark.parametrize(
+    "raw,seconds",
+    [
+        ("0.3s", 0.3),
+        ("0.005m", 0.3),
+        ("0.0001h", 0.36),
+        ("0.0000035d", 0.3024),
+    ],
+)
 async def test_sleep_scales_by_the_advertised_suffix(raw, seconds):
     started = time.monotonic()
     _, io, node = await handle_sleep([raw])
@@ -179,27 +211,46 @@ async def test_sleep_sums_suffixed_and_bare_operands():
 # an uppercase suffix, two of them, a suffix with anything after it, a
 # letter that is not one, and a bare suffix with no number.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw", [
-    "0S", "0M", "0H", "0D", "0.5S", "0ss", "0sx", "0n", "0b", "s", "1_0s",
-    "0 s"
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "0S",
+        "0M",
+        "0H",
+        "0D",
+        "0.5S",
+        "0ss",
+        "0sx",
+        "0n",
+        "0b",
+        "s",
+        "1_0s",
+        "0 s",
+    ],
+)
 async def test_sleep_refuses_a_suffix_gnulib_does_not_take(raw):
     _, io, _ = await handle_sleep(["--", raw])
     assert io.exit_code == 1
     assert io.stderr.startswith(
-        f"sleep: invalid time interval '{raw}'\n".encode())
+        f"sleep: invalid time interval '{raw}'\n".encode()
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raw",
-    ["abc", "-1", "inf", "Infinity", "nan", "NaN", "0x10", "1_0", "1e309", ""])
+    ["abc", "-1", "inf", "Infinity", "nan", "NaN", "0x10", "1_0", "1e309", ""],
+)
 async def test_sleep_invalid_interval_exits_1(raw):
     _, io, node = await handle_sleep([raw])
     assert io.exit_code == 1
-    assert io.stderr == (
-        f"sleep: invalid time interval '{raw}'\n"
-        f"Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (
+            f"sleep: invalid time interval '{raw}'\n"
+            f"Try 'sleep --help' for more information.\n"
+        ).encode()
+    )
     assert node.exit_code == 1
 
 
@@ -228,21 +279,26 @@ async def test_sleep_sums_every_operand():
 # `sleep 1x 1x` names 1x twice, `sleep 1x 0 2y` skips the good one).
 # Reading only the first operand made `sleep -- 0 bogus` exit 0.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,named", [
-    (["--", "0", "bogus"], ["bogus"]),
-    (["0", "bogus"], ["bogus"]),
-    (["bogus", "0"], ["bogus"]),
-    (["--", "0.2", "x", "y"], ["x", "y"]),
-    (["1x", "1x"], ["1x", "1x"]),
-    (["1x", "0", "2y"], ["1x", "2y"]),
-])
+@pytest.mark.parametrize(
+    "args,named",
+    [
+        (["--", "0", "bogus"], ["bogus"]),
+        (["0", "bogus"], ["bogus"]),
+        (["bogus", "0"], ["bogus"]),
+        (["--", "0.2", "x", "y"], ["x", "y"]),
+        (["1x", "1x"], ["1x", "1x"]),
+        (["1x", "0", "2y"], ["1x", "2y"]),
+    ],
+)
 async def test_sleep_refuses_any_bad_operand_naming_every_one(args, named):
     _, io, node = await handle_sleep(args)
     assert io.exit_code == 1
     assert node.exit_code == 1
     lines = "".join(f"sleep: invalid time interval '{w}'\n" for w in named)
-    assert io.stderr == (
-        f"{lines}Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (f"{lines}Try 'sleep --help' for more information.\n").encode()
+    )
 
 
 # The SUM is what gets slept, so an operand that carries it past the
@@ -254,17 +310,22 @@ async def test_sleep_refuses_any_bad_operand_naming_every_one(args, named):
 # deliberate divergence. The operand that overflowed is the one named,
 # so a third one is a second diagnostic.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,named", [
-    (["1e308", "1e308"], ["1e308"]),
-    (["1e308", "1e308", "1e308"], ["1e308", "1e308"]),
-])
+@pytest.mark.parametrize(
+    "args,named",
+    [
+        (["1e308", "1e308"], ["1e308"]),
+        (["1e308", "1e308", "1e308"], ["1e308", "1e308"]),
+    ],
+)
 async def test_sleep_refuses_a_sum_that_overflows(args, named):
     _, io, node = await asyncio.wait_for(handle_sleep(args), timeout=5)
     assert io.exit_code == 1
     assert node.exit_code == 1
     lines = "".join(f"sleep: invalid time interval '{w}'\n" for w in named)
-    assert io.stderr == (
-        f"{lines}Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (f"{lines}Try 'sleep --help' for more information.\n").encode()
+    )
 
 
 # A total that stays representable is still slept, however large: only
@@ -291,13 +352,19 @@ async def test_sleep_checks_every_operand_before_sleeping_any():
 # coreutils operand diagnostic: measured on 9.4, `sleep -- <e-acute>` is
 # `sleep: invalid time interval '\303\251'`.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw,escaped", [("xé", r"x\303\251"), ("x\r", r"x\r"),
-                                         ("--zzz=é", r"--zzz=\303\251")])
+@pytest.mark.parametrize(
+    "raw,escaped",
+    [("xé", r"x\303\251"), ("x\r", r"x\r"), ("--zzz=é", r"--zzz=\303\251")],
+)
 async def test_sleep_invalid_interval_quotes_the_word(raw, escaped):
     _, io, _ = await handle_sleep(["--", raw])
-    assert io.stderr == (
-        f"sleep: invalid time interval '{escaped}'\n"
-        f"Try 'sleep --help' for more information.\n").encode()
+    assert (
+        io.stderr
+        == (
+            f"sleep: invalid time interval '{escaped}'\n"
+            f"Try 'sleep --help' for more information.\n"
+        ).encode()
+    )
 
 
 @pytest.mark.asyncio

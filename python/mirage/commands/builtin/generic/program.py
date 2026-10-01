@@ -1,7 +1,9 @@
 from collections.abc import Sequence
 
-from mirage.commands.builtin.grep_pattern import (PATTERN_KEYS,
-                                                  merge_pattern_list)
+from mirage.commands.builtin.grep_pattern import (
+    PATTERN_KEYS,
+    merge_pattern_list,
+)
 from mirage.commands.builtin.rg_scan import os_error_text
 from mirage.commands.builtin.utils.paths import dispatch_stat
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
@@ -26,19 +28,23 @@ FILE_KEYS = {
     "zgrep": "f",
     "sed": "f",
     "awk": "f",
-    "jq": "from_file"
+    "jq": "from_file",
 }
 
 # ripgrep reads patterns from stdin once, and refuses both a second
 # `-f -` and a `-` operand after it, exit 2 (14.1.1).
-RG_STDIN_REREAD = ("rg: error reading -f/--file from stdin: "
-                   "stdin has already been consumed\n")
-RG_STDIN_SEARCHED = ("rg: error: attempted to read patterns from stdin "
-                     "while also searching stdin\n")
+RG_STDIN_REREAD = (
+    "rg: error reading -f/--file from stdin: stdin has already been consumed\n"
+)
+RG_STDIN_SEARCHED = (
+    "rg: error: attempted to read patterns from stdin "
+    "while also searching stdin\n"
+)
 
 
-def program_file_refusal(name: str, path: PathSpec,
-                         exc: BaseException) -> tuple[str, int]:
+def program_file_refusal(
+    name: str, path: PathSpec, exc: BaseException
+) -> tuple[str, int]:
     """A program file the command cannot read, in its own words and code.
 
     sed could not open the file, exit 4. mawk quotes the name after
@@ -75,8 +81,9 @@ def program_file_refusal(name: str, path: PathSpec,
     return fs_error_line(name, path, exc), 2
 
 
-async def read_program_file(name: str, path: PathSpec,
-                            dispatch: DispatchFn) -> bytes:
+async def read_program_file(
+    name: str, path: PathSpec, dispatch: DispatchFn
+) -> bytes:
     """One program file's bytes, read through the door.
 
     A directory opens and fails at its read, which a keyed store's own
@@ -113,8 +120,9 @@ async def prepare_program(
     stdin: ByteSource | None,
     dispatch: DispatchFn,
     operands: Sequence[PathSpec] = (),
-) -> tuple[list[str], dict[str, FlagValue], ByteSource | None, IOResult
-           | None]:
+) -> tuple[
+    list[str], dict[str, FlagValue], ByteSource | None, IOResult | None
+]:
     """Read program files once, before input routing or traversal fan-out.
 
     The program belongs to the invocation, not any input mount. Lower it
@@ -148,8 +156,14 @@ async def prepare_program(
             if is_stdin(path):
                 if name == "rg" and path.raw_path == "-":
                     if taken:
-                        return texts, flags, stdin, IOResult(
-                            exit_code=2, stderr=RG_STDIN_REREAD.encode())
+                        return (
+                            texts,
+                            flags,
+                            stdin,
+                            IOResult(
+                                exit_code=2, stderr=RG_STDIN_REREAD.encode()
+                            ),
+                        )
                     taken = True
                 pieces.append(await materialize(source))
                 consumed = True
@@ -159,11 +173,19 @@ async def prepare_program(
             # Match GNU's fatal script-open status; ordinary input-file
             # failures still belong to the native command handlers.
             line, code = program_file_refusal(name, path, exc)
-            return texts, flags, stdin, IOResult(exit_code=code,
-                                                 stderr=line.encode())
+            return (
+                texts,
+                flags,
+                stdin,
+                IOResult(exit_code=code, stderr=line.encode()),
+            )
     if taken and any(p.raw_path == "-" for p in operands):
-        return texts, flags, stdin, IOResult(exit_code=2,
-                                             stderr=RG_STDIN_SEARCHED.encode())
+        return (
+            texts,
+            flags,
+            stdin,
+            IOResult(exit_code=2, stderr=RG_STDIN_SEARCHED.encode()),
+        )
     out = dict(flags)
     out.pop(key)
     if name in ("grep", "rg", "zgrep"):
@@ -183,6 +205,7 @@ async def prepare_program(
         ]
     else:
         texts = [
-            "\n".join(data.decode(errors="replace") for data in pieces), *texts
+            "\n".join(data.decode(errors="replace") for data in pieces),
+            *texts,
         ]
     return texts, out, source if consumed else stdin, None

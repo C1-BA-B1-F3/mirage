@@ -17,7 +17,8 @@ DEFAULT_WIDTH = 80
 def _entries(text: str) -> list[str]:
     """The input lines util-linux ``column`` lays out: blank ones dropped."""
     return [
-        line for line in split_lines(text)
+        line
+        for line in split_lines(text)
         if not all(is_space(ch) for ch in line)
     ]
 
@@ -25,8 +26,11 @@ def _entries(text: str) -> list[str]:
 def _output_width(env: Mapping[str, str] | None) -> int:
     """``COLUMNS`` when it is a positive number, else 80: stdout is no tty."""
     raw = (env or {}).get("COLUMNS", "")
-    return int(raw) if raw.isascii() and raw.isdigit() and int(
-        raw) > 0 else DEFAULT_WIDTH
+    return (
+        int(raw)
+        if raw.isascii() and raw.isdigit() and int(raw) > 0
+        else DEFAULT_WIDTH
+    )
 
 
 def _fill_columns(text: str, width: int) -> str:
@@ -75,8 +79,10 @@ def _table_format(text: str, separator: str | None, output_sep: str) -> str:
     out: list[str] = []
     for row in rows:
         parts = [
-            cell + " " * (widths[idx] - text_width(cell)) if idx < len(row) -
-            1 else cell for idx, cell in enumerate(row)
+            cell + " " * (widths[idx] - text_width(cell))
+            if idx < len(row) - 1
+            else cell
+            for idx, cell in enumerate(row)
         ]
         out.append(output_sep.join(parts))
     return "\n".join(out) + "\n"
@@ -102,8 +108,10 @@ async def column(
     text = raw.decode(errors="replace")
     if table:
         out = _table_format(
-            text, separator,
-            output_separator if output_separator is not None else "  ")
+            text,
+            separator,
+            output_separator if output_separator is not None else "  ",
+        )
     else:
         out = _fill_columns(text, _output_width(env))
     return out.encode(), IOResult()
@@ -135,10 +143,12 @@ async def column_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await column(paths,
-                        read_bytes=read_bytes,
-                        stdin=opts.stdin,
-                        table=parsed.table,
-                        separator=parsed.separator,
-                        output_separator=parsed.output_separator,
-                        env=opts.env)
+    return await column(
+        paths,
+        read_bytes=read_bytes,
+        stdin=opts.stdin,
+        table=parsed.table,
+        separator=parsed.separator,
+        output_separator=parsed.output_separator,
+        env=opts.env,
+    )

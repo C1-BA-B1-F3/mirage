@@ -29,17 +29,13 @@ FILES = [
         "id": "a1",
         "name": "Mine",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }],
+        "owners": [{"me": True}],
         "size": "12",
     },
     {
         "id": "b2",
         "name": "Theirs",
-        "owners": [{
-            "me": False
-        }],
+        "owners": [{"me": False}],
     },
 ]
 
@@ -49,9 +45,9 @@ def _name(title: str, file_id: str, modified: str) -> str:
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=mount_key(virtual, "/m"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/m"), virtual=virtual, directory=virtual
+    )
 
 
 READDIR = make_app_readdir(MIME, detect_scope, _name, "x/file")
@@ -60,11 +56,14 @@ READDIR = make_app_readdir(MIME, detect_scope, _name, "x/file")
 @pytest.mark.asyncio
 async def test_a_corpus_lists_its_owners_files_through_the_apps_namer():
     index = RAMIndexCacheStore()
-    with patch("mirage.core.google.readdir.list_all_files",
-               new_callable=AsyncMock,
-               return_value=(FILES, True)) as listed:
-        out = await READDIR(GoogleApiAccessor(None, None), _spec("/m/owned"),
-                            index)
+    with patch(
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(FILES, True),
+    ) as listed:
+        out = await READDIR(
+            GoogleApiAccessor(None, None), _spec("/m/owned"), index
+        )
     assert out == ["/m/owned/Mine.a1.2026"]
     assert listed.await_args.kwargs["mime_type"] == MIME
     entry = (await index.get("/m/owned/Mine.a1.2026")).entry
@@ -74,9 +73,11 @@ async def test_a_corpus_lists_its_owners_files_through_the_apps_namer():
 
 @pytest.mark.asyncio
 async def test_the_root_lists_the_corpora_without_a_request():
-    with patch("mirage.core.google.readdir.list_all_files",
-               new_callable=AsyncMock) as listed:
-        out = await READDIR(GoogleApiAccessor(None, None), _spec("/m"),
-                            RAMIndexCacheStore())
+    with patch(
+        "mirage.core.google.readdir.list_all_files", new_callable=AsyncMock
+    ) as listed:
+        out = await READDIR(
+            GoogleApiAccessor(None, None), _spec("/m"), RAMIndexCacheStore()
+        )
     assert out == ["/m/owned", "/m/shared"]
     listed.assert_not_awaited()

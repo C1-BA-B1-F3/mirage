@@ -17,8 +17,6 @@ from mirage.commands.builtin.email.grep import grep
 from mirage.commands.builtin.email.io import IO as _IO
 from mirage.commands.builtin.email.rg import rg
 from mirage.commands.builtin.generic_bind import make_generic_commands
-from mirage.commands.builtin.generic_bind.provision import \
-    with_default_provisions
 
 _EMAIL_OVERRIDES = {"find", "grep", "rg"}
 
@@ -31,6 +29,7 @@ COMMANDS = [
         _IO,
         overrides=_EMAIL_OVERRIDES,
     ),
-    *with_default_provisions([find, grep, rg], _IO.stat, _IO.resolve_glob,
-                             _IO.readdir),
+    find,
+    grep,
+    rg,
 ]

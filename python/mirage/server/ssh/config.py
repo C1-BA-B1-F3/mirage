@@ -19,9 +19,13 @@ from typing import Mapping
 
 from mirage.server.daemon_config import read_daemon_table
 from mirage.server.paths import mirage_home
-from mirage.server.ssh.constants import (AUTHORIZED_KEYS_NAME,
-                                         DEFAULT_SSH_HOST, HOST_KEY_NAME,
-                                         SSH_DIR, SSH_ENV_KEYS)
+from mirage.server.ssh.constants import (
+    AUTHORIZED_KEYS_NAME,
+    DEFAULT_SSH_HOST,
+    HOST_KEY_NAME,
+    SSH_DIR,
+    SSH_ENV_KEYS,
+)
 from mirage.server.ssh.errors import SSHConfigError
 from mirage.types import JsonValue
 
@@ -59,8 +63,9 @@ def default_ssh_dir(home: Path | None = None) -> Path:
     return (home if home is not None else mirage_home()) / SSH_DIR
 
 
-def _setting(key: str, env: Mapping[str, str],
-             table: Mapping[str, JsonValue]) -> str:
+def _setting(
+    key: str, env: Mapping[str, str], table: Mapping[str, JsonValue]
+) -> str:
     value = env.get(SSH_ENV_KEYS[key], "").strip()
     if value:
         return value
@@ -73,16 +78,20 @@ def _parse_port(raw: str) -> int:
         port = int(raw)
     except ValueError as exc:
         raise SSHConfigError(
-            f"ssh_port must be an integer, got {raw!r}") from exc
+            f"ssh_port must be an integer, got {raw!r}"
+        ) from exc
     if not 0 < port < 65536:
         raise SSHConfigError(
-            f"ssh_port must be between 1 and 65535, got {port}")
+            f"ssh_port must be between 1 and 65535, got {port}"
+        )
     return port
 
 
-def resolve_ssh_config(env: Mapping[str, str] | None = None,
-                       table: Mapping[str, JsonValue] | None = None,
-                       home: Path | None = None) -> SSHConfig | None:
+def resolve_ssh_config(
+    env: Mapping[str, str] | None = None,
+    table: Mapping[str, JsonValue] | None = None,
+    home: Path | None = None,
+) -> SSHConfig | None:
     """Resolve the SSH door's settings, or None when it is off.
 
     Per key the environment variable wins over the ``[daemon]`` table
@@ -119,8 +128,14 @@ def resolve_ssh_config(env: Mapping[str, str] | None = None,
     return SSHConfig(
         port=_parse_port(raw_port),
         host=_setting("ssh_host", e, table) or DEFAULT_SSH_HOST,
-        host_key_file=(Path(host_key).expanduser() if host_key else ssh_dir /
-                       HOST_KEY_NAME),
-        authorized_keys_file=(Path(authorized).expanduser() if authorized else
-                              ssh_dir / AUTHORIZED_KEYS_NAME),
+        host_key_file=(
+            Path(host_key).expanduser()
+            if host_key
+            else ssh_dir / HOST_KEY_NAME
+        ),
+        authorized_keys_file=(
+            Path(authorized).expanduser()
+            if authorized
+            else ssh_dir / AUTHORIZED_KEYS_NAME
+        ),
     )

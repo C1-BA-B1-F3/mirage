@@ -19,8 +19,16 @@ from typing import Any
 import yaml
 from audits import audit, audit_gates, audit_invocation, audit_packages
 from cases import GROUPS, Fixture
-from constants import (LEG_PREFIX, MATRIX_REF, NO_LEG_DIM, NO_MATRIX, PACKAGES,
-                       REPO, ROOT_MANIFEST, WORKFLOW)
+from constants import (
+    LEG_PREFIX,
+    MATRIX_REF,
+    NO_LEG_DIM,
+    NO_MATRIX,
+    PACKAGES,
+    REPO,
+    ROOT_MANIFEST,
+    WORKFLOW,
+)
 
 
 def leg_scripts(manifest: dict[str, Any]) -> dict[str, str]:
@@ -34,8 +42,9 @@ def leg_scripts(manifest: dict[str, Any]) -> dict[str, str]:
     """
     scripts = manifest.get("scripts", {})
     return {
-        name[len(LEG_PREFIX):]: body
-        for name, body in scripts.items() if name.startswith(LEG_PREFIX)
+        name[len(LEG_PREFIX) :]: body
+        for name, body in scripts.items()
+        if name.startswith(LEG_PREFIX)
     }
 
 
@@ -113,8 +122,9 @@ def run_cases(label: str, cases: tuple[Fixture, ...]) -> int:
             print(f"    ok   {case.name}")
             continue
         failures += 1
-        want = (f"a problem containing {case.expect!r}"
-                if case.expect else "none")
+        want = (
+            f"a problem containing {case.expect!r}" if case.expect else "none"
+        )
         print(f"    FAIL {case.name}: expected {want}, got {problems}")
     return failures
 
@@ -127,8 +137,10 @@ def selftest() -> int:
     """
     failures = sum(run_cases(label, cases) for label, cases in GROUPS)
     if failures:
-        print(f"\n{failures} selftest case(s) failed; the gate cannot see a "
-              f"drift it claims to cover.")
+        print(
+            f"\n{failures} selftest case(s) failed; the gate cannot see a "
+            f"drift it claims to cover."
+        )
         return 1
     total = sum(len(cases) for _, cases in GROUPS)
     print(f"\nselftest OK: {total} drift shapes covered")
@@ -160,14 +172,18 @@ def main() -> int:
     problems += audit_invocation(workflow["jobs"]["test"])
     problems += audit_packages(members)
     if problems:
-        print(f"{WORKFLOW.relative_to(REPO)} and "
-              f"{ROOT_MANIFEST.relative_to(REPO)} disagree:")
+        print(
+            f"{WORKFLOW.relative_to(REPO)} and "
+            f"{ROOT_MANIFEST.relative_to(REPO)} disagree:"
+        )
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print(f"ok: every workspace package with a test script "
-          f"({len(packages)}) is claimed by exactly one of "
-          f"{len(declared)} legs ({', '.join(declared)})")
+    print(
+        f"ok: every workspace package with a test script "
+        f"({len(packages)}) is claimed by exactly one of "
+        f"{len(declared)} legs ({', '.join(declared)})"
+    )
     return 0
 
 

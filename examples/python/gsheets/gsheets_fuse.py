@@ -30,8 +30,8 @@ config = GSheetsConfig(
 vfs = GSheetsVFS(config=config)
 
 with Workspace(
-    {"/gsheets/": Mount(vfs, mode=MountMode.READ,
-                        backend=MountBackend.FUSE)}) as ws:
+    {"/gsheets/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

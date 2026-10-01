@@ -24,8 +24,9 @@ from mirage.workspace import Workspace
 
 
 def _ws():
-    return Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
 
 
 @pytest.mark.asyncio
@@ -87,8 +88,9 @@ async def test_ln_sr_stores_relative_target():
     await ws.shell("echo hi > /data/a/f.txt")
     r = await ws.shell("ln -sr /data/a/f.txt /data/b/link")
     assert r.exit_code == 0
-    assert (await ws.shell("readlink /data/b/link")).stdout.decode() == \
-        "../a/f.txt\n"
+    assert (
+        await ws.shell("readlink /data/b/link")
+    ).stdout.decode() == "../a/f.txt\n"
     # the relative link resolves back to the file
     assert (await ws.shell("cat /data/b/link")).stdout.decode() == "hi\n"
 
@@ -108,8 +110,9 @@ async def test_ln_sn_and_sT_are_accepted_noops():
     await ws.shell("echo hi > /data/a.txt")
     assert (await ws.shell("ln -sn /data/a.txt /data/l1")).exit_code == 0
     assert (await ws.shell("ln -sT /data/a.txt /data/l2")).exit_code == 0
-    assert (await ws.shell("readlink /data/l1")).stdout.decode() == \
-        "/data/a.txt\n"
+    assert (
+        await ws.shell("readlink /data/l1")
+    ).stdout.decode() == "/data/a.txt\n"
 
 
 @pytest.mark.asyncio
@@ -159,8 +162,10 @@ LOGICAL_CWD_ROWS = [
     # `-P` announces the path as selected and lands on the target: the
     # printed name and the resulting cwd deliberately disagree.
     ("cd /data/lk && cd /data && cd -P -", "/data/lk\n"),
-    ("cd /data/lk && cd /data && cd -P - && pwd",
-     "/data/lk\n/data/deep/real\n"),
+    (
+        "cd /data/lk && cd /data && cd -P - && pwd",
+        "/data/lk\n/data/deep/real\n",
+    ),
     # `set -P` is the session-wide `-P`, and GNU applies it to `cd` and
     # `pwd` alike. With no logical name ever recorded, `pwd -L` has
     # nothing else to report.
@@ -190,8 +195,9 @@ async def test_pwd_rejects_an_unknown_option():
     ws = _ws()
     r = await ws.shell("pwd -x")
     assert r.exit_code == 2
-    assert r.stderr.decode() == ("pwd: -x: invalid option\n"
-                                 "pwd: usage: pwd [-LP]\n")
+    assert r.stderr.decode() == (
+        "pwd: -x: invalid option\npwd: usage: pwd [-LP]\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -450,7 +456,8 @@ async def test_cross_mount_link_follow():
             "/data": (RAMVFS(), MountMode.WRITE),
             "/other": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     await ws.shell("echo remote > /other/g.txt")
     await ws.shell("ln -s /other/g.txt /data/xlink")
     r = await ws.shell("cat /data/xlink")
@@ -623,8 +630,8 @@ async def test_stat_percent_n_arrow_on_a_dangling_link():
 @pytest.mark.asyncio
 async def test_stat_percent_n_quotes_each_side_on_its_own():
     ws = _ws()
-    await ws.shell("echo hi > \"/data/it's\"")
-    await ws.shell("ln -s \"/data/it's\" /data/plain")
+    await ws.shell('echo hi > "/data/it\'s"')
+    await ws.shell('ln -s "/data/it\'s" /data/plain')
     r = await ws.shell("stat -c '%N' /data/plain")
     assert r.stdout.decode() == "'/data/plain' -> \"/data/it's\"\n"
 
@@ -646,10 +653,12 @@ async def test_stat_percent_n_modifiers_drop_quotes_and_pad_each_side():
     ws = await _seeded()
     r = await ws.shell("stat -c '[%20N]' /data/link.txt")
     assert r.stdout.decode() == (
-        "[      /data/link.txt ->   /data/dir/real.txt]\n")
+        "[      /data/link.txt ->   /data/dir/real.txt]\n"
+    )
     r = await ws.shell("stat -c '[%-20N]' /data/link.txt")
     assert r.stdout.decode() == (
-        "[/data/link.txt       -> /data/dir/real.txt  ]\n")
+        "[/data/link.txt       -> /data/dir/real.txt  ]\n"
+    )
     r = await ws.shell("stat -c '[%.6N]' /data/link.txt")
     assert r.stdout.decode() == "[/data/ -> /data/]\n"
     r = await ws.shell("stat -c '[%20N]' /data/dir/real.txt")
@@ -706,7 +715,11 @@ async def test_ls_recursive_lists_links_and_does_not_descend_them():
     r = await ws.shell("ls -R /data")
     out = r.stdout.decode()
     assert out.split("\n")[:5] == [
-        "/data:", "dangle", "dir", "dlink", "link.txt"
+        "/data:",
+        "dangle",
+        "dir",
+        "dlink",
+        "link.txt",
     ]
     # dir is descended, dlink is not: one group header per real directory.
     assert "/data/dir:" in out
@@ -752,7 +765,8 @@ async def test_file_describes_a_link_instead_of_following_it():
     ws = await _seeded()
     r = await ws.shell("file /data/link.txt")
     assert r.stdout.decode() == (
-        "/data/link.txt: symbolic link to /data/dir/real.txt\n")
+        "/data/link.txt: symbolic link to /data/dir/real.txt\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -761,7 +775,8 @@ async def test_file_calls_a_dangling_link_broken():
     r = await ws.shell("file /data/dangle")
     assert r.exit_code == 0
     assert r.stdout.decode() == (
-        "/data/dangle: broken symbolic link to /data/nope\n")
+        "/data/dangle: broken symbolic link to /data/nope\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -787,7 +802,8 @@ async def test_file_mime_reports_the_link_inode_type():
     ws = await _seeded()
     r = await ws.shell("file -i /data/link.txt")
     assert r.stdout.decode() == (
-        "/data/link.txt: inode/symlink; charset=binary\n")
+        "/data/link.txt: inode/symlink; charset=binary\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -923,8 +939,9 @@ async def test_link_prefix_resolves_for_no_follow_commands():
     assert r.stdout.decode() == "12345678901234\n"
     r = await ws.shell("rmdir /data/base/dlink/f2")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rmdir: failed to remove "
-                                 "'/data/base/dlink/f2': Not a directory\n")
+    assert r.stderr.decode() == (
+        "rmdir: failed to remove '/data/base/dlink/f2': Not a directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -974,9 +991,11 @@ async def test_readlink_of_a_slashed_link_is_a_silent_failure():
 async def test_trailing_slash_requires_a_directory():
     """A link to a file, a dangling link and a plain file all refuse."""
     ws = await _slash_ws()
-    for operand, detail in (("flink", "Not a directory"), ("reg",
-                                                           "Not a directory"),
-                            ("dangle", "No such file or directory")):
+    for operand, detail in (
+        ("flink", "Not a directory"),
+        ("reg", "Not a directory"),
+        ("dangle", "No such file or directory"),
+    ):
         path = f"/data/base/{operand}/"
         r = await ws.shell(f"cat {path}")
         assert r.exit_code == 1, operand
@@ -1001,16 +1020,19 @@ async def test_rmdir_words_a_link_apart_from_a_slashed_link():
     ws = await _slash_ws()
     r = await ws.shell("rmdir /data/base/dlink")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rmdir: failed to remove '/data/base/dlink': "
-                                 "Not a directory\n")
+    assert r.stderr.decode() == (
+        "rmdir: failed to remove '/data/base/dlink': Not a directory\n"
+    )
     r = await ws.shell("rmdir /data/base/dlink/")
     assert r.exit_code == 1
     assert r.stderr.decode() == (
         "rmdir: failed to remove '/data/base/dlink/': "
-        "Symbolic link not followed\n")
+        "Symbolic link not followed\n"
+    )
     # Neither attempt touched the link.
-    assert (await
-            ws.shell("readlink /data/base/dlink")).stdout.decode() == "sub\n"
+    assert (
+        await ws.shell("readlink /data/base/dlink")
+    ).stdout.decode() == "sub\n"
 
 
 @pytest.mark.asyncio
@@ -1019,20 +1041,25 @@ async def test_a_slash_protects_a_link_from_rm_and_unlink():
     ws = await _slash_ws()
     r = await ws.shell("rm /data/base/dlink/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rm: cannot remove '/data/base/dlink/': "
-                                 "Is a directory\n")
-    assert (await
-            ws.shell("readlink /data/base/dlink")).stdout.decode() == "sub\n"
+    assert r.stderr.decode() == (
+        "rm: cannot remove '/data/base/dlink/': Is a directory\n"
+    )
+    assert (
+        await ws.shell("readlink /data/base/dlink")
+    ).stdout.decode() == "sub\n"
     r = await ws.shell("rm -r /data/base/dlink/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rm: cannot remove '/data/base/dlink/': "
-                                 "Not a directory\n")
+    assert r.stderr.decode() == (
+        "rm: cannot remove '/data/base/dlink/': Not a directory\n"
+    )
     r = await ws.shell("unlink /data/base/dlink/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("unlink: cannot unlink '/data/base/dlink/': "
-                                 "Not a directory\n")
-    assert (await
-            ws.shell("readlink /data/base/dlink")).stdout.decode() == "sub\n"
+    assert r.stderr.decode() == (
+        "unlink: cannot unlink '/data/base/dlink/': Not a directory\n"
+    )
+    assert (
+        await ws.shell("readlink /data/base/dlink")
+    ).stdout.decode() == "sub\n"
     # Without the slash both remove the link itself, as GNU does.
     assert (await ws.shell("rm /data/base/dlink")).exit_code == 0
     assert (await ws.shell("readlink /data/base/dlink")).exit_code == 1
@@ -1045,8 +1072,9 @@ async def test_rm_f_suppresses_enotdir_but_not_eisdir():
     assert (await ws.shell("rm -rf /data/base/dlink/")).exit_code == 0
     r = await ws.shell("rm -f /data/base/dlink/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rm: cannot remove '/data/base/dlink/': "
-                                 "Is a directory\n")
+    assert r.stderr.decode() == (
+        "rm: cannot remove '/data/base/dlink/': Is a directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -1064,8 +1092,11 @@ async def test_mkdir_collides_with_a_link_it_cannot_see():
     to create the link's missing target instead.
     """
     ws = await _slash_ws()
-    for line in ("mkdir -p /data/base/dangle", "mkdir /data/base/dangle",
-                 "mkdir -p /data/base/dangle/"):
+    for line in (
+        "mkdir -p /data/base/dangle",
+        "mkdir /data/base/dangle",
+        "mkdir -p /data/base/dangle/",
+    ):
         r = await ws.shell(line)
         assert r.exit_code == 1, line
         assert "File exists" in r.stderr.decode(), line
@@ -1083,13 +1114,16 @@ async def test_touch_never_creates_through_a_trailing_slash():
     assert (await ws.shell("touch /data/base/dlink/")).exit_code == 0
     r = await ws.shell("touch /data/base/flink/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("touch: setting times of "
-                                 "'/data/base/flink/': Not a directory\n")
+    assert r.stderr.decode() == (
+        "touch: setting times of '/data/base/flink/': Not a directory\n"
+    )
     r = await ws.shell("touch /data/base/dangle/")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("touch: setting times of "
-                                 "'/data/base/dangle/': "
-                                 "No such file or directory\n")
+    assert r.stderr.decode() == (
+        "touch: setting times of "
+        "'/data/base/dangle/': "
+        "No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -1101,10 +1135,11 @@ async def test_tar_ignores_a_trailing_slash():
     """
     ws = await _slash_ws()
     assert (
-        await
-        ws.shell("tar -cf /data/a.tar -C /data/base dlink/")).exit_code == 0
-    assert (await
-            ws.shell("tar -cf /data/b.tar -C /data/base dlink")).exit_code == 0
+        await ws.shell("tar -cf /data/a.tar -C /data/base dlink/")
+    ).exit_code == 0
+    assert (
+        await ws.shell("tar -cf /data/b.tar -C /data/base dlink")
+    ).exit_code == 0
     slashed = (await ws.shell("tar -tf /data/a.tar")).stdout.decode()
     assert slashed == (await ws.shell("tar -tf /data/b.tar")).stdout.decode()
     assert slashed.splitlines() == ["dlink"]
@@ -1123,16 +1158,22 @@ async def test_removal_validates_the_line_before_it_drops_a_link():
     ws = await _slash_ws()
     r = await ws.shell("unlink /data/base/dlink /data/base/flink")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("unlink: extra operand '/data/base/flink'\n"
-                                 "Try 'unlink --help' for more information.\n")
+    assert r.stderr.decode() == (
+        "unlink: extra operand '/data/base/flink'\n"
+        "Try 'unlink --help' for more information.\n"
+    )
     r = await ws.shell("unlink --bogus /data/base/dlink")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("unlink: unrecognized option '--bogus'\n"
-                                 "Try 'unlink --help' for more information.\n")
+    assert r.stderr.decode() == (
+        "unlink: unrecognized option '--bogus'\n"
+        "Try 'unlink --help' for more information.\n"
+    )
     r = await ws.shell("rm --bogus /data/base/dlink")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("rm: unrecognized option '--bogus'\n"
-                                 "Try 'rm --help' for more information.\n")
+    assert r.stderr.decode() == (
+        "rm: unrecognized option '--bogus'\n"
+        "Try 'rm --help' for more information.\n"
+    )
     # Every link the refused lines named is still there.
     for name in ("dlink", "flink"):
         assert (await ws.shell(f"readlink /data/base/{name}")).exit_code == 0
@@ -1157,26 +1198,32 @@ async def test_mv_refuses_a_slashed_link_instead_of_renaming_it():
 
     r = await ws.shell("mv /data/base/dlink/ /data/out")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot move '/data/base/dlink/' to "
-                                 "'/data/out': Not a directory\n")
+    assert r.stderr.decode() == (
+        "mv: cannot move '/data/base/dlink/' to '/data/out': Not a directory\n"
+    )
     r = await ws.shell("mv /data/base/flink/ /data/out")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot stat '/data/base/flink/': "
-                                 "Not a directory\n")
+    assert r.stderr.decode() == (
+        "mv: cannot stat '/data/base/flink/': Not a directory\n"
+    )
     r = await ws.shell("mv /data/base/dangle/ /data/out")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot stat '/data/base/dangle/': "
-                                 "No such file or directory\n")
+    assert r.stderr.decode() == (
+        "mv: cannot stat '/data/base/dangle/': No such file or directory\n"
+    )
     # A directory destination names where the move would have landed.
     r = await ws.shell("mv /data/base/dlink/ /data/outdir")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot move '/data/base/dlink/' to "
-                                 "'/data/outdir/dlink': Not a directory\n")
+    assert r.stderr.decode() == (
+        "mv: cannot move '/data/base/dlink/' to "
+        "'/data/outdir/dlink': Not a directory\n"
+    )
     r = await ws.shell("mv /data/base/dlink/ /data/outfile")
     assert r.exit_code == 1
     assert r.stderr.decode() == (
         "mv: cannot overwrite non-directory '/data/outfile' "
-        "with directory '/data/base/dlink/'\n")
+        "with directory '/data/base/dlink/'\n"
+    )
     # Nothing moved, and the bare spelling still renames the link.
     assert (await ws.shell("ls /data/out")).exit_code != 0
     assert (await ws.shell("mv /data/base/dlink /data/out")).exit_code == 0
@@ -1190,8 +1237,10 @@ async def test_mv_resolves_a_link_prefix_before_refusing_the_last():
     await ws.shell("ln -s /data/base /data/alias")
     r = await ws.shell("mv /data/alias/dlink/ /data/out")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot move '/data/alias/dlink/' to "
-                                 "'/data/out': Not a directory\n")
+    assert r.stderr.decode() == (
+        "mv: cannot move '/data/alias/dlink/' to "
+        "'/data/out': Not a directory\n"
+    )
     assert (await ws.shell("readlink /data/base/dlink")).exit_code == 0
 
 
@@ -1221,8 +1270,9 @@ async def test_readlink_of_something_that_is_there_is_einval(path: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path",
-                         ["/data/missing", "/data/d/deep/missing", "/nomount"])
+@pytest.mark.parametrize(
+    "path", ["/data/missing", "/data/d/deep/missing", "/nomount"]
+)
 async def test_readlink_of_something_absent_is_enoent(path: str):
     # FileNotFoundError, not a bare OSError: a guest's `except
     # FileNotFoundError` is what has to catch this.
@@ -1255,7 +1305,8 @@ async def test_readlink_reads_the_listing_channel_for_a_marker_less_dir():
         # answers with stat silenced is what proves the listing is the
         # channel being read.
         return [
-            e for e in entries
+            e
+            for e in entries
             if str(e).rstrip("/").rsplit("/", 1)[-1] != "hollow"
         ]
 
@@ -1279,15 +1330,16 @@ async def test_readlink_does_not_probe_past_a_policy_that_denies_stat():
     """
 
     class NoStat(Policy):
-
         async def pre_ops(self, ctx):
             if ctx.op in ("stat", "readdir"):
                 return Deny(reason="no probing")
             return None
 
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[NoStat()])
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[NoStat()],
+    )
     with pytest.raises(OSError) as caught:
         await ws.vfs.readlink("/data/missing")
     assert caught.value.errno == errno.EINVAL
@@ -1306,8 +1358,9 @@ async def test_ln_refuses_a_name_a_file_already_holds():
     await ws.shell("echo hi > /data/a.txt")
     r = await ws.shell("ln -s /data/other /data/a.txt")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("ln: failed to create symbolic link "
-                                 "'/data/a.txt': File exists\n")
+    assert r.stderr.decode() == (
+        "ln: failed to create symbolic link '/data/a.txt': File exists\n"
+    )
     assert (await ws.shell("cat /data/a.txt")).stdout == b"hi\n"
 
 
@@ -1327,8 +1380,9 @@ async def test_ln_into_a_synthesized_tree_is_not_an_occupied_name():
 
     async def synthesized(op_name, path, *args, **kwargs):
         if op_name == "stat":
-            return FileStat(name=path.rsplit("/", 1)[-1],
-                            type=FileType.DIRECTORY)
+            return FileStat(
+                name=path.rsplit("/", 1)[-1], type=FileType.DIRECTORY
+            )
         if op_name == "readdir":
             return ["tables", "views"]
         return await original(op_name, path, *args, **kwargs)
@@ -1362,21 +1416,23 @@ async def test_mv_of_a_link_passes_the_admission_gate():
     """
 
     class NoRename(Policy):
-
         async def pre_ops(self, ctx):
             if ctx.op == "rename":
                 return Deny(reason="frozen")
             return None
 
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[NoRename()])
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[NoRename()],
+    )
     await ws.shell("echo hi > /data/a.txt")
     await ws.shell("ln -s /data/a.txt /data/lk")
     r = await ws.shell("mv /data/lk /data/lk2")
     assert r.exit_code == 1
-    assert r.stderr.decode() == ("mv: cannot move '/data/lk' to "
-                                 "'/data/lk2': Permission denied\n")
+    assert r.stderr.decode() == (
+        "mv: cannot move '/data/lk' to '/data/lk2': Permission denied\n"
+    )
     assert (await ws.shell("readlink /data/lk")).stdout == b"/data/a.txt\n"
 
 
@@ -1395,12 +1451,12 @@ async def test_ln_s_links_into_a_directory_destination():
     r = await ws.shell("ln -sv /data/a.txt /data/d")
     assert r.exit_code == 0
     assert r.stdout == b"'/data/d/a.txt' -> '/data/a.txt'\n"
-    assert (await ws.shell("readlink /data/d/a.txt")).stdout == \
-        b"/data/a.txt\n"
+    assert (
+        await ws.shell("readlink /data/d/a.txt")
+    ).stdout == b"/data/a.txt\n"
     r = await ws.shell("ln -sr /data/b.txt /data/d/")
     assert r.exit_code == 0
-    assert (await ws.shell("readlink /data/d/b.txt")).stdout == \
-        b"../b.txt\n"
+    assert (await ws.shell("readlink /data/d/b.txt")).stdout == b"../b.txt\n"
 
 
 @pytest.mark.asyncio
@@ -1409,14 +1465,17 @@ async def test_ln_s_target_directory_flag_links_every_operand():
     await _seed_ln(ws)
     r = await ws.shell("ln -s -t /data/d /data/a.txt /data/b.txt")
     assert r.exit_code == 0
-    assert (await ws.shell("readlink /data/d/a.txt")).stdout == \
-        b"/data/a.txt\n"
-    assert (await ws.shell("readlink /data/d/b.txt")).stdout == \
-        b"/data/b.txt\n"
+    assert (
+        await ws.shell("readlink /data/d/a.txt")
+    ).stdout == b"/data/a.txt\n"
+    assert (
+        await ws.shell("readlink /data/d/b.txt")
+    ).stdout == b"/data/b.txt\n"
     r = await ws.shell("ln -s /data/a.txt /data/b.txt /data/e")
     assert r.exit_code == 0
-    assert (await ws.shell("readlink /data/e/b.txt")).stdout == \
-        b"/data/b.txt\n"
+    assert (
+        await ws.shell("readlink /data/e/b.txt")
+    ).stdout == b"/data/b.txt\n"
 
 
 @pytest.mark.asyncio
@@ -1428,58 +1487,93 @@ async def test_ln_s_single_operand_links_into_the_cwd():
     assert r.stdout == b"../a.txt\n"
     r = await ws.shell("cd /data/d && ln -s ../a.txt")
     assert r.exit_code == 1
-    assert (r.stderr or b"") == \
-        b"ln: failed to create symbolic link './a.txt': File exists\n"
+    assert (
+        r.stderr or b""
+    ) == b"ln: failed to create symbolic link './a.txt': File exists\n"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "line,stderr",
     [
-        ("ln -s -t /data/nodir /data/a.txt",
-         "ln: failed to access '/data/nodir': No such file or directory\n"),
-        ("ln -s -t /data/b.txt /data/a.txt",
-         "ln: target '/data/b.txt' is not a directory\n"),
-        ("ln -s -t /data/d -T /data/a.txt",
-         "ln: cannot combine --target-directory and "
-         "--no-target-directory\n"),
-        ("ln -s /data/a.txt /data/b.txt /data/nodir",
-         "ln: target '/data/nodir': No such file or directory\n"),
-        ("ln -s /data/a.txt /data/d/x /data/b.txt",
-         "ln: target '/data/b.txt': Not a directory\n"),
-        ("ln -sT /data/a.txt /data/d",
-         "ln: failed to create symbolic link '/data/d': File exists\n"),
-        ("ln -sT /data/a.txt /data/b.txt /data/c",
-         "ln: extra operand '/data/c'\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln -sT /data/a.txt",
-         "ln: missing destination file operand after '/data/a.txt'\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln", "ln: missing file operand\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln -x /data/a.txt /data/l", "ln: invalid option -- 'x'\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln --bogus /data/a.txt /data/l",
-         "ln: unrecognized option '--bogus'\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln -s --backup=bogus /data/a.txt /data/l",
-         "ln: invalid argument 'bogus' for 'backup type'\n"
-         "Valid arguments are:\n"
-         "  - 'none', 'off'\n"
-         "  - 'simple', 'never'\n"
-         "  - 'existing', 'nil'\n"
-         "  - 'numbered', 't'\n"
-         "Try 'ln --help' for more information.\n"),
-        ("ln /data/missing /data/h",
-         "ln: failed to access '/data/missing': No such file or directory\n"),
-        ("ln /data/d /data/hd",
-         "ln: /data/d: hard link not allowed for directory\n"),
-        ("ln -d /data/d /data/hd",
-         "ln: failed to create hard link '/data/hd' => '/data/d': "
-         "Operation not permitted\n"),
-        ("ln -F /data/d /data/hd",
-         "ln: failed to create hard link '/data/hd' => '/data/d': "
-         "Operation not permitted\n"),
+        (
+            "ln -s -t /data/nodir /data/a.txt",
+            "ln: failed to access '/data/nodir': No such file or directory\n",
+        ),
+        (
+            "ln -s -t /data/b.txt /data/a.txt",
+            "ln: target '/data/b.txt' is not a directory\n",
+        ),
+        (
+            "ln -s -t /data/d -T /data/a.txt",
+            "ln: cannot combine --target-directory and "
+            "--no-target-directory\n",
+        ),
+        (
+            "ln -s /data/a.txt /data/b.txt /data/nodir",
+            "ln: target '/data/nodir': No such file or directory\n",
+        ),
+        (
+            "ln -s /data/a.txt /data/d/x /data/b.txt",
+            "ln: target '/data/b.txt': Not a directory\n",
+        ),
+        (
+            "ln -sT /data/a.txt /data/d",
+            "ln: failed to create symbolic link '/data/d': File exists\n",
+        ),
+        (
+            "ln -sT /data/a.txt /data/b.txt /data/c",
+            "ln: extra operand '/data/c'\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln -sT /data/a.txt",
+            "ln: missing destination file operand after '/data/a.txt'\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln",
+            "ln: missing file operand\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln -x /data/a.txt /data/l",
+            "ln: invalid option -- 'x'\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln --bogus /data/a.txt /data/l",
+            "ln: unrecognized option '--bogus'\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln -s --backup=bogus /data/a.txt /data/l",
+            "ln: invalid argument 'bogus' for 'backup type'\n"
+            "Valid arguments are:\n"
+            "  - 'none', 'off'\n"
+            "  - 'simple', 'never'\n"
+            "  - 'existing', 'nil'\n"
+            "  - 'numbered', 't'\n"
+            "Try 'ln --help' for more information.\n",
+        ),
+        (
+            "ln /data/missing /data/h",
+            "ln: failed to access '/data/missing': No such file or directory\n",
+        ),
+        (
+            "ln /data/d /data/hd",
+            "ln: /data/d: hard link not allowed for directory\n",
+        ),
+        (
+            "ln -d /data/d /data/hd",
+            "ln: failed to create hard link '/data/hd' => '/data/d': "
+            "Operation not permitted\n",
+        ),
+        (
+            "ln -F /data/d /data/hd",
+            "ln: failed to create hard link '/data/hd' => '/data/d': "
+            "Operation not permitted\n",
+        ),
     ],
 )
 async def test_ln_refuses_in_gnu_words(line, stderr):
@@ -1503,8 +1597,7 @@ async def test_ln_sb_moves_the_occupant_aside():
     r = await ws.shell("ln -s -S .bak /data/a.txt /data/b.txt")
     assert r.exit_code == 0
     assert (await ws.shell("cat /data/b.txt.bak")).stdout == b"yo\n"
-    assert (await ws.shell("readlink /data/b.txt")).stdout == \
-        b"/data/a.txt\n"
+    assert (await ws.shell("readlink /data/b.txt")).stdout == b"/data/a.txt\n"
 
 
 @pytest.mark.asyncio
@@ -1517,8 +1610,9 @@ async def test_ln_numbered_backups_and_backup_none():
     assert (await ws.shell("cat '/data/l.~1~'")).stdout == b"n\n"
     r = await ws.shell("ln -s --backup=none /data/b.txt /data/l")
     assert r.exit_code == 1
-    assert (r.stderr or b"") == \
-        b"ln: failed to create symbolic link '/data/l': File exists\n"
+    assert (
+        r.stderr or b""
+    ) == b"ln: failed to create symbolic link '/data/l': File exists\n"
 
 
 @pytest.mark.asyncio
@@ -1527,16 +1621,21 @@ async def test_ln_s_dereferences_a_link_to_a_directory_unless_n():
     await _seed_ln(ws)
     await ws.shell("ln -s /data/d /data/dl")
     assert (await ws.shell("ln -s /data/a.txt /data/dl")).exit_code == 0
-    assert (await ws.shell("readlink /data/d/a.txt")).stdout == \
-        b"/data/a.txt\n"
+    assert (
+        await ws.shell("readlink /data/d/a.txt")
+    ).stdout == b"/data/a.txt\n"
     r = await ws.shell("ln -sn /data/b.txt /data/dl")
     assert r.exit_code == 1
-    assert (r.stderr or b"") == \
-        b"ln: failed to create symbolic link '/data/dl': File exists\n"
+    assert (
+        r.stderr or b""
+    ) == b"ln: failed to create symbolic link '/data/dl': File exists\n"
     assert (await ws.shell("ln -sfn /data/b.txt /data/dl")).exit_code == 0
     assert (await ws.shell("readlink /data/dl")).stdout == b"/data/b.txt\n"
-    for line in ("ln -sL /data/a.txt /data/l1", "ln -sP /data/a.txt /data/l2",
-                 "ln -sd /data/a.txt /data/l3"):
+    for line in (
+        "ln -sL /data/a.txt /data/l1",
+        "ln -sP /data/a.txt /data/l2",
+        "ln -sd /data/a.txt /data/l3",
+    ):
         assert (await ws.shell(line)).exit_code == 0
 
 
@@ -1550,15 +1649,17 @@ async def test_ln_hard_copies_bytes_and_refuses_an_occupied_name():
     assert (await ws.shell("cat /data/h")).stdout == b"hi\n"
     r = await ws.shell("ln /data/b.txt /data/h")
     assert r.exit_code == 1
-    assert (r.stderr or b"") == \
-        b"ln: failed to create hard link '/data/h': File exists\n"
+    assert (
+        r.stderr or b""
+    ) == b"ln: failed to create hard link '/data/h': File exists\n"
     assert (await ws.shell("ln -f /data/b.txt /data/h")).exit_code == 0
     assert (await ws.shell("cat /data/h")).stdout == b"yo\n"
     r = await ws.shell("ln -bv /data/a.txt /data/h")
     assert r.stdout == b"'/data/h~' ~ '/data/h' => '/data/a.txt'\n"
     assert (await ws.shell("cat /data/h~")).stdout == b"yo\n"
-    assert (await
-            ws.shell("ln -t /data/e /data/a.txt /data/b.txt")).exit_code == 0
+    assert (
+        await ws.shell("ln -t /data/e /data/a.txt /data/b.txt")
+    ).exit_code == 0
     assert (await ws.shell("cat /data/e/b.txt")).stdout == b"yo\n"
     r = await ws.shell("ln /data/missing /data/a.txt /data/d")
     assert r.exit_code == 1
@@ -1578,8 +1679,9 @@ async def test_ln_hard_of_a_link_keeps_the_link_unless_L():
     await ws.shell("ln -s /data/nope /data/dang")
     r = await ws.shell("ln -L /data/dang /data/h3")
     assert r.exit_code == 1
-    assert (r.stderr or b"") == \
-        b"ln: failed to access '/data/dang': No such file or directory\n"
+    assert (
+        r.stderr or b""
+    ) == b"ln: failed to access '/data/dang': No such file or directory\n"
     assert (await ws.shell("ln /data/dang /data/h4")).exit_code == 0
     assert (await ws.shell("readlink /data/h4")).stdout == b"/data/nope\n"
 
@@ -1608,13 +1710,15 @@ async def test_ln_relative_needs_symbolic_after_the_operand_count():
     assert r.stderr == b"ln: cannot do --relative without --symbolic\n"
     assert (await ws.shell("test -e /data/rel")).exit_code == 1
     r = await ws.shell("ln -r")
-    assert r.stderr == (b"ln: missing file operand\n"
-                        b"Try 'ln --help' for more information.\n")
+    assert r.stderr == (
+        b"ln: missing file operand\nTry 'ln --help' for more information.\n"
+    )
     r = await ws.shell("ln -r -T -t /data/d /data/a.txt /data/x")
     assert r.stderr == b"ln: cannot do --relative without --symbolic\n"
     r = await ws.shell("ln -T -t /data/d")
-    assert r.stderr == (b"ln: missing file operand\n"
-                        b"Try 'ln --help' for more information.\n")
+    assert r.stderr == (
+        b"ln: missing file operand\nTry 'ln --help' for more information.\n"
+    )
     assert (await ws.shell("ln -rs /data/a.txt /data/d/rel")).exit_code == 0
     assert (await ws.shell("readlink /data/d/rel")).stdout == b"../a.txt\n"
 
@@ -1622,8 +1726,10 @@ async def test_ln_relative_needs_symbolic_after_the_operand_count():
 @pytest.mark.asyncio
 async def test_op_door_follows_relative_parent_targets_and_chains():
     ws = _ws()
-    await ws.shell("mkdir /data/s; echo hello > /data/a.txt; "
-                   "ln -s ../next /data/s/al; ln -s ./a.txt /data/next")
+    await ws.shell(
+        "mkdir /data/s; echo hello > /data/a.txt; "
+        "ln -s ../next /data/s/al; ln -s ./a.txt /data/next"
+    )
     path = PathSpec.from_str_path("/data/s/al")
     st, _ = await ws.dispatch("stat", path)
     assert st.type == FileType.FILE

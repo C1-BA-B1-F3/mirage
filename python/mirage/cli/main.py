@@ -19,7 +19,6 @@ from mirage.cli import daemon as daemon_module
 from mirage.cli import execute as execute_module
 from mirage.cli import job as job_module
 from mirage.cli import mcp as mcp_module
-from mirage.cli import provision as provision_module
 from mirage.cli import session as session_module
 from mirage.cli import workspace as workspace_module
 from mirage.server.daemon_config import DaemonConfigError
@@ -33,7 +32,6 @@ app.add_typer(workspace_module.app, name="workspace")
 app.add_typer(session_module.app, name="session")
 app.add_typer(job_module.app, name="job")
 app.add_typer(execute_module.app, name="execute")
-app.add_typer(provision_module.app, name="provision")
 app.add_typer(daemon_module.app, name="daemon")
 app.add_typer(config_module.app, name="config")
 app.add_typer(mcp_module.app, name="mcp")

@@ -39,12 +39,12 @@ deep_config = S3Config(
 vfs = S3VFS(config)
 deep_vfs = S3VFS(deep_config)
 
-with Workspace({
-        "/s3/":
-        Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE),
-        "/deep/":
-        deep_vfs
-}) as ws:
+with Workspace(
+    {
+        "/s3/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE),
+        "/deep/": deep_vfs,
+    }
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

@@ -66,8 +66,9 @@ def lookup_error(store: RAMStore, spec: PathSpec, key: str) -> OSError:
     return broken if broken is not None else enoent(spec)
 
 
-def _broken_parent(store: RAMStore, spec: PathSpec,
-                   key: str) -> OSError | None:
+def _broken_parent(
+    store: RAMStore, spec: PathSpec, key: str
+) -> OSError | None:
     for ancestor in ancestors(key):
         if ancestor in store.dirs:
             continue
@@ -99,8 +100,9 @@ def check_write_target(store: RAMStore, spec: PathSpec, key: str) -> None:
         raise eisdir(spec)
 
 
-def check_mkdir_target(store: RAMStore, spec: PathSpec, key: str,
-                       parents: bool) -> None:
+def check_mkdir_target(
+    store: RAMStore, spec: PathSpec, key: str, parents: bool
+) -> None:
     """Reject a ``mkdir`` the store cannot satisfy.
 
     The companion of :func:`check_dest_parents` for the one op that may

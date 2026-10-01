@@ -38,8 +38,7 @@ def main() -> None:
         base = f"/airtable/bases/{bases[0]}"
         with open(f"{base}/base.json") as f:
             meta = json.load(f)
-        print(f"\n--- {meta['base_name']}: "
-              f"{len(meta['tables'])} table(s) ---")
+        print(f"\n--- {meta['base_name']}: {len(meta['tables'])} table(s) ---")
         for table in meta["tables"]:
             print(f"  {table['table_name']} ({table['table_id']})")
         tables = [n for n in os.listdir(base) if n != "base.json"]

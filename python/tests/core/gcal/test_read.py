@@ -25,9 +25,9 @@ EVENT = "/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_event_reads_the_unmodified_api_payload(api, accessor, index):
@@ -40,9 +40,11 @@ async def test_event_reads_the_unmodified_api_payload(api, accessor, index):
 
 
 async def test_calendar_json_carries_the_bucket_zone_and_role(
-        api, accessor, index):
-    body = json.loads(await read(accessor, spec("/primary/calendar.json"),
-                                 index))
+    api, accessor, index
+):
+    body = json.loads(
+        await read(accessor, spec("/primary/calendar.json"), index)
+    )
     assert body["id"] == "integ@example.com"
     assert body["accessRole"] == "owner"
     assert body["primary"] is True
@@ -50,7 +52,8 @@ async def test_calendar_json_carries_the_bucket_zone_and_role(
 
 
 async def test_calendar_json_states_the_mount_wide_zone_not_the_calendars(
-        api, accessor, index):
+    api, accessor, index
+):
     # The reader calendar is America/Los_Angeles, but its day directories are
     # bucketed mount-wide so every calendar's 2026-08-11 is the same window.
     path = "/Engineering__team@group.calendar.google.com/calendar.json"
@@ -76,12 +79,15 @@ async def test_unknown_calendar_is_enoent(api, accessor, index):
 
 async def test_unknown_event_is_enoent(api, accessor, index):
     with pytest.raises(FileNotFoundError):
-        await read(accessor,
-                   spec("/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
-                   index)
+        await read(
+            accessor,
+            spec("/primary/2026-08-11/zzzz9__0000-0100_Nope.gcal.json"),
+            index,
+        )
 
 
 async def test_a_name_that_is_not_an_event_file_is_enoent(
-        api, accessor, index):
+    api, accessor, index
+):
     with pytest.raises(FileNotFoundError):
         await read(accessor, spec("/primary/2026-08-11/notes.txt"), index)

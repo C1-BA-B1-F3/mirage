@@ -21,8 +21,14 @@ from mirage.runtime.config import HomeConfig, RuntimeConfig
 from mirage.runtime.python.base import PythonRuntime
 from mirage.runtime.python.execution import prepare_source
 from mirage.runtime.python.flags import init_argv
-from mirage.runtime.types import (FilesystemOperation, RunArgs, RunResult,
-                                  RuntimeContext, RuntimeReach, ScriptSource)
+from mirage.runtime.types import (
+    FilesystemOperation,
+    RunArgs,
+    RunResult,
+    RuntimeContext,
+    RuntimeReach,
+    ScriptSource,
+)
 from mirage.runtime.vfs import RuntimeVFS
 from mirage.runtime.wasm import WasmFsConfig, WasmRuntime, WasmVFS
 
@@ -42,7 +48,8 @@ _BUILD_HINT = (
     "https://github.com/brettcannon/cpython-wasi-build/releases, unzip it, "
     "and point the runtime entry's config `home` (yaml `runtimes: [{name: "
     f"wasi, config: {{home: ...}}}}]`) or the {WASI_HOME_ENV} environment "
-    "variable at the directory")
+    "variable at the directory"
+)
 
 
 class WasiRuntime(PythonRuntime):
@@ -76,22 +83,28 @@ class WasiRuntime(PythonRuntime):
     # read-only (mutations raise PermissionError in WasmVFS), so
     # nothing goes around the gate.
     reach: RuntimeReach = "workspace"
-    filesystem: ClassVar[tuple[FilesystemOperation,
-                               ...]] = ('read', 'write', 'list', 'stat',
-                                        'glob')
+    filesystem: ClassVar[tuple[FilesystemOperation, ...]] = (
+        "read",
+        "write",
+        "list",
+        "stat",
+        "glob",
+    )
 
     config_cls: ClassVar[type[RuntimeConfig]] = HomeConfig
     config: HomeConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: HomeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: HomeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         if wasmtime is None:
             raise ImportError(
                 "the wasi runtime requires the 'wasi' extra. Install with: "
-                "pip install mirage-ai[wasi], or select another runtime")
+                "pip install mirage-ai[wasi], or select another runtime"
+            )
         super().__init__(captures, config, script)
         root = self.config.home or os.environ.get(WASI_HOME_ENV)
         if not root:
@@ -99,27 +112,32 @@ class WasiRuntime(PythonRuntime):
         self._root = Path(root)
         if not (self._root / "python.wasm").is_file():
             raise FileNotFoundError(
-                f"no python.wasm under {self._root}; {_BUILD_HINT}")
+                f"no python.wasm under {self._root}; {_BUILD_HINT}"
+            )
         stdlibs = sorted((self._root / "lib").glob("python3.*"))
         if not stdlibs:
             raise FileNotFoundError(
-                f"no lib/python3.* under {self._root}; {_BUILD_HINT}")
+                f"no lib/python3.* under {self._root}; {_BUILD_HINT}"
+            )
         self._pythonhome = f"/lib/{stdlibs[-1].name}"
         self._runtime = WasmRuntime(self._root / "python.wasm", "python3")
 
-    async def _execute_code(self, args: RunArgs,
-                            context: RuntimeContext | None) -> RunResult:
+    async def _execute_code(
+        self, args: RunArgs, context: RuntimeContext | None
+    ) -> RunResult:
         return await self.run(args, context)
 
-    async def run(self,
-                  args: RunArgs,
-                  context: RuntimeContext | None = None) -> RunResult:
+    async def run(
+        self, args: RunArgs, context: RuntimeContext | None = None
+    ) -> RunResult:
         context = context or self._capture_context()
         # Mount prefixes route to the workspace bridge; everything else
         # is served from the build directory, so a mount at "/" never
         # collides with the interpreter's own files.
-        fs = WasmVFS(WasmFsConfig(host_root=str(self._root)),
-                     RuntimeVFS.of(context) if context is not None else None)
+        fs = WasmVFS(
+            WasmFsConfig(host_root=str(self._root)),
+            RuntimeVFS.of(context) if context is not None else None,
+        )
         # The guest sees the mounts, so the script's own directory heads
         # sys.path, as it does on CPython.
         source = prepare_source(args, search_path=True)
@@ -127,7 +145,8 @@ class WasiRuntime(PythonRuntime):
         if cwd is not None:
             source = (
                 f"__import__('os').chdir({cwd.virtual!r})\n"
-                f"exec(compile({source!r}, '<string>', 'exec'), globals())")
+                f"exec(compile({source!r}, '<string>', 'exec'), globals())"
+            )
         # sys.argv becomes [prog, *args.args], matching the local runtime.
         stdout, stderr, exit_code = await self._runtime.run(
             argv=["python", *init_argv(args.flags), "-c", source, *args.args],

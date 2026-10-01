@@ -32,10 +32,9 @@ def dir_entry(vfs: str, name: str) -> IndexEntry:
         vfs (str): the VFS name, which spells the resource type.
         name (str): the directory's rendered name.
     """
-    return IndexEntry(id=name,
-                      name=name,
-                      resource_type=f"{vfs}/group",
-                      vfs_name=name)
+    return IndexEntry(
+        id=name, name=name, resource_type=f"{vfs}/group", vfs_name=name
+    )
 
 
 def make_readdir(tree: VectorTree[A]) -> ReaddirFn[A]:
@@ -50,21 +49,23 @@ def make_readdir(tree: VectorTree[A]) -> ReaddirFn[A]:
             return await tree.children(accessor, match)
         # Table names come from the catalog, not from a capped query, so
         # a glob here has nothing to narrow.
-        return [(name, dir_entry(tree.vfs, name))
-                for name in await tree.list_tables(accessor)]
+        return [
+            (name, dir_entry(tree.vfs, name))
+            for name in await tree.list_tables(accessor)
+        ]
 
     listers: dict[str, Lister[A]] = {ROOT: list_root, "group": tree.children}
 
     def build(accessor: A) -> ReaddirFn[A]:
-        return hierarchy_readdir(tree.detect(accessor),
-                                 listers=listers,
-                                 pattern_kinds=PATTERN_KINDS)
+        return hierarchy_readdir(
+            tree.detect(accessor), listers=listers, pattern_kinds=PATTERN_KINDS
+        )
 
     readdir_for = per_accessor(build)
 
-    async def readdir(accessor: A,
-                      path_spec: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    async def readdir(
+        accessor: A, path_spec: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> list[str]:
         return await readdir_for(accessor)(accessor, path_spec, index)
 
     return readdir

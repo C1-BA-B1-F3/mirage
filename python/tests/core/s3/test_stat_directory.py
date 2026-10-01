@@ -30,7 +30,8 @@ def _accessor() -> S3Accessor:
             region="us-east-1",
             aws_access_key_id="fake",
             aws_secret_access_key="fake",
-        ))
+        )
+    )
 
 
 def test_trailing_slash_prefers_directory_over_coexisting_object():
@@ -40,14 +41,20 @@ def test_trailing_slash_prefers_directory_over_coexisting_object():
     try:
         accessor = _accessor()
         file_stat = asyncio.run(
-            stat(accessor,
-                 PathSpec(vfs_path="csv", virtual="/csv", directory="/"),
-                 index=NULL_INDEX))
+            stat(
+                accessor,
+                PathSpec(vfs_path="csv", virtual="/csv", directory="/"),
+                index=NULL_INDEX,
+            )
+        )
         assert file_stat.type != FileType.DIRECTORY
         dir_stat = asyncio.run(
-            stat(accessor,
-                 PathSpec(vfs_path="csv", virtual="/csv/", directory="/csv/"),
-                 index=NULL_INDEX))
+            stat(
+                accessor,
+                PathSpec(vfs_path="csv", virtual="/csv/", directory="/csv/"),
+                index=NULL_INDEX,
+            )
+        )
         assert dir_stat.type == FileType.DIRECTORY
     finally:
         stack.close()

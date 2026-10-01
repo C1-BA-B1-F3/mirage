@@ -65,8 +65,10 @@ class NumberText:
 
 # A value as jq's parser builds it: JSON, with a --stream event's number
 # leaf kept as its literal.
-ParsedValue: TypeAlias = ("None | bool | int | float | str | NumberText"
-                          " | list[ParsedValue] | dict[str, ParsedValue]")
+ParsedValue: TypeAlias = (
+    "None | bool | int | float | str | NumberText"
+    " | list[ParsedValue] | dict[str, ParsedValue]"
+)
 
 
 @dataclass(frozen=True, slots=True)

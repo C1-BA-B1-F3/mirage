@@ -19,8 +19,13 @@ from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
 from mirage.workspace import Workspace
 from mirage.workspace.mount import Mount
-from tests.fixtures.msgraph_api import (DRIVE_ID, DRIVE_NAME, SITE_NAME,
-                                        FakeGraph, serve)
+from tests.fixtures.msgraph_api import (
+    DRIVE_ID,
+    DRIVE_NAME,
+    SITE_NAME,
+    FakeGraph,
+    serve,
+)
 
 OLD = b"version one\n"
 NEW = b"version two, longer\n"
@@ -36,13 +41,16 @@ def _vfs(graph: FakeGraph, scoped: bool = True):
 
 
 def _ws(vfs) -> Workspace:
-    return Workspace({
-        "/m":
-        Mount(vfs=vfs,
-              mode=MountMode.WRITE,
-              read=ReadSpec(policy=ReadPolicy.FRESH)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs,
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.FRESH),
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _out(ws: Workspace, line: str) -> bytes:
@@ -65,7 +73,8 @@ ROWS = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scoped,line", ROWS)
 async def test_a_write_between_the_token_and_the_bytes_is_refetched(
-        scoped, line):
+    scoped, line
+):
     with serve(FakeGraph(drives={DRIVE_ID: {"a.txt": OLD}})) as graph:
         ws = _ws(_vfs(graph, scoped))
         line = line.format(v=SCOPED if scoped else UNSCOPED)
@@ -86,9 +95,9 @@ async def test_a_write_between_the_token_and_the_bytes_is_refetched(
 
 @pytest.mark.asyncio
 async def test_a_listed_ctag_never_answers_for_a_changed_file():
-    with serve(FakeGraph(drives={DRIVE_ID: {
-            "a.txt": OLD
-    }}, children_allowed=1)) as graph:
+    with serve(
+        FakeGraph(drives={DRIVE_ID: {"a.txt": OLD}}, children_allowed=1)
+    ) as graph:
         ws = _ws(_vfs(graph))
         try:
             # The listing leaves c1 in the mount index. A probe that trusted
@@ -98,9 +107,9 @@ async def test_a_listed_ctag_never_answers_for_a_changed_file():
             # no request of its own, so there is a stale row to trust.
             mount = ws.mount("/m")
             items = graph.count("item")
-            listed = await mount.execute_op("stat",
-                                            "/m/a.txt",
-                                            index=mount.index)
+            listed = await mount.execute_op(
+                "stat", "/m/a.txt", index=mount.index
+            )
             assert (listed.fingerprint, graph.count("item")) == ("c1", items)
             assert await _out(ws, f"cat {SCOPED}") == OLD
             graph.write(DRIVE_ID, "a.txt", NEW)

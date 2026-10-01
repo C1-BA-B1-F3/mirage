@@ -43,8 +43,7 @@ class ExecuteNodeFn(Protocol):
         call_stack: CallStack,
         *,
         sink: JobConsole | None = None,
-    ) -> Awaitable[tuple[ByteSource | None, IOResult, ExecutionNode]]:
-        ...
+    ) -> Awaitable[tuple[ByteSource | None, IOResult, ExecutionNode]]: ...
 
 
 class ParsedCommand(NamedTuple):

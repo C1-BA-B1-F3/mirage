@@ -14,8 +14,12 @@
 
 from abc import ABC, abstractmethod
 
-from mirage.runtime.types import (EvalResult, EvalValue, ProcessExecution,
-                                  RunResult)
+from mirage.runtime.types import (
+    EvalResult,
+    EvalValue,
+    ProcessExecution,
+    RunResult,
+)
 
 
 class EvaluatorMixin(ABC):
@@ -38,11 +42,13 @@ class EvaluatorMixin(ABC):
     """
 
     @abstractmethod
-    async def eval(self,
-                   code: str,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+    ) -> EvalResult:
         """Evaluate one program and return its last expression.
 
         Args:
@@ -78,8 +84,9 @@ class LineExecutorMixin(ABC):
     """
 
     @abstractmethod
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         """Execute one raw command line wholesale.
 
         Args:

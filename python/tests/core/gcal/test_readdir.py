@@ -24,10 +24,12 @@ HK = "Asia/Hong_Kong"
 
 def spec(virtual: str, pattern: str | None = None) -> PathSpec:
     directory = (virtual.rsplit("/", 1)[0] or "/") if pattern else virtual
-    return PathSpec(virtual=virtual,
-                    directory=directory,
-                    vfs_path=virtual.lstrip("/"),
-                    pattern=pattern)
+    return PathSpec(
+        virtual=virtual,
+        directory=directory,
+        vfs_path=virtual.lstrip("/"),
+        pattern=pattern,
+    )
 
 
 def names(paths: list[str]) -> list[str]:
@@ -44,11 +46,14 @@ async def test_root_lists_one_directory_per_calendar(api, accessor, index):
 
 
 async def test_primary_keeps_its_alias_and_others_carry_the_id(
-        api, accessor, index):
+    api, accessor, index
+):
     calendars = await calendar_index(accessor)
     assert calendars["primary"]["id"] == "integ@example.com"
-    assert (calendars["Engineering__team@group.calendar.google.com"]["id"] ==
-            "team@group.calendar.google.com")
+    assert (
+        calendars["Engineering__team@group.calendar.google.com"]["id"]
+        == "team@group.calendar.google.com"
+    )
 
 
 async def test_bucket_zone_defaults_to_the_primary_calendar(api, accessor):
@@ -59,7 +64,8 @@ async def test_bucket_zone_defaults_to_the_primary_calendar(api, accessor):
 
 async def test_bucket_zone_honours_an_explicit_override(api, accessor):
     accessor.config = accessor.config.model_copy(
-        update={"time_zone": "Europe/Berlin"})
+        update={"time_zone": "Europe/Berlin"}
+    )
     calendars = await calendar_index(accessor)
     assert bucket_zone(accessor, calendars) == "Europe/Berlin"
 
@@ -82,8 +88,9 @@ async def test_calendar_listing_includes_all_past_days(api, accessor, index):
 
 
 async def test_a_date_glob_escapes_the_default_window(api, accessor, index):
-    out = await readdir(accessor, spec("/primary/2025-01-*", "2025-01-*"),
-                        index)
+    out = await readdir(
+        accessor, spec("/primary/2025-01-*", "2025-01-*"), index
+    )
     assert "2025-01-05" in names(out)
     listed = api.listed[-1]
     assert listed[1] == "2024-12-31T16:00:00+00:00"
@@ -101,16 +108,21 @@ async def test_day_lists_one_file_per_overlapping_event(api, accessor, index):
 
 
 async def test_a_multi_day_event_appears_under_every_day_it_covers(
-        api, accessor, index):
-    for day, hhmm in (("2026-08-10", "0900-2400"), ("2026-08-11", "0000-2400"),
-                      ("2026-08-12", "0000-2400"), ("2026-08-13",
-                                                    "0000-1700")):
+    api, accessor, index
+):
+    for day, hhmm in (
+        ("2026-08-10", "0900-2400"),
+        ("2026-08-11", "0000-2400"),
+        ("2026-08-12", "0000-2400"),
+        ("2026-08-13", "0000-1700"),
+    ):
         out = names(await readdir(accessor, spec(f"/primary/{day}"), index))
         assert f"cccc3__{hhmm}_Conference.gcal.json" in out
 
 
 async def test_an_all_day_event_does_not_leak_past_its_exclusive_end(
-        api, accessor, index):
+    api, accessor, index
+):
     out = names(await readdir(accessor, spec("/primary/2026-08-12"), index))
     assert not any("Public_Holiday" in n for n in out)
 
@@ -120,10 +132,15 @@ async def test_a_day_with_no_events_lists_empty(api, accessor, index):
 
 
 async def test_free_busy_calendar_renders_events_without_titles(
-        api, accessor, index):
-    out = names(await readdir(
-        accessor, spec("/Exec__busy@group.calendar.google.com/2026-08-11"),
-        index))
+    api, accessor, index
+):
+    out = names(
+        await readdir(
+            accessor,
+            spec("/Exec__busy@group.calendar.google.com/2026-08-11"),
+            index,
+        )
+    )
     # The real API sends no summary on such a calendar; the fixture keeps
     # one, so this asserts the accessRole is what decides the rendering.
     assert all(n.endswith("_busy.gcal.json") for n in out)
@@ -160,6 +177,7 @@ async def test_too_deep_a_path_is_enoent(api, accessor, index):
 
 async def test_min_access_role_filters_the_calendar_list(api, accessor, index):
     accessor.config = accessor.config.model_copy(
-        update={"min_access_role": "owner"})
+        update={"min_access_role": "owner"}
+    )
     out = names(await readdir(accessor, spec("/"), index))
     assert out == ["primary"]

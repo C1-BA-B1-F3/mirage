@@ -87,8 +87,9 @@ async def test_als_info(backend):
 
 @pytest.mark.asyncio
 async def test_agrep_raw(backend):
-    await backend.awrite("/search.txt",
-                         "hello world\ngoodbye world\nhello again")
+    await backend.awrite(
+        "/search.txt", "hello world\ngoodbye world\nhello again"
+    )
     result = await backend.agrep_raw("hello", path="/")
     assert isinstance(result, list)
     assert len(result) >= 2

@@ -13,21 +13,25 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic.crossmount.constants import (
-    CROSS_MOUNT_COMMANDS, FANOUT_COMMANDS, RELAY_COMMANDS, STREAM_COMMANDS)
-from mirage.commands.builtin.generic.crossmount.detect import (is_cross_mount,
-                                                               strategy_for)
+    CROSS_MOUNT_COMMANDS,
+    FANOUT_COMMANDS,
+    RELAY_COMMANDS,
+    STREAM_COMMANDS,
+)
+from mirage.commands.builtin.generic.crossmount.detect import (
+    is_cross_mount,
+    strategy_for,
+)
 from mirage.commands.builtin.generic.crossmount.types import Strategy
 from mirage.types import PathSpec
 
 
 class _Mount:
-
     def __init__(self, prefix: str):
         self.prefix = prefix
 
 
 class _Registry:
-
     def __init__(self, prefixes: dict[str, str]):
         self._prefixes = prefixes
 
@@ -39,18 +43,21 @@ class _Registry:
 
 
 def _scope(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path="",
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path="",
+        resolved=True,
+    )
 
 
 def test_sets_are_disjoint():
     assert not STREAM_COMMANDS & FANOUT_COMMANDS
     assert not STREAM_COMMANDS & RELAY_COMMANDS
     assert not FANOUT_COMMANDS & RELAY_COMMANDS
-    assert CROSS_MOUNT_COMMANDS == (STREAM_COMMANDS | FANOUT_COMMANDS
-                                    | RELAY_COMMANDS)
+    assert CROSS_MOUNT_COMMANDS == (
+        STREAM_COMMANDS | FANOUT_COMMANDS | RELAY_COMMANDS
+    )
 
 
 def test_strategy_for_stream_commands():
@@ -64,8 +71,17 @@ def test_strategy_for_fanout_commands():
 
 
 def test_strategy_for_relay_commands():
-    for name in ("cp", "mv", "diff", "cmp", "sort", "wc", "grep", "rg",
-                 "realpath"):
+    for name in (
+        "cp",
+        "mv",
+        "diff",
+        "cmp",
+        "sort",
+        "wc",
+        "grep",
+        "rg",
+        "realpath",
+    ):
         assert strategy_for(name) is Strategy.RELAY
 
 

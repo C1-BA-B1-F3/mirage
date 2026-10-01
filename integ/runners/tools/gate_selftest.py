@@ -25,14 +25,20 @@ import tempfile
 from pathlib import Path
 
 import check_case_targets as case_targets
+import shard
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
-import harness  # noqa: E402
-import main as runner_main  # noqa: E402
+import harness
+import main as runner_main
 
-from mirage.types import (DEFAULT_READ_TTL, Limit, MountMode, ReadPolicy,
-                          ReadSpec)
+from mirage.types import (
+    DEFAULT_READ_TTL,
+    Limit,
+    MountMode,
+    ReadPolicy,
+    ReadSpec,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace.mount.spec import Mount
 
@@ -89,69 +95,73 @@ def selftest_services_table() -> None:
         data = with_manifest(lambda d: d["services"].pop("trello"))
         harness.validate_services(data)
 
-    check("services: a service with no entry is rejected",
-          *raises(drop_entry, "missing an entry"))
+    check(
+        "services: a service with no entry is rejected",
+        *raises(drop_entry, "missing an entry"),
+    )
 
     def orphan_entry() -> None:
-        data = with_manifest(lambda d: d["services"].update(
-            {"nosuchsvc": {
-                "python": [],
-                "typescript": []
-            }}))
+        data = with_manifest(
+            lambda d: d["services"].update(
+                {"nosuchsvc": {"python": [], "typescript": []}}
+            )
+        )
         harness.validate_services(data)
 
-    check("services: an entry naming no target is rejected",
-          *raises(orphan_entry, "names no target"))
+    check(
+        "services: an entry naming no target is rejected",
+        *raises(orphan_entry, "names no target"),
+    )
 
     def half_declared() -> None:
         data = with_manifest(
-            lambda d: d["services"].update({"trello": {
-                "python": []
-            }}))
+            lambda d: d["services"].update({"trello": {"python": []}})
+        )
         harness.validate_services(data)
 
-    check("services: an entry missing a host is rejected",
-          *raises(half_declared, "must declare"))
+    check(
+        "services: an entry missing a host is rejected",
+        *raises(half_declared, "must declare"),
+    )
 
 
 def selftest_case_validation() -> None:
     cases = [
-        {
-            "id": "dup",
-            "targets": ["ram"],
-            "_source": "a.json"
-        },
-        {
-            "id": "dup",
-            "targets": ["ram"],
-            "_source": "b.json"
-        },
+        {"id": "dup", "targets": ["ram"], "_source": "a.json"},
+        {"id": "dup", "targets": ["ram"], "_source": "b.json"},
     ]
-    check("cases: a duplicate id is rejected",
-          *raises(lambda: harness.validate_cases(ROOT, cases), "duplicate"))
+    check(
+        "cases: a duplicate id is rejected",
+        *raises(lambda: harness.validate_cases(ROOT, cases), "duplicate"),
+    )
 
-    unknown = [{
-        "id": "solo",
-        "targets": ["nosuchtarget"],
-        "_source": "a.json"
-    }]
-    check("cases: an unknown target ref is rejected",
-          *raises(lambda: harness.validate_cases(ROOT, unknown), "unknown"))
+    unknown = [
+        {"id": "solo", "targets": ["nosuchtarget"], "_source": "a.json"}
+    ]
+    check(
+        "cases: an unknown target ref is rejected",
+        *raises(lambda: harness.validate_cases(ROOT, unknown), "unknown"),
+    )
 
-    unread = [{
-        "id": "unread",
-        "targets": ["ram"],
-        "mount_read": {
-            "/data": "bounded"
-        },
-        "_source": "a.json"
-    }]
-    check("cases: a mount_read without a read is rejected",
-          *raises(lambda: harness.validate_cases(ROOT, unread), "mount_read"))
+    unread = [
+        {
+            "id": "unread",
+            "targets": ["ram"],
+            "mount_read": {"/data": "bounded"},
+            "_source": "a.json",
+        }
+    ]
+    check(
+        "cases: a mount_read without a read is rejected",
+        *raises(lambda: harness.validate_cases(ROOT, unread), "mount_read"),
+    )
 
     real = harness.load_cases(ROOT)
-    check("cases: the shipped battery passes both gates",
-          len(real) > 0, f"loaded {len(real)} cases")
+    check(
+        "cases: the shipped battery passes both gates",
+        len(real) > 0,
+        f"loaded {len(real)} cases",
+    )
 
 
 def selftest_mount_read() -> None:
@@ -170,8 +180,13 @@ def selftest_mount_read() -> None:
         "mount_read: an override naming an unmounted prefix is refused",
         *raises(
             lambda: asyncio.run(
-                runner_main.adapters.open_consistency(target, ReadSpec(
-                ), {"/nope": bound})), "t: mount_read names no mount: /nope"))
+                runner_main.adapters.open_consistency(
+                    target, ReadSpec(), {"/nope": bound}
+                )
+            ),
+            "t: mount_read names no mount: /nope",
+        ),
+    )
 
     # A refused override must still tear down what was built.
     torn: list[tuple] = []
@@ -185,14 +200,21 @@ def selftest_mount_read() -> None:
     try:
         refused = raises(
             lambda: asyncio.run(
-                runner_main.adapters.open_consistency(target, ReadSpec(
-                ), {"/data":
-                    ReadSpec(policy=ReadPolicy.FRESH)})), "read: fresh")
+                runner_main.adapters.open_consistency(
+                    target,
+                    ReadSpec(),
+                    {"/data": ReadSpec(policy=ReadPolicy.FRESH)},
+                )
+            ),
+            "read: fresh",
+        )
     finally:
         runner_main.adapters.teardown_target = real_teardown
-    check("mount_read: a refused override still tears down what it built",
-          refused[0] and len(torn) == 1 and len(torn[0][1]) == 2,
-          f"{refused[1]}; teardowns {torn!r}")
+    check(
+        "mount_read: a refused override still tears down what it built",
+        refused[0] and len(torn) == 1 and len(torn[0][1]) == 2,
+        f"{refused[1]}; teardowns {torn!r}",
+    )
 
     bare, moded, limited, kept = RAMVFS(), RAMVFS(), RAMVFS(), RAMVFS()
     limits = {"cat": Limit(timeout_seconds=5)}
@@ -201,38 +223,48 @@ def selftest_mount_read() -> None:
             "/data": bare,
             "/ro": (moded, MountMode.READ),
             "/lim": (limited, MountMode.READ, limits),
-            "/keep": kept
-        }, {
-            "/data": bound,
-            "/ro": bound,
-            "/lim": bound
-        })
-    check("mount_read: a bare mount keeps the workspace's mode",
-          out["/data"] == Mount(vfs=bare, read=bound), repr(out["/data"]))
-    check("mount_read: a read-only mount keeps its mode",
-          out["/ro"] == Mount(vfs=moded, mode=MountMode.READ, read=bound),
-          repr(out["/ro"]))
+            "/keep": kept,
+        },
+        {"/data": bound, "/ro": bound, "/lim": bound},
+    )
+    check(
+        "mount_read: a bare mount keeps the workspace's mode",
+        out["/data"] == Mount(vfs=bare, read=bound),
+        repr(out["/data"]),
+    )
+    check(
+        "mount_read: a read-only mount keeps its mode",
+        out["/ro"] == Mount(vfs=moded, mode=MountMode.READ, read=bound),
+        repr(out["/ro"]),
+    )
     check(
         "mount_read: a mount keeps its command limits",
-        out["/lim"] == Mount(vfs=limited,
-                             mode=MountMode.READ,
-                             command_limits=limits,
-                             read=bound), repr(out["/lim"]))
-    check("mount_read: a mount the override does not name is untouched",
-          out["/keep"] is kept, repr(out["/keep"]))
-    got = runner_main.mount_read_of({
-        "mount_read": {
-            "/d": "bounded"
-        },
-        "ttl": 45
-    })
-    check("mount_read: the case's ttl rides into each override",
-          got == {"/d": bound}, repr(got))
+        out["/lim"]
+        == Mount(
+            vfs=limited, mode=MountMode.READ, command_limits=limits, read=bound
+        ),
+        repr(out["/lim"]),
+    )
+    check(
+        "mount_read: a mount the override does not name is untouched",
+        out["/keep"] is kept,
+        repr(out["/keep"]),
+    )
+    got = runner_main.mount_read_of(
+        {"mount_read": {"/d": "bounded"}, "ttl": 45}
+    )
+    check(
+        "mount_read: the case's ttl rides into each override",
+        got == {"/d": bound},
+        repr(got),
+    )
     got = runner_main.mount_read_of({"mount_read": {"/d": "bounded"}})
     check(
-        "mount_read: with no ttl an override takes the default bound", got == {
-            "/d": ReadSpec(policy=ReadPolicy.BOUNDED, ttl=DEFAULT_READ_TTL)
-        }, repr(got))
+        "mount_read: with no ttl an override takes the default bound",
+        got
+        == {"/d": ReadSpec(policy=ReadPolicy.BOUNDED, ttl=DEFAULT_READ_TTL)},
+        repr(got),
+    )
 
 
 def selftest_case_target_defaults(typescript: bool = False) -> None:
@@ -252,59 +284,63 @@ def selftest_case_target_defaults(typescript: bool = False) -> None:
             "id": "explicit",
             "seq": 1,
             "targets": ["disk"],
-            "command": "echo explicit"
+            "command": "echo explicit",
         }
         data = {"targets": ["ram"], "cases": [inherited, explicit]}
-        expected = [{
-            **explicit, "_source": "unix/targets.json"
-        }, {
-            **inherited, "targets": ["ram"],
-            "_source": "unix/targets.json"
-        }]
+        expected = [
+            {**explicit, "_source": "unix/targets.json"},
+            {**inherited, "targets": ["ram"], "_source": "unix/targets.json"},
+        ]
         for label, block, valid in [
             ("inherit and override", data, True),
-            ("empty override", {
-                **data, "cases": [{
-                    **inherited, "targets": []
-                }]
-            }, False),
-            ("missing targets", {
-                "cases": [inherited]
-            }, False),
-            ("invalid targets", {
-                **data, "targets": "ram"
-            }, False),
+            (
+                "empty override",
+                {**data, "cases": [{**inherited, "targets": []}]},
+                False,
+            ),
+            ("missing targets", {"cases": [inherited]}, False),
+            ("invalid targets", {**data, "targets": "ram"}, False),
         ]:
             path.write_text(json.dumps(block))
             host = "ts" if typescript else "py"
             name = f"case targets ({host}): {label}"
             if typescript:
-                proc = subprocess.run([
-                    str(TSX), "--eval",
-                    "import('./runners/typescript/harness.ts').then(m => "
-                    "console.log(JSON.stringify(m.loadCases(process.env.CASE_ROOT))))"
-                ],
-                                      cwd=ROOT,
-                                      env={
-                                          **os.environ, "CASE_ROOT": temp
-                                      },
-                                      capture_output=True,
-                                      text=True)
+                proc = subprocess.run(
+                    [
+                        str(TSX),
+                        "--eval",
+                        "import('./runners/typescript/harness.ts').then(m => "
+                        "console.log(JSON.stringify(m.loadCases(process.env.CASE_ROOT))))",
+                    ],
+                    cwd=ROOT,
+                    env={**os.environ, "CASE_ROOT": temp},
+                    capture_output=True,
+                    text=True,
+                )
                 if valid:
                     check(
-                        name, proc.returncode == 0
-                        and json.loads(proc.stdout) == expected, proc.stderr)
+                        name,
+                        proc.returncode == 0
+                        and json.loads(proc.stdout) == expected,
+                        proc.stderr,
+                    )
                 else:
                     check(
-                        name, proc.returncode != 0
-                        and "nonempty string list" in proc.stderr, proc.stderr)
+                        name,
+                        proc.returncode != 0
+                        and "nonempty string list" in proc.stderr,
+                        proc.stderr,
+                    )
             elif valid:
                 check(name, harness.load_cases(root) == expected)
             else:
                 check(
                     name,
-                    *raises(functools.partial(harness.load_cases, root),
-                            "nonempty string list"))
+                    *raises(
+                        functools.partial(harness.load_cases, root),
+                        "nonempty string list",
+                    ),
+                )
 
 
 def run_main(args: list[str], env: dict) -> int:
@@ -325,10 +361,12 @@ def run_main_err(args: list[str], env: dict) -> str:
     for k, v in env.items():
         if v == "":
             merged.pop(k, None)
-    proc = subprocess.run([sys.executable, str(MAIN), *args],
-                          capture_output=True,
-                          text=True,
-                          env=merged)
+    proc = subprocess.run(
+        [sys.executable, str(MAIN), *args],
+        capture_output=True,
+        text=True,
+        env=merged,
+    )
     return proc.stderr
 
 
@@ -346,10 +384,12 @@ def run_main_out(args: list[str], env: dict) -> tuple[int, str]:
     for k, v in env.items():
         if v == "":
             merged.pop(k, None)
-    proc = subprocess.run([sys.executable, str(MAIN), *args],
-                          capture_output=True,
-                          text=True,
-                          env=merged)
+    proc = subprocess.run(
+        [sys.executable, str(MAIN), *args],
+        capture_output=True,
+        text=True,
+        env=merged,
+    )
     return proc.returncode, proc.stdout
 
 
@@ -364,8 +404,11 @@ def selftest_strict_exit() -> None:
     check("strict: a skipped target exits non-zero", code != 0, f"exit {code}")
 
     code = run_main(["--target", "trello"], blanked)
-    check("permissive: the same run still exits 0 for local convenience",
-          code == 0, f"exit {code}")
+    check(
+        "permissive: the same run still exits 0 for local convenience",
+        code == 0,
+        f"exit {code}",
+    )
 
     # The partial-skip case the facet guard cannot see: one target of a
     # facet ran and another skipped for env. No facet mixes an env-free
@@ -374,47 +417,75 @@ def selftest_strict_exit() -> None:
     # facet guard would be what fired. The verdict is asserted directly.
     partial = ["trello (TRELLO_URL)"]
     verdict = runner_main.run_verdict("project", 1, True, partial, [])
-    check("strict: a facet that loses only some targets fails",
-          verdict is not None and verdict.startswith("strict:"), str(verdict))
+    check(
+        "strict: a facet that loses only some targets fails",
+        verdict is not None and verdict.startswith("strict:"),
+        str(verdict),
+    )
     verdict = runner_main.run_verdict("project", 1, False, partial, [])
-    check("permissive: that same partial facet passes", verdict is None,
-          str(verdict))
+    check(
+        "permissive: that same partial facet passes",
+        verdict is None,
+        str(verdict),
+    )
     verdict = runner_main.run_verdict("project", 0, True, partial, [])
-    check("facet guard: a facet that ran nothing fails first",
-          verdict == "facet 'project' ran no targets", str(verdict))
+    check(
+        "facet guard: a facet that ran nothing fails first",
+        verdict == "facet 'project' ran no targets",
+        str(verdict),
+    )
     verdict = runner_main.run_verdict(None, 1, True, [], ["nosuchtarget"])
-    check("strict: a target with no adapter for this host fails",
-          verdict is not None and "no python adapter" in verdict, str(verdict))
+    check(
+        "strict: a target with no adapter for this host fails",
+        verdict is not None and "no python adapter" in verdict,
+        str(verdict),
+    )
     verdict = runner_main.run_verdict(None, 1, False, [], ["nosuchtarget"])
-    check("permissive: a target with no adapter still passes locally", verdict
-          is None, str(verdict))
+    check(
+        "permissive: a target with no adapter still passes locally",
+        verdict is None,
+        str(verdict),
+    )
 
     # A facet split across CI jobs declares the services it does not
     # provision; a declared skip is tolerated, a typo'd one is rejected so
     # the list cannot rot into silently widening what --strict accepts.
     code = run_main(
-        ["--target", "trello", "--strict", "--allow-skip", "trello"], blanked)
-    check("allow-skip: a declared skip is tolerated under --strict", code == 0,
-          f"exit {code}")
+        ["--target", "trello", "--strict", "--allow-skip", "trello"], blanked
+    )
+    check(
+        "allow-skip: a declared skip is tolerated under --strict",
+        code == 0,
+        f"exit {code}",
+    )
     code = run_main(
         ["--target", "trello", "--strict", "--allow-skip", "nosuchsvc"],
-        blanked)
-    check("allow-skip: an unknown service name is rejected", code != 0,
-          f"exit {code}")
+        blanked,
+    )
+    check(
+        "allow-skip: an unknown service name is rejected",
+        code != 0,
+        f"exit {code}",
+    )
 
 
 # Read from the manifest rather than restated: a service gaining or losing
 # `shared` must move the lanes the pool asserts below, not a copy here.
 SHARED_SERVICES = {
     name
-    for name, service in json.loads((
-        ROOT / "targets.json").read_text())["services"].items()
+    for name, service in json.loads((ROOT / "targets.json").read_text())[
+        "services"
+    ].items()
     if service.get("shared")
 }
 # opfs swaps globalThis.navigator; a secrets target publishes a fetch
 # function into the process-global source registry under a fixed name.
 PROCESS_GLOBAL_TARGETS = [
-    "opfs", "secrets-dead", "secrets-env", "secrets-gated", "secrets-implicit"
+    "opfs",
+    "secrets-dead",
+    "secrets-env",
+    "secrets-gated",
+    "secrets-implicit",
 ]
 
 
@@ -427,32 +498,45 @@ def selftest_fake_ports() -> None:
         found = re.search(r"defaultPort:\s*(\d+)", config.read_text())
         if found is not None:
             defaults[config.parent.name] = int(found.group(1))
-    check("fake ports: the scan found the fakes",
-          len(defaults) > 10, f"{sorted(defaults)}")
+    check(
+        "fake ports: the scan found the fakes",
+        len(defaults) > 10,
+        f"{sorted(defaults)}",
+    )
     by_port: dict[int, list[str]] = {}
     for name, port in defaults.items():
         by_port.setdefault(port, []).append(name)
     shared = {port: names for port, names in by_port.items() if len(names) > 1}
-    check("fake ports: no two fakes share a default port", not shared,
-          f"{shared}")
+    check(
+        "fake ports: no two fakes share a default port",
+        not shared,
+        f"{shared}",
+    )
     pinned = json.loads((ROOT / "ci" / "fakes.json").read_text())
     clashes = [
         f"{name} defaults to {port}, which CI pins for {other}"
-        for name, port in defaults.items() for other, arm in pinned.items()
-        if isinstance(arm, dict) and arm.get("port") == port
+        for name, port in defaults.items()
+        for other, arm in pinned.items()
+        if isinstance(arm, dict)
+        and arm.get("port") == port
         and other.replace("-", "_") != name
     ]
-    workflow = (ROOT.parent / ".github" / "workflows" /
-                "test_integ.yml").read_text()
+    workflow = (
+        ROOT.parent / ".github" / "workflows" / "test_integ.yml"
+    ).read_text()
     clashes += [
         f"{name} defaults to {port}, which CI starts {other} on"
         for other, port_text in re.findall(
-            r"server/(\w+)/main\.ts --port (\d+)", workflow)
+            r"server/(\w+)/main\.ts --port (\d+)", workflow
+        )
         for name, port in defaults.items()
         if port == int(port_text) and other != name
     ]
-    check("fake ports: no default is a port CI gives another fake",
-          not clashes, "; ".join(sorted(set(clashes))))
+    check(
+        "fake ports: no default is a port CI gives another fake",
+        not clashes,
+        "; ".join(sorted(set(clashes))),
+    )
 
 
 def selftest_target_pool() -> None:
@@ -471,71 +555,106 @@ def selftest_target_pool() -> None:
 
     targets = data["targets"]
     named = sorted(targets[i]["id"] for i in alone)
-    check("pool: exactly the process-global openers run alone",
-          named == PROCESS_GLOBAL_TARGETS, f"ran alone: {named}")
+    check(
+        "pool: exactly the process-global openers run alone",
+        named == PROCESS_GLOBAL_TARGETS,
+        f"ran alone: {named}",
+    )
 
     lanes = {lane for _, lane in pool if not lane.startswith("solo:")}
-    check("pool: exactly the one-world fakes hold a lane",
-          lanes == SHARED_SERVICES, f"lanes: {sorted(lanes)}")
+    check(
+        "pool: exactly the one-world fakes hold a lane",
+        lanes == SHARED_SERVICES,
+        f"lanes: {sorted(lanes)}",
+    )
 
     scoped = [lane for i, lane in pool if targets[i].get("service") == "gws"]
-    check("pool: a run-scoped service does not serialize its own targets",
-          len(scoped) > 1 and all(la.startswith("solo:") for la in scoped),
-          f"gws lanes: {scoped}")
+    check(
+        "pool: a run-scoped service does not serialize its own targets",
+        len(scoped) > 1 and all(la.startswith("solo:") for la in scoped),
+        f"gws lanes: {scoped}",
+    )
 
     # GitHub selects and seeds its fixture inside each run's namespace.
     # A second repository target must be able to run beside the first.
-    twinned = with_manifest(lambda d: d["targets"].append({
-        **next(t for t in d["targets"] if t["id"] == "github"), "id":
-        "github-twin"
-    }))
+    twinned = with_manifest(
+        lambda d: d["targets"].append(
+            {
+                **next(t for t in d["targets"] if t["id"] == "github"),
+                "id": "github-twin",
+            }
+        )
+    )
     _, twin_pool = harness.plan_run(twinned["targets"], services)
     twin_lanes = [
-        lane for i, lane in twin_pool
+        lane
+        for i, lane in twin_pool
         if twinned["targets"][i]["id"].startswith("github")
     ]
     check(
         "pool: GitHub targets have independent lanes",
-        len(twin_lanes) == 2 and len(set(twin_lanes)) == 2
+        len(twin_lanes) == 2
+        and len(set(twin_lanes)) == 2
         and all(lane.startswith("solo:") for lane in twin_lanes),
-        f"lanes: {twin_lanes}")
+        f"lanes: {twin_lanes}",
+    )
 
     bad_shared = with_manifest(
-        lambda d: d["services"]["github"].update({"shared": 1}))
+        lambda d: d["services"]["github"].update({"shared": 1})
+    )
     check(
         "services: a non-boolean 'shared' is rejected",
-        *raises(functools.partial(harness.validate_services, bad_shared),
-                "must be a boolean"))
+        *raises(
+            functools.partial(harness.validate_services, bad_shared),
+            "must be a boolean",
+        ),
+    )
 
-    bad_exclusive = with_manifest(lambda d: next(
-        t for t in d["targets"] if t["id"] == "opfs").update({"exclusive": 1}))
+    bad_exclusive = with_manifest(
+        lambda d: next(t for t in d["targets"] if t["id"] == "opfs").update(
+            {"exclusive": 1}
+        )
+    )
     check(
         "targets: a non-boolean 'exclusive' is rejected",
-        *raises(functools.partial(harness.validate_targets, bad_exclusive),
-                "must be a boolean"))
+        *raises(
+            functools.partial(harness.validate_targets, bad_exclusive),
+            "must be a boolean",
+        ),
+    )
 
     stray_key = with_manifest(
-        lambda d: d["services"]["trello"].update({"nosuchkey": True}))
+        lambda d: d["services"]["trello"].update({"nosuchkey": True})
+    )
     check(
         "services: an unknown key on a service entry is rejected",
-        *raises(functools.partial(harness.validate_services, stray_key),
-                "unknown key"))
+        *raises(
+            functools.partial(harness.validate_services, stray_key),
+            "unknown key",
+        ),
+    )
 
     code = run_main(["--target", "ram", "--target-jobs", "0"], {})
     check("--target-jobs below one is refused", code == 2, f"exit {code}")
 
     # The equivalence itself, end to end. argerr is the one multi-target
     # facet that needs no service at all, so this costs a few seconds.
-    serial_code, serial_out = run_main_out(["--facet", "argerr", "--strict"],
-                                           {})
+    serial_code, serial_out = run_main_out(
+        ["--facet", "argerr", "--strict"], {}
+    )
     pool_code, pool_out = run_main_out(
-        ["--facet", "argerr", "--strict", "--target-jobs", "4"], {})
-    check("pool: a concurrent run exits as the serial run did",
-          serial_code == 0 and pool_code == 0,
-          f"serial {serial_code}, pool {pool_code}")
-    check("pool: a concurrent run prints what the serial run printed",
-          serial_out == pool_out and serial_out != "",
-          f"{len(serial_out)} vs {len(pool_out)} chars")
+        ["--facet", "argerr", "--strict", "--target-jobs", "4"], {}
+    )
+    check(
+        "pool: a concurrent run exits as the serial run did",
+        serial_code == 0 and pool_code == 0,
+        f"serial {serial_code}, pool {pool_code}",
+    )
+    check(
+        "pool: a concurrent run prints what the serial run printed",
+        serial_out == pool_out and serial_out != "",
+        f"{len(serial_out)} vs {len(pool_out)} chars",
+    )
 
 
 class PoolProbe:
@@ -554,8 +673,9 @@ class PoolProbe:
         delays (dict[str, float]): how long each target takes.
     """
 
-    def __init__(self, lanes: dict[str, str], alone: set[str],
-                 delays: dict[str, float]) -> None:
+    def __init__(
+        self, lanes: dict[str, str], alone: set[str], delays: dict[str, float]
+    ) -> None:
         self.lanes = lanes
         self.alone = alone
         self.delays = delays
@@ -564,8 +684,14 @@ class PoolProbe:
         self.lane_clashes: list[str] = []
         self.alone_clashes: list[str] = []
 
-    async def run(self, target: dict, cases: list[dict], root: Path,
-                  report: object, emit: object) -> None:
+    async def run(
+        self,
+        target: dict,
+        cases: list[dict],
+        root: Path,
+        report: object,
+        emit: object,
+    ) -> None:
         """Stand in for run_target, recording overlap.
 
         Args:
@@ -596,8 +722,9 @@ class PoolProbe:
             report.record(tid, "probe", [])
 
 
-def probe_pool(targets: list[dict], services: dict,
-               width: int) -> tuple[PoolProbe, list[str]]:
+def probe_pool(
+    targets: list[dict], services: dict, width: int
+) -> tuple[PoolProbe, list[str]]:
     """Drive the pool with a recorder instead of the real runner.
 
     Args:
@@ -612,8 +739,8 @@ def probe_pool(targets: list[dict], services: dict,
     alone, pool = harness.plan_run(targets, services)
     lanes = {targets[i]["id"]: lane for i, lane in pool}
     lanes.update(
-        {targets[i]["id"]: f"alone:{targets[i]['id']}"
-         for i in alone})
+        {targets[i]["id"]: f"alone:{targets[i]['id']}" for i in alone}
+    )
     delays = {
         t["id"]: 0.02 + 0.01 * (len(targets) - n)
         for n, t in enumerate(targets)
@@ -623,16 +750,21 @@ def probe_pool(targets: list[dict], services: dict,
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         asyncio.run(
-            runner_main.run_pool(targets, [],
-                                 ROOT,
-                                 report,
-                                 None,
-                                 services,
-                                 width,
-                                 runner=probe.run))
+            runner_main.run_pool(
+                targets,
+                [],
+                ROOT,
+                report,
+                None,
+                services,
+                width,
+                runner=probe.run,
+            )
+        )
     printed = [
         line.split("[")[1].split("]")[0]
-        for line in buffer.getvalue().splitlines() if "[" in line
+        for line in buffer.getvalue().splitlines()
+        if "[" in line
     ]
     return probe, printed
 
@@ -645,35 +777,43 @@ def selftest_pool_runtime() -> None:
     serially, or took no lane lock at all, passes all of them.
     """
     services = {
-        "one-world": {
-            "python": [],
-            "typescript": [],
-            "shared": True
-        },
-        "scoped": {
-            "python": [],
-            "typescript": []
-        },
+        "one-world": {"python": [], "typescript": [], "shared": True},
+        "scoped": {"python": [], "typescript": []},
     }
     targets = [{"id": f"scoped-{n}", "service": "scoped"} for n in range(6)]
     targets += [{"id": f"world-{n}", "service": "one-world"} for n in range(3)]
     targets.append({"id": "lonely", "exclusive": True})
 
     wide, printed = probe_pool(targets, services, 4)
-    check("pool: four targets really are in flight at width 4", wide.peak == 4,
-          f"peak {wide.peak}")
-    check("pool: two targets on a one-world fake never overlap",
-          wide.lane_clashes == [], f"overlapped: {wide.lane_clashes}")
-    check("pool: an exclusive target overlaps nothing",
-          wide.alone_clashes == [], f"overlapped: {wide.alone_clashes}")
+    check(
+        "pool: four targets really are in flight at width 4",
+        wide.peak == 4,
+        f"peak {wide.peak}",
+    )
+    check(
+        "pool: two targets on a one-world fake never overlap",
+        wide.lane_clashes == [],
+        f"overlapped: {wide.lane_clashes}",
+    )
+    check(
+        "pool: an exclusive target overlaps nothing",
+        wide.alone_clashes == [],
+        f"overlapped: {wide.alone_clashes}",
+    )
     # The targets above finish in reverse order by construction, so this
     # fails the moment a slot streams instead of buffering.
-    check("pool: output follows selection order, not completion order",
-          printed == [t["id"] for t in targets], f"printed: {printed}")
+    check(
+        "pool: output follows selection order, not completion order",
+        printed == [t["id"] for t in targets],
+        f"printed: {printed}",
+    )
 
     narrow, _ = probe_pool(targets, services, 1)
-    check("pool: width one runs one at a time", narrow.peak == 1,
-          f"peak {narrow.peak}")
+    check(
+        "pool: width one runs one at a time",
+        narrow.peak == 1,
+        f"peak {narrow.peak}",
+    )
 
     # The dispatch, not the pool: `--target-jobs 4` routing to the serial
     # loop is invisible in stdout, in exit codes and to the probe above,
@@ -681,10 +821,16 @@ def selftest_pool_runtime() -> None:
     # observable that separates the two paths.
     pooled = run_main_err(["--facet", "argerr", "--target-jobs", "4"], {})
     serial = run_main_err(["--facet", "argerr"], {})
-    check("pool: a width above one reaches the pool", "pool: " in pooled
-          and "at width 4" in pooled, f"stderr: {pooled[-120:]!r}")
-    check("pool: width one does not", "pool: " not in serial,
-          f"stderr: {serial[-120:]!r}")
+    check(
+        "pool: a width above one reaches the pool",
+        "pool: " in pooled and "at width 4" in pooled,
+        f"stderr: {pooled[-120:]!r}",
+    )
+    check(
+        "pool: width one does not",
+        "pool: " not in serial,
+        f"stderr: {serial[-120:]!r}",
+    )
 
 
 def run_case_targets(root: Path) -> int:
@@ -714,8 +860,10 @@ def selftest_case_targets() -> None:
     one more omission, or one fewer -- is a failure rather than a quieter
     number nobody reads.
     """
-    check("case targets: the committed tree sits on its baseline",
-          run_case_targets(ROOT.parent) == 0)
+    check(
+        "case targets: the committed tree sits on its baseline",
+        run_case_targets(ROOT.parent) == 0,
+    )
 
     narrow = "integ/unix/example/dialect.json"
     broad = "integ/unix/example/basic.json"
@@ -729,14 +877,18 @@ def selftest_case_targets() -> None:
     before = case_targets.excuse(case_targets.collect(targets), rationale)
     targets[f"{narrow} :: added"] = {"ram", "disk"}
     after = case_targets.excuse(case_targets.collect(targets), rationale)
-    check("case targets: a file rationale covers added dialect cases",
-          before == after == ({}, []))
+    check(
+        "case targets: a file rationale covers added dialect cases",
+        before == after == ({}, []),
+    )
     targets[f"{broad} :: second"] = {"ram"}
-    remaining, stale = case_targets.excuse(case_targets.collect(targets),
-                                           rationale)
+    remaining, stale = case_targets.excuse(
+        case_targets.collect(targets), rationale
+    )
     check(
         "case targets: a file rationale cannot excuse a sibling omission",
-        remaining == {f"{broad} :: second": ["disk", "remote"]} and not stale)
+        remaining == {f"{broad} :: second": ["disk", "remote"]} and not stale,
+    )
 
     exceptions = ROOT / "target_exceptions.json"
     original = exceptions.read_text()
@@ -745,17 +897,23 @@ def selftest_case_targets() -> None:
     try:
         loaded["baseline"] = baseline + 1
         exceptions.write_text(json.dumps(loaded, indent=2) + "\n")
-        check("case targets: a baseline above the real count fails",
-              run_case_targets(ROOT.parent) != 0)
+        check(
+            "case targets: a baseline above the real count fails",
+            run_case_targets(ROOT.parent) != 0,
+        )
         loaded["baseline"] = baseline - 1
         exceptions.write_text(json.dumps(loaded, indent=2) + "\n")
-        check("case targets: a baseline below the real count fails",
-              run_case_targets(ROOT.parent) != 0)
+        check(
+            "case targets: a baseline below the real count fails",
+            run_case_targets(ROOT.parent) != 0,
+        )
         loaded["baseline"] = baseline
         loaded["files"] = {"integ/unix/mv/empty_dir.json": "no longer a gap"}
         exceptions.write_text(json.dumps(loaded, indent=2) + "\n")
-        check("case targets: a stale exception fails",
-              run_case_targets(ROOT.parent) != 0)
+        check(
+            "case targets: a stale exception fails",
+            run_case_targets(ROOT.parent) != 0,
+        )
     finally:
         exceptions.write_text(original)
 
@@ -778,15 +936,18 @@ def run_typescript(args: list[str], env: dict) -> tuple[int, str]:
     for k, v in env.items():
         if v == "":
             merged.pop(k, None)
-    proc = subprocess.run([str(TSX), "runners/typescript/main.ts", *args],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT,
-                          env=merged)
+    proc = subprocess.run(
+        [str(TSX), "runners/typescript/main.ts", *args],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env=merged,
+    )
     lines = [ln for ln in proc.stderr.splitlines() if ln.strip()]
     errors = [ln for ln in lines if "Error" in ln or "error" in ln]
-    return proc.returncode, (errors[0] if errors else
-                             (lines[-1] if lines else ""))
+    return proc.returncode, (
+        errors[0] if errors else (lines[-1] if lines else "")
+    )
 
 
 def ts_stdout(args: list[str]) -> str:
@@ -798,10 +959,12 @@ def ts_stdout(args: list[str]) -> str:
     Returns:
         str: stdout, or empty when the runner failed.
     """
-    proc = subprocess.run([str(TSX), "runners/typescript/main.ts", *args],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT)
+    proc = subprocess.run(
+        [str(TSX), "runners/typescript/main.ts", *args],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
     return proc.stdout if proc.returncode == 0 else ""
 
 
@@ -813,7 +976,8 @@ RUN_ID_PROBE = (
     "import('./runners/typescript/adapters/index.ts').then((m) => {\n"
     "  const ids = Array.from({ length: 8 }, () => m.runId())\n"
     "  console.log(new Set(ids).size)\n"
-    "})\n")
+    "})\n"
+)
 
 
 def selftest_run_ids() -> None:
@@ -826,13 +990,17 @@ def selftest_run_ids() -> None:
     made unique by being slower than a millisecond and the pool is not:
     five targets started in one tick took one id.
     """
-    proc = subprocess.run([str(TSX), "--eval", RUN_ID_PROBE],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT)
-    check("run ids: eight minted in one tick are distinct (ts)",
-          proc.stdout.strip() == "8",
-          f"distinct: {proc.stdout.strip()!r} {proc.stderr[-200:]}")
+    proc = subprocess.run(
+        [str(TSX), "--eval", RUN_ID_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    check(
+        "run ids: eight minted in one tick are distinct (ts)",
+        proc.stdout.strip() == "8",
+        f"distinct: {proc.stdout.strip()!r} {proc.stderr[-200:]}",
+    )
 
 
 # planRun and targetLane are the typescript twins of what selftest_target_pool
@@ -851,7 +1019,8 @@ PLAN_PROBE = (
     "  const solo = gws.length > 1 && gws.every((p) => "
     "p.lane.startsWith('solo:'))\n"
     "  console.log(`${named}|${lanes}|${String(solo)}`)\n"
-    "})\n")
+    "})\n"
+)
 
 
 def selftest_plan_run() -> None:
@@ -860,18 +1029,21 @@ def selftest_plan_run() -> None:
     Args:
         None: reads the committed manifest.
     """
-    proc = subprocess.run([str(TSX), "--eval", PLAN_PROBE],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT)
-    want = (f"{','.join(PROCESS_GLOBAL_TARGETS)}|"
-            f"{','.join(sorted(SHARED_SERVICES))}|true")
+    proc = subprocess.run(
+        [str(TSX), "--eval", PLAN_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    want = (
+        f"{','.join(PROCESS_GLOBAL_TARGETS)}|"
+        f"{','.join(sorted(SHARED_SERVICES))}|true"
+    )
     check(
-        "pool (ts): the same targets run alone and the same fakes hold a "
-        "lane",
+        "pool (ts): the same targets run alone and the same fakes hold a lane",
         proc.stdout.strip() == want,
-        f"got {proc.stdout.strip()!r}, wanted {want!r} "
-        f"{proc.stderr[-200:]}")
+        f"got {proc.stdout.strip()!r}, wanted {want!r} {proc.stderr[-200:]}",
+    )
 
 
 # A consistency case whose target cannot build a shadow workspace used to be
@@ -886,7 +1058,8 @@ NO_SHADOW_PROBE = (
     "  const run = await m.runConsistencyCase(async () => null, c, t)\n"
     "  const diffs = m.compare(c, run.exitCode, run.out, run.stderr, 0)\n"
     "  console.log(`${String(diffs.length > 0)}|${run.stderr.trim()}`)\n"
-    "})\n")
+    "})\n"
+)
 
 
 def selftest_no_shadow_fails() -> None:
@@ -895,14 +1068,18 @@ def selftest_no_shadow_fails() -> None:
     Args:
         None: probes the typescript harness directly.
     """
-    proc = subprocess.run([str(TSX), "--eval", NO_SHADOW_PROBE],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT)
+    proc = subprocess.run(
+        [str(TSX), "--eval", NO_SHADOW_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
     failed, _, line = proc.stdout.strip().partition("|")
-    check("consistency (ts): a target with no shadow workspace fails the case",
-          failed == "true" and "no shadow workspace" in line,
-          f"got {proc.stdout.strip()!r} {proc.stderr[-200:]}")
+    check(
+        "consistency (ts): a target with no shadow workspace fails the case",
+        failed == "true" and "no shadow workspace" in line,
+        f"got {proc.stdout.strip()!r} {proc.stderr[-200:]}",
+    )
 
 
 # selftest_mount_read and the mount_read case rule, on the typescript host.
@@ -941,45 +1118,67 @@ MOUNT_READ_PROBE = (
     "  out.ttl = h.mountReadOf({ mount_read: { '/d': 'bounded' }, ttl: 45 })\n"
     "  out.nottl = h.mountReadOf({ mount_read: { '/d': 'bounded' } })\n"
     "  console.log(JSON.stringify(out))\n"
-    "})\n")
+    "})\n"
+)
 
 
 def selftest_mount_read_typescript() -> None:
     """selftest_mount_read's claims on the typescript host."""
-    proc = subprocess.run([str(TSX), "--eval", MOUNT_READ_PROBE],
-                          capture_output=True,
-                          text=True,
-                          cwd=ROOT)
+    proc = subprocess.run(
+        [str(TSX), "--eval", MOUNT_READ_PROBE],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
     try:
         out = json.loads(proc.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError) as exc:
-        check("mount_read (ts): the probe ran", False,
-              f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}")
+        check(
+            "mount_read (ts): the probe ran",
+            False,
+            f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}",
+        )
         return
-    check("cases (ts): a mount_read without a read is rejected", "mount_read"
-          in out["unread"], repr(out["unread"]))
-    check("mount_read (ts): an override naming an unmounted prefix is refused",
-          "t: mount_read names no mount: /nope" in out["nope"],
-          repr(out["nope"]))
-    check("mount_read (ts): a bare mount keeps the workspace's mode",
-          out["data"] == [True, None, "bounded", 45], repr(out["data"]))
-    check("mount_read (ts): a read-only mount keeps its mode",
-          out["ro"] == [True, "read", "bounded", 45], repr(out["ro"]))
-    check("mount_read (ts): a mount keeps its command limits",
-          out["lim"] == [True, "read", "bounded", 45, True], repr(out["lim"]))
-    check("mount_read (ts): a mount the override does not name is untouched",
-          out["keep"] is True, repr(out["keep"]))
-    check("mount_read (ts): the case's ttl rides into each override",
-          out["ttl"] == {"/d": {
-              "policy": "bounded",
-              "ttl": 45
-          }}, repr(out["ttl"]))
+    check(
+        "cases (ts): a mount_read without a read is rejected",
+        "mount_read" in out["unread"],
+        repr(out["unread"]),
+    )
+    check(
+        "mount_read (ts): an override naming an unmounted prefix is refused",
+        "t: mount_read names no mount: /nope" in out["nope"],
+        repr(out["nope"]),
+    )
+    check(
+        "mount_read (ts): a bare mount keeps the workspace's mode",
+        out["data"] == [True, None, "bounded", 45],
+        repr(out["data"]),
+    )
+    check(
+        "mount_read (ts): a read-only mount keeps its mode",
+        out["ro"] == [True, "read", "bounded", 45],
+        repr(out["ro"]),
+    )
+    check(
+        "mount_read (ts): a mount keeps its command limits",
+        out["lim"] == [True, "read", "bounded", 45, True],
+        repr(out["lim"]),
+    )
+    check(
+        "mount_read (ts): a mount the override does not name is untouched",
+        out["keep"] is True,
+        repr(out["keep"]),
+    )
+    check(
+        "mount_read (ts): the case's ttl rides into each override",
+        out["ttl"] == {"/d": {"policy": "bounded", "ttl": 45}},
+        repr(out["ttl"]),
+    )
     check(
         "mount_read (ts): with no ttl an override takes the default bound",
-        out["nottl"] == {"/d": {
-            "policy": "bounded",
-            "ttl": DEFAULT_READ_TTL
-        }}, repr(out["nottl"]))
+        out["nottl"] == {"/d": {"policy": "bounded", "ttl": DEFAULT_READ_TTL}},
+        repr(out["nottl"]),
+    )
 
 
 def selftest_typescript_gates(require: bool) -> None:
@@ -994,27 +1193,40 @@ def selftest_typescript_gates(require: bool) -> None:
     """
     if not TSX.is_file():
         if require:
-            check("typescript gates ran", False,
-                  f"--require-ts given but {TSX} is missing")
+            check(
+                "typescript gates ran",
+                False,
+                f"--require-ts given but {TSX} is missing",
+            )
             return
-        print("skip typescript gates: no tsx (run pnpm install from "
-              "typescript/)")
+        print(
+            "skip typescript gates: no tsx (run pnpm install from typescript/)"
+        )
         return
     # Prove the runner starts before reading exit codes as verdicts: an
     # unbuilt mirage package dies on import with a non-zero code, which
     # would make the strict assertion below pass for the wrong reason. An
     # unknown facet exits 2 without running any case, so it costs nothing.
     code, err = run_typescript(["--facet", "__selftest_no_such_facet__"], {})
-    check("typescript runner starts (packages built)", code == 2,
-          f"exit {code}: {err}")
+    check(
+        "typescript runner starts (packages built)",
+        code == 2,
+        f"exit {code}: {err}",
+    )
 
     blanked = {"TRELLO_URL": ""}
     code, err = run_typescript(["--target", "trello", "--strict"], blanked)
-    check("strict (ts): a skipped target exits non-zero", code != 0,
-          f"exit {code}: {err}")
+    check(
+        "strict (ts): a skipped target exits non-zero",
+        code != 0,
+        f"exit {code}: {err}",
+    )
     code, err = run_typescript(["--target", "trello"], blanked)
-    check("permissive (ts): the same run still exits 0", code == 0,
-          f"exit {code}: {err}")
+    check(
+        "permissive (ts): the same run still exits 0",
+        code == 0,
+        f"exit {code}: {err}",
+    )
     selftest_case_target_defaults(typescript=True)
     selftest_run_ids()
     selftest_plan_run()
@@ -1025,19 +1237,94 @@ def selftest_typescript_gates(require: bool) -> None:
     check("--target-jobs=0 is refused (ts)", code == 2, f"exit {code}: {err}")
 
     code, err = run_typescript(["--target", "ram", "--target-jobs"], {})
-    check("--target-jobs with no value is refused (ts)", code == 2,
-          f"exit {code}: {err}")
+    check(
+        "--target-jobs with no value is refused (ts)",
+        code == 2,
+        f"exit {code}: {err}",
+    )
 
     # The pool's two claims on this host too. The equivalence needs stdout,
     # which run_typescript drops in favour of stderr, so it spawns its own.
     code, err = run_typescript(["--target", "ram", "--target-jobs", "0"], {})
-    check("--target-jobs below one is refused (ts)", code == 2,
-          f"exit {code}: {err}")
+    check(
+        "--target-jobs below one is refused (ts)",
+        code == 2,
+        f"exit {code}: {err}",
+    )
     serial = ts_stdout(["--facet", "argerr", "--strict"])
     pooled = ts_stdout(["--facet", "argerr", "--strict", "--target-jobs", "4"])
-    check("pool (ts): a concurrent run prints what the serial run printed",
-          serial == pooled and serial != "",
-          f"{len(serial)} vs {len(pooled)} chars")
+    check(
+        "pool (ts): a concurrent run prints what the serial run printed",
+        serial == pooled and serial != "",
+        f"{len(serial)} vs {len(pooled)} chars",
+    )
+
+
+def selftest_shard() -> None:
+    """The shard jobs run every target of their facets once, and nothing
+    else: a facet that puts no target into the split, a target the host
+    cannot run, or a service another job provisions must not ride it."""
+    manifest = json.loads((ROOT / "targets.json").read_text())
+    counts = shard.case_counts(ROOT)
+    by_id = {target["id"]: target for target in manifest["targets"]}
+    skip = {"nextcloud", "notion"}
+    for host in ("python", "typescript"):
+        items = shard.work_items(
+            manifest, ["core", "http"], host, skip, counts
+        )
+        ran = [target_id for ids, _ in items for target_id in ids]
+        want = sorted(
+            target["id"]
+            for target in manifest["targets"]
+            if target.get("facet", "core") in ("core", "http")
+            and shard.runs_on(target, host)
+            and target.get("service") not in skip
+        )
+        check(
+            f"shard ({host}): the split holds each eligible target once",
+            sorted(ran) == want,
+            f"{sorted(set(ran) ^ set(want))}",
+        )
+        parts = shard.split(items, 2)
+        spread = [
+            target_id for part in parts for ids, _ in part for target_id in ids
+        ]
+        check(
+            f"shard ({host}): the shards partition the split",
+            sorted(spread) == sorted(ran),
+            f"{len(spread)} vs {len(ran)}",
+        )
+        check(
+            f"shard ({host}): no skipped service and no foreign host",
+            all(
+                by_id[target_id].get("service") not in skip
+                and shard.runs_on(by_id[target_id], host)
+                for target_id in ran
+            ),
+            f"{ran}",
+        )
+        check(
+            f"shard ({host}): core and http both put work in the split",
+            shard.idle_facets(manifest, ["core", "http"], items) == [],
+            f"{shard.idle_facets(manifest, ['core', 'http'], items)}",
+        )
+        check(
+            f"shard ({host}): a misspelled facet is reported idle",
+            shard.idle_facets(manifest, ["core", "htpp"], items) == ["htpp"],
+            f"{shard.idle_facets(manifest, ['core', 'htpp'], items)}",
+        )
+    check(
+        "shard: a browser-only target is not split onto the python host",
+        "opfs"
+        not in [
+            target_id
+            for ids, _ in shard.work_items(
+                manifest, ["core"], "python", set(), counts
+            )
+            for target_id in ids
+        ],
+        "opfs scheduled on python",
+    )
 
 
 def main() -> None:
@@ -1050,6 +1337,7 @@ def main() -> None:
     selftest_target_pool()
     selftest_pool_runtime()
     selftest_case_targets()
+    selftest_shard()
     selftest_typescript_gates("--require-ts" in sys.argv)
     print()
     if FAILURES:

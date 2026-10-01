@@ -56,7 +56,7 @@ export async function treeItems(repo: Repo, treeOid: string): Promise<TreeItem[]
   const read = await git.readObject({ ...repoArgs(repo), oid: treeOid, format: 'content' })
   const raw = read.object as Uint8Array
   const items: TreeItem[] = []
-  for (let at = 0; at < raw.length; ) {
+  for (let at = 0; at < raw.length;) {
     const space = raw.indexOf(SPACE, at)
     const nul = space < 0 ? -1 : raw.indexOf(NUL, space)
     if (nul < 0 || nul + 1 + OID_BYTES > raw.length)

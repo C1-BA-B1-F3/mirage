@@ -15,7 +15,7 @@
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import type { PathSpec } from '../../types.ts'
-import { markEscapedGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
+import { markEscapedGlobs } from '../../utils/glob_walk.ts'
 import { expandTilde } from '../../utils/path.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { SessionState } from '../session/session.ts'
@@ -78,11 +78,10 @@ async function expandBraceWord(
  *
  * Each node expands to its pieces, which IFS then splits into fields, so
  * an unquoted expansion anywhere in a word splits (`q$x` too) and quoted
- * text never does. The words are exactly expandParts', except that a
- * glob character quoting made literal travels under its own mark, so
- * `"/data/"*.txt` still globs while `'/data/*'.txt` does not and
- * `'/data/*'?.txt` globs on the `?` alone. Only pathname expansion reads
- * these; everything else takes the unmarked `expandParts`.
+ * text never does. A glob character quoting made literal travels under its
+ * own mark, so `"/data/"*.txt` still globs while `'/data/*'.txt` does not
+ * and `'/data/*'?.txt` globs on the `?` alone; `unmarkGlobs` takes the
+ * marks off.
  */
 export async function expandWords(
   parts: TSNodeLike[],
@@ -105,16 +104,6 @@ export async function expandWords(
     for (const w of splitFields(chunks, ifs)) result.push(w)
   }
   return result
-}
-
-export async function expandParts(
-  parts: TSNodeLike[],
-  session: SessionState,
-  executeFn: ExecuteFn,
-  callStack: CallStack | null = null,
-): Promise<string[]> {
-  const words = await expandWords(parts, session, executeFn, callStack)
-  return words.map((w) => unmarkGlobs(w))
 }
 
 export async function expandAndClassify(

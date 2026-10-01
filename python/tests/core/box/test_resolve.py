@@ -16,24 +16,18 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.box.resolve import (mount_relative_key, resolve_chain,
-                                     resolve_item)
+from mirage.core.box.resolve import (
+    mount_relative_key,
+    resolve_chain,
+    resolve_item,
+)
 
 FOLDERS = {
-    "0": [{
-        "type": "folder",
-        "id": "10",
-        "name": "team"
-    }, {
-        "type": "file",
-        "id": "2",
-        "name": "a.txt"
-    }],
-    "10": [{
-        "type": "folder",
-        "id": "11",
-        "name": "docs"
-    }],
+    "0": [
+        {"type": "folder", "id": "10", "name": "team"},
+        {"type": "file", "id": "2", "name": "a.txt"},
+    ],
+    "10": [{"type": "folder", "id": "11", "name": "docs"}],
     "11": [],
 }
 
@@ -77,16 +71,11 @@ def test_mount_relative_key_trims_through_the_mount_root():
     item = {
         "name": "a.txt",
         "path_collection": {
-            "entries": [{
-                "id": "0",
-                "name": "All Files"
-            }, {
-                "id": "10",
-                "name": "team"
-            }, {
-                "id": "11",
-                "name": "docs"
-            }]
+            "entries": [
+                {"id": "0", "name": "All Files"},
+                {"id": "10", "name": "team"},
+                {"id": "11", "name": "docs"},
+            ]
         },
     }
     assert mount_relative_key(item, "0") == "team/docs/a.txt"

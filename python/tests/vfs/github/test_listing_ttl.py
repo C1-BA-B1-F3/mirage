@@ -50,28 +50,32 @@ class _Clock(datetime):
 
 
 def _hub() -> FakeGitHub:
-    return FakeGitHub(files={
-        "docs/a.txt": OLD,
-        "docs/b.txt": b"bravo x\n",
-        "top.txt": b"top\n"
-    })
+    return FakeGitHub(
+        files={
+            "docs/a.txt": OLD,
+            "docs/b.txt": b"bravo x\n",
+            "top.txt": b"top\n",
+        }
+    )
 
 
 def _vfs(hub: FakeGitHub):
     return build_vfs(
-        "github", {
+        "github",
+        {
             "token": "t",
             "owner": "o",
             "repo": "r",
             "ref": "main",
-            "base_url": hub.url
-        })
+            "base_url": hub.url,
+        },
+    )
 
 
 def _mount(vfs, policy: ReadPolicy = ReadPolicy.BOUNDED, ttl: int = 1):
-    return Mount(vfs=vfs,
-                 mode=MountMode.READ,
-                 read=ReadSpec(policy=policy, ttl=ttl))
+    return Mount(
+        vfs=vfs, mode=MountMode.READ, read=ReadSpec(policy=policy, ttl=ttl)
+    )
 
 
 def _ws(vfs, prefix: str = "/gh", **kwargs) -> Workspace:
@@ -112,8 +116,14 @@ async def test_concurrent_sessions_after_an_expiry_fetch_the_tree_once():
             await _expire(ws, "/gh/docs")
             hub.log.clear()
             outs = await asyncio.wait_for(
-                asyncio.gather(*(_out(ws, "ls /gh/docs", session_id)
-                                 for session_id in ids)), 10)
+                asyncio.gather(
+                    *(
+                        _out(ws, "ls /gh/docs", session_id)
+                        for session_id in ids
+                    )
+                ),
+                10,
+            )
             assert hub.counts() == (0, 1, 0)
             assert outs == [LISTED] * 7
         finally:
@@ -161,8 +171,10 @@ async def test_a_reader_arriving_mid_refill_waits_for_it(monkeypatch):
             assert waited
         finally:
             release.set()
-            await asyncio.gather(*(task for task in (first, second) if task),
-                                 return_exceptions=True)
+            await asyncio.gather(
+                *(task for task in (first, second) if task),
+                return_exceptions=True,
+            )
             await ws.close()
 
 
@@ -180,16 +192,18 @@ async def test_a_glob_arriving_mid_refill_still_answers(monkeypatch):
             wiped, release = _gate(monkeypatch)
             first = asyncio.ensure_future(_out(ws, "ls /gh/docs", "s0"))
             await asyncio.wait_for(wiped.wait(), 5)
-            globbed = await asyncio.wait_for(_out(ws, "echo /gh/docs/*", "s1"),
-                                             5)
+            globbed = await asyncio.wait_for(
+                _out(ws, "echo /gh/docs/*", "s1"), 5
+            )
             assert globbed == b"/gh/docs/a.txt /gh/docs/b.txt\n"
             release.set()
             assert await asyncio.wait_for(first, 5) == LISTED
             assert hub.counts() == (0, 2, 0)
         finally:
             release.set()
-            await asyncio.gather(*([first] if first else []),
-                                 return_exceptions=True)
+            await asyncio.gather(
+                *([first] if first else []), return_exceptions=True
+            )
             await ws.close()
 
 
@@ -215,8 +229,14 @@ async def test_mixed_commands_after_an_expiry_never_deadlock(rotation):
             expected = {line: await _out(ws, line) for line in MIXED}
             await _expire(ws, "/gh/docs")
             outs = await asyncio.wait_for(
-                asyncio.gather(*(_out(ws, line, ids[n % 3])
-                                 for n, line in enumerate(order))), 5)
+                asyncio.gather(
+                    *(
+                        _out(ws, line, ids[n % 3])
+                        for n, line in enumerate(order)
+                    )
+                ),
+                5,
+            )
             assert outs == [expected[line] for line in order]
         finally:
             await ws.close()
@@ -254,7 +274,8 @@ async def _walk_after_an_add(prefix: str, line: str, path: str) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prefix,line,path", TREE_WALKS)
 async def test_a_tree_walk_after_an_expiry_sees_a_remote_add(
-        prefix, line, path):
+    prefix, line, path
+):
     await _walk_after_an_add(prefix, line, path)
 
 
@@ -270,13 +291,15 @@ async def test_a_truncated_tree_is_not_refetched_by_every_find():
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
         tree, truncated = await fetch_tree(config, "o", "r", "main")
-        vfs = GitHubVFS(config,
-                        "o",
-                        "r",
-                        "main",
-                        default_branch="main",
-                        tree=tree,
-                        truncated=truncated)
+        vfs = GitHubVFS(
+            config,
+            "o",
+            "r",
+            "main",
+            default_branch="main",
+            tree=tree,
+            truncated=truncated,
+        )
         ws = _ws(vfs, ttl=600)
         try:
             await _out(ws, "find /gh -name a.txt")
@@ -298,7 +321,8 @@ FIRST_READERS = [
 @pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
 @pytest.mark.parametrize("first", FIRST_READERS)
 async def test_a_listing_is_served_until_the_mount_ttl_then_refetched(
-        first, policy):
+    first, policy
+):
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub), policy=policy, ttl=1)
         try:
@@ -306,9 +330,9 @@ async def test_a_listing_is_served_until_the_mount_ttl_then_refetched(
             hub.files["docs/c.txt"] = b"charlie\n"
             # fresh checks the listing, so it sees the add at once; bounded
             # serves the cached one until the mount's ttl runs out.
-            assert await _out(
-                ws, "ls /gh/docs") == (LISTED if policy is ReadPolicy.BOUNDED
-                                       else GROWN)
+            assert await _out(ws, "ls /gh/docs") == (
+                LISTED if policy is ReadPolicy.BOUNDED else GROWN
+            )
             await asyncio.sleep(1.1)
             assert await _out(ws, "ls /gh/docs") == GROWN
         finally:
@@ -316,13 +340,17 @@ async def test_a_listing_is_served_until_the_mount_ttl_then_refetched(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected", [
-    ("ls /gh/docs", GROWN),
-    ("cat /gh/docs/a.txt", NEW),
-    ("find /gh -name c.txt", b"/gh/docs/c.txt\n"),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("ls /gh/docs", GROWN),
+        ("cat /gh/docs/a.txt", NEW),
+        ("find /gh -name c.txt", b"/gh/docs/c.txt\n"),
+    ],
+)
 async def test_the_first_reader_after_the_ttl_sees_the_remote_change(
-        line, expected):
+    line, expected
+):
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub), ttl=1)
         try:
@@ -355,7 +383,8 @@ async def test_two_prefixes_over_one_vfs_keep_their_own_bound():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("after,expected", [(599, LISTED), (601, GROWN)])
 async def test_a_mount_without_a_ttl_caps_listings_at_the_default(
-        monkeypatch, after, expected):
+    monkeypatch, after, expected
+):
     _Clock.at = T0
     for module in ("view", "ram"):
         monkeypatch.setattr(f"mirage.cache.index.{module}.datetime", _Clock)
@@ -393,17 +422,17 @@ async def test_an_invalid_walk_after_an_expiry_fetches_nothing(line):
 
 def _three() -> FakeGitHub:
     return FakeGitHub(
-        files={f"d{i}/{n}.txt": b"x\n"
-               for i in (1, 2, 3)
-               for n in "abc"})
+        files={f"d{i}/{n}.txt": b"x\n" for i in (1, 2, 3) for n in "abc"}
+    )
 
 
 def _fresh(hub: FakeGitHub, prefix: str = "/gh") -> Workspace:
-    return Workspace({
-        prefix:
-        _mount(_vfs(hub), policy=ReadPolicy.FRESH, ttl=600),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            prefix: _mount(_vfs(hub), policy=ReadPolicy.FRESH, ttl=600),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 # One recursive tree fetch per command: the listing it writes is trusted
@@ -451,8 +480,10 @@ async def test_a_fresh_ls_sees_a_file_added_outside_mirage():
             assert await _out(ws, "ls /gh/d1") == b"a.txt\nb.txt\nc.txt\n"
             hub.files["d1/new.txt"] = b"new\n"
             hub.log.clear()
-            assert await _out(ws,
-                              "ls /gh/d1") == b"a.txt\nb.txt\nc.txt\nnew.txt\n"
+            assert (
+                await _out(ws, "ls /gh/d1")
+                == b"a.txt\nb.txt\nc.txt\nnew.txt\n"
+            )
             assert hub.counts() == (0, 1, 0)
         finally:
             await ws.close()
@@ -468,7 +499,8 @@ async def test_each_command_of_a_loop_sees_changes_made_before_it():
             await _out(ws, "ls /gh")
             hub.log.clear()
             hub.after_recursive = lambda: hub.files.setdefault(
-                "d1/new.txt", b"new\n")
+                "d1/new.txt", b"new\n"
+            )
             out = await _out(ws, "for i in 1 2; do ls /gh/d1; done")
             assert out.count(b"new.txt") == 1
             assert hub.counts() == (0, 2, 0)
@@ -479,12 +511,14 @@ async def test_each_command_of_a_loop_sees_changes_made_before_it():
 @pytest.mark.asyncio
 async def test_a_bounded_mount_next_to_a_fresh_one_keeps_serving():
     with serve(_three()) as fresh_hub, serve(_three()) as bounded_hub:
-        ws = Workspace({
-            "/gh":
-            _mount(_vfs(fresh_hub), policy=ReadPolicy.FRESH, ttl=600),
-            "/gb":
-            _mount(_vfs(bounded_hub), ttl=600),
-        })
+        ws = Workspace(
+            {
+                "/gh": _mount(
+                    _vfs(fresh_hub), policy=ReadPolicy.FRESH, ttl=600
+                ),
+                "/gb": _mount(_vfs(bounded_hub), ttl=600),
+            }
+        )
         try:
             await _out(ws, "ls /gh/d1 /gb/d1")
             fresh_hub.log.clear()
@@ -509,8 +543,9 @@ async def test_seven_fresh_sessions_share_one_refetch():
             hub.log.clear()
             hold = threading.Event()
             hub.hold_recursive = hold
-            reads = asyncio.gather(*(_out(ws, "ls /gh/d1", session_id)
-                                     for session_id in ids))
+            reads = asyncio.gather(
+                *(_out(ws, "ls /gh/d1", session_id) for session_id in ids)
+            )
             await asyncio.sleep(0.2)
             hold.set()
             outs = await asyncio.wait_for(reads, 10)
@@ -528,9 +563,9 @@ async def test_an_unscoped_read_trusts_a_listing_for_the_window(monkeypatch):
     now = [100.0]
     monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
     readdir = PathSpec(virtual="/gh/d1", directory="/gh/d1", vfs_path="d1")
-    stat = PathSpec(virtual="/gh/d1/a.txt",
-                    directory="/gh/d1",
-                    vfs_path="d1/a.txt")
+    stat = PathSpec(
+        virtual="/gh/d1/a.txt", directory="/gh/d1", vfs_path="d1/a.txt"
+    )
     with serve(_three()) as hub:
         ws = _fresh(hub)
         try:
@@ -557,7 +592,8 @@ def _truncated() -> FakeGitHub:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("line", ["find /gh", "du -a /gh"])
 async def test_a_truncated_tree_walk_sees_every_folder_and_an_outside_add(
-        line):
+    line,
+):
     # A truncated tree is never refetched and names only the top level, so
     # walking it misses whole folders; the walk goes folder by folder.
     with serve(_truncated()) as hub:
@@ -580,8 +616,12 @@ async def test_a_truncated_find_honours_maxdepth():
         try:
             await _out(ws, "ls /gh")
             out = await _out(ws, "find /gh -maxdepth 1")
-            assert sorted(
-                out.decode().split()) == ["/gh", "/gh/d1", "/gh/d2", "/gh/d3"]
+            assert sorted(out.decode().split()) == [
+                "/gh",
+                "/gh/d1",
+                "/gh/d2",
+                "/gh/d3",
+            ]
         finally:
             await ws.close()
 
@@ -605,10 +645,12 @@ async def test_a_complete_tree_walk_still_reads_the_tree():
 async def test_fresh_tree_refill_preserves_nested_shared_index():
     with serve(_hub()) as hub:
         vfs = _vfs(hub)
-        ws = Workspace({
-            "/gh": _mount(vfs, ReadPolicy.FRESH, 600),
-            "/gh/sub/nested": _mount(vfs, ReadPolicy.FRESH, 600)
-        })
+        ws = Workspace(
+            {
+                "/gh": _mount(vfs, ReadPolicy.FRESH, 600),
+                "/gh/sub/nested": _mount(vfs, ReadPolicy.FRESH, 600),
+            }
+        )
         try:
             await _out(ws, "ls /gh")
             await _out(ws, "ls /gh/sub/nested")
@@ -616,8 +658,9 @@ async def test_fresh_tree_refill_preserves_nested_shared_index():
             before = await index.list_dir("/gh/sub/nested")
             assert before.entries
             await _out(ws, "ls /gh")
-            assert (await
-                    index.list_dir("/gh/sub/nested")).entries == before.entries
+            assert (
+                await index.list_dir("/gh/sub/nested")
+            ).entries == before.entries
             assert (await index.get(before.entries[0])).entry is not None
         finally:
             await ws.close()

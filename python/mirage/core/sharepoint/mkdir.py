@@ -1,39 +1,52 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
 import posixpath
 
 from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
+from mirage.core.msgraph.client import GraphError
 from mirage.core.msgraph.drive import create_child_folder
-from mirage.core.sharepoint.client import GraphError, item_url, split_path
-from mirage.core.sharepoint.resolve import resolve
+from mirage.core.sharepoint.client import item_url
+from mirage.core.sharepoint.resolve import resolve_item
 from mirage.types import PathSpec
-from mirage.utils.errors import enoent
 
 
-async def _create_dir(accessor: SharePointAccessor, drive_id: str,
-                      stripped: str) -> None:
-    parent = posixpath.dirname("/" + stripped).strip("/")
-    url = item_url(accessor.config,
-                   drive_id,
-                   "/" + parent if parent else "/",
-                   action="/children")
-    await create_child_folder(accessor.config,
-                              url,
-                              posixpath.basename(stripped),
-                              session=accessor.pool)
+async def _create_dir(
+    accessor: SharePointAccessor, drive_id: str, path: str
+) -> None:
+    url = item_url(
+        accessor.config, drive_id, posixpath.dirname(path), action="/children"
+    )
+    await create_child_folder(
+        accessor.config, url, posixpath.basename(path), session=accessor.pool
+    )
 
 
-async def _create_chain(accessor: SharePointAccessor, drive_id: str,
-                        item_p: str) -> None:
+async def _create_chain(
+    accessor: SharePointAccessor, drive_id: str, item_path: str
+) -> None:
     """Create every level of a drive path, from the drive root down.
 
     Args:
         accessor (SharePointAccessor): the mount's accessor.
         drive_id (str): the drive the path lives in.
-        item_p (str): the drive-relative path, key_prefix included.
+        item_path (str): the drive-relative path, key_prefix included.
     """
-    parts = item_p.split("/")
+    parts = item_path.split("/")
     for i in range(len(parts)):
-        await _create_dir(accessor, drive_id, "/".join(parts[:i + 1]))
+        await _create_dir(accessor, drive_id, "/".join(parts[: i + 1]))
 
 
 def _scoped_prefix(accessor: SharePointAccessor) -> str:
@@ -53,29 +66,29 @@ def _scoped_prefix(accessor: SharePointAccessor) -> str:
     return (config.key_prefix or "").strip("/")
 
 
-async def mkdir(accessor: SharePointAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
-    virtual = path.virtual if isinstance(path, PathSpec) else path
-    _, stripped = split_path(path)
-    if not stripped:
+async def mkdir(
+    accessor: SharePointAccessor, path: PathSpec, parents: bool = False
+) -> None:
+    if not path.vfs_path:
         return
-    resolved = await resolve(accessor, path)
-    if resolved.drive_id is None or resolved.item_path is None:
-        raise enoent(virtual)
-    drive_id = resolved.drive_id
-    item_p = resolved.item_path
+    resolved = await resolve_item(accessor, path)
+    drive_id = resolved.drive_id or ""
+    item_path = resolved.item_path or ""
     if parents:
-        await _create_chain(accessor, drive_id, item_p)
+        await _create_chain(accessor, drive_id, item_path)
     else:
         try:
-            await _create_dir(accessor, drive_id, item_p)
+            await _create_dir(accessor, drive_id, item_path)
         except GraphError as exc:
             prefix = _scoped_prefix(accessor)
-            if exc.status != 404 or not prefix or posixpath.dirname(
-                    item_p) != prefix:
+            missing_root = (
+                exc.status == 404
+                and prefix
+                and posixpath.dirname(item_path) == prefix
+            )
+            if not missing_root:
                 raise
-            await _create_chain(accessor, drive_id, item_p)
+            await _create_chain(accessor, drive_id, item_path)
     await invalidate_after_write(path)
     if parents:
         await invalidate_ancestors(path)

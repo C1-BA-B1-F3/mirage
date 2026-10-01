@@ -38,7 +38,7 @@ def op(
 ) -> Callable[..., Any]:
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        vfs_names = (vfs if isinstance(vfs, list) else [vfs])
+        vfs_names = vfs if isinstance(vfs, list) else [vfs]
         ops = getattr(fn, "_registered_ops", [])
         for p in vfs_names:
             ro = RegisteredOp(
@@ -56,10 +56,10 @@ def op(
 
 
 class OpsRegistry:
-
     def __init__(self) -> None:
-        self._registered: dict[tuple[str, str | None, str | None],
-                               RegisteredOp] = {}
+        self._registered: dict[
+            tuple[str, str | None, str | None], RegisteredOp
+        ] = {}
 
     def register(self, fn_or_op) -> None:
         if isinstance(fn_or_op, RegisteredOp):
@@ -72,7 +72,8 @@ class OpsRegistry:
         else:
             raise TypeError(
                 f"Expected @op-decorated function or RegisteredOp, "
-                f"got {type(fn_or_op)}")
+                f"got {type(fn_or_op)}"
+            )
 
     def unregister_vfs(self, vfs_kind: str) -> None:
         keys = [k for k, ro in self._registered.items() if ro.vfs == vfs_kind]

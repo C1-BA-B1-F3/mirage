@@ -40,7 +40,6 @@ async def main() -> None:
         title_column="productDisplayName",
         blob_column="image_bytes",
         blob_ext="jpg",
-        text_column="productDisplayName",
         vector_column="vector",
         search_limit=4,
     )
@@ -66,12 +65,16 @@ async def main() -> None:
     meta_res = await ws.shell(
         'chmod 640 "/fashion/Men/Shoes/White/3.md"'
         ' && chown 500:dev "/fashion/Men/Shoes/White/3.md"'
-        ' && touch -t 202601021530 "/fashion/Men/Shoes/White/3.md"')
+        ' && touch -t 202601021530 "/fashion/Men/Shoes/White/3.md"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/fashion/Men/Shoes/White/3.md"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/fashion/Men/Shoes/White/3.md")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     await show(ws, 'search "white running sneakers" /fashion')
 

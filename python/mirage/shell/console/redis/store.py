@@ -92,17 +92,15 @@ class RedisConsoleStore:
         ended = "1" if channel == Channel.CONTROL else "0"
         count = await self._append_script(
             keys=[self._stream, self._counter, self._ended],
-            args=[channel.value, data,
-                  repr(ts), ended,
-                  str(self._ttl or 0)])
-        return ConsoleChunk(seq=int(cast("int", count)) - 1,
-                            ts=ts,
-                            channel=channel,
-                            data=data)
+            args=[channel.value, data, repr(ts), ended, str(self._ttl or 0)],
+        )
+        return ConsoleChunk(
+            seq=int(cast("int", count)) - 1, ts=ts, channel=channel, data=data
+        )
 
-    async def read_from(self,
-                        seq: int,
-                        limit: int | None = None) -> ReadResult:
+    async def read_from(
+        self, seq: int, limit: int | None = None
+    ) -> ReadResult:
         self._check_open()
         pipe = self._client.pipeline()
         pipe.xrange(self._stream, min=f"{seq + 1}-0", max="+", count=limit)
@@ -119,9 +117,9 @@ class RedisConsoleStore:
     async def wait(self, seq: int) -> None:
         while not self._closed:
             try:
-                resp = await self._client.xread({self._stream: f"{seq}-0"},
-                                                count=1,
-                                                block=BLOCK_MS)
+                resp = await self._client.xread(
+                    {self._stream: f"{seq}-0"}, count=1, block=BLOCK_MS
+                )
             except redis_exceptions.ConnectionError:
                 # close() tore down the client under a parked reader;
                 # that is the documented way a wait ends early.
@@ -156,7 +154,9 @@ class RedisConsoleStore:
             entry (tuple[bytes, dict[bytes, bytes]]): stream id, fields.
         """
         entry_id, fields = entry
-        return ConsoleChunk(seq=int(entry_id.split(b"-")[0]) - 1,
-                            ts=float(fields[b"t"]),
-                            channel=Channel(fields[b"c"].decode()),
-                            data=fields[b"d"])
+        return ConsoleChunk(
+            seq=int(entry_id.split(b"-")[0]) - 1,
+            ts=float(fields[b"t"]),
+            channel=Channel(fields[b"c"].decode()),
+            data=fields[b"d"],
+        )

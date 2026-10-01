@@ -20,9 +20,8 @@ from mirage.shell.helpers import get_case_items, get_for_parts, get_text
 from mirage.shell.parse.constants import BASH_KEYWORDS
 from mirage.shell.parse.heredoc.reader import delimiter_end
 from mirage.shell.parse.heredoc.types import Heredoc
-from mirage.shell.types import FunctionBody
+from mirage.shell.types import FunctionBody, TSNodeLike
 from mirage.shell.types import NodeType as NT
-from mirage.shell.types import TSNodeLike
 
 _INDENT = "    "
 _REDIRECTS = (NT.FILE_REDIRECT, NT.HEREDOC_REDIRECT)
@@ -77,8 +76,11 @@ class _Printer:
         body = node.child_by_field_name("body")
         redirects = [c for c in node.named_children if c.type in _REDIRECTS]
         outer = node.parent
-        if (outer is not None and outer.type == NT.REDIRECTED_STATEMENT
-                and outer.named_children[0].id == node.id):
+        if (
+            outer is not None
+            and outer.type == NT.REDIRECTED_STATEMENT
+            and outer.named_children[0].id == node.id
+        ):
             redirects += [
                 c for c in outer.named_children[1:] if c.type in _REDIRECTS
             ]
@@ -89,11 +91,21 @@ class _Printer:
             text = self.command(body, inner) if body is not None else ""
         keyword = indent or name in _RESERVED
         head = ("function " if keyword else "") + f"{name} () \n"
-        return (head + indent + "{ \n" + inner + text + "\n" + indent + "}" +
-                self.redirects(redirects))
+        return (
+            head
+            + indent
+            + "{ \n"
+            + inner
+            + text
+            + "\n"
+            + indent
+            + "}"
+            + self.redirects(redirects)
+        )
 
-    def statements(self, children: Sequence[TSNodeLike], indent: str,
-                   trailing: bool) -> str:
+    def statements(
+        self, children: Sequence[TSNodeLike], indent: str, trailing: bool
+    ) -> str:
         """A list of statements: each on its own line under ``indent``,
         ``;`` between them, after the last one too when ``trailing`` (the
         body of an ``if`` or a loop); ``&`` keeps the next on its line.
@@ -126,8 +138,13 @@ class _Printer:
             elif heredoc:
                 out += "" if last else "\n" + indent
             elif not last:
-                out += (";\n" + indent if self.in_function else
-                        "\n" if index in newline_after else "; ")
+                out += (
+                    ";\n" + indent
+                    if self.in_function
+                    else "\n"
+                    if index in newline_after
+                    else "; "
+                )
             elif trailing:
                 out += ";"
         return out
@@ -138,8 +155,10 @@ class _Printer:
         if parent is None:
             return False
         source = parent.text or b""
-        between = source[left.end_byte - parent.start_byte:right.start_byte -
-                         parent.start_byte]
+        between = source[
+            left.end_byte - parent.start_byte : right.start_byte
+            - parent.start_byte
+        ]
         return b"\n" in between and b";" not in between
 
     def command(self, node: TSNodeLike, indent: str) -> str:
@@ -158,12 +177,14 @@ class _Printer:
                 c for c in node.named_children[1:] if c.type in _REDIRECTS
             ]
             if body.type == NT.FUNCTION_DEFINITION:
-                return self.definition(get_text(body.named_children[0]), body,
-                                       indent)
+                return self.definition(
+                    get_text(body.named_children[0]), body, indent
+                )
             return self.command(body, indent) + self.redirects(redirects)
         if kind == NT.COMMAND:
             words = [
-                self.word(c) for c in node.named_children
+                self.word(c)
+                for c in node.named_children
                 if c.type not in _REDIRECTS
             ]
             redirects = [
@@ -175,14 +196,18 @@ class _Printer:
         if kind == NT.LIST:
             left, right = node.named_children[0], node.named_children[1]
             op = next(c.type for c in node.children if not c.is_named)
-            return (self.command(left, indent) + f" {op} " +
-                    self.command(right, indent))
+            return (
+                self.command(left, indent)
+                + f" {op} "
+                + self.command(right, indent)
+            )
         if kind == "negated_command":
             return "! " + self.command(node.named_children[0], indent)
         if kind == "timed_statement":
-            portable = bool(getattr(node, "timing", (False, ))[0])
-            return (("time -p " if portable else "time ") +
-                    self.command(node.named_children[0], indent))
+            portable = bool(getattr(node, "timing", (False,))[0])
+            return ("time -p " if portable else "time ") + self.command(
+                node.named_children[0], indent
+            )
         if kind == NT.SUBSHELL:
             return "( " + self.statements(node.children, indent, False) + " )"
         if kind == "test_command" and get_text(node).startswith("[["):
@@ -191,9 +216,14 @@ class _Printer:
             if node.children and node.children[0].type == "((":
                 return _CONTINUATION.sub("", get_text(node))
             inner = indent + _INDENT
-            return ("{ \n" + inner +
-                    self.statements(node.children, inner, False) + "\n" +
-                    indent + "}")
+            return (
+                "{ \n"
+                + inner
+                + self.statements(node.children, inner, False)
+                + "\n"
+                + indent
+                + "}"
+            )
         if kind == NT.IF_STATEMENT:
             return self._if(node, indent)
         if kind in (NT.WHILE_STATEMENT, "until_statement"):
@@ -205,10 +235,14 @@ class _Printer:
         if kind == NT.CASE_STATEMENT:
             return self._case(node, indent)
         if kind == NT.FUNCTION_DEFINITION:
-            return self.definition(get_text(node.named_children[0]), node,
-                                   indent)
-        if kind in ("variable_assignments", "declaration_command",
-                    "unset_command"):
+            return self.definition(
+                get_text(node.named_children[0]), node, indent
+            )
+        if kind in (
+            "variable_assignments",
+            "declaration_command",
+            "unset_command",
+        ):
             words = [self.word(c) for c in node.named_children]
             if node.children and not node.children[0].is_named:
                 words.insert(0, get_text(node.children[0]))
@@ -227,8 +261,11 @@ class _Printer:
         if kind == "binary_expression" and len(named) == 2:
             op = next(get_text(c) for c in node.children if not c.is_named)
             if op in ("&&", "||"):
-                return (self.condition(named[0]) + f" {op} " +
-                        self.condition(named[1]))
+                return (
+                    self.condition(named[0])
+                    + f" {op} "
+                    + self.condition(named[1])
+                )
             return self.word(named[0]) + f" {op} " + self.word(named[1])
         if kind == "unary_expression" and named:
             op = get_text(node.children[0])
@@ -249,8 +286,11 @@ class _Printer:
                 out += " 2>&1 |"
             elif child.is_named:
                 if out:
-                    out += "\n" + "".join(
-                        self.deferred) + "  " if self.deferred else " "
+                    out += (
+                        "\n" + "".join(self.deferred) + "  "
+                        if self.deferred
+                        else " "
+                    )
                     self.deferred = []
                 out += self.command(child, indent)
         return out
@@ -293,46 +333,82 @@ class _Printer:
                 target.append(child)
         return self._branches(branches, otherwise, indent)
 
-    def _branches(self, branches: list[tuple[list[TSNodeLike],
-                                             list[TSNodeLike]]],
-                  otherwise: list[TSNodeLike] | None, indent: str) -> str:
+    def _branches(
+        self,
+        branches: list[tuple[list[TSNodeLike], list[TSNodeLike]]],
+        otherwise: list[TSNodeLike] | None,
+        indent: str,
+    ) -> str:
         condition, body = branches[0]
         inner = indent + _INDENT
-        out = ("if " + self.statements(condition, indent, False) + "; then\n" +
-               inner + self.statements(body, inner, True) + "\n")
+        out = (
+            "if "
+            + self.statements(condition, indent, False)
+            + "; then\n"
+            + inner
+            + self.statements(body, inner, True)
+            + "\n"
+        )
         if len(branches) > 1:
-            out += (indent + "else\n" + inner +
-                    self._branches(branches[1:], otherwise, inner) + ";\n")
+            out += (
+                indent
+                + "else\n"
+                + inner
+                + self._branches(branches[1:], otherwise, inner)
+                + ";\n"
+            )
         elif otherwise is not None:
-            out += (indent + "else\n" + inner +
-                    self.statements(otherwise, inner, True) + "\n")
+            out += (
+                indent
+                + "else\n"
+                + inner
+                + self.statements(otherwise, inner, True)
+                + "\n"
+            )
         return out + indent + "fi"
 
     def _while(self, node: TSNodeLike, indent: str) -> str:
         condition = [
-            c for c in node.children
+            c
+            for c in node.children
             if c.type not in ("while", "until", NT.DO_GROUP)
         ]
         group = next((c for c in node.children if c.type == NT.DO_GROUP), None)
-        return (node.children[0].type + " " +
-                self.statements(condition, indent, False) + "; do" +
-                self._group(group, indent))
+        return (
+            node.children[0].type
+            + " "
+            + self.statements(condition, indent, False)
+            + "; do"
+            + self._group(group, indent)
+        )
 
     def _group(self, group: TSNodeLike | None, indent: str) -> str:
         children = [
-            c for c in (group.children if group is not None else [])
+            c
+            for c in (group.children if group is not None else [])
             if c.type not in ("do", "done")
         ]
         inner = indent + _INDENT
-        return ("\n" + inner + self.statements(children, inner, True) + "\n" +
-                indent + "done")
+        return (
+            "\n"
+            + inner
+            + self.statements(children, inner, True)
+            + "\n"
+            + indent
+            + "done"
+        )
 
     def _for(self, node: TSNodeLike, indent: str) -> str:
         variable, values, _ = get_for_parts(node)
         words = " ".join(self.word(v) for v in values)
         group = next((c for c in node.children if c.type == NT.DO_GROUP), None)
-        return (node.children[0].type + f" {variable} in {words};\n" + indent +
-                "do" + self._group(group, indent))
+        return (
+            node.children[0].type
+            + f" {variable} in {words};\n"
+            + indent
+            + "do"
+            + self._group(group, indent)
+        )
 
     def _cfor(self, node: TSNodeLike, indent: str) -> str:
         source = node.text or b""
@@ -340,18 +416,28 @@ class _Printer:
         slots: list[str] = []
         begin = None
         for child in node.children:
-            if child.type in ("((", ";", "))") and (begin is not None
-                                                    or child.type == "(("):
+            if child.type in ("((", ";", "))") and (
+                begin is not None or child.type == "(("
+            ):
                 if begin is not None:
-                    text = source[begin - start:child.start_byte -
-                                  start].decode().lstrip()
+                    text = (
+                        source[begin - start : child.start_byte - start]
+                        .decode()
+                        .lstrip()
+                    )
                     slots.append(text or "1")
                 begin = child.end_byte if child.type != "))" else None
                 if child.type == "))":
                     break
         group = next((c for c in node.children if c.type == NT.DO_GROUP), None)
-        return ("for ((" + "; ".join(slots) + "))\n" + indent + "do" +
-                self._group(group, indent))
+        return (
+            "for (("
+            + "; ".join(slots)
+            + "))\n"
+            + indent
+            + "do"
+            + self._group(group, indent)
+        )
 
     def _case(self, node: TSNodeLike, indent: str) -> str:
         item_indent = indent + _INDENT
@@ -360,14 +446,22 @@ class _Printer:
         items = [c for c in node.named_children if c.type == NT.CASE_ITEM]
         for item, (patterns, body, _) in zip(items, get_case_items(node)):
             text = self.statements(body, body_indent, False)
-            out += (item_indent + " | ".join(self.word(p) for p in patterns) +
-                    ")\n" + (body_indent + text if text else "") + "\n" +
-                    item_indent + _terminator(node, item) + "\n")
+            out += (
+                item_indent
+                + " | ".join(self.word(p) for p in patterns)
+                + ")\n"
+                + (body_indent + text if text else "")
+                + "\n"
+                + item_indent
+                + _terminator(node, item)
+                + "\n"
+            )
         return out + indent + "esac"
 
     def redirects(self, nodes: Sequence[TSNodeLike]) -> str:
-        return "".join(" " + self.redirect(n) for n in nodes
-                       if n.type in _REDIRECTS)
+        return "".join(
+            " " + self.redirect(n) for n in nodes if n.type in _REDIRECTS
+        )
 
     def redirect(self, node: TSNodeLike) -> str:
         """A redirect as bash respells it: a duplication or a close names
@@ -378,18 +472,30 @@ class _Printer:
         Args:
             node (TSNodeLike): a file or heredoc redirect.
         """
-        fd = next((get_text(c)
-                   for c in node.children if c.type == NT.FILE_DESCRIPTOR),
-                  None)
+        fd = next(
+            (
+                get_text(c)
+                for c in node.children
+                if c.type == NT.FILE_DESCRIPTOR
+            ),
+            None,
+        )
         document = getattr(node, "heredoc", None)
         if document is not None or node.type == NT.HEREDOC_REDIRECT:
             return self._heredoc(node, fd, document)
         text = get_text(node)
-        op = next((get_text(c) for c in node.children
-                   if not c.is_named and c.type not in ("(", ")")), "")
+        op = next(
+            (
+                get_text(c)
+                for c in node.children
+                if not c.is_named and c.type not in ("(", ")")
+            ),
+            "",
+        )
         target = next(
             (c for c in node.named_children if c.type != NT.FILE_DESCRIPTOR),
-            None)
+            None,
+        )
         word = self.word(target) if target is not None else ""
         if text.lstrip("0123456789").startswith("<<<"):
             return f"{fd or ''}<<< {word}"
@@ -408,8 +514,9 @@ class _Printer:
             shown = ""
         return f"{shown}{op} {word}"
 
-    def _heredoc(self, node: TSNodeLike, fd: str | None,
-                 document: Heredoc | None) -> str:
+    def _heredoc(
+        self, node: TSNodeLike, fd: str | None, document: Heredoc | None
+    ) -> str:
         source = getattr(node, "source_text", node.text) or b""
         text = source.decode(errors="replace")
         operator = "<<-" if text.startswith("<<-") else "<<"
@@ -423,8 +530,11 @@ class _Printer:
             delimiter, quoted = document.delimiter, document.quoted
         else:
             body = get_text(
-                next((c for c in node.children if c.type == "heredoc_body"),
-                     node))
+                next(
+                    (c for c in node.children if c.type == "heredoc_body"),
+                    node,
+                )
+            )
             delimiter = word.strip("'\"")
             quoted = delimiter != word
         self.deferred.append(body + delimiter + "\n")
@@ -452,20 +562,24 @@ class _Printer:
             return _CONTINUATION.sub("", get_text(node))
         out = ""
         for part in _parts(node):
-            out += (_CONTINUATION.sub("", part)
-                    if isinstance(part, str) else self.word(part))
+            out += (
+                _CONTINUATION.sub("", part)
+                if isinstance(part, str)
+                else self.word(part)
+            )
         return out
 
 
 def _terminator(case: TSNodeLike, item: TSNodeLike) -> str:
     # As typed: the parser spells a last arm's `;;&` as `;;`.
-    token = next((c for c in item.children if c.type in (";;", ";&", ";;&")),
-                 None)
+    token = next(
+        (c for c in item.children if c.type in (";;", ";&", ";;&")), None
+    )
     if token is None:
         return ";;"
     text = get_text(token)
     source = case.text or b""
-    after = source[token.end_byte - case.start_byte:][:1]
+    after = source[token.end_byte - case.start_byte :][:1]
     return text + "&" if text == ";;" and after == b"&" else text
 
 
@@ -475,10 +589,13 @@ def _parts(node: TSNodeLike) -> list[str | TSNodeLike]:
     parts: list[str | TSNodeLike] = []
     for child in node.children:
         if child.start_byte > end:
-            parts.append(source[end - node.start_byte:child.start_byte -
-                                node.start_byte].decode())
+            parts.append(
+                source[
+                    end - node.start_byte : child.start_byte - node.start_byte
+                ].decode()
+            )
         end = child.end_byte
         parts.append(child)
     if end < node.end_byte:
-        parts.append(source[end - node.start_byte:].decode())
+        parts.append(source[end - node.start_byte :].decode())
     return parts

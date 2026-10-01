@@ -44,9 +44,11 @@ DISCORD = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--text", type="str", required=True),
-                Option(long="--reply-to",
-                       type="str",
-                       description="Reply to this message ID"),
+                Option(
+                    long="--reply-to",
+                    type="str",
+                    description="Reply to this message ID",
+                ),
             ),
         ),
         CLISpec(
@@ -55,9 +57,11 @@ DISCORD = CLISpec(
             fn=read,
             options=(
                 Option(long="--channel", type="str", required=True),
-                Option(long="--limit",
-                       type="int",
-                       description="Max messages (default: 20)"),
+                Option(
+                    long="--limit",
+                    type="int",
+                    description="Max messages (default: 20)",
+                ),
             ),
         ),
         CLISpec(
@@ -89,10 +93,12 @@ DISCORD = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--message", type="str", required=True),
-                Option(long="--emoji",
-                       type="str",
-                       required=True,
-                       description="Unicode emoji or name:id"),
+                Option(
+                    long="--emoji",
+                    type="str",
+                    required=True,
+                    description="Unicode emoji or name:id",
+                ),
             ),
         ),
         CLISpec(
@@ -102,9 +108,11 @@ DISCORD = CLISpec(
             options=(
                 Option(long="--guild", type="str", required=True),
                 Option(long="--query", type="str", required=True),
-                Option(long="--channel",
-                       type="str",
-                       description="Restrict to one channel"),
+                Option(
+                    long="--channel",
+                    type="str",
+                    description="Restrict to one channel",
+                ),
             ),
         ),
         CLISpec(
@@ -115,9 +123,11 @@ DISCORD = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--name", type="str", required=True),
-                Option(long="--message",
-                       type="str",
-                       description="Start the thread from this message"),
+                Option(
+                    long="--message",
+                    type="str",
+                    description="Start the thread from this message",
+                ),
             ),
         ),
         CLISpec(
@@ -128,16 +138,22 @@ DISCORD = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--question", type="str", required=True),
-                Option(long="--answer",
-                       type="str",
-                       required=True,
-                       multiple=True,
-                       description="Answer option (repeatable)"),
-                Option(long="--duration",
-                       type="int",
-                       description="Poll lifetime in hours (default: 24)"),
-                Option(long="--multiselect",
-                       description="Allow selecting several answers"),
+                Option(
+                    long="--answer",
+                    type="str",
+                    required=True,
+                    multiple=True,
+                    description="Answer option (repeatable)",
+                ),
+                Option(
+                    long="--duration",
+                    type="int",
+                    description="Poll lifetime in hours (default: 24)",
+                ),
+                Option(
+                    long="--multiselect",
+                    description="Allow selecting several answers",
+                ),
             ),
         ),
         CLISpec(
@@ -146,16 +162,18 @@ DISCORD = CLISpec(
             fn=members,
             options=(
                 Option(long="--guild", type="str", required=True),
-                Option(long="--query",
-                       type="str",
-                       description="Username prefix filter"),
+                Option(
+                    long="--query",
+                    type="str",
+                    description="Username prefix filter",
+                ),
             ),
         ),
         CLISpec(
             name="server-info",
             description="Fetch a guild's metadata",
             fn=server_info,
-            options=(Option(long="--guild", type="str", required=True), ),
+            options=(Option(long="--guild", type="str", required=True),),
         ),
     ),
 )

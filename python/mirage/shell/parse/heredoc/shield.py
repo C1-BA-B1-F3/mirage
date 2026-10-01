@@ -14,10 +14,15 @@
 
 from mirage.shell.bytes import encode_text
 from mirage.shell.parse.heredoc.body import heredoc_bodies
-from mirage.shell.parse.heredoc.constants import (ALTERNATE_FILLER, BACKSLASH,
-                                                  DASH_ARROW, ESCAPE_PARTNERS,
-                                                  FILLER, HEREDOC_START,
-                                                  LINE_BLANKS)
+from mirage.shell.parse.heredoc.constants import (
+    ALTERNATE_FILLER,
+    BACKSLASH,
+    DASH_ARROW,
+    ESCAPE_PARTNERS,
+    FILLER,
+    HEREDOC_START,
+    LINE_BLANKS,
+)
 from mirage.shell.parse.heredoc.delimiter import clean_delimiter
 from mirage.shell.parse.heredoc.types import HeredocOperator
 from mirage.shell.types import TSNodeLike
@@ -43,17 +48,21 @@ def heredoc_operators(root: TSNodeLike) -> list[HeredocOperator]:
         delimiter = clean_delimiter((node.text or b"").decode())
         previous = node.prev_sibling
         found.append(
-            HeredocOperator(word_start=node.start_byte,
-                            word_end=node.end_byte,
-                            delimiter=delimiter,
-                            allows_indent=previous is not None
-                            and previous.type == DASH_ARROW))
+            HeredocOperator(
+                word_start=node.start_byte,
+                word_end=node.end_byte,
+                delimiter=delimiter,
+                allows_indent=previous is not None
+                and previous.type == DASH_ARROW,
+            )
+        )
     found.sort(key=lambda operator: operator.word_start)
     return found
 
 
-def first_content_line(data: bytes, body_start: int,
-                       body_end: int) -> int | None:
+def first_content_line(
+    data: bytes, body_start: int, body_end: int
+) -> int | None:
     """Offset of the first body line that is not empty.
 
     Args:
@@ -71,8 +80,9 @@ def first_content_line(data: bytes, body_start: int,
     return None
 
 
-def terminator_lookalikes(data: bytes, span: tuple[int, int],
-                          delimiter: bytes) -> list[int]:
+def terminator_lookalikes(
+    data: bytes, span: tuple[int, int], delimiter: bytes
+) -> list[int]:
     """One byte per body line the scanner would close the body at.
 
     tree-sitter-bash compares a line's first ``len(delimiter)`` bytes,
@@ -101,9 +111,14 @@ def terminator_lookalikes(data: bytes, span: tuple[int, int],
         while start < line_end and data[start] in LINE_BLANKS:
             start += 1
         if data.startswith(delimiter, start, line_end):
-            masked = next((offset
-                           for offset in range(start, start + len(delimiter))
-                           if data[offset] not in ESCAPE_PARTNERS), None)
+            masked = next(
+                (
+                    offset
+                    for offset in range(start, start + len(delimiter))
+                    if data[offset] not in ESCAPE_PARTNERS
+                ),
+                None,
+            )
             if masked is not None:
                 offsets.append(masked)
         position = line_end + 1
@@ -146,10 +161,12 @@ def protected_source(data: bytes, root: TSNodeLike) -> bytes | None:
     for operator, span in zip(operators, spans):
         if span is None:
             continue
-        for offset in terminator_lookalikes(data, span,
-                                            encode_text(operator.delimiter)):
-            out[offset] = (ALTERNATE_FILLER
-                           if data[offset] == FILLER else FILLER)
+        for offset in terminator_lookalikes(
+            data, span, encode_text(operator.delimiter)
+        ):
+            out[offset] = (
+                ALTERNATE_FILLER if data[offset] == FILLER else FILLER
+            )
             changed = True
         line = first_content_line(data, *span)
         if line is None:
@@ -157,11 +174,17 @@ def protected_source(data: bytes, root: TSNodeLike) -> bytes | None:
         first = data[line]
         if first not in LINE_BLANKS and first != BACKSLASH:
             continue
-        filler = (ALTERNATE_FILLER
-                  if operator.delimiter.startswith(chr(FILLER)) else FILLER)
+        filler = (
+            ALTERNATE_FILLER
+            if operator.delimiter.startswith(chr(FILLER))
+            else FILLER
+        )
         out[line] = filler
         changed = True
-        if (first == BACKSLASH and line + 1 < span[1]
-                and data[line + 1] in ESCAPE_PARTNERS):
+        if (
+            first == BACKSLASH
+            and line + 1 < span[1]
+            and data[line + 1] in ESCAPE_PARTNERS
+        ):
             out[line + 1] = filler
     return bytes(out) if changed else None

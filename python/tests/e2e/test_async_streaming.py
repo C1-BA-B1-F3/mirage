@@ -27,10 +27,14 @@ def ws():
     mem = RAMVFS()
     big_content = b"\n".join([f"line {i}".encode() for i in range(10000)])
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/big.txt"), data=big_content))
+        ops(mem).write(PathSpec.from_str_path("/big.txt"), data=big_content)
+    )
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/small.txt"),
-                       data=b"apple\nbanana\napricot\ncherry\n"))
+        ops(mem).write(
+            PathSpec.from_str_path("/small.txt"),
+            data=b"apple\nbanana\napricot\ncherry\n",
+        )
+    )
     return Workspace(
         {"/data": (mem, MountMode.WRITE)},
         mode=MountMode.WRITE,

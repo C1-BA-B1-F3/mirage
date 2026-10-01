@@ -15,21 +15,30 @@
 from typing import TYPE_CHECKING, Any
 
 from mirage.server.version.errors import NoSuchBranchError
-from mirage.server.version.state_tree import (CONTROL_PREFIX, META_PATH,
-                                              blob_to_meta, meta_to_blob,
-                                              to_state, tree_inputs_from_state)
+from mirage.server.version.state_tree import (
+    CONTROL_PREFIX,
+    META_PATH,
+    blob_to_meta,
+    meta_to_blob,
+    to_state,
+    tree_inputs_from_state,
+)
 from mirage.server.version.store import VersionStore
 from mirage.types import DriftPolicy
-from mirage.workspace.snapshot import (apply_state_dict, install_fingerprints,
-                                       to_state_dict)
+from mirage.workspace.snapshot import (
+    apply_state_dict,
+    install_fingerprints,
+    to_state_dict,
+)
 from mirage.workspace.snapshot.keys import StateKey
 
 if TYPE_CHECKING:
     from mirage.workspace.workspace import Workspace
 
 
-async def snapshot_tree_from_state(store: VersionStore,
-                                   state: dict[str, Any]) -> bytes:
+async def snapshot_tree_from_state(
+    store: VersionStore, state: dict[str, Any]
+) -> bytes:
     entries, meta = tree_inputs_from_state(state)
     tree_entries: dict[str, bytes] = {}
     for path, data in entries.items():
@@ -41,16 +50,18 @@ async def snapshot_tree_from_state(store: VersionStore,
 async def commit(
     store: VersionStore,
     ws: "Workspace",
-    branch: str = 'main',
-    message: str = '',
+    branch: str = "main",
+    message: str = "",
 ) -> bytes:
     return await commit_state(store, await to_state_dict(ws), branch, message)
 
 
-async def commit_state(store: VersionStore,
-                       state: dict[str, Any],
-                       branch: str = "main",
-                       message: str = "") -> bytes:
+async def commit_state(
+    store: VersionStore,
+    state: dict[str, Any],
+    branch: str = "main",
+    message: str = "",
+) -> bytes:
     tree = await snapshot_tree_from_state(store, state)
     branches = await store.branches()
     parents: list[bytes] = []
@@ -61,23 +72,24 @@ async def commit_state(store: VersionStore,
     return await store.commit(tree, parents, branch, message)
 
 
-async def branch(store: VersionStore,
-                 name: str,
-                 from_branch: str = "main") -> None:
+async def branch(
+    store: VersionStore, name: str, from_branch: str = "main"
+) -> None:
     head = await store.head(from_branch)
     await store.set_branch(name, head)
 
 
 async def read_version(
-        store: VersionStore,
-        version: bytes) -> tuple[dict[str, bytes], dict[str, Any]]:
+    store: VersionStore, version: bytes
+) -> tuple[dict[str, bytes], dict[str, Any]]:
     tree = (await store.read_commit(version)).tree
     contents = await store.read_tree(tree)
     meta_oid = contents.pop(META_PATH, None)
-    meta = (blob_to_meta(await store.read_blob(meta_oid))
-            if meta_oid is not None else {
-                "mounts": []
-            })
+    meta = (
+        blob_to_meta(await store.read_blob(meta_oid))
+        if meta_oid is not None
+        else {"mounts": []}
+    )
     entries: dict[str, bytes] = {}
     for path, oid in contents.items():
         entries[path] = await store.read_blob(oid)
@@ -102,8 +114,9 @@ async def checkout(
     entries, meta = await read_version(store, version)
     state = to_state(entries, meta)
     await apply_state_dict(ws, state, replace_cache=True)
-    install_fingerprints(ws,
-                         state.get(StateKey.FINGERPRINTS) or [], drift_policy)
+    install_fingerprints(
+        ws, state.get(StateKey.FINGERPRINTS) or [], drift_policy
+    )
 
 
 def _strip_meta(changes: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -115,36 +128,41 @@ def _strip_meta(changes: dict[str, list[str]]) -> dict[str, list[str]]:
     }
 
 
-async def version_log(store: VersionStore,
-                      branch: str) -> list[dict[str, Any]]:
+async def version_log(
+    store: VersionStore, branch: str
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for oid in await store.log(branch):
         commit_obj = await store.read_commit(oid)
-        out.append({
-            "id": oid.decode(),
-            "message": commit_obj.message.decode(),
-        })
+        out.append(
+            {
+                "id": oid.decode(),
+                "message": commit_obj.message.decode(),
+            }
+        )
     return out
 
 
-async def version_diff(store: VersionStore, version_a: bytes,
-                       version_b: bytes) -> dict[str, list[str]]:
+async def version_diff(
+    store: VersionStore, version_a: bytes, version_b: bytes
+) -> dict[str, list[str]]:
     tree_a = (await store.read_commit(version_a)).tree
     tree_b = (await store.read_commit(version_b)).tree
     return _strip_meta(await store.diff(tree_a, tree_b))
 
 
-async def diff_live_vs_ref(store: VersionStore, state: dict[str, Any],
-                           ref) -> dict[str, list[str]]:
+async def diff_live_vs_ref(
+    store: VersionStore, state: dict[str, Any], ref
+) -> dict[str, list[str]]:
     live_tree = await snapshot_tree_from_state(store, state)
     version = await resolve_ref(store, ref)
     ref_tree = (await store.read_commit(version)).tree
     return _strip_meta(await store.diff(ref_tree, live_tree))
 
 
-async def status_state(store: VersionStore,
-                       state: dict[str, Any],
-                       branch: str = "main") -> dict[str, list[str]]:
+async def status_state(
+    store: VersionStore, state: dict[str, Any], branch: str = "main"
+) -> dict[str, list[str]]:
     live_tree = await snapshot_tree_from_state(store, state)
     if branch in await store.branches():
         head_tree = (await store.read_commit(await store.head(branch))).tree

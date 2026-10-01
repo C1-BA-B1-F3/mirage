@@ -14,6 +14,7 @@ permissions:
       - typescript/**
       - .github/workflows/test_integ.yml
       - .github/actions/setup-node-pnpm/action.yml
+      - .github/actions/setup-uv/action.yml
       - .github/actions/integ-battery-setup/action.yml
       - .github/actions/nextcloud-tune/action.yml
   pull_request:
@@ -58,12 +59,14 @@ jobs:
               - 'python/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             ts:
               - 'integ/**'
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
               - '.github/actions/nextcloud-tune/action.yml'
             database:
@@ -96,6 +99,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             data:
               - 'integ/**'
@@ -103,6 +107,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
               - '.github/actions/nextcloud-tune/action.yml'
             observability:
@@ -128,6 +133,7 @@ jobs:
               - 'typescript/packages/node/src/vfs/jaeger/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
             fuse:
               - 'integ/fuse/**'
               - 'integ/check_json.py'
@@ -139,6 +145,7 @@ jobs:
               - 'typescript/packages/node/src/workspace.ts'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             # integ-runtime runs every case through the python and typescript
             # hosts, so a '!' rule may drop only a module that nothing those
@@ -161,6 +168,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '!**/*.md'
               - '!python/tests/**'
               - '!typescript/**/*.test.ts'
@@ -225,10 +233,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -294,6 +299,10 @@ jobs:
         image: nextcloud:30-apache
         ports:
           - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
         env:
           SQLITE_DATABASE: nextcloud
           NEXTCLOUD_ADMIN_USER: admin
@@ -386,6 +395,10 @@ jobs:
       - name: Run cross-mount commands (ram -> ram/s3 via MinIO)
         working-directory: integ
         run: pnpm exec tsx cross_commands.ts
+
+      - name: Run virtual-root mount switching (ram/disk/yaml)
+        working-directory: integ
+        run: pnpm exec tsx root.ts
 
       - name: Run workspace lifecycle JSON scenarios (Node and browser wrappers)
         working-directory: integ
@@ -507,30 +520,35 @@ jobs:
           gh release download "$QUICKJS_BUILD" -R quickjs-ng/quickjs \
             -p qjs-wasi.wasm -O /tmp/quickjs/qjs-wasi.wasm
 
+      # One runner process per target, four at a time: a runner's
+      # --target-jobs lanes share one core, and the battery is CPU-bound
+      # there. shard.py splits the targets this host runs across the shard
+      # jobs by case count, leaving out the services --allow-skip names
+      # (other jobs provision and run those), and prints each target's time
+      # at the end, which is what to read before changing --procs or the
+      # shard count. The http facet rides the same split: its fixture server
+      # is a TypeScript kit fake the adapter starts, and this python-host job
+      # already has node for it.
       - name: Run declarative battery (python hosts)
         env:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
-        run: |
-          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
-            [.targets[] | select((.facet // "core") == "core")]
-            | to_entries | map(select(.key % $count == $index) | .value.id)
-            | if length == 0 then error("empty core shard") else .[] end
-          ' integ/targets.json)
-          args=()
-          while IFS= read -r target; do
-            args+=(--target "$target")
-          done <<< "$target_ids"
-          ./python/.venv/bin/python integ/runners/python/main.py "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
-
-      # Moved here from the `integ` job when the HTTP fixture server became a
-      # TypeScript kit fake: the adapter still starts it, but the interpreter is
-      # tsx now, and this is the python-host job that already has node for
-      # exactly that reason.
-      # HTTP is independent of the core shards and runs once per language.
-      - name: Run curl/wget battery (HTTP fixture started by the adapter)
-        if: matrix.shard == 0
-        run: ./python/.venv/bin/python integ/runners/python/main.py --facet http --strict
+        run: >-
+          ./python/.venv/bin/python integ/runners/tools/shard.py
+          --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --host python --facet core --facet http
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+          --emit-dir "$GITHUB_WORKSPACE/emit/python"
+          -- ./python/.venv/bin/python integ/runners/python/main.py --strict
+      # integ-shared-parity diffs these against the typescript shards'
+      # instead of running both hosts over the same targets a second time.
+      - name: Keep the battery outputs for the parity diff
+        uses: actions/upload-artifact@v7
+        with:
+          name: integ-emit-python-${{ matrix.shard }}
+          path: emit/python
+          if-no-files-found: error
+          retention-days: 1
 
   # Keep self-tests off the battery's critical path and timeout budget. These
   # checks start their own fakes; they do not need the shared service fleet.
@@ -699,66 +717,56 @@ jobs:
           build-packages: "false"
           typescript-build-artifact: integ-typescript-dist
 
+      # The http facet rides the same split: its fixture server is python
+      # (the adapter's startPythonServer), which this job has and integ-ts
+      # does not.
       - name: Run declarative battery (typescript hosts)
         working-directory: integ
         env:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
-        run: |
-          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
-            [.targets[] | select((.facet // "core") == "core")]
-            | to_entries | map(select(.key % $count == $index) | .value.id)
-            | if length == 0 then error("empty core shard") else .[] end
-          ' targets.json)
-          args=()
-          while IFS= read -r target; do
-            args+=(--target "$target")
-          done <<< "$target_ids"
-          pnpm exec tsx runners/typescript/main.ts "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
-
-      # The fixture server is python (started by the adapter through
-      # startPythonServer), so this runs here rather than in integ-ts, which
-      # has no python toolchain.
-      # HTTP is independent of the core shards and runs once per language.
-      - name: Run curl/wget battery (typescript host)
-        if: matrix.shard == 0
-        working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --facet http --strict
+        run: >-
+          ../python/.venv/bin/python runners/tools/shard.py
+          --shard "$SHARD_INDEX" --shards "$SHARD_COUNT" --procs 4
+          --host typescript --facet core --facet http
+          --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+          --emit-dir "$GITHUB_WORKSPACE/emit/typescript"
+          -- pnpm exec tsx runners/typescript/main.ts --strict
+      - name: Keep the battery outputs for the parity diff
+        uses: actions/upload-artifact@v7
+        with:
+          name: integ-emit-typescript-${{ matrix.shard }}
+          path: emit/typescript
+          if-no-files-found: error
+          retention-days: 1
 
   # The shared battery jobs prove each language passes its own battery. This one
   # runs both emitters and diffs them case by case, so a change that breaks
   # the same way in both languages still fails. Shared targets only (ram,
   # disk, redis) — the credentialed targets stay in their own jobs.
+  # The battery jobs keep every target's raw outputs, so parity is a diff of
+  # those files rather than both hosts running these targets a second time.
+  # The targets stay pinned to the ones it has always compared; widening the
+  # list costs nothing now but a run's worth of divergences to triage.
   integ-shared-parity:
-    needs: [changes, typescript-build]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    needs: [changes, integ-shared-py, integ-shared-ts]
+    if: ${{ !cancelled() && needs.integ-shared-py.result == 'success' && needs.integ-shared-ts.result == 'success' }}
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/integ-battery-setup
+      - uses: actions/download-artifact@v8
         with:
-          build-packages: "false"
-          typescript-build-artifact: integ-typescript-dist
-      # Targets are pinned: with no arguments parity.py adds the Graph and
-      # Mem0 groups unconditionally, and the setup action exports
-      # S3_ENDPOINT/SSH_HOST/GWS_URL, which would pull in the S3, SSH and
-      # Drive groups too. That would gate every core/TypeScript PR on the
-      # whole credentialed battery, which has its own jobs already.
+          pattern: integ-emit-python-*
+          path: emit/python
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: integ-emit-typescript-*
+          path: emit/typescript
+          merge-multiple: true
       - name: Diff python and typescript battery output
         run: >-
-          ./python/.venv/bin/python integ/runners/parity.py
+          python3 integ/runners/parity.py --from emit
           ram disk disk-host-links redis ram-history
 
   # One job per backend family with both hosts inside it. The postgres, chroma,
@@ -809,10 +817,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -892,6 +897,10 @@ jobs:
         image: nextcloud:30-apache
         ports:
           - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
         env:
           SQLITE_DATABASE: nextcloud
           NEXTCLOUD_ADMIN_USER: admin
@@ -910,10 +919,63 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Wait for Nextcloud and tune it for the battery
+        uses: ./.github/actions/nextcloud-tune
+        # A composite step cannot carry timeout-minutes, so the bound goes on
+        # the caller, where it covers the whole action.
+        timeout-minutes: 10
         with:
-          version: "0.12.9"
-          enable-cache: true
+          container-id: ${{ job.services.nextcloud.id }}
+          # Read from the job env the battery itself authenticates with, so
+          # the reset and the battery cannot disagree about the password.
+          admin-password: ${{ env.NEXTCLOUD_PASSWORD }}
+
+      - name: Run declarative battery on nextcloud
+        run: ./python/.venv/bin/python integ/runners/python/main.py --target nextcloud --strict
+
+  # The watch batteries poll and wait on deliveries, so they get a runner of
+  # their own rather than queueing behind the nextcloud corpus battery in
+  # integ-data; the path filter is the same one. The notion battery rides
+  # here because its fake needs the node toolchain this job sets up anyway,
+  # which leaves integ-data a python-only job.
+  integ-watch:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.data == 'true') }}
+    runs-on: ubuntu-latest
+    services:
+      nextcloud:
+        image: nextcloud:30-apache
+        ports:
+          - 8080:80
+        # The SQLite database and the files live in the data dir, and every
+        # write fsyncs there. The container dies with the job, so tmpfs loses
+        # nothing; uid 33 is the image's www-data.
+        options: --tmpfs /var/www/html/data:rw,uid=33,gid=33,mode=0770
+        env:
+          SQLITE_DATABASE: nextcloud
+          NEXTCLOUD_ADMIN_USER: admin
+          NEXTCLOUD_ADMIN_PASSWORD: admin123
+          NEXTCLOUD_TRUSTED_DOMAINS: localhost
+    env:
+      NEXTCLOUD_URL: http://localhost:8080/remote.php/dav/files/admin/
+      NEXTCLOUD_USERNAME: admin
+      NEXTCLOUD_PASSWORD: admin123
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -930,7 +992,8 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       # integ/generated/ is gitignored, so every kit fake this job starts
-      # (dropbox, box, onedrive) fails to import its client until this runs.
+      # (notion, dropbox, box, onedrive) fails to import its client until this
+      # runs.
       # The battery jobs get it from the integ-battery-setup action; this job
       # does not use that action and has to ask for it itself.
       - name: Generate integ Prisma clients
@@ -960,9 +1023,6 @@ jobs:
           # Read from the job env the battery itself authenticates with, so
           # the reset and the battery cannot disagree about the password.
           admin-password: ${{ env.NEXTCLOUD_PASSWORD }}
-
-      - name: Run declarative battery on nextcloud
-        run: ./python/.venv/bin/python integ/runners/python/main.py --target nextcloud --strict
 
       # disk and ssh need nothing (tempdir, in-process SFTP server);
       # dropbox is an out-of-process fake started below; s3 and gridfs need a
@@ -1158,10 +1218,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1240,10 +1297,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
+          save-cache: "false"
 
       - name: Install Python dependencies (base + fuse only)
         working-directory: python
@@ -1312,10 +1368,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
+          save-cache: "false"
 
       - name: Install Python dependencies (base + fuse only)
         working-directory: python
@@ -1492,10 +1547,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1624,10 +1676,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1706,10 +1755,10 @@ jobs:
     needs: [changes, typescript-build]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        facet: [project, email, chat, dify, mem0, cli]
+    # One job for the six small facets: each leg of the old matrix spent a
+    # minute or more on setup for under a minute of cases.
+    env:
+      FACETS: project email chat dify mem0 cli
     steps:
       - uses: actions/checkout@v7
 
@@ -1719,10 +1768,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1754,7 +1800,6 @@ jobs:
         run: pnpm run prisma:clients
 
       - name: Start fake Trello and Linear APIs
-        if: matrix.facet == 'project'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/trello/main.ts --port 5095 > /tmp/trello.log 2>&1 &
@@ -1769,7 +1814,6 @@ jobs:
       # The airtable mount runs in the project facet and its CLI in the cli
       # facet, against the same fake.
       - name: Start fake Airtable API
-        if: matrix.facet == 'project' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/airtable/main.ts --port 5101 > /tmp/airtable.log 2>&1 &
@@ -1782,7 +1826,6 @@ jobs:
       # ntn, linear, airtable) end to end against the same mocks the email,
       # chat and project facets use.
       - name: Start the fake mail and Google Workspace servers
-        if: matrix.facet == 'email' || matrix.facet == 'cli'
         run: |
           cd integ
           nohup pnpm exec tsx server/mail/main.ts --port 5085 \
@@ -1801,7 +1844,6 @@ jobs:
           echo "GWS_URL=http://127.0.0.1:19999" >> "$GITHUB_ENV"
 
       - name: Start fake Slack Web API
-        if: matrix.facet == 'chat' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/slack/main.ts --port 5097 > /tmp/slack.log 2>&1 &
@@ -1810,7 +1852,6 @@ jobs:
           echo "SLACK_URL=http://127.0.0.1:5097" >> "$GITHUB_ENV"
 
       - name: Start fake Discord API
-        if: matrix.facet == 'chat' || matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/discord/main.ts --port 5090 > /tmp/discord.log 2>&1 &
@@ -1821,7 +1862,6 @@ jobs:
       # A different Hugging Face product from the hf/ Xet store: hf_hub/ is
       # the git-backed Hub the `hf` CLI acts on.
       - name: Start fake Hugging Face Hub
-        if: matrix.facet == 'cli'
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/hf_hub/main.ts --port 5086 > /tmp/hfhub.log 2>&1 &
@@ -1834,7 +1874,6 @@ jobs:
       # it. Same server binary, named at startup and replayed by every later
       # bare /reset.
       - name: Start fake GitHub API
-        if: matrix.facet == 'cli'
         run: |
           cd integ
           nohup ./node_modules/.bin/tsx server/github/main.ts \
@@ -1843,28 +1882,41 @@ jobs:
           cat /tmp/github.log
           echo "GITHUB_URL=http://127.0.0.1:5098" >> "$GITHUB_ENV"
 
-      # The ntn and linear CLIs ride the notion mock (self-started by each
-      # runner under NOTION_ENABLED) and the fake Linear GraphQL server.
-      - name: Start fake Linear API and the Notion mock
-        if: matrix.facet == 'cli'
+      # The ntn CLI rides the notion mock (self-started by each runner under
+      # NOTION_ENABLED); the linear CLI rides the Linear fake started above.
+      - name: Start the Notion mock
         run: |
           cd integ
-          nohup ./node_modules/.bin/tsx server/linear/main.ts --port 5094 > /tmp/linear.log 2>&1 &
-          for i in $(seq 1 30); do grep -q "LINEAR_URL=" /tmp/linear.log && break; sleep 1; done
-          cat /tmp/linear.log
-          echo "LINEAR_URL=http://127.0.0.1:5094" >> "$GITHUB_ENV"
           nohup ./node_modules/.bin/tsx server/notion/main.ts --port 5091 > /tmp/notion.log 2>&1 &
           for i in $(seq 1 30); do grep -q "NOTION_URL=" /tmp/notion.log && break; sleep 1; done
           cat /tmp/notion.log
           echo "NOTION_URL=http://127.0.0.1:5091" >> "$GITHUB_ENV"
           echo "NOTION_ENABLED=1" >> "$GITHUB_ENV"
 
-      - name: Run ${{ matrix.facet }} battery (python host)
-        run: ./python/.venv/bin/python integ/runners/python/main.py --facet ${{ matrix.facet }} --strict
+      # Every facet in turn, each in its own log group. A failing facet does
+      # not stop the ones after it, and the typescript step runs even when the
+      # python one failed, so one run reports every facet on both hosts.
+      - name: Run every facet battery (python host)
+        run: |
+          failed=""
+          for facet in $FACETS; do
+            echo "::group::$facet"
+            ./python/.venv/bin/python integ/runners/python/main.py --facet "$facet" --strict || failed="$failed $facet"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
 
-      - name: Run ${{ matrix.facet }} battery (typescript host)
+      - name: Run every facet battery (typescript host)
+        if: ${{ !cancelled() }}
         working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --facet ${{ matrix.facet }} --strict
+        run: |
+          failed=""
+          for facet in $FACETS; do
+            echo "::group::$facet"
+            pnpm exec tsx runners/typescript/main.ts --facet "$facet" --strict || failed="$failed $facet"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
 
       # A 404 is an answer to a real client -- "no such repository", "no such
       # file" -- so an endpoint the fake does not implement is indistinguishable
@@ -1872,7 +1924,7 @@ jobs:
       # conclusion rather than an error. The fake names every unrouted request
       # on stderr; this is what makes that a failure rather than a log line.
       - name: Fail on any unrouted GitHub request
-        if: matrix.facet == 'cli'
+        if: ${{ !cancelled() }}
         run: |
           if grep -q "no route for" /tmp/github.log; then
             echo "The gh battery reached endpoints the fake does not implement:"
@@ -1891,10 +1943,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v7
+      # Its own entry: the conformance run installs both W&B SDKs from
+      # their requirements files, which the lock does not hold.
+      - uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
+          cache-suffix: wandb
+          cache-dependency-glob: |
+            python/uv.lock
+            integ/wandb/requirements-*.txt
       - name: Install Python dependencies
         working-directory: python
         run: uv sync --locked
@@ -1914,7 +1970,7 @@ jobs:
   gate:
     name: integ-gate
     runs-on: ubuntu-latest
-    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-selftests, integ-shared-parity, integ-database, integ-data, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
+    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-selftests, integ-shared-parity, integ-database, integ-data, integ-watch, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
     if: always()
     steps:
       - name: Check required jobs

@@ -31,7 +31,8 @@ TASK = (
     "/slack/channels/ and starts with 'general'. Each day's messages live "
     "in a <yyyy-mm-dd>.jsonl file. Use `ls` to discover the exact channel "
     "directory, then `grep -i hello` across its jsonl files. Report the "
-    "matching message texts and stop.")
+    "matching message texts and stop."
+)
 
 
 def build_workspace() -> Workspace:
@@ -41,11 +42,14 @@ def build_workspace() -> Workspace:
             region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
             aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
             aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-        ))
-    slack = SlackVFS(config=SlackConfig(
-        token=os.environ["SLACK_BOT_TOKEN"],
-        search_token=os.environ.get("SLACK_USER_TOKEN"),
-    ))
+        )
+    )
+    slack = SlackVFS(
+        config=SlackConfig(
+            token=os.environ["SLACK_BOT_TOKEN"],
+            search_token=os.environ.get("SLACK_USER_TOKEN"),
+        )
+    )
     return Workspace(
         {
             "/": (RAMVFS(), MountMode.WRITE),

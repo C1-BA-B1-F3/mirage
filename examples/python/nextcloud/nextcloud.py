@@ -75,13 +75,17 @@ async def main():
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {test_file} ===")
-    meta_res = await ws.shell(f'chmod 640 "{test_file}"'
-                              f' && chown 500:dev "{test_file}"'
-                              f' && touch -t 202601021530 "{test_file}"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{test_file}"'
+        f' && chown 500:dev "{test_file}"'
+        f' && touch -t 202601021530 "{test_file}"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch("stat", PathSpec.from_str_path(test_file))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print(f"\n=== rm {test_file} ===")
     r = await ws.shell(f"rm {test_file}")
@@ -90,7 +94,8 @@ async def main():
     print(f"=== stat {test_file} (expect failure) ===")
     r = await ws.shell(f"stat {test_file}")
     print(
-        f"  exit={r.exit_code}  stderr={(await r.stderr_str()).strip()[:80]}")
+        f"  exit={r.exit_code}  stderr={(await r.stderr_str()).strip()[:80]}"
+    )
 
 
 if __name__ == "__main__":

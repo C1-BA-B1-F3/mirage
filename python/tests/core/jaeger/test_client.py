@@ -26,20 +26,23 @@ TRACES_URL = re.compile(r"^http://localhost:16686/api/traces\?.*$")
 
 
 def sent_params(m: aioresponses) -> dict:
-    ((_key, calls), ) = m.requests.items()
+    ((_key, calls),) = m.requests.items()
     assert len(calls) == 1
     return calls[0].kwargs["params"]
 
 
-@pytest.mark.parametrize("value,valid", [
-    ("a" * 32, True),
-    ("a" * 16, True),
-    ("A" * 32, True),
-    ("zzz", False),
-    ("a" * 31, False),
-    ("a" * 33, False),
-    ("", False),
-])
+@pytest.mark.parametrize(
+    "value,valid",
+    [
+        ("a" * 32, True),
+        ("a" * 16, True),
+        ("A" * 32, True),
+        ("zzz", False),
+        ("a" * 31, False),
+        ("a" * 33, False),
+        ("", False),
+    ],
+)
 def test_is_trace_id(value, valid):
     assert is_trace_id(value) is valid
 
@@ -100,14 +103,15 @@ async def test_fetch_traces_converts_iso_window_to_micros():
 async def test_fetch_traces_surfaces_api_error_message():
     accessor = JaegerAccessor(JaegerConfig())
     with aioresponses() as m:
-        m.get(TRACES_URL,
-              status=400,
-              payload={
-                  "errors": [{
-                      "code": 400,
-                      "msg": "parameter 'service' is required"
-                  }]
-              })
+        m.get(
+            TRACES_URL,
+            status=400,
+            payload={
+                "errors": [
+                    {"code": 400, "msg": "parameter 'service' is required"}
+                ]
+            },
+        )
         try:
             with pytest.raises(JaegerApiError) as excinfo:
                 await fetch_traces(accessor, "checkout")

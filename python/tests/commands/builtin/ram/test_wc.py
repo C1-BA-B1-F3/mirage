@@ -115,8 +115,9 @@ async def test_wc_m_stdin_multibyte(workspace):
 
 @pytest.mark.asyncio
 async def test_wc_L_stdin(workspace):
-    io = await workspace.shell("wc -L",
-                               stdin=b"short\na much longer line\nmed\n")
+    io = await workspace.shell(
+        "wc -L", stdin=b"short\na much longer line\nmed\n"
+    )
     assert io.exit_code == 0
     assert io.stdout.decode().strip() == str(len("a much longer line"))
 

@@ -9,10 +9,12 @@ from mirage.utils.key_prefix import mount_key
 
 
 def _spec(original: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(original, prefix),
-                    virtual=original,
-                    directory=original,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=mount_key(original, prefix),
+        virtual=original,
+        directory=original,
+        resolved=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -92,9 +94,9 @@ async def test_mktemp_creates_file():
     async def write_bytes_fn(path, data):
         write_calls.append((path, data))
 
-    out, _ = await mktemp(mkdir_fn=mkdir_fn,
-                          write_bytes_fn=write_bytes_fn,
-                          t=True)
+    out, _ = await mktemp(
+        mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn, t=True
+    )
     text = out.decode()
     assert text.startswith("/tmp/tmp.")
     assert text.endswith("\n")
@@ -115,13 +117,13 @@ async def test_mktemp_creates_directory():
     async def write_bytes_fn(path, data):
         write_calls.append((path, data))
 
-    out, _ = await mktemp(mkdir_fn=mkdir_fn,
-                          write_bytes_fn=write_bytes_fn,
-                          d=True,
-                          t=True)
+    out, _ = await mktemp(
+        mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn, d=True, t=True
+    )
     text = out.decode().rstrip("\n")
-    assert [(path.virtual, parents)
-            for path, parents in mkdir_calls] == [(text, False)]
+    assert [(path.virtual, parents) for path, parents in mkdir_calls] == [
+        (text, False)
+    ]
     assert write_calls == []
 
 
@@ -135,9 +137,9 @@ async def test_mktemp_custom_parent():
     async def write_bytes_fn(path, data):
         pass
 
-    out, _ = await mktemp(mkdir_fn=mkdir_fn,
-                          write_bytes_fn=write_bytes_fn,
-                          p="/var/cache")
+    out, _ = await mktemp(
+        mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn, p="/var/cache"
+    )
     assert out.decode().startswith("/var/cache/tmp.")
     assert mkdir_calls == []
 
@@ -154,13 +156,15 @@ async def test_mktemp_never_creates_a_named_parent():
     async def write_bytes_fn(path, data):
         raise FileNotFoundError(path.virtual)
 
-    out, io = await mktemp(mkdir_fn=mkdir_fn,
-                           write_bytes_fn=write_bytes_fn,
-                           p="/var/cache")
+    out, io = await mktemp(
+        mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn, p="/var/cache"
+    )
     assert (out, io.exit_code, mkdir_calls) == (None, 1, [])
-    assert io.stderr == (b"mktemp: failed to create file via template "
-                         b"'/var/cache/tmp.XXXXXXXXXX': No such file or "
-                         b"directory\n")
+    assert io.stderr == (
+        b"mktemp: failed to create file via template "
+        b"'/var/cache/tmp.XXXXXXXXXX': No such file or "
+        b"directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -194,9 +198,9 @@ async def test_mktemp_pathspec_parent():
     async def write_bytes_fn(path, data):
         pass
 
-    out, _ = await mktemp(mkdir_fn=mkdir_fn,
-                          write_bytes_fn=write_bytes_fn,
-                          p=_spec("/scratch"))
+    out, _ = await mktemp(
+        mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn, p=_spec("/scratch")
+    )
     assert out.decode().startswith("/scratch/tmp.")
 
 
@@ -211,10 +215,12 @@ async def test_mktemp_custom_template():
     async def write_bytes_fn(path, data):
         write_calls.append((path, data))
 
-    out, _ = await mktemp("session_XXXXXX",
-                          mkdir_fn=mkdir_fn,
-                          write_bytes_fn=write_bytes_fn,
-                          t=True)
+    out, _ = await mktemp(
+        "session_XXXXXX",
+        mkdir_fn=mkdir_fn,
+        write_bytes_fn=write_bytes_fn,
+        t=True,
+    )
     text = out.decode().rstrip("\n")
     assert text.startswith("/tmp/session_")
     assert len(text) == len("/tmp/session_") + 6
@@ -237,15 +243,17 @@ async def test_mktemp_draws_again_when_a_name_is_taken():
     async def write_bytes_fn(path, data):
         written.append(path.virtual)
 
-    out, io = await mktemp("x.XXX",
-                           mkdir_fn=mkdir_fn,
-                           write_bytes_fn=write_bytes_fn,
-                           cwd="/data",
-                           exists_fn=exists_fn)
+    out, io = await mktemp(
+        "x.XXX",
+        mkdir_fn=mkdir_fn,
+        write_bytes_fn=write_bytes_fn,
+        cwd="/data",
+        exists_fn=exists_fn,
+    )
     assert io.exit_code == 0
     assert len(probed) == 2 and probed[0] != probed[1]
     assert written == [probed[1]]
-    assert out == (probed[1][len("/data/"):] + "\n").encode()
+    assert out == (probed[1][len("/data/") :] + "\n").encode()
 
 
 @pytest.mark.asyncio
@@ -258,11 +266,14 @@ async def test_mktemp_gives_up_when_every_name_is_taken():
     async def write_bytes_fn(path, data):
         written.append(path.virtual)
 
-    out, io = await mktemp("x.XXX",
-                           mkdir_fn=write_bytes_fn,
-                           write_bytes_fn=write_bytes_fn,
-                           cwd="/data",
-                           exists_fn=exists_fn)
+    out, io = await mktemp(
+        "x.XXX",
+        mkdir_fn=write_bytes_fn,
+        write_bytes_fn=write_bytes_fn,
+        cwd="/data",
+        exists_fn=exists_fn,
+    )
     assert (out, io.exit_code, written) == (None, 1, [])
-    assert io.stderr == (b"mktemp: failed to create file via template "
-                         b"'x.XXX': File exists\n")
+    assert io.stderr == (
+        b"mktemp: failed to create file via template 'x.XXX': File exists\n"
+    )

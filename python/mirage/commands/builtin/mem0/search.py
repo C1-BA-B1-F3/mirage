@@ -15,7 +15,6 @@
 from dataclasses import dataclass
 
 from mirage.accessor.mem0 import Mem0Accessor
-from mirage.commands.builtin.generic_bind import metadata_provision
 from mirage.commands.builtin.mem0.io import IO
 from mirage.commands.builtin.utils.paths import default_paths
 from mirage.commands.config import CommandOpts, command
@@ -46,27 +45,35 @@ def parse_flags(fl: FlagView, default_limit: int) -> SearchFlags:
     return SearchFlags(method=method, top_k=top_k, threshold=threshold)
 
 
-@command("search",
-         vfs="mem0",
-         spec=SPECS["search"],
-         provision=metadata_provision)
-async def search(accessor: Mem0Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("search", vfs="mem0", spec=SPECS["search"])
+async def search(
+    accessor: Mem0Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not texts:
         raise UsageError("search: query is required")
     query = texts[0]
-    parsed = parse_flags(FlagView(opts.flags, spec=SPECS["search"]),
-                         accessor.config.default_search_limit)
+    parsed = parse_flags(
+        FlagView(opts.flags, spec=SPECS["search"]),
+        accessor.config.default_search_limit,
+    )
     if parsed.method != "semantic":
         raise UsageError("search: only the 'semantic' method is supported")
     target_paths = default_paths(paths, opts.cwd)
     output = await search_resources(
-        IO.search, accessor, target_paths,
-        SearchQuery(query,
-                    options={
-                        "top_k": parsed.top_k,
-                        "method": parsed.method,
-                        "threshold": parsed.threshold
-                    }), opts.index)
+        IO.search,
+        accessor,
+        target_paths,
+        SearchQuery(
+            query,
+            options={
+                "top_k": parsed.top_k,
+                "method": parsed.method,
+                "threshold": parsed.threshold,
+            },
+        ),
+        opts.index,
+    )
     return output, IOResult()

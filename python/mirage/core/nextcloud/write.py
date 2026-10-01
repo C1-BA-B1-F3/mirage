@@ -8,10 +8,12 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def write_bytes(accessor: NextcloudAccessor,
-                      path: PathSpec,
-                      data: bytes,
-                      index: IndexCacheStore = NULL_INDEX) -> None:
+async def write_bytes(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    data: bytes,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     raw = path.mount_path
     key = raw.lstrip("/")
     op = accessor.operator()

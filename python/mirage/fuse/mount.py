@@ -40,7 +40,8 @@ def load_fuse() -> Any:
             "FUSE support requires the 'fuse' extra: install "
             '"mirage-ai[fuse]" plus the OS driver (macFUSE, fuse3, or '
             "WinFsp). Setup and support matrix: "
-            "https://mirage.dev/home/setup/fuse") from err
+            "https://mirage.dev/home/setup/fuse"
+        ) from err
     install_macfuse_extensions(fuse)
     return fuse
 
@@ -55,11 +56,13 @@ def _prepare_mountpoint(mountpoint: str) -> None:
         os.rmdir(mountpoint)
 
 
-def _run_fuse(fuse: Any,
-              fs: MirageFS,
-              mountpoint: str,
-              foreground: bool,
-              backend: MountBackend = MountBackend.FUSE) -> None:
+def _run_fuse(
+    fuse: Any,
+    fs: MirageFS,
+    mountpoint: str,
+    foreground: bool,
+    backend: MountBackend = MountBackend.FUSE,
+) -> None:
     # direct_io: the kernel ignores st_size and keeps issuing reads until the
     # backend returns EOF, which is what makes size-unknown (API-backed) files
     # readable by tools that never fstat (cat, grep).
@@ -82,17 +85,19 @@ def _run_fuse(fuse: Any,
         opts["volname"] = os.path.basename(mountpoint.rstrip("/"))
     else:
         opts["direct_io"] = True
-    fuse.FUSE(fs,
-              mountpoint,
-              nothreads=True,
-              foreground=foreground,
-              **opts,
-              **win_opts)
+    fuse.FUSE(
+        fs,
+        mountpoint,
+        nothreads=True,
+        foreground=foreground,
+        **opts,
+        **win_opts,
+    )
 
 
-def _await_ready(thread: threading.Thread,
-                 mountpoint: str,
-                 timeout: float = 10.0) -> None:
+def _await_ready(
+    thread: threading.Thread, mountpoint: str, timeout: float = 10.0
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         # POSIX: the pre-existing directory becomes a mountpoint. Windows:
@@ -111,19 +116,22 @@ def _await_ready(thread: threading.Thread,
         if not thread.is_alive():
             raise RuntimeError(
                 f"FUSE mount thread for {mountpoint!r} exited before the "
-                "mountpoint became live")
+                "mountpoint became live"
+            )
         time.sleep(0.02)
     raise TimeoutError(
         f"FUSE mount at {mountpoint!r} did not become ready within "
-        f"{timeout:g}s")
+        f"{timeout:g}s"
+    )
 
 
 def mount_background(
-        ops: Ops,
-        mountpoint: str,
-        root_prefix: str = "",
-        session: SessionState | None = None,
-        backend: str | MountBackend = MountBackend.FUSE) -> threading.Thread:
+    ops: Ops,
+    mountpoint: str,
+    root_prefix: str = "",
+    session: SessionState | None = None,
+    backend: str | MountBackend = MountBackend.FUSE,
+) -> threading.Thread:
     """Mount in a background thread and return once the tree is live.
 
     Args:
@@ -136,28 +144,31 @@ def mount_background(
     Returns:
         threading.Thread: the thread serving the mount.
     """
-    resolved = prepare_backend(backend,
-                               ops=ops,
-                               mountpoint=mountpoint,
-                               root_prefix=root_prefix)
+    resolved = prepare_backend(
+        backend, ops=ops, mountpoint=mountpoint, root_prefix=root_prefix
+    )
     fuse = load_fuse()
     fs = MirageFS(ops, root_prefix=root_prefix, session=session)
     _prepare_mountpoint(mountpoint)
-    t = threading.Thread(target=_run_fuse,
-                         args=(fuse, fs, mountpoint, True, resolved),
-                         daemon=True)
+    t = threading.Thread(
+        target=_run_fuse,
+        args=(fuse, fs, mountpoint, True, resolved),
+        daemon=True,
+    )
     t.start()
     _await_ready(t, mountpoint)
     return t
 
 
-def mount(ops: Ops | None = None,
-          mountpoint: str = "",
-          foreground: bool = True,
-          fs: MirageFS | None = None,
-          daemon: bool = False,
-          post_fork=None,
-          backend: str | MountBackend = MountBackend.FUSE) -> None:
+def mount(
+    ops: Ops | None = None,
+    mountpoint: str = "",
+    foreground: bool = True,
+    fs: MirageFS | None = None,
+    daemon: bool = False,
+    post_fork=None,
+    backend: str | MountBackend = MountBackend.FUSE,
+) -> None:
     resolved = prepare_backend(backend, ops=ops, mountpoint=mountpoint)
     if fs is None:
         if ops is None:
@@ -197,6 +208,7 @@ def mount(ops: Ops | None = None,
             # serving process exits.
             pass
         else:
-            subprocess.run(["fusermount", "-u", mountpoint],
-                           capture_output=True)
+            subprocess.run(
+                ["fusermount", "-u", mountpoint], capture_output=True
+            )
         t.join(timeout=5)

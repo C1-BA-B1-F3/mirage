@@ -17,8 +17,11 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
-from mirage.commands.builtin.generic.du import (ComputeEntries, ComputeSize,
-                                                du_generic)
+from mirage.commands.builtin.generic.du import (
+    ComputeEntries,
+    ComputeSize,
+    du_generic,
+)
 from mirage.commands.builtin.generic_bind.adapter import Builder, CommandIO
 from mirage.commands.config import CommandOpts
 from mirage.context import path_rules_active
@@ -109,11 +112,12 @@ async def _walk(
     for child in children:
         if not budget.spend():
             break
-        child_spec = PathSpec(virtual=child,
-                              directory=child,
-                              resolved=False,
-                              vfs_path=rekey(path.virtual, path.vfs_path,
-                                             child))
+        child_spec = PathSpec(
+            virtual=child,
+            directory=child,
+            resolved=False,
+            vfs_path=rekey(path.virtual, path.vfs_path, child),
+        )
         total += await _walk(ops, accessor, index, child_spec, budget, entries)
     return total
 
@@ -159,13 +163,18 @@ async def _op_entries(
     return await op(accessor, path, index)
 
 
-async def _resolve(ops: CommandIO, accessor: Accessor, index: IndexCacheStore,
-                   targets: list[PathSpec]) -> list[PathSpec]:
+async def _resolve(
+    ops: CommandIO,
+    accessor: Accessor,
+    index: IndexCacheStore,
+    targets: list[PathSpec],
+) -> list[PathSpec]:
     return await ops.resolve_glob(accessor, targets, index)
 
 
-async def _stat(ops: CommandIO, accessor: Accessor, index: IndexCacheStore,
-                path: PathSpec):
+async def _stat(
+    ops: CommandIO, accessor: Accessor, index: IndexCacheStore, path: PathSpec
+):
     return await ops.stat(accessor, path, index)
 
 
@@ -181,9 +190,13 @@ def _budget_directories(budget: WalkBudget) -> list[str]:
     return budget.directories
 
 
-async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def du(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("du: no VFS")
     budget = WalkBudget(ops.max_du_entries)
@@ -194,22 +207,26 @@ async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # reports a directory the rule refuses to open, where GNU does.
     if native is None or path_rules_active():
         compute_size = partial(walk_size, ops, accessor, opts.index, budget)
-        compute_entries = partial(walk_entries, ops, accessor, opts.index,
-                                  budget)
+        compute_entries = partial(
+            walk_entries, ops, accessor, opts.index, budget
+        )
     else:
         compute_size = partial(_op_size, native.size, accessor, opts.index)
-        compute_entries = partial(_op_entries, native.entries, accessor,
-                                  opts.index)
-    return await du_generic(paths,
-                            list(texts),
-                            opts,
-                            partial(_resolve, ops, accessor, opts.index),
-                            partial(_stat, ops, accessor, opts.index),
-                            compute_size,
-                            compute_entries,
-                            truncated=partial(_budget_hit, budget),
-                            unreadable=partial(_budget_unreadable, budget),
-                            directories=partial(_budget_directories, budget))
+        compute_entries = partial(
+            _op_entries, native.entries, accessor, opts.index
+        )
+    return await du_generic(
+        paths,
+        list(texts),
+        opts,
+        partial(_resolve, ops, accessor, opts.index),
+        partial(_stat, ops, accessor, opts.index),
+        compute_size,
+        compute_entries,
+        truncated=partial(_budget_hit, budget),
+        unreadable=partial(_budget_unreadable, budget),
+        directories=partial(_budget_directories, budget),
+    )
 
 
-BUILDER = Builder('du', du, None, False, None)
+BUILDER = Builder("du", du)

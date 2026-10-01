@@ -66,19 +66,39 @@ def _u32_utf8(value: int) -> bytes:
     if value < 0x800:
         return bytes((0xC0 | value >> 6, 0x80 | value & 0x3F))
     if value < 0x10000:
-        return bytes((0xE0 | value >> 12, 0x80 | value >> 6 & 0x3F,
-                      0x80 | value & 0x3F))
+        return bytes(
+            (0xE0 | value >> 12, 0x80 | value >> 6 & 0x3F, 0x80 | value & 0x3F)
+        )
     if value < 0x200000:
-        return bytes((0xF0 | value >> 18, 0x80 | value >> 12 & 0x3F,
-                      0x80 | value >> 6 & 0x3F, 0x80 | value & 0x3F))
+        return bytes(
+            (
+                0xF0 | value >> 18,
+                0x80 | value >> 12 & 0x3F,
+                0x80 | value >> 6 & 0x3F,
+                0x80 | value & 0x3F,
+            )
+        )
     if value < 0x4000000:
-        return bytes((0xF8 | value >> 24, 0x80 | value >> 18 & 0x3F,
-                      0x80 | value >> 12 & 0x3F, 0x80 | value >> 6 & 0x3F,
-                      0x80 | value & 0x3F))
+        return bytes(
+            (
+                0xF8 | value >> 24,
+                0x80 | value >> 18 & 0x3F,
+                0x80 | value >> 12 & 0x3F,
+                0x80 | value >> 6 & 0x3F,
+                0x80 | value & 0x3F,
+            )
+        )
     if value < 0x80000000:
-        return bytes((0xFC | value >> 30, 0x80 | value >> 24 & 0x3F,
-                      0x80 | value >> 18 & 0x3F, 0x80 | value >> 12 & 0x3F,
-                      0x80 | value >> 6 & 0x3F, 0x80 | value & 0x3F))
+        return bytes(
+            (
+                0xFC | value >> 30,
+                0x80 | value >> 24 & 0x3F,
+                0x80 | value >> 18 & 0x3F,
+                0x80 | value >> 12 & 0x3F,
+                0x80 | value >> 6 & 0x3F,
+                0x80 | value & 0x3F,
+            )
+        )
     return b""
 
 
@@ -130,10 +150,11 @@ def decode_ansi_c(content: str) -> str:
             continue
         if marker in _OCTAL:
             end = i + 1
-            while end < len(content) and end - i <= 3 \
-                    and content[end] in _OCTAL:
+            while (
+                end < len(content) and end - i <= 3 and content[end] in _OCTAL
+            ):
                 end += 1
-            value = int(content[i + 1:end], 8)
+            value = int(content[i + 1 : end], 8)
             # \400 is 256: the mask lands on NUL, which truncates too.
             if value & 0xFF == 0:
                 return "".join(out)

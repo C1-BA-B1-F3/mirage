@@ -31,10 +31,13 @@ def test_a_misspelled_key_is_refused():
         AirtableConfig(token="t", base_idz=["appX"])
 
 
-@pytest.mark.parametrize("field, value", [
-    ("max_read_records", 0),
-    ("requests_per_second", 0),
-])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("max_read_records", 0),
+        ("requests_per_second", 0),
+    ],
+)
 def test_bounds_are_positive(field, value):
     with pytest.raises(ValidationError):
         AirtableConfig(token="t", **{field: value})

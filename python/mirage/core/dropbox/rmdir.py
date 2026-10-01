@@ -23,9 +23,11 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir, enotempty
 
 
-async def rmdir(accessor: DropboxAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: DropboxAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Remove an empty folder.
 
     delete_v2 removes a folder RECURSIVELY; kernel/GNU rmdir must fail

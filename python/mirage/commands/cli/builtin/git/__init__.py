@@ -22,9 +22,14 @@ from mirage.commands.cli.builtin.git.fetch import fetch
 from mirage.commands.cli.builtin.git.for_each_ref import for_each_ref
 from mirage.commands.cli.builtin.git.fsck import fsck
 from mirage.commands.cli.builtin.git.init import init
-from mirage.commands.cli.builtin.git.inspect import (config, remote, rev_list,
-                                                     rev_parse, show_ref,
-                                                     version)
+from mirage.commands.cli.builtin.git.inspect import (
+    config,
+    remote,
+    rev_list,
+    rev_parse,
+    show_ref,
+    version,
+)
 from mirage.commands.cli.builtin.git.log import log
 from mirage.commands.cli.builtin.git.ls_files import ls_files
 from mirage.commands.cli.builtin.git.mv import mv
@@ -48,10 +53,12 @@ from mirage.io.types import IOResult
 # default lands as if typed, so an absent -C resolves to the session cwd
 # and the leaves need no separate working-directory fact. The root names it
 # its operand base, so a later relative -C lands under the one before it.
-DIRECTORY_OPTION = Option(short="-C",
-                          type="path",
-                          default=".",
-                          description="Run as if git was started in <path>")
+DIRECTORY_OPTION = Option(
+    short="-C",
+    type="path",
+    default=".",
+    description="Run as if git was started in <path>",
+)
 
 REVISION = Operand(type="str")
 
@@ -60,163 +67,230 @@ REVISION = Operand(type="str")
 # next word is a revision, never a format. A bare --format stays
 # parseable too, but only so pretty_format can answer it with git's own
 # fatal (pretty.c reads --format in its =value form alone).
-PRETTY_OPTION = Option(long="--pretty",
-                       type="str",
-                       value_optional=True,
-                       description="Commit display format: oneline, short, "
-                       "medium, full, fuller, or a format:/tformat:/%-string")
-FORMAT_OPTION = Option(long="--format",
-                       type="str",
-                       value_optional=True,
-                       description="Alias of --pretty (requires =value)")
+PRETTY_OPTION = Option(
+    long="--pretty",
+    type="str",
+    value_optional=True,
+    description="Commit display format: oneline, short, "
+    "medium, full, fuller, or a format:/tformat:/%-string",
+)
+FORMAT_OPTION = Option(
+    long="--format",
+    type="str",
+    value_optional=True,
+    description="Alias of --pretty (requires =value)",
+)
 
 # Free text, read by parse_date_mode: git names a style it lacks in its
 # own fatal, and format:<strftime> is no fixed word.
-DATE_OPTION = Option(long="--date",
-                     type="str",
-                     description="Date display format: default, relative, "
-                     "local, iso, iso-strict, rfc, short, raw, unix, human "
-                     "or format:<strftime>")
+DATE_OPTION = Option(
+    long="--date",
+    type="str",
+    description="Date display format: default, relative, "
+    "local, iso, iso-strict, rfc, short, raw, unix, human "
+    "or format:<strftime>",
+)
 
 DIFF_OPTIONS = (
-    Option(short='-W',
-           long='--function-context',
-           description='Show whole functions as diff context'),
-    Option(short="-U",
-           long="--unified",
-           type="int",
-           description="Number of context lines"),
+    Option(
+        short="-W",
+        long="--function-context",
+        description="Show whole functions as diff context",
+    ),
+    Option(
+        short="-U",
+        long="--unified",
+        type="int",
+        description="Number of context lines",
+    ),
     Option(long="--name-status", description="Show changed paths and status"),
-    Option(long="--name-only",
-           description="Show changed paths instead of the patch"),
-    Option(long="--stat",
-           description="Show the diffstat table instead of the patch"),
-    Option(long="--numstat",
-           description="Show added and deleted line counts per path"),
-    Option(long="--shortstat",
-           description="Show only the diffstat summary line"),
-    Option(long="--summary",
-           description="Summarize creations, deletions and mode changes"),
+    Option(
+        long="--name-only",
+        description="Show changed paths instead of the patch",
+    ),
+    Option(
+        long="--stat",
+        description="Show the diffstat table instead of the patch",
+    ),
+    Option(
+        long="--numstat",
+        description="Show added and deleted line counts per path",
+    ),
+    Option(
+        long="--shortstat", description="Show only the diffstat summary line"
+    ),
+    Option(
+        long="--summary",
+        description="Summarize creations, deletions and mode changes",
+    ),
     Option(short="-p", long="--patch", description="Show the patch"),
-    Option(short="-s",
-           long="--no-patch",
-           description="Suppress all diff output"),
-    Option(long="--no-ext-diff",
-           description="Accepted for compatibility; there are no external "
-           "diff drivers to disable"),
-    Option(short="-M",
-           long="--find-renames",
-           type="str",
-           value_optional=True,
-           description="Detect renames with an optional similarity threshold"),
+    Option(
+        short="-s", long="--no-patch", description="Suppress all diff output"
+    ),
+    Option(
+        long="--no-ext-diff",
+        description="Accepted for compatibility; there are no external "
+        "diff drivers to disable",
+    ),
+    Option(
+        short="-M",
+        long="--find-renames",
+        type="str",
+        value_optional=True,
+        description="Detect renames with an optional similarity threshold",
+    ),
     Option(long="--no-renames", description="Turn off rename detection"),
     Option(long="--raw", description="Show the raw diff format"),
 )
 
 MERGE_OPTIONS = (
-    Option(short="-m",
-           description="Show merge diffs separately against each parent"),
+    Option(
+        short="-m",
+        description="Show merge diffs separately against each parent",
+    ),
     Option(short="-c", description="Show combined merge diffs"),
     Option(long="--cc", description="Show dense combined merge diffs"),
-    Option(long="--first-parent",
-           description="Follow and compare only the first parent"),
-    Option(long="--diff-merges",
-           type="str",
-           description="Select merge diff mode"),
+    Option(
+        long="--first-parent",
+        description="Follow and compare only the first parent",
+    ),
+    Option(
+        long="--diff-merges", type="str", description="Select merge diff mode"
+    ),
 )
 
 LOG_OPTIONS = (
-    Option(short='-E',
-           long='--extended-regexp',
-           description='Use extended regular expressions'),
-    Option(short='-F',
-           long='--fixed-strings',
-           description='Match patterns literally'),
-    Option(short='-P',
-           long='--perl-regexp',
-           description='Use Perl-compatible regular expressions'),
-    Option(long='--basic-regexp', description='Use basic regular expressions'),
-    Option(long='--committer',
-           type='str',
-           multiple=True,
-           description='Limit commits to matching committers'),
-    Option(long="--author",
-           type="str",
-           multiple=True,
-           description="Limit commits to matching authors"),
-    Option(long="--grep",
-           type="str",
-           multiple=True,
-           description="Limit commits to ones with a message line that "
-           "matches"),
-    Option(short="-i",
-           long="--regexp-ignore-case",
-           description="Match --grep, --author and -S without regard to "
-           "case"),
+    Option(
+        short="-E",
+        long="--extended-regexp",
+        description="Use extended regular expressions",
+    ),
+    Option(
+        short="-F",
+        long="--fixed-strings",
+        description="Match patterns literally",
+    ),
+    Option(
+        short="-P",
+        long="--perl-regexp",
+        description="Use Perl-compatible regular expressions",
+    ),
+    Option(long="--basic-regexp", description="Use basic regular expressions"),
+    Option(
+        long="--committer",
+        type="str",
+        multiple=True,
+        description="Limit commits to matching committers",
+    ),
+    Option(
+        long="--author",
+        type="str",
+        multiple=True,
+        description="Limit commits to matching authors",
+    ),
+    Option(
+        long="--grep",
+        type="str",
+        multiple=True,
+        description="Limit commits to ones with a message line that matches",
+    ),
+    Option(
+        short="-i",
+        long="--regexp-ignore-case",
+        description="Match --grep, --author and -S without regard to case",
+    ),
     *MERGE_OPTIONS,
-    Option(long="--after",
-           type="str",
-           description="Commits more recent than a date, like --since"),
-    Option(long="--before",
-           type="str",
-           description="Commits older than a date, like --until"),
-    Option(long="--max-parents",
-           type="int",
-           description="Show only commits with at most this many parents"),
-    Option(long="--min-parents",
-           type="int",
-           description="Show only commits with at least this many parents"),
+    Option(
+        long="--after",
+        type="str",
+        description="Commits more recent than a date, like --since",
+    ),
+    Option(
+        long="--before",
+        type="str",
+        description="Commits older than a date, like --until",
+    ),
+    Option(
+        long="--max-parents",
+        type="int",
+        description="Show only commits with at most this many parents",
+    ),
+    Option(
+        long="--min-parents",
+        type="int",
+        description="Show only commits with at least this many parents",
+    ),
     Option(long="--merges", description="Show only merge commits"),
     Option(long="--no-merges", description="Leave out merge commits"),
     DATE_OPTION,
     Option(long="--decorate", description="Print ref names on commits"),
-    Option(short="-n",
-           long="--max-count",
-           type="int",
-           numeric_shorthand=True,
-           description="Limit the number of commits shown"),
+    Option(
+        short="-n",
+        long="--max-count",
+        type="int",
+        numeric_shorthand=True,
+        description="Limit the number of commits shown",
+    ),
     Option(long="--oneline", description="One abbreviated line per commit"),
     Option(long="--reverse", description="Print commits oldest first"),
-    Option(long="--graph",
-           description="Draw the commit history beside the log "
-           "(implies --topo-order)"),
-    Option(long="--topo-order",
-           description="Show no parent before all its children, one line "
-           "of history at a time"),
-    Option(long="--date-order",
-           description="Show no parent before all its children, otherwise "
-           "newest first"),
-    Option(long="--all",
-           description="Start from every ref as well as the revision"),
+    Option(
+        long="--graph",
+        description="Draw the commit history beside the log "
+        "(implies --topo-order)",
+    ),
+    Option(
+        long="--topo-order",
+        description="Show no parent before all its children, one line "
+        "of history at a time",
+    ),
+    Option(
+        long="--date-order",
+        description="Show no parent before all its children, otherwise "
+        "newest first",
+    ),
+    Option(
+        long="--all",
+        description="Start from every ref as well as the revision",
+    ),
     PRETTY_OPTION,
     FORMAT_OPTION,
     # The pickaxe, and the reason `git log -S <name> --reverse` answers
     # "which commit introduced this": it selects commits that changed
     # how many times the string occurs, not commits that mention it.
-    Option(short="-S",
-           type="str",
-           description="Show commits that change the number of occurrences "
-           "of the string"),
-    Option(long="--since",
-           type="str",
-           description="Commits more recent than a date (ISO-8601 or epoch)"),
-    Option(long="--until",
-           type="str",
-           description="Commits older than a date (ISO-8601 or epoch)"),
+    Option(
+        short="-S",
+        type="str",
+        description="Show commits that change the number of occurrences "
+        "of the string",
+    ),
+    Option(
+        long="--since",
+        type="str",
+        description="Commits more recent than a date (ISO-8601 or epoch)",
+    ),
+    Option(
+        long="--until",
+        type="str",
+        description="Commits older than a date (ISO-8601 or epoch)",
+    ),
 )
 
 MAILMAP_OPTIONS = (
-    Option(long='--mailmap', description='Apply mailmap to identities'),
-    Option(long='--use-mailmap', description='Apply mailmap to identities'),
-    Option(long='--no-mailmap', description='Use recorded identities'),
-    Option(long='--no-use-mailmap', description='Use recorded identities'),
+    Option(long="--mailmap", description="Apply mailmap to identities"),
+    Option(long="--use-mailmap", description="Apply mailmap to identities"),
+    Option(long="--no-mailmap", description="Use recorded identities"),
+    Option(long="--no-use-mailmap", description="Use recorded identities"),
 )
 
-SHOW_OPTIONS = (*MAILMAP_OPTIONS,
-                Option(long="--oneline",
-                       description="One abbreviated line per commit"),
-                *DIFF_OPTIONS, *MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION,
-                FORMAT_OPTION)
+SHOW_OPTIONS = (
+    *MAILMAP_OPTIONS,
+    Option(long="--oneline", description="One abbreviated line per commit"),
+    *DIFF_OPTIONS,
+    *MERGE_OPTIONS,
+    DATE_OPTION,
+    PRETTY_OPTION,
+    FORMAT_OPTION,
+)
 
 # git's ref-filter options, which `branch` and `tag` share. The four
 # commit filters take the next word as their commit, whatever it looks
@@ -227,110 +301,139 @@ SHOW_OPTIONS = (*MAILMAP_OPTIONS,
 # and `filter_words` reattaches a detached value from the verbatim argv.
 # `--points-at` always takes a value.
 REF_FILTER_OPTIONS = (
-    Option(long="--contains",
-           type="str",
-           value_optional=True,
-           multiple=True,
-           metavar="commit",
-           description="List only refs that contain the commit (HEAD if "
-           "omitted)"),
-    Option(long="--no-contains",
-           type="str",
-           value_optional=True,
-           multiple=True,
-           metavar="commit",
-           description="List only refs that don't contain the commit "
-           "(HEAD if omitted)"),
-    Option(long="--merged",
-           type="str",
-           value_optional=True,
-           multiple=True,
-           metavar="commit",
-           description="List only refs reachable from the commit (HEAD if "
-           "omitted)"),
-    Option(long="--no-merged",
-           type="str",
-           value_optional=True,
-           multiple=True,
-           metavar="commit",
-           description="List only refs not reachable from the commit (HEAD "
-           "if omitted)"),
-    Option(long="--points-at",
-           type="str",
-           multiple=True,
-           metavar="object",
-           description="List only refs that point at the object"),
+    Option(
+        long="--contains",
+        type="str",
+        value_optional=True,
+        multiple=True,
+        metavar="commit",
+        description="List only refs that contain the commit (HEAD if omitted)",
+    ),
+    Option(
+        long="--no-contains",
+        type="str",
+        value_optional=True,
+        multiple=True,
+        metavar="commit",
+        description="List only refs that don't contain the commit "
+        "(HEAD if omitted)",
+    ),
+    Option(
+        long="--merged",
+        type="str",
+        value_optional=True,
+        multiple=True,
+        metavar="commit",
+        description="List only refs reachable from the commit (HEAD if "
+        "omitted)",
+    ),
+    Option(
+        long="--no-merged",
+        type="str",
+        value_optional=True,
+        multiple=True,
+        metavar="commit",
+        description="List only refs not reachable from the commit (HEAD "
+        "if omitted)",
+    ),
+    Option(
+        long="--points-at",
+        type="str",
+        multiple=True,
+        metavar="object",
+        description="List only refs that point at the object",
+    ),
 )
 
 # git's ref-format options, which `for-each-ref`, `branch` and `tag`
 # share. --sort repeats, the last key given sorting first, and --no-sort
 # drops every key before it, the default refname included.
-FORMAT_OPTION_REF = Option(long="--format",
-                           type="str",
-                           metavar="format",
-                           description="Format each ref: %(fieldname) "
-                           "placeholders, as git for-each-ref")
+FORMAT_OPTION_REF = Option(
+    long="--format",
+    type="str",
+    metavar="format",
+    description="Format each ref: %(fieldname) "
+    "placeholders, as git for-each-ref",
+)
 SORT_OPTIONS = (
-    Option(long="--sort",
-           type="str",
-           multiple=True,
-           metavar="key",
-           description="Sort on a field, - reversing it and version: "
-           "comparing as versions"),
+    Option(
+        long="--sort",
+        type="str",
+        multiple=True,
+        metavar="key",
+        description="Sort on a field, - reversing it and version: "
+        "comparing as versions",
+    ),
     Option(long="--no-sort", description="Drop the sort keys given so far"),
 )
 OMIT_EMPTY_OPTION = Option(
     long="--omit-empty",
-    description="Print nothing, not even a newline, for an empty row")
+    description="Print nothing, not even a newline, for an empty row",
+)
 IGNORE_CASE_OPTION = Option(
     short="-i",
     long="--ignore-case",
-    description="Sort and match patterns case-insensitively")
+    description="Sort and match patterns case-insensitively",
+)
 
 FOR_EACH_REF_OPTIONS = (
-    Option(short="-s",
-           long="--shell",
-           description="Quote fields suitably for shells"),
-    Option(short="-p",
-           long="--perl",
-           description="Quote fields suitably for perl"),
+    Option(
+        short="-s",
+        long="--shell",
+        description="Quote fields suitably for shells",
+    ),
+    Option(
+        short="-p", long="--perl", description="Quote fields suitably for perl"
+    ),
     Option(long="--python", description="Quote fields suitably for python"),
     Option(long="--tcl", description="Quote fields suitably for Tcl"),
     OMIT_EMPTY_OPTION,
-    Option(long="--count",
-           type="int",
-           metavar="n",
-           description="Show only the first <n> refs"),
+    Option(
+        long="--count",
+        type="int",
+        metavar="n",
+        description="Show only the first <n> refs",
+    ),
     FORMAT_OPTION_REF,
-    Option(long="--exclude",
-           type="str",
-           multiple=True,
-           metavar="pattern",
-           description="Leave out refs matching the pattern"),
+    Option(
+        long="--exclude",
+        type="str",
+        multiple=True,
+        metavar="pattern",
+        description="Leave out refs matching the pattern",
+    ),
     *SORT_OPTIONS,
     *REF_FILTER_OPTIONS,
-    Option(long="--ignore-case",
-           description="Sort and match patterns case-insensitively"),
+    Option(
+        long="--ignore-case",
+        description="Sort and match patterns case-insensitively",
+    ),
     Option(long="--stdin", description="Read ref patterns from stdin"),
-    Option(long="--include-root-refs",
-           description="Also list HEAD and the other root refs"),
+    Option(
+        long="--include-root-refs",
+        description="Also list HEAD and the other root refs",
+    ),
 )
 
 BRANCH_OPTIONS = (
     Option(long="--show-current", description="Show the current branch name"),
-    Option(short="-v",
-           long="--verbose",
-           count=True,
-           description="Show commit and upstream details"),
+    Option(
+        short="-v",
+        long="--verbose",
+        count=True,
+        description="Show commit and upstream details",
+    ),
     Option(short="-a", description="List local and remote-tracking branches"),
     Option(short="-r", description="List remote-tracking branches"),
-    Option(short="-d",
-           long="--delete",
-           description="Delete a fully merged branch"),
+    Option(
+        short="-d", long="--delete", description="Delete a fully merged branch"
+    ),
     Option(short="-D", description="Delete a branch even if not merged"),
-    Option(short="-l",
-           long="--list",
-           description="List branches matching the patterns"),
+    Option(
+        short="-l",
+        long="--list",
+        description="List branches matching the patterns",
+    ),
     *REF_FILTER_OPTIONS,
     *SORT_OPTIONS,
     FORMAT_OPTION_REF,
@@ -342,83 +445,105 @@ PATHSPEC = Operand(type="str")
 
 ADD_OPTIONS = (
     Option(short="-A", long="--all", description="Stage every change"),
-    Option(short="-u",
-           long="--update",
-           description="Stage changes to tracked files only"),
-    Option(short="-f",
-           long="--force",
-           description="Stage paths an ignore rule covers"),
-    Option(short="-v",
-           long="--verbose",
-           description="Name each path as it is added or removed"),
+    Option(
+        short="-u",
+        long="--update",
+        description="Stage changes to tracked files only",
+    ),
+    Option(
+        short="-f",
+        long="--force",
+        description="Stage paths an ignore rule covers",
+    ),
+    Option(
+        short="-v",
+        long="--verbose",
+        description="Name each path as it is added or removed",
+    ),
 )
 
 COMMIT_OPTIONS = (
-    Option(short="-q",
-           long="--quiet",
-           description="Suppress feedback messages"),
-    Option(short="-a",
-           long="--all",
-           description="Stage modified and deleted tracked files first"),
+    Option(
+        short="-q", long="--quiet", description="Suppress feedback messages"
+    ),
+    Option(
+        short="-a",
+        long="--all",
+        description="Stage modified and deleted tracked files first",
+    ),
     # Required, not defaulted: git would open an editor without it, and
     # a mount has none to open.
-    Option(short="-m",
-           long="--message",
-           type="str",
-           description="Commit message"),
-    Option(long="--author",
-           type="str",
-           description="Override the recorded author"),
+    Option(
+        short="-m", long="--message", type="str", description="Commit message"
+    ),
+    Option(
+        long="--author", type="str", description="Override the recorded author"
+    ),
 )
 
 CHECKOUT_OPTIONS = (
     Option(short="-b", description="Create the branch and switch to it"),
-    Option(short="-q",
-           long="--quiet",
-           description="Suppress feedback messages"),
+    Option(
+        short="-q", long="--quiet", description="Suppress feedback messages"
+    ),
 )
 
 SWITCH_OPTIONS = (
-    Option(short="-q",
-           long="--quiet",
-           description="Suppress feedback messages"),
-    Option(short="-c",
-           long="--create",
-           type="str",
-           description="Create the branch and switch to it"),
-    Option(short="-d",
-           long="--detach",
-           description="Detach HEAD at the named commit"),
+    Option(
+        short="-q", long="--quiet", description="Suppress feedback messages"
+    ),
+    Option(
+        short="-c",
+        long="--create",
+        type="str",
+        description="Create the branch and switch to it",
+    ),
+    Option(
+        short="-d",
+        long="--detach",
+        description="Detach HEAD at the named commit",
+    ),
 )
 
 RESTORE_OPTIONS = (
     Option(short="-S", long="--staged", description="Restore the index"),
-    Option(short="-W",
-           long="--worktree",
-           description="Restore the working tree (default)"),
-    Option(short="-s",
-           long="--source",
-           type="str",
-           description="Which tree-ish to restore from"),
+    Option(
+        short="-W",
+        long="--worktree",
+        description="Restore the working tree (default)",
+    ),
+    Option(
+        short="-s",
+        long="--source",
+        type="str",
+        description="Which tree-ish to restore from",
+    ),
 )
 
 RM_OPTIONS = (
     Option(short="-r", description="Allow recursive removal"),
-    Option(long="--cached",
-           description="Only remove from the index, keeping the file"),
-    Option(short="-f",
-           long="--force",
-           description="Override the up-to-date check"),
-    Option(short="-q", long="--quiet",
-           description="Do not list removed files"),
-    Option(long="--ignore-unmatch",
-           description="Exit with a zero status even if nothing matched"),
+    Option(
+        long="--cached",
+        description="Only remove from the index, keeping the file",
+    ),
+    Option(
+        short="-f", long="--force", description="Override the up-to-date check"
+    ),
+    Option(
+        short="-q", long="--quiet", description="Do not list removed files"
+    ),
+    Option(
+        long="--ignore-unmatch",
+        description="Exit with a zero status even if nothing matched",
+    ),
 )
 
 MV_OPTIONS = (
-    Option(short="-f",
-           long="--force",
-           description="Force move/rename even if target exists"),
+    Option(
+        short="-f",
+        long="--force",
+        description="Force move/rename even if target exists",
+    ),
     Option(short="-k", description="Skip move/rename errors"),
     Option(short="-n", long="--dry-run", description="Dry run"),
     Option(short="-v", long="--verbose", description="Be verbose"),
@@ -429,21 +554,28 @@ TAG_OPTIONS = (
     # git spells the count attached (`-n2`) or not at all, never as a
     # separate token, which is what value_optional says: a bare -n means
     # one line and the next word is left alone to be a pattern.
-    Option(short="-n",
-           type="int",
-           value_optional=True,
-           description="Print <n> lines of each tag message"),
+    Option(
+        short="-n",
+        type="int",
+        value_optional=True,
+        description="Print <n> lines of each tag message",
+    ),
     Option(short="-d", long="--delete", description="Delete tags"),
-    Option(short="-a",
-           long="--annotate",
-           description="Annotated tag, needs a message"),
-    Option(short="-m",
-           long="--message",
-           type="str",
-           multiple=True,
-           description="Tag message (repeatable, one paragraph each)"),
-    Option(short="-f", long="--force",
-           description="Replace the tag if exists"),
+    Option(
+        short="-a",
+        long="--annotate",
+        description="Annotated tag, needs a message",
+    ),
+    Option(
+        short="-m",
+        long="--message",
+        type="str",
+        multiple=True,
+        description="Tag message (repeatable, one paragraph each)",
+    ),
+    Option(
+        short="-f", long="--force", description="Replace the tag if exists"
+    ),
     *REF_FILTER_OPTIONS,
     *SORT_OPTIONS,
     FORMAT_OPTION_REF,
@@ -452,27 +584,34 @@ TAG_OPTIONS = (
 )
 
 STATUS_OPTIONS = (
-    Option(long='--ignored', description='Show ignored files'),
-    Option(long="--porcelain",
-           type="str",
-           value_optional=True,
-           description="Machine-readable output, stable across versions"),
-    Option(short="-s",
-           long="--short",
-           description="Give the output in the "
-           "short format"),
-    Option(short="-b",
-           long="--branch",
-           description="Show the branch line even in short format"),
+    Option(long="--ignored", description="Show ignored files"),
+    Option(
+        long="--porcelain",
+        type="str",
+        value_optional=True,
+        description="Machine-readable output, stable across versions",
+    ),
+    Option(
+        short="-s",
+        long="--short",
+        description="Give the output in the short format",
+    ),
+    Option(
+        short="-b",
+        long="--branch",
+        description="Show the branch line even in short format",
+    ),
     # git spells the mode attached (`-uall`) or not at all, never as a
     # separate token, which is what value_optional says: a bare -u means
     # "all" and the next word is left alone to be an operand.
-    Option(short="-u",
-           long="--untracked-files",
-           type="str",
-           value_optional=True,
-           choices=("no", "normal", "all"),
-           description="Show untracked files: no, normal or all"),
+    Option(
+        short="-u",
+        long="--untracked-files",
+        type="str",
+        value_optional=True,
+        choices=("no", "normal", "all"),
+        description="Show untracked files: no, normal or all",
+    ),
 )
 
 
@@ -486,11 +625,15 @@ async def help_cmd(inv: CLIInvocation[None]) -> tuple[bytes | None, IOResult]:
     if found is None:
         return None, IOResult(
             exit_code=1,
-            stderr=(f"git: '{' '.join(inv.texts)}' is not a git command. "
-                    "See 'git --help'.\n").encode())
+            stderr=(
+                f"git: '{' '.join(inv.texts)}' is not a git command. "
+                "See 'git --help'.\n"
+            ).encode(),
+        )
     node, path = found
-    return node_help(" ".join(("git", *path)), node,
-                     GIT.usage_style).encode(), IOResult()
+    return node_help(
+        " ".join(("git", *path)), node, GIT.usage_style
+    ).encode(), IOResult()
 
 
 # The git program tree. No config_model: local git needs no credentials,
@@ -500,193 +643,288 @@ GIT = CLISpec(
     description="Content tracker",
     usage_style=UsageStyle.GIT,
     operand_base="-C",
-    options=(DIRECTORY_OPTION,
-             Option(long="--git-dir",
-                    type="str",
-                    env="GIT_DIR",
-                    description="Use the repository at <path>"),
-             Option(long="--work-tree",
-                    type="str",
-                    env="GIT_WORK_TREE",
-                    description="Use <path> as the working tree")),
+    options=(
+        DIRECTORY_OPTION,
+        Option(
+            long="--git-dir",
+            type="str",
+            env="GIT_DIR",
+            description="Use the repository at <path>",
+        ),
+        Option(
+            long="--work-tree",
+            type="str",
+            env="GIT_WORK_TREE",
+            description="Use <path> as the working tree",
+        ),
+    ),
     subcommands=(
-        CLISpec(name='reflog',
-                fn=reflog,
-                description='Show reference history',
-                options=(Option(short='-n',
-                                long='--max-count',
-                                type='int',
-                                numeric_shorthand=True,
-                                description='Limit the number of entries'), ),
-                rest=REVISION),
-        CLISpec(name='for-each-ref',
-                fn=for_each_ref,
-                description='List references with a format',
-                options=FOR_EACH_REF_OPTIONS,
-                rest=REVISION),
-        CLISpec(name='ls-files',
-                fn=ls_files,
-                description='Show files in the index',
-                options=(
-                    Option(short='-z', description='Terminate paths with NUL'),
-                    Option(short='-s',
-                           long='--stage',
-                           description='Show staged object metadata'),
-                    Option(short='-c',
-                           long='--cached',
-                           description='Show cached files'),
+        CLISpec(
+            name="reflog",
+            fn=reflog,
+            description="Show reference history",
+            options=(
+                Option(
+                    short="-n",
+                    long="--max-count",
+                    type="int",
+                    numeric_shorthand=True,
+                    description="Limit the number of entries",
                 ),
-                rest=REVISION),
-        CLISpec(name="fetch",
-                fn=fetch,
-                description="Download objects and refs from another "
-                "repository",
-                options=(
-                    Option(short="-q",
-                           long="--quiet",
-                           description="Print nothing but errors"),
-                    Option(short="-v",
-                           long="--verbose",
-                           description="Also list unchanged refs"),
-                    Option(short="-p",
-                           long="--prune",
-                           description="Remove remote-tracking refs the "
-                           "remote no longer has"),
-                    Option(short="-t",
-                           long="--tags",
-                           description="Fetch every tag"),
-                    Option(short="-n",
-                           long="--no-tags",
-                           description="Follow no tags"),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="for-each-ref",
+            fn=for_each_ref,
+            description="List references with a format",
+            options=FOR_EACH_REF_OPTIONS,
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="ls-files",
+            fn=ls_files,
+            description="Show files in the index",
+            options=(
+                Option(short="-z", description="Terminate paths with NUL"),
+                Option(
+                    short="-s",
+                    long="--stage",
+                    description="Show staged object metadata",
                 ),
-                rest=REVISION),
-        CLISpec(name="clone",
-                fn=clone,
-                description="Clone a repository into a new directory",
-                options=(
-                    Option(short="-q",
-                           long="--quiet",
-                           description="Print nothing but errors"),
-                    Option(short="-b",
-                           long="--branch",
-                           type="str",
-                           description="Check out this branch or tag"),
-                    Option(short="-o",
-                           long="--origin",
-                           type="str",
-                           description="Name the remote this instead of "
-                           "origin"),
-                    Option(short="-n",
-                           long="--no-checkout",
-                           description="Leave the working tree empty"),
+                Option(
+                    short="-c",
+                    long="--cached",
+                    description="Show cached files",
                 ),
-                rest=REVISION),
-        CLISpec(name="help",
-                fn=help_cmd,
-                description="Show command help",
-                rest=Operand(type="str")),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="fetch",
+            fn=fetch,
+            description="Download objects and refs from another repository",
+            options=(
+                Option(
+                    short="-q",
+                    long="--quiet",
+                    description="Print nothing but errors",
+                ),
+                Option(
+                    short="-v",
+                    long="--verbose",
+                    description="Also list unchanged refs",
+                ),
+                Option(
+                    short="-p",
+                    long="--prune",
+                    description="Remove remote-tracking refs the "
+                    "remote no longer has",
+                ),
+                Option(
+                    short="-t", long="--tags", description="Fetch every tag"
+                ),
+                Option(
+                    short="-n", long="--no-tags", description="Follow no tags"
+                ),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="clone",
+            fn=clone,
+            description="Clone a repository into a new directory",
+            options=(
+                Option(
+                    short="-q",
+                    long="--quiet",
+                    description="Print nothing but errors",
+                ),
+                Option(
+                    short="-b",
+                    long="--branch",
+                    type="str",
+                    description="Check out this branch or tag",
+                ),
+                Option(
+                    short="-o",
+                    long="--origin",
+                    type="str",
+                    description="Name the remote this instead of origin",
+                ),
+                Option(
+                    short="-n",
+                    long="--no-checkout",
+                    description="Leave the working tree empty",
+                ),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="help",
+            fn=help_cmd,
+            description="Show command help",
+            rest=Operand(type="str"),
+        ),
         CLISpec(
             name="init",
             fn=init,
-            description=
-            "Create an empty Git repository or reinitialize an existing one",
+            description=(
+                "Create an empty Git repository or reinitialize an "
+                "existing one"
+            ),
             write=True,
-            options=(Option(short="-q", long="--quiet"), Option(long="--bare"),
-                     Option(short="-b", long="--initial-branch", type="str")),
-            positional=(Operand(type="str", name="directory"), )),
-        CLISpec(name="fsck",
-                fn=fsck,
-                description="Verify object hashes and connectivity",
-                options=(Option(long="--full"), Option(long="--no-dangling"))),
-        CLISpec(name="stash",
-                description="Inspect saved working trees",
-                subcommands=(
-                    CLISpec(name="list",
-                            fn=stash_list,
-                            description="List stashed changes"),
-                    CLISpec(name="show",
-                            fn=stash_show,
-                            description="Show stashed changes",
-                            options=DIFF_OPTIONS,
-                            positional=(Operand(type="str", name="stash"), )),
-                )),
-        CLISpec(name="version",
-                aliases=("--version", "-v"),
-                fn=version,
-                description="Show the Mirage Git implementation version"),
-        CLISpec(name="remote",
-                description="List remotes",
-                fn=remote,
-                options=(Option(short="-v",
-                                long="--verbose",
-                                description="Show remote URLs"), )),
-        CLISpec(name="config",
-                description="Read repository configuration",
-                fn=config,
-                options=(Option(long="--global",
-                                description="Read global configuration"),
-                         Option(long="--get",
-                                description="Get a configuration value"),
-                         Option(short="-l",
-                                long="--list",
-                                description="List every variable and value"),
-                         Option(long="--show-origin",
-                                description="Show the file each value comes "
-                                "from"),
-                         Option(long="--get-regexp",
-                                description="Get the variables whose names "
-                                "match a regular expression")),
-                positional=(Operand(type="str", name="name"), )),
-        CLISpec(name="show-ref",
-                description="List references",
-                fn=show_ref,
-                rest=REVISION),
+            options=(
+                Option(short="-q", long="--quiet"),
+                Option(long="--bare"),
+                Option(short="-b", long="--initial-branch", type="str"),
+            ),
+            positional=(Operand(type="str", name="directory"),),
+        ),
+        CLISpec(
+            name="fsck",
+            fn=fsck,
+            description="Verify object hashes and connectivity",
+            options=(Option(long="--full"), Option(long="--no-dangling")),
+        ),
+        CLISpec(
+            name="stash",
+            description="Inspect saved working trees",
+            subcommands=(
+                CLISpec(
+                    name="list",
+                    fn=stash_list,
+                    description="List stashed changes",
+                ),
+                CLISpec(
+                    name="show",
+                    fn=stash_show,
+                    description="Show stashed changes",
+                    options=DIFF_OPTIONS,
+                    positional=(Operand(type="str", name="stash"),),
+                ),
+            ),
+        ),
+        CLISpec(
+            name="version",
+            aliases=("--version", "-v"),
+            fn=version,
+            description="Show the Mirage Git implementation version",
+        ),
+        CLISpec(
+            name="remote",
+            description="List remotes",
+            fn=remote,
+            options=(
+                Option(
+                    short="-v",
+                    long="--verbose",
+                    description="Show remote URLs",
+                ),
+            ),
+        ),
+        CLISpec(
+            name="config",
+            description="Read repository configuration",
+            fn=config,
+            options=(
+                Option(
+                    long="--global", description="Read global configuration"
+                ),
+                Option(long="--get", description="Get a configuration value"),
+                Option(
+                    short="-l",
+                    long="--list",
+                    description="List every variable and value",
+                ),
+                Option(
+                    long="--show-origin",
+                    description="Show the file each value comes from",
+                ),
+                Option(
+                    long="--get-regexp",
+                    description="Get the variables whose names "
+                    "match a regular expression",
+                ),
+            ),
+            positional=(Operand(type="str", name="name"),),
+        ),
+        CLISpec(
+            name="show-ref",
+            description="List references",
+            fn=show_ref,
+            rest=REVISION,
+        ),
         # shortlog's -n is --numbered, so the count keeps only its long
         # spelling.
-        CLISpec(name="shortlog",
-                fn=shortlog,
-                description="Summarize commit history",
-                options=(*(opt for opt in LOG_OPTIONS if opt.short != "-n"),
-                         Option(long="--max-count",
-                                type="int",
-                                description="Limit the number of commits"),
-                         Option(short="-s",
-                                long="--summary",
-                                description="Show only commit counts"),
-                         Option(short="-e",
-                                long="--email",
-                                description="Show author email addresses"),
-                         Option(short="-n",
-                                long="--numbered",
-                                description="Sort by commit count")),
-                rest=REVISION),
-        CLISpec(name="rev-parse",
-                fn=rev_parse,
-                description="Resolve revisions",
-                options=(
-                    Option(long="--show-toplevel",
-                           description="Show the worktree root"),
-                    Option(long="--abbrev-ref",
-                           description="Show abbreviated reference names"),
+        CLISpec(
+            name="shortlog",
+            fn=shortlog,
+            description="Summarize commit history",
+            options=(
+                *(opt for opt in LOG_OPTIONS if opt.short != "-n"),
+                Option(
+                    long="--max-count",
+                    type="int",
+                    description="Limit the number of commits",
                 ),
-                rest=REVISION),
-        CLISpec(name="rev-list",
-                description="List reachable commits",
-                fn=rev_list,
-                options=(*LOG_OPTIONS,
-                         Option(long="--count",
-                                description="Print commit count")),
-                rest=REVISION),
-        CLISpec(name="diff-tree",
-                description="Compare a commit with its parent",
-                fn=diff_tree,
-                options=(*SHOW_OPTIONS,
-                         Option(long="--no-commit-id",
-                                description="Suppress commit ID"),
-                         Option(short="-r",
-                                description="Recurse into subtrees")),
-                positional=(Operand(type="str", name="commit",
-                                    required=True), )),
+                Option(
+                    short="-s",
+                    long="--summary",
+                    description="Show only commit counts",
+                ),
+                Option(
+                    short="-e",
+                    long="--email",
+                    description="Show author email addresses",
+                ),
+                Option(
+                    short="-n",
+                    long="--numbered",
+                    description="Sort by commit count",
+                ),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="rev-parse",
+            fn=rev_parse,
+            description="Resolve revisions",
+            options=(
+                Option(
+                    long="--show-toplevel",
+                    description="Show the worktree root",
+                ),
+                Option(
+                    long="--abbrev-ref",
+                    description="Show abbreviated reference names",
+                ),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="rev-list",
+            description="List reachable commits",
+            fn=rev_list,
+            options=(
+                *LOG_OPTIONS,
+                Option(long="--count", description="Print commit count"),
+            ),
+            rest=REVISION,
+        ),
+        CLISpec(
+            name="diff-tree",
+            description="Compare a commit with its parent",
+            fn=diff_tree,
+            options=(
+                *SHOW_OPTIONS,
+                Option(
+                    long="--no-commit-id", description="Suppress commit ID"
+                ),
+                Option(short="-r", description="Recurse into subtrees"),
+            ),
+            positional=(Operand(type="str", name="commit", required=True),),
+        ),
         CLISpec(
             name="status",
             description="Show the working tree status",
@@ -711,10 +949,14 @@ GIT = CLISpec(
             name="diff",
             description="Show changes between commits",
             fn=diff,
-            options=(*DIFF_OPTIONS,
-                     Option(long="--cached",
-                            description="Compare the index with a commit"),
-                     Option(long="--staged", description="Alias of --cached")),
+            options=(
+                *DIFF_OPTIONS,
+                Option(
+                    long="--cached",
+                    description="Compare the index with a commit",
+                ),
+                Option(long="--staged", description="Alias of --cached"),
+            ),
             rest=REVISION,
         ),
         CLISpec(
@@ -737,9 +979,13 @@ GIT = CLISpec(
             name="reset",
             description="Unstage, putting the index back to HEAD",
             fn=reset,
-            options=(Option(short="-q",
-                            long="--quiet",
-                            description="Only report errors"), ),
+            options=(
+                Option(
+                    short="-q",
+                    long="--quiet",
+                    description="Only report errors",
+                ),
+            ),
             rest=PATHSPEC,
             write=True,
         ),

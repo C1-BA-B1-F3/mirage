@@ -3,11 +3,21 @@ import re
 from functools import partial
 from typing import Any
 
-from mirage.commands.cli.builtin.gh.accessor import (csv_values, json_fields,
-                                                     text_out, typed_out)
-from mirage.commands.cli.builtin.gh.constants import (  # yapf: disable
-    SEARCH_ALIASES, SEARCH_BOOLEAN, SEARCH_FIELDS, SEARCH_FLAGS,
-    SEARCH_MULTIPLE, SEARCH_SHAPES, SEARCH_SORTS)
+from mirage.commands.cli.builtin.gh.accessor import (
+    csv_values,
+    json_fields,
+    text_out,
+    typed_out,
+)
+from mirage.commands.cli.builtin.gh.constants import (
+    SEARCH_ALIASES,
+    SEARCH_BOOLEAN,
+    SEARCH_FIELDS,
+    SEARCH_FLAGS,
+    SEARCH_MULTIPLE,
+    SEARCH_SHAPES,
+    SEARCH_SORTS,
+)
 from mirage.commands.cli.builtin.gh.template import render_template
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.errors import UsageError
@@ -20,8 +30,11 @@ from mirage.io.types import CommandOutput, IOResult
 
 
 def _quote(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False) if re.search(r'[\s"]',
-                                                              value) else value
+    return (
+        json.dumps(value, ensure_ascii=False)
+        if re.search(r'[\s"]', value)
+        else value
+    )
 
 
 def _boolean(fl: FlagView, name: str) -> bool:
@@ -33,12 +46,18 @@ def _query(kind: str, words: tuple[str, ...], fl: FlagView) -> str:
     qualifiers: dict[str, list[str]] = {}
     for name in SEARCH_FLAGS[kind]:
         value = fl.raw(name.replace("-", "_"))
-        if value is None or name in ("app", "include-prs", "locked",
-                                     "merged") or name.startswith("no-"):
+        if (
+            value is None
+            or name in ("app", "include-prs", "locked", "merged")
+            or name.startswith("no-")
+        ):
             continue
         key = SEARCH_ALIASES.get(name, name)
-        if name == "review-requested" and isinstance(value,
-                                                     str) and "/" in value:
+        if (
+            name == "review-requested"
+            and isinstance(value, str)
+            and "/" in value
+        ):
             key = "team-review-requested"
         if name in SEARCH_BOOLEAN:
             values = [str(_boolean(fl, name)).lower()]
@@ -54,22 +73,28 @@ def _query(kind: str, words: tuple[str, ...], fl: FlagView) -> str:
             if fl.as_str("author") is not None:
                 raise UsageError("specify only `--author` or `--app`", 1)
             qualifiers["author"] = ["app/" + (fl.as_str("app") or "")]
-        for name in (("locked", "merged") if kind == "prs" else ("locked", )):
+        for name in ("locked", "merged") if kind == "prs" else ("locked",):
             if fl.raw(name) is not None:
-                qualifiers.setdefault(
-                    "is",
-                    []).append(name if _boolean(fl, name) else "un" + name)
+                qualifiers.setdefault("is", []).append(
+                    name if _boolean(fl, name) else "un" + name
+                )
         qualifiers["no"] = [
-            name for name in ("assignee", "label", "milestone", "project")
+            name
+            for name in ("assignee", "label", "milestone", "project")
             if _boolean(fl, "no_" + name)
         ]
     keywords = []
     for word in words:
         head, colon, tail = word.partition(":")
         keywords.append(head + ":" + _quote(tail) if colon else _quote(word))
-    return " ".join(keywords + sorted(f"{key}:{_quote(v)}"
-                                      for key, values in qualifiers.items()
-                                      for v in values))
+    return " ".join(
+        keywords
+        + sorted(
+            f"{key}:{_quote(v)}"
+            for key, values in qualifiers.items()
+            for v in values
+        )
+    )
 
 
 def _option(name: str) -> Option:
@@ -77,19 +102,16 @@ def _option(name: str) -> Option:
         "state": ("open", "closed"),
         "include-forks": ("false", "true", "only"),
         "checks": ("pending", "success", "failure"),
-        "review": ("none", "required", "approved", "changes_requested")
+        "review": ("none", "required", "approved", "changes_requested"),
     }.get(name, ())
-    return Option(long="--" + name,
-                  short={
-                      "repo": "-R",
-                      "base": "-B",
-                      "head": "-H"
-                  }.get(name),
-                  type="str",
-                  multiple=name in SEARCH_MULTIPLE,
-                  value_optional=name in SEARCH_BOOLEAN,
-                  choices=("true",
-                           "false") if name in SEARCH_BOOLEAN else choices)
+    return Option(
+        long="--" + name,
+        short={"repo": "-R", "base": "-B", "head": "-H"}.get(name),
+        type="str",
+        multiple=name in SEARCH_MULTIPLE,
+        value_optional=name in SEARCH_BOOLEAN,
+        choices=("true", "false") if name in SEARCH_BOOLEAN else choices,
+    )
 
 
 def search_spec() -> CLISpec:
@@ -97,26 +119,38 @@ def search_spec() -> CLISpec:
     for kind in SEARCH_FLAGS:
         options = [_option(name) for name in SEARCH_FLAGS[kind]]
         options.extend(
-            (Option(long="--json",
-                    type="str"), Option(long="--jq", short="-q", type="str"),
-             Option(long="--template", short="-t", type="str"),
-             Option(long="--limit", short="-L", type="int", default="30")))
+            (
+                Option(long="--json", type="str"),
+                Option(long="--jq", short="-q", type="str"),
+                Option(long="--template", short="-t", type="str"),
+                Option(long="--limit", short="-L", type="int", default="30"),
+            )
+        )
         if kind in SEARCH_SORTS:
-            options.extend((Option(long="--sort",
-                                   type="str",
-                                   choices=tuple(SEARCH_SORTS[kind])),
-                            Option(long="--order",
-                                   type="str",
-                                   choices=("asc", "desc"))))
+            options.extend(
+                (
+                    Option(
+                        long="--sort",
+                        type="str",
+                        choices=tuple(SEARCH_SORTS[kind]),
+                    ),
+                    Option(
+                        long="--order", type="str", choices=("asc", "desc")
+                    ),
+                )
+            )
         leaves.append(
-            CLISpec(name=kind,
-                    description=f"Search for {kind}",
-                    fn=partial(search_cmd, kind),
-                    rest=Operand(type="str", name="QUERY"),
-                    options=tuple(options)))
-    return CLISpec(name="search",
-                   description="Search GitHub",
-                   subcommands=tuple(leaves))
+            CLISpec(
+                name=kind,
+                description=f"Search for {kind}",
+                fn=partial(search_cmd, kind),
+                rest=Operand(type="str", name="QUERY"),
+                options=tuple(options),
+            )
+        )
+    return CLISpec(
+        name="search", description="Search GitHub", subcommands=tuple(leaves)
+    )
 
 
 def _search_error(exc: GitHubApiError, query: str) -> str:
@@ -136,8 +170,10 @@ def _search_error(exc: GitHubApiError, query: str) -> str:
         first = errors[0] if isinstance(errors[0], dict) else {}
         reason = first.get("message")
         quoted = json.dumps(query.strip(), ensure_ascii=False)
-        return (f"Invalid search query {quoted}.\n"
-                f"{reason if isinstance(reason, str) else ''}")
+        return (
+            f"Invalid search query {quoted}.\n"
+            f"{reason if isinstance(reason, str) else ''}"
+        )
     if data is None:
         message = f"{exc.status} {exc}"
     else:
@@ -154,36 +190,46 @@ async def search_cmd(kind: str, inv: CLIInvocation[GhConfig]) -> CommandOutput:
         raise UsageError("`--limit` must be between 1 and 1000", 1)
     if not inv.texts and len(inv.argv) <= 2:
         raise UsageError("specify search keywords or flags", 1)
-    if fields is None and (fl.as_str("jq") is not None
-                           or fl.as_str("template") is not None):
-        raise UsageError("cannot use `--jq` or `--template` without `--json`",
-                         1)
+    if fields is None and (
+        fl.as_str("jq") is not None or fl.as_str("template") is not None
+    ):
+        raise UsageError(
+            "cannot use `--jq` or `--template` without `--json`", 1
+        )
     if fl.as_str("jq") is not None and fl.as_str("template") is not None:
         raise UsageError("cannot use `--jq` and `--template` together", 1)
     query = _query(kind, inv.texts, fl)
     try:
         values = await search(
-            inv.config, {
-                "repos": "repositories",
-                "prs": "issues"
-            }.get(kind, kind), query, limit,
+            inv.config,
+            {"repos": "repositories", "prs": "issues"}.get(kind, kind),
+            query,
+            limit,
             fl.as_str("sort") if kind in SEARCH_SORTS else None,
-            fl.as_str("order") if kind in SEARCH_SORTS else None)
+            fl.as_str("order") if kind in SEARCH_SORTS else None,
+        )
     except GitHubApiError as exc:
-        return None, IOResult(exit_code=1,
-                              stderr=f"{_search_error(exc, query)}\n".encode())
+        return None, IOResult(
+            exit_code=1, stderr=f"{_search_error(exc, query)}\n".encode()
+        )
     rows = [_export(kind, value) for value in values]
     template = fl.as_str("template")
     if template is not None:
-        selected = [{
-            key: row.get(key)
-            for key in sorted(fields or [])
-        } for row in rows]
+        selected = [
+            {key: row.get(key) for key in sorted(fields or [])} for row in rows
+        ]
         return text_out(render_template(template, selected))
     return await typed_out(
-        rows, fl,
-        _human(kind, rows, values, kind == "issues"
-               and _boolean(fl, "include_prs")), SEARCH_FIELDS[kind])
+        rows,
+        fl,
+        _human(
+            kind,
+            rows,
+            values,
+            kind == "issues" and _boolean(fl, "include_prs"),
+        ),
+        SEARCH_FIELDS[kind],
+    )
 
 
 def _record(value: Any) -> dict[str, Any]:
@@ -194,8 +240,11 @@ def _shape(kind: str, value: Any) -> Any:
     if kind.startswith("*"):
         return None if value is None else _shape(kind[1:], value)
     if kind.startswith("[]"):
-        return [_shape(kind[2:], item)
-                for item in value] if isinstance(value, list) else None
+        return (
+            [_shape(kind[2:], item) for item in value]
+            if isinstance(value, list)
+            else None
+        )
     if kind == "time.Time":
         return value or "0001-01-01T00:00:00Z"
     if kind == "string":
@@ -219,19 +268,22 @@ def _user(value: Any) -> dict[str, Any]:
         "login": ("app/" if bot else "") + (row.get("login") or ""),
         "type": row.get("type") or "",
         "url": row.get("html_url") or "",
-        "is_bot": bot
+        "is_bot": bot,
     }
 
 
 def _export(kind: str, value: Any) -> dict[str, Any]:
     raw = _record(value)
-    row: dict[str, Any] = _shape({
-        "repos": "Repository",
-        "issues": "Issue",
-        "prs": "Issue",
-        "code": "Code",
-        "commits": "Commit"
-    }[kind], raw)
+    row: dict[str, Any] = _shape(
+        {
+            "repos": "Repository",
+            "issues": "Issue",
+            "prs": "Issue",
+            "code": "Code",
+            "commits": "Commit",
+        }[kind],
+        raw,
+    )
     if kind == "repos":
         row["owner"] = _user(raw.get("owner"))
     elif kind in ("issues", "prs"):
@@ -242,12 +294,13 @@ def _export(kind: str, value: Any) -> dict[str, Any]:
         row["labels"] = row.get("labels") or []
         pull = _record(raw.get("pull_request"))
         row["isPullRequest"] = bool(pull.get("html_url"))
-        row["state"] = "merged" if pull.get("merged_at") else raw.get(
-            "state", "")
+        row["state"] = (
+            "merged" if pull.get("merged_at") else raw.get("state", "")
+        )
         parts = str(raw.get("repository_url", "")).rstrip("/").split("/")
         row["repository"] = {
             "name": parts[-1],
-            "nameWithOwner": "/".join(parts[-2:])
+            "nameWithOwner": "/".join(parts[-2:]),
         }
     elif kind == "code":
         repo = _record(raw.get("repository"))
@@ -256,14 +309,17 @@ def _export(kind: str, value: Any) -> dict[str, Any]:
             "nameWithOwner": repo.get("full_name") or "",
             "url": repo.get("html_url") or "",
             "isPrivate": bool(repo.get("private")),
-            "isFork": bool(repo.get("fork"))
+            "isFork": bool(repo.get("fork")),
         }
-        row["textMatches"] = [{
-            "fragment": m.get("fragment", ""),
-            "matches": m.get("matches"),
-            "type": m.get("object_type", ""),
-            "property": m.get("property", "")
-        } for m in raw.get("text_matches", []) or []]
+        row["textMatches"] = [
+            {
+                "fragment": m.get("fragment", ""),
+                "matches": m.get("matches"),
+                "type": m.get("object_type", ""),
+                "property": m.get("property", ""),
+            }
+            for m in raw.get("text_matches", []) or []
+        ]
     elif kind == "commits":
         row["author"] = _user(raw.get("author"))
         row["committer"] = _user(raw.get("committer"))
@@ -273,62 +329,83 @@ def _export(kind: str, value: Any) -> dict[str, Any]:
             "committer": _shape("CommitUser", info.get("committer")),
             "comment_count": info.get("comment_count") or 0,
             "message": info.get("message") or "",
-            "tree": _shape("Tree", info.get("tree"))
+            "tree": _shape("Tree", info.get("tree")),
         }
         row["parents"] = row.get("parents") or []
         repo = _export("repos", raw.get("repository"))
         row["repository"] = {
             key: repo[key]
-            for key in ("description", "fullName", "name", "id", "isFork",
-                        "isPrivate", "owner", "url")
+            for key in (
+                "description",
+                "fullName",
+                "name",
+                "id",
+                "isFork",
+                "isPrivate",
+                "owner",
+                "url",
+            )
         }
     return row
 
 
-def _human(kind: str, rows: list[dict[str, Any]], values: list[Any],
-           both: bool) -> str:
+def _human(
+    kind: str, rows: list[dict[str, Any]], values: list[Any], both: bool
+) -> str:
     lines = []
     for row, value in zip(rows, values):
         raw = _record(value)
         if kind in ("issues", "prs"):
-            cells = (["pr" if row["isPullRequest"] else "issue"]
-                     if both else []) + [
-                         row["repository"]["nameWithOwner"],
-                         str(row["number"]), row["state"], " ".join(
-                             row["title"].split()), ", ".join(
-                                 label["name"]
-                                 for label in row["labels"]), row["updatedAt"]
-                     ]
+            cells = (
+                ["pr" if row["isPullRequest"] else "issue"] if both else []
+            ) + [
+                row["repository"]["nameWithOwner"],
+                str(row["number"]),
+                row["state"],
+                " ".join(row["title"].split()),
+                ", ".join(label["name"] for label in row["labels"]),
+                row["updatedAt"],
+            ]
         elif kind == "repos":
             tags = [
                 row["visibility"]
                 or ("private" if row["isPrivate"] else "public")
             ]
             tags += [
-                label for key, label in (("isFork", "fork"), ("isArchived",
-                                                              "archived"))
+                label
+                for key, label in (
+                    ("isFork", "fork"),
+                    ("isArchived", "archived"),
+                )
                 if row[key]
             ]
             cells = [
-                row["fullName"], " ".join(row["description"].split()),
-                ", ".join(tags), row["updatedAt"]
+                row["fullName"],
+                " ".join(row["description"].split()),
+                ", ".join(tags),
+                row["updatedAt"],
             ]
         elif kind == "commits":
             cells = [
-                row["repository"]["fullName"], row["sha"],
+                row["repository"]["fullName"],
+                row["sha"],
                 " ".join(row["commit"]["message"].split()),
                 _record(raw.get("author")).get("login", ""),
-                row["commit"]["author"]["date"]
+                row["commit"]["author"]["date"],
             ]
         else:
             for match in row["textMatches"]:
                 offset = 0
                 for line in match["fragment"].split("\n"):
                     end = offset + len(line.encode())
-                    if any(offset <= m.get("indices", [-1])[0] < end
-                           for m in match["matches"] or []):
-                        lines.append(f'{row["repository"]["nameWithOwner"]}:'
-                                     f'{row["path"]}: {line.strip()}\n')
+                    if any(
+                        offset <= m.get("indices", [-1])[0] < end
+                        for m in match["matches"] or []
+                    ):
+                        lines.append(
+                            f"{row['repository']['nameWithOwner']}:"
+                            f"{row['path']}: {line.strip()}\n"
+                        )
                     offset = end + 1
             continue
         lines.append("\t".join(cells) + "\n")

@@ -15,9 +15,12 @@
 
 def test_dirname(env):
     assert env.mirage("dirname /foo/bar/baz.txt") == env.native(
-        "dirname /foo/bar/baz.txt")
+        "dirname /foo/bar/baz.txt"
+    )
 
 
 def test_dirname_root(env):
-    assert env.mirage("dirname /foo").strip() == env.native(
-        "dirname /foo").strip()
+    assert (
+        env.mirage("dirname /foo").strip()
+        == env.native("dirname /foo").strip()
+    )

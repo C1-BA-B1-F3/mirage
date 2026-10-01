@@ -12,15 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.hf.accessor import (repo_type_of,
-                                                     require_operands,
-                                                     require_token, text_out)
+from mirage.commands.cli.builtin.hf.accessor import (
+    repo_type_of,
+    require_operands,
+    require_token,
+    text_out,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.hf_hub.admin import create_repo, create_tag
+from mirage.core.hf_hub.admin import create_repo, create_tag, list_tags
 from mirage.core.hf_hub.admin import delete_tag as delete_tag_api
-from mirage.core.hf_hub.admin import list_tags
 from mirage.core.hf_hub.client import repo_url
 from mirage.core.hf_hub.config import HfConfig
 from mirage.core.hf_hub.constants import DEFAULT_REVISION
@@ -28,7 +30,8 @@ from mirage.io.types import ByteSource, IOResult, materialize
 
 
 async def create_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Create a repository on the Hub."""
     require_operands(inv, ["repo_id"])
     require_token(inv, "repo create")
@@ -39,7 +42,8 @@ async def create_cmd(
     if repo_type == "space" and not sdk:
         raise UsageError(
             "creating a space requires --space_sdk (gradio, streamlit, "
-            "docker or static)")
+            "docker or static)"
+        )
     result = await create_repo(
         inv.config,
         repo_id,
@@ -47,30 +51,38 @@ async def create_cmd(
         private=bool(fl.as_bool("private")),
         space_sdk=sdk,
         exist_ok=bool(fl.as_bool("exist_ok")),
-        resource_group_id=fl.as_str("resource_group_id"))
+        resource_group_id=fl.as_str("resource_group_id"),
+    )
     url = result.get("url")
-    return text_out(f"{url}\n" if isinstance(url, str) else
-                    f"{repo_url(inv.config.endpoint, repo_type, repo_id)}\n")
+    return text_out(
+        f"{url}\n"
+        if isinstance(url, str)
+        else f"{repo_url(inv.config.endpoint, repo_type, repo_id)}\n"
+    )
 
 
 async def tag_create_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Tag a revision of a repository."""
     require_operands(inv, ["repo_id", "tag"])
     require_token(inv, "repo tag create")
     fl = FlagView(inv.flags)
     repo_id, tag = inv.texts[0], inv.texts[1]
-    await create_tag(inv.config,
-                     repo_id,
-                     tag,
-                     repo_type_of(fl),
-                     revision=fl.as_str("revision") or DEFAULT_REVISION,
-                     message=fl.as_str("message"))
+    await create_tag(
+        inv.config,
+        repo_id,
+        tag,
+        repo_type_of(fl),
+        revision=fl.as_str("revision") or DEFAULT_REVISION,
+        message=fl.as_str("message"),
+    )
     return text_out(f"Tag {tag} created on {repo_id}\n")
 
 
 async def tag_list_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """List a repository's tags."""
     require_operands(inv, ["repo_id"])
     fl = FlagView(inv.flags)
@@ -104,7 +116,8 @@ async def confirmed(inv: CLIInvocation[HfConfig]) -> bool:
 
 
 async def tag_delete_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Delete a tag from a repository.
 
     Upstream asks for confirmation before deleting; a workspace has no
@@ -117,6 +130,7 @@ async def tag_delete_cmd(
     if not await confirmed(inv):
         raise UsageError(
             f"deleting tag {tag} needs -y, or y on stdin: there is no "
-            "terminal to confirm on")
+            "terminal to confirm on"
+        )
     await delete_tag_api(inv.config, repo_id, tag, repo_type_of(fl))
     return text_out(f"Tag {tag} deleted on {repo_id}\n")

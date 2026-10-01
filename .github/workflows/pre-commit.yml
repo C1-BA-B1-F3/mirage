@@ -52,10 +52,7 @@ jobs:
             pre-commit-py3.12-
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
+        uses: ./.github/actions/setup-uv
 
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -75,6 +72,11 @@ jobs:
       - name: SKIP hook ids
         run: ./python/.venv/bin/python scripts/check_skip_hooks.py
 
+      # The hook's own lint run only proves the split on a clean tree; a
+      # failure in the background half would pass it unnoticed.
+      - name: ESLint batch split
+        run: typescript/scripts/precommit-run.sh --selftest
+
       - name: Install TypeScript dependencies
         working-directory: typescript
         run: pnpm install --frozen-lockfile
@@ -82,6 +84,19 @@ jobs:
       - name: Build TypeScript packages
         working-directory: typescript
         run: pnpm -r build
+
+      # The PathSpec discipline hook runs mypy over python/tests, which
+      # imports all of mirage; from an empty store that is 73-140 s of this
+      # job. Test (Python) saves the store for mirage, so read it under the
+      # same key and check only the tests from scratch (51 s -> 12 s locally).
+      - name: Restore the mypy incremental store
+        uses: actions/cache/restore@v6
+        with:
+          path: python/.mypy_cache
+          key: mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-${{ hashFiles('python/mirage/**/*.py', 'scripts/**/*.py') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py3.12-${{ hashFiles('python/uv.lock') }}-
+            mypy-${{ runner.os }}-py3.12-
 
       # Plain `git`, not a paths-filter action: an action reads the API
       # and can disagree with the three-dot diff pre-commit itself uses,
@@ -98,11 +113,11 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             # Version files too, not just config: a `rev:` pins every
             # python tool, but the typescript hooks are `language: system`
-            # and take theirs from the lockfile, so a bot's prettier bump
+            # and take theirs from the lockfile, so a bot's oxfmt bump
             # would reflow the tree behind a one-file diff. uv.lock counts
             # because check_test_pathspec.py shells out to the venv's mypy.
             # knip's inputs are absent because this job skips ts-knip.
-            wide='^(\.pre-commit-config\.yaml|\.github/workflows/pre-commit\.yml|ruff\.toml|\.isort\.cfg|python/(pyproject\.toml|uv\.lock)|typescript/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|packages/[^/]+/tsconfig(\.build)?\.json|eslint\.config\.js|\.prettierrc\.json|\.prettierignore|scripts/precommit-run\.sh)|integ/(package\.json|eslint\.config\.js|\.prettierrc\.json|\.prettierignore|scripts/precommit-run\.sh))$'
+            wide='^(\.pre-commit-config\.yaml|\.github/workflows/pre-commit\.yml|ruff\.toml|python/(pyproject\.toml|uv\.lock)|typescript/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|packages/[^/]+/tsconfig(\.build)?\.json|eslint\.config\.js|\.oxfmtrc\.json|scripts/precommit-run\.sh)|integ/(package\.json|eslint\.config\.js|\.oxfmtrc\.jsonc|scripts/precommit-run\.sh))$'
             # Captured, not piped: `grep -q` exits on its first match, so
             # under `pipefail` git's SIGPIPE would become the status and
             # invert this test in the case where a config DID change.

@@ -15,8 +15,14 @@
 from typing import Any
 
 from mirage.runtime.resolver import MountResolver
-from mirage.runtime.routing import (RouteContext, RouteDecision, RouteError,
-                                    RoutePolicy, decide_line, parsed_commands)
+from mirage.runtime.routing import (
+    RouteContext,
+    RouteDecision,
+    RouteError,
+    RoutePolicy,
+    decide_line,
+    parsed_commands,
+)
 from mirage.runtime.table import catch_all, runtime_bindings_for
 from mirage.workspace.lookup import Consumer, lookup
 from mirage.workspace.mount import MountRegistry
@@ -40,8 +46,12 @@ class Router:
         resolver (MountResolver): mount prefixes for the policy context.
     """
 
-    def __init__(self, registry: MountRegistry, runtimes: Runtimes,
-                 resolver: MountResolver) -> None:
+    def __init__(
+        self,
+        registry: MountRegistry,
+        runtimes: Runtimes,
+        resolver: MountResolver,
+    ) -> None:
         self._registry = registry
         self._runtimes = runtimes
         self._resolver = resolver
@@ -51,7 +61,6 @@ class Router:
         ast: Any,
         command: str,
         runtime: str | None,
-        provision: bool,
         session: SessionState,
         session_id: str,
         agent_id: str,
@@ -63,15 +72,13 @@ class Router:
         Returns None when nothing decides (no runtime argument, no
         policy configured) so dispatch falls to the static bindings. A
         nested eval passes its typed line's decision as ``inherited``
-        and keeps it: nested lines never re-route. Provision never
-        routes.
+        and keeps it: nested lines never re-route.
 
         Args:
             ast: the parsed tree-sitter root node.
             command (str): the raw command line.
             runtime (str | None): the execute() runtime argument, which
                 wins over the policy.
-            provision (bool): whether this is a provision run.
             session (SessionState): the effective session (cwd, env).
             session_id (str): session hosting the line.
             agent_id (str): agent the line runs as.
@@ -91,24 +98,26 @@ class Router:
                 overlay = runtime_bindings_for(entries, runtime)
             except ValueError as exc:
                 raise RouteError(str(exc)) from exc
-            return RouteDecision(bindings={
-                **self._registry.runtime_bindings,
-                **overlay
-            },
-                                 fallback=catch_all(entries))
-        if provision:
-            return None
+            return RouteDecision(
+                bindings={**self._registry.runtime_bindings, **overlay},
+                fallback=catch_all(entries),
+            )
         has_scripts = any(entry.script is not None for entry in entries)
         if route_policy is None and not has_scripts:
             return None
-        commands = parsed_commands(ast, self._registry.clis.names(),
-                                   self._registry.match_command_prefix)
+        commands = parsed_commands(
+            ast,
+            self._registry.clis.names(),
+            self._registry.match_command_prefix,
+        )
         external_commands: list[str] = []
         for parsed in commands:
             name = parsed.command
-            if ("/" not in name
-                    and name not in self._registry.runtime_bindings and lookup(
-                        name, session, self._registry) is Consumer.EXTERNAL):
+            if (
+                "/" not in name
+                and name not in self._registry.runtime_bindings
+                and lookup(name, session, self._registry) is Consumer.EXTERNAL
+            ):
                 external_commands.append(parsed.command)
         ctx = RouteContext(
             line=command,
@@ -122,9 +131,13 @@ class Router:
             mounts=tuple(self._resolver.prefixes()),
         )
         try:
-            return await decide_line(entries, route_policy, ctx,
-                                     self._registry.runtime_bindings,
-                                     external_commands)
+            return await decide_line(
+                entries,
+                route_policy,
+                ctx,
+                self._registry.runtime_bindings,
+                external_commands,
+            )
         except RouteError:
             raise
         except (ValueError, ImportError) as exc:

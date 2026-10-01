@@ -31,8 +31,11 @@ config = SeaweedFSConfig(
 
 vfs = SeaweedFSVFS(config)
 
-SEED_KEYS = ("/seaweedfs/data/example.jsonl", "/seaweedfs/data/config.json",
-             "/seaweedfs/notes.txt")
+SEED_KEYS = (
+    "/seaweedfs/data/example.jsonl",
+    "/seaweedfs/data/config.json",
+    "/seaweedfs/notes.txt",
+)
 
 
 async def seed(ws: Workspace) -> None:
@@ -40,10 +43,12 @@ async def seed(ws: Workspace) -> None:
         "/seaweedfs/data/example.jsonl",
         b'{"event":"queue-operation","tool":"mirage"}\n'
         b'{"event":"read","tool":"mirage"}\n'
-        b'{"event":"queue-operation","tool":"other"}\n')
+        b'{"event":"queue-operation","tool":"other"}\n',
+    )
     await ws.vfs.write(
         "/seaweedfs/data/config.json",
-        b'{"name":"mirage","version":1,"tags":["s3","seaweedfs"]}')
+        b'{"name":"mirage","version":1,"tags":["s3","seaweedfs"]}',
+    )
     await ws.vfs.write("/seaweedfs/notes.txt", b"hello from seaweedfs\n")
 
 

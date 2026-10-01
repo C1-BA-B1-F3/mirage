@@ -22,9 +22,11 @@ from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
 
 
-async def rmdir(accessor: DiskAccessor,
-                path_spec: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     p = await resolve_inside(accessor.root, path_spec)
     with disk_errors(path_spec.virtual):
         await aiofiles.os.rmdir(p)

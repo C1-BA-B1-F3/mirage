@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { enotsup } from '../../utils/errors.ts'
-import { invalidateAfterWrite } from '../../cache/context.ts'
 import { IndexEntry, ResourceType } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { buildTree, emitStartPath, keep, type PredNode } from '../../commands/builtin/find_eval.ts'
@@ -25,9 +24,10 @@ import {
   startOp,
 } from '../../observe/context.ts'
 import type { FindOptions } from '../../vfs/base.ts'
-import { FileStat, FileType, PathSpec } from '../../types.ts'
+import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import { enoent, listingError } from '../../utils/errors.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
+import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { windowFor } from '../../utils/ranges.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import type { MsGraphConfigResolved } from './config.ts'
@@ -97,8 +97,7 @@ export class DriveLoc {
   }
 
   parent(): string {
-    const index = this.path.lastIndexOf('/')
-    return index < 0 ? '' : this.path.slice(0, index)
+    return parentPath(this.path)
   }
 
   reference(folder = ''): string {
@@ -106,15 +105,27 @@ export class DriveLoc {
   }
 }
 
-function baseName(path: string): string {
+export function parentPath(path: string): string {
+  const index = path.lastIndexOf('/')
+  return index < 0 ? '' : path.slice(0, index)
+}
+
+export function baseName(path: string): string {
   const stripped = rstripSlash(path)
   const index = stripped.lastIndexOf('/')
   return index < 0 ? stripped : stripped.slice(index + 1)
 }
 
-function virtSpec(loc: DriveLoc): PathSpec {
-  const stripped = stripSlash(loc.virtual)
-  return PathSpec.fromStrPath(stripped !== '' ? `/${stripped}` : '/', stripped)
+// The directory a listing names: a glob operand lists the folder it sits in.
+export function directoryPath(path: PathSpec): PathSpec {
+  return path.pattern !== null ? path.dir : path
+}
+
+// The mount-absolute key the index files a listing or an entry under.
+export function virtualKey(path: PathSpec): string {
+  const target = directoryPath(path)
+  const prefix = mountPrefixOf(target.virtual, target.vfsPath)
+  return target.vfsPath !== '' ? `${prefix}/${target.vfsPath}` : prefix !== '' ? prefix : '/'
 }
 
 function asString(value: unknown): string | null {
@@ -184,10 +195,7 @@ export async function copyTree(
   dst: DriveLoc,
 ): Promise<void> {
   const conflict = await copyOnce(config, src, dst)
-  if (conflict === null) {
-    await invalidateAfterWrite(virtSpec(dst))
-    return
-  }
+  if (conflict === null) return
   // Status, not just code: `copyOnce` reports a monitor-reported failure
   // as 500 and a thrown conflict as 409, so re-raising `conflict` as it
   // arrived made the same refusal carry a different status depending on
@@ -216,7 +224,6 @@ export async function copyTree(
   if (secondConflict !== null) {
     throw new GraphError(500, secondConflict.code, secondConflict.message)
   }
-  await invalidateAfterWrite(virtSpec(dst))
 }
 
 export async function renameReplace(
@@ -454,29 +461,6 @@ async function* iterTree(
   }
 }
 
-export async function duTreeTotal(config: MsGraphConfigResolved, loc: DriveLoc): Promise<number> {
-  let total = 0
-  for await (const [, item, folder] of iterTree(config, loc)) {
-    if (!folder) total += asNumber(item.size) ?? 0
-  }
-  return total
-}
-
-export async function duTreeEntries(
-  config: MsGraphConfigResolved,
-  loc: DriveLoc,
-): Promise<[[string, number][], number]> {
-  const entries: [string, number][] = []
-  let total = 0
-  for await (const [relative, item, folder] of iterTree(config, loc)) {
-    if (folder) continue
-    const size = asNumber(item.size) ?? 0
-    entries.push([`/${relative}`, size])
-    total += size
-  }
-  return [entries, total]
-}
-
 // Walk knobs for callers that stack findItems under synthetic namespace
 // levels (SharePoint's site/library directories): `depthOffset` shifts the
 // reported depth so `-maxdepth`/`-mindepth` count from the real start path,
@@ -682,11 +666,11 @@ export async function statItem(
 // ENOENT. Both drive backends address items differently but probe
 // identically, so only their stat is injected.
 export function makeExists<A>(
-  stat: (accessor: A, path: PathSpec) => Promise<unknown>,
-): (accessor: A, path: PathSpec) => Promise<boolean> {
-  return async (accessor, path) => {
+  stat: (accessor: A, path: PathSpec, index?: IndexCacheStore) => Promise<unknown>,
+): (accessor: A, path: PathSpec, index?: IndexCacheStore) => Promise<boolean> {
+  return async (accessor, path, index) => {
     try {
-      await stat(accessor, path)
+      await stat(accessor, path, index)
       return true
     } catch (error) {
       if ((error as { code?: unknown }).code === 'ENOENT') return false

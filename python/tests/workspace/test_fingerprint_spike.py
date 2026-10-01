@@ -19,8 +19,14 @@ import time
 import pytest
 
 from mirage.io import IOResult
-from mirage.types import (DEFAULT_READ_TTL, CacheFacts, HiddenPaths, MountMode,
-                          ReadPolicy, ReadSpec)
+from mirage.types import (
+    DEFAULT_READ_TTL,
+    CacheFacts,
+    HiddenPaths,
+    MountMode,
+    ReadPolicy,
+    ReadSpec,
+)
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
@@ -135,10 +141,12 @@ def test_s3_always_warm_read_serves_cache_for_non_md5_fingerprint():
         first, second = asyncio.run(run())
     assert first == second == b"18\n"
     assert client.calls["head_object"] >= 1, (
-        "ALWAYS must consult the remote fingerprint on the warm read")
+        "ALWAYS must consult the remote fingerprint on the warm read"
+    )
     assert client.calls["get_object"] == 1, (
         "warm read with an unchanged remote fingerprint must serve from "
-        "cache; a second get_object means the entry was evicted")
+        "cache; a second get_object means the entry was evicted"
+    )
 
 
 def test_s3_fresh_warm_read_hits_cache_for_a_key_named_like_its_mount():
@@ -210,8 +218,11 @@ def test_a_tokenless_entry_costs_one_extra_get_then_carries_the_etag():
             # No `records`: the bytes land in the cache carrying no token,
             # which is exactly what the md5 default used to paper over.
             await ws.apply_io(
-                IOResult(reads={"/s3/data.txt": b"payload\n"},
-                         cache=["/s3/data.txt"]))
+                IOResult(
+                    reads={"/s3/data.txt": b"payload\n"},
+                    cache=["/s3/data.txt"],
+                )
+            )
             assert not await ws.cache.is_fresh("/s3/data.txt", "anything")
             before = client.calls["get_object"]
             io1 = await ws.shell("cat /s3/data.txt")
@@ -227,7 +238,8 @@ def test_a_tokenless_entry_costs_one_extra_get_then_carries_the_etag():
     assert first == 1, "the unverifiable entry is dropped and re-read once"
     assert second == 0, (
         "and the refetched entry carries a token that matches, so the read "
-        "after it is served from cache")
+        "after it is served from cache"
+    )
     # Deliberately not asserting *which* token the refetch stamped: this
     # mock builds its ETag as md5(content) with an empty suffix, so the
     # backend's token and a fabricated md5 are the same string and the
@@ -276,12 +288,15 @@ def test_always_revalidates_a_walk_and_a_glob():
 
     walk, glob, walk_calls = asyncio.run(run())
     assert walk == b"/s3/a.txt:v1\n/s3/b.txt:v2\n", (
-        "a recursive walk must revalidate each file it reads from cache")
+        "a recursive walk must revalidate each file it reads from cache"
+    )
     assert glob == b"v1\nv2\n", (
-        "a glob operand must revalidate the files it expanded to")
+        "a glob operand must revalidate the files it expanded to"
+    )
     assert walk_calls["head_object"] == 2, (
         "one backend stat per file walked; zero means the walk never "
-        "revalidated, which is the bug this test exists for")
+        "revalidated, which is the bug this test exists for"
+    )
 
 
 def test_always_warm_read_costs_one_probe():
@@ -307,9 +322,11 @@ def test_always_warm_read_costs_one_probe():
 
     asyncio.run(run())
     assert client.calls["head_object"] == 1, (
-        "the routing reconcile, reused by cat's stat and the gate")
+        "the routing reconcile, reused by cat's stat and the gate"
+    )
     assert client.calls["get_object"] == 0, (
-        "an unchanged object must still be served from cache")
+        "an unchanged object must still be served from cache"
+    )
 
 
 def _warm_stat(line: str, session_id: str | None = None):
@@ -318,14 +335,18 @@ def _warm_stat(line: str, session_id: str | None = None):
     client = session._client
     if session_id is not None:
         ws.create_session(session_id).hidden_paths = HiddenPaths(
-            paths=("/s3/a.txt", ))
+            paths=("/s3/a.txt",)
+        )
 
     async def run() -> tuple[int, bytes, str]:
         with patch_s3_session(session):
             await ws.shell("cat /s3/a.txt")
             client.calls.clear()
-            result = (await ws.shell(line) if session_id is None else await
-                      ws.shell(line, session_id=session_id))
+            result = (
+                await ws.shell(line)
+                if session_id is None
+                else await ws.shell(line, session_id=session_id)
+            )
             out = await result.materialize_stdout()
             err = await result.stderr_str()
             await ws.close()
@@ -419,7 +440,8 @@ def test_snapshot_false_mount_still_serves_a_verified_cache():
     assert out == b"v1\n"
     assert client.calls["get_object"] == 0, (
         "a verified cache entry must be served, not refetched, however the "
-        "mount answers supports_snapshot")
+        "mount answers supports_snapshot"
+    )
 
 
 def test_fanout_revalidates_a_descendant_mount():
@@ -435,10 +457,13 @@ def test_fanout_revalidates_a_descendant_mount():
 
     def mount(bucket: str) -> S3VFS:
         return S3VFS(
-            S3Config(bucket=bucket,
-                     region="us-east-1",
-                     aws_access_key_id="fake",
-                     aws_secret_access_key="fake"))
+            S3Config(
+                bucket=bucket,
+                region="us-east-1",
+                aws_access_key_id="fake",
+                aws_secret_access_key="fake",
+            )
+        )
 
     ws = Workspace(
         {
@@ -463,7 +488,8 @@ def test_fanout_revalidates_a_descendant_mount():
     assert b"/x/p.txt:v2" in out, "the primary leg must revalidate"
     assert b"/x/y/c.txt:v2" in out, (
         "the descendant leg must revalidate too; the fan-out never reaches "
-        "the registry's reconcile, so only the cache gate covers it")
+        "the registry's reconcile, so only the cache gate covers it"
+    )
 
 
 def test_a_flaky_probe_costs_a_refetch_not_the_walk():
@@ -485,8 +511,11 @@ def test_a_flaky_probe_costs_a_refetch_not_the_walk():
             real = mount.execute_op
 
             async def flaky(op, path, **kwargs):
-                if op == "stat" and path.endswith(
-                        "a.txt") and "index" in kwargs:
+                if (
+                    op == "stat"
+                    and path.endswith("a.txt")
+                    and "index" in kwargs
+                ):
                     raise OSError(errno.EIO, "backend stat unavailable")
                 return await real(op, path, **kwargs)
 
@@ -498,7 +527,8 @@ def test_a_flaky_probe_costs_a_refetch_not_the_walk():
     code, out = asyncio.run(run())
     assert code == 0, "a flaky probe must not fail the walk"
     assert out == b"/s3/a.txt:v1\n/s3/b.txt:v1\n", (
-        "the unverifiable file is re-read from the backend, not dropped")
+        "the unverifiable file is re-read from the backend, not dropped"
+    )
 
 
 def test_ram_cannot_declare_fresh():
@@ -548,8 +578,10 @@ def test_a_routing_probe_failure_never_takes_the_line():
 
             mount.execute_op = broken
             results = []
-            for line in ("ls -l /s3/a.txt; echo survived",
-                         "cat /s3/a.txt; echo survived"):
+            for line in (
+                "ls -l /s3/a.txt; echo survived",
+                "cat /s3/a.txt; echo survived",
+            ):
                 io = await ws.shell(line)
                 results.append((io.exit_code, await io.materialize_stdout()))
             await ws.close()
@@ -557,9 +589,11 @@ def test_a_routing_probe_failure_never_takes_the_line():
 
     (ls_exit, ls_out), (cat_exit, cat_out) = asyncio.run(run())
     assert ls_exit == 0 and ls_out.endswith(b"/s3/a.txt\nsurvived\n"), (
-        "a routing probe failure must not take a metadata command's line")
+        "a routing probe failure must not take a metadata command's line"
+    )
     assert cat_exit == 0 and cat_out == b"v1\nsurvived\n", (
-        "a routing probe failure drops the entry and the read goes cold")
+        "a routing probe failure drops the entry and the read goes cold"
+    )
 
 
 def test_metadata_command_reconciles_its_operand():
@@ -594,7 +628,8 @@ def test_metadata_command_reconciles_its_operand():
     assert evicted, (
         "ls must still reconcile its operand at routing; a replaced copy "
         "left in the cache means the one door a metadata command has to "
-        "backend truth went dark")
+        "backend truth went dark"
+    )
     assert client.calls["head_object"] == 4
 
 
@@ -626,7 +661,8 @@ def test_bounded_stamps_the_mounts_bound_on_the_cache_entry():
 
     assert asyncio.run(run()) == 30, (
         "the mount's bound must reach the cache entry, or `bounded` is "
-        "`lazy` renamed")
+        "`lazy` renamed"
+    )
 
 
 def test_bounded_serves_within_the_bound_then_goes_cold():
@@ -660,7 +696,8 @@ def test_bounded_serves_within_the_bound_then_goes_cold():
         "a warm bounded read is cat's own stat and nothing else; the same "
         "read under fresh also costs one (the routing reconcile, whose "
         "answer cat's stat and the gate reuse), so anything above one here "
-        "means a door that should have skipped did not")
+        "means a door that should have skipped did not"
+    )
     assert warm_calls.get("get_object", 0) == 0
     assert cold == b"v2\n", "past its bound, the entry must not be served"
 
@@ -689,10 +726,10 @@ def test_bounded_walk_costs_no_per_file_stat():
 
     walk, calls = asyncio.run(run())
     assert walk == b"/s3/a.txt:v1\n/s3/b.txt:v1\n"
-    assert calls.get(
-        "head_object",
-        0) == 0, ("a bounded walk must not revalidate; two means bounded is "
-                  "probing like fresh")
+    assert calls.get("head_object", 0) == 0, (
+        "a bounded walk must not revalidate; two means bounded is "
+        "probing like fresh"
+    )
     assert calls.get("get_object", 0) == 0
 
 
@@ -721,10 +758,12 @@ def test_bounded_drops_an_entry_that_carries_no_bound():
 
     calls, replacement = asyncio.run(run())
     assert calls["get_object"] == 1, (
-        "the bound-less entry is dropped and read cold, once")
+        "the bound-less entry is dropped and read cold, once"
+    )
     assert replacement == 30, (
         "the cold read must re-stamp the bound, or the drop repeats on "
-        "every read forever")
+        "every read forever"
+    )
 
 
 def test_two_mounts_carry_two_different_bounds():
@@ -745,14 +784,16 @@ def test_two_mounts_carry_two_different_bounds():
     session = MultiBucketSession({"test-bucket": objects})
     ws = Workspace(
         {
-            "/fast":
-            Mount(vfs=S3VFS(config),
-                  mode=MountMode.WRITE,
-                  read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=30)),
-            "/slow":
-            Mount(vfs=S3VFS(config),
-                  mode=MountMode.WRITE,
-                  read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90)),
+            "/fast": Mount(
+                vfs=S3VFS(config),
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=30),
+            ),
+            "/slow": Mount(
+                vfs=S3VFS(config),
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90),
+            ),
         },
         mode=MountMode.WRITE,
     )
@@ -771,10 +812,13 @@ def test_two_mounts_carry_two_different_bounds():
 
 def _s3(bucket: str) -> S3VFS:
     return S3VFS(
-        S3Config(bucket=bucket,
-                 region="us-east-1",
-                 aws_access_key_id="fake",
-                 aws_secret_access_key="fake"))
+        S3Config(
+            bucket=bucket,
+            region="us-east-1",
+            aws_access_key_id="fake",
+            aws_secret_access_key="fake",
+        )
+    )
 
 
 _SHAPES = {
@@ -788,7 +832,8 @@ _SHAPES = {
 @pytest.mark.parametrize("fresh_side", ["first", "second"])
 @pytest.mark.parametrize("shape", list(_SHAPES))
 def test_one_line_serves_each_mount_under_its_own_policy(
-        shape: str, fresh_side: str, default: ReadPolicy) -> None:
+    shape: str, fresh_side: str, default: ReadPolicy
+) -> None:
     """#1101 Design §2: a read policy is a property of the byte source.
 
     One line reads a `fresh` mount and a `bounded` one after both objects
@@ -817,14 +862,14 @@ def test_one_line_serves_each_mount_under_its_own_policy(
     notice.
     """
     first, second, line = _SHAPES[shape]
-    fresh, bounded = ((first, second) if fresh_side == "first" else
-                      (second, first))
+    fresh, bounded = (
+        (first, second) if fresh_side == "first" else (second, first)
+    )
     fresh_objects = {"f.txt": b"v1\n"}
     bounded_objects = {"f.txt": b"v1\n"}
-    session = MultiBucketSession({
-        "fresh-bkt": fresh_objects,
-        "bounded-bkt": bounded_objects
-    })
+    session = MultiBucketSession(
+        {"fresh-bkt": fresh_objects, "bounded-bkt": bounded_objects}
+    )
     client = session._client
     fresh_vfs = _s3("fresh-bkt")
     bounded_vfs = fresh_vfs if shape == "shared-vfs" else _s3("bounded-bkt")
@@ -836,17 +881,23 @@ def test_one_line_serves_each_mount_under_its_own_policy(
 
     ws = Workspace(
         {
-            fresh:
-            mount(fresh_vfs, ReadSpec(policy=ReadPolicy.FRESH)),
-            bounded:
-            mount(bounded_vfs, ReadSpec(policy=ReadPolicy.BOUNDED, ttl=900)),
+            fresh: mount(fresh_vfs, ReadSpec(policy=ReadPolicy.FRESH)),
+            bounded: mount(
+                bounded_vfs, ReadSpec(policy=ReadPolicy.BOUNDED, ttl=900)
+            ),
         },
         mode=MountMode.WRITE,
         read=ReadSpec(policy=default),
     )
 
-    async def run() -> tuple[int, bytes, list[tuple[str, str]], dict[tuple[
-        str, str], int], bytes, dict[tuple[str, str], int]]:
+    async def run() -> tuple[
+        int,
+        bytes,
+        list[tuple[str, str]],
+        dict[tuple[str, str], int],
+        bytes,
+        dict[tuple[str, str], int],
+    ]:
         with patch_s3_session(session):
             await ws.shell(f"ls {first}/ {second}/")
             await ws.shell(f"cat {first}/f.txt")
@@ -865,40 +916,53 @@ def test_one_line_serves_each_mount_under_its_own_policy(
             single_out = await single.materialize_stdout()
             single_calls = dict(client.bucket_calls)
             await ws.close()
-            return (result.exit_code, out, records, line_calls, single_out,
-                    single_calls)
+            return (
+                result.exit_code,
+                out,
+                records,
+                line_calls,
+                single_out,
+                single_calls,
+            )
 
-    (code, out, records, line_calls, single_out,
-     single_calls) = asyncio.run(run())
+    (code, out, records, line_calls, single_out, single_calls) = asyncio.run(
+        run()
+    )
 
     def version(prefix: str) -> str:
         return "v2" if prefix == fresh else "v1"
 
     assert code == 0
-    assert out == (f"{first}/f.txt:{version(first)}\n"
-                   f"{second}/f.txt:{version(second)}\n").encode(), (
-                       "each leg must print what its own policy serves")
+    assert (
+        out
+        == (
+            f"{first}/f.txt:{version(first)}\n"
+            f"{second}/f.txt:{version(second)}\n"
+        ).encode()
+    ), "each leg must print what its own policy serves"
     assert {
-        k: n
-        for k, n in line_calls.items() if k[1] == "bounded-bkt"
-    } == {}, ("the bounded leg must send nothing; a probe or a refetch "
-              "here means the fresh mount's policy reached it")
+        k: n for k, n in line_calls.items() if k[1] == "bounded-bkt"
+    } == {}, (
+        "the bounded leg must send nothing; a probe or a refetch "
+        "here means the fresh mount's policy reached it"
+    )
     # One bucket in shared-vfs, so this is the whole line's cost there.
-    assert {
-        k: n
-        for k, n in line_calls.items() if k[1] == "fresh-bkt"
-    } == {
+    assert {k: n for k, n in line_calls.items() if k[1] == "fresh-bkt"} == {
         ("list_objects_v2", "fresh-bkt"): 1,
         ("head_object", "fresh-bkt"): 1,
-        ("get_object", "fresh-bkt"): 1
-    }, ("the fresh leg re-lists its folder once (Task 1.2: fresh checks "
+        ("get_object", "fresh-bkt"): 1,
+    }, (
+        "the fresh leg re-lists its folder once (Task 1.2: fresh checks "
         "listings too), pays its gate probe and one refetch; a missing "
-        "head_object means it was served without being checked")
-    assert records == [("read", f"{fresh}/f.txt")
-                       ], "only the fresh leg's refetch reaches the backend"
+        "head_object means it was served without being checked"
+    )
+    assert records == [("read", f"{fresh}/f.txt")], (
+        "only the fresh leg's refetch reaches the backend"
+    )
     assert (single_out, single_calls) == (b"v1\n", {}), (
         "a single-mount read of the bounded leg must not reconcile at "
-        "routing; v2 here means the routing door read another policy")
+        "routing; v2 here means the routing door read another policy"
+    )
 
 
 def test_the_live_cache_facts_door_reads_the_mounts_bound():
@@ -918,25 +982,28 @@ def test_the_live_cache_facts_door_reads_the_mounts_bound():
     )
     ws = Workspace(
         {
-            "/s3":
-            Mount(vfs=S3VFS(config),
-                  mode=MountMode.WRITE,
-                  read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45))
+            "/s3": Mount(
+                vfs=S3VFS(config),
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45),
+            )
         },
         mode=MountMode.WRITE,
     )
 
     async def run() -> tuple[int | None, CacheFacts]:
         await ws.apply_io(
-            IOResult(reads={"/s3/f.txt": b"x"}, cache=["/s3/f.txt"]))
+            IOResult(reads={"/s3/f.txt": b"x"}, cache=["/s3/f.txt"])
+        )
         entry = ws.cache._entries["/s3/f.txt"].ttl
         unmounted = ws._dispatcher.cache_facts_for("/nowhere/f.txt")
         await ws.close()
         return entry, unmounted
 
     ttl, unmounted = asyncio.run(run())
-    assert ttl == 45, ("the live door must read the mount's bound, not the "
-                       "package default")
+    assert ttl == 45, (
+        "the live door must read the mount's bound, not the package default"
+    )
     assert unmounted.cacheable is False
 
 

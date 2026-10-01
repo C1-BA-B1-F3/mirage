@@ -29,8 +29,9 @@ class VFSActivity(Activity):
         if isinstance(source, CachableAsyncIterator):
             if source.exhausted:
                 return source
-            source.replace_source(ActivityStream(source.source,
-                                                 self.acquire()))
+            source.replace_source(
+                ActivityStream(source.source, self.acquire())
+            )
             return source
         return ActivityStream(source, self.acquire())
 
@@ -38,8 +39,9 @@ class VFSActivity(Activity):
 class ActivityStream:
     """Release a stream's VFS on EOF, error, or explicit close."""
 
-    def __init__(self, source: AsyncIterator[bytes],
-                 release: Callable[[], None]) -> None:
+    def __init__(
+        self, source: AsyncIterator[bytes], release: Callable[[], None]
+    ) -> None:
         self._source = source.__aiter__()
         self._release = release
         self._pull_lock = asyncio.Lock()

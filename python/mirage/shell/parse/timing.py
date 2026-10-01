@@ -6,18 +6,41 @@ import tree_sitter
 
 from mirage.shell.parse.heredoc.types import HeredocSource
 
-PREFIX = re.compile(rb"time(?=[ \t\r\n;|&)]|$)[ \t]*"
-                    rb"(?:(-p)(?=[ \t\r\n;|&)]|$)[ \t]*)?"
-                    rb"(?:--(?=[ \t\r\n;|&)]|$)[ \t]*)?")
-COMPOUND_HEADS = frozenset({
-    b"{", b"if", b"for", b"select", b"while", b"until", b"case", b"!", b"time"
-})
-STATEMENTS = frozenset({
-    "command", "test_command", "arithmetic_expansion", "pipeline",
-    "redirected_statement", "negated_command", "subshell",
-    "compound_statement", "if_statement", "for_statement", "while_statement",
-    "case_statement", "c_style_for_statement"
-})
+PREFIX = re.compile(
+    rb"time(?=[ \t\r\n;|&)]|$)[ \t]*"
+    rb"(?:(-p)(?=[ \t\r\n;|&)]|$)[ \t]*)?"
+    rb"(?:--(?=[ \t\r\n;|&)]|$)[ \t]*)?"
+)
+COMPOUND_HEADS = frozenset(
+    {
+        b"{",
+        b"if",
+        b"for",
+        b"select",
+        b"while",
+        b"until",
+        b"case",
+        b"!",
+        b"time",
+    }
+)
+STATEMENTS = frozenset(
+    {
+        "command",
+        "test_command",
+        "arithmetic_expansion",
+        "pipeline",
+        "redirected_statement",
+        "negated_command",
+        "subshell",
+        "compound_statement",
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "case_statement",
+        "c_style_for_statement",
+    }
+)
 
 
 def lower_timing(
@@ -44,23 +67,34 @@ def lower_timing(
             if negated:
                 body = node.named_children[0]
                 head = body.child_by_field_name("name")
-                arith = data[body.start_byte:body.start_byte + 2] == b"(("
-                if not arith and (head is None
-                                  or head.text not in COMPOUND_HEADS):
+                arith = data[body.start_byte : body.start_byte + 2] == b"(("
+                if not arith and (
+                    head is None or head.text not in COMPOUND_HEADS
+                ):
                     continue
-            name = node.children[0] if negated else node.child_by_field_name(
-                "name")
+            name = (
+                node.children[0]
+                if negated
+                else node.child_by_field_name("name")
+            )
             if name is None:
                 continue
-            if not negated and (node.type != "command" or name.text != b"time"
-                                or node.children[0].id != name.id):
+            if not negated and (
+                node.type != "command"
+                or name.text != b"time"
+                or node.children[0].id != name.id
+            ):
                 continue
             parent = node.parent
-            if (parent is not None and parent.type == "pipeline"
-                    and parent.named_children[0].id != node.id):
+            if (
+                parent is not None
+                and parent.type == "pipeline"
+                and parent.named_children[0].id != node.id
+            ):
                 continue
-            match = PREFIX.match(data,
-                                 name.start_byte) if not negated else None
+            match = (
+                PREFIX.match(data, name.start_byte) if not negated else None
+            )
             if not negated and match is None:
                 continue
             end = name.end_byte if match is None else match.end()
@@ -72,15 +106,27 @@ def lower_timing(
             if empty:
                 replacement = b":" + replacement[1:]
                 anchor = name.start_byte
-            marks = [(source.offsets[anchor] if position
-                      == source.offsets[name.start_byte] else position, kind,
-                      flag, begin, finish)
-                     for position, kind, flag, begin, finish in marks]
+            marks = [
+                (
+                    source.offsets[anchor]
+                    if position == source.offsets[name.start_byte]
+                    else position,
+                    kind,
+                    flag,
+                    begin,
+                    finish,
+                )
+                for position, kind, flag, begin, finish in marks
+            ]
             marks.append(
-                (source.offsets[anchor],
-                 "negated_command" if negated else "timed_statement",
-                 match is not None and match.group(1) is not None,
-                 source.offsets[name.start_byte], source.offsets[end]))
+                (
+                    source.offsets[anchor],
+                    "negated_command" if negated else "timed_statement",
+                    match is not None and match.group(1) is not None,
+                    source.offsets[name.start_byte],
+                    source.offsets[end],
+                )
+            )
             edits.append((name.start_byte, end, replacement))
         if not edits:
             break
@@ -92,13 +138,15 @@ def lower_timing(
 class PrefixNode:
     """Preserve native node behavior while adding an execution-only wrapper."""
 
-    def __init__(self,
-                 node: Any,
-                 targets: dict[int, tuple[tuple[str, bool], ...]],
-                 source: HeredocSource,
-                 spans: list[tuple[int, int]],
-                 skip: int = 0,
-                 parent: "PrefixNode | None" = None):
+    def __init__(
+        self,
+        node: Any,
+        targets: dict[int, tuple[tuple[str, bool], ...]],
+        source: HeredocSource,
+        spans: list[tuple[int, int]],
+        skip: int = 0,
+        parent: "PrefixNode | None" = None,
+    ):
         self._node = node
         self._targets = targets
         self._source = source
@@ -106,7 +154,7 @@ class PrefixNode:
         self._skip = skip
         self._parent = parent
         self.prefixes = targets.get(node.id, ())[skip:]
-        self.timing = (self.prefixes[0][1], ) if self.prefixes else ()
+        self.timing = (self.prefixes[0][1],) if self.prefixes else ()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._node, name)
@@ -116,23 +164,36 @@ class PrefixNode:
         return self.prefixes[0][0] if self.prefixes else self._node.type
 
     def _wrap(self, node: Any, parent: "PrefixNode | None" = None) -> Any:
-        return None if node is None else PrefixNode(
-            node, self._targets, self._source, self._spans, parent=parent)
+        return (
+            None
+            if node is None
+            else PrefixNode(
+                node, self._targets, self._source, self._spans, parent=parent
+            )
+        )
 
     @property
     def children(self) -> list[Any]:
         if self.timing:
             return [
-                PrefixNode(self._node, self._targets, self._source,
-                           self._spans, self._skip + 1, self)
+                PrefixNode(
+                    self._node,
+                    self._targets,
+                    self._source,
+                    self._spans,
+                    self._skip + 1,
+                    self,
+                )
             ]
         return [self._wrap(node, self) for node in self._node.children]
 
     @property
     def named_children(self) -> list[Any]:
-        return self.children if self.timing else [
-            self._wrap(node, self) for node in self._node.named_children
-        ]
+        return (
+            self.children
+            if self.timing
+            else [self._wrap(node, self) for node in self._node.named_children]
+        )
 
     @property
     def parent(self) -> Any:
@@ -148,12 +209,15 @@ class PrefixNode:
 
     @property
     def source_text(self) -> bytes:
-        if any(self.start_byte <= start < self.end_byte
-               for start, _ in self._source.documents):
+        if any(
+            self.start_byte <= start < self.end_byte
+            for start, _ in self._source.documents
+        ):
             return cast(bytes, self._node.source_text)
         text = bytearray(self._node.text or b"")
         for index, offset in enumerate(
-                self._source.offsets[self.start_byte:self.end_byte]):
+            self._source.offsets[self.start_byte : self.end_byte]
+        ):
             if any(start <= offset < end for start, end in self._spans):
                 text[index] = self._source.original[offset]
         return bytes(text)
@@ -168,14 +232,19 @@ def _spans_list(node: Any) -> bool:
     Args:
         node (Any): candidate statement for the reserved prefix.
     """
-    while (node.type in ("redirected_statement", "pipeline")
-           and node.named_children):
+    while (
+        node.type in ("redirected_statement", "pipeline")
+        and node.named_children
+    ):
         node = node.named_children[0]
     return bool(node.type == "list")
 
 
-def wrap_timing(root: Any, source: HeredocSource,
-                marks: list[tuple[int, str, bool, int, int]]) -> PrefixNode:
+def wrap_timing(
+    root: Any,
+    source: HeredocSource,
+    marks: list[tuple[int, str, bool, int, int]],
+) -> PrefixNode:
     """Attach each prefix to the entire following pipeline, within its list.
 
     Args:
@@ -188,17 +257,26 @@ def wrap_timing(root: Any, source: HeredocSource,
         stack = [root]
         while stack:
             node = stack.pop()
-            if node.type in STATEMENTS and source.offsets[
-                    node.start_byte] == position and not _spans_list(node):
+            if (
+                node.type in STATEMENTS
+                and source.offsets[node.start_byte] == position
+                and not _spans_list(node)
+            ):
                 prefixes = targets.get(node.id, ())
-                if kind == "timed_statement" and prefixes and prefixes[-1][
-                        0] == kind:
-                    prefixes = (*prefixes[:-1], (kind, prefixes[-1][1]
-                                                 or portable))
+                if (
+                    kind == "timed_statement"
+                    and prefixes
+                    and prefixes[-1][0] == kind
+                ):
+                    prefixes = (
+                        *prefixes[:-1],
+                        (kind, prefixes[-1][1] or portable),
+                    )
                 else:
                     prefixes = (*prefixes, (kind, portable))
                 targets[node.id] = prefixes
                 break
             stack.extend(reversed(node.named_children))
-    return PrefixNode(root, targets, source,
-                      [(start, end) for _, _, _, start, end in marks])
+    return PrefixNode(
+        root, targets, source, [(start, end) for _, _, _, start, end in marks]
+    )

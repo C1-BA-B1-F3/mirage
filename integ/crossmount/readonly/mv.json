@@ -5,6 +5,7 @@
       "seq": 773,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "echo keep | tee /data/xro_s2.txt > /dev/null && mv /data/xro_s2.txt /ro/xro2.txt",
@@ -19,6 +20,7 @@
       "seq": 774,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "cat /data/xro_s2.txt && ls /ro",

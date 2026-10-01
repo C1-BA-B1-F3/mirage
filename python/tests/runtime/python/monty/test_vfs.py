@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
 
 import pytest
@@ -29,13 +30,15 @@ class CountingCore(RuntimeVFS):
         files (dict[str, bytes]): the paths the mount holds.
     """
 
-    def __init__(self,
-                 files: dict[str, bytes],
-                 links: dict[str, str] | None = None,
-                 dirs: set[str] | None = None) -> None:
-        super().__init__(dispatch=None,
-                         loop=None,
-                         resolver=PrefixResolver(lambda: []))
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        links: dict[str, str] | None = None,
+        dirs: set[str] | None = None,
+    ) -> None:
+        super().__init__(
+            dispatch=None, loop=None, resolver=PrefixResolver(lambda: [])
+        )
         self.files = files
         self.links = dict(links or {})
         # A directory stats but does not read, which is the shape a
@@ -44,7 +47,10 @@ class CountingCore(RuntimeVFS):
         self.dirs = set(dirs or ())
         self.calls: list[tuple[str, str]] = []
 
-    def _raw(self, op, path, **kwargs):
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path))
         if op == "read":
             if path not in self.files:
@@ -52,22 +58,24 @@ class CountingCore(RuntimeVFS):
             return self.files[path]
         if op == "stat":
             if path in self.dirs:
-                return FileStat(name=path,
-                                size=0,
-                                type=FileType.DIRECTORY,
-                                content=None)
+                return FileStat(
+                    name=path, size=0, type=FileType.DIRECTORY, content=None
+                )
             if path not in self.files:
                 raise FileNotFoundError(path)
-            return FileStat(name=path,
-                            size=len(self.files[path]),
-                            type=FileType.FILE,
-                            content=ContentType.TEXT)
+            return FileStat(
+                name=path,
+                size=len(self.files[path]),
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            )
         if op == "readdir":
             # Full virtual paths, the door's own shape.
             prefix = path.rstrip("/") + "/"
             names = {
-                prefix + p[len(prefix):].split("/")[0]
-                for p in self.files if p.startswith(prefix)
+                prefix + p[len(prefix) :].split("/")[0]
+                for p in self.files
+                if p.startswith(prefix)
             }
             if not names:
                 raise FileNotFoundError(path)
@@ -171,7 +179,7 @@ class RefusingCore(CountingCore):
     def __init__(self) -> None:
         super().__init__({})
 
-    def _raw(self, op, path, **kwargs):
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path))
         raise PermissionError(errno.EACCES, "denied", path)
 

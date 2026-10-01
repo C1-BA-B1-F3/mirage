@@ -33,9 +33,11 @@ read = _op("read")
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -50,23 +52,30 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_gslide_renders_presentation_json(accessor, index):
-    await index.set_dir('/slides', [('deck.gslide.json',
-                                     IndexEntry(
-                                         id="slide123",
-                                         name="Deck",
-                                         resource_type="gdrive/gslide",
-                                         remote_time="2026-04-01T00:00:00Z",
-                                         vfs_name="deck.gslide.json",
-                                     ))])
+    await index.set_dir(
+        "/slides",
+        [
+            (
+                "deck.gslide.json",
+                IndexEntry(
+                    id="slide123",
+                    name="Deck",
+                    resource_type="gdrive/gslide",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="deck.gslide.json",
+                ),
+            )
+        ],
+    )
     slide_json = json.dumps({"presentationId": "slide123"}).encode()
     with patch(
-            "mirage.core.gdrive.read.read_presentation",
-            new_callable=AsyncMock,
-            return_value=slide_json,
+        "mirage.core.gdrive.read.read_presentation",
+        new_callable=AsyncMock,
+        return_value=slide_json,
     ) as mock:
-        result = await read(accessor,
-                            _scope("/slides/deck.gslide.json"),
-                            index=index)
+        result = await read(
+            accessor, _scope("/slides/deck.gslide.json"), index=index
+        )
         mock.assert_called_once_with(accessor.token_manager, "slide123")
         assert json.loads(result)["presentationId"] == "slide123"
 

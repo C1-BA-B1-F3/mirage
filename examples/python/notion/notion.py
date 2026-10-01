@@ -77,14 +77,19 @@ async def explore_pages(ws: Workspace) -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {base}/page.json ===")
-    meta_res = await ws.shell(f'chmod 640 "{base}/page.json"'
-                              f' && chown 500:dev "{base}/page.json"'
-                              f' && touch -t 202601021530 "{base}/page.json"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{base}/page.json"'
+        f' && chown 500:dev "{base}/page.json"'
+        f' && touch -t 202601021530 "{base}/page.json"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path(f"{base}/page.json"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path(f"{base}/page.json")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
     await run(ws, f'jq ".title" {base}/page.json')
     await run(ws, f'jq ".page_id" {base}/page.json')
     await run(ws, f'jq ".parent_type" {base}/page.json')
@@ -138,12 +143,13 @@ async def explore_databases(ws: Workspace) -> None:
     await run(ws, f'jq -r ".title" {source_base}/rows.jsonl')
     # A row's cells ride on its line, as Notion's own property objects,
     # answering to the schema in the data_source.json above.
-    await run(ws,
-              f'head -n 1 {source_base}/rows.jsonl | jq ".properties | keys"')
+    await run(
+        ws, f'head -n 1 {source_base}/rows.jsonl | jq ".properties | keys"'
+    )
 
-    row = (await
-           run(ws,
-               f'head -n 1 {source_base}/rows.jsonl | jq -r ".path"')).strip()
+    row = (
+        await run(ws, f'head -n 1 {source_base}/rows.jsonl | jq -r ".path"')
+    ).strip()
     if not row:
         print("Data source has no rows\n")
         return

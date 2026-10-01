@@ -22,11 +22,11 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def read(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
-        result = await read_values(tm,
-                                   fl.as_str("spreadsheet") or "",
-                                   fl.as_str("range") or "")
+        result = await read_values(
+            tm, fl.as_str("spreadsheet") or "", fl.as_str("range") or ""
+        )
     return yield_bytes(result), IOResult()

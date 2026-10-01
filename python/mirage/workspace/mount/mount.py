@@ -28,27 +28,45 @@ from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
-from mirage.commands.config import (CommandOpts, ExecContext,
-                                    RegisteredCommand, has_injected_version)
+from mirage.commands.config import CommandOpts, ExecContext, RegisteredCommand
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.flag_view import FlagBag
+from mirage.commands.spec.standard import has_injected_version
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
-from mirage.context import (effective_mount_mode, require_paths_writable,
-                            reset_mount_gate, reset_walk_probe, set_mount_gate,
-                            set_walk_probe, strongest_mode_under)
+from mirage.context import (
+    effective_mount_mode,
+    require_paths_writable,
+    reset_mount_gate,
+    reset_walk_probe,
+    set_mount_gate,
+    set_walk_probe,
+    strongest_mode_under,
+)
 from mirage.io.cachable_iterator import CachableAsyncIterator
 from mirage.io.types import ByteSource, IOResult, materialize
-from mirage.observe.context import (push_mount_context, push_revisions,
-                                    reset_active_recorder, reset_revisions,
-                                    with_mount_context, with_revisions)
+from mirage.observe.context import (
+    push_mount_context,
+    push_revisions,
+    reset_active_recorder,
+    reset_revisions,
+    with_mount_context,
+    with_revisions,
+)
 from mirage.ops.host_io import host_io, with_host_io
 from mirage.ops.registry import RegisteredOp
 from mirage.policy import resolve_limit
-from mirage.types import (FileType, Limit, MountMode, PathSpec, Producer,
-                          ReadSpec, WalkProbe)
+from mirage.types import (
+    FileType,
+    Limit,
+    MountMode,
+    PathSpec,
+    Producer,
+    ReadSpec,
+    WalkProbe,
+)
 from mirage.utils.context_scope import ContextScope
 from mirage.utils.errors import ebusy, enotsup, format_fs_error
 from mirage.utils.ids import uuid7
@@ -67,9 +85,12 @@ logger = logging.getLogger(__name__)
 _SUBTREE_OPS = frozenset({"rename"})
 
 
-async def _command_output(source: AsyncIterator[bytes], io: IOResult,
-                          command: str,
-                          paths: list[PathSpec]) -> AsyncIterator[bytes]:
+async def _command_output(
+    source: AsyncIterator[bytes],
+    io: IOResult,
+    command: str,
+    paths: list[PathSpec],
+) -> AsyncIterator[bytes]:
     """Keep a deferred backend failure on its command, after any emitted bytes.
 
     Args:
@@ -87,8 +108,11 @@ async def _command_output(source: AsyncIterator[bytes], io: IOResult,
         logger.debug("%s output failed", command, exc_info=True)
         existing = await materialize(io.stderr) or b""
         io.stderr = existing + format_fs_error(command, exc, paths)
-        io.exit_code = (exc.exit_code if isinstance(exc, UsageError) else
-                        read_fail_exit(command, exc))
+        io.exit_code = (
+            exc.exit_code
+            if isinstance(exc, UsageError)
+            else read_fail_exit(command, exc)
+        )
 
 
 def _wrap_cmd_streams(
@@ -157,11 +181,13 @@ def _wrap_op_stream(result: Any, mount_id: str, activity: VFSActivity) -> Any:
     """
     if isinstance(result, CachableAsyncIterator):
         result.replace_source(
-            with_host_io(with_mount_context(result.source, mount_id)))
+            with_host_io(with_mount_context(result.source, mount_id))
+        )
         return activity.hold(result)
     if hasattr(result, "__aiter__"):
-        return activity.hold(with_host_io(with_mount_context(result,
-                                                             mount_id)))
+        return activity.hold(
+            with_host_io(with_mount_context(result, mount_id))
+        )
     return result
 
 
@@ -213,20 +239,25 @@ class MountEntry:
         # than kept. The TypeScript twin freezes its copy at the same
         # point for the mirror-image reason.
         spec = read if read is not None else ReadSpec()
-        self.read = dataclasses.replace(spec,
-                                        policy=coerce_read_policy(spec.policy))
+        self.read = dataclasses.replace(
+            spec, policy=coerce_read_policy(spec.policy)
+        )
         # The store this mount runs its driver under, built by the
         # registry when the driver is placed and shared with any alias
         # of the same instance; a bare entry gets a RAM store at the
         # driver's TTL. ``index`` is the same store scoped by the cache
         # manager, which is what ops and commands receive.
-        self.index_store: IndexCacheStore = (index if index is not None else
-                                             build_index(None, vfs.index_ttl))
+        self.index_store: IndexCacheStore = (
+            index if index is not None else build_index(None, vfs.index_ttl)
+        )
         # The ``vfs:`` value the driver was built from, recorded for
         # snapshots; None for one constructed in code.
         self.vfs_ref = vfs_ref
-        self.index_config = (index_config.model_copy(
-            deep=True) if index_config is not None else None)
+        self.index_config = (
+            index_config.model_copy(deep=True)
+            if index_config is not None
+            else None
+        )
         self.activity = VFSActivity()
         self.retiring = False
         self.before_use: Callable[[], Awaitable[None]] | None = None
@@ -270,10 +301,12 @@ class MountEntry:
             name (str): the op name.
         """
         return bool(
-            self._resolve_cascade(name, None, self._ops, self._general_ops))
+            self._resolve_cascade(name, None, self._ops, self._general_ops)
+        )
 
-    async def expand_glob(self, paths: list[PathSpec],
-                          prefix: str) -> list[PathSpec]:
+    async def expand_glob(
+        self, paths: list[PathSpec], prefix: str
+    ) -> list[PathSpec]:
         """Expand glob words through the ``glob`` op, one spec at a time.
 
         A driver whose table carries no ``glob`` leaves every word as
@@ -285,26 +318,35 @@ class MountEntry:
             paths (list[PathSpec]): the words, pattern specs among them.
             prefix (str): the mount prefix without its trailing slash.
         """
-        levels = self._resolve_cascade("glob", None, self._ops,
-                                       self._general_ops)
+        levels = self._resolve_cascade(
+            "glob", None, self._ops, self._general_ops
+        )
         if not levels:
             return list(paths)
         async with self.use():
             if self.cache_manager is None:
-                return await self._run_glob(levels, paths, prefix,
-                                            self.index_store)
+                return await self._run_glob(
+                    levels, paths, prefix, self.index_store
+                )
             async with self.cache_manager.mutation():
                 await self.ensure_ready()
                 index = self.cache_manager.scope_index_locked(self.index_store)
                 return await self._run_glob(levels, paths, prefix, index)
 
-    async def _run_glob(self, levels: list[RegisteredOp],
-                        paths: list[PathSpec], prefix: str,
-                        index: IndexCacheStore) -> list[PathSpec]:
+    async def _run_glob(
+        self,
+        levels: list[RegisteredOp],
+        paths: list[PathSpec],
+        prefix: str,
+        index: IndexCacheStore,
+    ) -> list[PathSpec]:
         out: list[PathSpec] = []
         for p in paths:
-            spec = (dataclasses.replace(
-                p, vfs_path=mount_key(p.virtual, prefix)) if prefix else p)
+            spec = (
+                dataclasses.replace(p, vfs_path=mount_key(p.virtual, prefix))
+                if prefix
+                else p
+            )
             for op in levels:
                 matches = await op.fn(self.vfs.accessor, spec, index=index)
                 if matches is not None:
@@ -315,8 +357,11 @@ class MountEntry:
     @property
     def index(self) -> IndexCacheStore:
         index = self.index_store
-        return self.cache_manager.scope_index(
-            index) if self.cache_manager else index
+        return (
+            self.cache_manager.scope_index(index)
+            if self.cache_manager
+            else index
+        )
 
     async def ensure_ready(self) -> None:
         """Finish mount preparation before any backend or cache read."""
@@ -399,20 +444,23 @@ class MountEntry:
             return 0
         if self._prefix_index is None:
             index: dict[str, set[int]] = {}
-            names = (set(self._cmd_specs) | {n
-                                             for n, _ in self._cmds}
-                     | set(self._general_cmds))
+            names = (
+                set(self._cmd_specs)
+                | {n for n, _ in self._cmds}
+                | set(self._general_cmds)
+            )
             for name in names:
                 tokens = name.split(" ")
                 if len(tokens) > 1:
                     index.setdefault(tokens[0], set()).add(len(tokens))
             self._prefix_index = {
-                k: sorted(v, reverse=True)
-                for k, v in index.items()
+                k: sorted(v, reverse=True) for k, v in index.items()
             }
         for length in self._prefix_index.get(words[0], ()):
-            if length <= len(words) and self.resolve_command(" ".join(
-                    words[:length])) is not None:
+            if (
+                length <= len(words)
+                and self.resolve_command(" ".join(words[:length])) is not None
+            ):
                 return length
         return 1
 
@@ -484,32 +532,42 @@ class MountEntry:
         cmd_groups: dict[str, tuple[list[RegisteredCommand], set[str]]] = {}
         op_groups: dict[str, tuple[list[RegisteredOp], set[str]]] = {}
         for fn in fns:
-            rcs: list[RegisteredCommand] = ([fn] if isinstance(
-                fn, RegisteredCommand) else getattr(fn, "_registered_commands",
-                                                    []))
+            rcs: list[RegisteredCommand] = (
+                [fn]
+                if isinstance(fn, RegisteredCommand)
+                else getattr(fn, "_registered_commands", [])
+            )
             for rc in rcs:
                 keep, attempted = cmd_groups.setdefault(rc.name, ([], set()))
                 if rc.vfs is None or rc.vfs == pname:
                     keep.append(rc)
                 else:
                     attempted.add(rc.vfs)
-            ros: list[RegisteredOp] = ([fn] if isinstance(fn, RegisteredOp)
-                                       else getattr(fn, "_registered_ops", []))
+            ros: list[RegisteredOp] = (
+                [fn]
+                if isinstance(fn, RegisteredOp)
+                else getattr(fn, "_registered_ops", [])
+            )
             for ro in ros:
                 keep_op, attempted_op = op_groups.setdefault(
-                    ro.name, ([], set()))
+                    ro.name, ([], set())
+                )
                 if ro.vfs is None or ro.vfs == pname:
                     keep_op.append(ro)
                 else:
                     attempted_op.add(ro.vfs)
         for name, (keep, attempted) in cmd_groups.items():
             if not keep:
-                raise ValueError(f"command {name!r} is for VFS(s) "
-                                 f"{sorted(attempted)!r}, not {pname!r}")
+                raise ValueError(
+                    f"command {name!r} is for VFS(s) "
+                    f"{sorted(attempted)!r}, not {pname!r}"
+                )
         for name, (keep_op, attempted_op) in op_groups.items():
             if not keep_op:
-                raise ValueError(f"op {name!r} is for VFS(s) "
-                                 f"{sorted(attempted_op)!r}, not {pname!r}")
+                raise ValueError(
+                    f"op {name!r} is for VFS(s) "
+                    f"{sorted(attempted_op)!r}, not {pname!r}"
+                )
         for keep, _attempted in cmd_groups.values():
             for rc in keep:
                 self.register(rc)
@@ -541,13 +599,14 @@ class MountEntry:
             dict[str, list[str | None]]: Command name to filetype list.
         """
         result: dict[str, list[str | None]] = {}
-        for (name, filetype) in self._cmds:
+        for name, filetype in self._cmds:
             result.setdefault(name, []).append(filetype)
         for name in self._general_cmds:
             result.setdefault(name, [])
         for name in result:
-            result[name] = sorted(result[name],
-                                  key=lambda x: (x is not None, x or ""))
+            result[name] = sorted(
+                result[name], key=lambda x: (x is not None, x or "")
+            )
         return dict(sorted(result.items()))
 
     def registered_ops(self) -> dict[str, list[str | None]]:
@@ -557,13 +616,14 @@ class MountEntry:
             dict[str, list[str | None]]: Op name to filetype list.
         """
         result: dict[str, list[str | None]] = {}
-        for (name, filetype) in self._ops:
+        for name, filetype in self._ops:
             result.setdefault(name, []).append(filetype)
         for name in self._general_ops:
             result.setdefault(name, [])
         for name in result:
-            result[name] = sorted(result[name],
-                                  key=lambda x: (x is not None, x or ""))
+            result[name] = sorted(
+                result[name], key=lambda x: (x is not None, x or "")
+            )
         return dict(sorted(result.items()))
 
     # ── op registration ───────────────────────────────
@@ -642,28 +702,38 @@ class MountEntry:
             # The DISPATCHER's stat, not the backend's, so a mount root and a
             # namespace-only directory answer too; None means neither plane
             # saw anything, in which case the renderer reports its own miss.
-            if (extension is not None and paths and stat_path is not None
-                    and (cmd_name, extension) in self._cmds):
+            if (
+                extension is not None
+                and paths
+                and stat_path is not None
+                and (cmd_name, extension) in self._cmds
+            ):
                 entry = await stat_path(paths[0].virtual)
                 if entry is not None and entry.type == FileType.DIRECTORY:
                     extension = None
 
-            handlers = self._resolve_cascade(cmd_name, extension, self._cmds,
-                                             self._general_cmds)
+            handlers = self._resolve_cascade(
+                cmd_name, extension, self._cmds, self._general_cmds
+            )
             if not handlers:
                 return None, IOResult(
                     exit_code=127,
-                    stderr=(f"{cmd_name}: command not found".encode()))
+                    stderr=(f"{cmd_name}: command not found".encode()),
+                )
 
             mount_prefix = self.prefix.rstrip("/")
             filetype_fns = self.filetype_handlers(cmd_name)
-            is_filetype_cmd = extension is not None and (
-                cmd_name, extension) in self._cmds
+            is_filetype_cmd = (
+                extension is not None and (cmd_name, extension) in self._cmds
+            )
 
             paths = [
                 dataclasses.replace(
-                    p, vfs_path=mount_key(p.virtual, mount_prefix))
-                if isinstance(p, PathSpec) else p for p in paths
+                    p, vfs_path=mount_key(p.virtual, mount_prefix)
+                )
+                if isinstance(p, PathSpec)
+                else p
+                for p in paths
             ]
 
             # Stamp this mount's backend key onto path-shaped flag values so
@@ -674,17 +744,20 @@ class MountEntry:
             flags: dict[str, FlagValue] = FlagBag(flag_kwargs)
             for k, v in flag_kwargs.items():
                 if isinstance(v, PathSpec):
-                    flags[k] = dataclasses.replace(v,
-                                                   vfs_path=mount_key(
-                                                       v.virtual,
-                                                       mount_prefix))
-                elif isinstance(v, list) and v and all(
-                        isinstance(item, PathSpec) for item in v):
+                    flags[k] = dataclasses.replace(
+                        v, vfs_path=mount_key(v.virtual, mount_prefix)
+                    )
+                elif (
+                    isinstance(v, list)
+                    and v
+                    and all(isinstance(item, PathSpec) for item in v)
+                ):
                     specs = [item for item in v if isinstance(item, PathSpec)]
                     flags[k] = [
-                        dataclasses.replace(item,
-                                            vfs_path=mount_key(
-                                                item.virtual, mount_prefix))
+                        dataclasses.replace(
+                            item,
+                            vfs_path=mount_key(item.virtual, mount_prefix),
+                        )
                         for item in specs
                     ]
                 else:
@@ -731,17 +804,25 @@ class MountEntry:
             # and `..` with: the handler reaches its backend past the
             # door, so the door's stat and link follow are bound here.
             links = context.ns.links if context.ns is not None else None
-            walk_token = (set_walk_probe(
-                WalkProbe(stat=functools.partial(dispatch_stat,
-                                                 context.dispatch),
-                          follow=link_follow(links)))
-                          if context.dispatch is not None else None)
+            walk_token = (
+                set_walk_probe(
+                    WalkProbe(
+                        stat=functools.partial(
+                            dispatch_stat, context.dispatch
+                        ),
+                        follow=link_follow(links),
+                    )
+                )
+                if context.dispatch is not None
+                else None
+            )
             try:
                 for cmd in handlers:
                     # Only wrapper-owned responses bypass the write guard.
-                    info_only = (flags.get("help") is True
-                                 or (flags.get("version") is True
-                                     and has_injected_version(cmd.spec)))
+                    info_only = flags.get("help") is True or (
+                        flags.get("version") is True
+                        and has_injected_version(cmd.spec)
+                    )
                     # A command whose I/O runs under the path guards is
                     # refused where it writes, because only the write
                     # knows whether a line writes: `gzip -c`, `tar -t` and
@@ -755,13 +836,20 @@ class MountEntry:
                     # effective_mode: a mount whose only writable region
                     # is a show entry still runs it. The trailing newline
                     # is load-bearing: stderr accumulates across a line.
-                    if (cmd.write and not cmd.path_guarded
-                            and not info_only and strongest_mode_under(
-                                self.prefix, self.mode) == MountMode.READ):
+                    if (
+                        cmd.write
+                        and not cmd.path_guarded
+                        and not info_only
+                        and strongest_mode_under(self.prefix, self.mode)
+                        == MountMode.READ
+                    ):
                         return None, IOResult(
                             exit_code=1,
-                            stderr=(f"{cmd_name}: read-only mount "
-                                    f"at {self.prefix}\n".encode()))
+                            stderr=(
+                                f"{cmd_name}: read-only mount "
+                                f"at {self.prefix}\n".encode()
+                            ),
+                        )
                     # The dispatch-level guard only sees default limits
                     # (the mount is unknown before routing), so the
                     # mount-resolved timeout must also bound the command
@@ -771,24 +859,37 @@ class MountEntry:
                         cmd_name,
                         command_default=cmd.limit,
                         mount_override=context.limit_override
-                        or self.command_limits.get(cmd_name))
-                    cmd_timeout = (resolved_limit.timeout_seconds
-                                   if resolved_limit is not None else None)
+                        or self.command_limits.get(cmd_name),
+                    )
+                    cmd_timeout = (
+                        resolved_limit.timeout_seconds
+                        if resolved_limit is not None
+                        else None
+                    )
                     with host_io():
                         result = await run_with_timeout(
                             cmd.fn(self.vfs.accessor, paths, texts, opts),
-                            cmd_timeout, cmd_name)
+                            cmd_timeout,
+                            cmd_name,
+                        )
                     if result is not None:
-                        stream, io = _wrap_cmd_streams(result, self.revisions
-                                                       or None, self.mount_id,
-                                                       self.activity)
-                        io.producer = Producer(command=cmd_name,
-                                               prefixes=(self.prefix, ),
-                                               declared=cmd.limit)
+                        stream, io = _wrap_cmd_streams(
+                            result,
+                            self.revisions or None,
+                            self.mount_id,
+                            self.activity,
+                        )
+                        io.producer = Producer(
+                            command=cmd_name,
+                            prefixes=(self.prefix,),
+                            declared=cmd.limit,
+                        )
                         if stream is not None and not isinstance(
-                                stream, bytes):
-                            stream = _command_output(stream, io, cmd_name,
-                                                     paths)
+                            stream, bytes
+                        ):
+                            stream = _command_output(
+                                stream, io, cmd_name, paths
+                            )
                         return stream, io
                 return None, IOResult()
             finally:
@@ -808,8 +909,10 @@ class MountEntry:
         """
         filetype = get_extension(path)
         return bool(
-            self._resolve_cascade(op_name, filetype, self._ops,
-                                  self._general_ops))
+            self._resolve_cascade(
+                op_name, filetype, self._ops, self._general_ops
+            )
+        )
 
     async def execute_op(
         self,
@@ -836,10 +939,14 @@ class MountEntry:
             path (str): virtual path.
         """
         async with self.use():
-            filetype = (kwargs.pop("filetype")
-                        if "filetype" in kwargs else get_extension(path))
-            levels = self._resolve_cascade(op_name, filetype, self._ops,
-                                           self._general_ops)
+            filetype = (
+                kwargs.pop("filetype")
+                if "filetype" in kwargs
+                else get_extension(path)
+            )
+            levels = self._resolve_cascade(
+                op_name, filetype, self._ops, self._general_ops
+            )
             if not levels:
                 raise enotsup(str(self.vfs.name), op_name, path)
 
@@ -848,10 +955,12 @@ class MountEntry:
                 endpoints = [PathSpec.from_str_path(path)]
                 if isinstance(dst, PathSpec):
                     endpoints.append(dst)
-                require_paths_writable(endpoints,
-                                       self.prefix,
-                                       self.mode,
-                                       subtree=op_name in _SUBTREE_OPS)
+                require_paths_writable(
+                    endpoints,
+                    self.prefix,
+                    self.mode,
+                    subtree=op_name in _SUBTREE_OPS,
+                )
 
             mount_prefix = self.prefix.rstrip("/")
             scope = PathSpec(
@@ -863,8 +972,11 @@ class MountEntry:
             # Per-op caps are policy and fire at the op doors (post_ops);
             # only the timeout stays here, bounding the backend call itself.
             op_override = self.command_limits.get(op_name)
-            op_timeout = (op_override.timeout_seconds
-                          if op_override is not None else None)
+            op_timeout = (
+                op_override.timeout_seconds
+                if op_override is not None
+                else None
+            )
             recording_token = push_mount_context(self.mount_id)
             revs_token = push_revisions(self.revisions or None)
             try:
@@ -875,14 +987,17 @@ class MountEntry:
                     # spells the two the same, and routing the physical one
                     # hands the op back to the backend serving it.
                     with host_io():
-                        result = op.fn(self.vfs.accessor, scope, *args,
-                                       **kwargs)
+                        result = op.fn(
+                            self.vfs.accessor, scope, *args, **kwargs
+                        )
                         if inspect.isawaitable(result):
                             result = await run_with_timeout(
-                                result, op_timeout, op_name)
+                                result, op_timeout, op_name
+                            )
                     if result is not None:
-                        return _wrap_op_stream(result, self.mount_id,
-                                               self.activity)
+                        return _wrap_op_stream(
+                            result, self.mount_id, self.activity
+                        )
                 return None
             finally:
                 reset_revisions(revs_token)

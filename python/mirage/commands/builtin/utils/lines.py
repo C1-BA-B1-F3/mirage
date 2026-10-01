@@ -14,7 +14,7 @@ def split_lines_keepends(text: str) -> list[str]:
     start = 0
     for i, ch in enumerate(text):
         if ch == "\n":
-            out.append(text[start:i + 1])
+            out.append(text[start : i + 1])
             start = i + 1
     if start < len(text):
         out.append(text[start:])
@@ -59,5 +59,8 @@ def join_file_lines(chunks: Sequence[AnyStr], sep: AnyStr) -> AnyStr:
 
 
 __all__ = [
-    "join_file_lines", "map_lines", "split_lines", "split_lines_keepends"
+    "join_file_lines",
+    "map_lines",
+    "split_lines",
+    "split_lines_keepends",
 ]

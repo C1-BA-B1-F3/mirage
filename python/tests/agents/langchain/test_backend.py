@@ -148,8 +148,9 @@ async def test_als_reports_command_errors(backend):
 
 @pytest.mark.asyncio
 async def test_agrep(backend):
-    await backend.awrite("/search.txt",
-                         "hello world\ngoodbye world\nhello again")
+    await backend.awrite(
+        "/search.txt", "hello world\ngoodbye world\nhello again"
+    )
     result = await backend.agrep("hello", path="/")
     assert result.matches is not None
     assert len(result.matches) >= 2
@@ -161,16 +162,8 @@ async def test_agrep_single_file_keeps_path_and_line_numbers(backend):
     result = await backend.agrep("error", path="/log.txt")
     assert result.error is None
     assert result.matches == [
-        {
-            "path": "/log.txt",
-            "line": 2,
-            "text": "error here"
-        },
-        {
-            "path": "/log.txt",
-            "line": 4,
-            "text": "error again"
-        },
+        {"path": "/log.txt", "line": 2, "text": "error here"},
+        {"path": "/log.txt", "line": 4, "text": "error again"},
     ]
 
 
@@ -237,10 +230,13 @@ async def test_upload_and_download(backend):
 async def test_als_names_the_reason_beside_a_refusal():
     # stderr is bash's bare `Permission denied`; the reason rides the
     # refusal record, and the error text appends it as one more line.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   route_policy=lambda ctx: {"deny": "no lists"}
-                   if ctx.command == "ls" else None)
+    ws = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        route_policy=lambda ctx: (
+            {"deny": "no lists"} if ctx.command == "ls" else None
+        ),
+    )
     result = await LangchainWorkspace(ws).als("/")
     assert result.entries is None
     assert result.error == "ls: Permission denied\npolicy denied: no lists"

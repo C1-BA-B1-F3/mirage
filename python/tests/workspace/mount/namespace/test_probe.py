@@ -18,8 +18,10 @@ import pytest
 
 from mirage.io import IOResult
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.workspace.mount.namespace.probe import (resolve_path_stat,
-                                                    stat_or_none)
+from mirage.workspace.mount.namespace.probe import (
+    resolve_path_stat,
+    stat_or_none,
+)
 
 
 class _Dispatch:
@@ -35,8 +37,9 @@ class _Dispatch:
         self.readdir = readdir
         self.ops: list[str] = []
 
-    async def __call__(self, op: str, scope: PathSpec,
-                       **kwargs: Any) -> tuple[Any, IOResult]:
+    async def __call__(
+        self, op: str, scope: PathSpec, **kwargs: Any
+    ) -> tuple[Any, IOResult]:
         self.ops.append(op)
         answer = self.stat if op == "stat" else self.readdir
         if isinstance(answer, Exception):
@@ -88,8 +91,9 @@ async def test_absence_takes_both_channels_coming_back_empty():
 @pytest.mark.asyncio
 async def test_a_raising_readdir_is_absence_too():
     """A backend that raises rather than listing empty agrees."""
-    dispatch = _Dispatch(FileNotFoundError("/data/nope"),
-                         FileNotFoundError("/data/nope"))
+    dispatch = _Dispatch(
+        FileNotFoundError("/data/nope"), FileNotFoundError("/data/nope")
+    )
     assert await resolve_path_stat(dispatch, _spec("/data/nope")) is None
 
 

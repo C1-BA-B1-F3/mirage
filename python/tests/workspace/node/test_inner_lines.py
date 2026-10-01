@@ -36,10 +36,16 @@ def _argv(inner: InnerLine) -> list[str]:
         # A command already split into words.
         ("command", ["-p", "rm", "/x"], [("argv", ["rm", "/x"], False)]),
         ("exec", ["-a", "name", "rm", "/x"], [("argv", ["rm", "/x"], False)]),
-        ("env", ["-i", "-u", "HOME", "A=1", "rm", "/x"
-                 ], [("argv", ["rm", "/x"], False)]),
-        ("timeout", ["-s", "KILL", "5", "rm", "/x"], [("argv", ["rm", "/x"
-                                                                ], False)]),
+        (
+            "env",
+            ["-i", "-u", "HOME", "A=1", "rm", "/x"],
+            [("argv", ["rm", "/x"], False)],
+        ),
+        (
+            "timeout",
+            ["-s", "KILL", "5", "rm", "/x"],
+            [("argv", ["rm", "/x"], False)],
+        ),
         ("nohup", ["rm", "/x"], [("argv", ["rm", "/x"], False)]),
         # bash runs the named builtin with the words as given, so
         # `builtin eval 'rm /x'` is eval's line, admitted in turn.
@@ -51,9 +57,11 @@ def _argv(inner: InnerLine) -> list[str]:
         # Operands the runtime appends: stdin items, matched paths.
         ("xargs", ["-n", "1", "rm", "-f"], [("argv", ["rm", "-f"], True)]),
         ("xargs", [], [("argv", ["echo"], True)]),
-        ("find", ["/r", "-exec", "rm", "{}", ";", "-ok", "cat", "{}", "+"
-                  ], [("argv", ["rm", "{}"], True),
-                      ("argv", ["cat", "{}"], True)]),
+        (
+            "find",
+            ["/r", "-exec", "rm", "{}", ";", "-ok", "cat", "{}", "+"],
+            [("argv", ["rm", "{}"], True), ("argv", ["cat", "{}"], True)],
+        ),
         # Lines the gate cannot read: a file, a program from stdin.
         ("source", ["f.sh"], [("none", None, False)]),
         (".", ["f.sh"], [("none", None, False)]),
@@ -67,7 +75,8 @@ def _argv(inner: InnerLine) -> list[str]:
         ("timeout", ["5"], []),
         ("bash", ["--bogus"], []),
         ("cat", ["/x"], []),
-    ])
+    ],
+)
 def test_inner_lines_read_the_words_that_run_other_words(head, args, expected):
     got = []
     for inner in inner_lines(head, _words(*args)):
@@ -81,23 +90,33 @@ def test_inner_lines_read_the_words_that_run_other_words(head, args, expected):
     assert got == expected
 
 
-@pytest.mark.parametrize("head, args, missing", [
-    ("xargs", ["-n", "1", "rm", "-f"
-               ], "xargs: rm: No such file or directory\n"),
-    ("xargs", [], "xargs: echo: No such file or directory\n"),
-    ("timeout", ["-s", "KILL", "5", "rm", "/x"],
-     "timeout: failed to run command 'rm': No such file or directory\n"),
-    ("env", ["rm", "/x"], None),
-    ("command", ["rm", "/x"], None),
-    ("find", ["/r", "-exec", "rm", "{}", ";"], None),
-    ("eval", ["rm", "/x"], None),
-])
+@pytest.mark.parametrize(
+    "head, args, missing",
+    [
+        (
+            "xargs",
+            ["-n", "1", "rm", "-f"],
+            "xargs: rm: No such file or directory\n",
+        ),
+        ("xargs", [], "xargs: echo: No such file or directory\n"),
+        (
+            "timeout",
+            ["-s", "KILL", "5", "rm", "/x"],
+            "timeout: failed to run command 'rm': No such file or directory\n",
+        ),
+        ("env", ["rm", "/x"], None),
+        ("command", ["rm", "/x"], None),
+        ("find", ["/r", "-exec", "rm", "{}", ";"], None),
+        ("eval", ["rm", "/x"], None),
+    ],
+)
 def test_a_builtin_that_looks_the_name_up_reports_a_miss_itself(
-        head, args, missing):
+    head, args, missing
+):
     # xargs and timeout look the name up before they run it, as GNU's
     # exec does, so a name the session cannot see is theirs to report;
     # the rest hand the words back to the shell, which reports it.
-    (inner, ) = inner_lines(head, _words(*args))
+    (inner,) = inner_lines(head, _words(*args))
     assert inner.missing == missing
 
 
@@ -105,9 +124,9 @@ def test_inner_words_keep_what_the_gate_could_not_read():
     # A dynamic word rides into the inner command as itself, raw text
     # and no literal, so the inner admission still sees it as unread.
     dynamic = Word('"$cmd"', None)
-    (inner, ) = inner_lines(
-        "timeout",
-        [Word("5", "5"), dynamic, Word("x", "x")])
+    (inner,) = inner_lines(
+        "timeout", [Word("5", "5"), dynamic, Word("x", "x")]
+    )
     assert inner.argv[0] is dynamic
-    (inner, ) = inner_lines("eval", [Word("rm", "rm"), Word('"$p"', None)])
+    (inner,) = inner_lines("eval", [Word("rm", "rm"), Word('"$p"', None)])
     assert inner.line == 'rm "$p"'

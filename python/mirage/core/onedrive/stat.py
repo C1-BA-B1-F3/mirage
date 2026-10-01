@@ -14,44 +14,52 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive import folder_child_count, stat_item
-from mirage.core.onedrive.client import (GraphError, drive_loc, graph_get,
-                                         split_path)
+from mirage.core.msgraph.client import GraphError, graph_get
+from mirage.core.msgraph.drive import (
+    folder_child_count,
+    stat_item,
+    virtual_key,
+)
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 
 
-async def stat(accessor: OneDriveAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
-    virtual = path.virtual if isinstance(path, PathSpec) else path
-    prefix, stripped = split_path(path)
-    if not stripped:
+async def stat(
+    accessor: OneDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
+    if not path.vfs_path:
         # The mount root is a real Graph item (`/drive/root` or the
-        # key_prefix folder); fetch it so size/modified are populated
-        # instead of synthesizing a bare directory stat.
+        # key_prefix folder); fetch it so modified is populated instead of
+        # synthesizing a bare directory stat. Its `size` is Graph's
+        # aggregate subtree storage number, not rendered content length:
+        # expose it as extra, like every other folder (see entry_stat).
         try:
-            item = await graph_get(accessor.config,
-                                   drive_loc(accessor.config, "").item(),
-                                   session=accessor.pool)
+            item = await graph_get(
+                accessor.config,
+                drive_loc(accessor.config, "").item(),
+                session=accessor.pool,
+            )
         except GraphError as exc:
             if exc.status == 404:
-                raise enoent(virtual)
+                raise enoent(path)
             raise
-        # The root's `size` is Graph's aggregate subtree storage number,
-        # not rendered content length: expose it as extra, like every
-        # other folder (see entry_stat).
-        return FileStat(name="/",
-                        type=FileType.DIRECTORY,
-                        modified=item.get("lastModifiedDateTime"),
-                        extra={
-                            "size_bytes": item.get("size"),
-                            "child_count": folder_child_count(item),
-                        })
-    virtual_key = (prefix + "/" + stripped if prefix else "/" + stripped)
-    return await stat_item(accessor.config,
-                           drive_loc(accessor.config, stripped),
-                           virtual,
-                           virtual_key,
-                           index,
-                           session=accessor.pool)
+        return FileStat(
+            name="/",
+            type=FileType.DIRECTORY,
+            modified=item.get("lastModifiedDateTime"),
+            extra={
+                "size_bytes": item.get("size"),
+                "child_count": folder_child_count(item),
+            },
+        )
+    return await stat_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        path.virtual,
+        virtual_key(path),
+        index,
+        session=accessor.pool,
+    )

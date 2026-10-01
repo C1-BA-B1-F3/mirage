@@ -18,8 +18,11 @@ from mirage.accessor.jaeger import JaegerAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.jaeger.client import (JaegerApiError, fetch_operations,
-                                       fetch_trace)
+from mirage.core.jaeger.client import (
+    JaegerApiError,
+    fetch_operations,
+    fetch_trace,
+)
 from mirage.core.jaeger.readdir import assert_service
 from mirage.core.jaeger.scope import detect_scope
 from mirage.core.render.json import json_bytes
@@ -48,19 +51,28 @@ def _has_service(trace: dict[str, Any], service: str) -> bool:
         return False
     return any(
         isinstance(p, dict) and p.get("serviceName") == service
-        for p in processes.values())
+        for p in processes.values()
+    )
 
 
-async def _read_operations(accessor: JaegerAccessor, match: ScopeMatch,
-                           path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_operations(
+    accessor: JaegerAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     service = match.slots["service"]
     await assert_service(accessor, service, path.virtual)
     operations = await fetch_operations(accessor, service)
     return json_bytes(operations)
 
 
-async def _read_trace(accessor: JaegerAccessor, match: ScopeMatch,
-                      path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_trace(
+    accessor: JaegerAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     service = match.slots["service"]
     await assert_service(accessor, service, path.virtual)
     try:
@@ -76,7 +88,10 @@ async def _read_trace(accessor: JaegerAccessor, match: ScopeMatch,
     return json_bytes(trace)
 
 
-read = make_read(detect_scope, {
-    "operations": _read_operations,
-    "trace": _read_trace,
-})
+read = make_read(
+    detect_scope,
+    {
+        "operations": _read_operations,
+        "trace": _read_trace,
+    },
+)

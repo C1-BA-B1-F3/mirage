@@ -25,8 +25,12 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _read_message(accessor: EmailAccessor, match: ScopeMatch,
-                        path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_message(
+    accessor: EmailAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
@@ -34,13 +38,18 @@ async def _read_message(accessor: EmailAccessor, match: ScopeMatch,
     return message_json_bytes(msg)
 
 
-async def _read_attachment(accessor: EmailAccessor, match: ScopeMatch,
-                           path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_attachment(
+    accessor: EmailAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
-    data = await fetch_attachment(accessor, match.slots["folder"],
-                                  match.slots["uid"], entry.vfs_name)
+    data = await fetch_attachment(
+        accessor, match.slots["folder"], match.slots["uid"], entry.vfs_name
+    )
     if data is None:
         raise enoent(path.virtual)
     return data

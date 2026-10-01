@@ -48,8 +48,10 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "integ" / "truth" / "notion_atlas.json"
 REVISION = "8c563b55d7c967755f474299848049834d624617"
-URL = ("https://huggingface.co/datasets/ScaleAI/MCP-Atlas/resolve/"
-       f"{REVISION}/MCP-Atlas.parquet")
+URL = (
+    "https://huggingface.co/datasets/ScaleAI/MCP-Atlas/resolve/"
+    f"{REVISION}/MCP-Atlas.parquet"
+)
 TOOL_PREFIX = "notion_"
 URL_BASE = "https://www.notion.so/"
 ANNOTATIONS = {
@@ -85,29 +87,31 @@ def load_calls(parquet: Path) -> list[Json]:
                 pending[call["id"]] = call["function"]
             function = pending.get(message.get("tool_call_id", ""))
             if function is None or not function["name"].startswith(
-                    TOOL_PREFIX):
+                TOOL_PREFIX
+            ):
                 continue
             text = "".join(part["text"] for part in message["content"])
-            calls.append({
-                "task": row["TASK"],
-                "tool": function["name"][len(TOOL_PREFIX):],
-                "args": json.loads(function["arguments"]),
-                "reply": json.loads(text),
-            })
+            calls.append(
+                {
+                    "task": row["TASK"],
+                    "tool": function["name"][len(TOOL_PREFIX) :],
+                    "args": json.loads(function["arguments"]),
+                    "reply": json.loads(text),
+                }
+            )
     return calls
 
 
 def rich_text(content: str) -> list[Json]:
-    return [{
-        "type": "text",
-        "text": {
-            "content": content,
-            "link": None
-        },
-        "annotations": dict(ANNOTATIONS),
-        "plain_text": content,
-        "href": None,
-    }]
+    return [
+        {
+            "type": "text",
+            "text": {"content": content, "link": None},
+            "annotations": dict(ANNOTATIONS),
+            "plain_text": content,
+            "href": None,
+        }
+    ]
 
 
 def cell_value(prop: Json) -> Any:
@@ -144,8 +148,9 @@ def build_prop(column: Json, value: Any) -> Json:
     if kind in ("title", "rich_text"):
         rendered: Any = rich_text(value)
     elif kind == "select":
-        option = next(o for o in column["select"]["options"]
-                      if o["name"] == value)
+        option = next(
+            o for o in column["select"]["options"] if o["name"] == value
+        )
         rendered = {k: option[k] for k in ("id", "name", "color")}
     elif kind == "date":
         rendered = {"start": value, "end": None, "time_zone": None}
@@ -214,7 +219,8 @@ def read_columns(call: Json, columns: Json) -> set[str]:
     args = call["args"]
     refs = filter_refs(args.get("filter", {})) + [
         sort["property"]
-        for sort in args.get("sorts", []) if "property" in sort
+        for sort in args.get("sorts", [])
+        if "property" in sort
     ]
     return {name for name in (column_of(columns, ref) for ref in refs) if name}
 
@@ -233,32 +239,30 @@ def build_page(db: Json, rows: Json, page_id: str, refs: list[str]) -> Json:
     """
     cells = rows["cells"][page_id]
     columns = db["properties"]
-    title = next((cells[name] for name, col in columns.items()
-                  if col["type"] == "title" and name in cells), "")
+    title = next(
+        (
+            cells[name]
+            for name, col in columns.items()
+            if col["type"] == "title" and name in cells
+        ),
+        "",
+    )
     names = picked(columns, refs) if refs else list(columns)
     props = {
         name: build_prop(columns[name], cells[name])
-        for name in names if name in cells
+        for name in names
+        if name in cells
     }
     return {
         "object": "page",
         "id": page_id,
         "created_time": rows["created_time"],
         "last_edited_time": rows["last_edited_time"],
-        "created_by": {
-            "object": "user",
-            "id": rows["author"]
-        },
-        "last_edited_by": {
-            "object": "user",
-            "id": rows["author"]
-        },
+        "created_by": {"object": "user", "id": rows["author"]},
+        "last_edited_by": {"object": "user", "id": rows["author"]},
         "cover": None,
         "icon": None,
-        "parent": {
-            "type": "database_id",
-            "database_id": db["id"]
-        },
+        "parent": {"type": "database_id", "database_id": db["id"]},
         "archived": False,
         "in_trash": False,
         "properties": props,
@@ -294,36 +298,42 @@ def gather(calls: list[Json]) -> tuple[Json, list[Json], Json]:
     for page_id, seen in pages.items():
         db_id = seen[0]["parent"]["database_id"]
         block = blocks.setdefault(
-            db_id, {
+            db_id,
+            {
                 "created_time": seen[0]["created_time"],
                 "last_edited_time": seen[0]["last_edited_time"],
                 "author": seen[0]["created_by"]["id"],
                 "cells": {},
                 "urls": {},
-            })
+            },
+        )
         cells: Json = {}
         for page in seen:
-            for key, want in (("created_time", block["created_time"]),
-                              ("last_edited_time",
-                               block["last_edited_time"]), ("created_by", {
-                                   "object":
-                                   "user",
-                                   "id":
-                                   block["author"]
-                               })):
+            for key, want in (
+                ("created_time", block["created_time"]),
+                ("last_edited_time", block["last_edited_time"]),
+                ("created_by", {"object": "user", "id": block["author"]}),
+            ):
                 if page[key] != want:
                     fail(f"{page_id}: {key} is not its database's")
             for name, prop in page["properties"].items():
                 value = cell_value(prop)
                 if value in (None, "", []):
-                    fail(f"{page_id}.{name} is empty; the encoding has no "
-                         "room for an empty value")
+                    fail(
+                        f"{page_id}.{name} is empty; the encoding has no "
+                        "room for an empty value"
+                    )
                 if cells.setdefault(name, value) != value:
                     fail(f"{page_id}.{name} differs between replies")
         block["cells"][page_id] = cells
-        title = next((cells[n]
-                      for n, c in databases[db_id]["properties"].items()
-                      if c["type"] == "title" and n in cells), None)
+        title = next(
+            (
+                cells[n]
+                for n, c in databases[db_id]["properties"].items()
+                if c["type"] == "title" and n in cells
+            ),
+            None,
+        )
         if title is None:
             block["urls"][page_id] = seen[0]["url"]
     return databases, users, blocks
@@ -343,8 +353,21 @@ def equalities(node: Json) -> list[Json]:
         return [c for child in node["and"] for c in equalities(child)]
     if "or" in node or "property" not in node:
         return []
-    kind = next((k for k in ("title", "rich_text", "select", "number",
-                             "checkbox", "date") if k in node), None)
+    kind = next(
+        (
+            k
+            for k in (
+                "title",
+                "rich_text",
+                "select",
+                "number",
+                "checkbox",
+                "date",
+            )
+            if k in node
+        ),
+        None,
+    )
     if kind is None or list(node[kind]) != ["equals"]:
         return []
     return [{"property": node["property"], "value": node[kind]["equals"]}]
@@ -373,13 +396,17 @@ def infer_cells(calls: list[Json], databases: Json, blocks: Json) -> None:
         for cond in equalities(args["filter"]):
             name = column_of(columns, cond["property"])
             if name is None:
-                fail(f"{call['task']}: filter names no column "
-                     f"{cond['property']}")
+                fail(
+                    f"{call['task']}: filter names no column "
+                    f"{cond['property']}"
+                )
             for item in call["reply"]["results"]:
                 row = cells[item["id"]]
                 if row.setdefault(name, cond["value"]) != cond["value"]:
-                    fail(f"{call['task']}: {item['id']} matched {name} = "
-                         f"{cond['value']!r} but holds {row[name]!r}")
+                    fail(
+                        f"{call['task']}: {item['id']} matched {name} = "
+                        f"{cond['value']!r} but holds {row[name]!r}"
+                    )
 
 
 def check_rebuild(calls: list[Json], databases: Json, blocks: Json) -> None:
@@ -394,8 +421,9 @@ def check_rebuild(calls: list[Json], databases: Json, blocks: Json) -> None:
                 fail(f"{call['task']}: cannot rebuild {item['id']} exactly")
 
 
-def row_order(calls: list[Json], databases: Json,
-              blocks: Json) -> dict[str, list[str]]:
+def row_order(
+    calls: list[Json], databases: Json, blocks: Json
+) -> dict[str, list[str]]:
     """Each database's rows in an order every recorded reply agrees with.
 
     A query with no sort returns rows in the database's own order, so each
@@ -427,8 +455,11 @@ def row_order(calls: list[Json], databases: Json,
         if args.get("sorts"):
             tie_order(call, ids, databases, blocks, after)
             continue
-        chain = ids + ([call["reply"]["next_cursor"]]
-                       if call["reply"]["next_cursor"] in first_seen else [])
+        chain = ids + (
+            [call["reply"]["next_cursor"]]
+            if call["reply"]["next_cursor"] in first_seen
+            else []
+        )
         for a, b in zip(chain, chain[1:]):
             after[a].add(b)
         if "filter" not in args and "start_cursor" not in args:
@@ -442,8 +473,9 @@ def row_order(calls: list[Json], databases: Json,
         for a in nodes:
             for b in after[a] & nodes:
                 before[b] += 1
-        ready = sorted((n for n in nodes if before[n] == 0),
-                       key=first_seen.__getitem__)
+        ready = sorted(
+            (n for n in nodes if before[n] == 0), key=first_seen.__getitem__
+        )
         out: list[str] = []
         while ready:
             node = ready.pop(0)
@@ -459,8 +491,13 @@ def row_order(calls: list[Json], databases: Json,
     return order
 
 
-def tie_order(call: Json, ids: list[str], databases: Json, blocks: Json,
-              after: dict[str, set[str]]) -> None:
+def tie_order(
+    call: Json,
+    ids: list[str],
+    databases: Json,
+    blocks: Json,
+    after: dict[str, set[str]],
+) -> None:
     args = call["args"]
     if len(args["sorts"]) != 1 or "property" not in args["sorts"][0]:
         return
@@ -471,8 +508,13 @@ def tie_order(call: Json, ids: list[str], databases: Json, blocks: Json,
     for a, b, ka, kb in zip(ids, ids[1:], keys, keys[1:]):
         if ka is not None and ka == kb:
             after[a].add(b)
-    if ("filter" in args or "start_cursor" in args
-            or not call["reply"]["has_more"] or not ids or keys[-1] is None):
+    if (
+        "filter" in args
+        or "start_cursor" in args
+        or not call["reply"]["has_more"]
+        or not ids
+        or keys[-1] is None
+    ):
         return
     for page_id, row in cells.items():
         if page_id not in ids and row.get(name) == keys[-1]:
@@ -482,7 +524,8 @@ def tie_order(call: Json, ids: list[str], databases: Json, blocks: Json,
 def databases_found(call: Json) -> set[str]:
     return {
         item["id"]
-        for item in call["reply"]["results"] if item["object"] == "database"
+        for item in call["reply"]["results"]
+        if item["object"] == "database"
     }
 
 
@@ -504,13 +547,15 @@ def predates(call: Json, calls: list[Json], databases: Json) -> list[str]:
             theirs = databases_found(other)
             if mine < theirs:
                 missing |= theirs - mine
-    return sorted("".join(part["plain_text"]
-                          for part in databases[db_id]["title"])
-                  for db_id in missing)
+    return sorted(
+        "".join(part["plain_text"] for part in databases[db_id]["title"])
+        for db_id in missing
+    )
 
 
-def stored_call(call: Json, calls: list[Json], databases: Json,
-                blocks: Json) -> Json:
+def stored_call(
+    call: Json, calls: list[Json], databases: Json, blocks: Json
+) -> Json:
     """One call as the corpus keeps it.
 
     Args:
@@ -528,20 +573,19 @@ def stored_call(call: Json, calls: list[Json], databases: Json,
     args = call["args"]
     out: Json = {"task": call["task"], "tool": call["tool"], "args": args}
     stored = {
-        k: v
-        for k, v in reply.items() if k not in ("results", "request_id")
+        k: v for k, v in reply.items() if k not in ("results", "request_id")
     }
     stored["results"] = [item["id"] for item in reply["results"]]
     out["reply"] = stored
     missed = predates(call, calls, databases)
     if missed:
-        out["skip"] = (f"recorded before {', '.join(missed)} existed; the "
-                       "same search elsewhere in the recordings finds them")
+        out["skip"] = (
+            f"recorded before {', '.join(missed)} existed; the "
+            "same search elsewhere in the recordings finds them"
+        )
     if call["tool"] != "API-post-database-query":
         known = {
-            row_id
-            for block in blocks.values()
-            for row_id in block["cells"]
+            row_id for block in blocks.values() for row_id in block["cells"]
         }
         if reply["has_more"] and reply["next_cursor"] not in known:
             out["next"] = "unrecorded"
@@ -551,13 +595,16 @@ def stored_call(call: Json, calls: list[Json], databases: Json,
     for item in reply["results"]:
         missing = sorted(need - set(cells[item["id"]]))
         if missing:
-            out["skip"] = (f"{item['id']} is recorded without "
-                           f"{', '.join(missing)}, which the call reads, and "
-                           "no reply proves its value")
+            out["skip"] = (
+                f"{item['id']} is recorded without "
+                f"{', '.join(missing)}, which the call reads, and "
+                "no reply proves its value"
+            )
             break
     following = reply["next_cursor"]
-    if reply["has_more"] and (following not in cells
-                              or need - set(cells[following])):
+    if reply["has_more"] and (
+        following not in cells or need - set(cells[following])
+    ):
         out["next"] = "unrecorded"
     return out
 
@@ -579,18 +626,28 @@ def dump(corpus: Json) -> str:
 
     shaped = {
         **corpus,
-        "tables": [{
-            **table, "rows": [mark(row) for row in table["rows"]]
-        } for table in corpus["tables"]],
-        "calls": [{
-            **call, "reply": {
-                **call["reply"], "results": mark(call["reply"]["results"])
+        "tables": [
+            {**table, "rows": [mark(row) for row in table["rows"]]}
+            for table in corpus["tables"]
+        ],
+        "calls": [
+            {
+                **call,
+                "reply": {
+                    **call["reply"],
+                    "results": mark(call["reply"]["results"]),
+                },
             }
-        } for call in corpus["calls"]],
+            for call in corpus["calls"]
+        ],
     }
     text = json.dumps(shaped, indent=2, ensure_ascii=False)
-    return re.sub(r'"\\u0000(\d+)\\u0000"', lambda m: inline[int(m.group(1))],
-                  text) + "\n"
+    return (
+        re.sub(
+            r'"\\u0000(\d+)\\u0000"', lambda m: inline[int(m.group(1))], text
+        )
+        + "\n"
+    )
 
 
 def main() -> None:
@@ -609,33 +666,33 @@ def main() -> None:
     infer_cells(calls, databases, blocks)
     order = row_order(calls, databases, blocks)
     known = {
-        page_id
-        for block in blocks.values()
-        for page_id in block["cells"]
+        page_id for block in blocks.values() for page_id in block["cells"]
     }
     tables = []
     for db_id, db in databases.items():
         block = blocks.get(db_id)
         columns = list(db["properties"])
-        rows = [] if block is None else [
-            [page_id, block["urls"].get(page_id)] +
-            [block["cells"][page_id].get(name) for name in columns]
-            for page_id in order[db_id]
-        ]
-        tables.append({
-            "database":
-            db,
-            "created_time":
-            block["created_time"] if block else None,
-            "last_edited_time":
-            block["last_edited_time"] if block else None,
-            "author":
-            block["author"] if block else None,
-            "columns":
-            columns,
-            "rows":
-            rows,
-        })
+        rows = (
+            []
+            if block is None
+            else [
+                [page_id, block["urls"].get(page_id)]
+                + [block["cells"][page_id].get(name) for name in columns]
+                for page_id in order[db_id]
+            ]
+        )
+        tables.append(
+            {
+                "database": db,
+                "created_time": block["created_time"] if block else None,
+                "last_edited_time": block["last_edited_time"]
+                if block
+                else None,
+                "author": block["author"] if block else None,
+                "columns": columns,
+                "rows": rows,
+            }
+        )
     corpus = {
         "source": {
             "dataset": "ScaleAI/MCP-Atlas",
@@ -646,8 +703,9 @@ def main() -> None:
         },
         "users": users,
         "tables": tables,
-        "calls":
-        [stored_call(call, calls, databases, blocks) for call in calls],
+        "calls": [
+            stored_call(call, calls, databases, blocks) for call in calls
+        ],
     }
     OUT.write_text(dump(corpus))
     print(f"{OUT.relative_to(ROOT)}: {len(calls)} calls, {len(known)} rows")

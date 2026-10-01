@@ -25,5 +25,6 @@ __all__ = ["MongoDBConfig", "MongoDBVFS"]
 def __getattr__(name: str) -> "type[MongoDBVFS]":
     if name == "MongoDBVFS":
         from mirage.vfs.mongodb.mongodb import MongoDBVFS
+
         return MongoDBVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

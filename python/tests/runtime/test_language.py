@@ -28,7 +28,7 @@ from mirage.runtime.types import RunArgs, RunResult
 
 class EchoRuntime(PythonRuntime):
     name = "echo"
-    captures = ("echo-run", )
+    captures = ("echo-run",)
 
     async def run(self, args: RunArgs) -> RunResult:
         return RunResult(stdout=args.code.encode(), stderr=None, exit_code=0)
@@ -61,8 +61,8 @@ def test_captures_default_is_declared_once_per_tier():
     for cls in (MontyRuntime, WasiRuntime, LocalRuntime):
         assert cls.captures == ("python3", "python")
     assert QuickJsRuntime.captures == ("node", "js")
-    assert EchoRuntime.captures == ("echo-run", )
-    assert EchoRuntime(captures=("only", )).captures == ("only", )
+    assert EchoRuntime.captures == ("echo-run",)
+    assert EchoRuntime(captures=("only",)).captures == ("only",)
 
 
 def test_tiers_are_language_runtimes():

@@ -56,7 +56,8 @@ def collisions(paths: list[str]) -> dict[str, list[str]]:
         grouped[fold(path)].append(path)
     return {
         name: sorted(group)
-        for name, group in grouped.items() if len(group) > 1
+        for name, group in grouped.items()
+        if len(group) > 1
     }
 
 
@@ -83,8 +84,10 @@ def selftest() -> int:
             failures += 1
             print(f"  selftest: {paths} -> {got} group(s), wanted {want}")
     if failures:
-        print(f"\nFAIL: {failures} selftest case(s); the gate is blind to a "
-              "collision it claims to catch.")
+        print(
+            f"\nFAIL: {failures} selftest case(s); the gate is blind to a "
+            "collision it claims to catch."
+        )
         return 1
     print(f"selftest OK: {len(cases)} cases covered")
     return 0
@@ -93,7 +96,8 @@ def selftest() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Refuse two tracked paths that are one file on a "
-        "case-insensitive or Unicode-normalizing filesystem.")
+        "case-insensitive or Unicode-normalizing filesystem."
+    )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
 
@@ -104,15 +108,19 @@ def main() -> int:
     for _, group in sorted(found.items()):
         print(f"  collide: {' | '.join(group)}")
     if found:
-        print(f"\nFAIL: {len(found)} path group(s) differ only by case or "
-              "Unicode form. On macOS and Windows they are one file: a "
-              "checkout writes whichever comes last, the tree reads as "
-              "dirty, and one file's content stands in for the other's. "
-              "Rename one -- the goldens use a `.upper.json` suffix for an "
-              "uppercase flag.")
+        print(
+            f"\nFAIL: {len(found)} path group(s) differ only by case or "
+            "Unicode form. On macOS and Windows they are one file: a "
+            "checkout writes whichever comes last, the tree reads as "
+            "dirty, and one file's content stands in for the other's. "
+            "Rename one -- the goldens use a `.upper.json` suffix for an "
+            "uppercase flag."
+        )
         return 1
-    print("path collisions: none; every tracked path is its own file "
-          "on a case-insensitive filesystem")
+    print(
+        "path collisions: none; every tracked path is its own file "
+        "on a case-insensitive filesystem"
+    )
     return 0
 
 

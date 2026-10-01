@@ -18,22 +18,39 @@ import posixpath
 from fnmatch import fnmatch
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.commands.cli.builtin.hf.accessor import (hub_for, repo_type_of,
-                                                     require_operands,
-                                                     text_out)
+from mirage.commands.cli.builtin.hf.accessor import (
+    hub_for,
+    repo_type_of,
+    require_operands,
+    text_out,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.concurrency.limiter import ConcurrencyLimiter
-from mirage.core.hf_hub.cache import (blob_path, cache_root, etag_of,
-                                      link_target, ref_path, repo_folder_name,
-                                      snapshot_dir, snapshot_path)
+from mirage.core.hf_hub.cache import (
+    blob_path,
+    cache_root,
+    etag_of,
+    link_target,
+    ref_path,
+    repo_folder_name,
+    snapshot_dir,
+    snapshot_path,
+)
 from mirage.core.hf_hub.client import HfHubError, hub_bytes, resolve_url
 from mirage.core.hf_hub.config import HfConfig
-from mirage.core.hf_hub.constants import (ABSENT_STATUSES, GLOB_CHARS,
-                                          MAX_DOWNLOAD_WORKERS)
-from mirage.core.hf_hub.repo import (Absence, classify_absence, head_commit,
-                                     revision_url)
+from mirage.core.hf_hub.constants import (
+    ABSENT_STATUSES,
+    GLOB_CHARS,
+    MAX_DOWNLOAD_WORKERS,
+)
+from mirage.core.hf_hub.repo import (
+    Absence,
+    classify_absence,
+    head_commit,
+    revision_url,
+)
 from mirage.core.hf_hub.tree import fetch_tree
 from mirage.core.hf_hub.tree_entry import TreeEntry
 from mirage.io.types import ByteSource, IOResult
@@ -44,8 +61,12 @@ from mirage.utils.errors import MISS_ERRORS
 logger = logging.getLogger(__name__)
 
 
-def selected(tree: dict[str, TreeEntry], names: list[str], include: list[str],
-             exclude: list[str]) -> list[str]:
+def selected(
+    tree: dict[str, TreeEntry],
+    names: list[str],
+    include: list[str],
+    exclude: list[str],
+) -> list[str]:
     """Which repo paths a download line asks for.
 
     Named files win outright: upstream downloads exactly those and does
@@ -66,12 +87,14 @@ def selected(tree: dict[str, TreeEntry], names: list[str], include: list[str],
         return [path for path in files if path in set(names)]
     if include:
         files = [
-            path for path in files if any(
-                fnmatch(path, pattern) for pattern in include)
+            path
+            for path in files
+            if any(fnmatch(path, pattern) for pattern in include)
         ]
     if exclude:
         files = [
-            path for path in files
+            path
+            for path in files
             if not any(fnmatch(path, pattern) for pattern in exclude)
         ]
     return files
@@ -110,8 +133,12 @@ async def ensure_dir(dispatch: DispatchFn, path: str) -> None:
             continue
 
 
-async def write_file(dispatch: DispatchFn, accessor: HfHubAccessor,
-                     repo_path: str, local_dir: str) -> str:
+async def write_file(
+    dispatch: DispatchFn,
+    accessor: HfHubAccessor,
+    repo_path: str,
+    local_dir: str,
+) -> str:
     """Fetch one file and store it under the workspace directory.
 
     Args:
@@ -123,8 +150,13 @@ async def write_file(dispatch: DispatchFn, accessor: HfHubAccessor,
     Returns:
         str: the virtual path written.
     """
-    url = resolve_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                      accessor.revision, repo_path)
+    url = resolve_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        accessor.revision,
+        repo_path,
+    )
     data = await hub_bytes(accessor.token, url, session=accessor.pool)
     target = posixpath.join(local_dir, repo_path)
     await ensure_dir(dispatch, posixpath.dirname(target))
@@ -132,9 +164,13 @@ async def write_file(dispatch: DispatchFn, accessor: HfHubAccessor,
     return target
 
 
-async def fetch_all(dispatch: DispatchFn, accessor: HfHubAccessor,
-                    paths: list[str], local_dir: str,
-                    workers: int) -> list[str]:
+async def fetch_all(
+    dispatch: DispatchFn,
+    accessor: HfHubAccessor,
+    paths: list[str],
+    local_dir: str,
+    workers: int,
+) -> list[str]:
     """Download every selected file, a bounded number at a time.
 
     Upstream downloads with a worker pool for the same reason: a
@@ -179,9 +215,15 @@ async def path_exists(dispatch: DispatchFn, path: str) -> bool:
     return True
 
 
-async def cache_file(dispatch: DispatchFn, accessor: HfHubAccessor,
-                     entry: TreeEntry, cache_dir: str, folder: str, sha: str,
-                     force: bool) -> str:
+async def cache_file(
+    dispatch: DispatchFn,
+    accessor: HfHubAccessor,
+    entry: TreeEntry,
+    cache_dir: str,
+    folder: str,
+    sha: str,
+    force: bool,
+) -> str:
     """Put one file in the cache and link it into the snapshot.
 
     The bytes land once, under their content address, and the snapshot
@@ -206,8 +248,13 @@ async def cache_file(dispatch: DispatchFn, accessor: HfHubAccessor,
     etag = etag_of(entry)
     blob = blob_path(cache_dir, folder, etag)
     if force or not await path_exists(dispatch, blob):
-        url = resolve_url(accessor.endpoint, accessor.repo_type,
-                          accessor.repo_id, accessor.revision, entry.path)
+        url = resolve_url(
+            accessor.endpoint,
+            accessor.repo_type,
+            accessor.repo_id,
+            accessor.revision,
+            entry.path,
+        )
         data = await hub_bytes(accessor.token, url, session=accessor.pool)
         await ensure_dir(dispatch, posixpath.dirname(blob))
         await dispatch("write", PathSpec.from_str_path(blob), data=data)
@@ -223,10 +270,15 @@ async def cache_file(dispatch: DispatchFn, accessor: HfHubAccessor,
     return link
 
 
-async def fetch_into_cache(dispatch: DispatchFn, accessor: HfHubAccessor,
-                           tree: dict[str, TreeEntry], paths: list[str],
-                           cache_dir: str, force: bool,
-                           workers: int) -> tuple[str, list[str]]:
+async def fetch_into_cache(
+    dispatch: DispatchFn,
+    accessor: HfHubAccessor,
+    tree: dict[str, TreeEntry],
+    paths: list[str],
+    cache_dir: str,
+    force: bool,
+    workers: int,
+) -> tuple[str, list[str]]:
     """Populate the cache for one revision, bounded the same way.
 
     Args:
@@ -258,8 +310,9 @@ async def fetch_into_cache(dispatch: DispatchFn, accessor: HfHubAccessor,
 
     async def one(path: str) -> str:
         async with limiter.acquire():
-            return await cache_file(dispatch, accessor, tree[path], cache_dir,
-                                    folder, sha, force)
+            return await cache_file(
+                dispatch, accessor, tree[path], cache_dir, folder, sha, force
+            )
 
     written = list(await asyncio.gather(*(one(path) for path in paths)))
     return snapshot_dir(cache_dir, folder, sha), written
@@ -290,10 +343,13 @@ def refuse_variadic(names: list[str], flag: str, patterns: list[str]) -> None:
     stray = [name for name in names if any(ch in name for ch in GLOB_CHARS)]
     if not stray:
         return
-    rewritten = " ".join(f"{flag} {pattern!r}"
-                         for pattern in [*patterns, *stray])
-    raise UsageError(f"{flag} takes one pattern per occurrence: write "
-                     f"{rewritten}, not several after one {flag}")
+    rewritten = " ".join(
+        f"{flag} {pattern!r}" for pattern in [*patterns, *stray]
+    )
+    raise UsageError(
+        f"{flag} takes one pattern per occurrence: write "
+        f"{rewritten}, not several after one {flag}"
+    )
 
 
 async def refuse_absent(accessor: HfHubAccessor, names: list[str]) -> None:
@@ -321,21 +377,34 @@ async def refuse_absent(accessor: HfHubAccessor, names: list[str]) -> None:
             f"Repository Not Found for url: {url}.\n"
             "Please make sure you specified the correct `repo_id` and "
             "`repo_type`.\nIf you are trying to access a private or gated "
-            "repo, make sure you are authenticated.", 404, "RepoNotFound")
+            "repo, make sure you are authenticated.",
+            404,
+            "RepoNotFound",
+        )
     if absence is Absence.REVISION:
         raise HfHubError(
             f"Revision Not Found for url: {url}.\n"
-            f"Invalid rev id: {accessor.revision}", 404, "RevisionNotFound")
+            f"Invalid rev id: {accessor.revision}",
+            404,
+            "RevisionNotFound",
+        )
     if names:
-        missing = resolve_url(accessor.endpoint, accessor.repo_type,
-                              accessor.repo_id, accessor.revision, names[0])
-        raise HfHubError(f"Entry Not Found for url: {missing}.", 404,
-                         "EntryNotFound")
+        missing = resolve_url(
+            accessor.endpoint,
+            accessor.repo_type,
+            accessor.repo_id,
+            accessor.revision,
+            names[0],
+        )
+        raise HfHubError(
+            f"Entry Not Found for url: {missing}.", 404, "EntryNotFound"
+        )
     raise HfHubError(f"No files in {accessor.repo_id} matched the line", 404)
 
 
 async def download_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Download files from a repository into the workspace.
 
     Upstream defaults to `~/.cache/huggingface`, which a workspace has
@@ -353,7 +422,8 @@ async def download_cmd(
         raise UsageError(
             "nothing to download into: pass --local-dir, or --cache-dir "
             "(or set HF_HUB_CACHE / HF_HOME), since a workspace has no "
-            "home directory to default a cache under")
+            "home directory to default a cache under"
+        )
     if inv.doors is None or inv.doors.dispatch is None:
         raise UsageError("hf download needs a workspace to write into")
     repo_id, *names = list(inv.texts)
@@ -363,8 +433,9 @@ async def download_cmd(
         refuse_variadic(names, "--include", include)
     if exclude:
         refuse_variadic(names, "--exclude", exclude)
-    async with hub_for(inv, repo_id, repo_type_of(fl),
-                       fl.as_str("revision")) as accessor:
+    async with hub_for(
+        inv, repo_id, repo_type_of(fl), fl.as_str("revision")
+    ) as accessor:
         try:
             tree = await fetch_tree(accessor)
         except HfHubError as exc:
@@ -384,13 +455,19 @@ async def download_cmd(
             # cache in between; that is what upstream does too, which is why
             # --force-download only means anything in cache mode.
             base = local_dir.rstrip("/")
-            written = await fetch_all(inv.doors.dispatch, accessor, paths,
-                                      base, workers)
+            written = await fetch_all(
+                inv.doors.dispatch, accessor, paths, base, workers
+            )
         else:
             base, written = await fetch_into_cache(
-                inv.doors.dispatch, accessor, tree, paths, (cache_dir
-                                                            or "").rstrip("/"),
-                bool(fl.as_bool("force_download")), workers)
+                inv.doors.dispatch,
+                accessor,
+                tree,
+                paths,
+                (cache_dir or "").rstrip("/"),
+                bool(fl.as_bool("force_download")),
+                workers,
+            )
         if fl.as_bool("quiet"):
             return text_out(f"{base}\n")
         body = "".join(f"{path}\n" for path in written)

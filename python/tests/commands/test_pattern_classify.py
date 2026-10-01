@@ -39,8 +39,10 @@ def test_simple_with_special_chars():
 
 
 def test_regex_dot_star():
-    assert classify_pattern("hello.*world",
-                            fixed_string=False) == PatternType.REGEX
+    assert (
+        classify_pattern("hello.*world", fixed_string=False)
+        == PatternType.REGEX
+    )
 
 
 def test_regex_brackets():

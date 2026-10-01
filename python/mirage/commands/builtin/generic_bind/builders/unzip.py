@@ -15,40 +15,56 @@
 from functools import partial
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic.crossmount.utils import \
-    transfer_primitives
+from mirage.commands.builtin.generic.crossmount.utils import (
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.unzip import unzip_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def unzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def unzip(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("unzip: missing operand")
-    resolved = (await ops.resolve_glob(accessor, paths, opts.index)
-                if paths else [])
+    resolved = (
+        await ops.resolve_glob(accessor, paths, opts.index) if paths else []
+    )
     if opts.dispatch is not None:
         # Extraction writes wherever cwd or -d says, which need not be
         # this mount, so the doors are dispatch-relayed and each path
         # routes to the mount that owns it.
         prim = transfer_primitives(opts.dispatch)
-        return await unzip_generic(resolved,
-                                   list(texts),
-                                   opts,
-                                   prim["read_bytes"],
-                                   prim["write"],
-                                   prim["mkdir"],
-                                   stat=prim["stat"],
-                                   relay=True)
-    return await unzip_generic(resolved, list(texts), opts,
-                               bound_op(ops.read_bytes, accessor, opts.index),
-                               partial(ops.require(Operation.WRITE), accessor),
-                               partial(ops.require(Operation.MKDIR), accessor))
+        return await unzip_generic(
+            resolved,
+            list(texts),
+            opts,
+            prim["read_bytes"],
+            prim["write"],
+            prim["mkdir"],
+            stat=prim["stat"],
+            relay=True,
+        )
+    return await unzip_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(ops.read_bytes, accessor, opts.index),
+        partial(ops.require(Operation.WRITE), accessor),
+        partial(ops.require(Operation.MKDIR), accessor),
+    )
 
 
-BUILDER = Builder('unzip', unzip, write=True)
+BUILDER = Builder("unzip", unzip, write=True)

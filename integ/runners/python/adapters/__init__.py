@@ -64,8 +64,10 @@ from mirage.vfs.backblaze import BackblazeConfig, BackblazeVFS
 from mirage.vfs.box import BoxConfig, BoxVFS
 from mirage.vfs.ceph import CephConfig, CephVFS
 from mirage.vfs.chroma import ChromaConfig, ChromaVFS
-from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
-                                          DatabricksVolumeVFS)
+from mirage.vfs.databricks_volume import (
+    DatabricksVolumeConfig,
+    DatabricksVolumeVFS,
+)
 from mirage.vfs.dify import DifyConfig, DifyVFS
 from mirage.vfs.digitalocean import DigitalOceanConfig, DigitalOceanVFS
 from mirage.vfs.discord.config import DiscordConfig
@@ -160,8 +162,9 @@ S3_ACCESS = os.environ.get("AWS_ACCESS_KEY_ID", "testing")
 S3_SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY", "testing")
 
 
-def object_storage_vfs(name: str, bucket: str, endpoint: str,
-                       key_prefix: str | None) -> S3VFS:
+def object_storage_vfs(
+    name: str, bucket: str, endpoint: str, key_prefix: str | None
+) -> S3VFS:
     common = {
         "bucket": bucket,
         "region": S3_REGION,
@@ -172,13 +175,16 @@ def object_storage_vfs(name: str, bucket: str, endpoint: str,
     }
     if name == "s3":
         return S3VFS(
-            S3Config(bucket=bucket,
-                     region=S3_REGION,
-                     endpoint_url=endpoint,
-                     aws_access_key_id=S3_ACCESS,
-                     aws_secret_access_key=S3_SECRET,
-                     path_style=True,
-                     key_prefix=key_prefix))
+            S3Config(
+                bucket=bucket,
+                region=S3_REGION,
+                endpoint_url=endpoint,
+                aws_access_key_id=S3_ACCESS,
+                aws_secret_access_key=S3_SECRET,
+                path_style=True,
+                key_prefix=key_prefix,
+            )
+        )
     if name == "aliyun":
         return AliyunVFS(AliyunConfig(**common, path_style=True))
     if name == "backblaze":
@@ -230,9 +236,9 @@ def manifest_mime(entry: dict) -> MIMEText | MIMEMultipart:
         mime.attach(MIMEText(entry["body"], "plain", "utf-8"))
         for att in entry["attachments"]:
             part = MIMEText(att["content"], "plain", "utf-8")
-            part.add_header("Content-Disposition",
-                            "attachment",
-                            filename=att["filename"])
+            part.add_header(
+                "Content-Disposition", "attachment", filename=att["filename"]
+            )
             mime.attach(part)
     else:
         mime = MIMEText(entry["body"], "plain", "utf-8")
@@ -246,25 +252,26 @@ def manifest_mime(entry: dict) -> MIMEText | MIMEMultipart:
 
 
 class S3Service:
-
     def __init__(self, run_id: str) -> None:
         self.stop: Callable[[], None] = lambda: None
         if S3_ENDPOINT:
             self.endpoint = S3_ENDPOINT
         else:
             logging.getLogger("werkzeug").setLevel(logging.ERROR)
-            server = ThreadedMotoServer(ip_address="127.0.0.1",
-                                        port=0,
-                                        verbose=False)
+            server = ThreadedMotoServer(
+                ip_address="127.0.0.1", port=0, verbose=False
+            )
             server.start()
             host, port = server.get_host_and_port()
             self.endpoint = f"http://{host}:{port}"
             self.stop = server.stop
-        self.client = boto3.client("s3",
-                                   endpoint_url=self.endpoint,
-                                   aws_access_key_id=S3_ACCESS,
-                                   aws_secret_access_key=S3_SECRET,
-                                   region_name=S3_REGION)
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=self.endpoint,
+            aws_access_key_id=S3_ACCESS,
+            aws_secret_access_key=S3_SECRET,
+            region_name=S3_REGION,
+        )
         self.prefix = f"mirage-integ-{run_id}"
         self.buckets: set[str] = set()
 
@@ -276,8 +283,12 @@ class S3Service:
         return name
 
     def vfs(self, mount: dict) -> S3VFS:
-        return object_storage_vfs(mount["vfs"], self.bucket_for(mount),
-                                  self.endpoint, mount.get("prefix"))
+        return object_storage_vfs(
+            mount["vfs"],
+            self.bucket_for(mount),
+            self.endpoint,
+            mount.get("prefix"),
+        )
 
     async def teardown(self) -> None:
         for bucket in self.buckets:
@@ -290,17 +301,19 @@ class S3Service:
 
 
 class GridFSService:
-
     def __init__(self, run_id: str) -> None:
         self.uri = MONGODB_URI
         self.database = f"mirage_integ_{run_id}"
 
     def vfs(self, mount: dict) -> GridFSVFS:
         return GridFSVFS(
-            GridFSConfig(uri=self.uri,
-                         database=self.database,
-                         bucket=mount["bucket"],
-                         key_prefix=mount.get("prefix")))
+            GridFSConfig(
+                uri=self.uri,
+                database=self.database,
+                bucket=mount["bucket"],
+                key_prefix=mount.get("prefix"),
+            )
+        )
 
     async def teardown(self) -> None:
         client: AsyncMongoClient = AsyncMongoClient(self.uri)
@@ -328,8 +341,9 @@ class DatabricksVolumeService:
         process (asyncio.subprocess.Process): the running fake.
     """
 
-    def __init__(self, run_id: str, base: str,
-                 process: asyncio.subprocess.Process) -> None:
+    def __init__(
+        self, run_id: str, base: str, process: asyncio.subprocess.Process
+    ) -> None:
         self.run_id = run_id
         self.base = base
         self.process = process
@@ -342,10 +356,12 @@ class DatabricksVolumeService:
 
     def vfs(self, mount: dict) -> DatabricksVolumeVFS:
         volume = f"mirage-integ-{self.run_id}-{mount['volume']}"
-        config = DatabricksVolumeConfig(catalog="main",
-                                        schema="default",
-                                        volume=volume,
-                                        root_path=mount.get("prefix") or "/")
+        config = DatabricksVolumeConfig(
+            catalog="main",
+            schema="default",
+            volume=volume,
+            root_path=mount.get("prefix") or "/",
+        )
         client = HttpFilesClient(self.base, self.token)
         client.files.create_directory(configured_root(config))
         return DatabricksVolumeVFS(config, client=client)
@@ -355,7 +371,8 @@ class DatabricksVolumeService:
 
 
 async def start_kit_fake(
-        service: str) -> tuple[str, asyncio.subprocess.Process]:
+    service: str,
+) -> tuple[str, asyncio.subprocess.Process]:
     """Start integ/server/<service>/main.ts and read the endpoint it announces.
 
     The adapter owns the process rather than reading a URL from the
@@ -413,20 +430,29 @@ def _load_module(path: Path) -> ModuleType:
 
 def _load_ssh_server() -> ModuleType:
     return _load_module(
-        Path(__file__).resolve().parents[3] / "server" / "ssh_server.py")
+        Path(__file__).resolve().parents[3] / "server" / "ssh_server.py"
+    )
 
 
 async def _admin_exec(ws: Workspace, command: str) -> None:
     result = await ws.shell(command)
     if result.exit_code:
-        raise RuntimeError(f"admin command failed: {command}: "
-                           f"{await result.stderr_str()}")
+        raise RuntimeError(
+            f"admin command failed: {command}: {await result.stderr_str()}"
+        )
 
 
 class SSHService:
-
-    def __init__(self, host: str, port: int, server, root_dir: str | None,
-                 admin: SSHVFS, admin_ws: Workspace, base: str) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        server,
+        root_dir: str | None,
+        admin: SSHVFS,
+        admin_ws: Workspace,
+        base: str,
+    ) -> None:
         self.host = host
         self.port = port
         self.server = server
@@ -452,8 +478,9 @@ class SSHService:
         base = f"mirage-integ-{run_id}"
         admin = SSHVFS(SSHConfig(host=host, port=port, username="integ"))
         admin_ws = Workspace({"/admin": admin}, mode=MountMode.WRITE)
-        paths = " ".join(f"/admin/{base}/{m['root']}"
-                         for m in target["mounts"])
+        paths = " ".join(
+            f"/admin/{base}/{m['root']}" for m in target["mounts"]
+        )
         await _admin_exec(admin_ws, f"mkdir -p {paths}")
         # A server-side symlink in the /links mount: mirage's shell ln -s
         # only makes namespace links, so the battery needs one created over
@@ -462,16 +489,20 @@ class SSHService:
         sftp = await admin.accessor.sftp()
         for m in target["mounts"]:
             if m["root"] == "links":
-                await sftp.symlink("../data/poem.txt",
-                                   f"/{base}/{m['root']}/poem_link.txt")
+                await sftp.symlink(
+                    "../data/poem.txt", f"/{base}/{m['root']}/poem_link.txt"
+                )
         return cls(host, port, server, root_dir, admin, admin_ws, base)
 
     def vfs(self, mount: dict) -> SSHVFS:
         res = SSHVFS(
-            SSHConfig(host=self.host,
-                      port=self.port,
-                      username="integ",
-                      root=f"/{self.base}/{mount['root']}"))
+            SSHConfig(
+                host=self.host,
+                port=self.port,
+                username="integ",
+                root=f"/{self.base}/{mount['root']}",
+            )
+        )
         self.mounts.append(res)
         return res
 
@@ -491,9 +522,14 @@ class SSHService:
 
 
 class NextcloudService:
-
-    def __init__(self, url: str, username: str | None, password: str | None,
-                 admin_ws: Workspace, base: str) -> None:
+    def __init__(
+        self,
+        url: str,
+        username: str | None,
+        password: str | None,
+        admin_ws: Workspace,
+        base: str,
+    ) -> None:
         self.url = url
         self.username = username
         self.password = password
@@ -507,19 +543,22 @@ class NextcloudService:
         password = os.environ.get("NEXTCLOUD_PASSWORD", "admin123")
         base = f"mirage-integ-{run_id}"
         admin = NextcloudVFS(
-            NextcloudConfig(url=url, username=username, password=password))
+            NextcloudConfig(url=url, username=username, password=password)
+        )
         admin_ws = Workspace({"/admin": admin}, mode=MountMode.WRITE)
-        paths = " ".join(f"/admin/{base}/{m['root']}"
-                         for m in target["mounts"])
+        paths = " ".join(
+            f"/admin/{base}/{m['root']}" for m in target["mounts"]
+        )
         await _admin_exec(admin_ws, f"mkdir -p {paths}")
         return cls(url, username, password, admin_ws, base)
 
     def vfs(self, mount: dict) -> NextcloudVFS:
         url = f"{self.url.rstrip('/')}/{self.base}/{mount['root']}/"
         return NextcloudVFS(
-            NextcloudConfig(url=url,
-                            username=self.username,
-                            password=self.password))
+            NextcloudConfig(
+                url=url, username=self.username, password=self.password
+            )
+        )
 
     async def teardown(self) -> None:
         await _admin_exec(self.admin_ws, f"rm -rf /admin/{self.base}")
@@ -541,8 +580,9 @@ class GwsService:
     analog, so the three mounts never see each other.
     """
 
-    def __init__(self, url: str, folder_ids: dict[str, str],
-                 cli_scope: str | None) -> None:
+    def __init__(
+        self, url: str, folder_ids: dict[str, str], cli_scope: str | None
+    ) -> None:
         self.url = url
         self.folder_ids = folder_ids
         # A target may scope the gws install to one mount's folder, the
@@ -556,7 +596,7 @@ class GwsService:
         # since a mount hands its base URL to a client and never sees the
         # request. Scoping the base once covers the reset, the drives and
         # folders, the seeds and every mount.
-        url = f'{os.environ["GWS_URL"].rstrip("/")}/_run/{run_id}'
+        url = f"{os.environ['GWS_URL'].rstrip('/')}/_run/{run_id}"
         folder_ids: dict[str, str] = {}
         drive_ids: dict[str, str] = {}
         # Native mounts (gdocs/gsheets/gslides) render the modified date
@@ -595,8 +635,9 @@ class GwsService:
                 # created once per name and its id is the walk's start.
                 drive = mount.get("drive")
                 if drive and drive not in drive_ids:
-                    async with session.post(f"{url}/drive/v3/drives",
-                                            json={"name": drive}) as resp:
+                    async with session.post(
+                        f"{url}/drive/v3/drives", json={"name": drive}
+                    ) as resp:
                         resp.raise_for_status()
                         drive_ids[drive] = (await resp.json())["id"]
                 parent = drive_ids[drive] if drive else "root"
@@ -625,145 +666,166 @@ class GwsService:
         """
         if not name:
             return None
-        path = Path(
-            __file__).resolve().parents[3] / "fixtures" / f"{name}.json"
+        path = (
+            Path(__file__).resolve().parents[3] / "fixtures" / f"{name}.json"
+        )
         return json.loads(path.read_text())
 
     @staticmethod
-    async def _seed_apps(session: aiohttp.ClientSession, url: str,
-                         entries: list[dict]) -> None:
+    async def _seed_apps(
+        session: aiohttp.ClientSession, url: str, entries: list[dict]
+    ) -> None:
         # Native files are API objects, not byte blobs, so they seed through
         # the same editor APIs the backends speak instead of fixture uploads.
         for entry in entries:
             kind = entry["kind"]
             if kind == "doc":
-                async with session.post(f"{url}/v1/documents",
-                                        json={"title": entry["name"]}) as resp:
+                async with session.post(
+                    f"{url}/v1/documents", json={"title": entry["name"]}
+                ) as resp:
                     resp.raise_for_status()
                     doc_id = (await resp.json())["documentId"]
-                requests = [{
-                    "insertText": {
-                        "location": {
-                            "index": 1
-                        },
-                        "text": entry["text"],
+                requests = [
+                    {
+                        "insertText": {
+                            "location": {"index": 1},
+                            "text": entry["text"],
+                        }
                     }
-                }]
+                ]
                 async with session.post(
-                        f"{url}/v1/documents/{doc_id}:batchUpdate",
-                        json={"requests": requests}) as resp:
+                    f"{url}/v1/documents/{doc_id}:batchUpdate",
+                    json={"requests": requests},
+                ) as resp:
                     resp.raise_for_status()
             elif kind == "sheet":
                 async with session.post(
-                        f"{url}/v4/spreadsheets",
-                        json={"properties": {
-                            "title": entry["name"]
-                        }}) as resp:
+                    f"{url}/v4/spreadsheets",
+                    json={"properties": {"title": entry["name"]}},
+                ) as resp:
                     resp.raise_for_status()
                     sheet_id = (await resp.json())["spreadsheetId"]
                 async with session.post(
-                        f"{url}/v4/spreadsheets/{sheet_id}"
-                        "/values/Sheet1:append",
-                        json={"values": entry["rows"]}) as resp:
+                    f"{url}/v4/spreadsheets/{sheet_id}/values/Sheet1:append",
+                    json={"values": entry["rows"]},
+                ) as resp:
                     resp.raise_for_status()
             elif kind == "slide":
-                async with session.post(f"{url}/v1/presentations",
-                                        json={"title": entry["name"]}) as resp:
+                async with session.post(
+                    f"{url}/v1/presentations", json={"title": entry["name"]}
+                ) as resp:
                     resp.raise_for_status()
             else:
                 raise ValueError(f"unknown google-apps kind: {kind}")
 
     @staticmethod
-    async def _seed_calendar(session: aiohttp.ClientSession, url: str,
-                             entries: list[dict]) -> None:
+    async def _seed_calendar(
+        session: aiohttp.ClientSession, url: str, entries: list[dict]
+    ) -> None:
         # Events are API objects, so they seed through events.insert and
         # take the ids the server mints; the manifest pins the times, which
         # is what the day directories are derived from.
         for entry in entries:
             async with session.post(
-                    f"{url}/calendar/v3/calendars/primary/events",
-                    json=entry) as resp:
+                f"{url}/calendar/v3/calendars/primary/events", json=entry
+            ) as resp:
                 resp.raise_for_status()
 
     @staticmethod
-    async def _seed_mail(session: aiohttp.ClientSession, url: str,
-                         entries: list[dict]) -> None:
+    async def _seed_mail(
+        session: aiohttp.ClientSession, url: str, entries: list[dict]
+    ) -> None:
         # Messages are API objects: each manifest entry becomes an RFC822
         # payload inserted through messages.insert with
         # internalDateSource=dateHeader, so date dirs come from the
         # manifest, not the server clock.
         for entry in entries:
             raw = base64.urlsafe_b64encode(
-                manifest_mime(entry).as_bytes()).decode()
+                manifest_mime(entry).as_bytes()
+            ).decode()
             async with session.post(
-                    f"{url}/gmail/v1/users/me/messages",
-                    params={"internalDateSource": "dateHeader"},
-                    json={
-                        "raw": raw,
-                        "labelIds": entry.get("labels", []),
-                    }) as resp:
+                f"{url}/gmail/v1/users/me/messages",
+                params={"internalDateSource": "dateHeader"},
+                json={
+                    "raw": raw,
+                    "labelIds": entry.get("labels", []),
+                },
+            ) as resp:
                 resp.raise_for_status()
 
     @staticmethod
-    async def _folder(session: aiohttp.ClientSession, url: str, name: str,
-                      parent: str) -> str:
-        query = (f"name='{name}' and '{parent}' in parents "
-                 "and trashed=false")
-        async with session.get(f"{url}/drive/v3/files",
-                               params={"q": query}) as resp:
+    async def _folder(
+        session: aiohttp.ClientSession, url: str, name: str, parent: str
+    ) -> str:
+        query = f"name='{name}' and '{parent}' in parents and trashed=false"
+        async with session.get(
+            f"{url}/drive/v3/files", params={"q": query}
+        ) as resp:
             resp.raise_for_status()
             files = (await resp.json())["files"]
         if files:
             return files[0]["id"]
-        async with session.post(f"{url}/drive/v3/files",
-                                json={
-                                    "name": name,
-                                    "mimeType": FOLDER_MIME,
-                                    "parents": [parent],
-                                }) as resp:
+        async with session.post(
+            f"{url}/drive/v3/files",
+            json={
+                "name": name,
+                "mimeType": FOLDER_MIME,
+                "parents": [parent],
+            },
+        ) as resp:
             resp.raise_for_status()
             return (await resp.json())["id"]
 
     def vfs(self, mount: dict) -> GoogleDriveVFS:
         return GoogleDriveVFS(
-            GoogleDriveConfig(client_id="integ",
-                              refresh_token=GWS_TOKEN,
-                              api_base=self.url,
-                              folder_id=self.folder_ids[mount["path"]]))
+            GoogleDriveConfig(
+                client_id="integ",
+                refresh_token=GWS_TOKEN,
+                api_base=self.url,
+                folder_id=self.folder_ids[mount["path"]],
+            )
+        )
 
     def gdocs_vfs(self) -> GDocsVFS:
         return GDocsVFS(
-            GDocsConfig(client_id="integ",
-                        refresh_token=GWS_TOKEN,
-                        api_base=self.url))
+            GDocsConfig(
+                client_id="integ", refresh_token=GWS_TOKEN, api_base=self.url
+            )
+        )
 
     def gsheets_vfs(self) -> GSheetsVFS:
         return GSheetsVFS(
-            GSheetsConfig(client_id="integ",
-                          refresh_token=GWS_TOKEN,
-                          api_base=self.url))
+            GSheetsConfig(
+                client_id="integ", refresh_token=GWS_TOKEN, api_base=self.url
+            )
+        )
 
     def gslides_vfs(self) -> GSlidesVFS:
         return GSlidesVFS(
-            GSlidesConfig(client_id="integ",
-                          refresh_token=GWS_TOKEN,
-                          api_base=self.url))
+            GSlidesConfig(
+                client_id="integ", refresh_token=GWS_TOKEN, api_base=self.url
+            )
+        )
 
     def gcal_vfs(self, config: dict) -> GCalVFS:
         # today is pinned so the rolling window is the same on both hosts
         # and lands on the seeded events.
         return GCalVFS(
-            GCalConfig(client_id="integ",
-                       refresh_token=GWS_TOKEN,
-                       api_base=self.url,
-                       today="2026-02-11",
-                       **config))
+            GCalConfig(
+                client_id="integ",
+                refresh_token=GWS_TOKEN,
+                api_base=self.url,
+                today="2026-02-11",
+                **config,
+            )
+        )
 
     def gmail_vfs(self) -> GmailVFS:
         return GmailVFS(
-            GmailConfig(client_id="integ",
-                        refresh_token=GWS_TOKEN,
-                        api_base=self.url))
+            GmailConfig(
+                client_id="integ", refresh_token=GWS_TOKEN, api_base=self.url
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         config: dict[str, object] = {
@@ -813,12 +875,13 @@ class EmailService:
         prefix = f"{EMAIL_MANIFEST_DIR}/"
         if not mail.startswith(prefix):
             raise ValueError(
-                f"email target mail={mail!r} must live under {prefix}")
-        return mail[len(prefix):]
+                f"email target mail={mail!r} must live under {prefix}"
+            )
+        return mail[len(prefix) :]
 
     @classmethod
     async def create(cls, run_id: str, target: dict) -> "EmailService":
-        url = f'{os.environ["MAIL_URL"].rstrip("/")}/_run/{run_id}'
+        url = f"{os.environ['MAIL_URL'].rstrip('/')}/_run/{run_id}"
         body: dict = {"tenants": list(EMAIL_ACCOUNTS)}
         mail = target.get("mail")
         if mail:
@@ -830,13 +893,16 @@ class EmailService:
 
     def vfs(self, mount: dict) -> EmailVFS:
         return EmailVFS(
-            EmailConfig(imap_host=self.host,
-                        imap_port=EMAIL_IMAP_PORT,
-                        smtp_host=self.host,
-                        smtp_port=EMAIL_SMTP_PORT,
-                        username=EMAIL_USERNAME,
-                        password=self.password,
-                        use_ssl=False))
+            EmailConfig(
+                imap_host=self.host,
+                imap_port=EMAIL_IMAP_PORT,
+                smtp_host=self.host,
+                smtp_port=EMAIL_SMTP_PORT,
+                username=EMAIL_USERNAME,
+                password=self.password,
+                use_ssl=False,
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         # h1 and h2 are the same spec installed twice: two head words,
@@ -890,18 +956,21 @@ class OneDriveService:
 
     def vfs(self, mount: dict) -> OneDriveVFS:
         return OneDriveVFS(
-            OneDriveConfig(access_token=self.token,
-                           graph_base_url=self.url,
-                           key_prefix=mount.get("prefix")))
+            OneDriveConfig(
+                access_token=self.token,
+                graph_base_url=self.url,
+                key_prefix=mount.get("prefix"),
+            )
+        )
 
     async def teardown(self) -> None:
         return None
 
 
 class Mem0Service:
-
-    def __init__(self, endpoint: str,
-                 process: asyncio.subprocess.Process) -> None:
+    def __init__(
+        self, endpoint: str, process: asyncio.subprocess.Process
+    ) -> None:
         self.endpoint = endpoint
         self.process = process
 
@@ -920,10 +989,13 @@ class Mem0Service:
 
     def vfs(self, mount: dict) -> Mem0VFS:
         return Mem0VFS(
-            Mem0Config(api_key="integ-key",
-                       host=self.endpoint,
-                       user_id="integ-user",
-                       default_page_size=2))
+            Mem0Config(
+                api_key="integ-key",
+                host=self.endpoint,
+                user_id="integ-user",
+                default_page_size=2,
+            )
+        )
 
     async def teardown(self) -> None:
         await stop_kit_fake(self.process)
@@ -938,8 +1010,9 @@ class HttpService:
     The fake is a TypeScript kit service, so the interpreter is tsx.
     """
 
-    def __init__(self, endpoint: str,
-                 process: asyncio.subprocess.Process) -> None:
+    def __init__(
+        self, endpoint: str, process: asyncio.subprocess.Process
+    ) -> None:
         self.endpoint = endpoint
         self.process = process
 
@@ -991,12 +1064,15 @@ class DropboxService:
         return DropboxVFS(
             # The fake supports full-text search_v2, so exercise grep/rg
             # narrowing in the battery.
-            DropboxConfig(client_id="integ-client",
-                          client_secret="integ-secret",
-                          refresh_token=self.account(mount),
-                          endpoint=self.url,
-                          content_search=True,
-                          root_path=mount.get("root") or "/"))
+            DropboxConfig(
+                client_id="integ-client",
+                client_secret="integ-secret",
+                refresh_token=self.account(mount),
+                endpoint=self.url,
+                content_search=True,
+                root_path=mount.get("root") or "/",
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1035,7 +1111,8 @@ class HfService:
                 token=self.token,
                 endpoint=self.endpoint,
                 key_prefix=mount.get("prefix"),
-            ))
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1082,11 +1159,9 @@ class HfHubService:
         endpoint = os.environ["HF_HUB_URL"].rstrip("/")
         token = f"integ-hfhub-{run_id}"
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{endpoint}/reset",
-                                    json={
-                                        "tenants": [token],
-                                        "fixture": "v1"
-                                    }) as resp:
+            async with session.post(
+                f"{endpoint}/reset", json={"tenants": [token], "fixture": "v1"}
+            ) as resp:
                 resp.raise_for_status()
         return cls(run_id, endpoint)
 
@@ -1102,10 +1177,13 @@ class HfHubService:
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "hf": (cli_spec_for("hf"), {
-                "token": self.token,
-                "endpoint": self.endpoint,
-            }),
+            "hf": (
+                cli_spec_for("hf"),
+                {
+                    "token": self.token,
+                    "endpoint": self.endpoint,
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1149,8 +1227,9 @@ class BoxService:
     def _auth(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
 
-    async def _folder(self, session: aiohttp.ClientSession, parent_id: str,
-                      name: str) -> str:
+    async def _folder(
+        self, session: aiohttp.ClientSession, parent_id: str, name: str
+    ) -> str:
         """Create a folder, or find the existing one of that name.
 
         Args:
@@ -1158,30 +1237,34 @@ class BoxService:
             parent_id (str): id of the folder to create under.
             name (str): the folder's name.
         """
-        async with session.post(f"{self.url}/2.0/folders",
-                                headers=self._auth(),
-                                json={
-                                    "name": name,
-                                    "parent": {
-                                        "id": parent_id
-                                    }
-                                }) as resp:
+        async with session.post(
+            f"{self.url}/2.0/folders",
+            headers=self._auth(),
+            json={"name": name, "parent": {"id": parent_id}},
+        ) as resp:
             if resp.status == 201:
                 return (await resp.json())["id"]
             if resp.status != 409:
                 raise RuntimeError(
-                    f"box folder create {name} -> {resp.status}")
+                    f"box folder create {name} -> {resp.status}"
+                )
         async with session.get(
-                f"{self.url}/2.0/folders/{parent_id}/items?limit=1000",
-                headers=self._auth()) as resp:
+            f"{self.url}/2.0/folders/{parent_id}/items?limit=1000",
+            headers=self._auth(),
+        ) as resp:
             entries = (await resp.json())["entries"]
         for entry in entries:
             if entry["type"] == "folder" and entry["name"] == name:
                 return entry["id"]
         raise RuntimeError(f"box folder {name} neither created nor found")
 
-    async def _upload(self, session: aiohttp.ClientSession, folder_id: str,
-                      name: str, content: bytes) -> None:
+    async def _upload(
+        self,
+        session: aiohttp.ClientSession,
+        folder_id: str,
+        name: str,
+        content: bytes,
+    ) -> None:
         """Upload one file with the vendor's multipart shape.
 
         Args:
@@ -1191,20 +1274,19 @@ class BoxService:
             content (bytes): the file's bytes.
         """
         form = aiohttp.FormData()
-        form.add_field("attributes",
-                       json.dumps({
-                           "name": name,
-                           "parent": {
-                               "id": folder_id
-                           }
-                       }))
-        form.add_field("file",
-                       content,
-                       filename=name,
-                       content_type="application/octet-stream")
-        async with session.post(f"{self.url}/2.0/files/content",
-                                headers=self._auth(),
-                                data=form) as resp:
+        form.add_field(
+            "attributes",
+            json.dumps({"name": name, "parent": {"id": folder_id}}),
+        )
+        form.add_field(
+            "file",
+            content,
+            filename=name,
+            content_type="application/octet-stream",
+        )
+        async with session.post(
+            f"{self.url}/2.0/files/content", headers=self._auth(), data=form
+        ) as resp:
             if resp.status != 201:
                 raise RuntimeError(f"box upload {name} -> {resp.status}")
 
@@ -1218,8 +1300,7 @@ class BoxService:
             folder_id = await self._folder(session, "0", mount["folder"])
             seed = mount.get("seed")
             if seed:
-                base = (Path(__file__).resolve().parents[3] / "fixtures" /
-                        seed)
+                base = Path(__file__).resolve().parents[3] / "fixtures" / seed
                 for src in sorted(base.rglob("*")):
                     if not src.is_file():
                         continue
@@ -1227,25 +1308,28 @@ class BoxService:
                     parts = rel.split("/")
                     parent_id = folder_id
                     for name in parts[:-1]:
-                        parent_id = await self._folder(session, parent_id,
-                                                       name)
-                    await self._upload(session, parent_id, parts[-1],
-                                       src.read_bytes())
+                        parent_id = await self._folder(
+                            session, parent_id, name
+                        )
+                    await self._upload(
+                        session, parent_id, parts[-1], src.read_bytes()
+                    )
             if seed == "files/v1":
                 # A weblink beside the fixture: sizeless and content-free, so
                 # listings must hide it and a direct stat must ENOENT.
-                async with session.post(f"{self.url}/2.0/web_links",
-                                        headers=self._auth(),
-                                        json={
-                                            "name": "homepage",
-                                            "url": "https://example.com/",
-                                            "parent": {
-                                                "id": folder_id
-                                            },
-                                        }) as resp:
+                async with session.post(
+                    f"{self.url}/2.0/web_links",
+                    headers=self._auth(),
+                    json={
+                        "name": "homepage",
+                        "url": "https://example.com/",
+                        "parent": {"id": folder_id},
+                    },
+                ) as resp:
                     if resp.status != 201:
                         raise RuntimeError(
-                            f"box web_link seed failed: {resp.status}")
+                            f"box web_link seed failed: {resp.status}"
+                        )
         return folder_id
 
     def vfs(self, mount: dict) -> BoxVFS:
@@ -1257,7 +1341,8 @@ class BoxService:
                 # The fake supports name+content search, so exercise grep/rg
                 # push-down narrowing in the battery.
                 content_search=True,
-            ))
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1284,11 +1369,10 @@ class SlackService:
         url = os.environ["SLACK_URL"].rstrip("/")
         service = cls(url, f"integ-{run_id}")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{url}/reset",
-                                    json={
-                                        "tenants": [service.workspace],
-                                        "fixture": fixture
-                                    }) as resp:
+            async with session.post(
+                f"{url}/reset",
+                json={"tenants": [service.workspace], "fixture": fixture},
+            ) as resp:
                 resp.raise_for_status()
         return service
 
@@ -1308,18 +1392,24 @@ class SlackService:
     def vfs(self, mount: dict) -> SlackVFS:
         bot, search = self._tokens()
         return SlackVFS(
-            SlackConfig(token=bot,
-                        search_token=search,
-                        base_url=f"{self.url}/api",
-                        **mount.get("config", {})))
+            SlackConfig(
+                token=bot,
+                search_token=search,
+                base_url=f"{self.url}/api",
+                **mount.get("config", {}),
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "slack": (cli_spec_for("slack"), {
-                "token": self._tokens()[0],
-                "search_token": self._tokens()[1],
-                "base_url": f"{self.url}/api",
-            }),
+            "slack": (
+                cli_spec_for("slack"),
+                {
+                    "token": self._tokens()[0],
+                    "search_token": self._tokens()[1],
+                    "base_url": f"{self.url}/api",
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1350,27 +1440,31 @@ class GitHubService:
         base = os.environ["GITHUB_URL"].rstrip("/")
         made = cls(f"{base}/_run/{run_id}")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{made.url}/reset",
-                                    json={"fixture": fixture}) as resp:
+            async with session.post(
+                f"{made.url}/reset", json={"fixture": fixture}
+            ) as resp:
                 resp.raise_for_status()
         return made
 
     async def vfs(self, mount: dict) -> GitHubVFS:
         owner, _, repo = mount["repo"].partition("/")
         return GitHubVFS(
-            GitHubConfig(token="ghp-integ",
-                         owner=owner,
-                         repo=repo,
-                         base_url=self.url))
+            GitHubConfig(
+                token="ghp-integ", owner=owner, repo=repo, base_url=self.url
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "gh": (cli_spec_for("gh"), {
-                "token": "ghp-integ",
-                "base_url": self.url,
-                "repo": GH_CLI_REPO,
-                "branch": "main",
-            }),
+            "gh": (
+                cli_spec_for("gh"),
+                {
+                    "token": "ghp-integ",
+                    "base_url": self.url,
+                    "repo": GH_CLI_REPO,
+                    "branch": "main",
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1390,8 +1484,9 @@ class DifyService:
         process (asyncio.subprocess.Process): the running fake.
     """
 
-    def __init__(self, base: str, dataset: str,
-                 process: asyncio.subprocess.Process) -> None:
+    def __init__(
+        self, base: str, dataset: str, process: asyncio.subprocess.Process
+    ) -> None:
         self.base = base
         self.dataset = dataset
         self.process = process
@@ -1403,9 +1498,12 @@ class DifyService:
 
     def vfs(self, mount: dict) -> DifyVFS:
         return DifyVFS(
-            DifyConfig(api_key="integ-key",
-                       base_url=self.base,
-                       dataset_id=self.dataset))
+            DifyConfig(
+                api_key="integ-key",
+                base_url=self.base,
+                dataset_id=self.dataset,
+            )
+        )
 
     async def teardown(self) -> None:
         await stop_kit_fake(self.process)
@@ -1435,12 +1533,15 @@ class TrelloService:
 
     def vfs(self, mount: dict) -> TrelloVFS:
         return TrelloVFS(
-            TrelloConfig.model_validate({
-                "api_key": "integ-key",
-                "api_token": "integ-token",
-                "base_url": self.base,
-                **mount.get("config", {}),
-            }))
+            TrelloConfig.model_validate(
+                {
+                    "api_key": "integ-key",
+                    "api_token": "integ-token",
+                    "base_url": self.base,
+                    **mount.get("config", {}),
+                }
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1466,23 +1567,30 @@ class DiscordService:
     async def create(cls, fixture: str = "v1") -> "DiscordService":
         base = os.environ["DISCORD_URL"].rstrip("/")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{base}/reset", json={"fixture":
-                                                           fixture}) as resp:
+            async with session.post(
+                f"{base}/reset", json={"fixture": fixture}
+            ) as resp:
                 resp.raise_for_status()
         return cls(base)
 
     def vfs(self, mount: dict) -> DiscordVFS:
         return DiscordVFS(
-            DiscordConfig(token="integ-bot-token",
-                          base_url=f"{self.base}/api/v10",
-                          **mount.get("config", {})))
+            DiscordConfig(
+                token="integ-bot-token",
+                base_url=f"{self.base}/api/v10",
+                **mount.get("config", {}),
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "discord": (cli_spec_for("discord"), {
-                "token": "integ-bot-token",
-                "base_url": f"{self.base}/api/v10",
-            }),
+            "discord": (
+                cli_spec_for("discord"),
+                {
+                    "token": "integ-bot-token",
+                    "base_url": f"{self.base}/api/v10",
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1514,14 +1622,18 @@ class LinearService:
 
     def vfs(self, mount: dict) -> LinearVFS:
         return LinearVFS(
-            LinearConfig(api_key="integ-key", base_url=self.graphql))
+            LinearConfig(api_key="integ-key", base_url=self.graphql)
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "linear": (cli_spec_for("linear"), {
-                "api_key": "integ-key",
-                "base_url": self.graphql,
-            }),
+            "linear": (
+                cli_spec_for("linear"),
+                {
+                    "api_key": "integ-key",
+                    "base_url": self.graphql,
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1572,9 +1684,12 @@ class LangfuseService:
 
     def vfs(self, mount: dict) -> LangfuseVFS:
         return LangfuseVFS(
-            LangfuseConfig(public_key=self.public_key,
-                           secret_key=self.secret_key,
-                           host=self.host))
+            LangfuseConfig(
+                public_key=self.public_key,
+                secret_key=self.secret_key,
+                host=self.host,
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1602,8 +1717,9 @@ class SharePointService:
 
     @classmethod
     async def create(cls, run_id: str, target: dict) -> "SharePointService":
-        service = cls(f"{run_id}-{target['id']}",
-                      os.environ["ONEDRIVE_URL"].rstrip("/"))
+        service = cls(
+            f"{run_id}-{target['id']}", os.environ["ONEDRIVE_URL"].rstrip("/")
+        )
         for mount in target["mounts"]:
             await service.provision(mount)
         return service
@@ -1619,11 +1735,13 @@ class SharePointService:
         """
         drive = mount["drive"]
         async with aiohttp.ClientSession() as session:
-            async with session.put(f"{self.url}/drives/{drive}",
-                                   headers=self._auth()) as resp:
+            async with session.put(
+                f"{self.url}/drives/{drive}", headers=self._auth()
+            ) as resp:
                 if resp.status != 200:
                     raise RuntimeError(
-                        f"sharepoint drive {drive} -> {resp.status}")
+                        f"sharepoint drive {drive} -> {resp.status}"
+                    )
             parent = ""
             for name in (mount.get("prefix") or "").strip("/").split("/"):
                 if not name:
@@ -1634,27 +1752,35 @@ class SharePointService:
                 # across the two mounts of sharepoint-prefix that share a
                 # `team/reports` ancestor.
                 stem = f"{self.url}/drives/{drive}/root"
-                url = f"{stem}:/{parent}:/children" if parent \
+                url = (
+                    f"{stem}:/{parent}:/children"
+                    if parent
                     else f"{stem}/children"
+                )
                 body = {
                     "name": name,
                     "folder": {},
                     "@microsoft.graph.conflictBehavior": "replace",
                 }
-                async with session.post(url, headers=self._auth(),
-                                        json=body) as resp:
+                async with session.post(
+                    url, headers=self._auth(), json=body
+                ) as resp:
                     if resp.status != 200:
                         raise RuntimeError(
-                            f"sharepoint mkdir {name} -> {resp.status}")
+                            f"sharepoint mkdir {name} -> {resp.status}"
+                        )
                 parent = f"{parent}/{name}" if parent else name
 
     def vfs(self, mount: dict) -> SharePointVFS:
         return SharePointVFS(
-            SharePointConfig(access_token=self.token,
-                             graph_base_url=self.url,
-                             site="Main",
-                             drive=mount["drive"],
-                             key_prefix=mount.get("prefix")))
+            SharePointConfig(
+                access_token=self.token,
+                graph_base_url=self.url,
+                site="Main",
+                drive=mount["drive"],
+                key_prefix=mount.get("prefix"),
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -1699,25 +1825,30 @@ class AirtableService:
         # max_read_records is set below the fixture's 25-record Backlog so a
         # full read of it is refused while head still answers; the fake meters
         # nothing, so pacing is relaxed to keep the battery quick.
-        return AirtableVFS(config=AirtableConfig(
-            token=AIRTABLE_TOKEN,
-            base_url=f"{self.base}/v0",
-            base_ids=mount.get("base_ids"),
-            max_read_records=20,
-            requests_per_second=50.0,
-        ))
+        return AirtableVFS(
+            config=AirtableConfig(
+                token=AIRTABLE_TOKEN,
+                base_url=f"{self.base}/v0",
+                base_ids=mount.get("base_ids"),
+                max_read_records=20,
+                requests_per_second=50.0,
+            )
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         # The same bounds as the mount, scoped to two of the fixture's three
         # bases so the battery can show a refused one (the Archive).
         return {
-            "airtable": (cli_spec_for("airtable"), {
-                "token": AIRTABLE_TOKEN,
-                "base_url": f"{self.base}/v0",
-                "base_ids": list(AIRTABLE_CLI_BASES),
-                "max_read_records": 20,
-                "requests_per_second": 50.0,
-            }),
+            "airtable": (
+                cli_spec_for("airtable"),
+                {
+                    "token": AIRTABLE_TOKEN,
+                    "base_url": f"{self.base}/v0",
+                    "base_ids": list(AIRTABLE_CLI_BASES),
+                    "max_read_records": 20,
+                    "requests_per_second": 50.0,
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1771,21 +1902,26 @@ class NotionService:
         token = NOTION_TOKEN
         made = cls(url, token, run_id)
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{made.base}/reset",
-                                    json={"tenants": [token]}) as resp:
+            async with session.post(
+                f"{made.base}/reset", json={"tenants": [token]}
+            ) as resp:
                 resp.raise_for_status()
         return made
 
     def vfs(self, mount: dict) -> NotionVFS:
-        return NotionVFS(config=NotionConfig(api_key=self.token,
-                                             base_url=f"{self.base}/v1"))
+        return NotionVFS(
+            config=NotionConfig(api_key=self.token, base_url=f"{self.base}/v1")
+        )
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
-            "ntn": (cli_spec_for("ntn"), {
-                "api_key": self.token,
-                "base_url": f"{self.base}/v1",
-            }),
+            "ntn": (
+                cli_spec_for("ntn"),
+                {
+                    "api_key": self.token,
+                    "base_url": f"{self.base}/v1",
+                },
+            ),
         }
 
     async def teardown(self) -> None:
@@ -1793,44 +1929,28 @@ class NotionService:
 
 
 LANCEDB_ROWS = [
-    {
-        "id": 1,
-        "label": "cat",
-        "kind": "big",
-        "name": "a big orange cat"
-    },
-    {
-        "id": 2,
-        "label": "cat",
-        "kind": "small",
-        "name": "a small grey cat"
-    },
-    {
-        "id": 3,
-        "label": "dog",
-        "kind": "big",
-        "name": "a big brown dog"
-    },
-    {
-        "id": 4,
-        "label": "dog",
-        "kind": "small",
-        "name": "a small white dog"
-    },
+    {"id": 1, "label": "cat", "kind": "big", "name": "a big orange cat"},
+    {"id": 2, "label": "cat", "kind": "small", "name": "a small grey cat"},
+    {"id": 3, "label": "dog", "kind": "big", "name": "a big brown dog"},
+    {"id": 4, "label": "dog", "kind": "small", "name": "a small white dog"},
 ]
 
 # One group holding far more rows than the window facet's row cap, so a
 # glob for a row past the cap can only be answered by narrowing the query.
 LANCEDB_WIDE_CAP = 5
-LANCEDB_WIDE_ROWS = [{
-    "id": f"doc-{i:03d}",
-    "label": "all",
-    "name": f"row {i}"
-} for i in range(40)]
+LANCEDB_WIDE_ROWS = [
+    {
+        "id": f"doc-{i:03d}",
+        "label": "all",
+        "name": f"row {i}",
+        "score": i / 2,
+        "even": i % 2 == 0,
+    }
+    for i in range(40)
+]
 
 
 class LanceDBService:
-
     def __init__(self, uri: str, window: bool) -> None:
         self.uri = uri
         self.window = window
@@ -1849,19 +1969,23 @@ class LanceDBService:
     def vfs(self, mount: dict) -> LanceDBVFS:
         if self.window:
             return LanceDBVFS(
-                LanceDBConfig(uri=self.uri,
-                              table="wide",
-                              group_by=["label"],
-                              id_column="id",
-                              title_column="name",
-                              text_column="name",
-                              max_rows=LANCEDB_WIDE_CAP))
+                LanceDBConfig(
+                    uri=self.uri,
+                    table="wide",
+                    group_by=["label"],
+                    id_column="id",
+                    title_column="name",
+                    max_rows=LANCEDB_WIDE_CAP,
+                )
+            )
         return LanceDBVFS(
-            LanceDBConfig(uri=self.uri,
-                          group_by=["label", "kind"],
-                          id_column="id",
-                          title_column="name",
-                          text_column="name"))
+            LanceDBConfig(
+                uri=self.uri,
+                group_by=["label", "kind"],
+                id_column="id",
+                title_column="name",
+            )
+        )
 
     async def teardown(self) -> None:
         shutil.rmtree(self.uri, ignore_errors=True)
@@ -1883,9 +2007,9 @@ QDRANT_WIDE_POINTS = 600
 
 
 class QdrantService:
-
-    def __init__(self, host: str, port: int, collection: str,
-                 window: bool) -> None:
+    def __init__(
+        self, host: str, port: int, collection: str, window: bool
+    ) -> None:
         self.host = host
         self.port = port
         self.collection = collection
@@ -1902,19 +2026,21 @@ class QdrantService:
             await client.create_collection(
                 collection,
                 vectors_config=models.VectorParams(
-                    size=QDRANT_EMBED_DIM, distance=models.Distance.COSINE))
+                    size=QDRANT_EMBED_DIM, distance=models.Distance.COSINE
+                ),
+            )
             if window:
                 await client.upsert(
                     collection,
                     points=[
-                        models.PointStruct(id=i,
-                                           vector=[0.1] * QDRANT_EMBED_DIM,
-                                           payload={
-                                               "label": "all",
-                                               "name": f"row {i}"
-                                           })
+                        models.PointStruct(
+                            id=i,
+                            vector=[0.1] * QDRANT_EMBED_DIM,
+                            payload={"label": "all", "name": f"row {i}"},
+                        )
                         for i in range(1, QDRANT_WIDE_POINTS + 1)
-                    ])
+                    ],
+                )
             else:
                 await client.upsert(
                     collection,
@@ -1923,21 +2049,23 @@ class QdrantService:
                             id=i,
                             vector=[0.1] * QDRANT_EMBED_DIM,
                             payload={
-                                "label":
-                                label,
-                                "kind":
-                                kind,
-                                "name":
-                                name,
-                                "image_bytes":
-                                base64.b64encode(f"PNG-{i}".encode()).decode(),
-                            }) for i, label, kind, name in QDRANT_ROWS
-                    ])
-            for field in (("label", ) if window else ("label", "kind")):
+                                "label": label,
+                                "kind": kind,
+                                "name": name,
+                                "image_bytes": base64.b64encode(
+                                    f"PNG-{i}".encode()
+                                ).decode(),
+                            },
+                        )
+                        for i, label, kind, name in QDRANT_ROWS
+                    ],
+                )
+            for field in ("label",) if window else ("label", "kind"):
                 await client.create_payload_index(
                     collection,
                     field_name=field,
-                    field_schema=models.PayloadSchemaType.KEYWORD)
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
             await asyncio.sleep(2)
         finally:
             await client.close()
@@ -1946,22 +2074,28 @@ class QdrantService:
     def vfs(self, mount: dict) -> QdrantVFS:
         if self.window:
             return QdrantVFS(
-                QdrantConfig(host=self.host,
-                             port=self.port,
-                             collection=self.collection,
-                             group_by=["label"],
-                             id_field="id",
-                             text_field="name",
-                             max_rows=QDRANT_WIDE_CAP))
+                QdrantConfig(
+                    host=self.host,
+                    port=self.port,
+                    collection=self.collection,
+                    group_by=["label"],
+                    id_field="id",
+                    text_field="name",
+                    max_rows=QDRANT_WIDE_CAP,
+                )
+            )
         return QdrantVFS(
-            QdrantConfig(host=self.host,
-                         port=self.port,
-                         collection=self.collection,
-                         group_by=["label", "kind"],
-                         id_field="id",
-                         text_field="name",
-                         blob_field="image_bytes",
-                         blob_ext="png"))
+            QdrantConfig(
+                host=self.host,
+                port=self.port,
+                collection=self.collection,
+                group_by=["label", "kind"],
+                id_field="id",
+                text_field="name",
+                blob_field="image_bytes",
+                blob_ext="png",
+            )
+        )
 
     async def teardown(self) -> None:
         client = AsyncQdrantClient(host=self.host, port=self.port)
@@ -1981,7 +2115,6 @@ def _chroma_embedding(position: int) -> list[float]:
 
 
 class ChromaService:
-
     def __init__(self, host: str, port: int, collection_name: str) -> None:
         self.host = host
         self.port = port
@@ -1992,11 +2125,13 @@ class ChromaService:
         host = os.environ.get("CHROMA_HOST", "localhost")
         port = int(os.environ.get("CHROMA_PORT", "8000"))
         collection_name = f"mirage-integ-{uuid.uuid4().hex[:8]}"
-        seed_path = (Path(__file__).resolve().parents[3] / "server" /
-                     "chroma_seed.json")
+        seed_path = (
+            Path(__file__).resolve().parents[3] / "server" / "chroma_seed.json"
+        )
         seed = json.loads(seed_path.read_text())
         encoded = base64.b64encode(
-            gzip.compress(json.dumps(seed["path_tree"]).encode())).decode()
+            gzip.compress(json.dumps(seed["path_tree"]).encode())
+        ).decode()
         ids = ["__path_tree__"]
         documents = [encoded]
         metadatas: list[dict] = [{"kind": "path_tree"}]
@@ -2013,17 +2148,22 @@ class ChromaService:
                 position += 1
         client = await chromadb.AsyncHttpClient(host=host, port=port)
         collection = await client.create_collection(collection_name)
-        await collection.add(ids=ids,
-                             documents=documents,
-                             metadatas=metadatas,
-                             embeddings=embeddings)
+        await collection.add(
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
         return cls(host, port, collection_name)
 
     def vfs(self, mount: dict) -> ChromaVFS:
         return ChromaVFS(
-            config=ChromaConfig(host=self.host,
-                                port=self.port,
-                                collection_name=self.collection_name))
+            config=ChromaConfig(
+                host=self.host,
+                port=self.port,
+                collection_name=self.collection_name,
+            )
+        )
 
     async def teardown(self) -> None:
         client = await chromadb.AsyncHttpClient(host=self.host, port=self.port)
@@ -2074,26 +2214,13 @@ MONGODB_BOOKS = [
 ]
 
 MONGODB_AUTHORS = [
-    {
-        "_id": 1,
-        "name": "ada",
-        "books": 2
-    },
-    {
-        "_id": 2,
-        "name": "ben",
-        "books": 2
-    },
-    {
-        "_id": 3,
-        "name": "cara",
-        "books": 1
-    },
+    {"_id": 1, "name": "ada", "books": 2},
+    {"_id": 2, "name": "ben", "books": 2},
+    {"_id": 3, "name": "cara", "books": 1},
 ]
 
 
 class MongoDBService:
-
     def __init__(self, uri: str) -> None:
         self.uri = uri
 
@@ -2109,13 +2236,7 @@ class MongoDBService:
             await db.create_collection(
                 "recent_books",
                 viewOn="books",
-                pipeline=[{
-                    "$match": {
-                        "year": {
-                            "$gte": 2022
-                        }
-                    }
-                }],
+                pipeline=[{"$match": {"year": {"$gte": 2022}}}],
             )
         finally:
             await client.close()
@@ -2123,11 +2244,14 @@ class MongoDBService:
 
     def vfs(self, mount: dict) -> MongoDBVFS:
         return MongoDBVFS(
-            config=MongoDBConfig.model_validate({
-                "uri": self.uri,
-                "databases": [MONGODB_DB],
-                **mount.get("config", {}),
-            }))
+            config=MongoDBConfig.model_validate(
+                {
+                    "uri": self.uri,
+                    "databases": [MONGODB_DB],
+                    **mount.get("config", {}),
+                }
+            )
+        )
 
     async def teardown(self) -> None:
         return None
@@ -2157,7 +2281,6 @@ POSTGRES_PROBES = [
 
 
 class PostgresService:
-
     def __init__(self, dsn: str) -> None:
         self.dsn = dsn
 
@@ -2171,17 +2294,25 @@ class PostgresService:
             await conn.execute("DROP TABLE IF EXISTS authors")
             await conn.execute(
                 "CREATE TABLE books (id int PRIMARY KEY, title text, "
-                "author text, year int, rating double precision)")
-            await conn.execute("CREATE TABLE authors (id int PRIMARY KEY, "
-                               "name text, books int)")
+                "author text, year int, rating double precision)"
+            )
+            await conn.execute(
+                "CREATE TABLE authors (id int PRIMARY KEY, "
+                "name text, books int)"
+            )
             await conn.executemany(
                 "INSERT INTO books (id, title, author, year, rating) "
-                "VALUES ($1, $2, $3, $4, $5)", POSTGRES_BOOKS)
+                "VALUES ($1, $2, $3, $4, $5)",
+                POSTGRES_BOOKS,
+            )
             await conn.executemany(
                 "INSERT INTO authors (id, name, books) VALUES ($1, $2, $3)",
-                POSTGRES_AUTHORS)
-            await conn.execute("CREATE VIEW recent_books AS SELECT * FROM "
-                               "books WHERE year >= 2022")
+                POSTGRES_AUTHORS,
+            )
+            await conn.execute(
+                "CREATE VIEW recent_books AS SELECT * FROM "
+                "books WHERE year >= 2022"
+            )
             await conn.execute("ANALYZE books")
             await conn.execute("ANALYZE authors")
             # A quoted dot-prefixed schema is legal; the kit must keep it
@@ -2189,65 +2320,94 @@ class PostgresService:
             await conn.execute('DROP SCHEMA IF EXISTS ".hidden" CASCADE')
             await conn.execute('CREATE SCHEMA ".hidden"')
             await conn.execute(
-                'CREATE TABLE ".hidden".ghost (id int PRIMARY KEY)')
-            await conn.execute('DROP SCHEMA IF EXISTS contract CASCADE')
-            await conn.execute('CREATE SCHEMA contract')
+                'CREATE TABLE ".hidden".ghost (id int PRIMARY KEY)'
+            )
+            await conn.execute("DROP SCHEMA IF EXISTS contract CASCADE")
+            await conn.execute("CREATE SCHEMA contract")
             await conn.execute(
-                'CREATE TABLE contract.probes '
-                '(id int PRIMARY KEY, body text, active boolean)')
+                "CREATE TABLE contract.probes "
+                "(id int PRIMARY KEY, body text, active boolean)"
+            )
             await conn.executemany(
-                'INSERT INTO contract.probes VALUES ($1, $2, $3)',
-                POSTGRES_PROBES)
-            await conn.execute('ANALYZE contract.probes')
-            await conn.execute('DROP SCHEMA IF EXISTS byte_budget CASCADE')
-            await conn.execute('CREATE SCHEMA byte_budget')
-            await conn.execute('CREATE TABLE byte_budget.wide (body text) '
-                               'WITH (autovacuum_enabled = false)')
+                "INSERT INTO contract.probes VALUES ($1, $2, $3)",
+                POSTGRES_PROBES,
+            )
+            await conn.execute("ANALYZE contract.probes")
+            await conn.execute("DROP SCHEMA IF EXISTS byte_budget CASCADE")
+            await conn.execute("CREATE SCHEMA byte_budget")
+            await conn.execute(
+                "CREATE TABLE byte_budget.wide (body text) "
+                "WITH (autovacuum_enabled = false)"
+            )
             await conn.execute("INSERT INTO byte_budget.wide VALUES ('x')")
-            await conn.execute('ANALYZE byte_budget.wide')
+            await conn.execute("ANALYZE byte_budget.wide")
             await conn.execute(
-                "UPDATE byte_budget.wide SET body = repeat('é', 1000000)")
-            await conn.execute('CREATE TABLE byte_budget.empty (body text)')
+                "UPDATE byte_budget.wide SET body = repeat('é', 1000000)"
+            )
+            await conn.execute("CREATE TABLE byte_budget.empty (body text)")
             await conn.execute(
-                'CREATE TABLE byte_budget.exact (__mirage_bytes text)')
+                "CREATE TABLE byte_budget.exact (__mirage_bytes text)"
+            )
             await conn.execute("INSERT INTO byte_budget.exact VALUES (NULL)")
-            await conn.execute('ANALYZE byte_budget.empty')
-            await conn.execute('ANALYZE byte_budget.exact')
+            await conn.execute("ANALYZE byte_budget.empty")
+            await conn.execute("ANALYZE byte_budget.exact")
         finally:
             await conn.close()
         return cls(dsn)
 
     def vfs(self, mount: dict) -> PostgresVFS:
         return PostgresVFS(
-            PostgresConfig.model_validate({
-                "dsn": self.dsn,
-                "max_read_rows": 200,
-                **mount.get("config", {}),
-            }))
+            PostgresConfig.model_validate(
+                {
+                    "dsn": self.dsn,
+                    "max_read_rows": 200,
+                    **mount.get("config", {}),
+                }
+            )
+        )
 
     async def teardown(self) -> None:
         return None
 
 
-Service = (AirtableService | S3Service | OneDriveService | SharePointService
-           | Mem0Service
-           | SSHService | PostgresService | MongoDBService | ChromaService
-           | QdrantService | LanceDBService | NotionService
-           | NextcloudService | GwsService | HfService | HfHubService
-           | BoxService
-           | DropboxService | GridFSService | SlackService | TrelloService
-           | LinearService | DifyService | DatabricksVolumeService
-           | LangfuseService | JaegerService)
+Service = (
+    AirtableService
+    | S3Service
+    | OneDriveService
+    | SharePointService
+    | Mem0Service
+    | SSHService
+    | PostgresService
+    | MongoDBService
+    | ChromaService
+    | QdrantService
+    | LanceDBService
+    | NotionService
+    | NextcloudService
+    | GwsService
+    | HfService
+    | HfHubService
+    | BoxService
+    | DropboxService
+    | GridFSService
+    | SlackService
+    | TrelloService
+    | LinearService
+    | DifyService
+    | DatabricksVolumeService
+    | LangfuseService
+    | JaegerService
+)
 
 
 def build_ram(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     return RAMVFS(), _noop
 
 
 def build_disk(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     root = tempfile.mkdtemp(prefix=f"mirage-integ-disk-{run_id}-")
 
@@ -2257,8 +2417,12 @@ def build_disk(
     mount_root = Path(root)
     if fixture_name := mount.get("host_fixture"):
         fixture = json.loads(
-            (Path(__file__).resolve().parents[3] / "fixtures" /
-             (fixture_name + ".json")).read_text())
+            (
+                Path(__file__).resolve().parents[3]
+                / "fixtures"
+                / (fixture_name + ".json")
+            ).read_text()
+        )
         for relative, text in fixture["files"].items():
             target = mount_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -2272,7 +2436,7 @@ def build_disk(
 
 
 def build_redis(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     safe_path = mount["path"].strip("/").replace("/", "-") or "root"
     prefix = f"mirage-integ-{run_id}-{safe_path}/"
@@ -2280,49 +2444,49 @@ def build_redis(
 
 
 def build_s3(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, S3Service)
     return service.vfs(mount), _noop
 
 
 def build_gridfs(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GridFSService)
     return service.vfs(mount), _noop
 
 
 def build_databricks_volume(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, DatabricksVolumeService)
     return service.vfs(mount), _noop
 
 
 def build_onedrive(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, OneDriveService)
     return service.vfs(mount), _noop
 
 
 def build_sharepoint(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, SharePointService)
     return service.vfs(mount), _noop
 
 
 def build_mem0(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, Mem0Service)
     return service.vfs(mount), _noop
 
 
 def build_postgres(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, PostgresService)
     vfs = service.vfs(mount)
@@ -2330,7 +2494,7 @@ def build_postgres(
 
 
 def build_mongodb(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, MongoDBService)
     vfs = service.vfs(mount)
@@ -2338,14 +2502,14 @@ def build_mongodb(
 
 
 def build_chroma(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, ChromaService)
     return service.vfs(mount), _noop
 
 
 def build_qdrant(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, QdrantService)
     vfs = service.vfs(mount)
@@ -2353,7 +2517,7 @@ def build_qdrant(
 
 
 def build_lancedb(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, LanceDBService)
     vfs = service.vfs(mount)
@@ -2361,7 +2525,7 @@ def build_lancedb(
 
 
 def build_airtable(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, AirtableService)
     vfs = service.vfs(mount)
@@ -2369,154 +2533,154 @@ def build_airtable(
 
 
 def build_notion(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, NotionService)
     return service.vfs(mount), _noop
 
 
 def build_hf(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, HfService)
     return service.vfs(mount), _noop
 
 
 def build_hf_hub(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, HfHubService)
     return service.vfs(mount), _noop
 
 
 def build_box(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, BoxService)
     return service.vfs(mount), _noop
 
 
 def build_dropbox(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, DropboxService)
     return service.vfs(mount), _noop
 
 
 def build_dify(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, DifyService)
     return service.vfs(mount), _noop
 
 
 def build_trello(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, TrelloService)
     return service.vfs(mount), _noop
 
 
 def build_discord(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, DiscordService)
     return service.vfs(mount), _noop
 
 
 def build_linear(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, LinearService)
     return service.vfs(mount), _noop
 
 
 def build_jaeger(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, JaegerService)
     return service.vfs(mount), _noop
 
 
 def build_langfuse(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, LangfuseService)
     return service.vfs(mount), _noop
 
 
 def build_ssh(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, SSHService)
     return service.vfs(mount), _noop
 
 
 def build_gdrive(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.vfs(mount), _noop
 
 
 def build_gdocs(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.gdocs_vfs(), _noop
 
 
 def build_gsheets(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.gsheets_vfs(), _noop
 
 
 def build_gslides(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.gslides_vfs(), _noop
 
 
 def build_email(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, EmailService)
     return service.vfs(mount), _noop
 
 
 def build_gcal(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.gcal_vfs(mount.get("config", {})), _noop
 
 
 def build_gmail(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
     return service.gmail_vfs(), _noop
 
 
 def build_nextcloud(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, NextcloudService)
     return service.vfs(mount), _noop
 
 
 async def build_github(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GitHubService)
     return await service.vfs(mount), _noop
 
 
 def build_slack(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, SlackService)
     return service.vfs(mount), _noop
@@ -2529,74 +2693,62 @@ def build_slack(
 # github needs a live repo at construct, notion an OAuth provider, and
 # hf_buckets validates the bucket id.
 ARG_ERROR_VFS: dict[str, tuple[type, type, dict[str, object]]] = {
-    "airtable": (AirtableVFS, AirtableConfig, {
-        "token": "t"
-    }),
-    "databricks": (DatabricksVolumeVFS, DatabricksVolumeConfig, {
-        "host": "h",
-        "token": "t",
-        "catalog": "c",
-        "schema": "s",
-        "volume": "v",
-    }),
-    "discord": (DiscordVFS, DiscordConfig, {
-        "token": "x"
-    }),
-    "email": (EmailVFS, EmailConfig, {
-        "imap_host": "h",
-        "smtp_host": "h",
-        "username": "u",
-        "password": "p",
-    }),
-    "gdocs": (GDocsVFS, GDocsConfig, {
-        "client_id": "c",
-        "refresh_token": "r"
-    }),
-    "gdrive": (GoogleDriveVFS, GoogleDriveConfig, {
-        "client_id": "c",
-        "refresh_token": "r"
-    }),
-    "gmail": (GmailVFS, GmailConfig, {
-        "client_id": "c",
-        "refresh_token": "r"
-    }),
-    "gsheets": (GSheetsVFS, GSheetsConfig, {
-        "client_id": "c",
-        "refresh_token": "r"
-    }),
-    "gslides": (GSlidesVFS, GSlidesConfig, {
-        "client_id": "c",
-        "refresh_token": "r"
-    }),
-    "langfuse": (LangfuseVFS, LangfuseConfig, {
-        "public_key": "p",
-        "secret_key": "s"
-    }),
-    "linear": (LinearVFS, LinearConfig, {
-        "api_key": "k"
-    }),
-    "mem0": (Mem0VFS, Mem0Config, {
-        "api_key": "k",
-        "user_id": "u"
-    }),
-    "onedrive": (OneDriveVFS, OneDriveConfig, {
-        "access_token": "t"
-    }),
-    "sharepoint": (SharePointVFS, SharePointConfig, {
-        "access_token": "t"
-    }),
-    "slack": (SlackVFS, SlackConfig, {
-        "token": "x"
-    }),
-    "trello": (TrelloVFS, TrelloConfig, {
-        "api_key": "k",
-        "api_token": "t"
-    }),
+    "airtable": (AirtableVFS, AirtableConfig, {"token": "t"}),
+    "databricks": (
+        DatabricksVolumeVFS,
+        DatabricksVolumeConfig,
+        {
+            "host": "h",
+            "token": "t",
+            "catalog": "c",
+            "schema": "s",
+            "volume": "v",
+        },
+    ),
+    "discord": (DiscordVFS, DiscordConfig, {"token": "x"}),
+    "email": (
+        EmailVFS,
+        EmailConfig,
+        {
+            "imap_host": "h",
+            "smtp_host": "h",
+            "username": "u",
+            "password": "p",
+        },
+    ),
+    "gdocs": (GDocsVFS, GDocsConfig, {"client_id": "c", "refresh_token": "r"}),
+    "gdrive": (
+        GoogleDriveVFS,
+        GoogleDriveConfig,
+        {"client_id": "c", "refresh_token": "r"},
+    ),
+    "gmail": (GmailVFS, GmailConfig, {"client_id": "c", "refresh_token": "r"}),
+    "gsheets": (
+        GSheetsVFS,
+        GSheetsConfig,
+        {"client_id": "c", "refresh_token": "r"},
+    ),
+    "gslides": (
+        GSlidesVFS,
+        GSlidesConfig,
+        {"client_id": "c", "refresh_token": "r"},
+    ),
+    "langfuse": (
+        LangfuseVFS,
+        LangfuseConfig,
+        {"public_key": "p", "secret_key": "s"},
+    ),
+    "linear": (LinearVFS, LinearConfig, {"api_key": "k"}),
+    "mem0": (Mem0VFS, Mem0Config, {"api_key": "k", "user_id": "u"}),
+    "onedrive": (OneDriveVFS, OneDriveConfig, {"access_token": "t"}),
+    "sharepoint": (SharePointVFS, SharePointConfig, {"access_token": "t"}),
+    "slack": (SlackVFS, SlackConfig, {"token": "x"}),
+    "trello": (TrelloVFS, TrelloConfig, {"api_key": "k", "api_token": "t"}),
 }
 
 
 def build_arg_error(
-        mount: dict, run_id: str, service: Service | None
+    mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     vfs_cls, config_cls, kwargs = ARG_ERROR_VFS[mount["backend"]]
     return vfs_cls(config_cls(**kwargs)), _noop
@@ -2752,8 +2904,13 @@ async def build_mounts(
                 pair = await pair
             vfs, cleanup = pair
         built[mount["path"]] = vfs
-        mode = (MountMode.READ if mount.get("mode") == "read" else
-                MountMode.EXEC if mount.get("mode") == "exec" else None)
+        mode = (
+            MountMode.READ
+            if mount.get("mode") == "read"
+            else MountMode.EXEC
+            if mount.get("mode") == "exec"
+            else None
+        )
         # A mount states infrastructure only: what it is, where it is,
         # how it is served. Its permissions live in the profile, under
         # `profiles.<name>.mounts.<prefix>`.
@@ -2765,8 +2922,9 @@ async def build_mounts(
     return mounts, cleanups
 
 
-def cli_install(service: "Service | None",
-                cli_name: str) -> tuple[CLISpec, dict[str, object] | None]:
+def cli_install(
+    service: "Service | None", cli_name: str
+) -> tuple[CLISpec, dict[str, object] | None]:
     """The spec and config to install one CLI under its head word.
 
     Every CLI here so far talks to an API, so its mock service hands
@@ -2786,13 +2944,24 @@ def cli_install(service: "Service | None",
     # Widen the assert when another service grows a CLI.
     assert isinstance(
         service,
-        (AirtableService, DiscordService, EmailService, GitHubService,
-         GwsService, HfHubService, LinearService, NotionService, SlackService))
+        (
+            AirtableService,
+            DiscordService,
+            EmailService,
+            GitHubService,
+            GwsService,
+            HfHubService,
+            LinearService,
+            NotionService,
+            SlackService,
+        ),
+    )
     return service.cli_installs()[cli_name]
 
 
-async def mutate_write(shadow_ws: Workspace, path: str,
-                       content: bytes) -> None:
+async def mutate_write(
+    shadow_ws: Workspace, path: str, content: bytes
+) -> None:
     await shadow_ws.vfs.write(path, content)
 
 
@@ -2812,8 +2981,9 @@ async def mutate_line(shadow_ws: Workspace, command: str) -> None:
         raise RuntimeError(f"{command}: {await result.stderr_str()}")
 
 
-async def mutate_commit(shadow_ws: Workspace, path: str,
-                        content: bytes) -> None:
+async def mutate_commit(
+    shadow_ws: Workspace, path: str, content: bytes
+) -> None:
     """Change a Hub file the way the Hub changes: one commit.
 
     A Hub repo mount is read-only (a write is a commit, which is the `hf`
@@ -2830,13 +3000,15 @@ async def mutate_commit(shadow_ws: Workspace, path: str,
     accessor = getattr(mount.vfs, "accessor", None)
     if not isinstance(accessor, HfHubAccessor):
         raise ValueError(f"hf-hub cannot commit {path}")
-    rel = path[len(mount.prefix.rstrip("/")):]
-    await commit(accessor,
-                 additions=[Addition(accessor.repo_path(rel), content)])
+    rel = path[len(mount.prefix.rstrip("/")) :]
+    await commit(
+        accessor, additions=[Addition(accessor.repo_path(rel), content)]
+    )
 
 
-async def mutate_github(shadow_ws: Workspace, path: str,
-                        content: bytes) -> None:
+async def mutate_github(
+    shadow_ws: Workspace, path: str, content: bytes
+) -> None:
     """Change a repository file the way GitHub changes one: a contents PUT.
 
     A github mount is read-only, so the out-of-band change a consistency
@@ -2854,19 +3026,17 @@ async def mutate_github(shadow_ws: Workspace, path: str,
     accessor = getattr(mount.vfs, "accessor", None)
     if not isinstance(accessor, GitHubAccessor):
         raise ValueError(f"github cannot change {path}")
-    rel = path[len(mount.prefix.rstrip("/")):].lstrip("/")
-    endpoint = (f"/repos/{accessor.owner}/{accessor.repo}/contents/"
-                f"{quote(rel)}")
+    rel = path[len(mount.prefix.rstrip("/")) :].lstrip("/")
+    endpoint = f"/repos/{accessor.owner}/{accessor.repo}/contents/{quote(rel)}"
     body: dict[str, str] = {
         "message": f"integ: change {rel}",
         "content": base64.b64encode(content).decode(),
     }
     config = accessor.config
     try:
-        current = await github_request(config.token,
-                                       "GET",
-                                       endpoint,
-                                       base_url=config.base_url)
+        current = await github_request(
+            config.token, "GET", endpoint, base_url=config.base_url
+        )
     except GitHubApiError as exc:
         # Absent: create it. GitHub refuses a sha for a new file.
         if exc.status != 404:
@@ -2874,11 +3044,9 @@ async def mutate_github(shadow_ws: Workspace, path: str,
         logging.getLogger(__name__).debug("creating %s: %s", rel, exc)
     else:
         body["sha"] = str(current["sha"])
-    await github_request(config.token,
-                         "PUT",
-                         endpoint,
-                         body,
-                         base_url=config.base_url)
+    await github_request(
+        config.token, "PUT", endpoint, body, base_url=config.base_url
+    )
 
 
 MUTATORS: dict[str, Callable[[Workspace, str, bytes], Awaitable[None]]] = {
@@ -2914,8 +3082,11 @@ def _redis_console(url: str, prefix: str, job_id: int) -> JobConsole:
     """
     key_prefix = f"{prefix}{uuid.uuid4().hex[:8]}-{job_id}:"
     # Battery keys must not accumulate in the shared redis db.
-    return JobConsole(store=RedisConsoleStore(
-        url=url, key_prefix=key_prefix, ttl_seconds=3600))
+    return JobConsole(
+        store=RedisConsoleStore(
+            url=url, key_prefix=key_prefix, ttl_seconds=3600
+        )
+    )
 
 
 def console_factory(target: dict, run_id: str) -> ConsoleFactory | None:
@@ -2932,13 +3103,13 @@ def console_factory(target: dict, run_id: str) -> ConsoleFactory | None:
     if block is None:
         return None
     url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    return functools.partial(_redis_console, url,
-                             f"mirage-integ-console-{run_id}:")
+    return functools.partial(
+        _redis_console, url, f"mirage-integ-console-{run_id}:"
+    )
 
 
 async def open_target(
-    target: dict,
-    read: ReadSpec | None = None
+    target: dict, read: ReadSpec | None = None
 ) -> tuple[Workspace, Callable[[], Awaitable[None]]]:
     run_id = uuid.uuid4().hex[:8]
     service = await make_service(target, run_id)
@@ -2956,22 +3127,26 @@ async def open_target(
     profiles = scripted_profiles(target.get("profiles") or None)
     default_profile = target.get("profile")
     if read is not None:
-        ws = Workspace(mounts,
-                       mode=MountMode.WRITE,
-                       read=read,
-                       agent_id=agent_id,
-                       console_factory=factory,
-                       profiles=profiles,
-                       profile=default_profile,
-                       env=env_block)
+        ws = Workspace(
+            mounts,
+            mode=MountMode.WRITE,
+            read=read,
+            agent_id=agent_id,
+            console_factory=factory,
+            profiles=profiles,
+            profile=default_profile,
+            env=env_block,
+        )
     else:
-        ws = Workspace(mounts,
-                       mode=MountMode.WRITE,
-                       agent_id=agent_id,
-                       console_factory=factory,
-                       profiles=profiles,
-                       profile=default_profile,
-                       env=env_block)
+        ws = Workspace(
+            mounts,
+            mode=MountMode.WRITE,
+            agent_id=agent_id,
+            console_factory=factory,
+            profiles=profiles,
+            profile=default_profile,
+            env=env_block,
+        )
     for cli_name in target.get("clis", []):
         spec, config = cli_install(service, cli_name)
         ws.register_cli(cli_name, spec, config)
@@ -2991,8 +3166,9 @@ async def open_target(
     return ws, functools.partial(teardown_target, [ws], cleanups, service)
 
 
-def apply_mount_read(mounts: dict[str, VFSMount],
-                     mount_read: dict[str, ReadSpec]) -> dict[str, VFSMount]:
+def apply_mount_read(
+    mounts: dict[str, VFSMount], mount_read: dict[str, ReadSpec]
+) -> dict[str, VFSMount]:
     """The mount table with each named prefix under its own read policy.
 
     A mount keeps everything its builder gave it but the policy: a bare
@@ -3019,7 +3195,8 @@ def apply_mount_read(mounts: dict[str, VFSMount],
                 vfs=entry[0],
                 mode=entry[1],
                 command_limits=(entry[2] if len(entry) == 3 else {}),
-                read=spec)
+                read=spec,
+            )
         else:
             out[prefix] = Mount(vfs=entry, read=spec)
     return out
@@ -3028,26 +3205,30 @@ def apply_mount_read(mounts: dict[str, VFSMount],
 async def open_consistency(
     target: dict, read: ReadSpec, mount_read: dict[str, ReadSpec]
 ) -> tuple[
-        Workspace,
-        Callable[[str, bytes], Awaitable[None]],
-        Callable[[str], Awaitable[None]],
-        Callable[[], Awaitable[None]],
+    Workspace,
+    Callable[[str, bytes], Awaitable[None]],
+    Callable[[str], Awaitable[None]],
+    Callable[[], Awaitable[None]],
 ]:
     # Refused before anything opens, so there is nothing to clean up.
     unknown = sorted(set(mount_read) - {m["path"] for m in target["mounts"]})
     if unknown:
-        raise ValueError(f"{target['id']}: mount_read names no mount: "
-                         f"{', '.join(unknown)}")
+        raise ValueError(
+            f"{target['id']}: mount_read names no mount: {', '.join(unknown)}"
+        )
     run_id = uuid.uuid4().hex[:8]
     service = await make_service(target, run_id)
     read_mounts, read_cleanups = await build_mounts(target, run_id, service)
     shadow_mounts, shadow_cleanups = await build_mounts(
-        target, run_id, service)
+        target, run_id, service
+    )
     # A refused policy fails here, after the mounts and service exist.
     try:
-        read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
-                            mode=MountMode.WRITE,
-                            read=read)
+        read_ws = Workspace(
+            apply_mount_read(read_mounts, mount_read),
+            mode=MountMode.WRITE,
+            read=read,
+        )
     except Exception:
         await teardown_target([], [*read_cleanups, *shadow_cleanups], service)
         raise
@@ -3068,8 +3249,12 @@ async def open_consistency(
         read_ws,
         functools.partial(mutate, shadow_ws),
         functools.partial(mutate_line, shadow_ws),
-        functools.partial(teardown_target, [read_ws, shadow_ws],
-                          [*read_cleanups, *shadow_cleanups], service),
+        functools.partial(
+            teardown_target,
+            [read_ws, shadow_ws],
+            [*read_cleanups, *shadow_cleanups],
+            service,
+        ),
     )
 
 
@@ -3094,11 +3279,14 @@ def scripted_profiles(profiles: dict | None) -> dict | None:
             # Only the program is loaded; the block around it (its
             # runtime) is the document's and stays as written.
             doc = {
-                **doc, "policy": {
-                    **policy, "script":
-                    ScriptSource(script["source"],
-                                 language=script.get("language", "python"))
-                }
+                **doc,
+                "policy": {
+                    **policy,
+                    "script": ScriptSource(
+                        script["source"],
+                        language=script.get("language", "python"),
+                    ),
+                },
             }
         out[name] = doc
     return out

@@ -6,16 +6,20 @@ from typing import Any
 from mirage.accessor.chroma import ChromaAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.chroma.client import fetch_path_tree
-from mirage.core.slug_tree.rows import (dir_rows, drop_collisions,
-                                        normalize_slug)
+from mirage.core.slug_tree.rows import (
+    dir_rows,
+    drop_collisions,
+    normalize_slug,
+)
 from mirage.core.slug_tree.tree import SlugTree
 from mirage.core.slug_tree.types import DirRows
 from mirage.utils.path import gnu_basename
 
 
 async def load_tree(accessor: ChromaAccessor, prefix: str) -> DirRows:
-    return build_dir_entries(parse_path_tree(await fetch_path_tree(accessor)),
-                             prefix)
+    return build_dir_entries(
+        parse_path_tree(await fetch_path_tree(accessor)), prefix
+    )
 
 
 def parse_path_tree(raw: str) -> dict[str, dict[str, Any]]:
@@ -37,22 +41,26 @@ def parse_path_tree(raw: str) -> dict[str, dict[str, Any]]:
     return result
 
 
-def build_dir_entries(path_tree: dict[str, dict[str, Any]],
-                      prefix: str) -> DirRows:
+def build_dir_entries(
+    path_tree: dict[str, dict[str, Any]], prefix: str
+) -> DirRows:
     files: dict[str, dict[str, Any]] = {}
     for raw_slug, metadata in path_tree.items():
         path = normalize_slug(raw_slug, "Chroma path")
         if path in files:
             raise ValueError(f"Duplicate Chroma path '{path.strip('/')}'")
         files[path] = metadata
-    return dir_rows(drop_collisions(files, refuse_collision), prefix,
-                    file_entry)
+    return dir_rows(
+        drop_collisions(files, refuse_collision), prefix, file_entry
+    )
 
 
 def refuse_collision(ancestor: str, path: str) -> None:
-    raise ValueError("Path collision: Chroma path "
-                     f"'{ancestor.strip('/')}' is both a file and a directory "
-                     f"prefix for '{path.strip('/')}'.")
+    raise ValueError(
+        "Path collision: Chroma path "
+        f"'{ancestor.strip('/')}' is both a file and a directory "
+        f"prefix for '{path.strip('/')}'."
+    )
 
 
 def file_entry(path: str, metadata: dict[str, Any]) -> IndexEntry:

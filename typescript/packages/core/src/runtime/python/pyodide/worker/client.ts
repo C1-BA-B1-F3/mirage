@@ -248,7 +248,7 @@ export class PyodideWorkerClient {
       case 'stat':
         return vfs.stat(request.path, true)
       case 'readdir':
-        return vfs.readdir(request.path)
+        return vfs.readdir(request.path, request.classify ?? true)
       case 'readlink':
         return vfs.readlink(request.path)
       case 'dispatch': {

@@ -15,9 +15,15 @@
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from mirage.shell.constants import (ARITH_ASSIGN_OPS, ARITH_ELEM,
-                                    ARITH_MAX_DEPTH, ARITH_NAME, ARITH_SIGN,
-                                    ARITH_TOKEN, ARITH_WRAP)
+from mirage.shell.constants import (
+    ARITH_ASSIGN_OPS,
+    ARITH_ELEM,
+    ARITH_MAX_DEPTH,
+    ARITH_NAME,
+    ARITH_SIGN,
+    ARITH_TOKEN,
+    ARITH_WRAP,
+)
 from mirage.shell.errors import ArithError, UnboundVariable
 from mirage.shell.types import ArithResult, ArithWrite, ElementOps
 
@@ -70,7 +76,7 @@ def _tokenize(expr: str) -> list[str]:
             # arithmetic (an associative key can be any text at all) and
             # only the resolver knows which grammar applies.
             close = _matching_bracket(expr, end)
-            tokens.append(expr[match.start():close + 1])
+            tokens.append(expr[match.start() : close + 1])
             pos = close + 1
             continue
         pos = end
@@ -137,8 +143,9 @@ def _parse_base_literal(text: str) -> int:
     for ch in digits:
         digit = _base_digit(ch, base)
         if digit >= base:
-            raise ArithError(f"value too great for base (error token is "
-                             f'"{text}")')
+            raise ArithError(
+                f'value too great for base (error token is "{text}")'
+            )
         value = value * base + digit
     return value
 
@@ -152,8 +159,9 @@ def _parse_literal(text: str) -> int:
         try:
             return int(text, 8)
         except ValueError:
-            raise ArithError(f"value too great for base (error token is "
-                             f'"{text}")') from None
+            raise ArithError(
+                f'value too great for base (error token is "{text}")'
+            ) from None
     return int(text)
 
 
@@ -200,9 +208,12 @@ class ArithParser:
 
     def assign(self) -> tuple[Any, ...]:
         tok = self.peek()
-        if (tok is not None and self.pos + 1 < len(self.tokens)
-                and self.tokens[self.pos + 1] in ARITH_ASSIGN_OPS
-                and _target_node(tok) is not None):
+        if (
+            tok is not None
+            and self.pos + 1 < len(self.tokens)
+            and self.tokens[self.pos + 1] in ARITH_ASSIGN_OPS
+            and _target_node(tok) is not None
+        ):
             target = _target_node(self.take())
             op = self.take()
             return ("assign", target, op, self.assign())
@@ -329,8 +340,9 @@ class ArithParser:
         except ArithError:
             raise
         except ValueError:
-            raise ArithError(f'syntax error: unexpected token "{tok}"') \
-                from None
+            raise ArithError(
+                f'syntax error: unexpected token "{tok}"'
+            ) from None
 
 
 class ArithEvaluator:
@@ -345,16 +357,18 @@ class ArithEvaluator:
     expression made them.
     """
 
-    def __init__(self,
-                 env: Mapping[str, str],
-                 updates: dict[str, str],
-                 elem_updates: dict[tuple[str, str], str],
-                 writes: dict[tuple[str, str | None], str],
-                 depth: int,
-                 elements: ElementOps | None,
-                 read_var: Callable[[str], str | None] | None,
-                 wrote_var: Callable[[str, str], None] | None = None,
-                 nounset: bool = False) -> None:
+    def __init__(
+        self,
+        env: Mapping[str, str],
+        updates: dict[str, str],
+        elem_updates: dict[tuple[str, str], str],
+        writes: dict[tuple[str, str | None], str],
+        depth: int,
+        elements: ElementOps | None,
+        read_var: Callable[[str], str | None] | None,
+        wrote_var: Callable[[str, str], None] | None = None,
+        nounset: bool = False,
+    ) -> None:
         self.env = env
         self.updates = updates
         self.elem_updates = elem_updates
@@ -368,7 +382,8 @@ class ArithEvaluator:
     def _merged_env(self) -> dict[str, str]:
         merged = {
             name: value
-            for name in self.env if (value := self.env.get(name)) is not None
+            for name in self.env
+            if (value := self.env.get(name)) is not None
         }
         merged.update(self.updates)
         return merged
@@ -397,11 +412,20 @@ class ArithEvaluator:
             raw (str): the text to evaluate.
         """
         if self.depth >= ARITH_MAX_DEPTH:
-            raise ArithError(f"expression recursion level exceeded (error "
-                             f'token is "{raw}")')
-        nested = ArithEvaluator(self.env, self.updates, self.elem_updates,
-                                self.writes, self.depth + 1, self.elements,
-                                self.read_var, self.wrote_var, self.nounset)
+            raise ArithError(
+                f'expression recursion level exceeded (error token is "{raw}")'
+            )
+        nested = ArithEvaluator(
+            self.env,
+            self.updates,
+            self.elem_updates,
+            self.writes,
+            self.depth + 1,
+            self.elements,
+            self.read_var,
+            self.wrote_var,
+            self.nounset,
+        )
         return nested.run(ArithParser(_tokenize(raw)).parse())
 
     def lookup(self, name: str) -> int:
@@ -424,17 +448,24 @@ class ArithEvaluator:
             # Under `set -u` a name no variable holds is fatal, as
             # bash's expr_streval has it; an array counts whatever its
             # element 0 holds.
-            if value is None and self.nounset and not (
-                    self.elements is not None and self.elements.holds_array
-                    is not None and self.elements.holds_array(name)):
+            if (
+                value is None
+                and self.nounset
+                and not (
+                    self.elements is not None
+                    and self.elements.holds_array is not None
+                    and self.elements.holds_array(name)
+                )
+            ):
                 raise UnboundVariable(name)
             raw = "" if value is None else str(value)
         return self._coerce(raw)
 
     def elem_key(self, name: str, subscript: str) -> str:
         if self.elements is None:
-            raise ArithError('syntax error: operand expected (error token '
-                             'is "[")')
+            raise ArithError(
+                'syntax error: operand expected (error token is "[")'
+            )
         is_assoc = self.elements.is_assoc
         if is_assoc is not None and not is_assoc(name):
             # An indexed subscript is arithmetic in this expression's
@@ -463,9 +494,9 @@ class ArithEvaluator:
             return None
         return self.elem_key(target[1], target[2])
 
-    def read_target(self,
-                    target: tuple[Any, ...],
-                    key: str | None = None) -> int:
+    def read_target(
+        self, target: tuple[Any, ...], key: str | None = None
+    ) -> int:
         if target[0] == "var":
             return self.lookup(target[1])
         if key is None:
@@ -475,10 +506,9 @@ class ArithEvaluator:
             raw = self.elements.read(target[1], key)
         return self._coerce(raw)
 
-    def write_target(self,
-                     target: tuple[Any, ...],
-                     value: int,
-                     key: str | None = None) -> None:
+    def write_target(
+        self, target: tuple[Any, ...], value: int, key: str | None = None
+    ) -> None:
         text = str(value)
         if target[0] == "var":
             self.updates[target[1]] = text
@@ -550,15 +580,17 @@ class ArithEvaluator:
             _, op, target = node
             key = self.key_of(target)
             value = _wrap(
-                self.read_target(target, key) + (1 if op == "++" else -1))
+                self.read_target(target, key) + (1 if op == "++" else -1)
+            )
             self.write_target(target, value, key)
             return value
         if kind == "post":
             _, op, target = node
             key = self.key_of(target)
             value = self.read_target(target, key)
-            self.write_target(target, _wrap(value + (1 if op == "++" else -1)),
-                              key)
+            self.write_target(
+                target, _wrap(value + (1 if op == "++" else -1)), key
+            )
             return value
         raise ArithError(f"unsupported node: {kind}")
 
@@ -602,13 +634,15 @@ class ArithEvaluator:
         raise ArithError(f'unsupported operator "{op}"')
 
 
-def evaluate_arith(expr: str,
-                   env: Mapping[str, str],
-                   depth: int = 0,
-                   elements: ElementOps | None = None,
-                   read_var: Callable[[str], str | None] | None = None,
-                   wrote_var: Callable[[str, str], None] | None = None,
-                   nounset: bool = False) -> ArithResult:
+def evaluate_arith(
+    expr: str,
+    env: Mapping[str, str],
+    depth: int = 0,
+    elements: ElementOps | None = None,
+    read_var: Callable[[str], str | None] | None = None,
+    wrote_var: Callable[[str, str], None] | None = None,
+    nounset: bool = False,
+) -> ArithResult:
     """Evaluate a bash arithmetic expression.
 
     Implements bash's arithmetic grammar over 64-bit wrapping integers:
@@ -660,9 +694,17 @@ def evaluate_arith(expr: str,
     elem_updates: dict[tuple[str, str], str] = {}
     writes: dict[tuple[str, str | None], str] = {}
     try:
-        value = ArithEvaluator(env, updates, elem_updates, writes, depth,
-                               elements, read_var, wrote_var,
-                               nounset).run(node)
+        value = ArithEvaluator(
+            env,
+            updates,
+            elem_updates,
+            writes,
+            depth,
+            elements,
+            read_var,
+            wrote_var,
+            nounset,
+        ).run(node)
     except ArithError as exc:
         exc.writes = _arith_writes(writes)
         raise
@@ -670,7 +712,8 @@ def evaluate_arith(expr: str,
 
 
 def _arith_writes(
-        writes: dict[tuple[str, str | None], str]) -> tuple[ArithWrite, ...]:
+    writes: dict[tuple[str, str | None], str],
+) -> tuple[ArithWrite, ...]:
     """The evaluator's ordered write record as ``ArithWrite`` rows.
 
     Args:
@@ -678,4 +721,5 @@ def _arith_writes(
             the order of each target's last write.
     """
     return tuple(
-        ArithWrite(name, key, text) for (name, key), text in writes.items())
+        ArithWrite(name, key, text) for (name, key), text in writes.items()
+    )

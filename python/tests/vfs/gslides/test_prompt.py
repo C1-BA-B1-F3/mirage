@@ -22,8 +22,9 @@ def test_prompt_includes_buckets_and_structure():
     assert "shared with you by others" in rendered
     assert "still in owned/" in rendered
     assert "gslide.json structure" in rendered
-    text_path = (".slides[].pageElements[].shape.text"
-                 ".textElements[].textRun.content")
+    text_path = (
+        ".slides[].pageElements[].shape.text.textElements[].textRun.content"
+    )
     assert text_path in rendered
 
 

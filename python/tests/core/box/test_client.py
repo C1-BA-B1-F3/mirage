@@ -18,11 +18,18 @@ import pytest
 from aioresponses import aioresponses
 from yarl import URL
 
-from mirage.core.box.client import (BoxTokenManager, api_base_of,
-                                    box_get_bytes, token_url_of,
-                                    upload_base_of)
-from mirage.core.box.constants import (BOX_API_BASE, BOX_TOKEN_URL,
-                                       BOX_UPLOAD_BASE)
+from mirage.core.box.client import (
+    BoxTokenManager,
+    api_base_of,
+    box_get_bytes,
+    token_url_of,
+    upload_base_of,
+)
+from mirage.core.box.constants import (
+    BOX_API_BASE,
+    BOX_TOKEN_URL,
+    BOX_UPLOAD_BASE,
+)
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.box.config import BoxConfig
 
@@ -71,14 +78,16 @@ async def test_refresh_mode_rotates_refresh_token():
     async def on_rotated(token: str) -> None:
         rotated.append(token)
 
-    config = BoxConfig(client_id="cid",
-                       refresh_token="rt-1",
-                       on_refresh_token_rotated=on_rotated)
+    config = BoxConfig(
+        client_id="cid",
+        refresh_token="rt-1",
+        on_refresh_token_rotated=on_rotated,
+    )
     tm = BoxTokenManager(config)
     with patch(
-            "mirage.core.box.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("at-1", "rt-2", 3600),
+        "mirage.core.box.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("at-1", "rt-2", 3600),
     ) as mock_refresh:
         assert await tm.get_token() == "at-1"
         # Cached until expiry: no second HTTP call.
@@ -96,22 +105,22 @@ async def test_refresh_fn_overrides_default_flow():
         return "at-custom", "rt-1", 3600
 
     tm = BoxTokenManager(
-        BoxConfig(client_id="cid", refresh_token="rt-1",
-                  refresh_fn=refresh_fn))
+        BoxConfig(client_id="cid", refresh_token="rt-1", refresh_fn=refresh_fn)
+    )
     assert await tm.get_token() == "at-custom"
     assert tm.get_refresh_token() == "rt-1"
 
 
 @pytest.mark.asyncio
 async def test_ccg_mode_refetches_via_client_credentials():
-    config = BoxConfig(client_id="cid",
-                       client_secret="cs",
-                       enterprise_id="eid")
+    config = BoxConfig(
+        client_id="cid", client_secret="cs", enterprise_id="eid"
+    )
     tm = BoxTokenManager(config)
     with patch(
-            "mirage.core.box.client.fetch_ccg_token",
-            new_callable=AsyncMock,
-            return_value=("at-ccg", 3600),
+        "mirage.core.box.client.fetch_ccg_token",
+        new_callable=AsyncMock,
+        return_value=("at-ccg", 3600),
     ) as mock_ccg:
         assert await tm.get_token() == "at-ccg"
         mock_ccg.assert_awaited_once_with(config)
@@ -121,8 +130,9 @@ async def test_ccg_mode_refetches_via_client_credentials():
 GET_URL = "https://api.example/x"
 
 
-async def _get_bytes(status: int, body: bytes,
-                     window: ByteWindow | None) -> tuple[bytes, dict]:
+async def _get_bytes(
+    status: int, body: bytes, window: ByteWindow | None
+) -> tuple[bytes, dict]:
     tm = BoxTokenManager(BoxConfig(access_token="tok"))
     with aioresponses() as m:
         m.get(GET_URL, status=status, body=body)

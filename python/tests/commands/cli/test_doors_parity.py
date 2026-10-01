@@ -28,11 +28,14 @@ def test_every_door_is_spelled_as_the_command_tier_spells_it():
     assert not missing, (
         f"CLIDoors fields absent from CommandOpts: {missing}. "
         "Add the field there under the same name, or name "
-        "this one whatever that tier already calls it.")
-    mismatched = sorted(name for name, hint in doors.items()
-                        if opts[name] != hint)
-    assert not mismatched, (f"CLIDoors and CommandOpts disagree on the type "
-                            f"of: {mismatched}")
+        "this one whatever that tier already calls it."
+    )
+    mismatched = sorted(
+        name for name, hint in doors.items() if opts[name] != hint
+    )
+    assert not mismatched, (
+        f"CLIDoors and CommandOpts disagree on the type of: {mismatched}"
+    )
 
 
 def test_every_door_defaults_to_none():

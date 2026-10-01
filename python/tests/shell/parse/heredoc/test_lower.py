@@ -22,8 +22,8 @@ def test_lowering_keeps_source_locations_for_unicode_body():
     lowered = lower_heredocs(source, discover_heredocs(source, []))
     assert len(lowered.offsets) == len(lowered.source) + 1
     start, doc = lowered.documents[0]
-    assert lowered.source[start:start + 1] == b"<"
-    assert source[lowered.offsets[start]:].startswith("<<終".encode())
+    assert lowered.source[start : start + 1] == b"<"
+    assert source[lowered.offsets[start] :].startswith("<<終".encode())
     assert doc.body == "世界\n".encode()
 
 

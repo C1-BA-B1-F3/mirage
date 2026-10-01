@@ -12,9 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.links.links import (  # isort: skip
-    accepts_line, follow_directory_links, follow_parent, follow_paths,
-    prepare_mv, settle_moves, strip_link_operands)
+from mirage.workspace.executor.builtins.links.links import (
+    accepts_line,
+    follow_directory_links,
+    follow_parent,
+    follow_paths,
+    prepare_mv,
+    settle_moves,
+    strip_link_operands,
+)
 from mirage.workspace.executor.builtins.links.ln import handle_ln, operand_abs
 from mirage.workspace.executor.builtins.links.readlink import handle_readlink
 

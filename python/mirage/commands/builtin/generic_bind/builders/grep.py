@@ -16,10 +16,15 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.aggregators import prefix_aggregate
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic.grep import labelled
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op)
-from mirage.commands.builtin.generic_bind.search import (narrow_scope,
-                                                         run_search)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+)
+from mirage.commands.builtin.generic_bind.search import (
+    narrow_scope,
+    run_search,
+)
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.builtin.grep_pushdown import grep_needs_every_file
 from mirage.commands.config import CommandOpts
@@ -29,9 +34,13 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def grep(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def grep(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if ops.search is not None:
         return await run_search(ops, "grep", accessor, paths, texts, opts)
     resolved: list[PathSpec] = []
@@ -66,4 +75,4 @@ async def grep(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('grep', grep, None, False, prefix_aggregate, read=True)
+BUILDER = Builder("grep", grep, aggregate=prefix_aggregate, read=True)

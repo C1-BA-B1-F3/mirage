@@ -15,8 +15,11 @@
 import posixpath
 
 from mirage.commands.cli.builtin.git.constants import GIT_DIR
-from mirage.commands.cli.builtin.git.ignore import (GITIGNORE, IgnoreStack,
-                                                    load_ignores)
+from mirage.commands.cli.builtin.git.ignore import (
+    GITIGNORE,
+    IgnoreStack,
+    load_ignores,
+)
 from mirage.commands.cli.builtin.git.io import read_names, read_optional
 from mirage.commands.cli.builtin.git.types import RepoLocation, WorkTree
 from mirage.ops.types import LinkView, StatPath
@@ -57,7 +60,7 @@ def tracked_directories(tracked: set[str]) -> set[str]:
     for path in tracked:
         parts = path.split("/")[:-1]
         for depth in range(len(parts)):
-            directories.add("/".join(parts[:depth + 1]))
+            directories.add("/".join(parts[: depth + 1]))
     return directories
 
 
@@ -75,14 +78,16 @@ class Scanner:
             outside a workspace.
     """
 
-    def __init__(self,
-                 dispatch: DispatchFn,
-                 stat_path: StatPath,
-                 worktree: str,
-                 tracked: set[str],
-                 mode: str,
-                 links: LinkView | None,
-                 show_ignored: bool = False) -> None:
+    def __init__(
+        self,
+        dispatch: DispatchFn,
+        stat_path: StatPath,
+        worktree: str,
+        tracked: set[str],
+        mode: str,
+        links: LinkView | None,
+        show_ignored: bool = False,
+    ) -> None:
         self._dispatch = dispatch
         self._stat_path = stat_path
         self._worktree = worktree
@@ -99,8 +104,11 @@ class Scanner:
         Args:
             relative (str): repository-relative path, empty at the root.
         """
-        return posixpath.join(self._worktree,
-                              relative) if relative else self._worktree
+        return (
+            posixpath.join(self._worktree, relative)
+            if relative
+            else self._worktree
+        )
 
     async def _entry_stat(self, relative: str) -> FileStat | None:
         """What the walk sees at one path, without following a link.
@@ -123,10 +131,12 @@ class Scanner:
                 return link
         return await self._stat_path(absolute)
 
-    async def _holds_a_file(self,
-                            relative: str,
-                            ignores: IgnoreStack,
-                            include_ignored: bool = False) -> bool:
+    async def _holds_a_file(
+        self,
+        relative: str,
+        ignores: IgnoreStack,
+        include_ignored: bool = False,
+    ) -> bool:
         """Whether a directory holds anything git would call untracked.
 
         git lists a directory only when something inside it would be
@@ -138,8 +148,9 @@ class Scanner:
             ignores (IgnoreStack): the rules governing it.
         """
         rules = await self._descend(relative, ignores)
-        for entry in await read_names(self._dispatch,
-                                      self._absolute(relative)):
+        for entry in await read_names(
+            self._dispatch, self._absolute(relative)
+        ):
             name = _name_of(entry)
             if not name:
                 continue
@@ -156,8 +167,9 @@ class Scanner:
                 return True
         return False
 
-    async def _descend(self, relative: str,
-                       ignores: IgnoreStack) -> IgnoreStack:
+    async def _descend(
+        self, relative: str, ignores: IgnoreStack
+    ) -> IgnoreStack:
         """The ignore rules inside a directory, given the ones outside.
 
         Args:
@@ -167,12 +179,13 @@ class Scanner:
         if not relative:
             return ignores
         local = await read_optional(
-            self._dispatch, posixpath.join(self._absolute(relative),
-                                           GITIGNORE))
+            self._dispatch, posixpath.join(self._absolute(relative), GITIGNORE)
+        )
         return ignores if local is None else ignores.push(relative, local)
 
-    async def _visit_directory(self, relative: str, ignored: bool,
-                               ignores: IgnoreStack) -> None:
+    async def _visit_directory(
+        self, relative: str, ignored: bool, ignores: IgnoreStack
+    ) -> None:
         """Decide what a subdirectory contributes, then walk it or not.
 
         An ignored directory is still walked when the index holds
@@ -187,11 +200,15 @@ class Scanner:
         """
         holds_tracked = relative in self._directories
         if ignored:
-            if holds_tracked or (self._show_ignored
-                                 and self._mode == UNTRACKED_ALL):
+            if holds_tracked or (
+                self._show_ignored and self._mode == UNTRACKED_ALL
+            ):
                 await self.walk(relative, True, ignores)
-            elif (self._show_ignored and self._mode != UNTRACKED_NO
-                  and await self._holds_a_file(relative, ignores, True)):
+            elif (
+                self._show_ignored
+                and self._mode != UNTRACKED_NO
+                and await self._holds_a_file(relative, ignores, True)
+            ):
                 self.found.ignored.append(f"{relative}/")
             return
         if holds_tracked or self._mode == UNTRACKED_ALL:
@@ -207,11 +224,13 @@ class Scanner:
                 self.found.ignored[ignored_first:] = [f"{relative}/"]
             return
         if self._mode == UNTRACKED_NORMAL and await self._holds_a_file(
-                relative, ignores):
+            relative, ignores
+        ):
             self.found.untracked.append(f"{relative}/")
 
-    async def walk(self, relative: str, ignored: bool,
-                   ignores: IgnoreStack) -> None:
+    async def walk(
+        self, relative: str, ignored: bool, ignores: IgnoreStack
+    ) -> None:
         """Walk one directory, recording files and untracked entries.
 
         Args:
@@ -221,8 +240,9 @@ class Scanner:
             ignores (IgnoreStack): the rules governing its parent.
         """
         rules = await self._descend(relative, ignores)
-        for entry in sorted(await read_names(self._dispatch,
-                                             self._absolute(relative))):
+        for entry in sorted(
+            await read_names(self._dispatch, self._absolute(relative))
+        ):
             name = _name_of(entry)
             if not name or (not relative and name == GIT_DIR):
                 continue
@@ -232,7 +252,8 @@ class Scanner:
                 continue
             if info.type is FileType.DIRECTORY:
                 await self._visit_directory(
-                    child, ignored or rules.is_ignored(child, True), rules)
+                    child, ignored or rules.is_ignored(child, True), rules
+                )
                 continue
             self.found.files[child] = info
             if child in self._tracked or self._mode == UNTRACKED_NO:
@@ -243,13 +264,15 @@ class Scanner:
                 self.found.ignored.append(child)
 
 
-async def scan(dispatch: DispatchFn,
-               stat_path: StatPath,
-               location: RepoLocation,
-               tracked: set[str],
-               mode: str,
-               links: LinkView | None = None,
-               show_ignored: bool = False) -> WorkTree:
+async def scan(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    location: RepoLocation,
+    tracked: set[str],
+    mode: str,
+    links: LinkView | None = None,
+    show_ignored: bool = False,
+) -> WorkTree:
     """Walk a working tree once, for both halves of a status report.
 
     One walk answers two questions, which is why they are not asked
@@ -269,9 +292,17 @@ async def scan(dispatch: DispatchFn,
             walk lstats as git does. None outside a workspace, where
             there is no namespace to hold a link.
     """
-    ignores = await load_ignores(dispatch, location.commondir,
-                                 location.worktree)
-    scanner = Scanner(dispatch, stat_path, location.worktree, tracked, mode,
-                      links, show_ignored)
+    ignores = await load_ignores(
+        dispatch, location.commondir, location.worktree
+    )
+    scanner = Scanner(
+        dispatch,
+        stat_path,
+        location.worktree,
+        tracked,
+        mode,
+        links,
+        show_ignored,
+    )
     await scanner.walk("", False, ignores)
     return scanner.found

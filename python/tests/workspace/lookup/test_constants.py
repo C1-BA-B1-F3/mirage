@@ -15,11 +15,14 @@
 import pytest
 
 from mirage.types import LsLinkMode, PathSpec
-from mirage.workspace.lookup.constants import (NO_FOLLOW_COMMANDS,
-                                               dereferences,
-                                               follows_last_component,
-                                               ls_link_mode, reads_subtrees,
-                                               walks_mounts)
+from mirage.workspace.lookup.constants import (
+    NO_FOLLOW_COMMANDS,
+    dereferences,
+    follows_last_component,
+    ls_link_mode,
+    reads_subtrees,
+    walks_mounts,
+)
 
 
 def test_stat_is_a_no_follow_command():
@@ -36,8 +39,9 @@ def test_clustered_short_flag_dereferences():
 
 
 def test_long_form_dereferences():
-    assert dereferences("stat",
-                        ["stat", "--dereference", "/data/link"]) is True
+    assert (
+        dereferences("stat", ["stat", "--dereference", "/data/link"]) is True
+    )
 
 
 def test_absent_flag_does_not_dereference():
@@ -63,23 +67,33 @@ def test_a_pathspec_operand_is_not_read_as_a_flag():
     assert dereferences("stat", ["stat", spec]) is False
 
 
-@pytest.mark.parametrize("words, mode", [
-    (["ls", "-l", "/data/link"], LsLinkMode.NONE),
-    (["ls", "-d", "/data/link"], LsLinkMode.NONE),
-    (["ls", "-la", "/data/link"], LsLinkMode.NONE),
-    (["ls", "-g", "/data/link"], LsLinkMode.NONE),
-    (["ls", "-F", "/data/link"], LsLinkMode.NONE),
-    (["ls", "--cl", "/data/link"], LsLinkMode.NONE),
-    (["ls", "--indicator-style=classify", "/data/link"], LsLinkMode.NONE),
-    (["ls", "/data/link"], LsLinkMode.DIRECTORY),
-    (["ls", "-p", "/data/link"], LsLinkMode.DIRECTORY),
-    (["ls", "--file-type", "/data/link"], LsLinkMode.DIRECTORY),
-    (["ls", "--classify=never", "/data/link"], LsLinkMode.DIRECTORY),
-    (["ls", "-l", "-L", "/data/link"], LsLinkMode.ALL),
-    (["ls", "-F", "-H", "/data/link"], LsLinkMode.ALL),
-    (["ls", "-H", "--dereference-command-line-symlink-to-dir", "/data/link"
-      ], LsLinkMode.DIRECTORY),
-])
+@pytest.mark.parametrize(
+    "words, mode",
+    [
+        (["ls", "-l", "/data/link"], LsLinkMode.NONE),
+        (["ls", "-d", "/data/link"], LsLinkMode.NONE),
+        (["ls", "-la", "/data/link"], LsLinkMode.NONE),
+        (["ls", "-g", "/data/link"], LsLinkMode.NONE),
+        (["ls", "-F", "/data/link"], LsLinkMode.NONE),
+        (["ls", "--cl", "/data/link"], LsLinkMode.NONE),
+        (["ls", "--indicator-style=classify", "/data/link"], LsLinkMode.NONE),
+        (["ls", "/data/link"], LsLinkMode.DIRECTORY),
+        (["ls", "-p", "/data/link"], LsLinkMode.DIRECTORY),
+        (["ls", "--file-type", "/data/link"], LsLinkMode.DIRECTORY),
+        (["ls", "--classify=never", "/data/link"], LsLinkMode.DIRECTORY),
+        (["ls", "-l", "-L", "/data/link"], LsLinkMode.ALL),
+        (["ls", "-F", "-H", "/data/link"], LsLinkMode.ALL),
+        (
+            [
+                "ls",
+                "-H",
+                "--dereference-command-line-symlink-to-dir",
+                "/data/link",
+            ],
+            LsLinkMode.DIRECTORY,
+        ),
+    ],
+)
 def test_ls_link_mode_is_gnus_command_line_rule(words, mode):
     # coreutils 9.7: the last of -L, -H and
     # --dereference-command-line-symlink-to-dir wins; without one, -d, a
@@ -110,8 +124,9 @@ def test_find_link_options_are_last_wins():
     # `find -P -L x` does.
     assert dereferences("find", ["find", "-L", "-P", "/data/link"]) is False
     assert dereferences("find", ["find", "-P", "-L", "/data/link"]) is True
-    assert dereferences("find",
-                        ["find", "-L", "-P", "-L", "/data/link"]) is True
+    assert (
+        dereferences("find", ["find", "-L", "-P", "-L", "/data/link"]) is True
+    )
     assert dereferences("find", ["find", "-H", "/data/link"]) is True
     assert dereferences("find", ["find", "/data/link"]) is False
 

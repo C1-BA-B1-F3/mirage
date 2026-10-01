@@ -26,5 +26,6 @@ __all__ = ["GCalConfig", "make_event_filename", "GCalVFS"]
 def __getattr__(name: str) -> "type[GCalVFS]":
     if name == "GCalVFS":
         from mirage.vfs.gcal.gcal import GCalVFS
+
         return GCalVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

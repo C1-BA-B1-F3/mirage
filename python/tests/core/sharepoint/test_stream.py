@@ -27,9 +27,11 @@ _SITE_ID = "tenant.sharepoint.com,site-guid,web-guid"
 _DRIVE_ID = "b!driveXYZ"
 # The site is named like the mount, so vfs_path "m/Documents/k.txt" sits
 # under the virtual "/m/m/Documents/k.txt".
-_SPEC = PathSpec(virtual="/m/m/Documents/k.txt",
-                 directory="/m/m/Documents/",
-                 vfs_path="m/Documents/k.txt")
+_SPEC = PathSpec(
+    virtual="/m/m/Documents/k.txt",
+    directory="/m/m/Documents/",
+    vfs_path="m/Documents/k.txt",
+)
 
 
 def _accessor() -> SharePointAccessor:
@@ -44,14 +46,14 @@ async def test_recorded_stream_names_the_virtual_path():
     scope = RecordingScope()
     try:
         with aioresponses() as m:
-            m.get(re.compile(r".*/root:/k\.txt(\?.*)?$"),
-                  payload={
-                      "id": "01",
-                      "cTag": "c1",
-                      "versions": []
-                  })
-            m.get(f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
-                  body=b"bytes")
+            m.get(
+                re.compile(r".*/root:/k\.txt(\?.*)?$"),
+                payload={"id": "01", "cTag": "c1", "versions": []},
+            )
+            m.get(
+                f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
+                body=b"bytes",
+            )
             chunks = [c async for c in read_stream(_accessor(), _SPEC)]
     finally:
         scope.close()

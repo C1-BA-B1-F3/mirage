@@ -17,10 +17,16 @@ from pathlib import Path
 import pytest
 
 from mirage.server.env import ENV_HOME
-from mirage.server.paths import (PathOutsideRootError, mirage_home,
-                                 pid_file_path, resolve_within_root,
-                                 snapshot_root_path, state_root_path,
-                                 validate_path_segment, version_root_path)
+from mirage.server.paths import (
+    PathOutsideRootError,
+    mirage_home,
+    pid_file_path,
+    resolve_within_root,
+    snapshot_root_path,
+    state_root_path,
+    validate_path_segment,
+    version_root_path,
+)
 
 
 def test_resolve_within_root_relative(tmp_path):

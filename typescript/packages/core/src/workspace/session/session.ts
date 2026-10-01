@@ -955,9 +955,10 @@ export class SessionState {
       shownPaths:
         data.shown_paths != null
           ? {
-              entries: (data.shown_paths.entries ?? []).map(
-                (e): ShowEntry => ({ path: e.path, mode: e.mode ?? null }),
-              ),
+              entries: (data.shown_paths.entries ?? []).map((e): ShowEntry => ({
+                path: e.path,
+                mode: e.mode ?? null,
+              })),
             }
           : null,
       hiddenVars:

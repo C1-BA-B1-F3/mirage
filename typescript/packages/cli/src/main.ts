@@ -21,7 +21,6 @@ import { registerDaemonCommands } from './daemon.ts'
 import { registerExecuteCommand } from './execute.ts'
 import { registerJobCommands } from './job.ts'
 import { registerMcpCommand } from './mcp.ts'
-import { registerProvisionCommand } from './provision.ts'
 import { registerSessionCommands } from './session.ts'
 import { registerWorkspaceCommands } from './workspace.ts'
 
@@ -53,7 +52,6 @@ export function buildProgram(): Command {
   registerJobCommands(program)
   registerExecuteCommand(program)
   registerMcpCommand(program)
-  registerProvisionCommand(program)
   registerDaemonCommands(program)
   registerConfigCommands(program)
   return program

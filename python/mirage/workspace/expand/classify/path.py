@@ -18,8 +18,9 @@ from mirage.workspace.expand.classify.relative import relative_spec
 from mirage.workspace.mount import MountRegistry
 
 
-def classify_bare_path(word: str, registry: MountRegistry,
-                       cwd: str) -> str | PathSpec:
+def classify_bare_path(
+    word: str, registry: MountRegistry, cwd: str
+) -> str | PathSpec:
     """Classify a bare filename as a path resolved against cwd.
 
     Used when CommandSpec identifies an arg as PATH but classify_word

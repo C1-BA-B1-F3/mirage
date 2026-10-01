@@ -17,15 +17,34 @@ import struct
 
 from mirage.errors import FsCondition
 from mirage.runtime.verbs import refusal_of
-# yapf: disable
-from mirage.runtime.wasm.abi import (EACCES, EEXIST, EINVAL, EIO, EISDIR,
-                                     ENOENT, ENOTDIR, ENOTSUP, EXDEV, FST_ATIM,
-                                     FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
-                                     FT_DIR, FT_REG, FT_SYMLINK, LINK_REFUSAL,
-                                     LOOKUP_SYMLINK_FOLLOW, WASI, errno_for,
-                                     pack_dirent, pack_fdstat, pack_filestat,
-                                     pack_prestat, unpack_iovs, wasi_errno)
-# yapf: enable
+from mirage.runtime.wasm.abi import (
+    EACCES,
+    EEXIST,
+    EINVAL,
+    EIO,
+    EISDIR,
+    ENOENT,
+    ENOTDIR,
+    ENOTSUP,
+    EXDEV,
+    FST_ATIM,
+    FST_ATIM_NOW,
+    FST_MTIM,
+    FST_MTIM_NOW,
+    FT_DIR,
+    FT_REG,
+    FT_SYMLINK,
+    LINK_REFUSAL,
+    LOOKUP_SYMLINK_FOLLOW,
+    WASI,
+    errno_for,
+    pack_dirent,
+    pack_fdstat,
+    pack_filestat,
+    pack_prestat,
+    unpack_iovs,
+    wasi_errno,
+)
 from mirage.utils.errors import no_mount
 from mirage.utils.path import CycleError
 
@@ -105,7 +124,8 @@ def test_cross_mount_is_deliberately_noent_on_this_wire():
     # there. pathlib's EXDEV is the monty dialect's answer, not this
     # one's. The table row IS the decision; do not "fix" it to 75.
     assert wasi_errno(FsCondition.CROSS_MOUNT) == wasi_errno(
-        FsCondition.ENOENT)
+        FsCondition.ENOENT
+    )
     assert wasi_errno(FsCondition.CROSS_MOUNT) != wasi_errno(FsCondition.EXDEV)
 
 
@@ -118,7 +138,8 @@ def test_record_sizes_match_the_preview1_layouts():
 
 def test_dirent_carries_cookie_name_and_type():
     d_next, d_ino, namelen, ftype = struct.unpack_from(
-        "<QQIB", pack_dirent(4, b"f.txt", FT_REG))
+        "<QQIB", pack_dirent(4, b"f.txt", FT_REG)
+    )
     assert (d_next, d_ino, namelen, ftype) == (5, 5, 5, FT_REG)
     assert pack_dirent(4, b"f.txt", FT_REG)[24:] == b"f.txt"
 

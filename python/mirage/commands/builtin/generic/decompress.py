@@ -3,10 +3,13 @@ import string
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 
-from mirage.commands.builtin.constants import (GZIP_KNOWN_SUFFIXES,
-                                               GZIP_MAX_SUFFIX,
-                                               GZIP_RETRY_SUFFIXES,
-                                               GZIP_SUFFIX, GZIP_TAR_SUFFIXES)
+from mirage.commands.builtin.constants import (
+    GZIP_KNOWN_SUFFIXES,
+    GZIP_MAX_SUFFIX,
+    GZIP_RETRY_SUFFIXES,
+    GZIP_SUFFIX,
+    GZIP_TAR_SUFFIXES,
+)
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.copy import path_exists
 from mirage.commands.builtin.utils.links import LinkDoor
@@ -15,8 +18,14 @@ from mirage.commands.builtin.utils.stream import stdin_stream
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
 from mirage.utils.compress import gunzip_stream
-from mirage.utils.errors import (FS_ERRORS, DotWalkMissing, GzipDataError,
-                                 eloop, enotdir, fs_error_line)
+from mirage.utils.errors import (
+    FS_ERRORS,
+    DotWalkMissing,
+    GzipDataError,
+    eloop,
+    enotdir,
+    fs_error_line,
+)
 from mirage.utils.key_prefix import mounted_path
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
@@ -38,10 +47,12 @@ def gzip_suffix(name: str, suffix: str) -> str | None:
     """
     inner = any(
         len(suffix) < len(known) and known.endswith(suffix)
-        for known in GZIP_KNOWN_SUFFIXES)
+        for known in GZIP_KNOWN_SUFFIXES
+    )
     own = suffix.translate(_ASCII_LOWER)
-    order = ((*GZIP_KNOWN_SUFFIXES, own) if inner else
-             (own, *GZIP_KNOWN_SUFFIXES))
+    order = (
+        (*GZIP_KNOWN_SUFFIXES, own) if inner else (own, *GZIP_KNOWN_SUFFIXES)
+    )
     lowered = name.translate(_ASCII_LOWER)
     for known in order:
         cut = len(lowered) - len(known)
@@ -58,8 +69,9 @@ def suffix_refusal(suffix: str) -> IOResult | None:
     """
     if 0 < len(suffix.encode()) <= GZIP_MAX_SUFFIX:
         return None
-    return IOResult(exit_code=1,
-                    stderr=f"gzip: invalid suffix '{suffix}'\n".encode())
+    return IOResult(
+        exit_code=1, stderr=f"gzip: invalid suffix '{suffix}'\n".encode()
+    )
 
 
 def _decompressed(path: PathSpec, suffix: str) -> tuple[str, PathSpec] | None:
@@ -77,12 +89,15 @@ def _decompressed(path: PathSpec, suffix: str) -> tuple[str, PathSpec] | None:
         return None
     tar = ".tar" if found.translate(_ASCII_LOWER) in GZIP_TAR_SUFFIXES else ""
     cut = len(found)
-    return (path.raw_path[:-cut] + tar,
-            mounted_path(path, path.mount_path[:-cut] + tar))
+    return (
+        path.raw_path[:-cut] + tar,
+        mounted_path(path, path.mount_path[:-cut] + tar),
+    )
 
 
-def _retries(path: PathSpec, missing: FileNotFoundError,
-             suffix: str) -> list[PathSpec]:
+def _retries(
+    path: PathSpec, missing: FileNotFoundError, suffix: str
+) -> list[PathSpec]:
     """The names gzip -d opens in turn when ``path`` does not exist.
 
     Each is the name as typed with one suffix appended, in the same
@@ -97,16 +112,20 @@ def _retries(path: PathSpec, missing: FileNotFoundError,
         missing (FileNotFoundError): why it could not be opened.
         suffix (str): the -S suffix.
     """
-    suffixes = (GZIP_RETRY_SUFFIXES if suffix == GZIP_SUFFIX else
-                (suffix, *GZIP_RETRY_SUFFIXES))
+    suffixes = (
+        GZIP_RETRY_SUFFIXES
+        if suffix == GZIP_SUFFIX
+        else (suffix, *GZIP_RETRY_SUFFIXES)
+    )
     typed = path.raw_path
     if not typed:
         base = path.mount_path.rstrip("/") + "/"
         return [
             replace(mounted_path(path, base + s), raw_path=s) for s in suffixes
         ]
-    if (typed.rsplit("/", 1)[-1] in ("", ".", "..")
-            or isinstance(missing, DotWalkMissing)):
+    if typed.rsplit("/", 1)[-1] in ("", ".", "..") or isinstance(
+        missing, DotWalkMissing
+    ):
         return []
     return [
         replace(mounted_path(path, path.mount_path + s), raw_path=typed + s)
@@ -114,8 +133,9 @@ def _retries(path: PathSpec, missing: FileNotFoundError,
     ]
 
 
-async def _resumed(first: bytes | None,
-                   rest: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+async def _resumed(
+    first: bytes | None, rest: AsyncIterator[bytes]
+) -> AsyncIterator[bytes]:
     if first is None:
         return
     yield first
@@ -198,17 +218,24 @@ async def open_gzip_input(
         try:
             if door is not None and name is path and door.vanished(name):
                 raise FileNotFoundError(name.raw_path)
-            if (name.raw_path.endswith("/") and stat is not None
-                    and (await stat(name)).type is not FileType.DIRECTORY):
+            if (
+                name.raw_path.endswith("/")
+                and stat is not None
+                and (await stat(name)).type is not FileType.DIRECTORY
+            ):
                 raise enotdir(name)
             # The router followed the operand itself; a retried name it
             # never saw is followed through the door.
-            reads = (door.read(link) if door is not None and link is not None
-                     and name is not path else source(name))
+            reads = (
+                door.read(link)
+                if door is not None and link is not None and name is not path
+                else source(name)
+            )
             return GzipInput(name, await _opened(reads), link)
         except IsADirectoryError:
-            report(f"gzip: {name.raw_path} is a directory -- ignored\n", 2,
-                   True)
+            report(
+                f"gzip: {name.raw_path} is a directory -- ignored\n", 2, True
+            )
             return None
         except FileNotFoundError as exc:
             if retry and name is path:
@@ -221,8 +248,9 @@ async def open_gzip_input(
     return None
 
 
-async def output_taken(where: PathSpec, stat: StatFn | None,
-                       door: LinkDoor | None) -> bool:
+async def output_taken(
+    where: PathSpec, stat: StatFn | None, door: LinkDoor | None
+) -> bool:
     """Whether anything stands where gzip creates an output.
 
     gzip creates with O_EXCL, which a link standing there refuses,
@@ -235,8 +263,9 @@ async def output_taken(where: PathSpec, stat: StatFn | None,
         door (LinkDoor | None): the namespace's links.
     """
     if door is not None:
-        return await path_exists(door.lstat,
-                                 PathSpec.from_str_path(where.virtual))
+        return await path_exists(
+            door.lstat, PathSpec.from_str_path(where.virtual)
+        )
     return stat is not None and await path_exists(stat, where)
 
 
@@ -249,7 +278,8 @@ def beside_link(link: str, typed: str) -> PathSpec:
         typed (str): the output's name as gzip spells it.
     """
     return PathSpec.from_str_path(
-        posixpath.join(posixpath.dirname(link), posixpath.basename(typed)))
+        posixpath.join(posixpath.dirname(link), posixpath.basename(typed))
+    )
 
 
 async def decompress_inputs(
@@ -324,14 +354,19 @@ async def decompress_inputs(
         for operand in operands:
             on_stdin = operand.raw_path == "-"
             in_place = not (to_stdout or test_only or on_stdin)
-            opened = (None if on_stdin else await open_gzip_input(
-                operand,
-                raw_stream if in_place else stream,
-                report,
-                suffix=suffix,
-                follow=follow,
-                stat=stat,
-                door=door))
+            opened = (
+                None
+                if on_stdin
+                else await open_gzip_input(
+                    operand,
+                    raw_stream if in_place else stream,
+                    report,
+                    suffix=suffix,
+                    follow=follow,
+                    stat=stat,
+                    door=door,
+                )
+            )
             if opened is None and not on_stdin:
                 continue
             path = operand if opened is None else opened.name
@@ -346,8 +381,9 @@ async def decompress_inputs(
             chunks: list[bytes] = []
             failure: GzipDataError | None = None
             try:
-                async for chunk in gunzip_stream(source, test_only, force
-                                                 and not in_place):
+                async for chunk in gunzip_stream(
+                    source, test_only, force and not in_place
+                ):
                     if in_place:
                         chunks.append(chunk)
                     elif not test_only:
@@ -370,14 +406,16 @@ async def decompress_inputs(
                 continue
             if write is None or unlink is None:
                 raise ValueError(
-                    "in-place decompression requires write and unlink")
+                    "in-place decompression requires write and unlink"
+                )
             out_name, out = output
             if link is not None:
                 out = beside_link(link, out_name)
             existed = await output_taken(out, stat, door)
             if existed and not force:
-                report(f"gzip: {out_name} already exists;\tnot overwritten\n",
-                       2)
+                report(
+                    f"gzip: {out_name} already exists;\tnot overwritten\n", 2
+                )
                 continue
             if failure is not None:
                 fail(failure, shown)
@@ -397,19 +435,27 @@ async def decompress_inputs(
             if link is None:
                 io.writes[out.mount_path] = data
             if not keep:
-                await (unlink(path)
-                       if link is None or door is None else door.unlink(link))
+                await (
+                    unlink(path)
+                    if link is None or door is None
+                    else door.unlink(link)
+                )
 
     body = run()
-    if test_only or any(not (to_stdout or p.raw_path == "-")
-                        for p in operands):
+    if test_only or any(
+        not (to_stdout or p.raw_path == "-") for p in operands
+    ):
         return (await materialize(body)) or None, io
     return body, io
 
 
-async def replace_output(out: PathSpec, data: bytes,
-                         write: Callable[..., Awaitable[None]],
-                         door: LinkDoor | None, beside: bool) -> None:
+async def replace_output(
+    out: PathSpec,
+    data: bytes,
+    write: Callable[..., Awaitable[None]],
+    door: LinkDoor | None,
+    beside: bool,
+) -> None:
     """Write an in-place output, replacing a link standing at its name.
 
     gzip -f unlinks whatever holds the name before it creates the file,

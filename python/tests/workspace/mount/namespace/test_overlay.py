@@ -16,10 +16,9 @@ from mirage.types import FileStat, FileType
 from mirage.workspace.mount.namespace.namespace import NodeMeta
 from mirage.workspace.mount.namespace.overlay import merge_overlay_stat
 
-BASE = FileStat(type=FileType.FILE,
-                name="f.txt",
-                size=3,
-                modified="2026-01-01T00:00:00Z")
+BASE = FileStat(
+    type=FileType.FILE, name="f.txt", size=3, modified="2026-01-01T00:00:00Z"
+)
 
 
 def test_none_meta_returns_stat_unchanged():

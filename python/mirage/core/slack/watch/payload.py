@@ -119,8 +119,8 @@ def affected_ts(payload: JsonValue) -> tuple[str, ...]:
         return ()
     thread = text_field(subject(payload), "thread_ts")
     if thread is None or thread == own:
-        return (own, )
-    return (thread, own) if is_broadcast(payload) else (thread, )
+        return (own,)
+    return (thread, own) if is_broadcast(payload) else (thread,)
 
 
 def channel_id_of(payload: JsonValue) -> str | None:

@@ -16,13 +16,22 @@ import io
 
 import pytest
 
-from mirage.server.version.state_tree import (blob_to_meta, meta_to_blob,
-                                              to_state, tree_inputs_from_state)
+from mirage.server.version.state_tree import (
+    blob_to_meta,
+    meta_to_blob,
+    to_state,
+    tree_inputs_from_state,
+)
 from mirage.types import MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.snapshot.keys import (CacheKey, FingerprintKey, MountKey,
-                                            SessionKey, StateKey)
+from mirage.workspace.snapshot.keys import (
+    CacheKey,
+    FingerprintKey,
+    MountKey,
+    SessionKey,
+    StateKey,
+)
 from mirage.workspace.snapshot.manifest import split_manifest_and_blobs
 from mirage.workspace.snapshot.state import to_state_dict
 from mirage.workspace.snapshot.tar_io import read_tar, write_tar
@@ -89,42 +98,47 @@ async def test_whole_world_round_trip_sessions_nodes_history():
     ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE)
     await ws.shell("echo hi > /a.txt")
     state = await to_state_dict(ws)
-    state[StateKey.CACHE][CacheKey.ENTRIES] = [{
-        CacheKey.KEY: "/a.txt",
-        CacheKey.DATA: b"cached-bytes",
-        CacheKey.FINGERPRINT: "etag-1",
-        CacheKey.TTL: None,
-        CacheKey.CACHED_AT: 123.0,
-        CacheKey.SIZE: 12,
-    }]
-    state[StateKey.FINGERPRINTS] = [{
-        FingerprintKey.PATH: "/a.txt",
-        FingerprintKey.MOUNT_PREFIX: "/",
-        FingerprintKey.FINGERPRINT: "etag-1",
-        FingerprintKey.REVISION: "v1",
-    }]
-    state[StateKey.SESSIONS] = [{
-        SessionKey.SESSION_ID: "agent_a",
-        SessionKey.CWD: "/sub",
-        SessionKey.ENV: {
-            "API_KEY": "@aws:prod-key"
-        },
-        "mount_modes": {
-            "/": "read"
-        },
-    }]
+    state[StateKey.CACHE][CacheKey.ENTRIES] = [
+        {
+            CacheKey.KEY: "/a.txt",
+            CacheKey.DATA: b"cached-bytes",
+            CacheKey.FINGERPRINT: "etag-1",
+            CacheKey.TTL: None,
+            CacheKey.CACHED_AT: 123.0,
+            CacheKey.SIZE: 12,
+        }
+    ]
+    state[StateKey.FINGERPRINTS] = [
+        {
+            FingerprintKey.PATH: "/a.txt",
+            FingerprintKey.MOUNT_PREFIX: "/",
+            FingerprintKey.FINGERPRINT: "etag-1",
+            FingerprintKey.REVISION: "v1",
+        }
+    ]
+    state[StateKey.SESSIONS] = [
+        {
+            SessionKey.SESSION_ID: "agent_a",
+            SessionKey.CWD: "/sub",
+            SessionKey.ENV: {"API_KEY": "@aws:prod-key"},
+            "mount_modes": {"/": "read"},
+        }
+    ]
     state[StateKey.NODES] = {"/link.txt": {"target": "/a.txt"}}
-    state[StateKey.HISTORY] = [{
-        "type": "COMMAND",
-        "command": "echo hi > /a.txt",
-        "timestamp": 123.0,
-        "session": "agent_a",
-    }, {
-        "type": "COMMAND",
-        "command": "cat /a.txt",
-        "timestamp": 456.0,
-        "session": "agent_b",
-    }]
+    state[StateKey.HISTORY] = [
+        {
+            "type": "COMMAND",
+            "command": "echo hi > /a.txt",
+            "timestamp": 123.0,
+            "session": "agent_a",
+        },
+        {
+            "type": "COMMAND",
+            "command": "cat /a.txt",
+            "timestamp": 456.0,
+            "session": "agent_b",
+        },
+    ]
 
     entries, meta = tree_inputs_from_state(state)
     meta = blob_to_meta(meta_to_blob(meta))
@@ -139,8 +153,10 @@ async def test_whole_world_round_trip_sessions_nodes_history():
     assert session[SessionKey.ENV] == {"API_KEY": "@aws:prod-key"}
     assert session["mount_modes"] == {"/": "read"}
     assert restored[StateKey.NODES] == {"/link.txt": {"target": "/a.txt"}}
-    assert [e["command"] for e in restored[StateKey.HISTORY]
-            ] == ["echo hi > /a.txt", "cat /a.txt"]
+    assert [e["command"] for e in restored[StateKey.HISTORY]] == [
+        "echo hi > /a.txt",
+        "cat /a.txt",
+    ]
 
     # Cache is the one exclusion: derived and rebuildable.
     assert restored[StateKey.CACHE][CacheKey.ENTRIES] == []
@@ -160,12 +176,12 @@ async def test_control_plane_files_never_leak_into_mount_files():
     ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE)
     await ws.shell("echo hi > /a.txt")
     state = await to_state_dict(ws)
-    state[StateKey.SESSIONS] = [{
-        SessionKey.SESSION_ID: "agent_a",
-        SessionKey.ENV: {
-            "API_KEY": "@aws:prod-key"
-        },
-    }]
+    state[StateKey.SESSIONS] = [
+        {
+            SessionKey.SESSION_ID: "agent_a",
+            SessionKey.ENV: {"API_KEY": "@aws:prod-key"},
+        }
+    ]
 
     entries, meta = tree_inputs_from_state(state)
     restored = to_state(entries, blob_to_meta(meta_to_blob(meta)))
@@ -177,12 +193,7 @@ async def test_control_plane_files_never_leak_into_mount_files():
 def test_meta_blob_round_trip():
     meta = {
         "mounts": [],
-        "pins": {
-            "/s3/a.txt": {
-                "rev": "v123",
-                "fp": "etag-abc"
-            }
-        },
+        "pins": {"/s3/a.txt": {"rev": "v123", "fp": "etag-abc"}},
     }
 
     parsed = blob_to_meta(meta_to_blob(meta))
@@ -259,9 +270,11 @@ async def test_a_pre_v4_commit_reads_back_as_v3_rather_than_raising():
 
 @pytest.mark.asyncio
 async def test_the_mounts_read_spec_survives_the_version_meta():
-    ws = Workspace({"/m": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45))
+    ws = Workspace(
+        {"/m": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45),
+    )
     entries, meta = tree_inputs_from_state(await to_state_dict(ws))
     restored = to_state(entries, blob_to_meta(meta_to_blob(meta)))
 

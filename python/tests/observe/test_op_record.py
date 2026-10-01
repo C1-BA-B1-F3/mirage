@@ -113,18 +113,26 @@ def test_execution_node_records_in_to_dict():
 
 
 def test_internal_mount_identity_is_not_serialized():
-    record = OpRecord(op="read",
-                      path="/data/file",
-                      source="s3",
-                      bytes=3,
-                      timestamp=1,
-                      duration_ms=2,
-                      fingerprint="fp",
-                      revision="v1",
-                      mount_id="internal-mount")
+    record = OpRecord(
+        op="read",
+        path="/data/file",
+        source="s3",
+        bytes=3,
+        timestamp=1,
+        duration_ms=2,
+        fingerprint="fp",
+        revision="v1",
+        mount_id="internal-mount",
+    )
     fields = record.to_dict()
     assert set(fields) == {
-        "op", "path", "source", "bytes", "timestamp", "duration_ms",
-        "fingerprint", "revision"
+        "op",
+        "path",
+        "source",
+        "bytes",
+        "timestamp",
+        "duration_ms",
+        "fingerprint",
+        "revision",
     }
     assert ExecutionNode(records=[record]).to_dict()["records"] == [fields]

@@ -6,9 +6,11 @@ from mirage.types import MountMode, PathSpec
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.builtins.metadata import (parse_group,
-                                                         parse_owner,
-                                                         parse_touch_stamp)
+from mirage.workspace.executor.builtins.metadata import (
+    parse_group,
+    parse_owner,
+    parse_touch_stamp,
+)
 
 
 class _OverlayRAMVFS(RAMVFS):
@@ -20,7 +22,8 @@ class _OverlayRAMVFS(RAMVFS):
 
 
 def _make_overlay_ws(
-        files: dict[str, bytes]) -> tuple[Workspace, _OverlayRAMVFS]:
+    files: dict[str, bytes],
+) -> tuple[Workspace, _OverlayRAMVFS]:
     vfs = _OverlayRAMVFS()
     vfs._store.files.update(files)
     ws = Workspace({"/data/": (vfs, MountMode.WRITE)}, mode=MountMode.WRITE)
@@ -45,8 +48,10 @@ async def _run(ws: Workspace, cmd: str) -> tuple[int, str, str]:
 
 def _make_disk_ws(root) -> Workspace:
     (root / "f.txt").write_bytes(b"hello")
-    return Workspace({"/data/": (DiskVFS(root=str(root)), MountMode.WRITE)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/data/": (DiskVFS(root=str(root)), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+    )
 
 
 def test_parse_owner_forms():
@@ -63,10 +68,13 @@ def test_parse_group_forms():
 
 
 def test_parse_touch_stamp_posix():
-    assert parse_touch_stamp("202601021530",
-                             None) == "2026-01-02T15:30:00+00:00"
-    assert parse_touch_stamp("202601021530.45",
-                             None) == "2026-01-02T15:30:45+00:00"
+    assert (
+        parse_touch_stamp("202601021530", None) == "2026-01-02T15:30:00+00:00"
+    )
+    assert (
+        parse_touch_stamp("202601021530.45", None)
+        == "2026-01-02T15:30:45+00:00"
+    )
 
 
 def test_parse_touch_stamp_two_digit_year():
@@ -80,8 +88,10 @@ def test_parse_touch_stamp_date_string():
 
 
 def test_parse_touch_stamp_keeps_a_fraction():
-    assert parse_touch_stamp(
-        None, "2024-01-01 00:00:00.5") == "2024-01-01T00:00:00.500000+00:00"
+    assert (
+        parse_touch_stamp(None, "2024-01-01 00:00:00.5")
+        == "2024-01-01T00:00:00.500000+00:00"
+    )
 
 
 def test_parse_touch_stamp_invalid():
@@ -96,14 +106,18 @@ def test_parse_touch_stamp_invalid():
 @pytest.mark.asyncio
 async def test_metadata_commands_respect_read_only_mount():
     ws = _make_ws(MountMode.READ)
-    for cmd, action in (("chmod 644", "changing permissions of"),
-                        ("chown alice", "changing ownership of"),
-                        ("touch", "cannot touch"), ("touch -c",
-                                                    "setting times of")):
+    for cmd, action in (
+        ("chmod 644", "changing permissions of"),
+        ("chown alice", "changing ownership of"),
+        ("touch", "cannot touch"),
+        ("touch -c", "setting times of"),
+    ):
         code, _, err = await _run(ws, f"{cmd} /data/f.txt")
         assert code == 1
-        assert err == f"{cmd.split()[0]}: {action} '/data/f.txt': " \
+        assert (
+            err == f"{cmd.split()[0]}: {action} '/data/f.txt': "
             "Read-only file system\n"
+        )
 
 
 @pytest.mark.asyncio
@@ -164,8 +178,10 @@ async def test_overlay_fallback_when_mount_has_no_setattr():
     vfs._store.files["/f.txt"] = b"hello"
     ws = Workspace({"/data/": (vfs, MountMode.WRITE)}, mode=MountMode.WRITE)
     code, _, _ = await _run(
-        ws, "chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
-        " && touch -t 202603041200 /data/f.txt")
+        ws,
+        "chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
+        " && touch -t 202603041200 /data/f.txt",
+    )
     assert code == 0
     assert vfs._store.attrs == {}
     st, _ = await ws.dispatch("stat", PathSpec.from_str_path("/data/f.txt"))
@@ -181,8 +197,10 @@ async def test_overlay_attrs_render_in_ls_long():
     # injected namespace overlay must still render chmod/chown/touch.
     ws, _ = _make_overlay_ws({"/f.txt": b"hello"})
     await _run(
-        ws, "chmod 664 /data/f.txt && chown 500:dev /data/f.txt"
-        " && touch -t 202603041200 /data/f.txt")
+        ws,
+        "chmod 664 /data/f.txt && chown 500:dev /data/f.txt"
+        " && touch -t 202603041200 /data/f.txt",
+    )
     _, out, _ = await _run(ws, "ls -l /data")
     assert "-rw-rw-r--" in out
     assert " 500 dev " in out

@@ -25,14 +25,17 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def append(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
-        result = await append_values(tm,
-                                     fl.as_str("spreadsheet") or "",
-                                     fl.as_str("range") or "A1",
-                                     values_json_from_flags(fl))
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+        result = await append_values(
+            tm,
+            fl.as_str("spreadsheet") or "",
+            fl.as_str("range") or "A1",
+            values_json_from_flags(fl),
+        )
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

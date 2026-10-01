@@ -15,10 +15,17 @@
 import pytest
 
 from mirage.core.github.config import GhConfig
-from mirage.core.github.issue import (IssueListFilter, IssueSelections,
-                                      comment_issue, edit_issue, get_issue,
-                                      issue_comments, issue_fields,
-                                      list_issue_fields, list_issues)
+from mirage.core.github.issue import (
+    IssueListFilter,
+    IssueSelections,
+    comment_issue,
+    edit_issue,
+    get_issue,
+    issue_comments,
+    issue_fields,
+    list_issue_fields,
+    list_issues,
+)
 from mirage.core.github.repo import RepoRef
 
 
@@ -29,17 +36,15 @@ async def test_list_issues_filters_pull_requests(monkeypatch):
     async def pages(config, path, *, params, limit, include):
         calls.append((path, params, limit, include))
         return [
-            row for row in [{
-                "number": 1
-            }, {
-                "number": 2,
-                "pull_request": {}
-            }] if include(row)
+            row
+            for row in [{"number": 1}, {"number": 2, "pull_request": {}}]
+            if include(row)
         ]
 
     monkeypatch.setitem(list_issues.__globals__, "github_pages", pages)
-    rows = await list_issues(GhConfig(token="t"), RepoRef("o", "r"),
-                             {"state": "all"}, 7)
+    rows = await list_issues(
+        GhConfig(token="t"), RepoRef("o", "r"), {"state": "all"}, 7
+    )
 
     assert rows == [{"number": 1}]
     path, params, limit, include = calls[0]
@@ -51,7 +56,8 @@ async def test_list_issues_filters_pull_requests(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("verb", ["get", "edit", "comment"])
 async def test_direct_issue_verbs_reject_pull_request_numbers(
-        monkeypatch, verb):
+    monkeypatch, verb
+):
     calls = []
 
     async def request(token, method, path, *args, base_url=None):
@@ -86,13 +92,16 @@ async def test_comments_follow_graphql_cursors(monkeypatch):
                 "repository": {
                     "issueOrPullRequest": {
                         "comments": {
-                            "nodes": [{
-                                "body":
-                                "first" if cursor is None else "second"
-                            }],
+                            "nodes": [
+                                {
+                                    "body": "first"
+                                    if cursor is None
+                                    else "second"
+                                }
+                            ],
                             "pageInfo": {
                                 "hasNextPage": cursor is None,
-                                "endCursor": "next"
+                                "endCursor": "next",
                             },
                         }
                     }
@@ -133,20 +142,24 @@ class GraphQL:
 
 @pytest.mark.asyncio
 async def test_issue_fields_ask_for_the_number_as_an_issue_or_a_pull(
-        monkeypatch):
-    graphql = GraphQL({
-        "repository": {
-            "hasIssuesEnabled": True,
-            "issue": {
-                "__typename": "Issue",
-                "title": "t"
+    monkeypatch,
+):
+    graphql = GraphQL(
+        {
+            "repository": {
+                "hasIssuesEnabled": True,
+                "issue": {"__typename": "Issue", "title": "t"},
             }
         }
-    })
+    )
     monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
 
-    node = await issue_fields(GhConfig(token="t"), RepoRef("o", "r"), 4,
-                              IssueSelections("title,isPinned", "title"))
+    node = await issue_fields(
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        4,
+        IssueSelections("title,isPinned", "title"),
+    )
 
     assert node == {"__typename": "Issue", "title": "t"}
     query, variables = graphql.sent[0]
@@ -159,14 +172,20 @@ async def test_issue_fields_ask_for_the_number_as_an_issue_or_a_pull(
 
 @pytest.mark.asyncio
 async def test_issue_fields_leave_an_empty_half_out_and_page_by_cursor(
-        monkeypatch):
+    monkeypatch,
+):
     graphql = GraphQL({"repository": {"issue": {"__typename": "PullRequest"}}})
     monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
 
     await issue_fields(
-        GhConfig(token="t"), RepoRef("o", "r"), 4,
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        4,
         IssueSelections(
-            "", "comments(first: 100, after: $endCursor) {nodes {id}}"), "c1")
+            "", "comments(first: 100, after: $endCursor) {nodes {id}}"
+        ),
+        "c1",
+    )
 
     query, variables = graphql.sent[0]
     assert "$number: Int!, $endCursor: String)" in query
@@ -175,22 +194,28 @@ async def test_issue_fields_leave_an_empty_half_out_and_page_by_cursor(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("enabled, message", [
-    (False, "the 'o/r' repository has disabled issues"),
-    (True, "issue was not found but GraphQL reported no error"),
-])
+@pytest.mark.parametrize(
+    "enabled, message",
+    [
+        (False, "the 'o/r' repository has disabled issues"),
+        (True, "issue was not found but GraphQL reported no error"),
+    ],
+)
 async def test_issue_fields_refuse_an_answer_with_no_issue(
-        monkeypatch, enabled, message):
+    monkeypatch, enabled, message
+):
     graphql = GraphQL(
-        {"repository": {
-            "hasIssuesEnabled": enabled,
-            "issue": None
-        }})
+        {"repository": {"hasIssuesEnabled": enabled, "issue": None}}
+    )
     monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
 
     with pytest.raises(ValueError, match=message):
-        await issue_fields(GhConfig(token="t"), RepoRef("o", "r"), 4,
-                           IssueSelections("title", "title"))
+        await issue_fields(
+            GhConfig(token="t"),
+            RepoRef("o", "r"),
+            4,
+            IssueSelections("title", "title"),
+        )
 
 
 def _page(numbers, following):
@@ -198,14 +223,12 @@ def _page(numbers, following):
         "repository": {
             "hasIssuesEnabled": True,
             "issues": {
-                "nodes": [{
-                    "number": number
-                } for number in numbers],
+                "nodes": [{"number": number} for number in numbers],
                 "pageInfo": {
                     "hasNextPage": following is not None,
-                    "endCursor": following
+                    "endCursor": following,
                 },
-            }
+            },
         }
     }
 
@@ -216,9 +239,12 @@ async def test_issue_listing_pages_newest_first_to_the_limit(monkeypatch):
     monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
 
     rows = await list_issue_fields(
-        GhConfig(token="t"), RepoRef("o", "r"),
-        IssueListFilter(("OPEN", "CLOSED"), author="me", labels=("bug", )), 3,
-        "number")
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        IssueListFilter(("OPEN", "CLOSED"), author="me", labels=("bug",)),
+        3,
+        "number",
+    )
 
     assert rows == [{"number": 9}, {"number": 8}, {"number": 7}]
     assert graphql.sent[0][1] == {
@@ -232,23 +258,28 @@ async def test_issue_listing_pages_newest_first_to_the_limit(monkeypatch):
     assert graphql.sent[1][1]["endCursor"] == "c1"
     assert graphql.sent[1][1]["limit"] == 1
     assert "fragment issue on Issue {number}" in graphql.sent[0][0]
-    assert ("orderBy: {field: CREATED_AT, direction: DESC}"
-            in graphql.sent[0][0])
+    assert (
+        "orderBy: {field: CREATED_AT, direction: DESC}" in graphql.sent[0][0]
+    )
 
 
 @pytest.mark.asyncio
 async def test_issue_listing_refuses_disabled_issues(monkeypatch):
     graphql = GraphQL(
-        {"repository": {
-            "hasIssuesEnabled": False,
-            "issues": None
-        }})
+        {"repository": {"hasIssuesEnabled": False, "issues": None}}
+    )
     monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
 
-    with pytest.raises(ValueError,
-                       match="the 'o/r' repository has disabled issues"):
-        await list_issue_fields(GhConfig(token="t"), RepoRef("o", "r"),
-                                IssueListFilter(("OPEN", )), 30, "number")
+    with pytest.raises(
+        ValueError, match="the 'o/r' repository has disabled issues"
+    ):
+        await list_issue_fields(
+            GhConfig(token="t"),
+            RepoRef("o", "r"),
+            IssueListFilter(("OPEN",)),
+            30,
+            "number",
+        )
 
 
 @pytest.mark.asyncio
@@ -256,8 +287,13 @@ async def test_issue_listing_asks_nothing_for_a_zero_limit(monkeypatch):
     graphql = GraphQL()
     monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
 
-    rows = await list_issue_fields(GhConfig(token="t"), RepoRef("o", "r"),
-                                   IssueListFilter(("OPEN", )), 0, "number")
+    rows = await list_issue_fields(
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        IssueListFilter(("OPEN",)),
+        0,
+        "number",
+    )
 
     assert rows == []
     assert graphql.sent == []

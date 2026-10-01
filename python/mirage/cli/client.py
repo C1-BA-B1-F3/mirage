@@ -25,8 +25,10 @@ from mirage.cli.env import ENV_AUTH_MODE, ENV_AUTH_TOKEN
 from mirage.cli.settings import DaemonSettings, load_daemon_settings
 from mirage.server.auth import AuthMode
 from mirage.server.auth import storage as auth_storage
-from mirage.server.daemon_config import (read_daemon_table,
-                                         validate_daemon_table)
+from mirage.server.daemon_config import (
+    read_daemon_table,
+    validate_daemon_table,
+)
 from mirage.server.env import ENV_DAEMON_PORT
 from mirage.server.paths import mirage_home
 
@@ -64,16 +66,16 @@ class DaemonClient:
 
     def is_reachable(self, timeout: float = 0.5) -> bool:
         try:
-            r = self._client.get("/v1/health",
-                                 timeout=timeout,
-                                 headers=self._headers())
+            r = self._client.get(
+                "/v1/health", timeout=timeout, headers=self._headers()
+            )
             return r.status_code == 200
         except httpx.RequestError:
             return False
 
-    def ensure_running(self,
-                       startup_timeout: float = 5.0,
-                       allow_spawn: bool = True) -> None:
+    def ensure_running(
+        self, startup_timeout: float = 5.0, allow_spawn: bool = True
+    ) -> None:
         """Ensure the daemon is reachable, optionally spawning it.
 
         Args:
@@ -92,7 +94,8 @@ class DaemonClient:
         if not allow_spawn:
             raise DaemonUnreachable(
                 f"daemon not reachable at {self.settings.url}; "
-                "run `mirage workspace --create CONFIG.yaml` to spawn one")
+                "run `mirage workspace --create CONFIG.yaml` to spawn one"
+            )
         self._spawn_daemon()
         deadline = time.monotonic() + startup_timeout
         while time.monotonic() < deadline:
@@ -101,7 +104,8 @@ class DaemonClient:
             time.sleep(0.1)
         raise DaemonUnreachable(
             f"daemon spawned but did not answer /v1/health within "
-            f"{startup_timeout:.1f}s")
+            f"{startup_timeout:.1f}s"
+        )
 
     def _spawn_daemon(self) -> None:
         table = read_daemon_table(mirage_home())
@@ -110,7 +114,8 @@ class DaemonClient:
         env = dict(os.environ)
         if not self.settings.auth_token:
             self.settings.auth_token = auth_storage.ensure_token_file(
-                auth_storage.default_token_file())
+                auth_storage.default_token_file()
+            )
         env[ENV_AUTH_TOKEN] = self.settings.auth_token
         if ENV_AUTH_MODE not in env and not table.get("auth_mode"):
             env[ENV_AUTH_MODE] = AuthMode.LOCAL.value

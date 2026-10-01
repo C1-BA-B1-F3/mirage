@@ -23,8 +23,12 @@ from opendal.types import EntryMode
 import mirage.core.hf_buckets.hub as hub_mod
 from mirage.core.hf_buckets.driver import DRIVER, HfConn
 from mirage.core.hf_hub.client import HfHubError
-from tests.core.hf_buckets.conftest import (FakeAsyncOperator, _FakeEntry,
-                                            _FakeMetadata, make_accessor)
+from tests.core.hf_buckets.conftest import (
+    FakeAsyncOperator,
+    _FakeEntry,
+    _FakeMetadata,
+    make_accessor,
+)
 from tests.fixtures.hf_hub_api import FakeHub, xet_hash
 
 
@@ -92,10 +96,13 @@ async def test_connect_yields_the_accessor_operator():
 @pytest.mark.asyncio
 async def test_list_children_classifies_dirs_and_files():
     op = _op(
-        FakeAsyncOperator(files={
-            "data/a.json": b"12345",
-            "data/sub/b.json": b"67",
-        }))
+        FakeAsyncOperator(
+            files={
+                "data/a.json": b"12345",
+                "data/sub/b.json": b"67",
+            }
+        )
+    )
     got = [e async for e in DRIVER.list_children(op, "data/")]
     assert sorted((e.key, e.kind, e.size) for e in got) == [
         ("data/a.json", "f", 5),
@@ -126,11 +133,14 @@ async def test_list_children_stat_fills_a_missing_size():
 @pytest.mark.asyncio
 async def test_list_tree_yields_every_file_under_the_prefix():
     op = _op(
-        FakeAsyncOperator(files={
-            "data/a.json": b"12345",
-            "data/sub/b.json": b"67",
-            "other.txt": b"x",
-        }))
+        FakeAsyncOperator(
+            files={
+                "data/a.json": b"12345",
+                "data/sub/b.json": b"67",
+                "other.txt": b"x",
+            }
+        )
+    )
     got = [(t.key, t.size) async for t in DRIVER.list_tree(op, "data/")]
     assert sorted(got) == [("data/a.json", 5), ("data/sub/b.json", 2)]
 
@@ -178,7 +188,8 @@ async def test_head_returns_meta_for_a_file_and_none_otherwise(make_acc):
 
 @pytest.mark.asyncio
 async def test_head_stamps_nothing_for_a_row_without_a_hash(
-        monkeypatch, fake_hub: FakeHub):
+    monkeypatch, fake_hub: FakeHub
+):
     acc = make_accessor({"a.txt": b"12345"}, hub=fake_hub)
 
     async def rows(*_args, **_kwargs):
@@ -191,8 +202,9 @@ async def test_head_stamps_nothing_for_a_row_without_a_hash(
 
 
 @pytest.mark.asyncio
-async def test_head_refuses_a_row_without_a_size(monkeypatch,
-                                                 fake_hub: FakeHub):
+async def test_head_refuses_a_row_without_a_size(
+    monkeypatch, fake_hub: FakeHub
+):
     # A zero it made up would be a confident wrong size on a mount that
     # declares every size known.
     acc = make_accessor({"a.txt": b"12345"}, hub=fake_hub)
@@ -222,11 +234,13 @@ async def test_delete_file_is_silent_on_missing():
 
 @pytest.mark.asyncio
 async def test_delete_prefix_removes_the_subtree_only():
-    fake = FakeAsyncOperator(files={
-        "data/a.json": b"1",
-        "data/sub/b.json": b"2",
-        "other.txt": b"3",
-    })
+    fake = FakeAsyncOperator(
+        files={
+            "data/a.json": b"1",
+            "data/sub/b.json": b"2",
+            "other.txt": b"3",
+        }
+    )
     await DRIVER.delete_prefix(_op(fake), "data/")
     assert fake.files == {"other.txt": b"3"}
 
@@ -244,13 +258,20 @@ def test_is_not_found_matches_only_opendal_not_found():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method,path", [("list_tree", "data/"),
-                                         ("list_subtree", "data"),
-                                         ("list_subtree", "data/a.txt")])
-@pytest.mark.parametrize("modified",
-                         [datetime(2025, 1, 1, tzinfo=timezone.utc), None])
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("list_tree", "data/"),
+        ("list_subtree", "data"),
+        ("list_subtree", "data/a.txt"),
+    ],
+)
+@pytest.mark.parametrize(
+    "modified", [datetime(2025, 1, 1, tzinfo=timezone.utc), None]
+)
 async def test_recursive_rows_preserve_modification_time(
-        method, path, modified):
+    method, path, modified
+):
     fake = FakeAsyncOperator(files={"data/a.txt": b"old"})
     if modified is not None:
         fake.modified["data/a.txt"] = modified

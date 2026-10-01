@@ -14,31 +14,32 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.msgraph.drive import readdir_items
+from mirage.core.msgraph.drive import (
+    directory_path,
+    readdir_items,
+    virtual_key,
+)
 from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
 
-async def readdir(accessor: OneDriveAccessor,
-                  path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
-    prefix = mount_prefix_of(path.virtual, path.vfs_path) or ""
-    raw = path.directory if path.pattern else path.virtual
-    if prefix and raw.startswith(prefix):
-        rest = raw[len(prefix):]
-        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
-            raw = rest or "/"
-    stripped = raw.strip("/")
-    virtual_key = (prefix + "/" + stripped if prefix else "/" + stripped) \
-        if stripped else (prefix or "/")
-    listing = await index.list_dir(virtual_key)
+async def readdir(
+    accessor: OneDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
+    target = directory_path(path)
+    key = virtual_key(path)
+    listing = await index.list_dir(key)
     if listing.entries is not None:
         return listing.entries
-    return await readdir_items(accessor.config,
-                               drive_loc(accessor.config, stripped),
-                               index,
-                               prefix,
-                               stripped,
-                               virtual_key,
-                               session=accessor.pool)
+    return await readdir_items(
+        accessor.config,
+        drive_loc(accessor.config, target.vfs_path),
+        index,
+        mount_prefix_of(target.virtual, target.vfs_path),
+        target.vfs_path,
+        key,
+        session=accessor.pool,
+    )

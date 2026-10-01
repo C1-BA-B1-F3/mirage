@@ -82,22 +82,36 @@ async def test_the_accessor_owns_a_pool_that_close_drains():
 
 def test_bucket_path_applies_the_key_prefix_once():
     acc = HfBucketsAccessor(
-        HfBucketsConfig(bucket="org/b", key_prefix="/lead/trail/"))
+        HfBucketsConfig(bucket="org/b", key_prefix="/lead/trail/")
+    )
     assert acc.bucket_path("a.txt") == "lead/trail/a.txt"
     assert acc.bucket_path("/sub/a.txt") == "lead/trail/sub/a.txt"
-    assert HfBucketsAccessor(
-        HfBucketsConfig(bucket="org/b")).bucket_path("/a.txt") == "a.txt"
+    assert (
+        HfBucketsAccessor(HfBucketsConfig(bucket="org/b")).bucket_path(
+            "/a.txt"
+        )
+        == "a.txt"
+    )
     # opendal normalizes its root's empty segments away and the Hub matches
     # paths exactly, so the direct calls have to agree with the listing.
-    assert HfBucketsAccessor(HfBucketsConfig(
-        bucket="org/b",
-        key_prefix="a//b")).bucket_path("/x.txt") == "a/b/x.txt"
-    assert HfBucketsAccessor(HfBucketsConfig(
-        bucket="org/b", key_prefix="/")).bucket_path("/x.txt") == "x.txt"
+    assert (
+        HfBucketsAccessor(
+            HfBucketsConfig(bucket="org/b", key_prefix="a//b")
+        ).bucket_path("/x.txt")
+        == "a/b/x.txt"
+    )
+    assert (
+        HfBucketsAccessor(
+            HfBucketsConfig(bucket="org/b", key_prefix="/")
+        ).bucket_path("/x.txt")
+        == "x.txt"
+    )
 
 
 def test_the_pool_waits_the_configured_timeout_without_progress():
     assert HfBucketsAccessor(
-        HfBucketsConfig(bucket="o/b")).pool._timeout == stall_timeout(30)
-    assert HfBucketsAccessor(HfBucketsConfig(
-        bucket="o/b", timeout=5)).pool._timeout == stall_timeout(5)
+        HfBucketsConfig(bucket="o/b")
+    ).pool._timeout == stall_timeout(30)
+    assert HfBucketsAccessor(
+        HfBucketsConfig(bucket="o/b", timeout=5)
+    ).pool._timeout == stall_timeout(5)

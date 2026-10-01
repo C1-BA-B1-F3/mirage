@@ -122,8 +122,12 @@ def occurrence_in(node: Any, frame: Frame) -> Occurrence:
         node (Any): the command's tree-sitter node.
         frame (Frame): the scope it was walked in.
     """
-    return Occurrence(frame.parent, frame.text, node.start_byte - frame.base,
-                      node.end_byte - frame.base)
+    return Occurrence(
+        frame.parent,
+        frame.text,
+        node.start_byte - frame.base,
+        node.end_byte - frame.base,
+    )
 
 
 def whole_occurrence(frame: Frame) -> Occurrence:
@@ -138,8 +142,9 @@ def whole_occurrence(frame: Frame) -> Occurrence:
     Args:
         frame (Frame): the scope holding the words.
     """
-    return Occurrence(frame.parent, frame.text, 0,
-                      byte_offset(frame.text, len(frame.text)))
+    return Occurrence(
+        frame.parent, frame.text, 0, byte_offset(frame.text, len(frame.text))
+    )
 
 
 def body_frame(node: Any, frame: Frame) -> Frame | None:
@@ -161,7 +166,7 @@ def body_frame(node: Any, frame: Frame) -> Frame | None:
     raw = text[prefix:]
     for opener, closer in SUBSTITUTION_DELIMITERS:
         if raw.startswith(opener) and raw.endswith(closer):
-            body = raw[len(opener):len(raw) - len(closer)]
+            body = raw[len(opener) : len(raw) - len(closer)]
             base = node.start_byte + byte_offset(text, prefix) + len(opener)
             return Frame(body, base, occurrence_in(node, frame))
     return None
@@ -180,8 +185,12 @@ def part_of(occurrence: Occurrence, start: int, end: int) -> Occurrence:
             parser's offsets.
         end (int): the offset after its last byte.
     """
-    return Occurrence(occurrence.parent, occurrence.source,
-                      occurrence.start + start, occurrence.start + end)
+    return Occurrence(
+        occurrence.parent,
+        occurrence.source,
+        occurrence.start + start,
+        occurrence.start + end,
+    )
 
 
 def segment_frames(node: Any, frame: Frame) -> list[Frame]:
@@ -208,15 +217,20 @@ def segment_frames(node: Any, frame: Frame) -> list[Frame]:
     return [
         line_frame(
             s.text,
-            part_of(at, byte_offset(text, prefix + s.start),
-                    byte_offset(text, prefix + s.end)))
-        for s in split_backtick_region(raw) if s.command
+            part_of(
+                at,
+                byte_offset(text, prefix + s.start),
+                byte_offset(text, prefix + s.end),
+            ),
+        )
+        for s in split_backtick_region(raw)
+        if s.command
     ]
 
 
-def occurrence_of(node: Any,
-                  handed: HandOff,
-                  span: tuple[int, int] | None = None) -> Occurrence:
+def occurrence_of(
+    node: Any, handed: HandOff, span: tuple[int, int] | None = None
+) -> Occurrence:
     """Where a node the executor runs stands, on the line it runs in.
 
     Args:
@@ -230,9 +244,9 @@ def occurrence_of(node: Any,
     return at if span is None else part_of(at, *span)
 
 
-def evaluated_from(node: Any,
-                   handed: HandOff,
-                   span: tuple[int, int] | None = None) -> HandOff:
+def evaluated_from(
+    node: Any, handed: HandOff, span: tuple[int, int] | None = None
+) -> HandOff:
     """The hand-off a line read from a node's text runs on.
 
     Every re-parse the executor runs is a line of its own: the body a

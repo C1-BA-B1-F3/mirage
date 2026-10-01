@@ -17,13 +17,22 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mirage.commands.cli.builtin.ntn.serde import serde_message
-from mirage.commands.cli.builtin.ntn.util import (compact_json, first_text,
-                                                  notion_config, rust_debug)
+from mirage.commands.cli.builtin.ntn.util import (
+    compact_json,
+    first_text,
+    notion_config,
+    rust_debug,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.notion.client import (notion_delete, notion_get, notion_patch,
-                                       notion_post, notion_put)
+from mirage.core.notion.client import (
+    notion_delete,
+    notion_get,
+    notion_patch,
+    notion_post,
+    notion_put,
+)
 from mirage.core.notion.config import NotionConfig
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult, materialize
@@ -36,14 +45,19 @@ BAD_DATA = "error: Invalid JSON from --data\n"
 BAD_STDIN = "error: Invalid JSON from stdin\n"
 EMPTY_DATA = (
     "error: --data requires a valid JSON value.\n"
-    "  hint: Pass a JSON string such as `--data '{\"foo\":\"bar\"}'`, a file "
-    "such as `--data @body.json`, or stdin with `--data @-`.\n")
+    '  hint: Pass a JSON string such as `--data \'{"foo":"bar"}\'`, a file '
+    "such as `--data @body.json`, or stdin with `--data @-`.\n"
+)
 INLINE_LEAD = "error: Failed to parse inline request input: "
-INLINE_HINT = ("  hint: Use `Header:Value`, `name==value`, `path=value`, or "
-               "`path:=json`.\n")
+INLINE_HINT = (
+    "  hint: Use `Header:Value`, `name==value`, `path=value`, or "
+    "`path:=json`.\n"
+)
 CONFLICT_LEAD = "error: Request body can come from only one source, but got: "
-CONFLICT_HINT = ("  hint: Use only one of: stdin JSON, `--data`, or "
-                 "`path=value` / `path:=json` inputs.\n")
+CONFLICT_HINT = (
+    "  hint: Use only one of: stdin JSON, `--data`, or "
+    "`path=value` / `path:=json` inputs.\n"
+)
 STDIN_SOURCE = "stdin JSON"
 DATA_SOURCE = "--data"
 INLINE_SOURCE = "inline body inputs"
@@ -147,8 +161,12 @@ def place(cursor: JsonValue, key: str, value: JsonValue) -> None:
     raise UsageError(f"cannot assign through {key}")
 
 
-def classify(token: str, body: dict[str, JsonValue], params: dict[str, str],
-             headers: dict[str, str]) -> None:
+def classify(
+    token: str,
+    body: dict[str, JsonValue],
+    params: dict[str, str],
+    headers: dict[str, str],
+) -> None:
     """Sort one inline input into the body, query, or headers.
 
     Precedence is the upstream CLI's, and it is order-sensitive:
@@ -169,8 +187,9 @@ def classify(token: str, body: dict[str, JsonValue], params: dict[str, str],
         # the wording, and this message is compared byte for byte.
         message = serde_message(raw)
         if message is not None:
-            raise InlineRefusal(f"invalid JSON value in {rust_debug(token)}: "
-                                f"{message}")
+            raise InlineRefusal(
+                f"invalid JSON value in {rust_debug(token)}: {message}"
+            )
         assign(body, name, json.loads(raw))
         return
     if "==" in token:
@@ -199,7 +218,7 @@ def refusal(stderr: str, code: int) -> tuple[None, IOResult]:
 
 
 async def api(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     path = first_text(inv.texts, "api path")
@@ -234,17 +253,24 @@ async def api(
         for token in inv.texts[1:]:
             classify(token, inline, params, headers)
     except InlineRefusal as caught:
-        return refusal(f"{INLINE_LEAD}{caught.detail}\n{INLINE_HINT}",
-                       REFUSAL_EXIT)
+        return refusal(
+            f"{INLINE_LEAD}{caught.detail}\n{INLINE_HINT}", REFUSAL_EXIT
+        )
 
     named = [
         name
-        for name, given in ((STDIN_SOURCE, has_stdin), (DATA_SOURCE, has_data),
-                            (INLINE_SOURCE, bool(inline))) if given
+        for name, given in (
+            (STDIN_SOURCE, has_stdin),
+            (DATA_SOURCE, has_data),
+            (INLINE_SOURCE, bool(inline)),
+        )
+        if given
     ]
     if len(named) > 1:
-        return refusal(f"{CONFLICT_LEAD}{', '.join(named)}.\n{CONFLICT_HINT}",
-                       REFUSAL_EXIT)
+        return refusal(
+            f"{CONFLICT_LEAD}{', '.join(named)}.\n{CONFLICT_HINT}",
+            REFUSAL_EXIT,
+        )
 
     # A body source makes the call a POST even when what it carries is
     # empty: `--data {}` posts, and there is no object check anywhere,
@@ -265,17 +291,18 @@ async def api(
     route = route[3:] if route.startswith("/v1/") else route
     config = notion_config(inv)
     if method == "GET":
-        result = await notion_get(config,
-                                  route,
-                                  params=params or None,
-                                  extra_headers=headers or None)
+        result = await notion_get(
+            config, route, params=params or None, extra_headers=headers or None
+        )
     else:
         # `name==value` is a query parameter whatever the method is, so
         # it rides alongside the body rather than being dropped the
         # moment the call stops being a GET.
-        result = await call(config,
-                            route,
-                            body,
-                            extra_headers=headers or None,
-                            params=params or None)
+        result = await call(
+            config,
+            route,
+            body,
+            extra_headers=headers or None,
+            params=params or None,
+        )
     return yield_bytes(compact_json(result)), IOResult()

@@ -77,4 +77,4 @@ def pattern_names(pattern: str, name: str) -> bool:
         pattern (str): the pattern as written.
         name (str): the command name.
     """
-    return pattern_reaches(pattern, (name, ))
+    return pattern_reaches(pattern, (name,))

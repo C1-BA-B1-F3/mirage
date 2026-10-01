@@ -15,10 +15,16 @@
 import json
 
 from mirage.core.render.json import jsonl_bytes_by_created_at
-from mirage.core.trello.normalize import (normalize_board, normalize_card,
-                                          normalize_comment, normalize_label,
-                                          normalize_list, normalize_member,
-                                          normalize_workspace, to_json_bytes)
+from mirage.core.trello.normalize import (
+    normalize_board,
+    normalize_card,
+    normalize_comment,
+    normalize_label,
+    normalize_list,
+    normalize_member,
+    normalize_workspace,
+    to_json_bytes,
+)
 
 
 def test_normalize_workspace():
@@ -49,7 +55,7 @@ def test_normalize_list():
         "name": "Backlog",
         "idBoard": "b1",
         "closed": False,
-        "pos": 1024
+        "pos": 1024,
     }
     result = normalize_list(lst)
     assert result["list_id"] == "l1"
@@ -80,19 +86,13 @@ def test_normalize_card():
         "idBoard": "b1",
         "idList": "l1",
         "idMembers": ["m1"],
-        "labels": [{
-            "id": "lb1",
-            "name": "bug"
-        }],
+        "labels": [{"id": "lb1", "name": "bug"}],
         "due": "2026-04-10",
         "dueComplete": False,
         "closed": False,
         "desc": "Login is broken",
         "shortUrl": "https://trello.com/c/abc",
-        "members": [{
-            "id": "m1",
-            "username": "alice"
-        }],
+        "members": [{"id": "m1", "username": "alice"}],
     }
     result = normalize_card(card)
     assert result["card_id"] == "c1"
@@ -106,13 +106,8 @@ def test_normalize_comment():
     comment = {
         "id": "act1",
         "date": "2026-04-05T10:00:00Z",
-        "memberCreator": {
-            "id": "m1",
-            "fullName": "Alice"
-        },
-        "data": {
-            "text": "This needs fixing"
-        },
+        "memberCreator": {"id": "m1", "fullName": "Alice"},
+        "data": {"text": "This needs fixing"},
     }
     result = normalize_comment(comment, card_id="c1")
     assert result["comment_id"] == "act1"
@@ -129,14 +124,8 @@ def test_to_json_bytes():
 
 def test_jsonl_bytes_by_created_at():
     rows = [
-        {
-            "created_at": "2026-04-05",
-            "text": "second"
-        },
-        {
-            "created_at": "2026-04-01",
-            "text": "first"
-        },
+        {"created_at": "2026-04-05", "text": "second"},
+        {"created_at": "2026-04-01", "text": "first"},
     ]
     result = jsonl_bytes_by_created_at(rows)
     lines = result.strip().split(b"\n")

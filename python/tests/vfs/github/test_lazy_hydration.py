@@ -27,8 +27,9 @@ from mirage.workspace.reconcile import Reconciler
 CONFIG = GitHubConfig(token="ghp_test")
 TREE = {
     "src": TreeEntry(path="src", type="tree", sha="a", size=None),
-    "src/main.py": TreeEntry(path="src/main.py", type="blob", sha="b",
-                             size=10),
+    "src/main.py": TreeEntry(
+        path="src/main.py", type="blob", sha="b", size=10
+    ),
 }
 
 
@@ -53,16 +54,20 @@ def dir_calls(monkeypatch):
         at = tree_sha.partition(":")[2]
         prefix = at + "/" if at else ""
         rows = [
-            TreeEntry(path=path[len(prefix):],
-                      type=entry.type,
-                      sha=entry.sha,
-                      size=entry.size) for path, entry in TREE.items()
-            if path.startswith(prefix) and "/" not in path[len(prefix):]
+            TreeEntry(
+                path=path[len(prefix) :],
+                type=entry.type,
+                sha=entry.sha,
+                size=entry.size,
+            )
+            for path, entry in TREE.items()
+            if path.startswith(prefix) and "/" not in path[len(prefix) :]
         ]
         return rows, False
 
-    monkeypatch.setattr("mirage.core.github.tree.fetch_dir_page",
-                        _fetch_dir_page)
+    monkeypatch.setattr(
+        "mirage.core.github.tree.fetch_dir_page", _fetch_dir_page
+    )
     return calls
 
 
@@ -75,9 +80,9 @@ async def test_first_readdir_costs_one_tree_fetch(tree_calls):
     assert tree_calls == []
 
     index = RAMIndexCacheStore()
-    entries = await readdir(vfs.accessor,
-                            PathSpec(vfs_path="", virtual="/", directory="/"),
-                            index)
+    entries = await readdir(
+        vfs.accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert sorted(entries) == ["/src"]
     assert len(tree_calls) == 1
 
@@ -122,7 +127,8 @@ def default_branch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_mount_naming_no_ref_reads_the_repos_default_branch(
-        tree_calls, default_branch):
+    tree_calls, default_branch
+):
     # The config used to default `ref` to the literal string "main", so a
     # repository whose default branch is anything else 404d on the one
     # request the whole mount is built on and the mount read as empty.
@@ -134,7 +140,8 @@ async def test_a_mount_naming_no_ref_reads_the_repos_default_branch(
 
 @pytest.mark.asyncio
 async def test_an_unpinned_mount_is_on_the_default_branch_before_any_fetch(
-        tree_calls):
+    tree_calls,
+):
     # Naming no ref *means* following the default branch, so the two agree
     # whatever it turns out to be -- no request, and not the "not known
     # yet" None a pinned mount answers.
@@ -145,7 +152,8 @@ async def test_an_unpinned_mount_is_on_the_default_branch_before_any_fetch(
 
 @pytest.mark.asyncio
 async def test_reconcile_private_index_can_resolve_github_ids(
-        tree_calls, dir_calls):
+    tree_calls, dir_calls
+):
     # The subject is the reconciler's github-id resolution: the private
     # index it stats through holds nothing, and the id still resolves.
     vfs = GitHubVFS(CONFIG, "o", "r", "main")
@@ -173,7 +181,8 @@ async def test_reconcile_private_index_can_resolve_github_ids(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("surface", ["shell", "fs"])
 async def test_always_reads_current_github_blob_after_probe(
-        monkeypatch, surface):
+    monkeypatch, surface
+):
     sha = "v1"
 
     async def fetch_tree(*args, **kwargs):
@@ -188,8 +197,9 @@ async def test_always_reads_current_github_blob_after_probe(
         return blob_sha.encode()
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", fetch_tree)
-    monkeypatch.setattr("mirage.core.github.tree.fetch_dir_page",
-                        fetch_dir_page)
+    monkeypatch.setattr(
+        "mirage.core.github.tree.fetch_dir_page", fetch_dir_page
+    )
     monkeypatch.setattr("mirage.core.github.read.read_bytes", read_bytes)
     vfs = GitHubVFS(CONFIG, "o", "r", "main")
     ws = Workspace({"/gh": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))

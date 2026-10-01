@@ -63,9 +63,11 @@ MetaValue = str | bool | None
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 BUCKET = "mirage-integ-meta"
-CREDS = dict(aws_access_key_id="testing",
-             aws_secret_access_key="testing",
-             region_name="us-east-1")
+CREDS = dict(
+    aws_access_key_id="testing",
+    aws_secret_access_key="testing",
+    region_name="us-east-1",
+)
 
 
 def overlay_stat_fields(st: FileStat) -> dict[str, MetaValue]:
@@ -82,8 +84,9 @@ def overlay_stat_fields(st: FileStat) -> dict[str, MetaValue]:
         dict[str, MetaValue]: the asserted keys for this scenario.
     """
     return {
-        "overlay_snapshot_mode":
-        oct(st.mode)[2:] if st.mode is not None else None,
+        "overlay_snapshot_mode": oct(st.mode)[2:]
+        if st.mode is not None
+        else None,
         "overlay_snapshot_uid": str(st.uid) if st.uid is not None else None,
         "overlay_snapshot_gid": str(st.gid) if st.gid is not None else None,
         # First 19 chars ("2026-01-02T15:30:00") so the Z vs +00:00 suffix
@@ -92,19 +95,23 @@ def overlay_stat_fields(st: FileStat) -> dict[str, MetaValue]:
     }
 
 
-async def run_overlay_snapshot_roundtrip(ws: Workspace,
-                                         fresh: S3VFS) -> dict[str, MetaValue]:
+async def run_overlay_snapshot_roundtrip(
+    ws: Workspace, fresh: S3VFS
+) -> dict[str, MetaValue]:
     # Overlay attrs live in namespace NODES, so they must survive a
     # snapshot even though the s3 VFS is rebuilt fresh at load
     # (s3 snapshots redact creds and require a mounts= override).
     await ws.shell("echo alpha > /data/f.txt")
-    await ws.shell("chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
-                   " && touch -t 202601021530 /data/f.txt")
+    await ws.shell(
+        "chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
+        " && touch -t 202601021530 /data/f.txt"
+    )
     snap = Path(tempfile.mkdtemp(prefix="mirage-meta-osnap-")) / "ws.tar"
     await ws.snapshot(str(snap))
     restored = await Workspace.load(str(snap), mounts={"/data": fresh})
-    st, _ = await restored.dispatch("stat",
-                                    PathSpec.from_str_path("/data/f.txt"))
+    st, _ = await restored.dispatch(
+        "stat", PathSpec.from_str_path("/data/f.txt")
+    )
     await restored.shell("rm /data/f.txt")
     shutil.rmtree(snap.parent)
     return overlay_stat_fields(st)
@@ -115,9 +122,11 @@ async def run_overlay_orphan_gc(config: S3Config) -> dict[str, MetaValue]:
     # the namespace. When the object is deleted out-of-band (another agent,
     # the raw API), the overlay is orphaned. Under `read: fresh`, a stat
     # the backend reports gone must GC that orphaned node.
-    ws = Workspace({"/data": S3VFS(config)},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.FRESH))
+    ws = Workspace(
+        {"/data": S3VFS(config)},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
     await ws.shell("echo alpha > /data/g.txt && chmod 601 /data/g.txt")
     before = ws.namespace.meta_for("/data/g.txt") is not None
     mount = ws.namespace.mount_for("/data/g.txt")
@@ -130,8 +139,10 @@ async def run_overlay_orphan_gc(config: S3Config) -> dict[str, MetaValue]:
 async def run_snapshot_roundtrip() -> dict[str, MetaValue]:
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
     await ws.shell("echo alpha > /data/f.txt")
-    await ws.shell("chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
-                   " && touch -t 202601021530 /data/f.txt")
+    await ws.shell(
+        "chmod 601 /data/f.txt && chown 500:dev /data/f.txt"
+        " && touch -t 202601021530 /data/f.txt"
+    )
     snap = Path(tempfile.mkdtemp(prefix="mirage-meta-snap-")) / "ws.tar"
     await ws.snapshot(str(snap))
     restored = await Workspace.load(str(snap))
@@ -148,16 +159,19 @@ async def main() -> None:
     host, port = server.get_host_and_port()
     endpoint = f"http://{host}:{port}"
     bucket = f"{BUCKET}-{uuid.uuid4().hex[:8]}"
-    config = S3Config(bucket=bucket,
-                      region="us-east-1",
-                      endpoint_url=endpoint,
-                      aws_access_key_id="testing",
-                      aws_secret_access_key="testing",
-                      path_style=True)
+    config = S3Config(
+        bucket=bucket,
+        region="us-east-1",
+        endpoint_url=endpoint,
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+        path_style=True,
+    )
     result: dict[str, MetaValue] = {}
     try:
-        boto3.client("s3", endpoint_url=endpoint,
-                     **CREDS).create_bucket(Bucket=bucket)
+        boto3.client("s3", endpoint_url=endpoint, **CREDS).create_bucket(
+            Bucket=bucket
+        )
         s3_ws = Workspace({"/data": S3VFS(config)}, mode=MountMode.WRITE)
         overlay = await run_overlay_snapshot_roundtrip(s3_ws, S3VFS(config))
         result.update(overlay)

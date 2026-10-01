@@ -16,12 +16,10 @@ import { z } from 'zod'
 import { Accessor } from './base.ts'
 import {
   MSGRAPH_CONFIG_SHAPE,
-  graphApi,
   resolveMsGraphConfig,
   type MsGraphConfig,
   type MsGraphConfigResolved,
 } from '../core/msgraph/config.ts'
-import { DriveLoc } from '../core/msgraph/drive.ts'
 import {
   type ConfigOf,
   parseConfigWithSchema,
@@ -117,72 +115,11 @@ function resolveOneDriveConfig(config: OneDriveConfig): OneDriveConfigResolved {
   return resolved
 }
 
-// Exactly one target may be named (resolveOneDriveConfig enforces it), so
-// the arms are alternatives rather than a precedence chain. Naming none
-// means the signed-in user's own drive, which is the only form that works
-// under delegated auth with no extra identifiers.
-export function oneDriveBase(config: OneDriveConfigResolved): string {
-  const api = graphApi(config)
-  if (config.driveId !== null) return `${api}/drives/${encodeURIComponent(config.driveId)}`
-  if (config.siteId !== null) return `${api}/sites/${encodeURIComponent(config.siteId)}/drive`
-  if (config.groupId !== null) return `${api}/groups/${encodeURIComponent(config.groupId)}/drive`
-  if (config.userId !== null) return `${api}/users/${encodeURIComponent(config.userId)}/drive`
-  return `${api}/me/drive`
-}
-
-function encodedPath(path: string): string {
-  return path
-    .split('/')
-    .filter((part) => part !== '')
-    .map(encodeURIComponent)
-    .join('/')
-}
-
-function fullPath(config: OneDriveConfigResolved, path: string): string {
-  const stripped = stripSlash(path)
-  if (config.keyPrefix !== '' && stripped !== '') return `${config.keyPrefix}/${stripped}`
-  return config.keyPrefix || stripped
-}
-
-// A drive item by its path from the drive root, NOT placed under the
-// mount's keyPrefix: this is how the prefix folders themselves are reached.
-export function oneDriveFullItemUrl(
-  config: OneDriveConfigResolved,
-  full: string,
-  action = '',
-): string {
-  const base = oneDriveBase(config)
-  const path = stripSlash(full)
-  if (path === '') return `${base}/root${action}`
-  const stem = `${base}/root:/${encodedPath(path)}`
-  return action !== '' ? `${stem}:${action}` : stem
-}
-
-export function oneDriveItemUrl(config: OneDriveConfigResolved, path: string, action = ''): string {
-  return oneDriveFullItemUrl(config, fullPath(config, path), action)
-}
-
-export function oneDriveRefPath(config: OneDriveConfigResolved, folder = ''): string {
-  const base = oneDriveBase(config).slice(graphApi(config).length)
-  const full = fullPath(config, folder)
-  return full !== '' ? `${base}/root:/${encodedPath(full)}` : `${base}/root:`
-}
-
 export class OneDriveAccessor extends Accessor {
   readonly config: OneDriveConfigResolved
 
   constructor(config: OneDriveConfig) {
     super()
     this.config = resolveOneDriveConfig(config)
-  }
-
-  loc(path: string, virtual = path): DriveLoc {
-    return new DriveLoc({
-      drive: '',
-      path: stripSlash(path),
-      virtual: stripSlash(virtual),
-      url: (item, action) => oneDriveItemUrl(this.config, item, action),
-      ref: (folder) => oneDriveRefPath(this.config, folder),
-    })
   }
 }

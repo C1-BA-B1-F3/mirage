@@ -22,8 +22,11 @@ from mirage.core.s3.copy import copy
 from mirage.core.s3.rename import rename
 from mirage.types import PathSpec
 from mirage.vfs.s3 import S3Config
-from tests.e2e.s3_mock import (MultiBucketSession, patch_s3_multi,
-                               patch_s3_session)
+from tests.e2e.s3_mock import (
+    MultiBucketSession,
+    patch_s3_multi,
+    patch_s3_session,
+)
 
 BUCKET = "test-bucket"
 
@@ -34,17 +37,16 @@ def _config(key_prefix: str | None = None) -> S3Config:
         region="us-east-1",
         aws_access_key_id="fake",
         aws_secret_access_key="fake",
-        **({
-            "key_prefix": key_prefix
-        } if key_prefix else {}),
+        **({"key_prefix": key_prefix} if key_prefix else {}),
     )
 
 
 def _spec(key: str) -> PathSpec:
-    return PathSpec(vfs_path=key,
-                    virtual=f"/{key}",
-                    directory="/" +
-                    key.rsplit("/", 1)[0] if "/" in key else "/")
+    return PathSpec(
+        vfs_path=key,
+        virtual=f"/{key}",
+        directory="/" + key.rsplit("/", 1)[0] if "/" in key else "/",
+    )
 
 
 def _run(fn, store: dict, config: S3Config):
@@ -64,8 +66,11 @@ def test_rename_onto_the_same_key_keeps_the_object():
     follows removes the only copy.
     """
     store = {"a.txt": b"precious"}
-    _run(lambda acc: rename(acc, _spec("a.txt"), _spec("a.txt")), store,
-         _config())
+    _run(
+        lambda acc: rename(acc, _spec("a.txt"), _spec("a.txt")),
+        store,
+        _config(),
+    )
     assert store == {"a.txt": b"precious"}
 
 
@@ -80,7 +85,8 @@ def test_rename_onto_the_same_key_issues_no_writes():
     stack = patch_s3_session(session)
     try:
         asyncio.run(
-            rename(S3Accessor(_config()), _spec("a.txt"), _spec("a.txt")))
+            rename(S3Accessor(_config()), _spec("a.txt"), _spec("a.txt"))
+        )
         calls = session.client().calls
         assert calls["copy_object"] == 0
         assert calls["delete_object"] == 0
@@ -90,35 +96,48 @@ def test_rename_onto_the_same_key_issues_no_writes():
 
 def test_copy_onto_the_same_key_is_a_no_op():
     store = {"a.txt": b"precious"}
-    _run(lambda acc: copy(acc, _spec("a.txt"), _spec("a.txt")), store,
-         _config())
+    _run(
+        lambda acc: copy(acc, _spec("a.txt"), _spec("a.txt")), store, _config()
+    )
     assert store == {"a.txt": b"precious"}
 
 
 def test_rename_onto_the_same_key_still_fails_when_absent():
     """A missing source must not be silently reported as moved."""
     with pytest.raises(FileNotFoundError):
-        _run(lambda acc: rename(acc, _spec("nope.txt"), _spec("nope.txt")), {},
-             _config())
+        _run(
+            lambda acc: rename(acc, _spec("nope.txt"), _spec("nope.txt")),
+            {},
+            _config(),
+        )
 
 
 def test_copy_onto_the_same_key_still_fails_when_absent():
     with pytest.raises(FileNotFoundError):
-        _run(lambda acc: copy(acc, _spec("nope.txt"), _spec("nope.txt")), {},
-             _config())
+        _run(
+            lambda acc: copy(acc, _spec("nope.txt"), _spec("nope.txt")),
+            {},
+            _config(),
+        )
 
 
 def test_distinct_keys_still_move():
     """The guard must not swallow a real rename."""
     store = {"a.txt": b"precious"}
-    _run(lambda acc: rename(acc, _spec("a.txt"), _spec("b.txt")), store,
-         _config())
+    _run(
+        lambda acc: rename(acc, _spec("a.txt"), _spec("b.txt")),
+        store,
+        _config(),
+    )
     assert store == {"b.txt": b"precious"}
 
 
 def test_guard_compares_resolved_keys_not_spelling():
     """Two paths that differ only by the mount's key prefix are one key."""
     store = {"pre/a.txt": b"precious"}
-    _run(lambda acc: rename(acc, _spec("a.txt"), _spec("a.txt")), store,
-         _config(key_prefix="pre/"))
+    _run(
+        lambda acc: rename(acc, _spec("a.txt"), _spec("a.txt")),
+        store,
+        _config(key_prefix="pre/"),
+    )
     assert store == {"pre/a.txt": b"precious"}

@@ -111,7 +111,6 @@ async function main(): Promise<void> {
       titleColumn: 'productDisplayName',
       blobColumn: 'image_bytes',
       blobExt: 'jpg',
-      textColumn: 'productDisplayName',
       vectorColumn: 'vector',
       searchLimit: 4,
     },

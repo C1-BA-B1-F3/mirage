@@ -20,14 +20,17 @@ from typing import Any
 from mirage.accessor.base import Accessor
 from mirage.cache.context import active_cache_manager
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.cache.read_through import (cache_aware_read_bytes,
-                                       cache_aware_read_stream)
-from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
-                                                          with_dir_guard,
-                                                          with_path_guards,
-                                                          with_policy_guard)
+from mirage.cache.read_through import (
+    cache_aware_read_bytes,
+    cache_aware_read_stream,
+)
+from mirage.commands.builtin.generic_bind.adapter import (
+    CommandIO,
+    with_dir_guard,
+    with_path_guards,
+    with_policy_guard,
+)
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
-from mirage.commands.builtin.generic_bind.provision import default_provision
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -35,18 +38,31 @@ from mirage.types import FileType, PathSpec
 from mirage.utils.errors import MISS_ERRORS, eisdir, enotdir
 
 
-def _cached_stat(stat: Callable[..., Any], accessor: Accessor, path: PathSpec,
-                 *args, **kwargs):
+def _cached_stat(
+    stat: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    *args,
+    **kwargs,
+):
     manager = active_cache_manager()
     return _cached_stat_result(manager, stat, accessor, path, *args, **kwargs)
 
 
-async def _cached_stat_result(manager, stat: Callable[...,
-                                                      Any], accessor: Accessor,
-                              path: PathSpec, *args, **kwargs):
+async def _cached_stat_result(
+    manager,
+    stat: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    *args,
+    **kwargs,
+):
     result = await stat(accessor, path, *args, **kwargs)
-    if (result is not None and getattr(result, "size", None) is None
-            and manager is not None):
+    if (
+        result is not None
+        and getattr(result, "size", None) is None
+        and manager is not None
+    ):
         # cached_size, not cached_bytes: this runs only where the backend
         # named no size -- the API mounts -- so gating it would turn a
         # stat into a backend stat.
@@ -78,27 +94,38 @@ def with_read_cache(ops: CommandIO) -> CommandIO:
     read_bytes = cache_aware_read_bytes(ops.read_bytes)
     return replace(
         with_stat_cache(ops),
-        read_stream=(functools.partial(stream_from_bytes, read_bytes)
-                     if ops.streams_bytes else cache_aware_read_stream(
-                         ops.read_stream)),
+        read_stream=(
+            functools.partial(stream_from_bytes, read_bytes)
+            if ops.streams_bytes
+            else cache_aware_read_stream(ops.read_stream)
+        ),
         read_bytes=read_bytes,
     )
 
 
-async def _slash_checked_stat(stat: Callable[..., Any], accessor: Accessor,
-                              path: PathSpec, *args, **kwargs):
+async def _slash_checked_stat(
+    stat: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    *args,
+    **kwargs,
+):
     result = await stat(accessor, path, *args, **kwargs)
-    if (path.raw_path.endswith("/")
-            and getattr(result, "type", None) != FileType.DIRECTORY):
+    if (
+        path.raw_path.endswith("/")
+        and getattr(result, "type", None) != FileType.DIRECTORY
+    ):
         raise enotdir(path)
     return result
 
 
-async def _slash_checked_readdir(readdir: Callable[..., Any],
-                                 stat: Callable[..., Any],
-                                 accessor: Accessor,
-                                 path: PathSpec,
-                                 index: IndexCacheStore = NULL_INDEX):
+async def _slash_checked_readdir(
+    readdir: Callable[..., Any],
+    stat: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+):
     # A listing never reaches the stat wrapper, and on a keyed store it
     # cannot tell "not a directory" from "no keys under this prefix" on
     # its own: `ls flink/` answered with an empty listing and exit 0
@@ -125,8 +152,13 @@ async def _slash_checked_readdir(readdir: Callable[..., Any],
     return await readdir(accessor, path, index)
 
 
-async def _slash_checked_write(write: Callable[..., Any], accessor: Accessor,
-                               path: PathSpec, *args, **kwargs):
+async def _slash_checked_write(
+    write: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    *args,
+    **kwargs,
+):
     # open(2) with O_CREAT refuses a slash-terminated name outright,
     # before looking anything up: `x/` can only ever be a directory, so
     # there is nothing to create and nothing to truncate. GNU tee and
@@ -167,22 +199,26 @@ def with_slash_guard(ops: CommandIO) -> CommandIO:
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
-    guarded = replace(ops,
-                      stat=functools.partial(_slash_checked_stat, ops.stat),
-                      readdir=functools.partial(_slash_checked_readdir,
-                                                ops.readdir, ops.stat))
+    guarded = replace(
+        ops,
+        stat=functools.partial(_slash_checked_stat, ops.stat),
+        readdir=functools.partial(
+            _slash_checked_readdir, ops.readdir, ops.stat
+        ),
+    )
     if ops.write is not None:
-        guarded = replace(guarded,
-                          write=functools.partial(_slash_checked_write,
-                                                  ops.write))
+        guarded = replace(
+            guarded, write=functools.partial(_slash_checked_write, ops.write)
+        )
     if ops.append is not None:
-        guarded = replace(guarded,
-                          append=functools.partial(_slash_checked_write,
-                                                   ops.append))
+        guarded = replace(
+            guarded, append=functools.partial(_slash_checked_write, ops.append)
+        )
     if ops.truncate is not None:
-        guarded = replace(guarded,
-                          truncate=functools.partial(_slash_checked_write,
-                                                     ops.truncate))
+        guarded = replace(
+            guarded,
+            truncate=functools.partial(_slash_checked_write, ops.truncate),
+        )
     return guarded
 
 
@@ -202,8 +238,13 @@ def with_stat_cache(ops: CommandIO) -> CommandIO:
     return replace(ops, stat=functools.partial(_cached_stat, ops.stat))
 
 
-async def _probe_answered_stat(stat: Callable[..., Any], accessor: Accessor,
-                               path: PathSpec, *args, **kwargs):
+async def _probe_answered_stat(
+    stat: Callable[..., Any],
+    accessor: Accessor,
+    path: PathSpec,
+    *args,
+    **kwargs,
+):
     # The freshness probe already asked the backend this command; asking
     # again resolves through listings fresh has not re-checked yet.
     manager = active_cache_manager()
@@ -244,11 +285,15 @@ def _write_wraps(ops: CommandIO) -> CommandIO:
     return with_slash_guard(ops)
 
 
-async def _run_with_namespace_globs(ops: CommandIO,
-                                    finish: Callable[[CommandIO], CommandIO],
-                                    fn: Callable[..., Any], accessor: Accessor,
-                                    paths: list[PathSpec], texts: list[str],
-                                    opts: CommandOpts) -> Any:
+async def _run_with_namespace_globs(
+    ops: CommandIO,
+    finish: Callable[[CommandIO], CommandIO],
+    fn: Callable[..., Any],
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> Any:
     """Run a builder with an adapter that carries the invocation's
     namespace facts below every guard.
 
@@ -288,14 +333,16 @@ async def _run_with_namespace_globs(ops: CommandIO,
     stamped = replace(
         ops,
         glob_children=children,
-        glob_target_stat=(links.target_stat if links is not None else None))
+        glob_target_stat=(links.target_stat if links is not None else None),
+    )
     # The policy guard sits outside the cache wraps (`finish`) so a
     # coded pre_ops deny fires before a warm serve, the dispatcher's
     # own order at the op door. A probe answer is served below the path
     # guards (`with_probe_answers` on the raw adapter), so they still
     # judge every path before it.
-    bound = with_dir_guard(with_policy_guard(finish(
-        with_path_guards(stamped))))
+    bound = with_dir_guard(
+        with_policy_guard(finish(with_path_guards(stamped)))
+    )
     return await fn(bound, accessor, paths, texts, opts)
 
 
@@ -304,7 +351,6 @@ def make_generic_commands(
     ops: CommandIO,
     *,
     overrides: set[str] | None = None,
-    provision_overrides: dict[str, Callable[..., Any]] | None = None,
     ops_overrides: dict[str, CommandIO] | None = None,
 ) -> list[Callable[..., Any]]:
     """Generate the default command set for a backend from its ops.
@@ -314,36 +360,28 @@ def make_generic_commands(
         ops (CommandIO): the backend's IO adapter.
         overrides (set[str] | None): command names to skip (the backend
             ships its own wrapper for these).
-        provision_overrides (dict[str, Callable] | None): per-command
-            provision functions that replace the catalog default (for a
-            backend whose cost model genuinely differs).
         ops_overrides (dict[str, CommandIO] | None): per-command adapters
             that replace the shared adapter when one command needs a cheaper
             backend operation.
     """
     skip = overrides or set()
-    prov_over = provision_overrides or {}
     ops_over = ops_overrides or {}
     # A name no builder has does nothing at all, so a misspelled override
     # left the generic registered beside the bespoke one, and an override
     # for a command the table never had (mem0's `search`) read as if it
     # displaced something. Refused at registration, which is import time.
     known = {b.name for b in BUILDERS}
-    unknown = sorted((set(skip) | set(prov_over) | set(ops_over)) - known)
+    unknown = sorted((set(skip) | set(ops_over)) - known)
     if unknown:
-        raise ValueError(f"make_generic_commands({vfs!r}): no generic "
-                         f"builder named {', '.join(unknown)}")
+        raise ValueError(
+            f"make_generic_commands({vfs!r}): no generic "
+            f"builder named {', '.join(unknown)}"
+        )
     commands: list[Callable[..., Any]] = []
     for b in BUILDERS:
         if b.name in skip:
             continue
         raw = ops_over.get(b.name, ops)
-        # Path guards are applied per invocation, over the stamped
-        # adapter, inside _run_with_namespace_globs; this registration
-        # copy exists for provision estimates, which bind here and read
-        # the session at call time. The raw adapter stays untouched for
-        # the ops tables, whose door does its own enforcement.
-        base_ops = with_path_guards(raw)
         finish: Callable[[CommandIO], CommandIO]
         if b.read:
             finish = _read_wraps
@@ -353,27 +391,23 @@ def make_generic_commands(
             finish = _write_wraps
         # A per-command adapter with its own stat (dify's light ls) would
         # otherwise print the probe's full stat under fresh only.
-        answered = (with_probe_answers(raw)
-                    if raw.stat is ops.stat and not b.write else raw)
-        bound = functools.partial(_run_with_namespace_globs, answered, finish,
-                                  b.fn)
-        provision: Callable[..., Any] | None
-        if b.name in prov_over:
-            provision = prov_over[b.name]
-        elif b.provision is not None:
-            provision = b.provision(base_ops.stat)
-        else:
-            provision = default_provision(b.name,
-                                          base_ops.stat,
-                                          resolve_glob=base_ops.resolve_glob,
-                                          readdir=base_ops.readdir)
-        agg = b.aggregate if base_ops.local else None
+        answered = (
+            with_probe_answers(raw)
+            if raw.stat is ops.stat and not b.write
+            else raw
+        )
+        bound = functools.partial(
+            _run_with_namespace_globs, answered, finish, b.fn
+        )
+        agg = b.aggregate if raw.local else None
         commands.append(
-            command(b.name,
-                    vfs=vfs,
-                    spec=SPECS[b.name],
-                    provision=provision,
-                    aggregate=agg,
-                    write=b.write,
-                    path_guarded=True)(bound))
+            command(
+                b.name,
+                vfs=vfs,
+                spec=SPECS[b.name],
+                aggregate=agg,
+                write=b.write,
+                path_guarded=True,
+            )(bound)
+        )
     return commands

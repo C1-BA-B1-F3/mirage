@@ -15,10 +15,19 @@
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.metadata.metadata import (
-    apply_attrs, apply_link_attrs, parse_owner, resolve_operand, walk_owned)
-from mirage.workspace.executor.builtins.shared import (expand_operands, fail,
-                                                       finish, operand_text,
-                                                       split_value_flags)
+    apply_attrs,
+    apply_link_attrs,
+    parse_owner,
+    resolve_operand,
+    walk_owned,
+)
+from mirage.workspace.executor.builtins.shared import (
+    expand_operands,
+    fail,
+    finish,
+    operand_text,
+    split_value_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 
@@ -56,35 +65,33 @@ async def handle_chown(
     errors: list[str] = []
     for target in await expand_operands(namespace, operands[1:]):
         if no_deref and namespace.is_link(target.virtual):
-            await apply_link_attrs(dispatch,
-                                   "chown",
-                                   target,
-                                   errors,
-                                   uid=uid,
-                                   gid=gid)
+            await apply_link_attrs(
+                dispatch, "chown", target, errors, uid=uid, gid=gid
+            )
             continue
-        found = await resolve_operand(namespace, dispatch, "chown", target,
-                                      errors)
+        found = await resolve_operand(
+            namespace, dispatch, "chown", target, errors
+        )
         if found is None:
             continue
         resolved, stat = found
         if recursive:
-            paths, links = await walk_owned(namespace, dispatch, resolved,
-                                            stat)
+            paths, links = await walk_owned(
+                namespace, dispatch, resolved, stat
+            )
         else:
             paths, links = [resolved], []
         for path in paths:
-            await apply_attrs(dispatch,
-                              "chown",
-                              path,
-                              errors,
-                              uid=uid,
-                              gid=gid)
+            await apply_attrs(
+                dispatch, "chown", path, errors, uid=uid, gid=gid
+            )
         for link in links:
-            await apply_link_attrs(dispatch,
-                                   "chown",
-                                   PathSpec.from_str_path(link),
-                                   errors,
-                                   uid=uid,
-                                   gid=gid)
+            await apply_link_attrs(
+                dispatch,
+                "chown",
+                PathSpec.from_str_path(link),
+                errors,
+                uid=uid,
+                gid=gid,
+            )
     return finish("chown", errors)

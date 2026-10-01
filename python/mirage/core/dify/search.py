@@ -7,13 +7,21 @@ from mirage.core.dify.client import dify_post
 from mirage.core.dify.read import segment_text
 from mirage.core.dify.tree import DIFY_TREE, SLUG_NOUN
 from mirage.core.slug_tree.rows import normalize_slug
-from mirage.core.slug_tree.search import (hit_lines, search_scope,
-                                          target_entries, validate_query)
+from mirage.core.slug_tree.search import (
+    hit_lines,
+    search_scope,
+    target_entries,
+    validate_query,
+)
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.score import format_score
-from mirage.vfs.search import (float_option, int_option, text_option,
-                               validate_options)
+from mirage.vfs.search import (
+    float_option,
+    int_option,
+    text_option,
+    validate_options,
+)
 from mirage.vfs.types import SearchQuery
 
 logger = logging.getLogger(__name__)
@@ -49,7 +57,8 @@ async def search_segments(
     has_name_based_target = False
     if paths:
         conditions, has_name_based_target = await metadata_conditions(
-            accessor, paths, index)
+            accessor, paths, index
+        )
         if not conditions:
             return b""
         retrieval_model["metadata_filtering_conditions"] = {
@@ -59,22 +68,24 @@ async def search_segments(
     response = await dify_post(
         accessor,
         f"/datasets/{accessor.config.dataset_id}/retrieve",
-        {
-            "query": query,
-            "retrieval_model": retrieval_model
-        },
+        {"query": query, "retrieval_model": retrieval_model},
     )
-    output = records_to_bytes(response_records(response.get("records")),
-                              accessor.config.slug_metadata_name, mount_prefix)
+    output = records_to_bytes(
+        response_records(response.get("records")),
+        accessor.config.slug_metadata_name,
+        mount_prefix,
+    )
     if paths and has_name_based_target and output == b"":
         logger.debug(
             "Dify scoped search returned no records for name-based documents; "
-            "check that Built-in Fields are enabled in Dify dataset metadata.")
+            "check that Built-in Fields are enabled in Dify dataset metadata."
+        )
     return output
 
 
-def validate_args(query: str, method: str, top_k: int,
-                  threshold: float) -> str:
+def validate_args(
+    query: str, method: str, top_k: int, threshold: float
+) -> str:
     validate_query(query, top_k)
     if threshold < 0 or threshold > 1:
         raise ValueError("search: threshold must be in [0, 1]")
@@ -100,17 +111,21 @@ async def metadata_conditions(
             name_values.append(entry.name)
     conditions: list[dict[str, Any]] = []
     if slug_values:
-        conditions.append({
-            "name": accessor.config.slug_metadata_name,
-            "comparison_operator": "in",
-            "value": sorted(slug_values),
-        })
+        conditions.append(
+            {
+                "name": accessor.config.slug_metadata_name,
+                "comparison_operator": "in",
+                "value": sorted(slug_values),
+            }
+        )
     if name_values:
-        conditions.append({
-            "name": "document_name",
-            "comparison_operator": "in",
-            "value": sorted(name_values),
-        })
+        conditions.append(
+            {
+                "name": "document_name",
+                "comparison_operator": "in",
+                "value": sorted(name_values),
+            }
+        )
     return conditions, bool(name_values)
 
 
@@ -176,8 +191,9 @@ def record_path(
     try:
         normalized = normalize_slug(raw_path, SLUG_NOUN)
     except ValueError:
-        logger.debug("Skipping Dify record with invalid slug/name: %r",
-                     raw_path)
+        logger.debug(
+            "Skipping Dify record with invalid slug/name: %r", raw_path
+        )
         return None
     prefix = mount_prefix.rstrip("/")
     if not prefix:
@@ -192,12 +208,16 @@ def document_path(
     metadata = document.get("doc_metadata")
     if isinstance(metadata, list):
         for item in metadata:
-            if (isinstance(item, dict)
-                    and item.get("name") == slug_metadata_name
-                    and item.get("value") is not None):
+            if (
+                isinstance(item, dict)
+                and item.get("name") == slug_metadata_name
+                and item.get("value") is not None
+            ):
                 return str(item["value"])
-    if isinstance(metadata,
-                  dict) and metadata.get(slug_metadata_name) is not None:
+    if (
+        isinstance(metadata, dict)
+        and metadata.get(slug_metadata_name) is not None
+    ):
         return str(metadata[slug_metadata_name])
     name = document.get("name")
     if name is None:
@@ -205,27 +225,35 @@ def document_path(
     return str(name)
 
 
-async def search_many(accessor: DifyAccessor,
-                      paths: list[PathSpec],
-                      query: SearchQuery,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
-    validate_options(query, {'top_k', 'method', 'threshold'})
+async def search_many(
+    accessor: DifyAccessor,
+    paths: list[PathSpec],
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
+    validate_options(query, {"top_k", "method", "threshold"})
     top_k = int_option(query, "top_k", 10)
     method = text_option(query, "method", "semantic")
     threshold = float_option(query, "threshold", 0.0)
     targets, prefix = await search_scope(DIFY_TREE, accessor, paths, index)
-    return hit_lines(await search_segments(accessor,
-                                           query.query,
-                                           targets,
-                                           index,
-                                           top_k=top_k,
-                                           mount_prefix=prefix,
-                                           method=method,
-                                           threshold=threshold))
+    return hit_lines(
+        await search_segments(
+            accessor,
+            query.query,
+            targets,
+            index,
+            top_k=top_k,
+            mount_prefix=prefix,
+            method=method,
+            threshold=threshold,
+        )
+    )
 
 
-async def search_resource(accessor: DifyAccessor,
-                          path: PathSpec,
-                          query: SearchQuery,
-                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def search_resource(
+    accessor: DifyAccessor,
+    path: PathSpec,
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     return await search_many(accessor, [path], query, index)

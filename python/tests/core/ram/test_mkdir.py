@@ -26,7 +26,8 @@ async def test_mkdir():
 
     a = RAMAccessor(s)
     await mkdir(
-        a, PathSpec(vfs_path="newdir", virtual="/newdir", directory="/newdir"))
+        a, PathSpec(vfs_path="newdir", virtual="/newdir", directory="/newdir")
+    )
     assert "/newdir" in s.dirs
     assert "/newdir" in s.modified
 
@@ -41,9 +42,12 @@ async def test_mkdir_parent_not_found():
     with pytest.raises(FileNotFoundError, match="/no/parent"):
         await mkdir(
             a,
-            PathSpec(vfs_path="no/parent",
-                     virtual="/no/parent",
-                     directory="/no/parent"))
+            PathSpec(
+                vfs_path="no/parent",
+                virtual="/no/parent",
+                directory="/no/parent",
+            ),
+        )
     assert "/no/parent" not in s.dirs
 
 
@@ -56,9 +60,12 @@ async def test_mkdir_under_a_plain_file_is_not_a_directory():
     with pytest.raises(NotADirectoryError):
         await mkdir(
             a,
-            PathSpec(vfs_path="plain/sub",
-                     virtual="/plain/sub",
-                     directory="/plain/sub"))
+            PathSpec(
+                vfs_path="plain/sub",
+                virtual="/plain/sub",
+                directory="/plain/sub",
+            ),
+        )
     assert "/plain/sub" not in s.dirs
 
 
@@ -71,9 +78,12 @@ async def test_mkdir_deep_under_a_plain_file_is_not_a_directory():
     with pytest.raises(NotADirectoryError):
         await mkdir(
             a,
-            PathSpec(vfs_path="plain/sub/deeper",
-                     virtual="/plain/sub/deeper",
-                     directory="/plain/sub/deeper"))
+            PathSpec(
+                vfs_path="plain/sub/deeper",
+                virtual="/plain/sub/deeper",
+                directory="/plain/sub/deeper",
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -99,11 +109,15 @@ async def test_mkdir_p_across_a_file_names_the_component():
 
     a = RAMAccessor(s)
     with pytest.raises(NotADirectoryError) as excinfo:
-        await mkdir(a,
-                    PathSpec(vfs_path="g/a.txt/sub",
-                             virtual="/g/a.txt/sub",
-                             directory="/g/a.txt/sub"),
-                    parents=True)
+        await mkdir(
+            a,
+            PathSpec(
+                vfs_path="g/a.txt/sub",
+                virtual="/g/a.txt/sub",
+                directory="/g/a.txt/sub",
+            ),
+            parents=True,
+        )
     # GNU quotes the component it tripped on, not the operand, and the file
     # it collided with is left alone.
     assert str(excinfo.value) == "/g/a.txt"
@@ -119,11 +133,15 @@ async def test_mkdir_p_stops_at_the_first_bad_component():
 
     a = RAMAccessor(s)
     with pytest.raises(NotADirectoryError) as excinfo:
-        await mkdir(a,
-                    PathSpec(vfs_path="a.txt/x/y/z",
-                             virtual="/a.txt/x/y/z",
-                             directory="/a.txt/x/y/z"),
-                    parents=True)
+        await mkdir(
+            a,
+            PathSpec(
+                vfs_path="a.txt/x/y/z",
+                virtual="/a.txt/x/y/z",
+                directory="/a.txt/x/y/z",
+            ),
+            parents=True,
+        )
     assert str(excinfo.value) == "/a.txt"
 
 
@@ -135,11 +153,11 @@ async def test_mkdir_p_onto_a_file_target_is_eexist():
 
     a = RAMAccessor(s)
     with pytest.raises(FileExistsError, match="/a.txt"):
-        await mkdir(a,
-                    PathSpec(vfs_path="a.txt",
-                             virtual="/a.txt",
-                             directory="/a.txt"),
-                    parents=True)
+        await mkdir(
+            a,
+            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt"),
+            parents=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -151,8 +169,8 @@ async def test_mkdir_refuses_an_existing_file():
     a = RAMAccessor(s)
     with pytest.raises(FileExistsError, match="/a.txt"):
         await mkdir(
-            a, PathSpec(vfs_path="a.txt", virtual="/a.txt",
-                        directory="/a.txt"))
+            a, PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt")
+        )
     assert s.files["/a.txt"] == b"hi"
 
 
@@ -161,11 +179,11 @@ async def test_mkdir_with_parents():
     s = RAMStore()
 
     a = RAMAccessor(s)
-    await mkdir(a,
-                PathSpec(vfs_path="a/b/c",
-                         virtual="/a/b/c",
-                         directory="/a/b/c"),
-                parents=True)
+    await mkdir(
+        a,
+        PathSpec(vfs_path="a/b/c", virtual="/a/b/c", directory="/a/b/c"),
+        parents=True,
+    )
     assert "/a" in s.dirs
     assert "/a/b" in s.dirs
     assert "/a/b/c" in s.dirs

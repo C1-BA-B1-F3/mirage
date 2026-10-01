@@ -3,11 +3,15 @@ import pytest
 from mirage.io.stream import materialize
 from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ExitSignal, ReturnSignal
+from mirage.workspace.executor.builtins.control import (
+    handle_colon,
+    handle_exit,
+    handle_false,
+    handle_return,
+    handle_true,
+    loop_levels,
+)
 from mirage.workspace.session.session import SessionState
-
-from mirage.workspace.executor.builtins.control import (  # isort: skip
-    handle_colon, handle_exit, handle_false, handle_return, handle_true,
-    loop_levels)
 
 
 def make_session() -> SessionState:
@@ -64,8 +68,9 @@ async def test_return_in_source_raises_signal():
 
 @pytest.mark.asyncio
 async def test_return_too_many_args_fails_without_signal():
-    _, io, _ = await handle_return(["1", "2"], make_session(),
-                                   make_function_stack())
+    _, io, _ = await handle_return(
+        ["1", "2"], make_session(), make_function_stack()
+    )
     assert io.exit_code == 1
     assert io.stderr == b"return: too many arguments\n"
 
@@ -115,14 +120,26 @@ async def test_exit_too_many_arguments_does_not_exit():
 @pytest.mark.asyncio
 async def test_true_false_colon_fixed_status():
     out, io, node = await handle_true()
-    assert (out, io.exit_code, node.command, node.exit_code) == (None, 0,
-                                                                 "true", 0)
+    assert (out, io.exit_code, node.command, node.exit_code) == (
+        None,
+        0,
+        "true",
+        0,
+    )
     out, io, node = await handle_colon()
-    assert (out, io.exit_code, node.command, node.exit_code) == (None, 0, ":",
-                                                                 0)
+    assert (out, io.exit_code, node.command, node.exit_code) == (
+        None,
+        0,
+        ":",
+        0,
+    )
     out, io, node = await handle_false()
-    assert (out, io.exit_code, node.command, node.exit_code) == (None, 1,
-                                                                 "false", 1)
+    assert (out, io.exit_code, node.command, node.exit_code) == (
+        None,
+        1,
+        "false",
+        1,
+    )
 
 
 def test_loop_levels():

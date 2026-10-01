@@ -71,10 +71,9 @@ def dead_source() -> FetchFn:
 
 
 def _ws(env, **kw) -> Workspace:
-    return Workspace({"/": RAMVFS()},
-                     mode=kw.pop("mode", MountMode.WRITE),
-                     env=env,
-                     **kw)
+    return Workspace(
+        {"/": RAMVFS()}, mode=kw.pop("mode", MountMode.WRITE), env=env, **kw
+    )
 
 
 @pytest.mark.asyncio
@@ -114,17 +113,12 @@ async def test_whole_env_command_fetches_an_unspelled_name():
 async def test_eager_joins_every_line_a_lazy_sibling_waits():
     calls, fetch = counting_source({"E": "ev", "L": "lv"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "E": {
-            "from": "fake",
-            "ref": "re",
-            "fetch": "eager"
-        },
-        "L": {
-            "from": "fake",
-            "ref": "rl"
-        },
-    })
+    ws = _ws(
+        {
+            "E": {"from": "fake", "ref": "re", "fetch": "eager"},
+            "L": {"from": "fake", "ref": "rl"},
+        }
+    )
     try:
         assert (await ws.shell("echo hi")).exit_code == 0
         assert calls == ["re"]
@@ -139,18 +133,12 @@ async def test_eager_joins_every_line_a_lazy_sibling_waits():
 async def test_two_names_one_secret_is_one_fetch():
     calls, fetch = counting_source({"user": "u", "pass": "p"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "DB_USER": {
-            "from": "fake",
-            "ref": "db",
-            "key": "user"
-        },
-        "DB_PASS": {
-            "from": "fake",
-            "ref": "db",
-            "key": "pass"
-        },
-    })
+    ws = _ws(
+        {
+            "DB_USER": {"from": "fake", "ref": "db", "key": "user"},
+            "DB_PASS": {"from": "fake", "ref": "db", "key": "pass"},
+        }
+    )
     try:
         io = await ws.shell("echo $DB_USER:$DB_PASS")
         assert (await io.stdout_str()) == "u:p\n"
@@ -204,14 +192,13 @@ async def test_per_session_env_is_that_sessions_alone():
 async def test_guest_runtime_reads_the_fetched_value():
     calls, fetch = counting_source({"GITHUB_TOKEN": "gt"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({"GITHUB_TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }},
-             mode=MountMode.EXEC)
+    ws = _ws(
+        {"GITHUB_TOKEN": {"from": "fake", "ref": "r"}}, mode=MountMode.EXEC
+    )
     try:
         io = await ws.shell(
-            "python3 -c 'import os; print(os.environ[\"GITHUB_TOKEN\"])'")
+            "python3 -c 'import os; print(os.environ[\"GITHUB_TOKEN\"])'"
+        )
         assert io.exit_code == 0
         assert (await io.stdout_str()) == "gt\n"
         assert calls == ["r"]
@@ -228,8 +215,9 @@ async def test_readonly_preset_refuses_with_bash_wording():
         assert io.stderr == b"bash: EDITOR: readonly variable\n"
         io = await ws.shell("unset EDITOR")
         assert io.exit_code == 1
-        assert io.stderr == (b"bash: unset: EDITOR: cannot unset: "
-                             b"readonly variable\n")
+        assert io.stderr == (
+            b"bash: unset: EDITOR: cannot unset: readonly variable\n"
+        )
         io = await ws.shell("echo $EDITOR")
         assert (await io.stdout_str()) == "vi\n"
     finally:
@@ -243,10 +231,11 @@ async def test_export_p_renders_an_unfetched_managed_name_unset():
     ws = _ws(None)
     try:
         session = ws.get_session(ws.default_session_id)
-        session.vars["T"] = ShellVar(None,
-                                     frozenset({VarAttr.EXPORT}),
-                                     managed=ManagedRef(
-                                         "fake", "r", "T", False))
+        session.vars["T"] = ShellVar(
+            None,
+            frozenset({VarAttr.EXPORT}),
+            managed=ManagedRef("fake", "r", "T", False),
+        )
         io = await ws.shell("export -p")
         assert "declare -x T\n" in (await io.stdout_str())
     finally:
@@ -352,8 +341,13 @@ async def test_mutating_forms_do_not_render_the_environment():
     register_secrets("fake", FakeConfig, fetch)
     ws = _ws({"TOKEN": {"from": "fake", "ref": "r"}})
     try:
-        for line in ("set -u", "set +u", "declare -x OTHER=1",
-                     "export OTHER=2", "printenv PATH"):
+        for line in (
+            "set -u",
+            "set +u",
+            "declare -x OTHER=1",
+            "export OTHER=2",
+            "printenv PATH",
+        ):
             await ws.shell(line)
         assert calls == []
         io = await ws.shell("declare -p TOKEN")
@@ -383,7 +377,7 @@ async def test_hidden_managed_name_never_fetches():
     ws = _ws({"TOKEN": {"from": "fake", "ref": "r", "fetch": "eager"}})
     try:
         session = ws.get_session(ws.default_session_id)
-        session.hidden_vars = HiddenVars(names=("TOKEN", ))
+        session.hidden_vars = HiddenVars(names=("TOKEN",))
         io = await ws.shell("env")
         assert io.exit_code == 0
         assert "TOKEN" not in (await io.stdout_str())
@@ -446,13 +440,15 @@ async def test_alias_body_fills_on_invocation():
 async def test_alias_rest_is_not_a_managed_read():
     calls, fetch = counting_source({"token": "v"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "__mirage_alias_rest__": {
-            "from": "fake",
-            "ref": "r",
-            "key": "token"
-        },
-    })
+    ws = _ws(
+        {
+            "__mirage_alias_rest__": {
+                "from": "fake",
+                "ref": "r",
+                "key": "token",
+            },
+        }
+    )
     try:
         await ws.shell("shopt -s expand_aliases")
         await ws.shell("alias ll='echo hi'")
@@ -537,8 +533,9 @@ async def test_body_read_before_its_mask_fetches():
     register_secrets("fake", FakeConfig, fetch)
     ws = _ws({"TOKEN": {"from": "fake", "ref": "r"}})
     try:
-        io = await ws.shell('f() { echo "pre:$TOKEN"; local TOKEN=shadow; }; f'
-                            )
+        io = await ws.shell(
+            'f() { echo "pre:$TOKEN"; local TOKEN=shadow; }; f'
+        )
         assert (await io.stdout_str()) == "pre:t0\n"
         assert calls == ["r"]
     finally:
@@ -824,18 +821,12 @@ async def test_arith_chase_follows_a_dynamic_assignment():
 async def test_arith_chase_replans_after_a_fetch():
     calls, fetch = counting_source({"A": "B", "B": "7"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "A": {
-            "from": "fake",
-            "ref": "ra",
-            "key": "A"
-        },
-        "B": {
-            "from": "fake",
-            "ref": "rb",
-            "key": "B"
-        },
-    })
+    ws = _ws(
+        {
+            "A": {"from": "fake", "ref": "ra", "key": "A"},
+            "B": {"from": "fake", "ref": "rb", "key": "B"},
+        }
+    )
     try:
         # A's fetched value names B, unknowable before the fetch: the
         # second planning pass is what reaches B.
@@ -925,7 +916,6 @@ async def test_prior_line_nameref_fetches_its_target():
 
 
 class DenyNamed(Policy):
-
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -936,10 +926,12 @@ class DenyNamed(Policy):
 
 
 def _policed_ws(deny: str, env) -> Workspace:
-    return Workspace({"/": RAMVFS()},
-                     mode=MountMode.WRITE,
-                     env=env,
-                     policies=[DenyNamed(deny)])
+    return Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        env=env,
+        policies=[DenyNamed(deny)],
+    )
 
 
 @pytest.mark.asyncio
@@ -980,7 +972,6 @@ async def test_dynamic_word_deny_fetches_before_the_value_gate():
 
 
 class AskNamed(Policy):
-
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -991,11 +982,13 @@ class AskNamed(Policy):
 
 
 def _asking_ws(name: str, env, on_ask=None) -> Workspace:
-    return Workspace({"/": RAMVFS()},
-                     mode=MountMode.WRITE,
-                     env=env,
-                     policies=[AskNamed(name)],
-                     on_ask=on_ask)
+    return Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        env=env,
+        policies=[AskNamed(name)],
+        on_ask=on_ask,
+    )
 
 
 @pytest.mark.asyncio
@@ -1010,10 +1003,9 @@ async def test_asked_literal_line_fetches_only_after_approval():
         calls.append("ask")
         return dataclasses.replace(record, outcome=Outcome.ALLOW)
 
-    ws = _asking_ws("printenv", {"TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }}, approve)
+    ws = _asking_ws(
+        "printenv", {"TOKEN": {"from": "fake", "ref": "r"}}, approve
+    )
     try:
         io = await ws.shell("printenv TOKEN")
         assert (await io.stdout_str()) == "t0\n"
@@ -1034,10 +1026,9 @@ async def test_asked_literal_line_denied_never_fetches():
         calls.append("ask")
         return dataclasses.replace(record, outcome=Outcome.DENY)
 
-    ws = _asking_ws("printenv", {"TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }}, refuse)
+    ws = _asking_ws(
+        "printenv", {"TOKEN": {"from": "fake", "ref": "r"}}, refuse
+    )
     try:
         io = await ws.shell("printenv TOKEN")
         assert io.exit_code == 126
@@ -1061,7 +1052,7 @@ async def test_asked_literal_line_left_pending_never_fetches():
         assert io.stderr == b"printenv: Permission denied\n"
         assert io.refusal is not None and io.refusal.kind == "pending"
         assert calls == []
-        pending, = ws.decisions.pending()
+        (pending,) = ws.decisions.pending()
         await ws.decisions.answer(pending.id, Outcome.ALLOW, Scope.ONCE)
         again = await ws.shell("printenv TOKEN")
         assert (await again.stdout_str()) == "t0\n"
@@ -1157,18 +1148,17 @@ async def test_defining_a_denied_body_is_not_judged():
     calls, fetch = counting_source({"TOKEN": "t0", "E": "ev"})
     register_secrets("fake", FakeConfig, fetch)
     ws = _policed_ws(
-        "printenv", {
-            "TOKEN": {
-                "from": "fake",
-                "ref": "r"
-            },
+        "printenv",
+        {
+            "TOKEN": {"from": "fake", "ref": "r"},
             "EAGER": {
                 "from": "fake",
                 "ref": "re",
                 "key": "E",
-                "fetch": "eager"
+                "fetch": "eager",
             },
-        })
+        },
+    )
     try:
         io = await ws.shell("g() { printenv TOKEN; }")
         assert io.exit_code == 0
@@ -1186,10 +1176,9 @@ async def test_asked_function_body_fetches_only_after_approval():
         calls.append("ask")
         return dataclasses.replace(record, outcome=Outcome.ALLOW)
 
-    ws = _asking_ws("printenv", {"TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }}, approve)
+    ws = _asking_ws(
+        "printenv", {"TOKEN": {"from": "fake", "ref": "r"}}, approve
+    )
     try:
         await ws.shell("f() { printenv TOKEN; }")
         io = await ws.shell("f")
@@ -1209,10 +1198,9 @@ async def test_asked_function_body_denied_never_fetches():
         calls.append("ask")
         return dataclasses.replace(record, outcome=Outcome.DENY)
 
-    ws = _asking_ws("printenv", {"TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }}, refuse)
+    ws = _asking_ws(
+        "printenv", {"TOKEN": {"from": "fake", "ref": "r"}}, refuse
+    )
     try:
         await ws.shell("f() { printenv TOKEN; }")
         io = await ws.shell("f")
@@ -1261,56 +1249,51 @@ async def _cli_probe(inv):
 
 
 def _shared_cli_spec() -> CLISpec:
-    return CLISpec(name="mycli",
-                   options=(Option(long="--token",
-                                   type="str",
-                                   env="CLI_SHARED"), ),
-                   subcommands=(CLISpec(name="alpha",
-                                        fn=_cli_probe,
-                                        options=(Option(
-                                            long="--a",
-                                            type="str",
-                                            env="CLI_SHARED"), )), ))
+    return CLISpec(
+        name="mycli",
+        options=(Option(long="--token", type="str", env="CLI_SHARED"),),
+        subcommands=(
+            CLISpec(
+                name="alpha",
+                fn=_cli_probe,
+                options=(Option(long="--a", type="str", env="CLI_SHARED"),),
+            ),
+        ),
+    )
 
 
 def _cli_spec() -> CLISpec:
-    return CLISpec(name="mycli",
-                   options=(Option(long="--token", type="str",
-                                   env="CLI_ROOT"), ),
-                   subcommands=(CLISpec(name="alpha",
-                                        fn=_cli_noop,
-                                        options=(Option(long="--a",
-                                                        type="str",
-                                                        env="CLI_ALPHA"), )),
-                                CLISpec(name="beta",
-                                        fn=_cli_noop,
-                                        options=(Option(long="--b",
-                                                        type="str",
-                                                        env="CLI_BETA"), ))))
+    return CLISpec(
+        name="mycli",
+        options=(Option(long="--token", type="str", env="CLI_ROOT"),),
+        subcommands=(
+            CLISpec(
+                name="alpha",
+                fn=_cli_noop,
+                options=(Option(long="--a", type="str", env="CLI_ALPHA"),),
+            ),
+            CLISpec(
+                name="beta",
+                fn=_cli_noop,
+                options=(Option(long="--b", type="str", env="CLI_BETA"),),
+            ),
+        ),
+    )
 
 
 @pytest.mark.asyncio
 async def test_cli_fetches_only_the_invoked_verb_path():
-    calls, fetch = counting_source({
-        "CLI_ROOT": "r0",
-        "CLI_ALPHA": "a0",
-        "CLI_BETA": "b0"
-    })
+    calls, fetch = counting_source(
+        {"CLI_ROOT": "r0", "CLI_ALPHA": "a0", "CLI_BETA": "b0"}
+    )
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "CLI_ROOT": {
-            "from": "fake",
-            "ref": "root"
-        },
-        "CLI_ALPHA": {
-            "from": "fake",
-            "ref": "alpha"
-        },
-        "CLI_BETA": {
-            "from": "fake",
-            "ref": "beta"
-        },
-    })
+    ws = _ws(
+        {
+            "CLI_ROOT": {"from": "fake", "ref": "root"},
+            "CLI_ALPHA": {"from": "fake", "ref": "alpha"},
+            "CLI_BETA": {"from": "fake", "ref": "beta"},
+        }
+    )
     try:
         ws.register_cli("mycli", _cli_spec())
         await ws.shell("mycli alpha")
@@ -1323,16 +1306,12 @@ async def test_cli_fetches_only_the_invoked_verb_path():
 async def test_supplied_cli_option_skips_its_env():
     calls, fetch = counting_source({"CLI_ROOT": "r0", "CLI_ALPHA": "a0"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "CLI_ROOT": {
-            "from": "fake",
-            "ref": "root"
-        },
-        "CLI_ALPHA": {
-            "from": "fake",
-            "ref": "alpha"
-        },
-    })
+    ws = _ws(
+        {
+            "CLI_ROOT": {"from": "fake", "ref": "root"},
+            "CLI_ALPHA": {"from": "fake", "ref": "alpha"},
+        }
+    )
     try:
         ws.register_cli("mycli", _cli_spec())
         # Typed outranks environment: the parser never reads CLI_ROOT
@@ -1349,16 +1328,12 @@ async def test_supplied_cli_option_skips_its_env():
 async def test_abbreviated_option_still_fetches():
     calls, fetch = counting_source({"CLI_ROOT": "r0", "CLI_ALPHA": "a0"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "CLI_ROOT": {
-            "from": "fake",
-            "ref": "root"
-        },
-        "CLI_ALPHA": {
-            "from": "fake",
-            "ref": "alpha"
-        },
-    })
+    ws = _ws(
+        {
+            "CLI_ROOT": {"from": "fake", "ref": "root"},
+            "CLI_ALPHA": {"from": "fake", "ref": "alpha"},
+        }
+    )
     try:
         ws.register_cli("mycli", _cli_spec())
         # An abbreviation is never claimed as supplied: the scan stops
@@ -1378,10 +1353,12 @@ async def test_group_env_option_reaches_the_leaf():
         _PROBE_FLAGS.clear()
         ws.register_cli(
             "mycli",
-            CLISpec(name="mycli",
-                    options=(Option(long="--token", type="str",
-                                    env="CLI_ROOT"), ),
-                    subcommands=(CLISpec(name="alpha", fn=_cli_probe), )))
+            CLISpec(
+                name="mycli",
+                options=(Option(long="--token", type="str", env="CLI_ROOT"),),
+                subcommands=(CLISpec(name="alpha", fn=_cli_probe),),
+            ),
+        )
         io = await ws.shell("mycli alpha")
         assert io.exit_code == 0
         assert calls == ["root"]
@@ -1464,16 +1441,12 @@ async def test_alias_invoked_cli_fetches_its_env():
     # spec tree rather than reading "no verb selected".
     calls, fetch = counting_source({"CLI_ROOT": "r0", "CLI_ALPHA": "a0"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({
-        "CLI_ROOT": {
-            "from": "fake",
-            "ref": "root"
-        },
-        "CLI_ALPHA": {
-            "from": "fake",
-            "ref": "alpha"
-        },
-    })
+    ws = _ws(
+        {
+            "CLI_ROOT": {"from": "fake", "ref": "root"},
+            "CLI_ALPHA": {"from": "fake", "ref": "alpha"},
+        }
+    )
     try:
         ws.register_cli("mycli", _cli_spec())
         await ws.shell("shopt -s expand_aliases")
@@ -1617,7 +1590,6 @@ async def test_self_read_in_the_prefix_keeps_the_fetch():
 
 
 class DenyUnrelatedWrite(Policy):
-
     async def pre_session(self, ctx) -> Action | None:
         if ctx.key == "UNRELATED":
             return Deny(f"no writing {ctx.key}")
@@ -1632,11 +1604,10 @@ async def test_session_write_policy_disables_masking():
     # unchanged.
     calls, fetch = counting_source({"TOKEN": "t0"})
     register_secrets("fake", FakeConfig, fetch)
-    ws = _ws({"TOKEN": {
-        "from": "fake",
-        "ref": "r"
-    }},
-             policies=[DenyUnrelatedWrite()])
+    ws = _ws(
+        {"TOKEN": {"from": "fake", "ref": "r"}},
+        policies=[DenyUnrelatedWrite()],
+    )
     try:
         io = await ws.shell("TOKEN=local; printenv TOKEN")
         assert (await io.stdout_str()) == "local\n"
@@ -1657,7 +1628,8 @@ def account_source() -> FetchFn:
     async def fetch(config: AccountConfig, ref: str) -> ResolvedSecret:
         seen = config.token.get_secret_value() if config.token else "none"
         return ResolvedSecret(
-            fields={"credential": f"{config.account}:{ref}:{seen}"})
+            fields={"credential": f"{config.account}:{ref}:{seen}"}
+        )
 
     return fetch
 
@@ -1665,17 +1637,10 @@ def account_source() -> FetchFn:
 @pytest.mark.asyncio
 async def test_a_declared_instance_carries_its_config_to_the_fetch():
     register_secrets("acct", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={"prod": {
-                 "source": "acct",
-                 "config": {
-                     "account": "a1"
-                 }
-             }})
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={"prod": {"source": "acct", "config": {"account": "a1"}}},
+    )
     try:
         out = await ws.shell('echo "$TOKEN"')
         assert out.stdout == b"a1:r:none\n"
@@ -1688,31 +1653,14 @@ async def test_two_instances_of_one_source_stay_apart():
     register_secrets("acct", AccountConfig, account_source())
     ws = _ws(
         {
-            "A": {
-                "from": "prod",
-                "ref": "r",
-                "key": "credential"
-            },
-            "B": {
-                "from": "test",
-                "ref": "r",
-                "key": "credential"
-            },
+            "A": {"from": "prod", "ref": "r", "key": "credential"},
+            "B": {"from": "test", "ref": "r", "key": "credential"},
         },
         secrets={
-            "prod": {
-                "source": "acct",
-                "config": {
-                    "account": "a1"
-                }
-            },
-            "test": {
-                "source": "acct",
-                "config": {
-                    "account": "a2"
-                }
-            },
-        })
+            "prod": {"source": "acct", "config": {"account": "a1"}},
+            "test": {"source": "acct", "config": {"account": "a2"}},
+        },
+    )
     try:
         out = await ws.shell('echo "$A"; echo "$B"')
         assert out.stdout == b"a1:r:none\na2:r:none\n"
@@ -1724,22 +1672,17 @@ async def test_two_instances_of_one_source_stay_apart():
 async def test_an_instance_config_reads_its_bootstrap_source(monkeypatch):
     monkeypatch.setenv("FILL_PROBE_TOKEN", "s3cr3t")
     register_secrets("acct", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={
-                 "prod": {
-                     "source": "acct",
-                     "config": {
-                         "token": {
-                             "from": "env",
-                             "key": "FILL_PROBE_TOKEN"
-                         }
-                     },
-                 }
-             })
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={
+            "prod": {
+                "source": "acct",
+                "config": {
+                    "token": {"from": "env", "key": "FILL_PROBE_TOKEN"}
+                },
+            }
+        },
+    )
     try:
         out = await ws.shell('echo "$TOKEN"')
         assert out.stdout == b"default:r:s3cr3t\n"
@@ -1750,17 +1693,10 @@ async def test_an_instance_config_reads_its_bootstrap_source(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_bare_source_name_still_uses_ambient_defaults():
     register_secrets("acct", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "acct",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={"prod": {
-                 "source": "acct",
-                 "config": {
-                     "account": "a1"
-                 }
-             }})
+    ws = _ws(
+        {"TOKEN": {"from": "acct", "ref": "r", "key": "credential"}},
+        secrets={"prod": {"source": "acct", "config": {"account": "a1"}}},
+    )
     try:
         out = await ws.shell('echo "$TOKEN"')
         assert out.stdout == b"default:r:none\n"
@@ -1780,10 +1716,11 @@ async def slow_bootstrap(calls: list[str]) -> FetchFn:
 
 class LineBox(Runtime, LineExecutorMixin):
     name = "sandbox"
-    captures = ("*", )
+    captures = ("*",)
 
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         return RunResult(stdout=b"box", stderr=None, exit_code=0)
 
 
@@ -1802,22 +1739,14 @@ async def test_a_whole_line_with_nothing_pending_resolves_nothing():
         secrets={
             "prod": {
                 "source": "acct-whole",
-                "config": {
-                    "token": {
-                        "from": "env",
-                        "key": "TOKEN"
-                    }
-                },
+                "config": {"token": {"from": "env", "key": "TOKEN"}},
             }
         },
-        env={"TOKEN": {
-            "from": "prod",
-            "ref": "r",
-            "key": "credential"
-        }})
+        env={"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+    )
     try:
         session = ws.get_session(ws.default_session_id)
-        session.hidden_vars = HiddenVars(names=("TOKEN", ))
+        session.hidden_vars = HiddenVars(names=("TOKEN",))
         io = await ws.shell("nvidia-smi -L")
         assert io.exit_code == 0
         assert calls == []
@@ -1839,19 +1768,11 @@ async def test_a_denied_line_never_resolves_the_block():
         secrets={
             "prod": {
                 "source": "acct-denied",
-                "config": {
-                    "token": {
-                        "from": "env",
-                        "key": "TOKEN"
-                    }
-                },
+                "config": {"token": {"from": "env", "key": "TOKEN"}},
             }
         },
-        env={"TOKEN": {
-            "from": "prod",
-            "ref": "r",
-            "key": "credential"
-        }})
+        env={"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+    )
     try:
         io = await ws.shell("printenv TOKEN")
         assert io.exit_code == 126
@@ -1870,28 +1791,22 @@ async def test_a_cancelled_waiter_leaves_the_shared_resolution_alone():
     calls: list[str] = []
     register_secrets("env", FakeConfig, await slow_bootstrap(calls))
     register_secrets("acct-cancel", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={
-                 "prod": {
-                     "source": "acct-cancel",
-                     "config": {
-                         "token": {
-                             "from": "env",
-                             "key": "TOKEN"
-                         }
-                     },
-                 }
-             })
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={
+            "prod": {
+                "source": "acct-cancel",
+                "config": {"token": {"from": "env", "key": "TOKEN"}},
+            }
+        },
+    )
     ws.create_session("a")
     ws.create_session("b")
     try:
         doomed = asyncio.create_task(ws.shell('echo "$TOKEN"', session_id="a"))
         survivor = asyncio.create_task(
-            ws.shell('echo "$TOKEN"', session_id="b"))
+            ws.shell('echo "$TOKEN"', session_id="b")
+        )
         await asyncio.sleep(0)
         doomed.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -1910,14 +1825,10 @@ async def test_an_instance_aliasing_env_redacts_like_env():
     name is the deployment's word, and `{prod: {source: env}}` must
     hide the host's variable names however few of them there are."""
     register_secrets("env", FakeConfig, small_env({"HOME": "/root"}))
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "",
-        "key": "NOPE"
-    }},
-             secrets={"prod": {
-                 "source": "env"
-             }})
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "", "key": "NOPE"}},
+        secrets={"prod": {"source": "env"}},
+    )
     try:
         result = await ws.shell('echo "$TOKEN"')
         assert result.exit_code == 1
@@ -1945,28 +1856,22 @@ async def test_concurrent_first_lines_resolve_the_block_once():
     calls: list[str] = []
     register_secrets("env", FakeConfig, await slow_bootstrap(calls))
     register_secrets("acct-race", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={
-                 "prod": {
-                     "source": "acct-race",
-                     "config": {
-                         "token": {
-                             "from": "env",
-                             "key": "TOKEN"
-                         }
-                     },
-                 }
-             })
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={
+            "prod": {
+                "source": "acct-race",
+                "config": {"token": {"from": "env", "key": "TOKEN"}},
+            }
+        },
+    )
     ws.create_session("a")
     ws.create_session("b")
     try:
         first, second = await asyncio.gather(
             ws.shell('echo "$TOKEN"', session_id="a"),
-            ws.shell('echo "$TOKEN"', session_id="b"))
+            ws.shell('echo "$TOKEN"', session_id="b"),
+        )
         assert (await first.stdout_str()) == "default:r:t\n"
         assert (await second.stdout_str()) == "default:r:t\n"
         assert calls == [""]
@@ -1981,17 +1886,9 @@ async def test_a_copy_keeps_the_declared_instances():
     restored pointer names an instance no source table knows."""
     register_secrets("acct-copy", AccountConfig, account_source())
     ws = _ws(
-        {"TOKEN": {
-            "from": "prod",
-            "ref": "r",
-            "key": "credential"
-        }},
-        secrets={"prod": {
-            "source": "acct-copy",
-            "config": {
-                "account": "a1"
-            }
-        }})
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={"prod": {"source": "acct-copy", "config": {"account": "a1"}}},
+    )
     try:
         copy = await ws.copy()
         try:
@@ -2007,33 +1904,23 @@ async def test_a_copy_keeps_the_declared_instances():
 @pytest.mark.asyncio
 async def test_from_state_takes_the_block_the_deployment_supplies():
     register_secrets("acct-state", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={
-                 "prod": {
-                     "source": "acct-state",
-                     "config": {
-                         "account": "a1"
-                     }
-                 }
-             })
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={
+            "prod": {"source": "acct-state", "config": {"account": "a1"}}
+        },
+    )
     try:
         state = await to_state_dict(ws)
     finally:
         await ws.close()
-    restored = await Workspace.from_state(state,
-                                          mounts={"/": RAMVFS()},
-                                          secrets={
-                                              "prod": {
-                                                  "source": "acct-state",
-                                                  "config": {
-                                                      "account": "a2"
-                                                  }
-                                              }
-                                          })
+    restored = await Workspace.from_state(
+        state,
+        mounts={"/": RAMVFS()},
+        secrets={
+            "prod": {"source": "acct-state", "config": {"account": "a2"}}
+        },
+    )
     try:
         result = await restored.shell('echo "$TOKEN"')
         assert result.exit_code == 0
@@ -2068,14 +1955,10 @@ async def test_a_pointer_named_after_a_prototype_member_is_unknown():
 @pytest.mark.asyncio
 async def test_a_pointer_naming_an_instance_needs_no_source_of_that_name():
     register_secrets("acct", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={"prod": {
-                 "source": "acct"
-             }})
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={"prod": {"source": "acct"}},
+    )
     await ws.close()
 
 
@@ -2087,17 +1970,10 @@ async def test_a_bad_instance_config_fails_the_lines_that_read_it():
     unknown source name still fails at construction; what is left for
     resolution to find is a config the source refuses."""
     register_secrets("acct", AccountConfig, account_source())
-    ws = _ws({"TOKEN": {
-        "from": "prod",
-        "ref": "r",
-        "key": "credential"
-    }},
-             secrets={"prod": {
-                 "source": "acct",
-                 "config": {
-                     "nonesuch": "x"
-                 }
-             }})
+    ws = _ws(
+        {"TOKEN": {"from": "prod", "ref": "r", "key": "credential"}},
+        secrets={"prod": {"source": "acct", "config": {"nonesuch": "x"}}},
+    )
     try:
         assert (await ws.shell("echo hi")).exit_code == 0
         out = await ws.shell('echo "$TOKEN"')
@@ -2124,16 +2000,18 @@ def pre_command(ctx):
 
 
 def _scripted_ws(env, source: str) -> Workspace:
-    return _ws(env,
-               profiles={
-                   "release": {
-                       "policy": {
-                           "script": ScriptSource(source),
-                           "runtime": "monty",
-                       }
-                   }
-               },
-               profile="release")
+    return _ws(
+        env,
+        profiles={
+            "release": {
+                "policy": {
+                    "script": ScriptSource(source),
+                    "runtime": "monty",
+                }
+            }
+        },
+        profile="release",
+    )
 
 
 @pytest.mark.asyncio

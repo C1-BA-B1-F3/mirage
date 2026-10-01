@@ -146,8 +146,11 @@ def _under_m(path: str) -> bool:
 
 
 def _ledger(records) -> list[tuple[str, str]]:
-    return [(r.op, r.path) for r in records
-            if _under_m(r.path) and r.op not in EXEMPT_OPS]
+    return [
+        (r.op, r.path)
+        for r in records
+        if _under_m(r.path) and r.op not in EXEMPT_OPS
+    ]
 
 
 async def _prepare(ws: Workspace, state: MountState) -> None:
@@ -158,8 +161,9 @@ async def _prepare(ws: Workspace, state: MountState) -> None:
         assert io.exit_code == 0
 
 
-async def _run_records(state: MountState, script: list[str],
-                       seed: list[str]) -> tuple[Workspace, list]:
+async def _run_records(
+    state: MountState, script: list[str], seed: list[str]
+) -> tuple[Workspace, list]:
     ws = Workspace(
         {
             "/m": (state.vfs, MountMode.WRITE),
@@ -212,7 +216,8 @@ def _row_marks(ptype: str):
 
 
 @pytest.mark.parametrize(
-    "ptype", [pytest.param(p, id=p, marks=_row_marks(p)) for p in EXPECTED])
+    "ptype", [pytest.param(p, id=p, marks=_row_marks(p)) for p in EXPECTED]
+)
 def test_record_paths_are_virtual(ptype, tmp_path):
     state = build_mount(ptype, "/m", tmp_path, 1)
     with ExitStack() as stack:
@@ -249,7 +254,8 @@ async def _run_invariant(state: MountState) -> list[tuple[str, str, str]]:
     ws, records = await _run_records(state, SWEEP, ["echo x > /m/k2.txt"])
     try:
         checked = [
-            r for r in records
+            r
+            for r in records
             if r.mount_id is not None and r.op not in EXEMPT_OPS
         ]
         assert checked
@@ -264,7 +270,8 @@ async def _run_invariant(state: MountState) -> list[tuple[str, str, str]]:
 
 
 @pytest.mark.parametrize(
-    "ptype", [pytest.param(p, id=p, marks=_row_marks(p)) for p in EXPECTED])
+    "ptype", [pytest.param(p, id=p, marks=_row_marks(p)) for p in EXPECTED]
+)
 def test_every_record_resolves_to_its_mount(ptype, tmp_path):
     state = build_mount(ptype, "/m", tmp_path, 1)
     with ExitStack() as stack:
@@ -283,7 +290,8 @@ async def _cat_mount_ids() -> tuple[list[str | None], str | None]:
         io = await ws.shell("cat /m/m/k.txt")
         assert await io.stdout_str() == "x\n"
         ids = [
-            r.mount_id for r in ws._ops.records
+            r.mount_id
+            for r in ws._ops.records
             if (r.op, r.path) == ("read", K)
         ]
         return ids, ws.mount("/m").mount_id

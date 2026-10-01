@@ -21,6 +21,7 @@ from mirage.cache.index.store import IndexCacheStore
 redis_store: Callable[..., IndexCacheStore] | None
 try:
     from mirage.cache.index.redis import RedisIndexCacheStore
+
     redis_store = RedisIndexCacheStore
 except ImportError:
     redis_store = None
@@ -44,9 +45,11 @@ def build_index(config: IndexConfig | None, ttl: float) -> IndexCacheStore:
         return RAMIndexCacheStore(ttl=ttl)
     if isinstance(config, RedisIndexConfig):
         if redis_store is None:
-            raise ImportError("RedisIndexConfig requires the 'redis' extra. "
-                              "Install with: pip install mirage-ai[redis]")
-        return redis_store(ttl=config.ttl,
-                           url=config.url,
-                           key_prefix=config.key_prefix)
+            raise ImportError(
+                "RedisIndexConfig requires the 'redis' extra. "
+                "Install with: pip install mirage-ai[redis]"
+            )
+        return redis_store(
+            ttl=config.ttl, url=config.url, key_prefix=config.key_prefix
+        )
     return RAMIndexCacheStore(ttl=config.ttl)

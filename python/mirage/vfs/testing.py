@@ -14,16 +14,19 @@ from mirage.vfs.base import BaseVFS
 @dataclass(frozen=True, slots=True)
 class ReadFixture:
     """A small known file, its parent directory, and an absent sibling."""
+
     file: PathSpec
     directory: PathSpec
     missing: PathSpec
     content: bytes
 
 
-async def check_read_contract(adapter: VFSAdapter | CommandIO,
-                              accessor: Accessor,
-                              fixture: ReadFixture,
-                              index: IndexCacheStore = NULL_INDEX) -> None:
+async def check_read_contract(
+    adapter: VFSAdapter | CommandIO,
+    accessor: Accessor,
+    fixture: ReadFixture,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Verify reads against a caller-owned fixture without mutations.
 
     Native ranges probe nonempty windows within the fixture. Empty and
@@ -35,36 +38,43 @@ async def check_read_contract(adapter: VFSAdapter | CommandIO,
         fixture (ReadFixture): file, parent, absent sibling, and bytes.
         index (IndexCacheStore): cache to exercise, if any.
     """
-    io = adapter.to_command_io() if isinstance(adapter,
-                                               VFSAdapter) else adapter
+    io = (
+        adapter.to_command_io() if isinstance(adapter, VFSAdapter) else adapter
+    )
     data = await io.read_bytes(accessor, fixture.file, index)
     assert data == fixture.content, "read_bytes differs from fixture content"
     info = await io.stat(accessor, fixture.file, index)
     assert info.type == FileType.FILE, "fixture must stat as a file"
-    assert info.size is None or info.size == len(
-        data), "stat size must be rendered byte length or None"
+    assert info.size is None or info.size == len(data), (
+        "stat size must be rendered byte length or None"
+    )
     parent = await io.stat(accessor, fixture.directory, index)
-    assert parent.type == FileType.DIRECTORY, (
-        "parent must stat as a directory")
+    assert parent.type == FileType.DIRECTORY, "parent must stat as a directory"
     children = await io.readdir(accessor, fixture.directory, index)
     assert fixture.file.virtual in children, (
-        "readdir must include the child virtual path")
+        "readdir must include the child virtual path"
+    )
     streamed = b"".join(
-        [part async for part in io.read_stream(accessor, fixture.file, index)])
+        [part async for part in io.read_stream(accessor, fixture.file, index)]
+    )
     assert streamed == data, "read_stream differs from read_bytes"
     if io.read_range is not None and data:
         offset = min(1, len(data) - 1)
         for size in (min(3, len(data) - offset), None):
             end = None if size is None else offset + size
-            actual = await io.read_range(accessor, fixture.file, index, offset,
-                                         size)
-            assert actual == data[
-                offset:end], "read_range must use offset and byte count"
+            actual = await io.read_range(
+                accessor, fixture.file, index, offset, size
+            )
+            assert actual == data[offset:end], (
+                "read_range must use offset and byte count"
+            )
     if io.exists is not None:
-        assert await io.exists(
-            accessor, fixture.file), "exists rejected the fixture file"
-        assert not await io.exists(
-            accessor, fixture.missing), "exists accepted a missing file"
+        assert await io.exists(accessor, fixture.file), (
+            "exists rejected the fixture file"
+        )
+        assert not await io.exists(accessor, fixture.missing), (
+            "exists accepted a missing file"
+        )
     for operation in (io.stat, io.read_bytes):
         try:
             await operation(accessor, fixture.missing, index)
@@ -87,12 +97,15 @@ class DriverOps:
             store at the driver's ``index_ttl`` by default.
     """
 
-    def __init__(self,
-                 vfs: BaseVFS,
-                 index: IndexCacheStore | None = None) -> None:
+    def __init__(
+        self, vfs: BaseVFS, index: IndexCacheStore | None = None
+    ) -> None:
         self.vfs = vfs
-        self.index = (index if index is not None else RAMIndexCacheStore(
-            ttl=vfs.index_ttl))
+        self.index = (
+            index
+            if index is not None
+            else RAMIndexCacheStore(ttl=vfs.index_ttl)
+        )
 
     def op(self, name: str) -> RegisteredOp:
         """The registration serving ``name`` for every filetype.
@@ -111,11 +124,13 @@ class DriverOps:
         Args:
             name (str): the op name.
         """
-        return any(ro.name == name and ro.filetype is None
-                   for ro in self.vfs.ops())
+        return any(
+            ro.name == name and ro.filetype is None for ro in self.vfs.ops()
+        )
 
-    async def call(self, name: str, path: PathSpec, *args: Any,
-                   **kwargs: Any) -> Any:
+    async def call(
+        self, name: str, path: PathSpec, *args: Any, **kwargs: Any
+    ) -> Any:
         """Call op ``name`` on ``path`` with the driver's accessor.
 
         Args:
@@ -150,9 +165,9 @@ class DriverOps:
         await self.call("create", path)
 
     async def mkdir(self, path: PathSpec, parents: bool = False) -> None:
-        await self.call("mkdir", path, **({
-            "parents": True
-        } if parents else {}))
+        await self.call(
+            "mkdir", path, **({"parents": True} if parents else {})
+        )
 
     async def unlink(self, path: PathSpec) -> None:
         await self.call("unlink", path)
@@ -173,9 +188,9 @@ async def _joined(value: bytes | AsyncIterator[bytes]) -> bytes:
     return b"".join([chunk async for chunk in value])
 
 
-async def check_driver_contract(vfs: BaseVFS,
-                                fixture: ReadFixture,
-                                index: IndexCacheStore | None = None) -> None:
+async def check_driver_contract(
+    vfs: BaseVFS, fixture: ReadFixture, index: IndexCacheStore | None = None
+) -> None:
     """Verify a driver's read ops against a caller-owned fixture.
 
     The driver-level twin of :func:`check_read_contract`: the checks run
@@ -196,23 +211,25 @@ async def check_driver_contract(vfs: BaseVFS,
     assert data == fixture.content, "read differs from fixture content"
     info = await table.stat(fixture.file)
     assert info.type == FileType.FILE, "fixture must stat as a file"
-    assert info.size is None or info.size == len(
-        data), "stat size must be rendered byte length or None"
+    assert info.size is None or info.size == len(data), (
+        "stat size must be rendered byte length or None"
+    )
     parent = await table.stat(fixture.directory)
-    assert parent.type == FileType.DIRECTORY, (
-        "parent must stat as a directory")
+    assert parent.type == FileType.DIRECTORY, "parent must stat as a directory"
     children = await table.readdir(fixture.directory)
     assert fixture.file.virtual in children, (
-        "readdir must include the child virtual path")
+        "readdir must include the child virtual path"
+    )
     if data:
         offset = min(1, len(data) - 1)
         for size in (min(3, len(data) - offset), None):
             end = None if size is None else offset + size
-            actual = await _joined(await table.read(fixture.file,
-                                                    offset=offset,
-                                                    size=size))
+            actual = await _joined(
+                await table.read(fixture.file, offset=offset, size=size)
+            )
             assert actual == data[offset:end], (
-                "read must use offset and byte count")
+                "read must use offset and byte count"
+            )
     for operation in (table.stat, table.read):
         try:
             await operation(fixture.missing)

@@ -16,12 +16,25 @@ import re
 from dataclasses import dataclass, field, replace
 from functools import cache, lru_cache
 
-from mirage.commands.builtin.utils.charset import (ALL, CharSet, host_char,
-                                                   host_class)
+from mirage.commands.builtin.utils.charset import (
+    ALL,
+    CharSet,
+    host_char,
+    host_class,
+)
 from mirage.commands.builtin.utils.types import HostRegex
-from mirage.commands.builtin.utils.unicode_tables import (  # yapf: disable
-    ASCII_CLASSES, ASCII_DIGIT, ASCII_SPACE, ASCII_WORD, PCRE_HSPACE,
-    PCRE_VSPACE, category, fold, pcre_word, unicode_property)
+from mirage.commands.builtin.utils.unicode_tables import (
+    ASCII_CLASSES,
+    ASCII_DIGIT,
+    ASCII_SPACE,
+    ASCII_WORD,
+    PCRE_HSPACE,
+    PCRE_VSPACE,
+    category,
+    fold,
+    pcre_word,
+    unicode_property,
+)
 
 # PCRE2's compile error texts (pcre2_error.c, 10.43 and 10.46 agree on
 # every one used here), which grep prints after `grep: ` and ripgrep
@@ -40,8 +53,7 @@ MALFORMED_PROPERTY = "malformed \\P or \\p sequence"
 N_IN_CLASS = "\\N is not supported in a class"
 NO_SUBPATTERN = "reference to non-existent subpattern"
 BAD_GROUP_SYNTAX = "unrecognized character after (? or (?-"
-CODE_POINT_BIG = ("character code point value in \\x{} or \\o{} "
-                  "is too large")
+CODE_POINT_BIG = "character code point value in \\x{} or \\o{} is too large"
 RANGE_BAD = "invalid range in character class"
 RANGE_ORDER = "range out of order in character class"
 POSIX_UNKNOWN = "unknown POSIX class name"
@@ -52,18 +64,22 @@ ESCAPE_UNKNOWN = "unrecognized character follows \\"
 NAME_EXPECTED = "subpattern name expected"
 NAME_UNTERMINATED = "syntax error in subpattern name (missing terminator?)"
 NAME_DIGIT = "subpattern name must start with a non-digit"
-NAME_DUPLICATE = ("two named subpatterns have the same name "
-                  "(PCRE2_DUPNAMES not set)")
+NAME_DUPLICATE = (
+    "two named subpatterns have the same name (PCRE2_DUPNAMES not set)"
+)
 COMMENT_UNTERMINATED = "missing ) after (?# comment"
-KEEP_IN_LOOKAROUND = ("\\K is not allowed in lookarounds "
-                      "(but see PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK)")
+KEEP_IN_LOOKAROUND = (
+    "\\K is not allowed in lookarounds "
+    "(but see PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK)"
+)
 NAMED_CHAR_UTF = "\\N{U+dddd} is supported only in Unicode (UTF) mode"
 CASE_ESCAPES = "PCRE2 does not support \\F, \\L, \\l, \\N{name}, \\U, or \\u"
 ESCAPE_IN_CLASS = "escape sequence is invalid in character class"
-G_SYNTAX = ("\\g is not followed by a braced, angle-bracketed, or quoted "
-            "name/number or by a plain number")
-K_SYNTAX = ("\\k is not followed by a braced, angle-bracketed, or quoted "
-            "name")
+G_SYNTAX = (
+    "\\g is not followed by a braced, angle-bracketed, or quoted "
+    "name/number or by a plain number"
+)
+K_SYNTAX = "\\k is not followed by a braced, angle-bracketed, or quoted name"
 
 # What mirage refuses although PCRE2 accepts it: nothing on either host
 # engine can mean the same, so the pattern is refused rather than run as
@@ -87,12 +103,16 @@ DIGITS = re.compile(r"[0-9]*")
 OCTAL_TAIL = re.compile(r"[0-7]{0,2}")
 HEX_PAIR = re.compile(r"[0-9a-fA-F]{0,2}")
 G_REFERENCE = re.compile(
-    r"\{(-?[0-9]+)\}|(-?[0-9]+)|\{([A-Za-z_][A-Za-z0-9_]*)\}")
+    r"\{(-?[0-9]+)\}|(-?[0-9]+)|\{([A-Za-z_][A-Za-z0-9_]*)\}"
+)
 K_REFERENCE = re.compile(
     r"<([A-Za-z_][A-Za-z0-9_]*)>|'([A-Za-z_][A-Za-z0-9_]*)'"
-    r"|\{([A-Za-z_][A-Za-z0-9_]*)\}")
-GROUP_NAMES = re.compile(r"\(\?(?:P?<([A-Za-z_][A-Za-z0-9_]*)>"
-                         r"|'([A-Za-z_][A-Za-z0-9_]*)')")
+    r"|\{([A-Za-z_][A-Za-z0-9_]*)\}"
+)
+GROUP_NAMES = re.compile(
+    r"\(\?(?:P?<([A-Za-z_][A-Za-z0-9_]*)>"
+    r"|'([A-Za-z_][A-Za-z0-9_]*)')"
+)
 # An inline option group that could change case sensitivity (or, with
 # `x`, what the text of the pattern is): a caseless pattern without one is
 # caseless throughout, and the host engine folds it.
@@ -105,18 +125,19 @@ SIMPLE_ESCAPES = {
     "f": 0x0C,
     "n": 0x0A,
     "r": 0x0D,
-    "t": 0x09
+    "t": 0x09,
 }
 UCP_POSIX = {
-    "alpha": ("L", ),
+    "alpha": ("L",),
     "alnum": ("L", "N"),
-    "digit": ("Nd", ),
-    "lower": ("Ll", ),
-    "upper": ("Lu", ),
-    "cntrl": ("Cc", ),
+    "digit": ("Nd",),
+    "lower": ("Ll",),
+    "upper": ("Lu",),
+    "cntrl": ("Cc",),
 }
-GRAPH_EXCLUDED = CharSet.of((0x061C, 0x061C), (0x180E, 0x180E),
-                            (0x2066, 0x2069))
+GRAPH_EXCLUDED = CharSet.of(
+    (0x061C, 0x061C), (0x180E, 0x180E), (0x2066, 0x2069)
+)
 NEWLINE_SEQUENCE = CharSet.of((0x0A, 0x0D), (0x85, 0x85), (0x2028, 0x2029))
 
 
@@ -147,6 +168,7 @@ class Flags:
         xx (bool): ``x`` inside classes too.
         U (bool): ungreedy.
     """
+
     i: bool = False
     m: bool = False
     n: bool = False
@@ -174,6 +196,7 @@ class Frame:
         atomic (int): the synthetic group number of an emulated atomic
             group, else 0.
     """
+
     open_at: int
     out_start: int
     flags: Flags
@@ -186,8 +209,9 @@ class Frame:
     atomic: int = 0
 
 
-def add_width(a: tuple[int, int | None],
-              b: tuple[int, int | None]) -> tuple[int, int | None]:
+def add_width(
+    a: tuple[int, int | None], b: tuple[int, int | None]
+) -> tuple[int, int | None]:
     """Two lengths in sequence.
 
     Args:
@@ -257,7 +281,7 @@ class PcreTranslator:
         Args:
             offset (int): how far ahead.
         """
-        return self.src[self.pos + offset:self.pos + offset + 1]
+        return self.src[self.pos + offset : self.pos + offset + 1]
 
     def translate(self) -> HostRegex:
         """Scan the whole pattern.
@@ -277,12 +301,16 @@ class PcreTranslator:
             host = self.group_map.get(number)
             if host is None:
                 raise self.fail(NO_SUBPATTERN, offset)
-            source = source.replace(BACKREF_MARK.format(index),
-                                    f"(?:\\{host})")
+            source = source.replace(
+                BACKREF_MARK.format(index), f"(?:\\{host})"
+            )
         if self.caseless_backref and self.case_sensitive_text:
             raise self.fail(
-                UNSUPPORTED.format("a caseless back-reference in a "
-                                   "case-sensitive pattern"), 0)
+                UNSUPPORTED.format(
+                    "a caseless back-reference in a case-sensitive pattern"
+                ),
+                0,
+            )
         return HostRegex(source, self.caseless_backref)
 
     def skip_space(self) -> None:
@@ -323,8 +351,10 @@ class PcreTranslator:
             self.pos += 1
             self.atom(
                 host_class(
-                    ALL if self.flags.s else ALL.minus(CharSet.chars(0x0A))),
-                (1, 1))
+                    ALL if self.flags.s else ALL.minus(CharSet.chars(0x0A))
+                ),
+                (1, 1),
+            )
         elif ch == "^":
             self.pos += 1
             self.assertion("(?:^|(?<=\\n))" if self.flags.m else "^")
@@ -423,12 +453,15 @@ class PcreTranslator:
         ch = self.peek()
         if not ch:
             raise self.fail(MISSING_PAREN, len(src))
-        rest = src[self.pos:]
+        rest = src[self.pos :]
         if rest.startswith(("<=", "<!")):
             self.pos += 2
-            self.push(start,
-                      "(?<=" if ch == "<" and rest[1] == "=" else "(?<!",
-                      "behind", rest[1] == "!")
+            self.push(
+                start,
+                "(?<=" if ch == "<" and rest[1] == "=" else "(?<!",
+                "behind",
+                rest[1] == "!",
+            )
             return
         if ch in "=!":
             self.pos += 1
@@ -460,13 +493,14 @@ class PcreTranslator:
             return
         if rest.startswith("P=") or rest.startswith("P>"):
             if rest.startswith("P>"):
-                raise self.fail(UNSUPPORTED.format("(?P>name) recursion"),
-                                start)
+                raise self.fail(
+                    UNSUPPORTED.format("(?P>name) recursion"), start
+                )
             self.pos += 2
             close = src.find(")", self.pos)
             if close < 0:
                 raise self.fail(NAME_UNTERMINATED, len(src))
-            name = src[self.pos:close]
+            name = src[self.pos : close]
             at = self.pos
             self.pos = close + 1
             self.named_backref(name, at)
@@ -475,12 +509,16 @@ class PcreTranslator:
             raise self.fail(UNSUPPORTED.format("(?| branch reset"), start)
         if ch == "(":
             raise self.fail(UNSUPPORTED.format("(?( conditional group"), start)
-        if ch in "R&+" or ch.isdigit() or (ch == "-"
-                                           and self.peek(1).isdigit()):
+        if (
+            ch in "R&+"
+            or ch.isdigit()
+            or (ch == "-" and self.peek(1).isdigit())
+        ):
             raise self.fail(UNSUPPORTED.format("recursion"), start)
         if ch == "*":
-            raise self.fail(UNSUPPORTED.format("(?* non-atomic lookaround"),
-                            start)
+            raise self.fail(
+                UNSUPPORTED.format("(?* non-atomic lookaround"), start
+            )
         self.inline_flags(start)
 
     def verb(self, start: int) -> None:
@@ -492,10 +530,17 @@ class PcreTranslator:
         close = self.src.find(")", start)
         if close < 0:
             raise self.fail(MISSING_PAREN, len(self.src))
-        name = self.src[start + 2:close]
+        name = self.src[start + 2 : close]
         if start == 0 or self.out == []:
-            if name in ("UTF", "UTF8", "UCP", "NO_JIT", "NO_START_OPT",
-                        "NO_AUTO_POSSESS", "NO_DOTSTAR_ANCHOR"):
+            if name in (
+                "UTF",
+                "UTF8",
+                "UCP",
+                "NO_JIT",
+                "NO_START_OPT",
+                "NO_AUTO_POSSESS",
+                "NO_DOTSTAR_ANCHOR",
+            ):
                 self.pos = close + 1
                 return
         raise self.fail(UNSUPPORTED.format(f"(*{name})"), start)
@@ -543,13 +588,11 @@ class PcreTranslator:
         if self.peek() != terminator:
             raise self.fail(NAME_UNTERMINATED)
         self.pos += 1
-        return self.src[begin:found.end()]
+        return self.src[begin : found.end()]
 
-    def push(self,
-             start: int,
-             opener: str,
-             kind: str,
-             negative: bool = False) -> None:
+    def push(
+        self, start: int, opener: str, kind: str, negative: bool = False
+    ) -> None:
         """Open a group whose host opener is ``opener``.
 
         Args:
@@ -582,13 +625,9 @@ class PcreTranslator:
         flags = self.flags
         on = True
         if self.peek() == "^":
-            flags = replace(flags,
-                            i=False,
-                            m=False,
-                            n=False,
-                            s=False,
-                            x=False,
-                            xx=False)
+            flags = replace(
+                flags, i=False, m=False, n=False, s=False, x=False, xx=False
+            )
             self.pos += 1
         while True:
             if self.pos >= len(self.src):
@@ -631,7 +670,9 @@ class PcreTranslator:
         if frame.kind == "atomic" and frame.atomic:
             self.out.append(f"(?P={ATOMIC_PREFIX}{frame.atomic})")
         if frame.kind == "ahead":
-            self.out[frame.out_start:] = ["".join(self.out[frame.out_start:])]
+            self.out[frame.out_start :] = [
+                "".join(self.out[frame.out_start :])
+            ]
             self.atom_start = frame.out_start
             self.atom_width = (0, 0)
             self.repeatable = True
@@ -640,9 +681,11 @@ class PcreTranslator:
             return
         lows = [w[0] for w in frame.widths]
         highs = [w[1] for w in frame.widths]
-        width = (min(lows), None if None in highs else max(h for h in highs
-                                                           if h is not None))
-        self.out[frame.out_start:] = ["".join(self.out[frame.out_start:])]
+        width = (
+            min(lows),
+            None if None in highs else max(h for h in highs if h is not None),
+        )
+        self.out[frame.out_start :] = ["".join(self.out[frame.out_start :])]
         self.atom_start = frame.out_start
         self.atom_width = width
         self.repeatable = True
@@ -669,11 +712,12 @@ class PcreTranslator:
             if low != high:
                 raise self.fail(
                     UNSUPPORTED.format("a variable-length lookbehind"),
-                    frame.open_at)
+                    frame.open_at,
+                )
         bodies = []
         edges = [*frame.branches, len(self.out) + 1]
         for i, begin in enumerate(frame.branches):
-            bodies.append("".join(self.out[begin:edges[i + 1] - 1]))
+            bodies.append("".join(self.out[begin : edges[i + 1] - 1]))
         opener = "(?<!" if frame.negative else "(?<="
         if len(bodies) == 1:
             text = opener + bodies[0] + ")"
@@ -681,7 +725,7 @@ class PcreTranslator:
             text = "".join(opener + b + ")" for b in bodies)
         else:
             text = "(?:" + "|".join(opener + b + ")" for b in bodies) + ")"
-        self.out[frame.out_start:] = [text]
+        self.out[frame.out_start :] = [text]
         self.atom_start = None
         self.repeatable = False
 
@@ -698,8 +742,13 @@ class PcreTranslator:
             low, high, end = interval
             self.pos = end
             at = end - 1
-            token = ("{%d}" % low if high == low else "{%d,}" %
-                     low if high is None else "{%d,%d}" % (low, high))
+            token = (
+                "{%d}" % low
+                if high == low
+                else "{%d,}" % low
+                if high is None
+                else "{%d,%d}" % (low, high)
+            )
         else:
             self.pos += 1
             low, high = {"*": (0, None), "+": (1, None), "?": (0, 1)}[op]
@@ -729,14 +778,16 @@ class PcreTranslator:
         if frame.high is not None and width[1] is not None:
             frame.high -= width[1]
         least = width[0] * low
-        most = (None if high is None or width[1] is None else width[1] * high)
+        most = None if high is None or width[1] is None else width[1] * high
         if high is None and width[1] == 0:
             most = 0
-        frame.low, frame.high = add_width((frame.low, frame.high),
-                                          (least, most))
+        frame.low, frame.high = add_width(
+            (frame.low, frame.high), (least, most)
+        )
         self.out[start:] = [
-            self.possessive(body, token) if suffix == "+" else body + token +
-            suffix
+            self.possessive(body, token)
+            if suffix == "+"
+            else body + token + suffix
         ]
         self.quantified = True
         self.atom_width = (least, most)
@@ -766,13 +817,17 @@ class PcreTranslator:
         found = INTERVAL.match(self.src, i)
         if found is None:
             return None
-        low_text, comma, high_text = found.group(1), found.group(
-            2), found.group(3)
+        low_text, comma, high_text = (
+            found.group(1),
+            found.group(2),
+            found.group(3),
+        )
         if not low_text and not (comma and high_text):
             return None
         low = int(low_text) if low_text else 0
-        high = low if comma is None else (
-            int(high_text) if high_text else None)
+        high = (
+            low if comma is None else (int(high_text) if high_text else None)
+        )
         for value in (low, high):
             if value is not None and value > 65535:
                 raise self.fail(QUANTIFIER_BIG, found.end() - 1)
@@ -789,7 +844,9 @@ class PcreTranslator:
         self.pos += 2
         if ch == "Q":
             end = self.src.find("\\E", self.pos)
-            text = self.src[self.pos:] if end < 0 else self.src[self.pos:end]
+            text = (
+                self.src[self.pos :] if end < 0 else self.src[self.pos : end]
+            )
             self.pos = len(self.src) if end < 0 else end + 2
             for c in text:
                 self.literal(ord(c))
@@ -804,8 +861,9 @@ class PcreTranslator:
         if ch in "XC":
             raise self.fail(UNSUPPORTED.format("\\" + ch), start)
         if ch == "R":
-            self.atom("(?:\\r\\n|" + host_class(NEWLINE_SEQUENCE) + ")",
-                      (1, 2))
+            self.atom(
+                "(?:\\r\\n|" + host_class(NEWLINE_SEQUENCE) + ")", (1, 2)
+            )
             return
         if ch == "b":
             self.assertion(boundary(True, self.unicode))
@@ -839,7 +897,7 @@ class PcreTranslator:
         if not self.unicode:
             raise self.fail(NAMED_CHAR_UTF)
         close = self.src.find("}", self.pos)
-        body = self.src[self.pos + 1:close] if close > 0 else ""
+        body = self.src[self.pos + 1 : close] if close > 0 else ""
         if not body.startswith("U+"):
             raise self.fail(CASE_ESCAPES)
         digits = body[2:]
@@ -880,9 +938,10 @@ class PcreTranslator:
         if ch == "g":
             found = G_REFERENCE.match(src, self.pos)
             if found is None:
-                if src[self.pos:self.pos + 1] in ("<", "'"):
-                    raise self.fail(UNSUPPORTED.format("subroutine calls"),
-                                    start)
+                if src[self.pos : self.pos + 1] in ("<", "'"):
+                    raise self.fail(
+                        UNSUPPORTED.format("subroutine calls"), start
+                    )
                 raise self.fail(G_SYNTAX)
             self.pos = found.end()
             if found.group(3):
@@ -901,7 +960,8 @@ class PcreTranslator:
         self.pos = found.end()
         self.named_backref(
             found.group(1) or found.group(2) or found.group(3),
-            self.pos - len(found.group()) + 1)
+            self.pos - len(found.group()) + 1,
+        )
         return True
 
     def backref(self, number: int, offset: int) -> None:
@@ -940,8 +1000,9 @@ class PcreTranslator:
             return ALL.minus(CharSet.chars(0x0A))
         table = {
             "d": category("Nd") if self.unicode else ASCII_DIGIT,
-            "s":
-            (PCRE_HSPACE.union(PCRE_VSPACE) if self.unicode else ASCII_SPACE),
+            "s": (
+                PCRE_HSPACE.union(PCRE_VSPACE) if self.unicode else ASCII_SPACE
+            ),
             "w": pcre_word() if self.unicode else ASCII_WORD,
             "h": PCRE_HSPACE,
             "v": PCRE_VSPACE,
@@ -960,7 +1021,7 @@ class PcreTranslator:
             close = self.src.find("}", self.pos)
             if close < 0:
                 raise self.fail(UNKNOWN_PROPERTY, len(self.src))
-            name = self.src[self.pos + 1:close]
+            name = self.src[self.pos + 1 : close]
             self.pos = close + 1
         elif self.pos < len(self.src):
             name = self.src[self.pos]
@@ -1000,12 +1061,16 @@ class PcreTranslator:
             if self.peek() != "{":
                 raise self.fail(DIGITS_MISSING)
             close = src.find("}", self.pos)
-            digits = src[self.pos + 1:close] if close > 0 else ""
-            if close < 0 or not digits or any(d not in "01234567"
-                                              for d in digits):
+            digits = src[self.pos + 1 : close] if close > 0 else ""
+            if (
+                close < 0
+                or not digits
+                or any(d not in "01234567" for d in digits)
+            ):
                 raise self.fail(
                     OCTAL_BAD if digits or close < 0 else DIGITS_MISSING,
-                    self.pos + 1 + first_outside(digits, "01234567"))
+                    self.pos + 1 + first_outside(digits, "01234567"),
+                )
             self.pos = close + 1
             return self.code_point(int(digits, 8), close)
         if ch.isdigit():
@@ -1026,10 +1091,11 @@ class PcreTranslator:
         src = self.src
         if self.peek() == "{":
             close = src.find("}", self.pos)
-            digits = src[self.pos + 1:close] if close > 0 else ""
+            digits = src[self.pos + 1 : close] if close > 0 else ""
             if close < 0 or any(d not in HEX for d in digits):
-                raise self.fail(HEX_BAD,
-                                self.pos + 1 + first_outside(digits, HEX))
+                raise self.fail(
+                    HEX_BAD, self.pos + 1 + first_outside(digits, HEX)
+                )
             if not digits:
                 raise self.fail(DIGITS_MISSING)
             self.pos = close + 1
@@ -1080,7 +1146,9 @@ class PcreTranslator:
             first = False
             if src.startswith("\\Q", self.pos):
                 end = src.find("\\E", self.pos + 2)
-                text = src[self.pos + 2:] if end < 0 else src[self.pos + 2:end]
+                text = (
+                    src[self.pos + 2 :] if end < 0 else src[self.pos + 2 : end]
+                )
                 self.pos = len(src) if end < 0 else end + 2
                 cs = cs.union(CharSet.chars(*(ord(c) for c in text)))
                 continue
@@ -1102,8 +1170,10 @@ class PcreTranslator:
                 cs = cs.union(CharSet.chars(low))
                 continue
             self.pos += 1
-            if src.startswith("[:",
-                              self.pos) and self.posix_name() is not None:
+            if (
+                src.startswith("[:", self.pos)
+                and self.posix_name() is not None
+            ):
                 raise self.fail(RANGE_BAD, self.pos)
             high = self.class_char()
             if isinstance(high, CharSet):
@@ -1119,7 +1189,7 @@ class PcreTranslator:
         close = self.src.find(":]", self.pos + 2)
         if close < 0:
             return None
-        name = self.src[self.pos + 2:close]
+        name = self.src[self.pos + 2 : close]
         if not POSIX_NAME.fullmatch(name):
             return None
         return name
@@ -1137,8 +1207,9 @@ class PcreTranslator:
             raise self.fail(UNSUPPORTED.format(f"[[:{bare}:]]"), self.pos)
         cs = posix_set(bare, self.unicode)
         if cs is None:
-            raise self.fail(POSIX_UNKNOWN,
-                            self.src.find(":]", self.pos + 2) + 2)
+            raise self.fail(
+                POSIX_UNKNOWN, self.src.find(":]", self.pos + 2) + 2
+            )
         self.pos = self.src.find(":]", self.pos + 2) + 2
         return cs.negate() if negated else cs
 
@@ -1169,8 +1240,9 @@ def first_outside(text: str, allowed: str) -> int:
         text (str): the digits as typed.
         allowed (str): the digits the escape takes.
     """
-    return next((i for i, ch in enumerate(text) if ch not in allowed),
-                len(text))
+    return next(
+        (i for i, ch in enumerate(text) if ch not in allowed), len(text)
+    )
 
 
 def word_edge(start: bool, unicode: bool) -> str:
@@ -1278,18 +1350,20 @@ def count_groups(pattern: str) -> int:
             continue
         if ch == "[":
             i += 1
-            if pattern[i:i + 1] == "^":
+            if pattern[i : i + 1] == "^":
                 i += 1
-            if pattern[i:i + 1] == "]":
+            if pattern[i : i + 1] == "]":
                 i += 1
             while i < len(pattern) and pattern[i] != "]":
                 i += 2 if pattern[i] == "\\" else 1
             i += 1
             continue
         if ch == "(":
-            rest = pattern[i + 1:i + 4]
-            if not rest.startswith(("?", "*")) or (rest.startswith(
-                ("?<", "?'", "?P<")) and not rest.startswith(("?<=", "?<!"))):
+            rest = pattern[i + 1 : i + 4]
+            if not rest.startswith(("?", "*")) or (
+                rest.startswith(("?<", "?'", "?P<"))
+                and not rest.startswith(("?<=", "?<!"))
+            ):
                 count += 1
         i += 1
     return count
@@ -1305,10 +1379,12 @@ def named_groups(pattern: str) -> frozenset[str]:
     return frozenset(a or b for a, b in GROUP_NAMES.findall(pattern))
 
 
-def translate_pcre(pattern: str,
-                   unicode: bool = False,
-                   ignore_case: bool = False,
-                   multi_line: bool = False) -> HostRegex:
+def translate_pcre(
+    pattern: str,
+    unicode: bool = False,
+    ignore_case: bool = False,
+    multi_line: bool = False,
+) -> HostRegex:
     """Translate a PCRE2 pattern into this host's regex dialect.
 
     Args:
@@ -1327,8 +1403,9 @@ def translate_pcre(pattern: str,
             host engine can express.
     """
     if ignore_case and not INLINE_CASE.search(pattern):
-        translated = PcreTranslator(pattern, unicode,
-                                    Flags(m=multi_line)).translate()
+        translated = PcreTranslator(
+            pattern, unicode, Flags(m=multi_line)
+        ).translate()
         return HostRegex(translated.source, True)
     flags = Flags(i=ignore_case, m=multi_line)
     return PcreTranslator(pattern, unicode, flags).translate()
@@ -1341,8 +1418,9 @@ def keep_names(pattern: re.Pattern[str]) -> tuple[str, ...]:
     Args:
         pattern (re.Pattern[str]): the compiled pattern.
     """
-    return tuple(name for name in pattern.groupindex
-                 if name.startswith(KEEP_PREFIX))
+    return tuple(
+        name for name in pattern.groupindex if name.startswith(KEEP_PREFIX)
+    )
 
 
 def match_start(m: re.Match[str]) -> int:
@@ -1365,7 +1443,7 @@ def match_text(m: re.Match[str]) -> str:
         m (re.Match[str]): the host match.
     """
     start = match_start(m)
-    return m.group() if start == m.start() else m.string[start:m.end()]
+    return m.group() if start == m.start() else m.string[start : m.end()]
 
 
 @lru_cache(maxsize=256)

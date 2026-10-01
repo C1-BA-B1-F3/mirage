@@ -13,8 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.hierarchy.codec import Codec
-from mirage.core.hierarchy.scope import (Scope, ScopeMatch, Slot,
-                                         make_detect_scope)
+from mirage.core.hierarchy.scope import (
+    Scope,
+    ScopeMatch,
+    Slot,
+    make_detect_scope,
+)
 from mirage.core.mongodb.types import KIND_DIR_NAMES, EntityKind
 from mirage.types import ContentType
 
@@ -34,24 +38,40 @@ KIND = Codec(validate=is_kind_dir)
 # search push-down all classify through it, so the file surface and the
 # search surface cannot disagree about what a path means.
 SCOPES = (
-    Scope(kind="database", segments=(Slot("database"), )),
-    Scope(kind="database_json",
-          segments=(Slot("database"), "database.json"),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(kind="database", segments=(Slot("database"),)),
+    Scope(
+        kind="database_json",
+        segments=(Slot("database"), "database.json"),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
     Scope(kind="kind_dir", segments=(Slot("database"), Slot("kind", KIND))),
-    Scope(kind="entity",
-          segments=(Slot("database"), Slot("kind", KIND), Slot("name"))),
-    Scope(kind="schema_json",
-          segments=(Slot("database"), Slot("kind",
-                                           KIND), Slot("name"), "schema.json"),
-          leaf=True,
-          filetype=ContentType.TEXT),
-    Scope(kind="documents",
-          segments=(Slot("database"), Slot("kind", KIND), Slot("name"),
-                    "documents.jsonl"),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="entity",
+        segments=(Slot("database"), Slot("kind", KIND), Slot("name")),
+    ),
+    Scope(
+        kind="schema_json",
+        segments=(
+            Slot("database"),
+            Slot("kind", KIND),
+            Slot("name"),
+            "schema.json",
+        ),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
+    Scope(
+        kind="documents",
+        segments=(
+            Slot("database"),
+            Slot("kind", KIND),
+            Slot("name"),
+            "documents.jsonl",
+        ),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

@@ -38,23 +38,20 @@ def ops_summary() -> str:
     return f"{len(records)} ops, {total} bytes transferred"
 
 
-def show_plan(label: str, dr) -> None:
-    print(f"\n--- plan: {label} ---")
-    print(f"  network_read: {dr.network_read}  cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}  cache_hits: {dr.cache_hits}  "
-          f"precision: {dr.precision}")
-
-
 async def main():
     print(f"=== mounted {vfs.accessor.bucket_uri} at /s/ ===")
 
     print("\n=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /s/__nf_missing__.txt", "head /s/__nf_missing__.txt",
-                "stat /s/__nf_missing__.txt"):
+    for cmd in (
+        "cat /s/__nf_missing__.txt",
+        "head /s/__nf_missing__.txt",
+        "stat /s/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ── discover structure ──────────────────────────────
     print("\n=== ls /s/ ===")
@@ -78,14 +75,19 @@ async def main():
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print("=== metadata overlay on /s/README.md ===")
-    meta_res = await ws.shell('chmod 640 "/s/README.md"'
-                              ' && chown 500:dev "/s/README.md"'
-                              ' && touch -t 202601021530 "/s/README.md"')
+    meta_res = await ws.shell(
+        'chmod 640 "/s/README.md"'
+        ' && chown 500:dev "/s/README.md"'
+        ' && touch -t 202601021530 "/s/README.md"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path("/s/README.md"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path("/s/README.md")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     # ── find variants ───────────────────────────────────
     print("\n=== find /s/ -type d ===")
@@ -114,8 +116,9 @@ async def main():
     print(f"  {(await r.stdout_str()).strip()}")
 
     print("=== cat /s/requirements.txt ===")
-    r = await ws.shell("cat /s/requirements.txt 2>/dev/null"
-                       " || echo '(no requirements.txt)'")
+    r = await ws.shell(
+        "cat /s/requirements.txt 2>/dev/null || echo '(no requirements.txt)'"
+    )
     print((await r.stdout_str()).rstrip())
 
     # ── grep across app code ────────────────────────────
@@ -124,8 +127,9 @@ async def main():
     print(await r.stdout_str())
 
     print("=== grep -c '^import\\|^from' /s/app.py ===")
-    r = await ws.shell("grep -c '^import\\|^from' /s/app.py"
-                       " 2>/dev/null || echo 0")
+    r = await ws.shell(
+        "grep -c '^import\\|^from' /s/app.py 2>/dev/null || echo 0"
+    )
     print(f"  import lines: {(await r.stdout_str()).strip()}")
 
     print("=== grep -ic flask /s/app.py ===")
@@ -155,8 +159,7 @@ async def main():
     print(f"  stdout: {(await r.stdout_str()).strip()}  exit: {r.exit_code}")
 
     print("=== grep -q nonexistent /s/README.md || echo 'absent' ===")
-    r = await ws.shell("grep -q nonexistent /s/README.md"
-                       " || echo 'absent'")
+    r = await ws.shell("grep -q nonexistent /s/README.md || echo 'absent'")
     print(f"  stdout: {(await r.stdout_str()).strip()}  exit: {r.exit_code}")
 
     # ── quoting + command substitution ──────────────────
@@ -166,38 +169,16 @@ async def main():
     print(f'  wc -l "$README": {(await r.stdout_str()).strip()}')
 
     r = await ws.shell("head -n 1 $(echo /s/README.md)")
-    print(f"  head -n 1 $(echo /s/README.md): "
-          f"{(await r.stdout_str()).strip()}")
+    print(
+        f"  head -n 1 $(echo /s/README.md): {(await r.stdout_str()).strip()}"
+    )
 
     # ── background jobs ─────────────────────────────────
     print("\n=== background: wc + grep in parallel ===")
-    r = await ws.shell("wc -l /s/README.md &"
-                       " grep -c '^#' /s/README.md &"
-                       " wait; echo done")
+    r = await ws.shell(
+        "wc -l /s/README.md & grep -c '^#' /s/README.md & wait; echo done"
+    )
     print(f"  stdout: {(await r.stdout_str()).strip()}")
-
-    # ── PROVISION ───────────────────────────────────────
-    print("\n=== PROVISION (plan without executing) ===")
-    await ws.cache.clear()
-    before = ops_summary()
-
-    dr = await ws.shell("cat /s/README.md", provision=True)
-    show_plan("cat /s/README.md", dr)
-
-    dr = await ws.shell("head -c 100 /s/README.md", provision=True)
-    show_plan("head -c 100 /s/README.md (byte budget, EXACT)", dr)
-
-    dr = await ws.shell("ls /s/", provision=True)
-    show_plan("ls /s/ (metadata only)", dr)
-
-    dr = await ws.shell("find /s/ -name '*.py'", provision=True)
-    show_plan("find /s/ -name '*.py' (metadata only)", dr)
-
-    dr = await ws.shell("grep -l import /s/*.py", provision=True)
-    show_plan("grep -l import /s/*.py", dr)
-
-    print(f"\n  before plans: {before}")
-    print(f"  after plans:  {ops_summary()}  (planning is read-free)")
 
     # ── streaming chains ────────────────────────────────
     print("\n=== STREAMING (chain backpressure) ===")
@@ -210,8 +191,9 @@ async def main():
         dt = time.monotonic() - t0
         net = sum(rec.bytes for rec in ws.vfs.records) - before_bytes
         out = (await r.stdout_str()).rstrip().splitlines()
-        print(f"  {label:38s} bytes={net:>6,}  t={dt:4.2f}s  "
-              f"lines={len(out):>3}")
+        print(
+            f"  {label:38s} bytes={net:>6,}  t={dt:4.2f}s  lines={len(out):>3}"
+        )
 
     await ws.cache.clear()
     await measure("head -n 1 (line streamed)", f"head -n 1 {target}")
@@ -220,11 +202,14 @@ async def main():
     await ws.cache.clear()
     await measure("cat | head -n 1", f"cat {target} | head -n 1")
     await ws.cache.clear()
-    await measure("cat | grep '^#' | head -n 1",
-                  f"cat {target} | grep '^#' | head -n 1")
+    await measure(
+        "cat | grep '^#' | head -n 1", f"cat {target} | grep '^#' | head -n 1"
+    )
     await ws.cache.clear()
-    await measure("4-stage: cat|tr|grep|head -n 1",
-                  f"cat {target} | tr A-Z a-z | grep app | head -n 1")
+    await measure(
+        "4-stage: cat|tr|grep|head -n 1",
+        f"cat {target} | tr A-Z a-z | grep app | head -n 1",
+    )
 
     print(f"\nFinal: {ops_summary()}")
 

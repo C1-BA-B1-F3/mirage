@@ -90,8 +90,9 @@ describe.each(NATIVE_BACKENDS)('native join (%s backend)', (kind) => {
     try {
       env.createFile('a.txt', ENC.encode('a 1\nb 2\n'))
       env.createFile('b.txt', ENC.encode('1 x\n2 y\n'))
-      const result = await env.mirage('join -1 1 -2 1 /data/a.txt /data/b.txt')
-      expect(result.trim().length >= 0).toBe(true)
+      const m = await env.mirage('join -1 2 -2 1 /data/a.txt /data/b.txt')
+      const n = await env.native('join -1 2 -2 1 a.txt b.txt')
+      expect(m).toBe(n)
     } finally {
       await env.cleanup()
     }

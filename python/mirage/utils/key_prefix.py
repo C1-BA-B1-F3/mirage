@@ -70,7 +70,7 @@ def strip(prefix: str, key: str) -> str:
     Returns:
         The key with the prefix removed if present; otherwise unchanged.
     """
-    return key[len(prefix):] if prefix and key.startswith(prefix) else key
+    return key[len(prefix) :] if prefix and key.startswith(prefix) else key
 
 
 def strip_mount(virtual: str, prefix: str) -> str:
@@ -95,7 +95,7 @@ def strip_mount(virtual: str, prefix: str) -> str:
         strip_mount("/x.txt", "")                  -> "/x.txt"
     """
     if prefix and virtual.startswith(prefix):
-        rest = virtual[len(prefix):]
+        rest = virtual[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             return rest or "/"
     return virtual

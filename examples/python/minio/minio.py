@@ -47,23 +47,31 @@ async def main():
         "/minio/data/example.jsonl",
         b'{"event":"queue-operation","tool":"mirage"}\n'
         b'{"event":"read","tool":"mirage"}\n'
-        b'{"event":"queue-operation","tool":"other"}\n')
-    await ws.vfs.write("/minio/data/config.json",
-                       b'{"name":"mirage","version":1,"tags":["s3","minio"]}')
+        b'{"event":"queue-operation","tool":"other"}\n',
+    )
+    await ws.vfs.write(
+        "/minio/data/config.json",
+        b'{"name":"mirage","version":1,"tags":["s3","minio"]}',
+    )
     await ws.vfs.write("/minio/notes.txt", b"hello from minio\n")
 
     # chmod/chown/touch never hit the MinIO API: attrs land in the
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print("=== metadata overlay on /minio/notes.txt ===")
-    meta_res = await ws.shell('chmod 640 "/minio/notes.txt"'
-                              ' && chown 500:dev "/minio/notes.txt"'
-                              ' && touch -t 202601021530 "/minio/notes.txt"')
+    meta_res = await ws.shell(
+        'chmod 640 "/minio/notes.txt"'
+        ' && chown 500:dev "/minio/notes.txt"'
+        ' && touch -t 202601021530 "/minio/notes.txt"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path("/minio/notes.txt"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path("/minio/notes.txt")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("\n--- ls /minio/ ---")
     r = await ws.shell("ls /minio/")
@@ -97,16 +105,12 @@ async def main():
     r = await ws.shell("jq .tags /minio/data/config.json")
     print(f"  {(await r.stdout_str()).strip()}")
 
-    print("\n--- PROVISION: cat (plan only) vs head -c (byte budget) ---")
-    dr = await ws.shell("cat /minio/data/example.jsonl", provision=True)
-    print(f"  cat: network_read={dr.network_read} precision={dr.precision}")
-    dr = await ws.shell("head -c 20 /minio/data/example.jsonl", provision=True)
-    print(f"  head -c 20: network_read={dr.network_read} "
-          f"precision={dr.precision}")
-
     print("\n--- rm seeded objects ---")
-    for key in ("/minio/data/example.jsonl", "/minio/data/config.json",
-                "/minio/notes.txt"):
+    for key in (
+        "/minio/data/example.jsonl",
+        "/minio/data/config.json",
+        "/minio/notes.txt",
+    ):
         await ws.shell(f"rm {key}")
     print("  cleaned")
 

@@ -23,8 +23,12 @@ from mirage.types import PathSpec
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.score import format_score
-from mirage.vfs.search import (float_option, int_option, text_option,
-                               validate_options)
+from mirage.vfs.search import (
+    float_option,
+    int_option,
+    text_option,
+    validate_options,
+)
 from mirage.vfs.types import SearchQuery
 
 
@@ -78,11 +82,13 @@ async def search_memories_rendered(
     return ("\n".join(lines) + "\n").encode()
 
 
-async def search_many(accessor: Mem0Accessor,
-                      paths: list[PathSpec],
-                      query: SearchQuery,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
-    validate_options(query, {'top_k', 'method', 'threshold'})
+async def search_many(
+    accessor: Mem0Accessor,
+    paths: list[PathSpec],
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
+    validate_options(query, {"top_k", "method", "threshold"})
     top_k = int_option(query, "top_k", accessor.config.default_search_limit)
     if not paths:
         raise ValueError("search: at least one scope is required")
@@ -91,28 +97,35 @@ async def search_many(accessor: Mem0Accessor,
     threshold = float_option(query, "threshold", 0.0)
     if method != "semantic":
         raise ValueError("search: only the 'semantic' method is supported")
-    targets = [] if any(not p.vfs_path.strip("/")
-                        for p in paths) else await make_resolve_glob(readdir)(
-                            accessor, paths, index)
-    ids: set[str] | None = None if any(not p.vfs_path.strip("/")
-                                       for p in paths) else set()
+    targets = (
+        []
+        if any(not p.vfs_path.strip("/") for p in paths)
+        else await make_resolve_glob(readdir)(accessor, paths, index)
+    )
+    ids: set[str] | None = (
+        None if any(not p.vfs_path.strip("/") for p in paths) else set()
+    )
     for path in targets:
         match = detect_scope(path)
         if match.kind != "memory":
             raise FileNotFoundError(path.virtual)
         if ids is not None:
             ids.add(match.slots["memory_id"])
-    output = await search_memories_rendered(accessor,
-                                            query.query,
-                                            mount_prefix=prefix,
-                                            top_k=top_k,
-                                            threshold=threshold,
-                                            memory_ids=ids)
+    output = await search_memories_rendered(
+        accessor,
+        query.query,
+        mount_prefix=prefix,
+        top_k=top_k,
+        threshold=threshold,
+        memory_ids=ids,
+    )
     return output.decode().removesuffix("\n").split("\n") if output else []
 
 
-async def search_resource(accessor: Mem0Accessor,
-                          path: PathSpec,
-                          query: SearchQuery,
-                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def search_resource(
+    accessor: Mem0Accessor,
+    path: PathSpec,
+    query: SearchQuery,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     return await search_many(accessor, [path], query, index)

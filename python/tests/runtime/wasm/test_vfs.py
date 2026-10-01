@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno as host_errno
 import os
 import time
@@ -20,13 +21,25 @@ import pytest
 
 from mirage.ops.namespace_view import merge_readdir
 from mirage.runtime.resolver import PrefixResolver
-from mirage.runtime.types import VFSStat
+from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import FT_DIR, FT_REG, FT_SYMLINK, FT_UNKNOWN
+from mirage.runtime.wasm.abi import (
+    FT_CHR,
+    FT_DIR,
+    FT_REG,
+    FT_SYMLINK,
+    FT_UNKNOWN,
+)
 from mirage.runtime.wasm.config import WasmFsConfig
-from mirage.runtime.wasm.vfs import WasmVFS
+from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
 from mirage.types import ContentType, FileStat, FileType
-from mirage.utils.stat_view import FILE_MODE, mtime_ns
+from mirage.utils.stat_view import (
+    CHAR_MODE,
+    DIR_MODE,
+    FILE_MODE,
+    LINK_MODE,
+    mtime_ns,
+)
 
 # The stamp a link's own row carries, deliberately not the stamp the
 # double gives a file, so a test can tell which row it was answered.
@@ -40,16 +53,21 @@ class FakeVFS(RuntimeVFS):
     guard and the append fallback under test are the shipping ones.
     """
 
-    def __init__(self,
-                 files=None,
-                 dirs=None,
-                 prefixes=(),
-                 links=None,
-                 modified="2026-07-15T00:00:00Z"):
-        super().__init__(dispatch=None,
-                         loop=None,
-                         resolver=PrefixResolver(lambda: list(prefixes),
-                                                 self._link_names_under))
+    def __init__(
+        self,
+        files=None,
+        dirs=None,
+        prefixes=(),
+        links=None,
+        modified="2026-07-15T00:00:00Z",
+    ):
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(
+                lambda: list(prefixes), self._link_names_under
+            ),
+        )
         self.files = dict(files or {})
         self.dirs = set(dirs or ())
         self.links = dict(links or {})
@@ -66,12 +84,15 @@ class FakeVFS(RuntimeVFS):
         """
         base = directory.rstrip("/") + "/"
         return {
-            path[len(base):]
+            path[len(base) :]
             for path in self.links
-            if path.startswith(base) and "/" not in path[len(base):]
+            if path.startswith(base) and "/" not in path[len(base) :]
         }
 
-    def _raw(self, op, path, **kwargs):
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path, kwargs))
         if op == "stat":
             # The door answers a no-follow stat of a link from the node
@@ -79,21 +100,25 @@ class FakeVFS(RuntimeVFS):
             # target bytes.
             if kwargs.get("nofollow") and path in self.links:
                 target = self.links[path]
-                return FileStat(name=path,
-                                size=len(target.encode()),
-                                modified=LINK_MTIME,
-                                type=FileType.SYMLINK)
+                return FileStat(
+                    name=path,
+                    size=len(target.encode()),
+                    modified=LINK_MTIME,
+                    type=FileType.SYMLINK,
+                )
             # A following stat is the door's default, so a link answers
             # for its target: the row says nothing about the link and the
             # mark is the only thing that can.
             if path in self.links:
-                return self._raw("stat", self.links[path], **kwargs)
+                return await self._op("stat", self.links[path], **kwargs)
             if path in self.files:
-                return FileStat(name=path,
-                                size=len(self.files[path]),
-                                modified=self.modified,
-                                type=FileType.FILE,
-                                content=ContentType.TEXT)
+                return FileStat(
+                    name=path,
+                    size=len(self.files[path]),
+                    modified=self.modified,
+                    type=FileType.FILE,
+                    content=ContentType.TEXT,
+                )
             # The real door answers a directory for a structure-only
             # path (a mount prefix with no backend object behind it).
             roots = {p.rstrip("/") or "/" for p in self.prefixes()}
@@ -159,17 +184,18 @@ class FailingStatVFS(FakeVFS):
         super().__init__(**kwargs)
         self.failing = failing
 
-    def _raw(self, op, path, **kwargs):
+    async def _op(self, op, path, **kwargs):
         if op == "stat" and path == self.failing:
             raise OSError(host_errno.EIO, "upstream 502 Bad Gateway", path)
-        return super()._raw(op, path, **kwargs)
+        return await super()._op(op, path, **kwargs)
 
 
 def test_mount_prefix_routes_to_bridge_even_when_host_file_exists(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "f.txt").write_text("host-side")
-    bridge = FakeVFS(files={"/data/f.txt": b"bridge-side"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        files={"/data/f.txt": b"bridge-side"}, prefixes=["/data/"]
+    )
     fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/data/f.txt") == b"bridge-side"
 
@@ -208,14 +234,18 @@ def test_no_host_no_bridge_sees_empty_filesystem():
 
 
 def test_stat_maps_filestat_fields():
-    bridge = FakeVFS(files={"/data/f.txt": b"hello"},
-                     dirs={"/data/sub"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        files={"/data/f.txt": b"hello"},
+        dirs={"/data/sub"},
+        prefixes=["/data/"],
+    )
     fs = WasmVFS(core=bridge)
     st = fs.stat("/data/f.txt")
-    assert st == VFSStat(
-        size=5, is_dir=False, mode=FILE_MODE,
-        mtime_ns=st.mtime_ns) and st.mtime_ns > 0
+    assert (
+        st
+        == VFSStat(size=5, is_dir=False, mode=FILE_MODE, mtime_ns=st.mtime_ns)
+        and st.mtime_ns > 0
+    )
     assert fs.stat("/data/sub").is_dir is True
     assert fs.stat_or_none("/data/nope") is None
 
@@ -224,9 +254,9 @@ def test_readdir_bridge_resolves_kind_from_slash_or_stat():
     # A slash-marked entry is a directory without a stat; an unmarked
     # one is classified by the stat the same readdir populated, so a
     # guest's d_type is real instead of FT_UNKNOWN.
-    bridge = FakeVFS(files={"/data/f.txt": b""},
-                     dirs={"/data/sub"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        files={"/data/f.txt": b""}, dirs={"/data/sub"}, prefixes=["/data/"]
+    )
     fs = WasmVFS(core=bridge)
     assert fs.readdir("/data") == [("f.txt", FT_REG), ("sub", FT_DIR)]
 
@@ -235,12 +265,11 @@ def test_readdir_reports_an_entry_it_could_not_stat_as_unknown():
     # One entry's failing stat does not fail the listing. Its d_type is
     # FT_UNKNOWN rather than a guess, so a guest that needs the kind
     # stats it and meets the failure there.
-    bridge = FailingStatVFS("/data/bad.txt",
-                            files={
-                                "/data/f.txt": b"",
-                                "/data/bad.txt": b""
-                            },
-                            prefixes=["/data/"])
+    bridge = FailingStatVFS(
+        "/data/bad.txt",
+        files={"/data/f.txt": b"", "/data/bad.txt": b""},
+        prefixes=["/data/"],
+    )
     fs = WasmVFS(core=bridge)
     assert fs.readdir("/data") == [("bad.txt", FT_UNKNOWN), ("f.txt", FT_REG)]
     with pytest.raises(OSError):
@@ -252,9 +281,11 @@ def test_readdir_reports_a_link_as_a_link():
     # that reads d_type (CPython's scandir does) answers is_symlink
     # without a call of its own. A link to a file stats as that file, so
     # only the mark can tell them apart.
-    bridge = FakeVFS(files={"/data/f.txt": b""},
-                     links={"/data/l": "/data/f.txt"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        files={"/data/f.txt": b""},
+        links={"/data/l": "/data/f.txt"},
+        prefixes=["/data/"],
+    )
     fs = WasmVFS(core=bridge)
     assert fs.readdir("/data") == [("f.txt", FT_REG), ("l", FT_SYMLINK)]
 
@@ -262,9 +293,11 @@ def test_readdir_reports_a_link_as_a_link():
 def test_readdir_reports_a_link_to_a_directory_as_a_link():
     # The one that used to read as a plain directory, which is how a
     # guest walk followed it.
-    bridge = FakeVFS(dirs={"/data/sub"},
-                     links={"/data/dl": "/data/sub"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        dirs={"/data/sub"},
+        links={"/data/dl": "/data/sub"},
+        prefixes=["/data/"],
+    )
     fs = WasmVFS(core=bridge)
     assert fs.readdir("/data") == [("dl", FT_SYMLINK), ("sub", FT_DIR)]
 
@@ -297,11 +330,10 @@ def test_a_root_mount_does_not_shadow_the_build_directory(tmp_path):
     """
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "os.py").write_text("stdlib")
-    bridge = FakeVFS(files={
-        "/lib/os.py": b"mount-side",
-        "/mine.txt": b"root-side"
-    },
-                     prefixes=["/"])
+    bridge = FakeVFS(
+        files={"/lib/os.py": b"mount-side", "/mine.txt": b"root-side"},
+        prefixes=["/"],
+    )
     fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/lib/os.py") == b"stdlib"
     assert fs.read("/mine.txt") == b"root-side"
@@ -330,20 +362,27 @@ def test_stat_reads_offsetless_stamps_as_utc():
     os.environ["TZ"] = "America/New_York"
     time.tzset()
     try:
-        naive = FakeVFS(files={"/data/f.txt": b"hello"},
-                        prefixes=["/data/"],
-                        modified="2026-01-02T03:04:05")
-        aware = FakeVFS(files={"/data/f.txt": b"hello"},
-                        prefixes=["/data/"],
-                        modified="2026-01-02T03:04:05+00:00")
+        naive = FakeVFS(
+            files={"/data/f.txt": b"hello"},
+            prefixes=["/data/"],
+            modified="2026-01-02T03:04:05",
+        )
+        aware = FakeVFS(
+            files={"/data/f.txt": b"hello"},
+            prefixes=["/data/"],
+            modified="2026-01-02T03:04:05+00:00",
+        )
         got_naive = WasmVFS(core=naive).stat("/data/f.txt").mtime_ns
         got_aware = WasmVFS(core=aware).stat("/data/f.txt").mtime_ns
         assert got_naive == got_aware
         assert got_naive == mtime_ns(
-            FileStat(name="f",
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     modified="2026-01-02T03:04:05"))
+            FileStat(
+                name="f",
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+                modified="2026-01-02T03:04:05",
+            )
+        )
     finally:
         if previous is None:
             os.environ.pop("TZ", None)
@@ -353,9 +392,11 @@ def test_stat_reads_offsetless_stamps_as_utc():
 
 
 def test_lstat_reports_a_link_as_a_link_sized_by_its_target():
-    bridge = FakeVFS(files={"/data/t.txt": b"x" * 40},
-                     links={"/data/l": "t.txt"},
-                     prefixes=["/data/"])
+    bridge = FakeVFS(
+        files={"/data/t.txt": b"x" * 40},
+        links={"/data/l": "t.txt"},
+        prefixes=["/data/"],
+    )
     fs = WasmVFS(None, bridge)
     st = fs.lstat("/data/l")
     assert st.is_link is True
@@ -366,7 +407,8 @@ def test_lstat_reports_a_link_as_a_link_sized_by_its_target():
     # for every link, so a no-follow utime persisted and stayed
     # invisible to the guest that wrote it.
     assert st.mtime_ns == mtime_ns(
-        FileStat(name="l", type=FileType.SYMLINK, modified=LINK_MTIME))
+        FileStat(name="l", type=FileType.SYMLINK, modified=LINK_MTIME)
+    )
     assert ("stat", "/data/l", {"nofollow": True}) in bridge.calls
 
 
@@ -416,18 +458,25 @@ def test_readlink_on_a_build_path_is_einval_not_read_only(tmp_path):
 def test_setattr_passes_every_field_including_nofollow():
     bridge = FakeVFS(files={"/data/f.txt": b"x"}, prefixes=["/data/"])
     fs = WasmVFS(None, bridge)
-    fs.setattr("/data/f.txt",
-               atime="1970-01-01T00:01:40+00:00",
-               mtime=None,
-               nofollow=True)
-    assert bridge.attrs == [("/data/f.txt", {
-        "mode": None,
-        "uid": None,
-        "gid": None,
-        "atime": "1970-01-01T00:01:40+00:00",
-        "mtime": None,
-        "nofollow": True,
-    })]
+    fs.setattr(
+        "/data/f.txt",
+        atime="1970-01-01T00:01:40+00:00",
+        mtime=None,
+        nofollow=True,
+    )
+    assert bridge.attrs == [
+        (
+            "/data/f.txt",
+            {
+                "mode": None,
+                "uid": None,
+                "gid": None,
+                "atime": "1970-01-01T00:01:40+00:00",
+                "mtime": None,
+                "nofollow": True,
+            },
+        )
+    ]
 
 
 def test_a_mutation_of_a_build_file_stays_refused(tmp_path):
@@ -440,3 +489,37 @@ def test_a_mutation_of_a_build_file_stays_refused(tmp_path):
         fs.symlink("/lib/os.py", "elsewhere.py")
     with pytest.raises(PermissionError):
         fs.setattr("/lib/os.py", atime=None, mtime="x", nofollow=False)
+
+
+def test_filetype_of_answers_a_stat_and_a_listing_row_alike():
+    # One table for path_filestat_get and fd_readdir, so d_type never
+    # disagrees with the stat: a character device lists as one.
+    assert (
+        filetype_of(
+            VFSStat(
+                size=3, is_dir=False, mode=LINK_MODE, mtime_ns=0, is_link=True
+            )
+        )
+        == FT_SYMLINK
+    )
+    assert (
+        filetype_of(VFSStat(size=0, is_dir=True, mode=DIR_MODE, mtime_ns=0))
+        == FT_DIR
+    )
+    assert (
+        filetype_of(VFSStat(size=1, is_dir=False, mode=FILE_MODE, mtime_ns=0))
+        == FT_REG
+    )
+    assert (
+        filetype_of(
+            VFSEntry(path="/dev/null", size=0, is_dir=False, mode=CHAR_MODE)
+        )
+        == FT_CHR
+    )
+    assert (
+        filetype_of(VFSEntry(path="/data/sub/", size=0, is_dir=True)) == FT_DIR
+    )
+    assert (
+        filetype_of(VFSEntry(path="/data/bad", size=0, is_dir=False))
+        == FT_UNKNOWN
+    )

@@ -15,8 +15,10 @@
 import json
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.trello._input import (file_operand,
-                                                   resolve_text_input)
+from mirage.commands.builtin.trello._input import (
+    file_operand,
+    resolve_text_input,
+)
 from mirage.commands.builtin.trello._scope import require_card
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
@@ -28,20 +30,25 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-SPEC = CommandSpec(options=(
-    Option(long="--card_id", type="str"),
-    Option(long="--name", type="str"),
-    Option(long="--desc", type="str"),
-    Option(long="--desc_file", type="path"),
-    Option(long="--due", type="str"),
-    Option(long="--closed", type="str"),
-), )
+SPEC = CommandSpec(
+    options=(
+        Option(long="--card_id", type="str"),
+        Option(long="--name", type="str"),
+        Option(long="--desc", type="str"),
+        Option(long="--desc_file", type="path"),
+        Option(long="--due", type="str"),
+        Option(long="--closed", type="str"),
+    ),
+)
 
 
 @command("trello card update", vfs="trello", spec=SPEC, write=True)
 async def trello_card_update(
-        accessor: TrelloAccessor, paths: list[PathSpec], texts: list[str],
-        opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPEC)
     config = accessor.config
     card_id = fl.as_str("card_id")
@@ -49,9 +56,11 @@ async def trello_card_update(
         raise ValueError("--card_id is required")
     name = fl.as_str("name")
     desc = None
-    if (fl.as_str("desc") is not None
-            or file_operand(fl, "desc_file") is not None
-            or opts.stdin is not None):
+    if (
+        fl.as_str("desc") is not None
+        or file_operand(fl, "desc_file") is not None
+        or opts.stdin is not None
+    ):
         desc = await resolve_text_input(
             accessor,
             inline_text=fl.as_str("desc"),
@@ -78,6 +87,7 @@ async def trello_card_update(
         session=accessor.pool,
     )
     return yield_bytes(
-        json.dumps(normalize_card(card),
-                   ensure_ascii=False,
-                   separators=(",", ":")).encode()), IOResult()
+        json.dumps(
+            normalize_card(card), ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    ), IOResult()

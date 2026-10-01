@@ -13,14 +13,25 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.shell.parse.env import env_reads, implicit_reads, opaque_reads
-from mirage.shell.parse.names import (arith_reads, assignment_values,
-                                      command_invocations, command_words,
-                                      identifier_names, referenced_names)
-from mirage.shell.parse.parse import (BASH_LANGUAGE, TS_PARSER,
-                                      join_continuations, parse)
-from mirage.shell.parse.syntax import (find_syntax_error,
-                                       find_unterminated_backtick,
-                                       syntax_error_result)
+from mirage.shell.parse.names import (
+    arith_reads,
+    assignment_values,
+    command_invocations,
+    command_words,
+    identifier_names,
+    referenced_names,
+)
+from mirage.shell.parse.parse import (
+    BASH_LANGUAGE,
+    TS_PARSER,
+    join_continuations,
+    parse,
+)
+from mirage.shell.parse.syntax import (
+    find_syntax_error,
+    find_unterminated_backtick,
+    syntax_error_result,
+)
 
 __all__ = [
     "BASH_LANGUAGE",

@@ -43,14 +43,6 @@ async def main():
 
     first = (await r.stdout_str()).strip().split("\n")[0]
 
-    print("=== plan: cat ===")
-    dr = await ws.shell(f"cat /gdocs/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
-    print("=== plan: grep ===")
-    dr = await ws.shell(f"grep textRun /gdocs/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
     print("=== jq .title ===")
     r = await ws.shell(f'jq ".title" /gdocs/owned/{first}')
     print(await r.stdout_str())
@@ -68,32 +60,38 @@ async def main():
     print(await r.stdout_str())
 
     print("=== gws docs documents create ===")
-    r = await ws.shell('gws docs documents create'
-                       ' --json \'{"title": "MIRAGE Example Doc"}\'')
+    r = await ws.shell(
+        'gws docs documents create --json \'{"title": "MIRAGE Example Doc"}\''
+    )
     doc = json.loads(await r.stdout_str())
     doc_id = doc["documentId"]
     print(f"Created: {doc_id}")
 
     print("\n=== gws docs documents batchUpdate ===")
-    body = json.dumps({
-        "requests": [{
-            "insertText": {
-                "location": {
-                    "index": 1
-                },
-                "text": "Hello from MIRAGE!\n",
-            }
-        }]
-    })
+    body = json.dumps(
+        {
+            "requests": [
+                {
+                    "insertText": {
+                        "location": {"index": 1},
+                        "text": "Hello from MIRAGE!\n",
+                    }
+                }
+            ]
+        }
+    )
     params = json.dumps({"documentId": doc_id})
-    r = await ws.shell(f"gws docs documents batchUpdate"
-                       f" --params '{params}' --json '{body}'")
+    r = await ws.shell(
+        f"gws docs documents batchUpdate --params '{params}' --json '{body}'"
+    )
     print(f"Updated: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws docs write ===")
-    r = await ws.shell(f'gws docs write'
-                       f' --document {doc_id}'
-                       f' --text "Appended via gws docs write."')
+    r = await ws.shell(
+        f"gws docs write"
+        f" --document {doc_id}"
+        f' --text "Appended via gws docs write."'
+    )
     print(f"Written: {(await r.stdout_str())[:80]}")
 
     url = f"https://docs.google.com/document/d/{doc_id}/edit"

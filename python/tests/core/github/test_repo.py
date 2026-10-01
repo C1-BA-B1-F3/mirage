@@ -19,9 +19,13 @@ import pytest
 
 from mirage.accessor.github import GitHubAccessor
 from mirage.core.github.config import GhConfig, GitHubConfig
-from mirage.core.github.repo import (create_repo, ensure_ref,
-                                     fetch_default_branch, list_repos,
-                                     parse_repo)
+from mirage.core.github.repo import (
+    create_repo,
+    ensure_ref,
+    fetch_default_branch,
+    list_repos,
+    parse_repo,
+)
 
 
 @pytest.fixture
@@ -35,12 +39,14 @@ async def test_fetch_default_branch_main(mock_get, config):
     mock_get.return_value = {"default_branch": "main"}
     result = await fetch_default_branch(config, "acme", "proj")
     assert result == "main"
-    mock_get.assert_awaited_once_with(config.token,
-                                      "/repos/{owner}/{repo}",
-                                      base_url=None,
-                                      owner="acme",
-                                      repo="proj",
-                                      session=None)
+    mock_get.assert_awaited_once_with(
+        config.token,
+        "/repos/{owner}/{repo}",
+        base_url=None,
+        owner="acme",
+        repo="proj",
+        session=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -74,7 +80,8 @@ def test_parse_repo_refuses_a_spec_that_is_not_the_format(spec):
 @pytest.mark.asyncio
 @patch("mirage.core.github.repo.github_get")
 async def test_ensure_ref_resolves_the_default_branch_when_none_was_named(
-        mock_get, config):
+    mock_get, config
+):
     mock_get.return_value = {"default_branch": "master"}
     accessor = GitHubAccessor(config, "acme", "proj")
     assert await ensure_ref(accessor) == "master"
@@ -86,17 +93,21 @@ async def test_ensure_ref_resolves_the_default_branch_when_none_was_named(
 @pytest.mark.asyncio
 @patch("mirage.core.github.repo.github_get")
 async def test_ensure_ref_keeps_a_pinned_ref_without_a_request(
-        mock_get, config):
+    mock_get, config
+):
     accessor = GitHubAccessor(config, "acme", "proj", "release-2")
     assert await ensure_ref(accessor) == "release-2"
     mock_get.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("owner", "expected"), [("Alice", "/user/repos"),
-                                                 ("acme", "/orgs/acme/repos")])
+@pytest.mark.parametrize(
+    ("owner", "expected"),
+    [("Alice", "/user/repos"), ("acme", "/orgs/acme/repos")],
+)
 async def test_create_repo_distinguishes_the_user_from_an_org(
-        monkeypatch, owner, expected):
+    monkeypatch, owner, expected
+):
     calls = []
 
     async def request(token, method, path, body=None, *, base_url=None):
@@ -113,9 +124,10 @@ async def test_create_repo_distinguishes_the_user_from_an_org(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("kind", "expected"),
-                         [("User", "/users/alice/repos"),
-                          ("Organization", "/orgs/alice/repos")])
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [("User", "/users/alice/repos"), ("Organization", "/orgs/alice/repos")],
+)
 async def test_list_repos_resolves_the_owner_type(monkeypatch, kind, expected):
     calls = []
 
@@ -136,7 +148,8 @@ async def test_list_repos_resolves_the_owner_type(monkeypatch, kind, expected):
 @pytest.mark.asyncio
 @patch("mirage.core.github.repo.github_get")
 async def test_ensure_ref_resolves_once_for_concurrent_readers(
-        mock_get, config):
+    mock_get, config
+):
     mock_get.return_value = {"default_branch": "trunk"}
     accessor = GitHubAccessor(config, "acme", "proj")
     refs = await asyncio.gather(*(ensure_ref(accessor) for _ in range(4)))

@@ -18,8 +18,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind import (CommandIO,
-                                                  make_generic_commands)
+from mirage.commands.builtin.generic_bind import (
+    CommandIO,
+    make_generic_commands,
+)
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.generic import make_generic_ops
 from mirage.ops.registry import RegisteredOp
@@ -144,7 +146,6 @@ class BaseVFS:
         overrides: set[str] | None = None,
         commands: list[Callable[..., Any]] | None = None,
         ops: list[Callable[..., Any]] | None = None,
-        provision_overrides: dict[str, Callable[..., Any]] | None = None,
         auto_ops: bool = True,
         caches_reads: bool | None = None,
         sizes_always_known: bool | None = None,
@@ -179,8 +180,6 @@ class BaseVFS:
             ops (list[Callable] | None): ``@op`` functions or
                 ``RegisteredOp`` values layered over the derived set; one
                 carrying no filetype shadows the derived op of its name.
-            provision_overrides (dict[str, Callable] | None): per-command
-                cost estimators replacing the catalog default.
             auto_ops (bool): derive the op set from the table; disable to
                 serve only the explicit ``ops``.
             caches_reads (bool | None): serve repeat reads from the file
@@ -219,11 +218,11 @@ class BaseVFS:
         if read_revalidatable is not None:
             self.read_revalidatable = read_revalidatable
         if io is None:
-            if any(x is not None
-                   for x in (overrides, commands, ops, provision_overrides)):
+            if any(x is not None for x in (overrides, commands, ops)):
                 raise ValueError(
-                    "overrides, commands, ops and provision_overrides "
-                    "derive from an io table; pass io")
+                    "overrides, commands and ops derive from an io table; "
+                    "pass io"
+                )
             return
         # The base's placeholder would register every generic command
         # under a VFS no registry or prompt knows.
@@ -231,13 +230,12 @@ class BaseVFS:
             raise ValueError("a VFS built from a table needs a name")
         self._from_table = True
         table = io.to_command_io() if isinstance(io, VFSAdapter) else io
-        self._commands_table = registered_commands([
-            *make_generic_commands(self.name,
-                                   table,
-                                   overrides=overrides,
-                                   provision_overrides=provision_overrides),
-            *(commands or []),
-        ])
+        self._commands_table = registered_commands(
+            [
+                *make_generic_commands(self.name, table, overrides=overrides),
+                *(commands or []),
+            ]
+        )
         user_ops: list[RegisteredOp] = []
         for fn in ops or []:
             if isinstance(fn, RegisteredOp):
@@ -248,8 +246,11 @@ class BaseVFS:
         # same name: the derived set is built with those names skipped,
         # so two handlers never compete for one key.
         shadowed = {ro.name for ro in user_ops if ro.filetype is None}
-        derived = (make_generic_ops(self.name, table, overrides=shadowed)
-                   if auto_ops else [])
+        derived = (
+            make_generic_ops(self.name, table, overrides=shadowed)
+            if auto_ops
+            else []
+        )
         self._ops_table = [*derived, *user_ops]
 
     def ops(self) -> list[RegisteredOp]:
@@ -264,8 +265,7 @@ class BaseVFS:
 
     def commands(self) -> list[RegisteredCommand]:
         """The shell commands this driver serves, as registered commands."""
-        return (self._commands_table
-                if self._commands_table is not None else [])
+        return self._commands_table if self._commands_table is not None else []
 
     def storage_location(self) -> str | None:
         """Where this driver's bytes live, as one string a person can read.

@@ -45,9 +45,11 @@ SLACK = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--text", type="str", required=True),
-                Option(long="--thread-ts",
-                       type="str",
-                       description="Reply in this thread"),
+                Option(
+                    long="--thread-ts",
+                    type="str",
+                    description="Reply in this thread",
+                ),
             ),
         ),
         CLISpec(
@@ -56,9 +58,11 @@ SLACK = CLISpec(
             fn=read_messages,
             options=(
                 Option(long="--channel", type="str", required=True),
-                Option(long="--limit",
-                       type="int",
-                       description="Max messages (default: 20)"),
+                Option(
+                    long="--limit",
+                    type="int",
+                    description="Max messages (default: 20)",
+                ),
             ),
         ),
         CLISpec(
@@ -69,10 +73,12 @@ SLACK = CLISpec(
             options=(
                 Option(long="--channel", type="str", required=True),
                 Option(long="--ts", type="str", required=True),
-                Option(long="--emoji",
-                       type="str",
-                       required=True,
-                       description="Emoji name without colons"),
+                Option(
+                    long="--emoji",
+                    type="str",
+                    required=True,
+                    description="Emoji name without colons",
+                ),
             ),
         ),
         CLISpec(
@@ -108,21 +114,25 @@ SLACK = CLISpec(
             name="list-pins",
             description="List the pinned items of a channel",
             fn=list_pins,
-            options=(Option(long="--channel", type="str", required=True), ),
+            options=(Option(long="--channel", type="str", required=True),),
         ),
         CLISpec(
             name="member-info",
             description="Fetch one user's profile",
             fn=member_info,
-            options=(Option(long="--user", type="str", required=True), ),
+            options=(Option(long="--user", type="str", required=True),),
         ),
         CLISpec(
             name="list-members",
             description="List workspace members, optionally filtered",
             fn=list_members,
-            options=(Option(long="--query",
-                            type="str",
-                            description="Name or email filter"), ),
+            options=(
+                Option(
+                    long="--query",
+                    type="str",
+                    description="Name or email filter",
+                ),
+            ),
         ),
         CLISpec(
             name="emoji-list",
@@ -134,17 +144,25 @@ SLACK = CLISpec(
             description="Search messages with Slack query operators",
             fn=search,
             options=(
-                Option(long="--query",
-                       type="str",
-                       required=True,
-                       description=("Slack search query (supports operators "
-                                    "like 'from:@user', 'in:#channel')")),
-                Option(long="--count",
-                       type="int",
-                       description="Results per page (1-100, default 20)"),
-                Option(long="--page",
-                       type="int",
-                       description="1-based page number (default 1)"),
+                Option(
+                    long="--query",
+                    type="str",
+                    required=True,
+                    description=(
+                        "Slack search query (supports operators "
+                        "like 'from:@user', 'in:#channel')"
+                    ),
+                ),
+                Option(
+                    long="--count",
+                    type="int",
+                    description="Results per page (1-100, default 20)",
+                ),
+                Option(
+                    long="--page",
+                    type="int",
+                    description="1-based page number (default 1)",
+                ),
             ),
         ),
     ),

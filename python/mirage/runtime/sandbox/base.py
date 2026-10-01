@@ -50,15 +50,16 @@ class RemoteSandbox(Runtime, LineExecutorMixin):
     # gate never sees those effects, however well isolated the
     # sandbox itself is.
     reach: RuntimeReach = "remote"
-    captures: tuple[str, ...] = (EXTERNAL_COMMANDS, )
+    captures: tuple[str, ...] = (EXTERNAL_COMMANDS,)
     config_cls: ClassVar[type[SandboxConfig]] = SandboxConfig
     config: SandboxConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: SandboxConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: SandboxConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         super().__init__(captures, config, script)
         # Connect-once latch: the first captured line connects; later
         # lines just execute. A failed connect leaves it unset so the
@@ -66,8 +67,9 @@ class RemoteSandbox(Runtime, LineExecutorMixin):
         self._connected = False
         self._connect_lock = asyncio.Lock()
 
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         """Run one raw line in the sandbox, connecting once.
 
         The line, cwd, and paths pass through verbatim: the sandbox is
@@ -95,8 +97,9 @@ class RemoteSandbox(Runtime, LineExecutorMixin):
         """Attach to the user's live sandbox, failing loud if absent."""
         raise NotImplementedError
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         """Execute one shell line inside the sandbox.
 
         Args:

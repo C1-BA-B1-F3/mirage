@@ -54,15 +54,19 @@ asyncio.run(main(sys.argv[1], sys.argv[2]))
 """
 
 
-async def cas_increment(store: DiskSessionStore, worker: str,
-                        rounds: int) -> None:
+async def cas_increment(
+    store: DiskSessionStore, worker: str, rounds: int
+) -> None:
     """Read-modify-CAS one counter, retrying until each round lands."""
     for _ in range(rounds):
         for _ in range(200):
-            record = (await store.load()).get("hot", {
-                "session_id": "hot",
-                "env": {},
-            })
+            record = (await store.load()).get(
+                "hot",
+                {
+                    "session_id": "hot",
+                    "env": {},
+                },
+            )
             env = dict(record.get("env", {}))
             env[worker] = str(int(env.get(worker, "0")) + 1)
             expected = int(record.get("generation", 0))
@@ -81,16 +85,14 @@ async def test_set_load_roundtrip(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     await store.set("s1", {"session_id": "s1", "cwd": "/a", "env": {}})
     await store.set(
-        "s2", {
+        "s2",
+        {
             "session_id": "s2",
             "cwd": "/",
-            "env": {
-                "K": "v"
-            },
-            "mount_modes": {
-                "/data": "read"
-            }
-        })
+            "env": {"K": "v"},
+            "mount_modes": {"/data": "read"},
+        },
+    )
     entries = await store.load()
     await store.close()
     assert entries["s1"]["cwd"] == "/a"
@@ -117,10 +119,10 @@ async def test_cas_create_only_once(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     first = {"session_id": "s", "generation": 1}
     assert await store.cas_set("s", first, 0) is True
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 1
-    }, 0) is False
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 1}, 0)
+        is False
+    )
     await store.close()
     stored = json.loads((tmp_path / "sessions" / "s.json").read_bytes())
     assert stored == first
@@ -130,15 +132,16 @@ async def test_cas_create_only_once(tmp_path):
 async def test_cas_stale_generation_rejected(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     await store.set("s", {"session_id": "s", "generation": 2})
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 2
-    }, 1) is False
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "cwd": "/x",
-        "generation": 3
-    }, 2) is True
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
+        is False
+    )
+    assert (
+        await store.cas_set(
+            "s", {"session_id": "s", "cwd": "/x", "generation": 3}, 2
+        )
+        is True
+    )
     entries = await store.load()
     await store.close()
     assert entries["s"]["cwd"] == "/x"
@@ -148,10 +151,10 @@ async def test_cas_stale_generation_rejected(tmp_path):
 async def test_cas_legacy_record_counts_as_generation_zero(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     await store.set("s", {"session_id": "s"})
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 1
-    }, 0) is True
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 1}, 0)
+        is True
+    )
     await store.close()
 
 
@@ -161,15 +164,15 @@ async def test_cas_lock_held_by_live_writer_loses(tmp_path):
     await store.set("s", {"session_id": "s", "generation": 1})
     lock = tmp_path / "sessions" / "s.json.lock"
     lock.write_bytes(b"9999999")
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 2
-    }, 1) is False
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
+        is False
+    )
     lock.unlink()
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 2
-    }, 1) is True
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
+        is True
+    )
     await store.close()
 
 
@@ -180,12 +183,13 @@ async def test_cas_stale_lock_reclaimed(tmp_path):
     lock = tmp_path / "sessions" / "s.json.lock"
     lock.write_bytes(b"424242")
     stale = 100.0
-    os.utime(lock,
-             (lock.stat().st_atime - stale, lock.stat().st_mtime - stale))
-    assert await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 2
-    }, 1) is True
+    os.utime(
+        lock, (lock.stat().st_atime - stale, lock.stat().st_mtime - stale)
+    )
+    assert (
+        await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
+        is True
+    )
     assert not lock.exists()
     await store.close()
 
@@ -205,13 +209,13 @@ async def test_no_tmp_or_lock_leftovers(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     await store.set("s", {"session_id": "s"})
     assert await store.cas_set("s", {"session_id": "s", "generation": 1}, 0)
-    assert not await store.cas_set("s", {
-        "session_id": "s",
-        "generation": 1
-    }, 0)
+    assert not await store.cas_set(
+        "s", {"session_id": "s", "generation": 1}, 0
+    )
     await store.close()
     leftovers = [
-        p.name for p in (tmp_path / "sessions").iterdir()
+        p.name
+        for p in (tmp_path / "sessions").iterdir()
         if not p.name.endswith(".json")
     ]
     assert leftovers == []
@@ -221,8 +225,9 @@ async def test_no_tmp_or_lock_leftovers(tmp_path):
 async def test_concurrent_cas_writers_lose_nothing(tmp_path):
     store = DiskSessionStore(str(tmp_path))
     workers = [f"w{i}" for i in range(5)]
-    await asyncio.gather(*(cas_increment(store, worker, 5)
-                           for worker in workers))
+    await asyncio.gather(
+        *(cas_increment(store, worker, 5) for worker in workers)
+    )
     record = (await store.load())["hot"]
     await store.close()
     assert record["generation"] == 25
@@ -234,9 +239,9 @@ async def test_cross_process_cas_writers_lose_nothing(tmp_path):
     """The lockfile protocol's whole point: separate OS processes CAS
     the same record without losing an update."""
     procs = [
-        await
-        asyncio.create_subprocess_exec(sys.executable, "-c", CHILD_SCRIPT,
-                                       str(tmp_path), f"p{i}")
+        await asyncio.create_subprocess_exec(
+            sys.executable, "-c", CHILD_SCRIPT, str(tmp_path), f"p{i}"
+        )
         for i in range(3)
     ]
     codes = await asyncio.gather(*(p.wait() for p in procs))

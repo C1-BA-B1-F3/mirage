@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.errors import (CommandTimeoutError, FindParseError,
-                                    UsageError)
+from mirage.commands.errors import (
+    CommandTimeoutError,
+    FindParseError,
+    UsageError,
+)
 from mirage.io import IOResult
 from mirage.policy import Deny, refusal_of, render_deny
 from mirage.runtime.routing import RouteDeny

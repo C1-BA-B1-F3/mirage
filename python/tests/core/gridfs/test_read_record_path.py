@@ -29,7 +29,6 @@ SPEC = PathSpec(virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt")
 
 
 class _Out:
-
     def __init__(self) -> None:
         self.done = False
 
@@ -44,7 +43,6 @@ class _Out:
 
 
 class _Bucket:
-
     async def open_download_stream(self, _file_id):
         return _Out()
 
@@ -54,15 +52,16 @@ async def _latest_file(_conn, _key):
 
 
 def _accessor():
-    return type("A", (),
-                {"config": GridFSConfig(uri="mongodb://h", database="d")})()
+    return type(
+        "A", (), {"config": GridFSConfig(uri="mongodb://h", database="d")}
+    )()
 
 
 def _patch(monkeypatch, fn) -> None:
     monkeypatch.setitem(fn.__globals__, "latest_file", _latest_file)
-    monkeypatch.setitem(fn.__globals__,
-                        "bucket",
-                        lambda _a, _c=None: _Bucket())
+    monkeypatch.setitem(
+        fn.__globals__, "bucket", lambda _a, _c=None: _Bucket()
+    )
 
 
 @pytest.mark.asyncio

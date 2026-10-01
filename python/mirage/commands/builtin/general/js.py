@@ -13,9 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.general.interpreter import (resolve_source,
-                                                         run_code,
-                                                         runtime_version)
+from mirage.commands.builtin.general.interpreter import (
+    resolve_source,
+    run_code,
+    runtime_version,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -32,8 +34,9 @@ async def _js(
     label = opts.command or "js"
     fl = FlagView(opts.flags, spec=SPECS["js"])
     if fl.as_bool("version"):
-        return await runtime_version(label, opts.runtime, opts.env,
-                                     opts.runtime_unavailable)
+        return await runtime_version(
+            label, opts.runtime, opts.env, opts.runtime_unavailable
+        )
     error, prepared = await resolve_source(
         label,
         paths,
@@ -43,19 +46,24 @@ async def _js(
         opts.dispatch,
         opts.cwd,
         opts.exec_allowed,
-        exec_path_allowed=opts.exec_path_allowed)
+        exec_path_allowed=opts.exec_path_allowed,
+    )
     if error is not None or prepared is None:
         assert error is not None
         return error
     as_module = fl.as_bool("module") or (
         prepared.script_path is not None
-        and prepared.script_path.virtual.endswith(".mjs"))
-    return await run_code(label,
-                          prepared,
-                          opts.env, {"module": as_module},
-                          opts.runtime,
-                          opts.runtime_unavailable,
-                          cwd=opts.cwd)
+        and prepared.script_path.virtual.endswith(".mjs")
+    )
+    return await run_code(
+        label,
+        prepared,
+        opts.env,
+        {"module": as_module},
+        opts.runtime,
+        opts.runtime_unavailable,
+        cwd=opts.cwd,
+    )
 
 
 js = command("js", vfs=None, spec=SPECS["js"])(_js)

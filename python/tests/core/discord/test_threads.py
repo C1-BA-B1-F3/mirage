@@ -24,26 +24,32 @@ CONFIG = DiscordConfig(token="bot-token")
 
 @pytest.mark.asyncio
 async def test_create_thread_from_message():
-    with patch("mirage.core.discord.threads.discord_post",
-               new_callable=AsyncMock,
-               return_value={"id": "T1"}) as post:
+    with patch(
+        "mirage.core.discord.threads.discord_post",
+        new_callable=AsyncMock,
+        return_value={"id": "T1"},
+    ) as post:
         result = await create_thread(CONFIG, "C1", "topic", message_id="M1")
-    post.assert_awaited_once_with(CONFIG,
-                                  "/channels/C1/messages/M1/threads",
-                                  {"name": "topic"},
-                                  session=None)
+    post.assert_awaited_once_with(
+        CONFIG,
+        "/channels/C1/messages/M1/threads",
+        {"name": "topic"},
+        session=None,
+    )
     assert result == {"id": "T1"}
 
 
 @pytest.mark.asyncio
 async def test_create_thread_standalone():
-    with patch("mirage.core.discord.threads.discord_post",
-               new_callable=AsyncMock,
-               return_value={"id": "T2"}) as post:
+    with patch(
+        "mirage.core.discord.threads.discord_post",
+        new_callable=AsyncMock,
+        return_value={"id": "T2"},
+    ) as post:
         await create_thread(CONFIG, "C1", "topic")
-    post.assert_awaited_once_with(CONFIG,
-                                  "/channels/C1/threads", {
-                                      "name": "topic",
-                                      "type": 11
-                                  },
-                                  session=None)
+    post.assert_awaited_once_with(
+        CONFIG,
+        "/channels/C1/threads",
+        {"name": "topic", "type": 11},
+        session=None,
+    )

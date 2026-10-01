@@ -29,8 +29,10 @@ def test_dev_null_redirect_stderr(shell):
 
 
 def test_dev_null_preserves_exit_code(shell):
-    cmd = ("if cat /data/nope.txt 2>/dev/null; "
-           "then echo found; else echo missing; fi")
+    cmd = (
+        "if cat /data/nope.txt 2>/dev/null; "
+        "then echo found; else echo missing; fi"
+    )
     assert shell.mirage(cmd) == "missing\n"
 
 
@@ -68,7 +70,8 @@ def test_device_safeguard_does_not_cap_adjacent_regular_files(shell):
     size = CHAR_DEVICE_MAX_BYTES + 1
     shell.create_file("large.bin", b"x" * size)
     code, stdout, stderr = shell.mirage_result(
-        "cat /dev/null /data/large.bin | wc -c")
+        "cat /dev/null /data/large.bin | wc -c"
+    )
     assert code == 0
     assert stdout == f"{size}\n"
     assert "output truncated" not in stderr
@@ -79,15 +82,18 @@ def test_dev_nodes_are_classified_as_character_devices(shell):
     assert shell.mirage("find /dev -type c") == "/dev/null\n/dev/zero\n"
     assert shell.mirage("find /dev -empty") == ""
     assert shell.mirage("stat -c '%F %t %T' /dev/null") == (
-        "character special file 1 3\n")
+        "character special file 1 3\n"
+    )
     long_zero = shell.mirage("ls -l /dev/zero")
     assert long_zero.startswith("crw-rw-rw-")
     assert "1, 5" in long_zero
     assert shell.mirage("file /dev/zero") == (
-        "/dev/zero: character special (1/5)\n")
+        "/dev/zero: character special (1/5)\n"
+    )
     assert shell.mirage("du /dev/zero") == "0\t/dev/zero\n"
     assert shell.mirage("find /dev/null -printf '%m %M\\n'") == (
-        "666 crw-rw-rw-\n")
+        "666 crw-rw-rw-\n"
+    )
     assert shell.mirage("stat -c '%a %f' /dev/null") == "666 21b6\n"
 
 
@@ -134,8 +140,10 @@ def test_dev_null_is_a_char_device_not_a_regular_file(shell):
     # A char device exists and passes -c/-e, but not -f (regular file).
     assert shell.mirage("if [ -e /dev/null ]; then echo yes; fi") == "yes\n"
     assert shell.mirage("if [ -c /dev/null ]; then echo yes; fi") == "yes\n"
-    assert shell.mirage(
-        "if [ -f /dev/null ]; then echo yes; else echo no; fi") == "no\n"
+    assert (
+        shell.mirage("if [ -f /dev/null ]; then echo yes; else echo no; fi")
+        == "no\n"
+    )
 
 
 def test_rm_dev_null_exits_zero_and_removes(shell):

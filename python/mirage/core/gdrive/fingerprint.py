@@ -21,9 +21,12 @@ def _token(value: JsonValue) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def drive_fingerprint(resource_type: str, md5: JsonValue,
-                      head_revision: JsonValue,
-                      modified: JsonValue) -> str | None:
+def drive_fingerprint(
+    resource_type: str,
+    md5: JsonValue,
+    head_revision: JsonValue,
+    modified: JsonValue,
+) -> str | None:
     """The token a Drive file's stat and read both stamp, chosen by kind.
 
     Drive gives every file with content an md5 and a head revision. A
@@ -48,7 +51,9 @@ def entry_fingerprint(entry: IndexEntry) -> str | None:
     Args:
         entry (IndexEntry): the file's index entry.
     """
-    return drive_fingerprint(entry.resource_type,
-                             entry.extra.get("md5_checksum"),
-                             entry.extra.get("head_revision_id"),
-                             entry.remote_time)
+    return drive_fingerprint(
+        entry.resource_type,
+        entry.extra.get("md5_checksum"),
+        entry.extra.get("head_revision_id"),
+        entry.remote_time,
+    )

@@ -20,8 +20,9 @@ from mirage.core.ssh.client import _abs
 from mirage.types import PathSpec
 
 
-async def rename(accessor: SSHAccessor, src_spec: PathSpec,
-                 dst_spec: PathSpec) -> None:
+async def rename(
+    accessor: SSHAccessor, src_spec: PathSpec, dst_spec: PathSpec
+) -> None:
     src = src_spec.mount_path
     dst = dst_spec.mount_path
     config = accessor.config

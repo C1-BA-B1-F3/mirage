@@ -18,9 +18,13 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.crossmount.utils import transfer_links
 from mirage.commands.builtin.generic.mv import mv as generic_mv
 from mirage.commands.builtin.generic.mv import parse_flags
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op,
-                                                          refuse_reveal)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+    refuse_reveal,
+)
 from mirage.commands.builtin.generic_bind.builders.cp import overlayable_stat
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -29,9 +33,13 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import NativeMove, PathSpec
 
 
-async def mv(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def mv(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("mv: no VFS")
     fl = FlagView(opts.flags, spec=SPECS["mv"])
@@ -41,16 +49,24 @@ async def mv(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return await generic_mv(
         paths,
         strategy=NativeMove(
-            rename=partial(ops.require(Operation.RENAME), accessor)),
+            rename=partial(ops.require(Operation.RENAME), accessor)
+        ),
         stat=overlayable_stat(ops, accessor, opts.index, overlay),
         flags=parsed,
         readdir=bound_op(ops.readdir, accessor, opts.index),
         guard=refuse_reveal,
-        copies=(transfer_links(
-            opts.ns.links, opts.dispatch,
-            opts.cwd.virtual if opts.cwd is not None else "/")
-                if opts.ns is not None and opts.ns.links is not None
-                and opts.dispatch is not None else None))
+        copies=(
+            transfer_links(
+                opts.ns.links,
+                opts.dispatch,
+                opts.cwd.virtual if opts.cwd is not None else "/",
+            )
+            if opts.ns is not None
+            and opts.ns.links is not None
+            and opts.dispatch is not None
+            else None
+        ),
+    )
 
 
-BUILDER = Builder('mv', mv, write=True)
+BUILDER = Builder("mv", mv, write=True)

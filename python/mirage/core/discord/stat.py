@@ -27,13 +27,15 @@ from mirage.utils.filetype import content_type_for_mime
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 
-def _dir_stat(match: ScopeMatch, path: PathSpec,
-              entry: IndexEntry) -> FileStat:
+def _dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
 
 
-def _guild_stat(match: ScopeMatch, path: PathSpec,
-                entry: IndexEntry) -> FileStat:
+def _guild_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name or entry.name,
         type=FileType.DIRECTORY,
@@ -41,8 +43,9 @@ def _guild_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _channel_stat(match: ScopeMatch, path: PathSpec,
-                  entry: IndexEntry) -> FileStat:
+def _channel_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name or entry.name,
         type=FileType.DIRECTORY,
@@ -51,8 +54,9 @@ def _channel_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _file_blob_stat(match: ScopeMatch, path: PathSpec,
-                    entry: IndexEntry) -> FileStat:
+def _file_blob_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     mimetype = entry.extra.get("content_type", "")
     return FileStat(
         name=entry.vfs_name or entry.name,
@@ -66,8 +70,9 @@ def _file_blob_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-async def _channel_proven(accessor: DiscordAccessor, path: PathSpec,
-                          index: IndexCacheStore, up: int) -> None:
+async def _channel_proven(
+    accessor: DiscordAccessor, path: PathSpec, index: IndexCacheStore, up: int
+) -> None:
     """Raise ENOENT unless the path's channel ancestor exists.
 
     Args:
@@ -81,15 +86,19 @@ async def _channel_proven(accessor: DiscordAccessor, path: PathSpec,
     for _ in range(up):
         virtual = virtual.rsplit("/", 1)[0]
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=mount_key(virtual, prefix))
+    spec = PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=mount_key(virtual, prefix)
+    )
     if await resolve_entry(readdir, accessor, spec, index) is None:
         raise enoent(path.virtual)
 
 
-async def _stat_day(accessor: DiscordAccessor, match: ScopeMatch,
-                    path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _stat_day(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     """Stat a day directory, which resolves beyond the listed window.
 
     The channel listing synthesizes a bounded window of recent days,
@@ -111,8 +120,12 @@ async def _stat_day(accessor: DiscordAccessor, match: ScopeMatch,
     return FileStat(name=match.slots["day"], type=FileType.DIRECTORY)
 
 
-async def _stat_chat(accessor: DiscordAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _stat_chat(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     """Stat chat.jsonl, which survives a sealed day.
 
     A day whose history could not be listed (403/404/429) seals an
@@ -127,22 +140,25 @@ async def _stat_chat(accessor: DiscordAccessor, match: ScopeMatch,
     await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
-        return FileStat(name="chat.jsonl",
-                        type=FileType.FILE,
-                        content=ContentType.TEXT,
-                        size=entry.size)
+        return FileStat(
+            name="chat.jsonl",
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+            size=entry.size,
+        )
     await _channel_proven(accessor, path, index, up=2)
-    return FileStat(name="chat.jsonl",
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    size=None)
+    return FileStat(
+        name="chat.jsonl",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        size=None,
+    )
 
 
 stat = make_stat(
     detect_scope,
     readdir,
-    guards={kind: guard_day
-            for kind in ("messages", "files", "file_blob")},
+    guards={kind: guard_day for kind in ("messages", "files", "file_blob")},
     entry_stats={
         "guild": _guild_stat,
         "channels_dir": _dir_stat,

@@ -49,8 +49,9 @@ async def test_unstaging_puts_the_index_back(git_rw, repo_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_unstaging_leaves_the_working_tree_alone(git_rw,
-                                                       repo_path: Path):
+async def test_unstaging_leaves_the_working_tree_alone(
+    git_rw, repo_path: Path
+):
     # Mixed mode, which is git's default: the edit survives, only the
     # staging of it is undone.
     (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
@@ -74,7 +75,8 @@ async def test_a_clean_tree_reports_nothing(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_staged_new_file_becomes_untracked_again(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "fresh.txt").write_text("x\n", encoding="utf-8")
     await run(git_rw, "add -A")
     await run(git_rw, "reset")
@@ -97,10 +99,12 @@ async def test_a_pathspec_that_matches_nothing_is_refused(git_rw):
     # to a script as "the index was reset".
     code, _out, err = await run(git_rw, "reset nosuch.txt")
     assert code == 128
-    assert err == (b"fatal: ambiguous argument 'nosuch.txt': unknown revision "
-                   b"or path not in the working tree.\nUse '--' to separate "
-                   b"paths from revisions, like this:\n"
-                   b"'git <command> [<revision>...] -- [<file>...]'\n")
+    assert err == (
+        b"fatal: ambiguous argument 'nosuch.txt': unknown revision "
+        b"or path not in the working tree.\nUse '--' to separate "
+        b"paths from revisions, like this:\n"
+        b"'git <command> [<revision>...] -- [<file>...]'\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -109,8 +113,10 @@ async def test_a_revision_operand_says_which_feature_is_missing(git_rw):
     # and "unknown revision" would be a lie about a revision it resolves.
     code, _out, err = await run(git_rw, "reset HEAD~1")
     assert code == 128
-    assert err == (b"fatal: cannot reset to 'HEAD~1': this build resets the "
-                   b"index from HEAD only\n")
+    assert err == (
+        b"fatal: cannot reset to 'HEAD~1': this build resets the "
+        b"index from HEAD only\n"
+    )
 
 
 @pytest.mark.asyncio

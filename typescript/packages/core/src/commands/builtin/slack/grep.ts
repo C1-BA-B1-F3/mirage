@@ -35,7 +35,6 @@ import { grepGeneric } from '../generic/grep.ts'
 import { patternArg } from '../grep_pattern.ts'
 import { pushdownOperand, textSearchResults } from '../grep_pushdown.ts'
 import { prependStderr } from '../utils/output.ts'
-import { fileReadProvision } from './_provision.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const resolveSlackGlob = resolveGlobOf(SLACK_IO)
@@ -136,5 +135,4 @@ export const SLACK_GREP = command({
   vfs: VFSName.SLACK,
   spec: specOf('grep'),
   fn: grepCommand,
-  provision: fileReadProvision,
 })

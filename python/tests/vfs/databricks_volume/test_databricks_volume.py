@@ -28,8 +28,10 @@ from mirage.core.databricks_volume.read import read_bytes
 from mirage.core.databricks_volume.stream import read_stream
 from mirage.types import PathSpec, VFSName
 from mirage.utils.key_prefix import mount_key
-from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
-                                          DatabricksVolumeVFS)
+from mirage.vfs.databricks_volume import (
+    DatabricksVolumeConfig,
+    DatabricksVolumeVFS,
+)
 from tests.fixtures.driver_ops import ops
 
 
@@ -38,13 +40,11 @@ class NotFoundError(Exception):
 
 
 class FakeDownload:
-
     def __init__(self, data: bytes) -> None:
         self.contents = BytesIO(data)
 
 
 class FakeFiles:
-
     def __init__(self) -> None:
         self.downloads: dict[str, bytes] = {}
         self.metadata: dict[str, object] = {}
@@ -86,7 +86,8 @@ class FakeFiles:
             self.directories.setdefault(cur, [])
             parent = posixpath.dirname(cur) or "/"
             self._upsert_directory_entry(
-                parent, SimpleNamespace(path=cur, is_directory=True))
+                parent, SimpleNamespace(path=cur, is_directory=True)
+            )
 
     def delete_directory(self, path: str) -> None:
         self.delete_directory_calls.append(path)
@@ -99,7 +100,8 @@ class FakeFiles:
         self.directories.pop(path, None)
         parent = posixpath.dirname(path.rstrip("/")) or "/"
         self.directories[parent] = [
-            entry for entry in self.directories.get(parent, [])
+            entry
+            for entry in self.directories.get(parent, [])
             if getattr(entry, "path", None) != path
         ]
 
@@ -138,18 +140,21 @@ class FakeFiles:
         self.downloads.pop(path, None)
         parent = posixpath.dirname(path.rstrip("/")) or "/"
         self.directories[parent] = [
-            entry for entry in self.directories.get(parent, [])
+            entry
+            for entry in self.directories.get(parent, [])
             if getattr(entry, "path", None) != path
         ]
 
     def _upsert_directory_entry(self, parent: str, entry: object) -> None:
         entries = [
-            existing for existing in self.directories.get(parent, [])
+            existing
+            for existing in self.directories.get(parent, [])
             if getattr(existing, "path", None) != getattr(entry, "path", None)
         ]
         entries.append(entry)
         self.directories[parent] = sorted(
-            entries, key=lambda item: getattr(item, "path", ""))
+            entries, key=lambda item: getattr(item, "path", "")
+        )
 
 
 def _apply_range_header(data: bytes, range_header: str) -> bytes:
@@ -162,7 +167,6 @@ def _apply_range_header(data: bytes, range_header: str) -> bytes:
 
 
 class FakeApiClient:
-
     def __init__(self, files: FakeFiles) -> None:
         self.files = files
 
@@ -197,7 +201,6 @@ class FakeApiClient:
 
 
 class FakeClient:
-
     def __init__(self, files: FakeFiles) -> None:
         self.files = files
         self.api_client = FakeApiClient(files)
@@ -236,7 +239,8 @@ def seed_file(files: FakeFiles, path: str, data: bytes) -> None:
             path=path,
             is_directory=False,
             file_size=len(data),
-        ))
+        )
+    )
 
 
 def test_config_validation_and_normalization():
@@ -267,9 +271,9 @@ def test_backend_path_uses_volume_root_and_strips_mount_prefix():
         virtual="/volume/reports/latest.md",
         directory="/volume/reports",
     )
-    assert backend_path(
-        config,
-        path) == ("/Volumes/main/default/agent_files/root/reports/latest.md")
+    assert backend_path(config, path) == (
+        "/Volumes/main/default/agent_files/root/reports/latest.md"
+    )
 
 
 def test_vfs_state_redacts_token():
@@ -329,24 +333,36 @@ async def test_read_stat_readdir_range_stream_and_exists():
     ]
     vfs = make_vfs(files)
 
-    assert await read_bytes(
-        vfs.accessor,
-        PathSpec.from_str_path(
-            "/volume/reports/latest.md",
-            mount_key("/volume/reports/latest.md", "/volume"))) == b"abcdef"
-    assert await read_bytes(vfs.accessor,
-                            PathSpec.from_str_path(
-                                "/volume/reports/latest.md",
-                                mount_key("/volume/reports/latest.md",
-                                          "/volume")),
-                            offset=1,
-                            size=3) == b"bcd"
-    chunks = [
-        chunk async for chunk in read_stream(
+    assert (
+        await read_bytes(
             vfs.accessor,
             PathSpec.from_str_path(
                 "/volume/reports/latest.md",
-                mount_key("/volume/reports/latest.md", "/volume")),
+                mount_key("/volume/reports/latest.md", "/volume"),
+            ),
+        )
+        == b"abcdef"
+    )
+    assert (
+        await read_bytes(
+            vfs.accessor,
+            PathSpec.from_str_path(
+                "/volume/reports/latest.md",
+                mount_key("/volume/reports/latest.md", "/volume"),
+            ),
+            offset=1,
+            size=3,
+        )
+        == b"bcd"
+    )
+    chunks = [
+        chunk
+        async for chunk in read_stream(
+            vfs.accessor,
+            PathSpec.from_str_path(
+                "/volume/reports/latest.md",
+                mount_key("/volume/reports/latest.md", "/volume"),
+            ),
             chunk_size=2,
         )
     ]
@@ -354,7 +370,9 @@ async def test_read_stat_readdir_range_stream_and_exists():
     file_stat = await ops(vfs).stat(
         PathSpec.from_str_path(
             "/volume/reports/latest.md",
-            mount_key("/volume/reports/latest.md", "/volume")))
+            mount_key("/volume/reports/latest.md", "/volume"),
+        )
+    )
     assert file_stat.name == "latest.md"
     assert file_stat.size == 6
     assert file_stat.modified == "2023-11-14T22:13:20Z"
@@ -362,14 +380,20 @@ async def test_read_stat_readdir_range_stream_and_exists():
         vfs.accessor,
         PathSpec.from_str_path(
             "/volume/reports/latest.md",
-            mount_key("/volume/reports/latest.md", "/volume")))
+            mount_key("/volume/reports/latest.md", "/volume"),
+        ),
+    )
     assert not await exists(
         vfs.accessor,
-        PathSpec.from_str_path("/volume/missing.md",
-                               mount_key("/volume/missing.md", "/volume")))
+        PathSpec.from_str_path(
+            "/volume/missing.md", mount_key("/volume/missing.md", "/volume")
+        ),
+    )
     entries = await ops(vfs).readdir(
-        PathSpec.from_str_path("/volume/reports",
-                               mount_key("/volume/reports", "/volume")))
+        PathSpec.from_str_path(
+            "/volume/reports", mount_key("/volume/reports", "/volume")
+        )
+    )
     assert entries == ["/volume/reports/latest.md"]
 
 
@@ -398,15 +422,21 @@ async def test_vfs_exposes_file_write_ops():
     vfs = make_vfs(files)
 
     await ops(vfs).write(
-        PathSpec.from_str_path("/volume/new.txt",
-                               mount_key("/volume/new.txt", "/volume")),
-        b"hello")
+        PathSpec.from_str_path(
+            "/volume/new.txt", mount_key("/volume/new.txt", "/volume")
+        ),
+        b"hello",
+    )
     await ops(vfs).create(
-        PathSpec.from_str_path("/volume/empty.txt",
-                               mount_key("/volume/empty.txt", "/volume")))
+        PathSpec.from_str_path(
+            "/volume/empty.txt", mount_key("/volume/empty.txt", "/volume")
+        )
+    )
     await ops(vfs).unlink(
-        PathSpec.from_str_path("/volume/new.txt",
-                               mount_key("/volume/new.txt", "/volume")))
+        PathSpec.from_str_path(
+            "/volume/new.txt", mount_key("/volume/new.txt", "/volume")
+        )
+    )
 
     assert files.downloads[f"{root}/empty.txt"] == b""
     assert f"{root}/new.txt" not in files.downloads
@@ -435,32 +465,53 @@ async def test_workspace_write_mode_invalidates_parent_directory_index():
     ws = Workspace({"/dbx/": make_vfs(files)}, mode=MountMode.WRITE)
     index = ws.mount("/dbx/").index_store
 
-    await index.set_dir("/dbx", [("old.txt",
-                                  IndexEntry(
-                                      id="/dbx/old.txt",
-                                      name="old.txt",
-                                      resource_type="file",
-                                  ))])
+    await index.set_dir(
+        "/dbx",
+        [
+            (
+                "old.txt",
+                IndexEntry(
+                    id="/dbx/old.txt",
+                    name="old.txt",
+                    resource_type="file",
+                ),
+            )
+        ],
+    )
     assert (await index.list_dir("/dbx")).entries == ["/dbx/old.txt"]
 
     await ws.vfs.write("/dbx/new.txt", b"hello")
     assert (await index.list_dir("/dbx")).status == (LookupStatus.NOT_FOUND)
 
-    await index.set_dir("/dbx", [("new.txt",
-                                  IndexEntry(
-                                      id="/dbx/new.txt",
-                                      name="new.txt",
-                                      resource_type="file",
-                                  ))])
+    await index.set_dir(
+        "/dbx",
+        [
+            (
+                "new.txt",
+                IndexEntry(
+                    id="/dbx/new.txt",
+                    name="new.txt",
+                    resource_type="file",
+                ),
+            )
+        ],
+    )
     await ws.vfs.create("/dbx/empty.txt")
     assert (await index.list_dir("/dbx")).status == (LookupStatus.NOT_FOUND)
 
-    await index.set_dir("/dbx", [("empty.txt",
-                                  IndexEntry(
-                                      id="/dbx/empty.txt",
-                                      name="empty.txt",
-                                      resource_type="file",
-                                  ))])
+    await index.set_dir(
+        "/dbx",
+        [
+            (
+                "empty.txt",
+                IndexEntry(
+                    id="/dbx/empty.txt",
+                    name="empty.txt",
+                    resource_type="file",
+                ),
+            )
+        ],
+    )
     await ws.vfs.unlink("/dbx/empty.txt")
     assert (await index.list_dir("/dbx")).status == (LookupStatus.NOT_FOUND)
 
@@ -562,11 +613,13 @@ async def test_read_only_mount_rejects_file_write_commands():
     rm_io = await ws.shell("rm /dbx/created.txt")
 
     assert touch_io.exit_code == 1
-    assert touch_io.stderr == (b"touch: cannot touch '/dbx/created.txt': "
-                               b"Read-only file system\n")
+    assert touch_io.stderr == (
+        b"touch: cannot touch '/dbx/created.txt': Read-only file system\n"
+    )
     assert rm_io.exit_code == 1
-    assert rm_io.stderr == (b"rm: cannot remove '/dbx/created.txt': "
-                            b"No such file or directory\n")
+    assert rm_io.stderr == (
+        b"rm: cannot remove '/dbx/created.txt': No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -672,14 +725,17 @@ async def test_workspace_execute_databricks_volume_find_files():
 async def test_workspace_execute_databricks_volume_recursive_grep_and_rg():
     files = FakeFiles()
     root = "/Volumes/main/default/agent_files/root"
-    files.directory_metadata.update({
-        root,
-        f"{root}/nested",
-        f"{root}/nested/deeper",
-    })
+    files.directory_metadata.update(
+        {
+            root,
+            f"{root}/nested",
+            f"{root}/nested/deeper",
+        }
+    )
     files.metadata[f"{root}/nested"] = SimpleNamespace(is_directory=True)
     files.metadata[f"{root}/nested/deeper"] = SimpleNamespace(
-        is_directory=True)
+        is_directory=True
+    )
     files.metadata[f"{root}/nested/info.txt"] = SimpleNamespace(
         content_length=17,
         content_type=None,
@@ -692,7 +748,8 @@ async def test_workspace_execute_databricks_volume_recursive_grep_and_rg():
     )
     files.downloads[f"{root}/nested/info.txt"] = b"alpha debug line\n"
     files.downloads[f"{root}/nested/deeper/notes.md"] = (
-        b"# Notes\nbeta debug detail\n")
+        b"# Notes\nbeta debug detail\n"
+    )
     files.directories[root] = [
         SimpleNamespace(path=f"{root}/nested", is_directory=True),
     ]
@@ -719,7 +776,8 @@ async def test_workspace_execute_databricks_volume_recursive_grep_and_rg():
     assert grep_io.exit_code == 0
     assert b"/dbx/nested/info.txt:1:alpha debug line" in grep_io.stdout
     assert b"/dbx/nested/deeper/notes.md:2:beta debug detail" in (
-        grep_io.stdout)
+        grep_io.stdout
+    )
     assert not grep_io.stderr
     assert rg_io.exit_code == 0
     assert b"/dbx/nested/info.txt:alpha debug line" in rg_io.stdout

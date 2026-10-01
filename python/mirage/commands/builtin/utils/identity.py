@@ -47,8 +47,9 @@ class Identity:
 NO_IDENTITY = Identity()
 
 
-def identity_from(ns: NamespaceView | None,
-                  session_view: SessionView | None) -> Identity:
+def identity_from(
+    ns: NamespaceView | None, session_view: SessionView | None
+) -> Identity:
     """The identity two planes' views describe.
 
     Args:
@@ -59,7 +60,8 @@ def identity_from(ns: NamespaceView | None,
     """
     return Identity(
         user=ns.user if ns is not None else None,
-        profile=session_view.profile() if session_view is not None else None)
+        profile=session_view.profile() if session_view is not None else None,
+    )
 
 
 def identity_of(opts: CommandOpts) -> Identity:

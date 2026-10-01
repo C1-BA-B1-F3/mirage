@@ -18,23 +18,26 @@ from functools import partial
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.du import du_generic
-from mirage.commands.builtin.generic_bind.adapter import (with_path_guards,
-                                                          with_policy_guard)
-from mirage.commands.builtin.generic_bind.builders.du import (WalkBudget,
-                                                              walk_entries,
-                                                              walk_size)
-from mirage.commands.builtin.github._provision import metadata_provision
+from mirage.commands.builtin.generic_bind.adapter import (
+    with_path_guards,
+    with_policy_guard,
+)
+from mirage.commands.builtin.generic_bind.builders.du import (
+    WalkBudget,
+    walk_entries,
+    walk_size,
+)
 from mirage.commands.builtin.github.io import IO, resolve_glob
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.core.github.tree import ensure_tree
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 
 
-def _subtree(accessor: GitHubAccessor,
-             path: PathSpec) -> list[tuple[str, int]]:
+def _subtree(
+    accessor: GitHubAccessor, path: PathSpec
+) -> list[tuple[str, int]]:
     """Every sized entry at or under ``path``, in mount-relative space.
 
     Read off the git tree rather than the index, mirroring TypeScript's
@@ -47,8 +50,11 @@ def _subtree(accessor: GitHubAccessor,
     """
     key = path.vfs_path.strip("/")
     prefix = key + "/" if key else ""
-    found = [("/" + p, entry.size) for p, entry in accessor.tree.items()
-             if (p == key or p.startswith(prefix)) and entry.size is not None]
+    found = [
+        ("/" + p, entry.size)
+        for p, entry in accessor.tree.items()
+        if (p == key or p.startswith(prefix)) and entry.size is not None
+    ]
     found.sort()
     return found
 
@@ -57,57 +63,80 @@ async def _du_size(accessor: GitHubAccessor, path: PathSpec) -> int:
     return sum(size for _, size in _subtree(accessor, path))
 
 
-async def _du_entries(accessor: GitHubAccessor,
-                      path: PathSpec) -> tuple[list[tuple[str, int]], int]:
+async def _du_entries(
+    accessor: GitHubAccessor, path: PathSpec
+) -> tuple[list[tuple[str, int]], int]:
     found = _subtree(accessor, path)
     return found, sum(size for _, size in found)
 
 
-async def du_provision(accessor: GitHubAccessor, paths: list[PathSpec],
-                       texts: list[str], opts: CommandOpts) -> ProvisionResult:
-    return await metadata_provision("du " + " ".join(
-        p.virtual if isinstance(p, PathSpec) else p for p in paths))
-
-
-async def _resolve(live: Callable[[], Awaitable[None]],
-                   accessor: GitHubAccessor, index: IndexCacheStore,
-                   targets: list[PathSpec]) -> list[PathSpec]:
+async def _resolve(
+    live: Callable[[], Awaitable[None]],
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    targets: list[PathSpec],
+) -> list[PathSpec]:
     await live()
     return await resolve_glob(accessor, targets, index)
 
 
-async def _stat(live: Callable[[], Awaitable[None]], accessor: GitHubAccessor,
-                index: IndexCacheStore, path: PathSpec):
+async def _stat(
+    live: Callable[[], Awaitable[None]],
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    path: PathSpec,
+):
     await live()
     return await IO.stat(accessor, path, index)
 
 
-async def _live_size(live: Callable[[], Awaitable[None]],
-                     accessor: GitHubAccessor, index: IndexCacheStore,
-                     budget: WalkBudget, path: PathSpec) -> int:
+async def _live_size(
+    live: Callable[[], Awaitable[None]],
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    budget: WalkBudget,
+    path: PathSpec,
+) -> int:
     await live()
     # A truncated tree names only some paths and is never refetched, so it
     # is walked folder by folder, as a backend with no tree would be.
     if accessor.truncated:
-        return await walk_size(with_policy_guard(with_path_guards(IO)),
-                               accessor, index, budget, path)
+        return await walk_size(
+            with_policy_guard(with_path_guards(IO)),
+            accessor,
+            index,
+            budget,
+            path,
+        )
     return await _du_size(accessor, path)
 
 
-async def _live_entries(live: Callable[[], Awaitable[None]],
-                        accessor: GitHubAccessor, index: IndexCacheStore,
-                        budget: WalkBudget,
-                        path: PathSpec) -> tuple[list[tuple[str, int]], int]:
+async def _live_entries(
+    live: Callable[[], Awaitable[None]],
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    budget: WalkBudget,
+    path: PathSpec,
+) -> tuple[list[tuple[str, int]], int]:
     await live()
     if accessor.truncated:
-        return await walk_entries(with_policy_guard(with_path_guards(IO)),
-                                  accessor, index, budget, path)
+        return await walk_entries(
+            with_policy_guard(with_path_guards(IO)),
+            accessor,
+            index,
+            budget,
+            path,
+        )
     return await _du_entries(accessor, path)
 
 
-@command("du", vfs="github", spec=SPECS["du"], provision=du_provision)
-async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("du", vfs="github", spec=SPECS["du"])
+async def du(
+    accessor: GitHubAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     checked = False
     budget = WalkBudget(IO.max_du_entries)
 
@@ -121,15 +150,15 @@ async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
             await ensure_tree(accessor, opts.index, opts.mount_prefix)
             checked = True
 
-    return await du_generic(paths,
-                            list(texts),
-                            opts,
-                            partial(_resolve, live, accessor, opts.index),
-                            partial(_stat, live, accessor, opts.index),
-                            partial(_live_size, live, accessor, opts.index,
-                                    budget),
-                            partial(_live_entries, live, accessor, opts.index,
-                                    budget),
-                            truncated=lambda: budget.hit,
-                            unreadable=lambda: budget.unreadable,
-                            directories=lambda: budget.directories)
+    return await du_generic(
+        paths,
+        list(texts),
+        opts,
+        partial(_resolve, live, accessor, opts.index),
+        partial(_stat, live, accessor, opts.index),
+        partial(_live_size, live, accessor, opts.index, budget),
+        partial(_live_entries, live, accessor, opts.index, budget),
+        truncated=lambda: budget.hit,
+        unreadable=lambda: budget.unreadable,
+        directories=lambda: budget.directories,
+    )

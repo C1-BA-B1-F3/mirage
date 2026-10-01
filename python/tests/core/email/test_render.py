@@ -17,10 +17,7 @@ import json
 from mirage.core.email.render import envelopes_json_bytes, message_json_bytes
 
 MESSAGE = {
-    "from": {
-        "name": "Alice",
-        "email": "alice@example.com"
-    },
+    "from": {"name": "Alice", "email": "alice@example.com"},
     "subject": "Hello",
     "date": "",
     "body_text": "hi there",
@@ -44,15 +41,15 @@ def test_rendering_is_stable_whether_or_not_internaldate_is_present():
     assert message_json_bytes(MESSAGE) == message_json_bytes(without)
 
 
-FULL = dict(MESSAGE,
-            body_html="<p>hi there</p>",
-            snippet="hi there",
-            has_attachments=True,
-            attachments=[{
-                "filename": "a.txt",
-                "content_type": "text/plain",
-                "size": 3
-            }])
+FULL = dict(
+    MESSAGE,
+    body_html="<p>hi there</p>",
+    snippet="hi there",
+    has_attachments=True,
+    attachments=[
+        {"filename": "a.txt", "content_type": "text/plain", "size": 3}
+    ],
+)
 
 
 def test_an_envelope_carries_no_body():

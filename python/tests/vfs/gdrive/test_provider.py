@@ -31,14 +31,18 @@ def config():
 
 
 def test_vfs_init(config):
-    with patch("mirage.core.google.client.refresh_access_token", ):
+    with patch(
+        "mirage.core.google.client.refresh_access_token",
+    ):
         vfs = GoogleDriveVFS(config)
         assert vfs.name == VFSName.GDRIVE
         assert vfs.caches_reads is True
 
 
 def test_vfs_accessor(config):
-    with patch("mirage.core.google.client.refresh_access_token", ):
+    with patch(
+        "mirage.core.google.client.refresh_access_token",
+    ):
         vfs = GoogleDriveVFS(config)
         assert vfs.accessor is not None
         assert vfs.accessor.config is config
@@ -46,6 +50,8 @@ def test_vfs_accessor(config):
 
 
 def test_vfs_commands_registered(config):
-    with patch("mirage.core.google.client.refresh_access_token", ):
+    with patch(
+        "mirage.core.google.client.refresh_access_token",
+    ):
         vfs = GoogleDriveVFS(config)
         assert len(vfs.commands()) >= 50

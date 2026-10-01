@@ -61,6 +61,7 @@ class CommandName(StrEnum):
     ``str`` the executor passes still matches. Mirrors the crossmount
     ``Cmd`` pattern.
     """
+
     BASE64 = "base64"
     CMP = "cmp"
     COMM = "comm"
@@ -101,8 +102,9 @@ ParsedFlagValue: TypeAlias = str | bool | int | list[str]
 # unpacking these members. The mixed list is the ``pair`` shape: a pair
 # option accumulates (name, value) flattened, so a PATH-typed pair like
 # jq's ``--rawfile name file`` alternates text and PathSpec.
-FlagValue: TypeAlias = (ParsedFlagValue | PathSpec | list[PathSpec]
-                        | list[str | PathSpec])
+FlagValue: TypeAlias = (
+    ParsedFlagValue | PathSpec | list[PathSpec] | list[str | PathSpec]
+)
 
 
 @dataclass(frozen=True)
@@ -181,6 +183,7 @@ class Option:
             and the renderer that reports the line need it.
         description (str | None): help text.
     """
+
     short: str | None = None
     long: str | None = None
     type: ValueType = "bool"
@@ -244,6 +247,7 @@ class Operand:
             python3's own. One switch cannot do both, which is why the
             boundary has to be declared.
     """
+
     type: ValueType = "path"
     provided_by: tuple[str, ...] = ()
     text_when: tuple[str, ...] = ()

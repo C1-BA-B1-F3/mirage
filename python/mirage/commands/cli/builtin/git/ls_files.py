@@ -40,11 +40,13 @@ def pathspec_selects(path: str, patterns: list[str]) -> bool:
     """
     return any(
         under(path, pattern) or path == pattern or fnmatch(path, pattern)
-        for pattern in patterns)
+        for pattern in patterns
+    )
 
 
 async def ls_files(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """List index paths, including conflict stages when requested.
 
     Without a pathspec the listing is the start directory's subtree;
@@ -60,18 +62,22 @@ async def ls_files(
         doors = inv.doors or CLIDoors()
         _, location = await opened(fl, doors)
         assert doors.dispatch is not None
-        fully = await config_bool(doors.dispatch, location, b"core",
-                                  b"quotepath", True)
+        fully = await config_bool(
+            doors.dispatch, location, b"core", b"quotepath", True
+        )
         state = await read_index(doors.dispatch, location.gitdir)
         start = start_point(fl)
         prefix = repo_relative(location, start, ".")
         patterns = [repo_relative(location, start, text) for text in inv.texts]
         rows = [(path, 0, entry) for path, entry in state.entries.items()]
         rows.extend(
-            (path, stage, entry) for path, conflict in state.conflicts.items()
-            for stage, entry in enumerate((conflict.ancestor, conflict.this,
-                                           conflict.other), 1)
-            if entry is not None)
+            (path, stage, entry)
+            for path, conflict in state.conflicts.items()
+            for stage, entry in enumerate(
+                (conflict.ancestor, conflict.this, conflict.other), 1
+            )
+            if entry is not None
+        )
         nul = fl.as_bool("z")
         out = []
         for path, stage, entry in sorted(rows, key=lambda row: row[:2]):

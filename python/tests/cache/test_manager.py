@@ -43,9 +43,12 @@ def _stores() -> tuple[RAMFileCacheStore, RAMIndexCacheStore]:
 
 async def _seed(cache: RAMFileCacheStore, index: RAMIndexCacheStore) -> None:
     await cache.set("/data/arch/h.txt", b"two\n")
-    await index.set_dir("/data/arch", [
-        ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
-    ])
+    await index.set_dir(
+        "/data/arch",
+        [
+            ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
+        ],
+    )
 
 
 async def _write_case() -> tuple[bool, bool]:
@@ -68,8 +71,9 @@ async def _unlink_case() -> tuple[bool, bool, IndexEntry | None]:
     cache, index = _stores()
     await _seed(cache, index)
     manager = CacheManager(cache, index, "/data/", True)
-    await manager.invalidate_after_unlink(PathSpec.from_str_path("/arch/h.txt")
-                                          )
+    await manager.invalidate_after_unlink(
+        PathSpec.from_str_path("/arch/h.txt")
+    )
     cached = await cache.exists("/data/arch/h.txt")
     listing = await index.list_dir("/data/arch")
     entry = await index.get("/data/arch/h.txt")
@@ -103,9 +107,11 @@ async def _pathspec_case() -> bool:
     cache, index = _stores()
     await _seed(cache, index)
     manager = CacheManager(cache, index, "/data/", True)
-    spec = PathSpec(vfs_path=mount_key("/data/arch/h.txt", "/data/"),
-                    virtual="/data/arch/h.txt",
-                    directory="/data/arch")
+    spec = PathSpec(
+        vfs_path=mount_key("/data/arch/h.txt", "/data/"),
+        virtual="/data/arch/h.txt",
+        directory="/data/arch",
+    )
     await manager.invalidate_after_write(spec)
     return await cache.exists("/data/arch/h.txt")
 
@@ -118,9 +124,11 @@ async def _cached_hit_case() -> bytes | None:
     cache, index = _stores()
     await cache.set("/data/x.txt", b"cached")
     manager = CacheManager(cache, index, "/data/", True)
-    spec = PathSpec(vfs_path=mount_key("/data/x.txt", "/data/"),
-                    virtual="/data/x.txt",
-                    directory="/data/")
+    spec = PathSpec(
+        vfs_path=mount_key("/data/x.txt", "/data/"),
+        virtual="/data/x.txt",
+        directory="/data/",
+    )
     return await manager.cached_bytes(spec)
 
 
@@ -131,9 +139,11 @@ def test_cached_bytes_returns_cached_value():
 async def _cached_miss_case() -> bytes | None:
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
-    spec = PathSpec(vfs_path=mount_key("/data/x.txt", "/data/"),
-                    virtual="/data/x.txt",
-                    directory="/data/")
+    spec = PathSpec(
+        vfs_path=mount_key("/data/x.txt", "/data/"),
+        virtual="/data/x.txt",
+        directory="/data/",
+    )
     return await manager.cached_bytes(spec)
 
 
@@ -145,9 +155,11 @@ async def _cached_local_case() -> bytes | None:
     cache, index = _stores()
     await cache.set("/data/x.txt", b"cached")
     manager = CacheManager(cache, index, "/data/", False)
-    spec = PathSpec(vfs_path=mount_key("/data/x.txt", "/data/"),
-                    virtual="/data/x.txt",
-                    directory="/data/")
+    spec = PathSpec(
+        vfs_path=mount_key("/data/x.txt", "/data/"),
+        virtual="/data/x.txt",
+        directory="/data/",
+    )
     return await manager.cached_bytes(spec)
 
 
@@ -156,9 +168,9 @@ def test_cached_bytes_local_mount_returns_none():
 
 
 def _spec(path: str = "/data/x.txt") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, "/data/"),
-                    virtual=path,
-                    directory="/data/")
+    return PathSpec(
+        vfs_path=mount_key(path, "/data/"), virtual=path, directory="/data/"
+    )
 
 
 async def _gate_refuses_case() -> tuple[bytes | None, list[str]]:
@@ -195,7 +207,8 @@ async def _gate_skipped_on_miss_case() -> list[str]:
 
 def test_gate_is_not_asked_for_a_path_the_cache_does_not_hold():
     assert _run(_gate_skipped_on_miss_case()) == [], (
-        "a cold read must cost no revalidation")
+        "a cold read must cost no revalidation"
+    )
 
 
 async def _gate_skipped_on_local_case() -> list[str]:
@@ -232,7 +245,8 @@ async def _gate_skipped_when_unowned_case() -> list[str]:
 
 def test_gate_is_not_asked_for_a_key_the_mount_no_longer_owns():
     assert _run(_gate_skipped_when_unowned_case()) == [], (
-        "ownership is checked first, so a retiring mount is never probed")
+        "ownership is checked first, so a retiring mount is never probed"
+    )
 
 
 async def _gate_raises_case() -> bytes | None:
@@ -269,14 +283,16 @@ def test_cached_size_reports_the_length_without_revalidating():
     assert size == 6
     assert asked == [], (
         "the stat size backfill runs on the backends that report no size, "
-        "so gating it would turn a stat into a backend stat")
+        "so gating it would turn a stat into a backend stat"
+    )
 
 
 def test_cached_size_of_an_empty_render_is_zero_not_none():
     size, _ = _run(_cached_size_case(b""))
     assert size == 0, (
         "an empty cached render has a known size; None would read as "
-        "unknown and reach ls -l and stat as a missing size")
+        "unknown and reach ls -l and stat as a missing size"
+    )
 
 
 async def _cached_size_miss_case() -> int | None:
@@ -307,8 +323,11 @@ async def _drop_prefix_case() -> tuple[bool, bool, bool]:
     await cache.set("/other/keep.txt", b"safe\n")
     manager = CacheManager(cache, index, "/data/", True)
     await manager.drop_prefix()
-    return (await cache.exists("/data/arch/h.txt"), await
-            cache.exists("/other/keep.txt"), manager._caches_reads)
+    return (
+        await cache.exists("/data/arch/h.txt"),
+        await cache.exists("/other/keep.txt"),
+        manager._caches_reads,
+    )
 
 
 def test_drop_prefix_evicts_this_mount_only():
@@ -339,8 +358,11 @@ async def _drop_prefix_root_case() -> tuple[str, bool, bool]:
     await cache.set("/sub/b.txt", b"y")
     manager = CacheManager(cache, index, "/", True)
     await manager.drop_prefix()
-    return (manager._prefix, await cache.exists("/a.txt"), await
-            cache.exists("/sub/b.txt"))
+    return (
+        manager._prefix,
+        await cache.exists("/a.txt"),
+        await cache.exists("/sub/b.txt"),
+    )
 
 
 def test_drop_prefix_reaches_every_key_on_a_root_mount():
@@ -381,8 +403,10 @@ async def _ancestors_root_mount_case() -> tuple[bool, bool]:
         await index.set_dir(directory, [])
     manager = CacheManager(cache, index, "/", True)
     await manager.invalidate_ancestors(PathSpec.from_str_path("/a/b/c.txt"))
-    return ((await index.list_dir("/")).entries
-            is not None, (await index.list_dir("/a")).entries is not None)
+    return (
+        (await index.list_dir("/")).entries is not None,
+        (await index.list_dir("/a")).entries is not None,
+    )
 
 
 def test_invalidate_ancestors_reaches_the_root_listing():
@@ -562,7 +586,6 @@ async def test_a_replaced_store_forgets_what_the_old_one_was_written():
 
 
 class _Clock:
-
     def __init__(self) -> None:
         self.now = 100.0
 
@@ -617,8 +640,10 @@ async def test_a_probed_stat_is_served_for_the_rest_of_its_command_only():
     async with command_scope():
         manager.note_probed(path, stat)
         assert manager.probed_stat(path) is stat
-        assert manager.probed_stat(
-            PathSpec.from_str_path("/data/arch/other")) is None
+        assert (
+            manager.probed_stat(PathSpec.from_str_path("/data/arch/other"))
+            is None
+        )
     assert manager.probed_stat(path) is None
     async with command_scope():
         assert manager.probed_stat(path) is None
@@ -635,12 +660,14 @@ async def test_a_probe_outside_a_command_is_never_served():
 
 async def _write(manager: CacheManager, index) -> None:
     await manager.invalidate_after_write(
-        PathSpec.from_str_path("/data/elsewhere"))
+        PathSpec.from_str_path("/data/elsewhere")
+    )
 
 
 async def _unlink(manager: CacheManager, index) -> None:
     await manager.invalidate_after_unlink(
-        PathSpec.from_str_path("/data/elsewhere"))
+        PathSpec.from_str_path("/data/elsewhere")
+    )
 
 
 async def _subtree(manager: CacheManager, index) -> None:
@@ -657,9 +684,12 @@ async def _prefix(manager: CacheManager, index) -> None:
 
 async def _relisted_gone(manager: CacheManager, index) -> None:
     view = manager.scope_index(index)
-    await view.set_dir("/data/arch", [
-        ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
-    ])
+    await view.set_dir(
+        "/data/arch",
+        [
+            ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
+        ],
+    )
     await view.set_dir("/data/arch", [])
 
 
@@ -669,7 +699,8 @@ async def _relisted_gone(manager: CacheManager, index) -> None:
 # means the backend may no longer match what the probe saw.
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "drop", [_write, _unlink, _subtree, _external, _prefix, _relisted_gone])
+    "drop", [_write, _unlink, _subtree, _external, _prefix, _relisted_gone]
+)
 async def test_every_cache_drop_in_the_command_retires_its_probed_stats(drop):
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True, on_gone=_ignore_gone)
@@ -687,7 +718,8 @@ async def _ignore_gone(_gone) -> None:
 
 @pytest.mark.asyncio
 async def test_probed_stats_of_finished_commands_are_dropped_past_the_bound(
-        monkeypatch):
+    monkeypatch,
+):
     # Only the probing command can be served an answer, so once the map is
     # full the other commands' entries are dead weight; dropping one costs at
     # most a backend stat, never a wrong answer.
@@ -696,8 +728,9 @@ async def test_probed_stats_of_finished_commands_are_dropped_past_the_bound(
     manager = CacheManager(cache, index, "/data/", True)
     for n in range(4):
         async with command_scope():
-            manager.note_probed(PathSpec.from_str_path(f"/data/old{n}"),
-                                _probed())
+            manager.note_probed(
+                PathSpec.from_str_path(f"/data/old{n}"), _probed()
+            )
     async with command_scope():
         mine = PathSpec.from_str_path("/data/mine")
         manager.note_probed(mine, _probed())
@@ -735,7 +768,8 @@ async def test_an_overlapping_probe_belongs_only_to_its_command(scoped):
 
 @pytest.mark.asyncio
 async def test_one_large_command_does_not_rescan_its_probes_on_every_insert(
-        monkeypatch):
+    monkeypatch,
+):
     # Past the bound, a prune that frees nothing (every entry is the running
     # command's) must not run again on the next insert, or a large walk turns
     # quadratic: the next prune waits until the map has doubled.
@@ -752,7 +786,8 @@ async def test_one_large_command_does_not_rescan_its_probes_on_every_insert(
     manager = CacheManager(cache, index, "/data/", True)
     async with command_scope():
         for n in range(64):
-            manager.note_probed(PathSpec.from_str_path(f"/data/f{n}"),
-                                _probed())
+            manager.note_probed(
+                PathSpec.from_str_path(f"/data/f{n}"), _probed()
+            )
         assert len(manager._probed) == 64
     assert len(scans) <= 5

@@ -29,9 +29,11 @@ def expansion_source(data: bytes, root: TSNodeLike) -> bytes:
         node = stack.pop()
         stack.extend(node.children)
         children = node.children
-        opens.extend((child, list(children[index + 1:]))
-                     for index, child in enumerate(children)
-                     if child.type == "${")
+        opens.extend(
+            (child, list(children[index + 1 :]))
+            for index, child in enumerate(children)
+            if child.type == "${"
+        )
     out = bytearray(data)
     covered = 0
     for child, tail in sorted(opens, key=lambda pair: pair[0].end_byte):
@@ -40,13 +42,16 @@ def expansion_source(data: bytes, root: TSNodeLike) -> bytes:
         if start < covered or end is None:
             continue
         if bad_substitution(data[start:end].decode(errors="replace")):
-            out[start + 2:end - 1] = b"a" * (end - start - 3)
+            out[start + 2 : end - 1] = b"a" * (end - start - 3)
             covered = end
             continue
         if tail and tail[0].type == "!":
             tail.pop(0)
-        if (len(tail) >= 2 and tail[0].type
-                in ("variable_name", "special_variable_name", "subscript")
-                and tail[1].type == ":"):
+        if (
+            len(tail) >= 2
+            and tail[0].type
+            in ("variable_name", "special_variable_name", "subscript")
+            and tail[1].type == ":"
+        ):
             out[tail[1].start_byte] = ord("-")
     return bytes(out)

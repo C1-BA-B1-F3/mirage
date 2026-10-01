@@ -17,23 +17,39 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mirage.commands.spec import constants
-from mirage.commands.spec.argmatch import (ArgmatchChoices, ArgmatchMatch,
-                                           argmatch, value_classes)
+from mirage.commands.spec.argmatch import (
+    ArgmatchChoices,
+    ArgmatchMatch,
+    argmatch,
+    value_classes,
+)
 from mirage.commands.spec.builtin_specs import SPECS
 from mirage.commands.spec.builtins import is_builtin_grammar
-from mirage.commands.spec.compile import (CompiledSpec, compile_spec,
-                                          expand_git_long, expand_long,
-                                          expand_table_long)
-from mirage.commands.spec.constants import (ARG_PLACEHOLDER,
-                                            ARGMATCH_CHOICE_OPTIONS,
-                                            FLOAT_VALUE, INT_VALUE,
-                                            NO_LONG_OPTIONS, NUMERIC_SHORT,
-                                            SOLE_ARGUMENT_LONG_OPTIONS,
-                                            flag_kwarg_name)
+from mirage.commands.spec.compile import (
+    CompiledSpec,
+    compile_spec,
+    expand_git_long,
+    expand_long,
+    expand_table_long,
+)
+from mirage.commands.spec.constants import (
+    ARG_PLACEHOLDER,
+    ARGMATCH_CHOICE_OPTIONS,
+    FLOAT_VALUE,
+    INT_VALUE,
+    NO_LONG_OPTIONS,
+    NUMERIC_SHORT,
+    SOLE_ARGUMENT_LONG_OPTIONS,
+    flag_kwarg_name,
+)
 from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.oldstyle import expand_old_style
-from mirage.commands.spec.types import (CommandSpec, Option, ParsedFlagValue,
-                                        ValueType)
+from mirage.commands.spec.types import (
+    CommandSpec,
+    Option,
+    ParsedFlagValue,
+    ValueType,
+)
 from mirage.utils.path import resolve_path
 
 
@@ -49,12 +65,15 @@ def _argmatch_options() -> tuple[Option, ...]:
     found: list[Option] = []
     for name, spelling in sorted(ARGMATCH_CHOICE_OPTIONS):
         options = [
-            o for o in SPECS[name].options
+            o
+            for o in SPECS[name].options
             if (o.long if o.long else o.short) == spelling
         ]
         if not options:
-            raise ValueError(f"ARGMATCH_CHOICE_OPTIONS names {name} "
-                             f"{spelling}, which that spec does not declare")
+            raise ValueError(
+                f"ARGMATCH_CHOICE_OPTIONS names {name} "
+                f"{spelling}, which that spec does not declare"
+            )
         found.extend(options)
     return tuple(found)
 
@@ -82,8 +101,10 @@ def _argmatch_dests(spec: CommandSpec) -> frozenset[str]:
         spec (CommandSpec): the grammar being parsed.
     """
     return frozenset(
-        (o.long if o.long else o.short) or "" for o in spec.options
-        if o.choices and any(o is table for table in _ARGMATCH_OPTIONS))
+        (o.long if o.long else o.short) or ""
+        for o in spec.options
+        if o.choices and any(o is table for table in _ARGMATCH_OPTIONS)
+    )
 
 
 @dataclass
@@ -111,9 +132,9 @@ class ParsedArgs:
     # int-typed options (canonical spelling, value), and absent required
     # options (canonical spelling).
     invalid_options: list[str] = field(default_factory=list)
-    ambiguous_options: list[tuple[str,
-                                  tuple[str,
-                                        ...]]] = field(default_factory=list)
+    ambiguous_options: list[tuple[str, tuple[str, ...]]] = field(
+        default_factory=list
+    )
     # One tag per refusal in scan encounter order ("invalid",
     # "unexpected_value", "ambiguous", "needs_value", "int", "float",
     # "value"), so the refusal names the FIRST offending token like GNU
@@ -136,9 +157,11 @@ class ParsedArgs:
     # can fill the ambiguous one, because only a prefix can be
     # ambiguous and every other choices set compares the whole word.
     invalid_value_options: list[tuple[str, str, ArgmatchChoices]] = field(
-        default_factory=list)
+        default_factory=list
+    )
     ambiguous_value_options: list[tuple[str, str, ArgmatchChoices]] = field(
-        default_factory=list)
+        default_factory=list
+    )
     invalid_int_options: list[tuple[str, str]] = field(default_factory=list)
     invalid_float_options: list[tuple[str, str]] = field(default_factory=list)
     missing_required_options: list[str] = field(default_factory=list)
@@ -181,17 +204,25 @@ class _Refusals:
     beside the scan's own tags, so the reporter can tell which list holds
     the FIRST refusal on the line, the one GNU stops at.
     """
+
     kinds: list[str]
     ints: list[tuple[str, str]] = field(default_factory=list)
     floats: list[tuple[str, str]] = field(default_factory=list)
-    values: list[tuple[str, str,
-                       ArgmatchChoices]] = field(default_factory=list)
+    values: list[tuple[str, str, ArgmatchChoices]] = field(
+        default_factory=list
+    )
     ambiguous_values: list[tuple[str, str, ArgmatchChoices]] = field(
-        default_factory=list)
+        default_factory=list
+    )
 
 
-def _check_value(refusals: _Refusals, cs: CompiledSpec,
-                 argmatch_dests: frozenset[str], dest: str, value: str) -> str:
+def _check_value(
+    refusals: _Refusals,
+    cs: CompiledSpec,
+    argmatch_dests: frozenset[str],
+    dest: str,
+    value: str,
+) -> str:
     """Run one value through its dest's int, float and choices checks.
 
     Int-typed values are refused before choices, argparse's order (type
@@ -295,8 +326,9 @@ def _set_value_flag(
         flags[name] = stored
 
 
-def _bag_values(flags: Mapping[str, ParsedFlagValue],
-                dest_name: str) -> list[str]:
+def _bag_values(
+    flags: Mapping[str, ParsedFlagValue], dest_name: str
+) -> list[str]:
     """The values the bag holds for one dest.
 
     The bare boolean form of an optional-value flag is exempt from the
@@ -447,7 +479,7 @@ def _match_mixed_cluster(
     chars = tok[1:]
     for idx, ch in enumerate(chars):
         name = f"-{ch}"
-        rest = chars[idx + 1:]
+        rest = chars[idx + 1 :]
         if rest and name in cs.attach_spellings:
             return bools, name, rest
         if name in cs.bool_spellings:
@@ -459,8 +491,9 @@ def _match_mixed_cluster(
     return None
 
 
-def _match_digit_cluster(tok: str,
-                         cs: CompiledSpec) -> tuple[list[str], str] | None:
+def _match_digit_cluster(
+    tok: str, cs: CompiledSpec
+) -> tuple[list[str], str] | None:
     """Match a cluster of bool flags and digit options (``-d10``).
 
     For a DIGIT_OPTIONS program the digits are option letters too, and
@@ -595,9 +628,11 @@ def parse_command(
         # not answer it for a GNU command: a CLI node's textual rest IS
         # the pass-through slot, while basename's is a list of names,
         # and eleven GNU specs share basename's shape.
-        lenient_dash_operands = (cs.rest_kind is not None
-                                 and cs.rest_kind != "path"
-                                 and not cs.remainder)
+        lenient_dash_operands = (
+            cs.rest_kind is not None
+            and cs.rest_kind != "path"
+            and not cs.remainder
+        )
         no_long_option_parser = lenient_dash_operands
         outside_sole_argument = False
         digit_options = False
@@ -638,19 +673,18 @@ def parse_command(
         # states.
         digit_options = builtin and cmd_name in constants.DIGIT_OPTIONS
         equals_values = builtin and cmd_name in constants.EQUALS_SHORT_VALUES
-        in_order_operands = (builtin
-                             and cmd_name in constants.IN_ORDER_OPERANDS)
+        in_order_operands = builtin and cmd_name in constants.IN_ORDER_OPERANDS
         letter_options = builtin and cmd_name in constants.LETTER_OPTIONS
-        whole_words = (builtin
-                       and cmd_name in constants.WHOLE_WORD_LONG_OPTIONS)
+        whole_words = builtin and cmd_name in constants.WHOLE_WORD_LONG_OPTIONS
         own_loop = builtin and cmd_name in constants.OWN_OPTION_LOOP
         synonyms = {
             spelling: same
             for (name, spelling), same in constants.LONG_SYNONYMS.items()
             if builtin and name == cmd_name
         }
-        long_table = (constants.LONG_OPTION_TABLES.get(cmd_name)
-                      if builtin else None)
+        long_table = (
+            constants.LONG_OPTION_TABLES.get(cmd_name) if builtin else None
+        )
 
     def refused_on_tape(word: str) -> bool:
         """Leave a refusal on the tape, where a program that runs its own
@@ -728,12 +762,17 @@ def parse_command(
                     i += 1
                     continue
                 if found:
-                    group = next((g for g in long_table if g[0] == found[0]),
-                                 ())
+                    group = next(
+                        (g for g in long_table if g[0] == found[0]), ()
+                    )
                     spelling = next(
-                        (name for name in group if name in cs.dest), typed)
-            elif (typed not in cs.dest and not no_long_option_parser
-                  and spec.allow_abbrev):
+                        (name for name in group if name in cs.dest), typed
+                    )
+            elif (
+                typed not in cs.dest
+                and not no_long_option_parser
+                and spec.allow_abbrev
+            ):
                 expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
                     spelling = expansions[0]
@@ -752,19 +791,35 @@ def parse_command(
             elif is_pair and eq == -1 and i + 2 < len(scan_argv):
                 # Two tokens, both recorded under the one dest, so the
                 # command reads the accumulated list in twos.
-                _set_value_flag(flags, refusals, cs, argmatch_dests, spelling,
-                                scan_argv[i + 1])
-                _set_value_flag(flags, refusals, cs, argmatch_dests, spelling,
-                                scan_argv[i + 2])
+                _set_value_flag(
+                    flags,
+                    refusals,
+                    cs,
+                    argmatch_dests,
+                    spelling,
+                    scan_argv[i + 1],
+                )
+                _set_value_flag(
+                    flags,
+                    refusals,
+                    cs,
+                    argmatch_dests,
+                    spelling,
+                    scan_argv[i + 2],
+                )
                 # The first token names the value and is always textual;
                 # the option's own kind describes the second.
                 word_kinds[scan_origins[i + 1]] = "str"
                 word_kinds[scan_origins[i + 2]] = cs.kind_of[spelling]
                 i += 3
-            elif (not is_pair and etok in cs.long_value_spellings
-                  and i + 1 < len(scan_argv)):
-                _set_value_flag(flags, refusals, cs, argmatch_dests, etok,
-                                scan_argv[i + 1])
+            elif (
+                not is_pair
+                and etok in cs.long_value_spellings
+                and i + 1 < len(scan_argv)
+            ):
+                _set_value_flag(
+                    flags, refusals, cs, argmatch_dests, etok, scan_argv[i + 1]
+                )
                 word_kinds[scan_origins[i + 1]] = cs.kind_of[etok]
                 if cs.dest_of(etok) == cs.base_dest:
                     word_bases[scan_origins[i + 1]] = base
@@ -782,11 +837,19 @@ def parse_command(
                     option_error_kinds.append("invalid")
                 i += 1
             else:
-                if eq != -1 and (spelling in cs.long_value_spellings
-                                 or spelling in cs.long_optional_spellings):
-                    _set_value_flag(flags, refusals, cs, argmatch_dests,
-                                    spelling, tok[eq + 1:])
-                    base = _rebase(flags, cs, spelling, tok[eq + 1:], base)
+                if eq != -1 and (
+                    spelling in cs.long_value_spellings
+                    or spelling in cs.long_optional_spellings
+                ):
+                    _set_value_flag(
+                        flags,
+                        refusals,
+                        cs,
+                        argmatch_dests,
+                        spelling,
+                        tok[eq + 1 :],
+                    )
+                    base = _rebase(flags, cs, spelling, tok[eq + 1 :], base)
                 elif etok in cs.long_value_spellings:
                     # Declared value flag at end of line with no argument.
                     if not refused_on_tape(etok):
@@ -819,8 +882,11 @@ def parse_command(
 
         # A dash word with no letter after the dash is an operand to jq
         # (`-1`, `-.`, `- x`), so it falls through to the operands below.
-        if (tok.startswith("-") and len(tok) > 1
-                and (not letter_options or constants.DASH_LETTER.match(tok))):
+        if (
+            tok.startswith("-")
+            and len(tok) > 1
+            and (not letter_options or constants.DASH_LETTER.match(tok))
+        ):
             if cs.numeric_dest is not None and NUMERIC_SHORT.match(tok):
                 flags[cs.numeric_dest] = tok[1:]
                 i += 1
@@ -828,9 +894,10 @@ def parse_command(
             matched_optional = False
             for vf in cs.attach_spellings:
                 if tok.startswith(vf) and len(tok) > len(vf):
-                    _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    tok[len(vf):])
-                    base = _rebase(flags, cs, vf, tok[len(vf):], base)
+                    _set_value_flag(
+                        flags, refusals, cs, argmatch_dests, vf, tok[len(vf) :]
+                    )
+                    base = _rebase(flags, cs, vf, tok[len(vf) :], base)
                     i += 1
                     matched_optional = True
                     break
@@ -839,8 +906,14 @@ def parse_command(
             matched_value = False
             for vf in cs.value_spellings:
                 if tok == vf and i + 1 < len(scan_argv):
-                    _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    scan_argv[i + 1])
+                    _set_value_flag(
+                        flags,
+                        refusals,
+                        cs,
+                        argmatch_dests,
+                        vf,
+                        scan_argv[i + 1],
+                    )
                     word_kinds[scan_origins[i + 1]] = cs.kind_of[vf]
                     if cs.dest_of(vf) == cs.base_dest:
                         word_bases[scan_origins[i + 1]] = base
@@ -849,9 +922,10 @@ def parse_command(
                     matched_value = True
                     break
                 if tok.startswith(vf) and len(tok) > len(vf):
-                    attached_value = _attached(tok[len(vf):], equals_values)
-                    _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    attached_value)
+                    attached_value = _attached(tok[len(vf) :], equals_values)
+                    _set_value_flag(
+                        flags, refusals, cs, argmatch_dests, vf, attached_value
+                    )
                     base = _rebase(flags, cs, vf, attached_value, base)
                     i += 1
                     matched_value = True
@@ -865,8 +939,11 @@ def parse_command(
                 continue
 
             count_dest = cs.numeric_dest if digit_options else None
-            digit_cluster = (_match_digit_cluster(tok, cs)
-                             if count_dest is not None else None)
+            digit_cluster = (
+                _match_digit_cluster(tok, cs)
+                if count_dest is not None
+                else None
+            )
             if count_dest is not None and digit_cluster is not None:
                 for name in digit_cluster[0]:
                     _set_bool_flag(flags, cs, name)
@@ -893,16 +970,23 @@ def parse_command(
                     attached = _attached(attached, equals_values)
                     for name in cluster_bools:
                         _set_bool_flag(flags, cs, name)
-                    _set_value_flag(flags, refusals, cs, argmatch_dests, vflag,
-                                    attached)
+                    _set_value_flag(
+                        flags, refusals, cs, argmatch_dests, vflag, attached
+                    )
                     base = _rebase(flags, cs, vflag, attached, base)
                     i += 1
                     continue
                 if i + 1 < len(scan_argv):
                     for name in cluster_bools:
                         _set_bool_flag(flags, cs, name)
-                    _set_value_flag(flags, refusals, cs, argmatch_dests, vflag,
-                                    scan_argv[i + 1])
+                    _set_value_flag(
+                        flags,
+                        refusals,
+                        cs,
+                        argmatch_dests,
+                        vflag,
+                        scan_argv[i + 1],
+                    )
                     word_kinds[scan_origins[i + 1]] = cs.kind_of[vflag]
                     if cs.dest_of(vflag) == cs.base_dest:
                         word_bases[scan_origins[i + 1]] = base
@@ -911,11 +995,15 @@ def parse_command(
                     continue
 
             if lenient_dash_operands or (
-                    NUMERIC_SHORT.match(tok) and
-                (not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq")):
+                NUMERIC_SHORT.match(tok)
+                and (
+                    not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq"
+                )
+            ):
                 record_operand(tok)
-            elif tok in cs.value_spellings or (mixed is not None
-                                               and mixed[2] is None):
+            elif tok in cs.value_spellings or (
+                mixed is not None and mixed[2] is None
+            ):
                 # A declared value flag (alone or ending a cluster) with no
                 # argument left on the line. GNU reports the flag character.
                 if tok in cs.value_spellings:
@@ -932,9 +1020,15 @@ def parse_command(
                     option_error_kinds.append("needs_value")
             else:
                 # GNU reports the first offending character, not the token.
-                at = next((at for at, ch in enumerate(tok[1:], 1)
-                           if f"-{ch}" not in cs.bool_spellings
-                           and f"-{ch}" not in cs.value_spellings), 1)
+                at = next(
+                    (
+                        at
+                        for at, ch in enumerate(tok[1:], 1)
+                        if f"-{ch}" not in cs.bool_spellings
+                        and f"-{ch}" not in cs.value_spellings
+                    ),
+                    1,
+                )
                 bad = tok[at]
                 if own_loop:
                     # The letters before it are read first, so jq's `-hx`
@@ -997,7 +1091,8 @@ def parse_command(
     # dest canonicalizes here too, so a default spelled as a prefix
     # reaches the command as the candidate it names.
     checked = dict.fromkeys(
-        [*cs.int_dests, *cs.float_dests, *cs.choices_by_dest])
+        [*cs.int_dests, *cs.float_dests, *cs.choices_by_dest]
+    )
     for dest_name in checked:
         if dest_name in typed_dests:
             continue
@@ -1007,30 +1102,38 @@ def parse_command(
             for part in values
         ]
         if stored and stored != values:
-            flags[dest_name] = (stored if isinstance(flags.get(dest_name),
-                                                     list) else stored[0])
+            flags[dest_name] = (
+                stored if isinstance(flags.get(dest_name), list) else stored[0]
+            )
 
     missing_required_options = [
         dest_name for dest_name in cs.required_dests if dest_name not in flags
     ]
 
     positional: tuple[ValueType, ...] = tuple(
-        op.type for op in spec.positional
-        if not any(cs.dest_of(name) in flags for name in op.provided_by))
+        op.type
+        for op in spec.positional
+        if not any(cs.dest_of(name) in flags for name in op.provided_by)
+    )
 
     # A required slot the line left empty. Counted against the surviving
     # slots rather than the declared ones, so a flag standing in for a
     # slot (provided_by) satisfies it the same way a word would.
     supplying = [
-        op for op in spec.positional
+        op
+        for op in spec.positional
         if not any(cs.dest_of(name) in flags for name in op.provided_by)
     ]
     missing_required_operands = [
-        op.name or ARG_PLACEHOLDER for index, op in enumerate(supplying)
+        op.name or ARG_PLACEHOLDER
+        for index, op in enumerate(supplying)
         if op.required and len(raw_args) <= index
     ]
-    if (spec.rest is not None and spec.rest.required
-            and len(raw_args) <= len(supplying)):
+    if (
+        spec.rest is not None
+        and spec.rest.required
+        and len(raw_args) <= len(supplying)
+    ):
         missing_required_operands.append(spec.rest.name or ARG_PLACEHOLDER)
 
     # A flag can turn the rest slot textual for this line only: tar's -x
@@ -1038,9 +1141,11 @@ def parse_command(
     # --args makes the operands typed after it positional strings rather
     # than input files. Only classification moves: unknown dash tokens stay
     # as strict as the declared kind makes them.
-    text_from = (_first_text_operand(flags, cs, spec.rest.text_when,
-                                     in_order_operands)
-                 if spec.rest is not None else None)
+    text_from = (
+        _first_text_operand(flags, cs, spec.rest.text_when, in_order_operands)
+        if spec.rest is not None
+        else None
+    )
 
     # Overflow operands past the declared positional slots pass through
     # classified like the last slot (TEXT when there is none), so a
@@ -1048,8 +1153,10 @@ def parse_command(
     # UsageError (#452). The parser classifies, it never drops or raises.
     overflow_kind = positional[-1] if positional else "str"
 
-    stdin_script = (cmd_name in constants.STDIN_SCRIPT_COMMANDS
-                    and is_builtin_grammar(cmd_name, spec))
+    stdin_script = (
+        cmd_name in constants.STDIN_SCRIPT_COMMANDS
+        and is_builtin_grammar(cmd_name, spec)
+    )
     classified: list[tuple[str, ValueType]] = []
     raw_operands: list[tuple[str, ValueType]] = []
     for j, arg in enumerate(raw_args):
@@ -1100,15 +1207,20 @@ def parse_command(
             path_flag_values.extend(paired[1::2])
         elif isinstance(value, list):
             resolved_list = [
-                "-" if part == "-" and cmd_name in ("grep", "rg", "sed", "awk")
-                and flag_name in ("-f", "--file") else resolve_path(part, cwd)
+                "-"
+                if part == "-"
+                and cmd_name in ("grep", "rg", "sed", "awk")
+                and flag_name in ("-f", "--file")
+                else resolve_path(part, cwd)
                 for part in value
             ]
             flags[flag_name] = resolved_list
             path_flag_values.extend(resolved_list)
         elif isinstance(value, str):
-            if (value == "-" and constants.STDOUT_DASH_OPTIONS.get(cmd_name)
-                    == flag_name):
+            if (
+                value == "-"
+                and constants.STDOUT_DASH_OPTIONS.get(cmd_name) == flag_name
+            ):
                 continue
             resolved = resolve_path(value, cwd)
             flags[flag_name] = resolved
@@ -1125,11 +1237,18 @@ def parse_command(
             text_flag_values.append(value)
 
     flags.occurrences = [
-        (name, resolve_path(value, cwd)
-         if cs.kind_by_dest.get(name) == "path" and isinstance(value, str)
-         and not (value == "-"
-                  and constants.STDOUT_DASH_OPTIONS.get(cmd_name) == name) else
-         value) for name, value in flags.occurrences
+        (
+            name,
+            resolve_path(value, cwd)
+            if cs.kind_by_dest.get(name) == "path"
+            and isinstance(value, str)
+            and not (
+                value == "-"
+                and constants.STDOUT_DASH_OPTIONS.get(cmd_name) == name
+            )
+            else value,
+        )
+        for name, value in flags.occurrences
     ]
     return ParsedArgs(
         flags=flags,
@@ -1159,8 +1278,10 @@ def parse_command(
 def parse_to_kwargs(parsed: ParsedArgs) -> dict[str, ParsedFlagValue]:
     result: FlagBag[ParsedFlagValue] = FlagBag()
     if isinstance(parsed.flags, FlagBag):
-        result.occurrences = [(flag_kwarg_name(name), value)
-                              for name, value in parsed.flags.occurrences]
+        result.occurrences = [
+            (flag_kwarg_name(name), value)
+            for name, value in parsed.flags.occurrences
+        ]
     for key, value in parsed.flags.items():
         result[flag_kwarg_name(key)] = value
     return result

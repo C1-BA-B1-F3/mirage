@@ -62,10 +62,10 @@ class _FakeFile:
 
     async def read(self, size: int | None = None) -> bytes:
         if size is None:
-            out = self.data[self.pos:]
+            out = self.data[self.pos :]
             self.pos = len(self.data)
         else:
-            out = self.data[self.pos:self.pos + size]
+            out = self.data[self.pos : self.pos + size]
             self.pos += len(out)
         return out
 
@@ -107,12 +107,14 @@ class FakeAsyncOperator:
 
     def _rel(self, key: str) -> str:
         stem = self.root.strip("/")
-        return key[len(stem) + 1:] if stem else key
+        return key[len(stem) + 1 :] if stem else key
 
     def _meta(self, key: str) -> _FakeMetadata:
-        return _FakeMetadata(content_length=len(self.files[key]),
-                             mode=EntryMode.File,
-                             last_modified=self.modified.get(key))
+        return _FakeMetadata(
+            content_length=len(self.files[key]),
+            mode=EntryMode.File,
+            last_modified=self.modified.get(key),
+        )
 
     def _refuse(self, name: str) -> None:
         if self.reach is not None:
@@ -167,7 +169,7 @@ class FakeAsyncOperator:
         seen_dirs: set[str] = set()
         entries: list[_FakeEntry] = []
         for f in keys:
-            rest = f[len(pfx):]
+            rest = f[len(pfx) :]
             if "/" in rest:
                 dkey = pfx + rest.split("/", 1)[0] + "/"
                 if dkey not in seen_dirs:
@@ -176,10 +178,12 @@ class FakeAsyncOperator:
                         _FakeEntry(
                             path=self._rel(dkey),
                             metadata=_FakeMetadata(mode=EntryMode.Dir),
-                        ))
+                        )
+                    )
             else:
                 entries.append(
-                    _FakeEntry(path=self._rel(f), metadata=self._meta(f)))
+                    _FakeEntry(path=self._rel(f), metadata=self._meta(f))
+                )
 
         async def _iter():
             for e in entries:
@@ -200,11 +204,13 @@ class FakeAsyncOperator:
         return _iter()
 
 
-def make_accessor(files: dict[str, bytes] | None = None,
-                  *,
-                  key_prefix: str | None = None,
-                  hub: FakeHub | None = None,
-                  token: str | None = "t") -> HfBucketsAccessor:
+def make_accessor(
+    files: dict[str, bytes] | None = None,
+    *,
+    key_prefix: str | None = None,
+    hub: FakeHub | None = None,
+    token: str | None = "t",
+) -> HfBucketsAccessor:
     """A bucket accessor over one shared store.
 
     With ``hub``, the FakeHub serves the same dict the opendal fake reads
@@ -224,7 +230,8 @@ def make_accessor(files: dict[str, bytes] | None = None,
         bucket=BUCKET,
         token=token,
         key_prefix=key_prefix,
-        endpoint=hub.url if hub is not None else DEAD_ENDPOINT)
+        endpoint=hub.url if hub is not None else DEAD_ENDPOINT,
+    )
     acc = HfBucketsAccessor(cfg)
     fake = FakeAsyncOperator(files=store, root=acc._root() or "")
     acc._fake = fake

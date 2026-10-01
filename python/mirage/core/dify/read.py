@@ -10,11 +10,13 @@ from mirage.types import PathSpec
 from mirage.utils.ranges import slice_window
 
 
-async def read_bytes(accessor: DifyAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: DifyAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a document, optionally only a byte range of it.
 
     A document is rendered here from its segments, so its bytes do not
@@ -36,16 +38,16 @@ async def read_bytes(accessor: DifyAccessor,
 
 
 async def read_stream(
-        accessor: DifyAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> AsyncIterator[bytes]:
+    accessor: DifyAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> AsyncIterator[bytes]:
     entry = await file_entry(DIFY_TREE, accessor, path, index)
     async for chunk in join_lines(segment_texts(accessor, entry.id)):
         yield chunk
 
 
-async def segment_texts(accessor: DifyAccessor,
-                        document_id: str) -> AsyncIterator[str]:
+async def segment_texts(
+    accessor: DifyAccessor, document_id: str
+) -> AsyncIterator[str]:
     async for page in iter_segment_pages(accessor, document_id):
         for segment in page:
             yield segment_text(segment)

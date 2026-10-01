@@ -47,7 +47,8 @@ async def mk_store(redis_prefix):
 async def test_mkdir(mk_store):
     a = await mk_store("test:mkdir:1:")
     await mkdir(
-        a, PathSpec(vfs_path="newdir", virtual="/newdir", directory="/newdir"))
+        a, PathSpec(vfs_path="newdir", virtual="/newdir", directory="/newdir")
+    )
     assert await a.store.has_dir("/newdir")
     assert await a.store.get_modified("/newdir") is not None
 
@@ -60,9 +61,12 @@ async def test_mkdir_parent_not_found(mk_store):
     with pytest.raises(FileNotFoundError, match="/no/parent"):
         await mkdir(
             a,
-            PathSpec(vfs_path="no/parent",
-                     virtual="/no/parent",
-                     directory="/no/parent"))
+            PathSpec(
+                vfs_path="no/parent",
+                virtual="/no/parent",
+                directory="/no/parent",
+            ),
+        )
     assert not await a.store.has_dir("/no/parent")
 
 
@@ -73,9 +77,12 @@ async def test_mkdir_under_a_plain_file_is_not_a_directory(mk_store):
     with pytest.raises(NotADirectoryError):
         await mkdir(
             a,
-            PathSpec(vfs_path="plain/sub",
-                     virtual="/plain/sub",
-                     directory="/plain/sub"))
+            PathSpec(
+                vfs_path="plain/sub",
+                virtual="/plain/sub",
+                directory="/plain/sub",
+            ),
+        )
     assert not await a.store.has_dir("/plain/sub")
 
 
@@ -86,9 +93,12 @@ async def test_mkdir_deep_under_a_plain_file_is_not_a_directory(mk_store):
     with pytest.raises(NotADirectoryError):
         await mkdir(
             a,
-            PathSpec(vfs_path="plain/sub/deeper",
-                     virtual="/plain/sub/deeper",
-                     directory="/plain/sub/deeper"))
+            PathSpec(
+                vfs_path="plain/sub/deeper",
+                virtual="/plain/sub/deeper",
+                directory="/plain/sub/deeper",
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -108,11 +118,15 @@ async def test_mkdir_p_across_a_file_names_the_component(mk_store):
     a = await mk_store("test:mkdir:p1:")
     await a.store.set_file("/a.txt", b"hi")
     with pytest.raises(NotADirectoryError) as excinfo:
-        await mkdir(a,
-                    PathSpec(vfs_path="a.txt/sub",
-                             virtual="/a.txt/sub",
-                             directory="/a.txt/sub"),
-                    parents=True)
+        await mkdir(
+            a,
+            PathSpec(
+                vfs_path="a.txt/sub",
+                virtual="/a.txt/sub",
+                directory="/a.txt/sub",
+            ),
+            parents=True,
+        )
     # GNU quotes the component it tripped on, not the operand, and the file
     # it collided with is left alone.
     assert str(excinfo.value) == "/a.txt"
@@ -125,11 +139,11 @@ async def test_mkdir_p_onto_a_file_target_is_eexist(mk_store):
     a = await mk_store("test:mkdir:p2:")
     await a.store.set_file("/a.txt", b"hi")
     with pytest.raises(FileExistsError, match="/a.txt"):
-        await mkdir(a,
-                    PathSpec(vfs_path="a.txt",
-                             virtual="/a.txt",
-                             directory="/a.txt"),
-                    parents=True)
+        await mkdir(
+            a,
+            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt"),
+            parents=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -138,19 +152,19 @@ async def test_mkdir_refuses_an_existing_file(mk_store):
     await a.store.set_file("/a.txt", b"hi")
     with pytest.raises(FileExistsError, match="/a.txt"):
         await mkdir(
-            a, PathSpec(vfs_path="a.txt", virtual="/a.txt",
-                        directory="/a.txt"))
+            a, PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt")
+        )
     assert await a.store.get_file("/a.txt") == b"hi"
 
 
 @pytest.mark.asyncio
 async def test_mkdir_with_parents(mk_store):
     a = await mk_store("test:mkdir:4:")
-    await mkdir(a,
-                PathSpec(vfs_path="a/b/c",
-                         virtual="/a/b/c",
-                         directory="/a/b/c"),
-                parents=True)
+    await mkdir(
+        a,
+        PathSpec(vfs_path="a/b/c", virtual="/a/b/c", directory="/a/b/c"),
+        parents=True,
+    )
     assert await a.store.has_dir("/a")
     assert await a.store.has_dir("/a/b")
     assert await a.store.has_dir("/a/b/c")

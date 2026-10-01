@@ -58,20 +58,24 @@ def test_human_size_matches_gnu(size: int, expected: str):
 
 
 def test_format_ls_long_regular_file():
-    stat = FileStat(name="file.txt",
-                    size=5,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    modified="2026-01-01T00:00:00Z")
+    stat = FileStat(
+        name="file.txt",
+        size=5,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified="2026-01-01T00:00:00Z",
+    )
     [line] = format_ls_long([stat])
     assert line == "-rw-r--r-- 1 - - 5 Jan  1  2026 file.txt"
 
 
 def test_format_ls_long_owner_is_user_and_group_is_profile():
-    stat = FileStat(name="file.txt",
-                    size=5,
-                    type=FileType.FILE,
-                    modified="2026-01-01T00:00:00Z")
+    stat = FileStat(
+        name="file.txt",
+        size=5,
+        type=FileType.FILE,
+        modified="2026-01-01T00:00:00Z",
+    )
     identity = Identity(user="alice", profile="admin")
     [line] = format_ls_long([stat], identity=identity)
     assert line == "-rw-r--r-- 1 alice admin 5 Jan  1  2026 file.txt"
@@ -100,18 +104,22 @@ def test_format_ls_long_metadata_less_row_keeps_the_owner_columns():
 
 
 def test_format_ls_long_device_row():
-    null = FileStat(name="null",
-                    type=FileType.CHAR_DEVICE,
-                    extra={DEVICE_NUMBERS_KEY: (1, 3)})
+    null = FileStat(
+        name="null",
+        type=FileType.CHAR_DEVICE,
+        extra={DEVICE_NUMBERS_KEY: (1, 3)},
+    )
     [line] = format_ls_long([null], identity=Identity(user="alice"))
     assert line == "crw-rw-rw- 1 alice - 1, 3 - null"
 
 
 def test_format_ls_long_directory():
-    stat = FileStat(name="sub",
-                    size=0,
-                    type=FileType.DIRECTORY,
-                    modified="2026-01-01T00:00:00Z")
+    stat = FileStat(
+        name="sub",
+        size=0,
+        type=FileType.DIRECTORY,
+        modified="2026-01-01T00:00:00Z",
+    )
     [line] = format_ls_long([stat])
     assert line.startswith("drwxr-xr-x ")
     assert line.endswith(" sub")
@@ -119,16 +127,20 @@ def test_format_ls_long_directory():
 
 def test_format_ls_long_size_alignment():
     stats = [
-        FileStat(name="a",
-                 size=5,
-                 type=FileType.FILE,
-                 content=ContentType.TEXT,
-                 modified="2026-01-01T00:00:00Z"),
-        FileStat(name="b",
-                 size=1234,
-                 type=FileType.FILE,
-                 content=ContentType.TEXT,
-                 modified="2026-01-01T00:00:00Z"),
+        FileStat(
+            name="a",
+            size=5,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+            modified="2026-01-01T00:00:00Z",
+        ),
+        FileStat(
+            name="b",
+            size=1234,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+            modified="2026-01-01T00:00:00Z",
+        ),
     ]
     lines = format_ls_long(stats)
     assert "    5 Jan  1  2026 a" in lines[0]
@@ -136,21 +148,25 @@ def test_format_ls_long_size_alignment():
 
 
 def test_format_ls_long_human_size():
-    stat = FileStat(name="big",
-                    size=2048,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    modified="2026-01-01T00:00:00Z")
+    stat = FileStat(
+        name="big",
+        size=2048,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified="2026-01-01T00:00:00Z",
+    )
     [line] = format_ls_long([stat], human=True)
     assert "2.0K" in line
     assert " 2048 " not in line
 
 
 def test_format_ls_long_missing_modified():
-    stat = FileStat(name="x",
-                    size=0,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    modified=None)
+    stat = FileStat(
+        name="x",
+        size=0,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified=None,
+    )
     [line] = format_ls_long([stat])
     assert line == "-rw-r--r-- 1 - - 0 - x"

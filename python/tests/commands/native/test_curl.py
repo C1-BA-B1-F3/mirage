@@ -32,35 +32,41 @@ from mirage.types import PathSpec
 HEADERS = (("Content-Type", "text/plain"), ("Content-Length", "10"))
 
 
-def _ok(body: bytes = b"hello body",
-        status: int = 200,
-        reason: str = "OK") -> HttpResponse:
-    return HttpResponse(status=status,
-                        reason=reason,
-                        body=body,
-                        url="http://x.test/f",
-                        headers=HEADERS)
+def _ok(
+    body: bytes = b"hello body", status: int = 200, reason: str = "OK"
+) -> HttpResponse:
+    return HttpResponse(
+        status=status,
+        reason=reason,
+        body=body,
+        url="http://x.test/f",
+        headers=HEADERS,
+    )
 
 
 def _stub(monkeypatch, resp=None, exc=None) -> list[dict]:
     calls: list[dict] = []
 
-    def fake(url,
-             method="GET",
-             headers=None,
-             data=None,
-             timeout=30,
-             follow_redirects=False,
-             verify=True):
-        calls.append({
-            "url": url,
-            "method": method,
-            "headers": headers,
-            "data": data,
-            "timeout": timeout,
-            "follow_redirects": follow_redirects,
-            "verify": verify,
-        })
+    def fake(
+        url,
+        method="GET",
+        headers=None,
+        data=None,
+        timeout=30,
+        follow_redirects=False,
+        verify=True,
+    ):
+        calls.append(
+            {
+                "url": url,
+                "method": method,
+                "headers": headers,
+                "data": data,
+                "timeout": timeout,
+                "follow_redirects": follow_redirects,
+                "verify": verify,
+            }
+        )
         if exc is not None:
             raise exc
         return resp if resp is not None else _ok()
@@ -69,10 +75,9 @@ def _stub(monkeypatch, resp=None, exc=None) -> list[dict]:
     return calls
 
 
-def _run(*texts: str,
-         dispatch=None,
-         cwd=None,
-         **flags) -> tuple[bytes, object]:
+def _run(
+    *texts: str, dispatch=None, cwd=None, **flags
+) -> tuple[bytes, object]:
     base = cwd or "/"
     spec = PathSpec(virtual=base, directory=base, vfs_path="", resolved=False)
     opts = CommandOpts(dispatch=dispatch, cwd=spec, flags=flags)
@@ -119,10 +124,9 @@ def test_silent_keeps_exit_22_without_message(monkeypatch):
 
 def test_show_error_restores_message(monkeypatch):
     _stub(monkeypatch, resp=_ok(b"x", 404, "Not Found"))
-    _body, io = _run("http://x.test/missing",
-                     fail=True,
-                     silent=True,
-                     show_error=True)
+    _body, io = _run(
+        "http://x.test/missing", fail=True, silent=True, show_error=True
+    )
     assert io.exit_code == 22
     assert b"curl: (22)" in io.stderr
 
@@ -183,9 +187,9 @@ def test_write_failure_is_exit_23_with_strerror(monkeypatch):
     async def boom(op, scope, **kwargs):
         raise FileNotFoundError("/tmp/nope/out.txt")
 
-    _body, io = _run("http://x.test/f",
-                     output="/tmp/nope/out.txt",
-                     dispatch=boom)
+    _body, io = _run(
+        "http://x.test/f", output="/tmp/nope/out.txt", dispatch=boom
+    )
     assert io.exit_code == 23
     expected = b"curl: (23) /tmp/nope/out.txt: No such file or directory"
     assert expected in io.stderr
@@ -208,10 +212,12 @@ def test_write_failure_silenced_by_s(monkeypatch):
     async def boom(op, scope, **kwargs):
         raise FileNotFoundError("/tmp/nope/out.txt")
 
-    _body, io = _run("http://x.test/f",
-                     output="/tmp/nope/out.txt",
-                     dispatch=boom,
-                     silent=True)
+    _body, io = _run(
+        "http://x.test/f",
+        output="/tmp/nope/out.txt",
+        dispatch=boom,
+        silent=True,
+    )
     assert io.exit_code == 23
     assert io.stderr == b""
 
@@ -219,18 +225,21 @@ def test_write_failure_silenced_by_s(monkeypatch):
 def test_form_field_uses_the_form_helper(monkeypatch):
     calls: list[dict] = []
 
-    def fake_form(url,
-                  method="POST",
-                  form_data=None,
-                  headers=None,
-                  timeout=30,
-                  follow_redirects=False,
-                  verify=True):
+    def fake_form(
+        url,
+        method="POST",
+        form_data=None,
+        headers=None,
+        timeout=30,
+        follow_redirects=False,
+        verify=True,
+    ):
         calls.append({"url": url, "method": method, "form_data": form_data})
         return _ok(b"form ok")
 
-    monkeypatch.setitem(curl.__wrapped__.__globals__, "http_form_request",
-                        fake_form)
+    monkeypatch.setitem(
+        curl.__wrapped__.__globals__, "http_form_request", fake_form
+    )
     body, io = _run("http://x.test/form", form="field=value")
     assert io.exit_code == 0
     assert body == b"form ok"
@@ -242,8 +251,12 @@ def test_exit_code_constants_match_curl():
     # submodule of the same name, so the module namespace is reached through
     # the unwrapped function (see CLAUDE.md).
     g = curl.__wrapped__.__globals__
-    assert (g["EXIT_USAGE"], g["EXIT_CONNECT"], g["EXIT_HTTP_ERROR"],
-            g["EXIT_WRITE"]) == (2, 7, 22, 23)
+    assert (
+        g["EXIT_USAGE"],
+        g["EXIT_CONNECT"],
+        g["EXIT_HTTP_ERROR"],
+        g["EXIT_WRITE"],
+    ) == (2, 7, 22, 23)
 
 
 # Pinned against curl 8.7.1 / 8.14.1 (byte shapes captured with `cat -ve`
@@ -251,22 +264,23 @@ def test_exit_code_constants_match_curl():
 # both hosts because fetch never exposes the wire casing, and the status
 # line always says HTTP/1.1 because fetch cannot observe the version.
 HINT = "curl: try 'curl --help' or 'curl --manual' for more information\n"
-RESPONSE_DUMP = ("HTTP/1.1 200 OK\r\n"
-                 "content-length: 10\r\n"
-                 "content-type: text/plain\r\n"
-                 "\r\n")
+RESPONSE_DUMP = (
+    "HTTP/1.1 200 OK\r\ncontent-length: 10\r\ncontent-type: text/plain\r\n\r\n"
+)
 
 
 def test_long_spellings_reach_the_request(monkeypatch):
     calls = _stub(monkeypatch)
-    _run("http://x.test/echo",
-         request="PUT",
-         header="X-Mirage-Test: yes",
-         user_agent="agent/1")
+    _run(
+        "http://x.test/echo",
+        request="PUT",
+        header="X-Mirage-Test: yes",
+        user_agent="agent/1",
+    )
     assert calls[0]["method"] == "PUT"
     assert calls[0]["headers"] == {
         "X-Mirage-Test": "yes",
-        "User-Agent": "agent/1"
+        "User-Agent": "agent/1",
     }
 
 
@@ -284,7 +298,8 @@ def test_negative_max_time_is_refused_before_any_transfer(monkeypatch):
         _run("http://x.test/f", max_time=-1, silent=True)
     assert excinfo.value.exit_code == 2
     assert str(excinfo.value).startswith(
-        "curl: option --max-time: expected a positive numerical parameter\n")
+        "curl: option --max-time: expected a positive numerical parameter\n"
+    )
     assert calls == []
 
 
@@ -299,17 +314,16 @@ def test_head_with_data_is_refused_with_curls_warning(monkeypatch):
     assert io.stderr.decode() == (
         "Warning: You can only select one HTTP request method! "
         "You asked for both POST \n"
-        "Warning: (-d, --data) and HEAD (-I, --head).\n")
+        "Warning: (-d, --data) and HEAD (-I, --head).\n"
+    )
 
 
 def test_silent_mutes_the_head_with_data_warning_but_keeps_exit_2(monkeypatch):
     # -s mutes a warning and -S does not bring one back (curl 8.7.1).
     _stub(monkeypatch)
-    _body, io = _run("http://x.test/f",
-                     head=True,
-                     data="x",
-                     silent=True,
-                     show_error=True)
+    _body, io = _run(
+        "http://x.test/f", head=True, data="x", silent=True, show_error=True
+    )
     assert io.exit_code == 2
     assert io.stderr == b""
 
@@ -318,8 +332,9 @@ def test_head_with_form_adds_an_option_error_silent_never_mutes(monkeypatch):
     _stub(monkeypatch)
     _body, io = _run("http://x.test/f", head=True, form="a=b", silent=True)
     assert io.exit_code == 2
-    assert io.stderr.decode() == ("curl: option -F: is badly used here\n" +
-                                  HINT)
+    assert io.stderr.decode() == (
+        "curl: option -F: is badly used here\n" + HINT
+    )
 
 
 def test_max_time_zero_disables_the_deadline(monkeypatch):
@@ -336,8 +351,10 @@ def test_timeout_is_exit_28(monkeypatch):
     body, io = _run("http://x.test/f", max_time=2)
     assert body == b""
     assert io.exit_code == 28
-    assert io.stderr == (b"curl: (28) Operation timed out after 2001 "
-                         b"milliseconds with 0 bytes received\n")
+    assert io.stderr == (
+        b"curl: (28) Operation timed out after 2001 "
+        b"milliseconds with 0 bytes received\n"
+    )
 
 
 def test_silent_timeout_keeps_exit_28_without_message(monkeypatch):
@@ -357,19 +374,22 @@ def test_verbose_dumps_request_and_response_headers_on_stderr(monkeypatch):
         "> Host: x.test\r\n"
         "> User-Agent: Mozilla/5.0 (compatible; mirage/1.0)\r\n"
         "> Accept: */*\r\n"
-        "> \r\n" + "".join(f"< {line}\r\n"
-                           for line in RESPONSE_DUMP.split("\r\n")[:-1]))
+        "> \r\n"
+        + "".join(f"< {line}\r\n" for line in RESPONSE_DUMP.split("\r\n")[:-1])
+    )
 
 
 def test_verbose_shows_custom_headers_and_the_body_headers(monkeypatch):
     _stub(monkeypatch)
-    _body, io = _run("http://x.test:8080/f",
-                     verbose=True,
-                     silent=True,
-                     request="POST",
-                     header="X-Test: 1",
-                     user_agent="agent/1",
-                     data="a=1")
+    _body, io = _run(
+        "http://x.test:8080/f",
+        verbose=True,
+        silent=True,
+        request="POST",
+        header="X-Test: 1",
+        user_agent="agent/1",
+        data="a=1",
+    )
     assert io.stderr.decode().split("< ")[0] == (
         "> POST /f HTTP/1.1\r\n"
         "> Host: x.test:8080\r\n"
@@ -378,7 +398,8 @@ def test_verbose_shows_custom_headers_and_the_body_headers(monkeypatch):
         "> X-Test: 1\r\n"
         "> Content-Length: 3\r\n"
         "> Content-Type: application/x-www-form-urlencoded\r\n"
-        "> \r\n")
+        "> \r\n"
+    )
 
 
 def test_head_prints_the_headers_and_sends_head(monkeypatch):
@@ -399,7 +420,8 @@ def test_head_with_explicit_get_drops_the_body(monkeypatch):
 
 
 def test_data_sends_the_form_content_type_unless_a_header_names_one(
-        monkeypatch):
+    monkeypatch,
+):
     # -d adds curl's own Content-Type to the request, and -v shows the one
     # that is sent: a -H Content-Type takes its place in the custom slot
     # and no default follows (curl 8.7.1).
@@ -409,11 +431,13 @@ def test_data_sends_the_form_content_type_unless_a_header_names_one(
         "Content-Type": "application/x-www-form-urlencoded"
     }
     calls = _stub(monkeypatch)
-    _body, io = _run("http://x.test/f",
-                     data="{}",
-                     header="Content-Type: application/json",
-                     verbose=True,
-                     silent=True)
+    _body, io = _run(
+        "http://x.test/f",
+        data="{}",
+        header="Content-Type: application/json",
+        verbose=True,
+        silent=True,
+    )
     assert calls[0]["headers"] == {"Content-Type": "application/json"}
     assert io.stderr.decode().split("< ")[0] == (
         "> POST /f HTTP/1.1\r\n"
@@ -422,7 +446,8 @@ def test_data_sends_the_form_content_type_unless_a_header_names_one(
         "> Accept: */*\r\n"
         "> Content-Type: application/json\r\n"
         "> Content-Length: 2\r\n"
-        "> \r\n")
+        "> \r\n"
+    )
 
 
 def test_include_prints_the_headers_before_the_body(monkeypatch):
@@ -435,13 +460,15 @@ HOP_DUMP = "HTTP/1.1 302 Found\r\nlocation: /f\r\n\r\n"
 
 
 def _redirected(method: str = "GET") -> HttpResponse:
-    hop = HttpResponse(status=302,
-                       reason="Found",
-                       body=b"302: Found",
-                       url="http://x.test/r",
-                       headers=(("Location", "/f"), ),
-                       method=method)
-    return replace(_ok(), history=(hop, ))
+    hop = HttpResponse(
+        status=302,
+        reason="Found",
+        body=b"302: Found",
+        url="http://x.test/r",
+        headers=(("Location", "/f"),),
+        method=method,
+    )
+    return replace(_ok(), history=(hop,))
 
 
 def test_include_with_location_prints_every_hops_headers(monkeypatch):
@@ -463,23 +490,26 @@ def test_verbose_with_location_traces_each_request(monkeypatch):
     _body, io = _run("http://x.test/r", location=True, verbose=True)
     lines = io.stderr.decode().split("\r\n")
     assert [
-        line for line in lines
+        line
+        for line in lines
         if line.startswith("> GET") or line.startswith("< HTTP/")
     ] == [
-        "> GET /r HTTP/1.1", "< HTTP/1.1 302 Found", "> GET /f HTTP/1.1",
-        "< HTTP/1.1 200 OK"
+        "> GET /r HTTP/1.1",
+        "< HTTP/1.1 302 Found",
+        "> GET /f HTTP/1.1",
+        "< HTTP/1.1 200 OK",
     ]
 
 
 def test_verbose_with_location_drops_the_body_headers_after_a_switch(
-        monkeypatch):
+    monkeypatch,
+):
     # The body rode the POST; the GET a 302 turns it into carries none,
     # so its request block shows no Content-Length or Content-Type.
     _stub(monkeypatch, resp=_redirected(method="POST"))
-    _body, io = _run("http://x.test/r",
-                     location=True,
-                     verbose=True,
-                     data="a=1")
+    _body, io = _run(
+        "http://x.test/r", location=True, verbose=True, data="a=1"
+    )
     first, second = io.stderr.decode().split("< HTTP/1.1")[:2]
     assert "> POST /r HTTP/1.1" in first
     assert "> Content-Length: 3" in first
@@ -529,7 +559,8 @@ def test_dump_header_file_is_written_through_the_door(monkeypatch):
 
 
 def test_dump_header_dash_with_output_leaves_only_headers_on_stdout(
-        monkeypatch):
+    monkeypatch,
+):
     _stub(monkeypatch)
     body, io = _run("http://x.test/f", dump_header="-", output="/tmp/b")
     assert body.decode() == RESPONSE_DUMP
@@ -542,15 +573,19 @@ def test_dump_header_and_output_naming_one_file_leave_the_body(monkeypatch):
     assert io.writes == {"/tmp/x": b"hello body"}
 
 
-@pytest.mark.parametrize("flag,tail", [("include", "hello body"),
-                                       ("head", "")])
+@pytest.mark.parametrize(
+    "flag,tail", [("include", "hello body"), ("head", "")]
+)
 def test_dump_header_dash_beside_include_prints_each_line_twice(
-        monkeypatch, flag, tail):
+    monkeypatch, flag, tail
+):
     _stub(monkeypatch)
     body, _io = _run("http://x.test/f", dump_header="-", **{flag: True})
     lines = RESPONSE_DUMP.split("\r\n")[:-1]
-    assert body.decode() == "".join(f"{line}\r\n{line}\r\n"
-                                    for line in lines) + tail
+    assert (
+        body.decode()
+        == "".join(f"{line}\r\n{line}\r\n" for line in lines) + tail
+    )
 
 
 def test_dump_header_with_location_dumps_every_hop(monkeypatch):
@@ -561,13 +596,14 @@ def test_dump_header_with_location_dumps_every_hop(monkeypatch):
 
 def test_dump_header_survives_fail(monkeypatch):
     _stub(monkeypatch, resp=_ok(b"not found", 404, "Not Found"))
-    body, io = _run("http://x.test/missing",
-                    dump_header="-",
-                    fail=True,
-                    silent=True)
+    body, io = _run(
+        "http://x.test/missing", dump_header="-", fail=True, silent=True
+    )
     assert io.exit_code == 22
-    assert body == (b"HTTP/1.1 404 Not Found\r\ncontent-length: 10\r\n"
-                    b"content-type: text/plain\r\n\r\n")
+    assert body == (
+        b"HTTP/1.1 404 Not Found\r\ncontent-length: 10\r\n"
+        b"content-type: text/plain\r\n\r\n"
+    )
 
 
 def test_dump_header_write_failure_is_exit_23(monkeypatch):
@@ -576,9 +612,9 @@ def test_dump_header_write_failure_is_exit_23(monkeypatch):
     async def boom(op, scope, **kwargs):
         raise FileNotFoundError("/tmp/nope/h")
 
-    body, io = _run("http://x.test/f",
-                    dump_header="/tmp/nope/h",
-                    dispatch=boom)
+    body, io = _run(
+        "http://x.test/f", dump_header="/tmp/nope/h", dispatch=boom
+    )
     assert io.exit_code == 23
     assert body == b""
     assert io.stderr == b"curl: (23) /tmp/nope/h: No such file or directory\n"

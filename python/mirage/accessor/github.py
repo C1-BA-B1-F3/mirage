@@ -20,15 +20,16 @@ from mirage.core.github.tree_entry import TreeEntry
 
 
 class GitHubAccessor(SessionAccessor):
-
-    def __init__(self,
-                 config: GitHubConfig,
-                 owner: str,
-                 repo: str,
-                 ref: str | None = None,
-                 default_branch: str | None = None,
-                 tree: dict[str, TreeEntry] | None = None,
-                 truncated: bool = False) -> None:
+    def __init__(
+        self,
+        config: GitHubConfig,
+        owner: str,
+        repo: str,
+        ref: str | None = None,
+        default_branch: str | None = None,
+        tree: dict[str, TreeEntry] | None = None,
+        truncated: bool = False,
+    ) -> None:
         super().__init__()
         self.config = config
         self.owner = owner

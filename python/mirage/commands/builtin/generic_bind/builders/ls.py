@@ -17,32 +17,42 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.ls import ls_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          overlaid_stat)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    overlaid_stat,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, PathSpec
 
 
-async def ls(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def ls(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor):
         raise ValueError("ls: no VFS")
     if not paths:
         paths = [
-            PathSpec(virtual=opts.cwd.virtual,
-                     directory=opts.cwd.virtual,
-                     resolved=False,
-                     vfs_path=opts.cwd.vfs_path)
+            PathSpec(
+                virtual=opts.cwd.virtual,
+                directory=opts.cwd.virtual,
+                resolved=False,
+                vfs_path=opts.cwd.vfs_path,
+            )
         ]
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
     stat_fn: Callable[..., Awaitable[FileStat]] = partial(ops.stat, accessor)
     overlay = opts.ns.stat_overlay if opts.ns is not None else None
     if overlay is not None:
         stat_fn = partial(overlaid_stat, stat_fn, overlay)
-    return await ls_generic(resolved, list(texts), opts,
-                            partial(ops.readdir, accessor), stat_fn)
+    return await ls_generic(
+        resolved, list(texts), opts, partial(ops.readdir, accessor), stat_fn
+    )
 
 
-BUILDER = Builder('ls', ls, None, False, None)
+BUILDER = Builder("ls", ls)

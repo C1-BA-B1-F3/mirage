@@ -33,7 +33,8 @@ def accessor():
 @pytest.fixture
 def prefixed():
     return FakeAccessor(
-        HfRepoConfig(repo_id="acme/widget", key_prefix="sub/dir"))
+        HfRepoConfig(repo_id="acme/widget", key_prefix="sub/dir")
+    )
 
 
 @pytest.fixture
@@ -53,13 +54,15 @@ def ps(path: str, prefix: str = "") -> PathSpec:
     """A PathSpec for a mount-local path under an optional mount prefix."""
     rel = path.strip("/")
     stem = prefix.rstrip("/")
-    virtual = (f"{stem}/{rel}" if rel else stem) if stem else \
-        (f"/{rel}" if rel else "/")
+    virtual = (
+        (f"{stem}/{rel}" if rel else stem)
+        if stem
+        else (f"/{rel}" if rel else "/")
+    )
     parent = virtual.rsplit("/", 1)[0] or "/"
-    return PathSpec(virtual=virtual,
-                    directory=parent,
-                    vfs_path=rel,
-                    raw_path=virtual)
+    return PathSpec(
+        virtual=virtual, directory=parent, vfs_path=rel, raw_path=virtual
+    )
 
 
 def page(rows, next_url: str = "") -> ApiResponse:
@@ -74,7 +77,7 @@ def file_row(path: str, size: int = 10, **extra) -> dict:
         "oid": f"oid-{path}",
         "size": size,
         "path": path,
-        **extra
+        **extra,
     }
 
 
@@ -83,5 +86,5 @@ def dir_row(path: str) -> dict:
         "type": "directory",
         "oid": f"tree-{path}",
         "size": 0,
-        "path": path
+        "path": path,
     }

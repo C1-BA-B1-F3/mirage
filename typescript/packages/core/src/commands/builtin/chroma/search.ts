@@ -20,5 +20,5 @@ export const CHROMA_SEARCH = makeSearch(
   VFSName.CHROMA,
   CHROMA_IO.search,
   (fl) => ({ top_k: fl.asInt('top_k') ?? 10 }),
-  { name: 'chroma-query', provision: null },
+  { name: 'chroma-query' },
 )

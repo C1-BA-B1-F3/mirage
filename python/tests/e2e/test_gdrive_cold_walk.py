@@ -25,11 +25,13 @@ from tests.e2e.gdrive_mock import FakeGDrive, patch_gdrive
 
 
 def _vfs() -> GoogleDriveVFS:
-    return GoogleDriveVFS(config=GoogleDriveConfig(
-        client_id="fake",
-        client_secret="fake",
-        refresh_token="fake",
-    ))
+    return GoogleDriveVFS(
+        config=GoogleDriveConfig(
+            client_id="fake",
+            client_secret="fake",
+            refresh_token="fake",
+        )
+    )
 
 
 @pytest.fixture
@@ -49,10 +51,12 @@ def cold():
     stack = ExitStack()
     stack.enter_context(patch_gdrive((gdrive.config, fake)))
     try:
-        yield Workspace({
-            "/gdrive/": (gdrive, MountMode.WRITE),
-            "/ram/": (RAMVFS(), MountMode.WRITE),
-        })
+        yield Workspace(
+            {
+                "/gdrive/": (gdrive, MountMode.WRITE),
+                "/ram/": (RAMVFS(), MountMode.WRITE),
+            }
+        )
     finally:
         stack.close()
 

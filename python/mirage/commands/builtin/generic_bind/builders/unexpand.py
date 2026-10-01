@@ -14,22 +14,33 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.unexpand import unexpand_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          dir_aware_stat,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    dir_aware_stat,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def unexpand(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                   texts: list[str],
-                   opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def unexpand(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     resolved = await resolve_or_empty(ops, accessor, paths, opts.index)
     return await unexpand_generic(
-        resolved, list(texts), opts, dir_aware_stat(ops, accessor, opts),
-        bound_op(ops.read_bytes, accessor, opts.index))
+        resolved,
+        list(texts),
+        opts,
+        dir_aware_stat(ops, accessor, opts),
+        bound_op(ops.read_bytes, accessor, opts.index),
+    )
 
 
-BUILDER = Builder('unexpand', unexpand, None, False, None, read=True)
+BUILDER = Builder("unexpand", unexpand, read=True)

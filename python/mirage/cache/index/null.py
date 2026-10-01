@@ -14,8 +14,13 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import (Evicted, IndexEntry, ListResult,
-                                       LookupResult, LookupStatus)
+from mirage.cache.index.config import (
+    Evicted,
+    IndexEntry,
+    ListResult,
+    LookupResult,
+    LookupStatus,
+)
 from mirage.cache.index.store import IndexCacheStore
 
 
@@ -37,8 +42,12 @@ class NullIndexCacheStore(IndexCacheStore):
     async def get(self, vfs_path: str) -> LookupResult:
         return LookupResult(status=LookupStatus.NOT_FOUND)
 
-    def seed(self, entries: dict[str, IndexEntry],
-             children: dict[str, list[str]], expires_at: datetime) -> None:
+    def seed(
+        self,
+        entries: dict[str, IndexEntry],
+        children: dict[str, list[str]],
+        expires_at: datetime,
+    ) -> None:
         return None
 
     async def put(self, vfs_path: str, entry: IndexEntry) -> None:
@@ -48,13 +57,13 @@ class NullIndexCacheStore(IndexCacheStore):
         return ListResult(status=LookupStatus.NOT_FOUND)
 
     async def set_dir(
-            self,
-            vfs_path: str,
-            entries: list[tuple[str, IndexEntry]],
-            expired_at: datetime | None = None,
-            *,
-            window: bool = False,
-            excluded: tuple[str, ...] = (),
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+        *,
+        window: bool = False,
+        excluded: tuple[str, ...] = (),
     ) -> list[Evicted]:
         return []
 
@@ -67,10 +76,9 @@ class NullIndexCacheStore(IndexCacheStore):
     async def invalidate_dir(self, vfs_path: str) -> None:
         return None
 
-    async def invalidate_prefix(self,
-                                vfs_path: str,
-                                *,
-                                excluded: tuple[str, ...] = ()) -> None:
+    async def invalidate_prefix(
+        self, vfs_path: str, *, excluded: tuple[str, ...] = ()
+    ) -> None:
         return None
 
     async def invalidate(self) -> None:

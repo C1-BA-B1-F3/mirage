@@ -5,6 +5,7 @@
       "seq": 991029,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spb && cd /data/spb && printf abcdefg > g && split -n 3 g p && cat paa && printf '|' && cat pab && printf '|' && cat pac",
@@ -22,6 +23,7 @@
       "seq": 991030,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spe && cd /data/spe && printf ab > h && split -n 5 h p && ls p* | tr '\\n' ' ' && cat pac | wc -c",
@@ -39,6 +41,7 @@
       "seq": 991031,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spk && cd /data/spk && printf abcdefg > g && split -n 2/3 g p && ls",
@@ -56,6 +59,7 @@
       "seq": 991032,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spn && cd /data/spn && printf 'line1\\nline2\\nline3\\nline4\\nline5\\n' > f && split -n l/3 f p && cat paa && printf '|' && cat pab && printf '|' && cat pac",
@@ -73,6 +77,7 @@
       "seq": 991033,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spn && cd /data/spn && printf 'line1\\nline2\\nline3\\nline4\\nline5\\n' > f && split -n l/7 f q && for x in qa?; do printf '%s=' $x; cat $x | tr '\\n' '~'; echo; done",
@@ -90,6 +95,7 @@
       "seq": 991034,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spn && cd /data/spn && printf 'line1\\nline2\\nline3\\nline4\\nline5\\n' > f && split -n l/2/3 f",
@@ -107,6 +113,7 @@
       "seq": 991035,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spn && cd /data/spn && printf 'line1\\nline2\\nline3\\nline4\\nline5\\n' > f && split -n r/3 f r && cat raa && printf '|' && cat rab && printf '|' && cat rac",
@@ -124,6 +131,7 @@
       "seq": 991036,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spn && cd /data/spn && printf 'line1\\nline2\\nline3\\nline4\\nline5\\n' > f && split -n r/2/3 f",
@@ -141,6 +149,7 @@
       "seq": 991037,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "split -n 4/3 /data/a.txt",
@@ -158,6 +167,7 @@
       "seq": 991038,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "split -n l/0/3 /data/a.txt",
@@ -175,6 +185,7 @@
       "seq": 991039,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "split -n 3/0 /data/a.txt",
@@ -192,6 +203,7 @@
       "seq": 991040,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/sph && cd /data/sph && printf 'abcdef\\n' > in && split -b 2 --hex-suffixes=A in",
@@ -209,6 +221,7 @@
       "seq": 991041,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/spz && cd /data/spz && printf 'abcdef\\n' > in && split -b 3 --numeric-suffixes= in z && ls z*",
@@ -226,6 +239,7 @@
       "seq": 991079,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\ndef\\n' | split -n 2/1000000000",
@@ -243,6 +257,7 @@
       "seq": 991080,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\ndef\\n' | split -n l/2/1000000000",
@@ -260,6 +275,7 @@
       "seq": 991081,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\ndef\\n' | split -n l/1000000000/1000000000",
@@ -277,6 +293,7 @@
       "seq": 991082,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf 'abc\\ndef\\n' | split -n r/2/1000000000",

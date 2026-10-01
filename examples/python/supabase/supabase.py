@@ -55,54 +55,17 @@ async def main():
         print("unpause the project in the Supabase dashboard and rerun")
         return
 
-    print("=== PLAN ESTIMATES ===\n")
-
-    dr = await ws.shell(
-        "grep mirage /supabase/example.jsonl",
-        provision=True,
-    )
-    print("--- plan: grep mirage /supabase/example.jsonl ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  read_ops: {dr.read_ops}, precision: {dr.precision}")
-
-    dr = await ws.shell(
-        "grep mirage /supabase/example.jsonl | head -n 3",
-        provision=True,
-    )
-    print("\n--- plan: grep mirage ... | head -n 3 ---")
-    print(f"  op: {dr.op}, children: {len(dr.children)}")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  precision: {dr.precision}")
-    for c in dr.children:
-        net, cache = c.network_read, c.cache_read
-        print(f"    {c.command}: net={net}, cache={cache}, {c.precision}")
-
-    dr = await ws.shell(
-        "grep mirage /supabase/example.jsonl && echo found",
-        provision=True,
-    )
-    print("\n--- plan: grep ... && echo found ---")
-    print(f"  op: {dr.op}, network_read: {dr.network_read}")
-    for c in dr.children:
-        print(f"    {c.command}: net={c.network_read}, {c.precision}")
-
-    print(f"\n  Stats after plans (should be 0): {ops_summary()}")
-
-    print("\n--- caching: cat /supabase/example.jsonl | wc -l ---")
+    print("--- caching: cat /supabase/example.jsonl | wc -l ---")
     result = await ws.shell("cat /supabase/example.jsonl | wc -l")
     print(f"  lines: {(await result.stdout_str()).strip()}")
     print(f"  Stats after caching: {ops_summary()}")
 
-    dr = await ws.shell("grep mirage /supabase/example.jsonl", provision=True)
-    print("\n--- plan after cache: grep mirage ... ---")
-    print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
-    print(f"  cache_hits: {dr.cache_hits}, read_ops: {dr.read_ops}")
-
-    print("\n=== ACTUAL EXECUTION ===\n")
+    print("\n=== EXECUTION ===\n")
 
     print("--- grep mirage /supabase/example.jsonl ---")
     output = await (
-        await ws.shell("grep mirage /supabase/example.jsonl")).stdout_str()
+        await ws.shell("grep mirage /supabase/example.jsonl")
+    ).stdout_str()
     lines = output.strip().splitlines() if output.strip() else []
     print(f"  Matches: {len(lines)}")
     if lines:
@@ -111,8 +74,8 @@ async def main():
 
     print("\n--- grep -m 1 mirage /supabase/example.jsonl ---")
     output = await (
-        await
-        ws.shell("grep -m 1 mirage /supabase/example.jsonl")).stdout_str()
+        await ws.shell("grep -m 1 mirage /supabase/example.jsonl")
+    ).stdout_str()
     lines = output.strip().splitlines() if output.strip() else []
     print(f"  Matches: {len(lines)}")
     print(f"  Stats: {ops_summary()}")
@@ -131,61 +94,87 @@ async def main():
         print(f"    {ln[:80]}...")
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- cat /supabase/example.jsonl"
-          " | grep queue-operation | sort | uniq ---")
+    print(
+        "\n--- cat /supabase/example.jsonl"
+        " | grep queue-operation | sort | uniq ---"
+    )
     result = await ws.shell(
-        "cat /supabase/example.jsonl | grep queue-operation | sort | uniq")
-    lines = ((await result.stdout_str()).strip().splitlines() if
-             (await result.stdout_str()).strip() else [])
+        "cat /supabase/example.jsonl | grep queue-operation | sort | uniq"
+    )
+    lines = (
+        (await result.stdout_str()).strip().splitlines()
+        if (await result.stdout_str()).strip()
+        else []
+    )
     print(f"  Unique lines: {len(lines)}")
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- rg queue-operation /supabase/example.jsonl"
-          " | head -n 5 | cut -d , -f 2 ---")
-    result = await ws.shell("rg queue-operation /supabase/example.jsonl"
-                            " | head -n 5 | cut -d , -f 2")
+    print(
+        "\n--- rg queue-operation /supabase/example.jsonl"
+        " | head -n 5 | cut -d , -f 2 ---"
+    )
+    result = await ws.shell(
+        "rg queue-operation /supabase/example.jsonl"
+        " | head -n 5 | cut -d , -f 2"
+    )
     print(f"  Fields:\n    {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- grep -m 1 mirage /supabase/example.jsonl"
-          " && echo 'found mirage' ---")
+    print(
+        "\n--- grep -m 1 mirage /supabase/example.jsonl"
+        " && echo 'found mirage' ---"
+    )
     result = await ws.shell(
-        "grep -m 1 mirage /supabase/example.jsonl && echo found")
+        "grep -m 1 mirage /supabase/example.jsonl && echo found"
+    )
     print(f"  Exit code: {result.exit_code}")
     print(
-        f"  Stdout ends with: ...{(await result.stdout_str()).strip()[-30:]}")
+        f"  Stdout ends with: ...{(await result.stdout_str()).strip()[-30:]}"
+    )
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- grep NONEXISTENT /supabase/example.jsonl"
-          " || echo 'not found' ---")
+    print(
+        "\n--- grep NONEXISTENT /supabase/example.jsonl"
+        " || echo 'not found' ---"
+    )
     result = await ws.shell(
-        "grep NONEXISTENT /supabase/example.jsonl || echo not_found")
+        "grep NONEXISTENT /supabase/example.jsonl || echo not_found"
+    )
     print(f"  Exit code: {result.exit_code}")
     print(f"  Output: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- (grep queue-operation /supabase/example.jsonl"
-          " | sort | uniq) | wc -l ---")
+    print(
+        "\n--- (grep queue-operation /supabase/example.jsonl"
+        " | sort | uniq) | wc -l ---"
+    )
     result = await ws.shell(
-        "(grep queue-operation /supabase/example.jsonl | sort | uniq)"
-        " | wc -l")
+        "(grep queue-operation /supabase/example.jsonl | sort | uniq) | wc -l"
+    )
     print(f"  Unique queue ops: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
-    print("\n--- head -n 1 /supabase/example.jsonl"
-          " ; wc -l /supabase/example.jsonl ---")
-    result = await ws.shell("head -n 1 /supabase/example.jsonl"
-                            " ; wc -l /supabase/example.jsonl")
+    print(
+        "\n--- head -n 1 /supabase/example.jsonl"
+        " ; wc -l /supabase/example.jsonl ---"
+    )
+    result = await ws.shell(
+        "head -n 1 /supabase/example.jsonl ; wc -l /supabase/example.jsonl"
+    )
     print(f"  Output: {(await result.stdout_str()).strip()}")
     print(f"  Stats: {ops_summary()}")
 
     print("\n--- lazy multi-pipe: grep | grep -v | head | cut ---")
-    result = await ws.shell("grep queue-operation /supabase/example.jsonl"
-                            " | grep -v error | head -n 2 | cut -d , -f 1")
+    result = await ws.shell(
+        "grep queue-operation /supabase/example.jsonl"
+        " | grep -v error | head -n 2 | cut -d , -f 1"
+    )
     print(f"  Output:\n    {(await result.stdout_str()).strip()}")
 
-    result_full = await ws.shell("grep queue-operation /supabase/example.jsonl"
-                                 " | grep -v error | cut -d , -f 1")
+    result_full = await ws.shell(
+        "grep queue-operation /supabase/example.jsonl"
+        " | grep -v error | cut -d , -f 1"
+    )
     full_lines = (await result_full.stdout_str()).strip().splitlines()
     print(f"  Without head: {len(full_lines)} lines (full Supabase download)")
 
@@ -203,29 +192,37 @@ async def main():
 
     print("\n--- jq: all team names (nested [] iterator) ---")
     result = await ws.shell(
-        "jq \".departments[].teams[].name\" /supabase/example.json")
+        'jq ".departments[].teams[].name" /supabase/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: all employee names ---")
-    result = await ws.shell("jq \".departments[].teams[].members[].name\""
-                            " /supabase/example.json")
+    result = await ws.shell(
+        'jq ".departments[].teams[].members[].name" /supabase/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: senior engineers on platform ---")
-    result = await ws.shell("jq \".departments[0].teams[0].members"
-                            " | map(select(.level == \\\"senior\\\"))"
-                            " | map(.name)\" /supabase/example.json")
+    result = await ws.shell(
+        'jq ".departments[0].teams[0].members'
+        ' | map(select(.level == \\"senior\\"))'
+        ' | map(.name)" /supabase/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: all active project names ---")
-    result = await ws.shell("jq \".departments[].teams[].projects"
-                            " | map(select(.status == \\\"active\\\"))"
-                            " | map(.name)\" /supabase/example.json")
+    result = await ws.shell(
+        'jq ".departments[].teams[].projects'
+        ' | map(select(.status == \\"active\\"))'
+        ' | map(.name)" /supabase/example.json'
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: mirage project metrics ---")
-    result = await ws.shell("jq .departments[0].teams[0].projects[0].metrics"
-                            " /supabase/example.json")
+    result = await ws.shell(
+        "jq .departments[0].teams[0].projects[0].metrics"
+        " /supabase/example.json"
+    )
     print(f"  {(await result.stdout_str()).strip()}")
 
     print("\n--- jq: total budget ---")
@@ -249,12 +246,16 @@ async def main():
     meta_res = await ws.shell(
         'chmod 640 "/supabase/example.json"'
         ' && chown 500:dev "/supabase/example.json"'
-        ' && touch -t 202601021530 "/supabase/example.json"')
+        ' && touch -t 202601021530 "/supabase/example.json"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/supabase/example.json"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/supabase/example.json")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
 
 if __name__ == "__main__":

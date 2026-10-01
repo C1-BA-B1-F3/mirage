@@ -52,5 +52,6 @@ def test_invalid_shapes():
     assert detect_scope(_ps("/bogus/File__id.gsheet.json")).kind == "invalid"
     assert detect_scope(_ps("/owned/plain.gsheet.json")).kind == "invalid"
     assert detect_scope(_ps("/owned/File__id.wrong.json")).kind == "invalid"
-    assert detect_scope(
-        _ps("/owned/File__id.gsheet.json/deep")).kind == "invalid"
+    assert (
+        detect_scope(_ps("/owned/File__id.gsheet.json/deep")).kind == "invalid"
+    )

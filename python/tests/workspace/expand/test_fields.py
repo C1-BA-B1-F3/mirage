@@ -15,14 +15,20 @@
 import pytest
 
 from mirage.utils.glob_walk import mark_globs
-from mirage.workspace.expand.fields import (chunks_text, ifs_joiner,
-                                            join_chunks, splat_chunks,
-                                            split_fields, value_piece)
+from mirage.workspace.expand.fields import (
+    chunks_text,
+    ifs_joiner,
+    join_chunks,
+    splat_chunks,
+    split_fields,
+    value_piece,
+)
 from mirage.workspace.expand.types import FieldBreak, Piece
 
 
-@pytest.mark.parametrize("ifs,joiner", [(None, " "), (",", ","), (", ", ","),
-                                        ("", "")])
+@pytest.mark.parametrize(
+    "ifs,joiner", [(None, " "), (",", ","), (", ", ","), ("", "")]
+)
 def test_ifs_joiner_is_the_first_character(ifs, joiner):
     assert ifs_joiner(ifs) == joiner
 
@@ -42,7 +48,8 @@ def test_ifs_joiner_is_the_first_character(ifs, joiner):
         ("a b\nc", "\n", ["a b", "c"]),
         # An empty IFS splits nothing.
         ("a b", "", ["a b"]),
-    ])
+    ],
+)
 def test_split_fields_reads_ifs_as_bash_does(text, ifs, fields):
     assert split_fields([Piece(text, True)], ifs) == fields
 
@@ -73,7 +80,7 @@ def test_split_fields_breaks_between_splat_elements():
         FieldBreak(" "),
         Piece("", True),
         FieldBreak(" "),
-        Piece("b c", True)
+        Piece("b c", True),
     ]
     assert split_fields(chunks, "") == ["x", "b c"]
 

@@ -38,8 +38,9 @@ def normalize_slug(value: str, noun: str) -> str:
     return "/" + "/".join(parts)
 
 
-def drop_collisions(files: dict[str, V],
-                    on_collision: Callable[[str, str], None]) -> dict[str, V]:
+def drop_collisions(
+    files: dict[str, V], on_collision: Callable[[str, str], None]
+) -> dict[str, V]:
     """Drop every file that another file needs as its directory.
 
     A backend that refuses such a tree raises from ``on_collision``.
@@ -61,8 +62,11 @@ def drop_collisions(files: dict[str, V],
     return kept
 
 
-def dir_rows(files: dict[str, V], prefix: str,
-             file_entry: Callable[[str, V], IndexEntry]) -> DirRows:
+def dir_rows(
+    files: dict[str, V],
+    prefix: str,
+    file_entry: Callable[[str, V], IndexEntry],
+) -> DirRows:
     """Lay files out as each folder's rows under a mount prefix.
 
     Args:
@@ -77,15 +81,17 @@ def dir_rows(files: dict[str, V], prefix: str,
         for depth in range(1, len(parts)):
             directories.add("/" + "/".join(parts[:depth]))
     rows: DirRows = {
-        virtual_path(directory, prefix): []
-        for directory in directories
+        virtual_path(directory, prefix): [] for directory in directories
     }
     for directory in sorted(directories - {"/"}):
-        entry = IndexEntry(id=directory.strip("/"),
-                           name=gnu_basename(directory),
-                           resource_type="folder")
+        entry = IndexEntry(
+            id=directory.strip("/"),
+            name=gnu_basename(directory),
+            resource_type="folder",
+        )
         rows[virtual_path(parent(directory), prefix)].append(
-            (entry.name, entry))
+            (entry.name, entry)
+        )
     for path in sorted(files):
         entry = file_entry(path, files[path])
         rows[virtual_path(parent(path), prefix)].append((entry.name, entry))

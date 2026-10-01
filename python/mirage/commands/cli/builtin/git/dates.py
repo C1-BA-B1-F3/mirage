@@ -19,14 +19,28 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from mirage.commands.builtin.utils.strftime import gnu_strftime
-from mirage.commands.cli.builtin.git.errors import (DateFormatColonError,
-                                                    UnknownDateFormatError)
+from mirage.commands.cli.builtin.git.errors import (
+    DateFormatColonError,
+    UnknownDateFormatError,
+)
 from mirage.commands.cli.builtin.git.types import DateKind, DateMode
 from mirage.utils.timezone import zone_from_env
 
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-          "Nov", "Dec")
+MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 
 # git's test clock: when set, the moment relative and human dates count
 # from, read as atoi reads it.
@@ -90,13 +104,13 @@ def parse_date_mode(value: str, clock: DateMode) -> DateMode:
         spelled = "default-local"
     for word, kind in DATE_SPELLINGS:
         if spelled.startswith(word):
-            rest = spelled[len(word):]
+            rest = spelled[len(word) :]
             break
     else:
         raise UnknownDateFormatError(spelled)
     local = rest.startswith(LOCAL_SUFFIX)
     if local:
-        rest = rest[len(LOCAL_SUFFIX):]
+        rest = rest[len(LOCAL_SUFFIX) :]
     if kind is DateKind.STRFTIME:
         if not rest.startswith(":"):
             raise DateFormatColonError(spelled)
@@ -179,14 +193,14 @@ def relative_date(timestamp: int, now: int) -> str:
         total = (diff * 12 * 2 + 365) // (365 * 2)
         years, months = divmod(total, 12)
         if months:
-            return (f"{_plural(years, 'year')}, "
-                    f"{_plural(months, 'month')} ago")
+            return f"{_plural(years, 'year')}, {_plural(months, 'month')} ago"
         return f"{_plural(years, 'year')} ago"
     return f"{_plural((diff + 183) // 365, 'year')} ago"
 
 
-def _normal(timestamp: int, moment: datetime, offset: int,
-            mode: DateMode) -> str:
+def _normal(
+    timestamp: int, moment: datetime, offset: int, mode: DateMode
+) -> str:
     """git's default style, and ``human``, as ``show_date_normal`` lays
     them out.
 
@@ -291,8 +305,9 @@ def show_date(timestamp: int, offset: int, mode: DateMode) -> str:
         moment = _local_moment(timestamp, mode)
         offset = _offset_of(moment)
     else:
-        moment = datetime.fromtimestamp(timestamp,
-                                        timezone(timedelta(seconds=offset)))
+        moment = datetime.fromtimestamp(
+            timestamp, timezone(timedelta(seconds=offset))
+        )
     if mode.kind is DateKind.RAW:
         return f"{timestamp} {zone_text(offset)}"
     if mode.kind is DateKind.RELATIVE:
@@ -303,12 +318,15 @@ def show_date(timestamp: int, offset: int, mode: DateMode) -> str:
         return f"{moment.year:04d}-{moment:%m-%d %H:%M:%S} {zone_text(offset)}"
     if mode.kind is DateKind.ISO8601_STRICT:
         zone = zone_text(offset)
-        return (f"{moment.year:04d}-{moment:%m-%dT%H:%M:%S}" +
-                ("Z" if offset == 0 else f"{zone[:3]}:{zone[3:]}"))
+        return f"{moment.year:04d}-{moment:%m-%dT%H:%M:%S}" + (
+            "Z" if offset == 0 else f"{zone[:3]}:{zone[3:]}"
+        )
     if mode.kind is DateKind.RFC2822:
-        return (f"{DAYS[moment.weekday()]}, {moment.day} "
-                f"{MONTHS[moment.month - 1]} {moment.year} "
-                f"{moment:%H:%M:%S} {zone_text(offset)}")
+        return (
+            f"{DAYS[moment.weekday()]}, {moment.day} "
+            f"{MONTHS[moment.month - 1]} {moment.year} "
+            f"{moment:%H:%M:%S} {zone_text(offset)}"
+        )
     if mode.kind is DateKind.STRFTIME:
         return _strftime(moment, offset, mode)
     return _normal(timestamp, moment, offset, mode)

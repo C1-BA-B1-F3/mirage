@@ -104,29 +104,44 @@ async def run_shell_function(
         for cmd in func_body:
             try:
                 stdout, io, last_exec = await run_statement(
-                    execute_node, cmd, session, stdin, bound, cs, job_table,
-                    agent_id, handed, decisions)
+                    execute_node,
+                    cmd,
+                    session,
+                    stdin,
+                    bound,
+                    cs,
+                    job_table,
+                    agent_id,
+                    handed,
+                    decisions,
+                )
             except ReturnSignal as sig:
                 if sig.stdout is not None:
                     all_stdout.append(sig.stdout)
                 if sig.stderr:
                     merged_io = await merged_io.merge(
-                        IOResult(stderr=sig.stderr))
+                        IOResult(stderr=sig.stderr)
+                    )
                 merged_io.exit_code = sig.exit_code
                 break
             except UNWINDING as sig:
                 raise await carried(
                     sig,
-                    async_chain(all_stdout) if all_stdout else None, merged_io)
+                    async_chain(all_stdout) if all_stdout else None,
+                    merged_io,
+                )
             # $? tracks each statement inside the body, so a bare
             # `return` (and mid-function $?) sees the last command.
             stdout = await finish_statement(stdout, io, session, cmd)
             if stdout is not None:
                 all_stdout.append(stdout)
             merged_io = await merged_io.merge(io)
-            if (io.exit_code != 0 and session.shell_options.get("errexit")
-                    and cmd.type not in ERREXIT_EXEMPT_TYPES
-                    and not session.errexit_immune):
+            if (
+                io.exit_code != 0
+                and session.shell_options.get("errexit")
+                and cmd.type not in ERREXIT_EXEMPT_TYPES
+                and not session.errexit_immune
+            ):
                 merged_io.exit_code = io.exit_code
                 break
         combined = async_chain(all_stdout) if all_stdout else None

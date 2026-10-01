@@ -25,9 +25,11 @@ from mirage.vfs.types import ReadOps
 # GitHub is read-only, so the generic byte-mutation
 # commands are intentionally absent (no write op wired). There is no native
 # streaming read, so the stream op is synthesized from the whole-blob read.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False,
-                max_glob_matches=SCOPE_ERROR).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+    max_glob_matches=SCOPE_ERROR,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

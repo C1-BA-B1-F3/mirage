@@ -19,7 +19,6 @@ ASTRAL = "\U00010400"
 
 
 class _PromptVFS(RAMVFS):
-
     def __init__(self, prompt: str) -> None:
         super().__init__()
         self.prompt = prompt

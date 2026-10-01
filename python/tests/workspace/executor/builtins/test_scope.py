@@ -44,7 +44,7 @@ def test_scope_path_passes_a_plain_string_through():
 
 
 def test_scope_path_reads_the_virtual_path_off_a_pathspec():
-    spec = PathSpec(virtual="/data/file.txt",
-                    directory="/data/",
-                    vfs_path="file.txt")
+    spec = PathSpec(
+        virtual="/data/file.txt", directory="/data/", vfs_path="file.txt"
+    )
     assert _scope_path(spec) == "/data/file.txt"

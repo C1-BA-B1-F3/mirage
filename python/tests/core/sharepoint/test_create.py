@@ -25,9 +25,11 @@ _SITE_ID = "tenant.sharepoint.com,site-guid,web-guid"
 _DRIVE_ID = "b!driveXYZ"
 # The site is named like the mount, so vfs_path "m/Documents/k.txt" sits
 # under the virtual "/m/m/Documents/k.txt".
-_SPEC = PathSpec(virtual="/m/m/Documents/k.txt",
-                 directory="/m/m/Documents/",
-                 vfs_path="m/Documents/k.txt")
+_SPEC = PathSpec(
+    virtual="/m/m/Documents/k.txt",
+    directory="/m/m/Documents/",
+    vfs_path="m/Documents/k.txt",
+)
 
 
 def _accessor() -> SharePointAccessor:
@@ -42,10 +44,14 @@ async def test_create_records_the_virtual_path():
     scope = RecordingScope()
     try:
         with aioresponses() as m:
-            m.put(f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
-                  status=201,
-                  payload={"id": "X"})
+            m.put(
+                f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
+                status=201,
+                payload={"id": "X"},
+            )
             await create(_accessor(), _SPEC)
     finally:
         scope.close()
-    assert [r.path for r in scope.records] == ["/m/m/Documents/k.txt"]
+    assert [(r.op, r.path) for r in scope.records] == [
+        ("create", "/m/m/Documents/k.txt")
+    ]

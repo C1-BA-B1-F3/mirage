@@ -15,8 +15,13 @@
 from dataclasses import dataclass
 
 from mirage.core.hierarchy.codec import DATE, JSON_NAME, Codec
-from mirage.core.hierarchy.scope import (ROOT, Scope, ScopeMatch, Slot,
-                                         make_detect_scope)
+from mirage.core.hierarchy.scope import (
+    ROOT,
+    Scope,
+    ScopeMatch,
+    Slot,
+    make_detect_scope,
+)
 from mirage.types import ContentType
 
 
@@ -35,28 +40,33 @@ def is_container(text: str) -> bool:
 CONTAINER = Codec(validate=is_container)
 
 _CHANNEL = (Slot("container", CONTAINER), Slot("channel", id_key="channel_id"))
-_DAY = _CHANNEL + (Slot("day", DATE), )
+_DAY = _CHANNEL + (Slot("day", DATE),)
 
 # One description of the tree: readdir, stat, read and the search
 # push-down all classify through it, so the file surface and the command
 # surface cannot disagree about what a path means.
 SCOPES = (
-    Scope(kind="channels_root", segments=("channels", ), probed=False),
-    Scope(kind="dms_root", segments=("dms", ), probed=False),
-    Scope(kind="users_root", segments=("users", ), probed=False),
-    Scope(kind="user",
-          segments=("users", Slot("user", JSON_NAME, id_key="user_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(kind="channels_root", segments=("channels",), probed=False),
+    Scope(kind="dms_root", segments=("dms",), probed=False),
+    Scope(kind="users_root", segments=("users",), probed=False),
+    Scope(
+        kind="user",
+        segments=("users", Slot("user", JSON_NAME, id_key="user_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="channel", segments=_CHANNEL),
     Scope(kind="day", segments=_DAY),
-    Scope(kind="messages",
-          segments=_DAY + ("chat.jsonl", ),
-          leaf=True,
-          filetype=ContentType.TEXT),
-    Scope(kind="files", segments=_DAY + ("files", )),
-    Scope(kind="file_blob", segments=_DAY + ("files", Slot("blob")),
-          leaf=True),
+    Scope(
+        kind="messages",
+        segments=_DAY + ("chat.jsonl",),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
+    Scope(kind="files", segments=_DAY + ("files",)),
+    Scope(
+        kind="file_blob", segments=_DAY + ("files", Slot("blob")), leaf=True
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)
@@ -78,6 +88,7 @@ class SearchTarget:
         channel_name (str | None): display half of the channel dirname.
         channel_id (str | None): channel id parsed from the dirname.
     """
+
     container: str | None = None
     channel_name: str | None = None
     channel_id: str | None = None

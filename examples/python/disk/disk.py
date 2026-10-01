@@ -110,21 +110,28 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /data/missing.json", "head /data/missing.json",
-                "stat /data/missing.json"):
+    for cmd in (
+        "cat /data/missing.json",
+        "head /data/missing.json",
+        "stat /data/missing.json",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== metadata writes refuse on read-only mounts ===")
-    for cmd in ("chmod 600 /data/example.json",
-                "chown 500:dev /data/example.json",
-                "touch -t 202601021530 /data/example.json"):
+    for cmd in (
+        "chmod 600 /data/example.json",
+        "chown 500:dev /data/example.json",
+        "touch -t 202601021530 /data/example.json",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ── persistence: save / load / copy / deepcopy ──────────────────
     # Disk has no redacted config: full file tree is in the snapshot.
@@ -141,22 +148,29 @@ async def main() -> None:
         # Load with default fresh tmpdir
         loaded_default = await Workspace.load(snap)
         r = await loaded_default.shell("ls /data/")
-        print(f"  loaded (default tmpdir) ls: "
-              f"{(await r.stdout_str()).strip()[:80]}…")
+        print(
+            f"  loaded (default tmpdir) ls: "
+            f"{(await r.stdout_str()).strip()[:80]}…"
+        )
 
         # Load with caller-supplied root — files written into custom_root
         loaded_custom = await Workspace.load(
-            snap, mounts={"/data": DiskVFS(root=custom_root)})
+            snap, mounts={"/data": DiskVFS(root=custom_root)}
+        )
         r = await loaded_custom.shell("ls /data/")
-        print(f"  loaded (root={custom_root[:40]}…) ls: "
-              f"{(await r.stdout_str()).strip()[:80]}…")
+        print(
+            f"  loaded (root={custom_root[:40]}…) ls: "
+            f"{(await r.stdout_str()).strip()[:80]}…"
+        )
         print(f"  custom_root contents: {sorted(os.listdir(custom_root))[:5]}")
 
         cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")

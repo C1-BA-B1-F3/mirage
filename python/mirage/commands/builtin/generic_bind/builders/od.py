@@ -1,9 +1,12 @@
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.od import od as generic_od
 from mirage.commands.builtin.generic.od import parse_count
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -11,9 +14,13 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def od(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def od(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["od"])
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     formats = [
@@ -31,8 +38,9 @@ async def od(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         stdin=opts.stdin,
         address_radix=fl.as_str("address_radix") or "o",
         skip=(parse_count(skip_value, "-j") if skip_value is not None else 0),
-        limit=(parse_count(limit_value, "-N")
-               if limit_value is not None else None),
+        limit=(
+            parse_count(limit_value, "-N") if limit_value is not None else None
+        ),
         formats=formats,
     )
 

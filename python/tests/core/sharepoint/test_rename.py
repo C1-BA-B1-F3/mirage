@@ -1,9 +1,11 @@
+import re
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
-from mirage.core.sharepoint.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.sharepoint.rename import rename
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -24,9 +26,9 @@ def _accessor() -> SharePointAccessor:
 
 def _spec(rel: str) -> PathSpec:
     virtual = f"/sp/Engineering/Documents/{rel}"
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
@@ -62,13 +64,10 @@ async def test_rename_same_parent_omits_parent_reference():
 async def test_rename_conflict_deletes_file_destination_and_retries():
     with aioresponses() as m:
         m.patch(_DRIVE + "/root:/a.txt", status=409, payload=_CONFLICT)
-        m.get(_DRIVE + "/root:/b.txt",
-              payload={
-                  "id": "2",
-                  "name": "b.txt",
-                  "size": 1,
-                  "file": {}
-              })
+        m.get(
+            _DRIVE + "/root:/b.txt",
+            payload={"id": "2", "name": "b.txt", "size": 1, "file": {}},
+        )
         m.delete(_DRIVE + "/root:/b.txt", status=204)
         m.patch(_DRIVE + "/root:/a.txt", status=200, payload={"id": "1"})
         await rename(_accessor(), _spec("a.txt"), _spec("b.txt"))
@@ -80,22 +79,53 @@ async def test_rename_conflict_deletes_file_destination_and_retries():
 async def test_rename_conflict_keeps_error_for_nonempty_dir():
     with aioresponses() as m:
         m.patch(_DRIVE + "/root:/src", status=409, payload=_CONFLICT)
-        m.get(_DRIVE + "/root:/dst",
-              payload={
-                  "id": "2",
-                  "name": "dst",
-                  "folder": {
-                      "childCount": 1
-                  }
-              })
-        m.get(_DRIVE + "/root:/dst:/children",
-              payload={
-                  "value": [{
-                      "id": "3",
-                      "name": "kid",
-                      "size": 0,
-                      "file": {}
-                  }]
-              })
+        m.get(
+            _DRIVE + "/root:/dst",
+            payload={"id": "2", "name": "dst", "folder": {"childCount": 1}},
+        )
+        m.get(
+            _DRIVE + "/root:/dst:/children",
+            payload={
+                "value": [{"id": "3", "name": "kid", "size": 0, "file": {}}]
+            },
+        )
         with pytest.raises(GraphError):
             await rename(_accessor(), _spec("src"), _spec("dst"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "src,dst,named",
+    [
+        (
+            "/sp/Nope/Documents/a.txt",
+            "/sp/Engineering/Documents/b.txt",
+            "/sp/Nope/Documents/a.txt",
+        ),
+        (
+            "/sp/Engineering/Documents/a.txt",
+            "/sp/Nope/Documents/b.txt",
+            "/sp/Nope/Documents/b.txt",
+        ),
+    ],
+)
+async def test_rename_names_the_side_that_does_not_resolve(src, dst, named):
+    with aioresponses() as m:
+        m.get(
+            re.compile(r".*/sites\?.*"),
+            payload={
+                "value": [{"id": _SITE_ID, "displayName": "Engineering"}]
+            },
+            repeat=True,
+        )
+        with pytest.raises(FileNotFoundError) as exc:
+            await rename(
+                _accessor(),
+                PathSpec(
+                    vfs_path=mount_key(src, "/sp"), virtual=src, directory=src
+                ),
+                PathSpec(
+                    vfs_path=mount_key(dst, "/sp"), virtual=dst, directory=dst
+                ),
+            )
+    assert str(exc.value) == named

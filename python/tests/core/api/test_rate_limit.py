@@ -20,7 +20,6 @@ from mirage.core.api.rate_limit import RateLimiter
 
 
 class _Clock:
-
     def __init__(self) -> None:
         self.now = 100.0
         self.waits: list[float] = []
@@ -33,7 +32,6 @@ class _Clock:
 
 
 class _Stalled(_Clock):
-
     def __init__(self, until: float) -> None:
         super().__init__()
         self.until = until

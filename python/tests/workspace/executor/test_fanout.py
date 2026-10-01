@@ -12,26 +12,31 @@ from mirage.ops.types import NamespaceView
 from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.fanout import (_adjust_depth_texts,
-                                              _fan_out_traversal,
-                                              _filter_under_prefixes,
-                                              _synthesize_find_mount_entries)
+from mirage.workspace.executor.fanout import (
+    _adjust_depth_texts,
+    _fan_out_traversal,
+    _filter_under_prefixes,
+    _synthesize_find_mount_entries,
+)
 
 
 def _shown_mount_entries(target, descendants, texts, raw, stat_path=None):
     entries, _ = asyncio.run(
-        _synthesize_find_mount_entries(target, descendants, texts, raw,
-                                       stat_path))
+        _synthesize_find_mount_entries(
+            target, descendants, texts, raw, stat_path
+        )
+    )
     return "\n".join(p.raw_path for p in entries)
 
 
 class TraversalMount:
-
-    def __init__(self,
-                 prefix: str,
-                 output: bytes = b"",
-                 exit_code: int = 0,
-                 error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        prefix: str,
+        output: bytes = b"",
+        exit_code: int = 0,
+        error: Exception | None = None,
+    ) -> None:
         self.prefix = prefix
         self.output = output
         self.exit_code = exit_code
@@ -39,12 +44,9 @@ class TraversalMount:
         self.command_limits = {}
         self.calls: list[ExecContext] = []
 
-    async def execute_cmd(self,
-                          name,
-                          paths,
-                          texts,
-                          flags,
-                          context=ExecContext()):
+    async def execute_cmd(
+        self, name, paths, texts, flags, context=ExecContext()
+    ):
         self.calls.append(context)
         if self.error is not None:
             raise self.error
@@ -52,14 +54,20 @@ class TraversalMount:
         return self.output, IOResult(
             exit_code=self.exit_code,
             stderr=stderr,
-            matched_runs=[[
-                PathSpec(virtual=row, directory=row, vfs_path="", raw_path=row)
-                for row in self.output.decode().splitlines()
-            ]] if name == "find" else None)
+            matched_runs=[
+                [
+                    PathSpec(
+                        virtual=row, directory=row, vfs_path="", raw_path=row
+                    )
+                    for row in self.output.decode().splitlines()
+                ]
+            ]
+            if name == "find"
+            else None,
+        )
 
 
 class TraversalRegistry:
-
     def __init__(self, descendants: list[TraversalMount]) -> None:
         self._descendants = descendants
 
@@ -89,8 +97,9 @@ def test_synthesize_honors_not():
 
 def test_synthesize_honors_or():
     desc = _mounts("/ram/", "/disk/", "/notes/")
-    out = _shown_mount_entries("/", desc,
-                               ["-name", "ram", "-o", "-name", "disk"], "/")
+    out = _shown_mount_entries(
+        "/", desc, ["-name", "ram", "-o", "-name", "disk"], "/"
+    )
     assert out == "/ram\n/disk"
 
 
@@ -101,22 +110,28 @@ def test_synthesize_type_file_excludes_mount_dirs():
 
 def test_synthesize_type_dir_includes_mount_dirs():
     desc = _mounts("/ram/", "/disk/")
-    assert _shown_mount_entries("/", desc, ["-type", "d"],
-                                "/") == "/ram\n/disk"
+    assert (
+        _shown_mount_entries("/", desc, ["-type", "d"], "/") == "/ram\n/disk"
+    )
 
 
 def test_synthesize_maxdepth_window():
     desc = _mounts("/ram/", "/a/b/")
-    assert _shown_mount_entries("/", desc, ["-maxdepth", "1"],
-                                "/") == "/ram\n/a"
+    assert (
+        _shown_mount_entries("/", desc, ["-maxdepth", "1"], "/") == "/ram\n/a"
+    )
 
 
 def test_synthesize_namespace_ancestors():
     desc = _mounts("/ghost/very/deep/")
-    assert _shown_mount_entries("/", desc, [],
-                                "/") == "/ghost\n/ghost/very\n/ghost/very/deep"
-    assert _shown_mount_entries("/ghost", desc, [],
-                                "/ghost") == "/ghost/very\n/ghost/very/deep"
+    assert (
+        _shown_mount_entries("/", desc, [], "/")
+        == "/ghost\n/ghost/very\n/ghost/very/deep"
+    )
+    assert (
+        _shown_mount_entries("/ghost", desc, [], "/ghost")
+        == "/ghost/very\n/ghost/very/deep"
+    )
 
 
 def test_synthesize_shared_ancestor_once():
@@ -128,26 +143,34 @@ def test_synthesize_prune_drops_the_mounts_under_a_pruned_ancestor():
     desc = _mounts("/skip/deep/", "/keep/")
     texts = ["-path", "/skip", "-prune", "-o", "-print"]
     assert _shown_mount_entries("/", desc, texts, "/") == "/keep"
-    assert _shown_mount_entries("/", desc, ["-path", "/skip", "-prune"],
-                                "/") == "/skip"
+    assert (
+        _shown_mount_entries("/", desc, ["-path", "/skip", "-prune"], "/")
+        == "/skip"
+    )
 
 
 def test_synthesize_prune_at_the_start_point_hides_every_mount():
     desc = _mounts("/a/", "/b/deep/")
     assert _shown_mount_entries("/", desc, ["-type", "d", "-prune"], "/") == ""
-    assert _shown_mount_entries("/", desc,
-                                ["-mindepth", "1", "-type", "d", "-prune"],
-                                "/") == "/a\n/b"
+    assert (
+        _shown_mount_entries(
+            "/", desc, ["-mindepth", "1", "-type", "d", "-prune"], "/"
+        )
+        == "/a\n/b"
+    )
 
 
 def test_synthesize_returns_the_evaluated_tree():
     _, tree = asyncio.run(
-        _synthesize_find_mount_entries("/", _mounts("/skip/deep/"),
-                                       ["-path", "/skip", "-prune"], "/"))
+        _synthesize_find_mount_entries(
+            "/", _mounts("/skip/deep/"), ["-path", "/skip", "-prune"], "/"
+        )
+    )
     assert tree is not None
     assert pruned_keys(tree) == ["/skip"]
     _, tree = asyncio.run(
-        _synthesize_find_mount_entries("/", _mounts("/a/"), ["-bogus"], "/"))
+        _synthesize_find_mount_entries("/", _mounts("/a/"), ["-bogus"], "/")
+    )
     assert tree is None
 
 
@@ -161,16 +184,21 @@ def test_synthesize_time_test_before_prune_gates_the_mounts():
     }
 
     async def stat_path(path):
-        return FileStat(name=path.rsplit("/", 1)[-1],
-                        type=FileType.DIRECTORY,
-                        modified=stamps[path])
+        return FileStat(
+            name=path.rsplit("/", 1)[-1],
+            type=FileType.DIRECTORY,
+            modified=stamps[path],
+        )
 
     desc = _mounts("/old/deep/", "/new/deep/")
     gated = ["-mindepth", "1", "-newermt", "2010-01-01", "-prune"]
-    assert _shown_mount_entries("/", desc, gated, "/",
-                                stat_path) == "/old/deep\n/new"
+    assert (
+        _shown_mount_entries("/", desc, gated, "/", stat_path)
+        == "/old/deep\n/new"
+    )
     _, tree = asyncio.run(
-        _synthesize_find_mount_entries("/", desc, gated, "/", stat_path))
+        _synthesize_find_mount_entries("/", desc, gated, "/", stat_path)
+    )
     # `/old` failed the test, so it alone is open; `/new/deep` sits under
     # a pruned directory and is never judged.
     assert pruned_keys(tree) == ["/old/deep", "/new"]
@@ -188,9 +216,11 @@ def test_synthesize_never_stats_a_mount_under_a_pruned_directory():
         statted.append(path)
         if path.startswith("/skip/"):
             raise PermissionError(path)
-        return FileStat(name=path.rsplit("/", 1)[-1],
-                        type=FileType.DIRECTORY,
-                        modified="2026-01-01T00:00:00Z")
+        return FileStat(
+            name=path.rsplit("/", 1)[-1],
+            type=FileType.DIRECTORY,
+            modified="2026-01-01T00:00:00Z",
+        )
 
     desc = _mounts("/skip/deep/", "/keep/deep/")
     texts = ["-path", "/skip", "-prune", "-newermt", "2010-01-01"]
@@ -199,8 +229,9 @@ def test_synthesize_never_stats_a_mount_under_a_pruned_directory():
 
 
 def test_adjust_depth_texts_reduces_maxdepth_by_delta():
-    out = _adjust_depth_texts(["-maxdepth", "3", "-name", "x"], "/",
-                              "/data/sub")
+    out = _adjust_depth_texts(
+        ["-maxdepth", "3", "-name", "x"], "/", "/data/sub"
+    )
     assert out == ["-maxdepth", "1", "-name", "x"]
 
 
@@ -215,8 +246,10 @@ def test_adjust_depth_texts_no_depth_tokens_unchanged():
 
 
 def test_adjust_depth_texts_same_mount_unchanged():
-    assert _adjust_depth_texts(["-maxdepth", "3"], "/data",
-                               "/data") == ["-maxdepth", "3"]
+    assert _adjust_depth_texts(["-maxdepth", "3"], "/data", "/data") == [
+        "-maxdepth",
+        "3",
+    ]
 
 
 def test_prune_above_a_nested_mount_skips_its_walk():
@@ -226,15 +259,18 @@ def test_prune_above_a_nested_mount_skips_its_walk():
     parent._store.files["/skip/x.txt"] = b"x\n"
     child = RAMVFS()
     child._store.files["/leaf.txt"] = b"deep\n"
-    ws = Workspace(mounts={
-        "/": (parent, MountMode.EXEC),
-        "/skip/deep/": (child, MountMode.EXEC),
-    })
+    ws = Workspace(
+        mounts={
+            "/": (parent, MountMode.EXEC),
+            "/skip/deep/": (child, MountMode.EXEC),
+        }
+    )
 
     async def scenario():
         return [
-            await
-            ws.shell("find / -path /skip -prune -o -name '*.txt' -print"),
+            await ws.shell(
+                "find / -path /skip -prune -o -name '*.txt' -print"
+            ),
             await ws.shell("find / -type d -prune"),
             await ws.shell("find / -path /skip/deep -prune -o -print"),
         ]
@@ -252,10 +288,12 @@ def test_maxdepth_applies_to_child_mount_depth_end_to_end():
     child = RAMVFS()
     child._store.dirs.add("/a")
     child._store.files["/a/b.txt"] = b"deep\n"
-    ws = Workspace(mounts={
-        "/": (parent, MountMode.EXEC),
-        "/data/": (child, MountMode.EXEC),
-    }, )
+    ws = Workspace(
+        mounts={
+            "/": (parent, MountMode.EXEC),
+            "/data/": (child, MountMode.EXEC),
+        },
+    )
     io = asyncio.run(ws.shell("find / -maxdepth 2"))
     out = (io.stdout if isinstance(io.stdout, bytes) else b"").decode()
     assert "/data/a" in out
@@ -271,7 +309,8 @@ def _nested_ghost_workspace() -> Workspace:
         mounts={
             "/": (parent, MountMode.EXEC),
             "/ghost/very/deep/": (deep, MountMode.EXEC),
-        })
+        }
+    )
 
 
 def test_find_ls_renders_namespace_ancestor_rows():
@@ -311,8 +350,18 @@ def test_fanout_preserves_partial_failure_exit_code():
     child = TraversalMount("/data/", exit_code=1)
     path = PathSpec.from_str_path("/")
     _, io, _ = asyncio.run(
-        _fan_out_traversal("tree", [path], [], {}, TraversalRegistry([child]),
-                           primary, "/", "tree /", None))
+        _fan_out_traversal(
+            "tree",
+            [path],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            "tree /",
+            None,
+        )
+    )
     assert io.exit_code == 1
     assert io.stderr == b"backend failed\n"
 
@@ -322,8 +371,18 @@ def test_fanout_reports_unexpected_backend_error_without_losing_output():
     child = TraversalMount("/data/", error=RuntimeError("backend exploded"))
     path = PathSpec.from_str_path("/")
     out, io, _ = asyncio.run(
-        _fan_out_traversal("tree", [path], [], {}, TraversalRegistry([child]),
-                           primary, "/", "tree /", None))
+        _fan_out_traversal(
+            "tree",
+            [path],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            "tree /",
+            None,
+        )
+    )
     assert out == b"root\n"
     assert io.exit_code == 1
     assert io.stderr == b"tree: backend exploded\n"
@@ -334,25 +393,35 @@ def _du_probe(refused: str):
     async def stat_path(path):
         if path == refused:
             raise PermissionError(13, "Permission denied", path)
-        kind = (FileType.DIRECTORY if path in ("/empty",
-                                               "/data") else FileType.FILE)
+        kind = (
+            FileType.DIRECTORY
+            if path in ("/empty", "/data")
+            else FileType.FILE
+        )
         return FileStat(name=path.rsplit("/", 1)[-1], type=kind)
 
     return stat_path
 
 
 def test_du_fanout_keeps_the_rows_when_an_empty_row_refuses_stat():
-    primary = TraversalMount("/",
-                             output=b"0\t/empty\n0\t/sealed\n3\t/f\n3\t/\n")
+    primary = TraversalMount(
+        "/", output=b"0\t/empty\n0\t/sealed\n3\t/f\n3\t/\n"
+    )
     child = TraversalMount("/data/", output=b"4\t/data/x\n4\t/data\n")
     out, io, _ = asyncio.run(
-        _fan_out_traversal("du", [PathSpec.from_str_path("/")], [], {},
-                           TraversalRegistry([child]),
-                           primary,
-                           "/",
-                           "du /",
-                           None,
-                           stat_path=_du_probe("/sealed")))
+        _fan_out_traversal(
+            "du",
+            [PathSpec.from_str_path("/")],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            "du /",
+            None,
+            stat_path=_du_probe("/sealed"),
+        )
+    )
     assert out == b"4\t/data\n0\t/empty\n7\t/\n"
     assert io.exit_code == 1
     assert io.stderr == b"du: cannot access '/sealed': Permission denied\n"
@@ -362,13 +431,19 @@ def test_du_fanout_keeps_the_rows_when_a_mount_root_refuses_stat():
     primary = TraversalMount("/", output=b"3\t/f\n3\t/\n")
     child = TraversalMount("/data/", output=b"4\t/data/x\n4\t/data\n")
     out, io, _ = asyncio.run(
-        _fan_out_traversal("du", [PathSpec.from_str_path("/")], [], {},
-                           TraversalRegistry([child]),
-                           primary,
-                           "/",
-                           "du /",
-                           None,
-                           stat_path=_du_probe("/data")))
+        _fan_out_traversal(
+            "du",
+            [PathSpec.from_str_path("/")],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            "du /",
+            None,
+            stat_path=_du_probe("/data"),
+        )
+    )
     assert out == b"4\t/data\n7\t/\n"
     assert io.exit_code == 0
 
@@ -377,19 +452,25 @@ def test_filter_reads_du_paths_after_the_size_column():
     """du renders SIZE\\tPATH, so the path is the second field; reading
     the first kept every shadowed du row in the parent's output."""
     out = asyncio.run(
-        _filter_under_prefixes(b"1000\t/base/inner\n1010\t/base\n",
-                               ["/base/inner"], "du"))
+        _filter_under_prefixes(
+            b"1000\t/base/inner\n1010\t/base\n", ["/base/inner"], "du"
+        )
+    )
     assert out == b"1010\t/base\n"
 
 
 def test_filter_still_reads_find_and_grep_paths_from_the_front():
     out = asyncio.run(
-        _filter_under_prefixes(b"/base/inner/x\n/base/y\n", ["/base/inner"],
-                               "find"))
+        _filter_under_prefixes(
+            b"/base/inner/x\n/base/y\n", ["/base/inner"], "find"
+        )
+    )
     assert out == b"/base/y\n"
     out = asyncio.run(
-        _filter_under_prefixes(b"/base/inner/x:hit\n/base/y:hit\n",
-                               ["/base/inner"], "grep"))
+        _filter_under_prefixes(
+            b"/base/inner/x:hit\n/base/y:hit\n", ["/base/inner"], "grep"
+        )
+    )
     assert out == b"/base/y:hit\n"
 
 
@@ -404,7 +485,8 @@ def _shadowed_workspace(top: int = 10, real: int = 7) -> Workspace:
         mounts={
             "/base/": (parent, MountMode.EXEC),
             "/base/inner/": (child, MountMode.EXEC),
-        })
+        }
+    )
 
 
 def _stdout(io) -> str:
@@ -428,10 +510,12 @@ def test_du_fanout_folds_the_child_mount_into_its_ancestors():
 def test_du_a_fanout_hides_shadowed_leaves():
     ws = _shadowed_workspace()
     io = asyncio.run(ws.shell("du -a /base"))
-    assert _stdout(io) == ("7\t/base/inner/real.txt\n"
-                           "7\t/base/inner\n"
-                           "10\t/base/top.txt\n"
-                           "17\t/base\n")
+    assert _stdout(io) == (
+        "7\t/base/inner/real.txt\n"
+        "7\t/base/inner\n"
+        "10\t/base/top.txt\n"
+        "17\t/base\n"
+    )
 
 
 def test_du_s_fanout_is_one_row_per_operand():
@@ -461,26 +545,33 @@ def test_du_separate_dirs_fanout_scopes_only_the_rows():
     ``17 total``.
     """
     ws = _shadowed_workspace()
-    assert _stdout(asyncio.run(
-        ws.shell("du -S /base"))) == "7\t/base/inner\n10\t/base\n"
-    assert _stdout(asyncio.run(
-        ws.shell("du -Sc /base"))) == "7\t/base/inner\n10\t/base\n17\ttotal\n"
+    assert (
+        _stdout(asyncio.run(ws.shell("du -S /base")))
+        == "7\t/base/inner\n10\t/base\n"
+    )
+    assert (
+        _stdout(asyncio.run(ws.shell("du -Sc /base")))
+        == "7\t/base/inner\n10\t/base\n17\ttotal\n"
+    )
 
 
 def test_du_separate_dirs_summarize_fanout():
     ws = _shadowed_workspace()
     assert _stdout(asyncio.run(ws.shell("du -Ss /base"))) == "10\t/base\n"
-    assert _stdout(asyncio.run(
-        ws.shell("du -Ssc /base"))) == "10\t/base\n17\ttotal\n"
+    assert (
+        _stdout(asyncio.run(ws.shell("du -Ssc /base")))
+        == "10\t/base\n17\ttotal\n"
+    )
 
 
 def test_du_separate_dirs_all_fanout():
     ws = _shadowed_workspace()
-    assert _stdout(asyncio.run(
-        ws.shell("du -Sa /base"))) == ("7\t/base/inner/real.txt\n"
-                                       "7\t/base/inner\n"
-                                       "10\t/base/top.txt\n"
-                                       "10\t/base\n")
+    assert _stdout(asyncio.run(ws.shell("du -Sa /base"))) == (
+        "7\t/base/inner/real.txt\n"
+        "7\t/base/inner\n"
+        "10\t/base/top.txt\n"
+        "10\t/base\n"
+    )
 
 
 def test_du_sc_fanout_prints_one_total():
@@ -515,13 +606,19 @@ def test_fanout_offers_the_namespace_view_to_every_sub_run():
     path = PathSpec.from_str_path("/")
     view = NamespaceView()
     asyncio.run(
-        _fan_out_traversal("find", [path], [], {},
-                           TraversalRegistry([child]),
-                           primary,
-                           "/",
-                           "find /",
-                           None,
-                           ns=view))
+        _fan_out_traversal(
+            "find",
+            [path],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            "find /",
+            None,
+            ns=view,
+        )
+    )
     for mount in (primary, child):
         assert mount.calls[0].ns is view
 
@@ -552,16 +649,19 @@ def test_fanout_sub_runs_still_see_symlinks():
     assert "13\t/base/link.txt\n" in sized
     # Post-order, siblings sorted: inner, link.txt, top.txt, then the
     # operand carrying all three (7 + 13 + 10).
-    assert sized == ("7\t/base/inner/real.txt\n"
-                     "7\t/base/inner\n"
-                     "13\t/base/link.txt\n"
-                     "10\t/base/top.txt\n"
-                     "30\t/base\n")
+    assert sized == (
+        "7\t/base/inner/real.txt\n"
+        "7\t/base/inner\n"
+        "13\t/base/link.txt\n"
+        "10\t/base/top.txt\n"
+        "30\t/base\n"
+    )
 
 
 def test_fanout_link_rows_match_the_unmounted_tree():
     plain = _stdout(
-        asyncio.run(_linked_workspace(nested=False).shell("du -a /base")))
+        asyncio.run(_linked_workspace(nested=False).shell("du -a /base"))
+    )
     assert "13\t/base/link.txt\n" in plain
 
 
@@ -579,7 +679,8 @@ def _spanning_workspace() -> Workspace:
             "/base/": (parent, MountMode.EXEC),
             "/base/inner/": (child, MountMode.EXEC),
             "/other/": (other, MountMode.EXEC),
-        })
+        }
+    )
 
 
 def test_operands_spanning_mounts_still_fan_out_inside_each_operand():
@@ -589,10 +690,9 @@ def test_operands_spanning_mounts_still_fan_out_inside_each_operand():
     tree. GNU counts a mounted filesystem in the same run either way."""
     ws = _spanning_workspace()
     io = asyncio.run(ws.shell("du -c /base /other"))
-    assert _stdout(io) == ("9\t/base/inner\n"
-                           "19\t/base\n"
-                           "10\t/other\n"
-                           "29\ttotal\n")
+    assert _stdout(io) == (
+        "9\t/base/inner\n19\t/base\n10\t/other\n29\ttotal\n"
+    )
 
 
 def test_du_fan_out_accounts_for_every_du_flag():
@@ -619,10 +719,9 @@ def test_operands_spanning_mounts_separate_dirs():
     covers every byte."""
     ws = _spanning_workspace()
     io = asyncio.run(ws.shell("du -Sc /base /other"))
-    assert _stdout(io) == ("9\t/base/inner\n"
-                           "10\t/base\n"
-                           "10\t/other\n"
-                           "29\ttotal\n")
+    assert _stdout(io) == (
+        "9\t/base/inner\n10\t/base\n10\t/other\n29\ttotal\n"
+    )
 
 
 def test_operands_spanning_mounts_fan_out_for_find_and_grep():
@@ -631,8 +730,7 @@ def test_operands_spanning_mounts_fan_out_for_find_and_grep():
     assert "/base/inner/real.txt" in found
     assert "/base/inner/leftover.txt" not in found
     hits = _stdout(asyncio.run(ws.shell("grep -r hit /base /other")))
-    assert hits == ("/base/inner/real.txt:hit here\n"
-                    "/other/o.txt:hit there\n")
+    assert hits == ("/base/inner/real.txt:hit here\n/other/o.txt:hit there\n")
 
 
 def test_ls_r_drops_the_shadowed_group_whole():
@@ -643,8 +741,9 @@ def test_ls_r_drops_the_shadowed_group_whole():
     under its own header, one blank line between groups."""
     ws = _shadowed_workspace()
     io = asyncio.run(ws.shell("ls -R /base"))
-    assert _stdout(io) == ("/base:\ninner\ntop.txt\n\n"
-                           "/base/inner:\nreal.txt\n")
+    assert _stdout(io) == (
+        "/base:\ninner\ntop.txt\n\n/base/inner:\nreal.txt\n"
+    )
 
 
 def _unnamed_mountpoint_workspace() -> Workspace:
@@ -662,7 +761,8 @@ def _unnamed_mountpoint_workspace() -> Workspace:
         mounts={
             "/base/": (parent, MountMode.EXEC),
             "/base/nested/": (child, MountMode.EXEC),
-        })
+        }
+    )
 
 
 def test_ls_r_lists_a_mountpoint_the_parent_backend_cannot_name():
@@ -677,8 +777,9 @@ def test_ls_r_lists_a_mountpoint_the_parent_backend_cannot_name():
     """
     ws = _unnamed_mountpoint_workspace()
     io = asyncio.run(ws.shell("ls -R /base"))
-    assert _stdout(io) == ("/base:\nnested\ntop.txt\n\n"
-                           "/base/nested:\nreal.txt\n")
+    assert _stdout(io) == (
+        "/base:\nnested\ntop.txt\n\n/base/nested:\nreal.txt\n"
+    )
 
 
 def test_ls_r_lists_a_mountpoint_below_the_operand():
@@ -697,11 +798,12 @@ def test_ls_r_lists_a_mountpoint_below_the_operand():
         mounts={
             "/base/": (parent, MountMode.EXEC),
             "/base/sub/deep/": (child, MountMode.EXEC),
-        })
+        }
+    )
     io = asyncio.run(ws.shell("ls -R /base"))
-    assert _stdout(io) == ("/base:\nsub\n\n"
-                           "/base/sub:\ndeep\np.txt\n\n"
-                           "/base/sub/deep:\nreal.txt\n")
+    assert _stdout(io) == (
+        "/base:\nsub\n\n/base/sub:\ndeep\np.txt\n\n/base/sub/deep:\nreal.txt\n"
+    )
 
 
 def test_ls_r_lists_a_namespace_only_ancestor_under_a_served_root():
@@ -712,9 +814,9 @@ def test_ls_r_lists_a_namespace_only_ancestor_under_a_served_root():
     because no other run renders them."""
     ws = _nested_ghost_workspace()
     io = asyncio.run(ws.shell("ls -R /"))
-    assert _stdout(io).startswith("/:\ndev\nghost\ntop.txt\nusr\n\n"
-                                  "/ghost:\nvery\n\n"
-                                  "/ghost/very:\ndeep\n")
+    assert _stdout(io).startswith(
+        "/:\ndev\nghost\ntop.txt\nusr\n\n/ghost:\nvery\n\n/ghost/very:\ndeep\n"
+    )
 
 
 def test_ls_r_relative_operand_never_descends_the_mount_root():
@@ -728,8 +830,7 @@ def test_ls_r_relative_operand_never_descends_the_mount_root():
     """
     ws = _shadowed_workspace()
     io = asyncio.run(ws.shell("ls -R base"))
-    assert _stdout(io) == ("base:\ninner\ntop.txt\n\n"
-                           "base/inner:\nreal.txt\n")
+    assert _stdout(io) == ("base:\ninner\ntop.txt\n\nbase/inner:\nreal.txt\n")
 
 
 def test_ls_r_renders_a_file_mount_as_one_row_and_no_group():
@@ -748,7 +849,8 @@ def test_ls_r_renders_a_file_mount_as_one_row_and_no_group():
     io = asyncio.run(ws.shell("ls -aRF /"))
     assert _stdout(io).startswith(
         "/:\n./\n../\n.bash_history\ndev/\ntop.txt\nusr/\n\n"
-        "/usr:\n./\n../\nbin/\n\n/dev:\n./\n../\nnull\nzero\n\n")
+        "/usr:\n./\n../\nbin/\n\n/dev:\n./\n../\nnull\nzero\n\n"
+    )
     assert _stdout(io).count(".bash_history") == 1
 
 
@@ -759,20 +861,22 @@ def test_tree_renders_one_document_across_a_nested_mount():
     none of the ones it covers."""
     ws = _shadowed_workspace()
     io = asyncio.run(ws.shell("tree /base"))
-    assert _stdout(io) == ("/base\n"
-                           "|-- inner\n"
-                           "|   `-- real.txt\n"
-                           "`-- top.txt\n"
-                           "\n"
-                           "2 directories, 2 files\n")
+    assert _stdout(io) == (
+        "/base\n"
+        "|-- inner\n"
+        "|   `-- real.txt\n"
+        "`-- top.txt\n"
+        "\n"
+        "2 directories, 2 files\n"
+    )
 
 
 def test_ls_r_spanning_mounts_separates_every_group():
     ws = _spanning_workspace()
     io = asyncio.run(ws.shell("ls -R /base /other"))
-    assert _stdout(io) == ("/base:\ninner\ntop.txt\n\n"
-                           "/base/inner:\nreal.txt\n\n"
-                           "/other:\no.txt\n")
+    assert _stdout(io) == (
+        "/base:\ninner\ntop.txt\n\n/base/inner:\nreal.txt\n\n/other:\no.txt\n"
+    )
 
 
 def test_synthesize_respells_entries_with_the_typed_base():
@@ -787,23 +891,36 @@ def test_synthesize_honors_the_time_window():
     # keeps it, and a candidate that cannot be statted is dropped.
     mounts = [TraversalMount("/child")]
     stats = {
-        "/child":
-        FileStat(name="child",
-                 type=FileType.DIRECTORY,
-                 modified="2026-01-02T00:00:00Z")
+        "/child": FileStat(
+            name="child",
+            type=FileType.DIRECTORY,
+            modified="2026-01-02T00:00:00Z",
+        )
     }
 
     async def stat_path(path):
         return stats.get(path)
 
-    assert _shown_mount_entries("/", mounts, ["-newermt", "2099-01-01"], "/",
-                                stat_path) == ""
-    assert _shown_mount_entries("/", mounts, ["-newermt", "2020-01-01"], "/",
-                                stat_path) == "/child"
+    assert (
+        _shown_mount_entries(
+            "/", mounts, ["-newermt", "2099-01-01"], "/", stat_path
+        )
+        == ""
+    )
+    assert (
+        _shown_mount_entries(
+            "/", mounts, ["-newermt", "2020-01-01"], "/", stat_path
+        )
+        == "/child"
+    )
     assert _shown_mount_entries("/", mounts, [], "/", stat_path) == "/child"
     stats.clear()
-    assert _shown_mount_entries("/", mounts, ["-newermt", "2020-01-01"], "/",
-                                stat_path) == ""
+    assert (
+        _shown_mount_entries(
+            "/", mounts, ["-newermt", "2020-01-01"], "/", stat_path
+        )
+        == ""
+    )
 
 
 def _context_workspace() -> Workspace:
@@ -816,7 +933,8 @@ def _context_workspace() -> Workspace:
         mounts={
             "/base/": (parent, MountMode.EXEC),
             "/base/inner/": (child, MountMode.EXEC),
-        })
+        }
+    )
 
 
 @pytest.mark.parametrize("line", ["rg -A1 hit /base", "grep -r -A1 hit /base"])
@@ -825,28 +943,41 @@ def test_context_across_a_nested_mount_is_separated(line):
     as one run does: ripgrep 14.1.1 and GNU grep 3.11 both separate one
     file's context from the next file's."""
     io = asyncio.run(_context_workspace().shell(line))
-    assert _stdout(io) == ("/base/inner/real.txt:hit\n"
-                           "/base/inner/real.txt-z\n--\n"
-                           "/base/top.txt:hit\n/base/top.txt-y\n")
+    assert _stdout(io) == (
+        "/base/inner/real.txt:hit\n"
+        "/base/inner/real.txt-z\n--\n"
+        "/base/top.txt:hit\n/base/top.txt-y\n"
+    )
 
 
-@pytest.mark.parametrize("options, expected", [
-    ("--sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
-    ("--sortr path -l", "/base/top.txt\n/base/inner/real.txt\n"),
-    ("--sort path -I", "hit\nhit\n"),
-    ("-d 1 -l", "/base/top.txt\n"),
-    ("-d 2 --sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
-    ("--sort path --heading",
-     "/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n"),
-    ("--sort path -A1",
-     "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n"
-     "/base/top.txt:hit\n/base/top.txt-y\n"),
-    ("--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
-     ""),
-    ("-t txt -T txt -t txt --sort path -l",
-     "/base/inner/real.txt\n/base/top.txt\n"),
-    ("-t txt -T txt -t txt -l", "/base/inner/real.txt\n/base/top.txt\n"),
-])
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        ("--sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
+        ("--sortr path -l", "/base/top.txt\n/base/inner/real.txt\n"),
+        ("--sort path -I", "hit\nhit\n"),
+        ("-d 1 -l", "/base/top.txt\n"),
+        ("-d 2 --sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
+        (
+            "--sort path --heading",
+            "/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n",
+        ),
+        (
+            "--sort path -A1",
+            "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n"
+            "/base/top.txt:hit\n/base/top.txt-y\n",
+        ),
+        (
+            "--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
+            "",
+        ),
+        (
+            "-t txt -T txt -t txt --sort path -l",
+            "/base/inner/real.txt\n/base/top.txt\n",
+        ),
+        ("-t txt -T txt -t txt -l", "/base/inner/real.txt\n/base/top.txt\n"),
+    ],
+)
 def test_rg_options_across_nested_mounts(options, expected):
     io = asyncio.run(_context_workspace().shell(f"rg {options} hit /base"))
     assert _stdout(io) == expected
@@ -856,7 +987,8 @@ def test_rg_options_across_nested_mounts(options, expected):
 @pytest.mark.parametrize("direction", ["sort", "sortr"])
 def test_rg_creation_sort_is_explicitly_unsupported(direction):
     io = asyncio.run(
-        _context_workspace().shell(f"rg --{direction} created hit /base"))
+        _context_workspace().shell(f"rg --{direction} created hit /base")
+    )
     assert io.exit_code == 2
     assert b"creation time is not supported" in io.stderr
 
@@ -869,9 +1001,12 @@ def test_the_empty_name_does_not_fan_out():
             "/base": (RAMVFS(), MountMode.WRITE),
             "/base/inner": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
-    for line, err in (("du ''", b"du: invalid zero-length file name\n"),
-                      ("find ''", b"find: '': No such file or directory\n")):
+        mode=MountMode.WRITE,
+    )
+    for line, err in (
+        ("du ''", b"du: invalid zero-length file name\n"),
+        ("find ''", b"find: '': No such file or directory\n"),
+    ):
         io = asyncio.run(ws.shell(f"cd /base && {line}"))
         assert io.exit_code == 1
         assert _stdout(io) == ""
@@ -880,17 +1015,24 @@ def test_the_empty_name_does_not_fan_out():
 
 @pytest.mark.parametrize(
     "operands",
-    ["'' /base", "/base ''", "loop/child /base", "/base loop/child"])
-@pytest.mark.parametrize("command, expected, error", [
-    ("find",
-     "/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n",
-     1),
-    ("du -s", "18\t/base\n", 1),
-    ("grep -rl hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
-    ("rg -l hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
-])
-def test_refused_operand_does_not_hide_nested_mounts(operands, command,
-                                                     expected, error):
+    ["'' /base", "/base ''", "loop/child /base", "/base loop/child"],
+)
+@pytest.mark.parametrize(
+    "command, expected, error",
+    [
+        (
+            "find",
+            "/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n",
+            1,
+        ),
+        ("du -s", "18\t/base\n", 1),
+        ("grep -rl hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
+        ("rg -l hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
+    ],
+)
+def test_refused_operand_does_not_hide_nested_mounts(
+    operands, command, expected, error
+):
     ws = _context_workspace()
     asyncio.run(ws.shell("cd /base; ln -s loop loop"))
     io = asyncio.run(ws.shell(f"cd /base; {command} {operands}"))
@@ -901,15 +1043,25 @@ def test_refused_operand_does_not_hide_nested_mounts(operands, command,
     assert io.stderr
 
 
-@pytest.mark.parametrize("command, code", [("find", 1), ("du", 1), ("grep", 2),
-                                           ("rg", 2)])
+@pytest.mark.parametrize(
+    "command, code", [("find", 1), ("du", 1), ("grep", 2), ("rg", 2)]
+)
 def test_successful_mount_does_not_mask_a_failed_mount(command, code):
     primary = TraversalMount("/", output=b"match\n")
     child = TraversalMount("/data/", exit_code=code)
     _, io, _ = asyncio.run(
-        _fan_out_traversal(command, [PathSpec.from_str_path("/")], [], {},
-                           TraversalRegistry([child]), primary, "/", command,
-                           None))
+        _fan_out_traversal(
+            command,
+            [PathSpec.from_str_path("/")],
+            [],
+            {},
+            TraversalRegistry([child]),
+            primary,
+            "/",
+            command,
+            None,
+        )
+    )
     assert io.exit_code == code
     assert io.stderr == b"backend failed\n"
 
@@ -922,31 +1074,56 @@ def _linked_tree() -> Workspace:
             "/data": (RAMVFS(), MountMode.WRITE),
             "/data/m": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     asyncio.run(
-        ws.shell("mkdir /data/s && printf o > /data/s/f && "
-                 "printf 'hello\\n' > /data/a.txt && printf o > /data/m/g && "
-                 "cd /data && ln -s ../a.txt s/al && ln -s nowhere s/dang"))
+        ws.shell(
+            "mkdir /data/s && printf o > /data/s/f && "
+            "printf 'hello\\n' > /data/a.txt && printf o > /data/m/g && "
+            "cd /data && ln -s ../a.txt s/al && ln -s nowhere s/dang"
+        )
+    )
     return ws
 
 
-DANGLING = (b"rg: /data/s/dang: IO error for operation on /data/s/dang: "
-            b"No such file or directory (os error 2)\n")
+DANGLING = (
+    b"rg: /data/s/dang: IO error for operation on /data/s/dang: "
+    b"No such file or directory (os error 2)\n"
+)
 
 
-@pytest.mark.parametrize("line, stdout, stderr, code", [
-    ("rg --sort path o /data", "/data/a.txt:hello\n/data/m/g:o\n"
-     "/data/s/f:o\n", b"", 0),
-    ("rg -L --sort path o /data", "/data/a.txt:hello\n/data/m/g:o\n"
-     "/data/s/al:hello\n/data/s/f:o\n", DANGLING, 2),
-    ("rg -L o /data", "/data/a.txt:hello\n/data/s/f:o\n/data/s/al:hello\n"
-     "/data/m/g:o\n", DANGLING, 2),
-])
+@pytest.mark.parametrize(
+    "line, stdout, stderr, code",
+    [
+        (
+            "rg --sort path o /data",
+            "/data/a.txt:hello\n/data/m/g:o\n/data/s/f:o\n",
+            b"",
+            0,
+        ),
+        (
+            "rg -L --sort path o /data",
+            "/data/a.txt:hello\n/data/m/g:o\n/data/s/al:hello\n/data/s/f:o\n",
+            DANGLING,
+            2,
+        ),
+        (
+            "rg -L o /data",
+            "/data/a.txt:hello\n/data/s/f:o\n/data/s/al:hello\n/data/m/g:o\n",
+            DANGLING,
+            2,
+        ),
+    ],
+)
 def test_rg_follows_links_in_a_walk_that_spans_mounts_only_under_dash_upper_l(
-        line: str, stdout: str, stderr: bytes, code: int):
+    line: str, stdout: str, stderr: bytes, code: int
+):
     # Both fan-outs hand the walk the namespace and the door: the unified
     # walk --sort takes skipped every link as ripgrep does only once it
     # could tell one, and a per-mount run follows them under -L.
     io = asyncio.run(_linked_tree().shell(line))
-    assert (_stdout(io), io.stderr
-            or b"", io.exit_code) == (stdout, stderr, code)
+    assert (_stdout(io), io.stderr or b"", io.exit_code) == (
+        stdout,
+        stderr,
+        code,
+    )

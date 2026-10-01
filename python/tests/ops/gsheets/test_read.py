@@ -23,9 +23,11 @@ from mirage.utils.key_prefix import mount_key
 
 
 def _scope(path: str, prefix: str = "/gsheets") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -37,16 +39,19 @@ def accessor():
 async def test_read_calls_core(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gsheets.read.core_read",
-            new_callable=AsyncMock,
-            return_value=b'{"spreadsheetId": "sheet1"}',
+        "mirage.ops.gsheets.read.core_read",
+        new_callable=AsyncMock,
+        return_value=b'{"spreadsheetId": "sheet1"}',
     ) as mock:
         scope = _scope("/gsheets/owned/Budget__sheet1.gsheet.json")
         result = await fn(accessor, scope, index=None)
         mock.assert_called_once_with(
             accessor,
-            _scope("/gsheets/owned/Budget__sheet1.gsheet.json",
-                   prefix="/gsheets"), None)
+            _scope(
+                "/gsheets/owned/Budget__sheet1.gsheet.json", prefix="/gsheets"
+            ),
+            None,
+        )
         assert b"sheet1" in result
 
 
@@ -54,11 +59,13 @@ async def test_read_calls_core(accessor):
 async def test_read_not_found(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gsheets.read.core_read",
-            new_callable=AsyncMock,
-            side_effect=FileNotFoundError("not found"),
+        "mirage.ops.gsheets.read.core_read",
+        new_callable=AsyncMock,
+        side_effect=FileNotFoundError("not found"),
     ):
         with pytest.raises(FileNotFoundError):
-            await fn(accessor,
-                     _scope("/gsheets/owned/Nonexistent__sheet9.gsheet.json"),
-                     index=None)
+            await fn(
+                accessor,
+                _scope("/gsheets/owned/Nonexistent__sheet9.gsheet.json"),
+                index=None,
+            )

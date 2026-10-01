@@ -21,8 +21,10 @@ from mirage.cache.index import IndexCacheStore
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.postgres import client
-from mirage.core.postgres._schema_json import (build_database_json,
-                                               build_entity_schema_json)
+from mirage.core.postgres._schema_json import (
+    build_database_json,
+    build_entity_schema_json,
+)
 from mirage.core.postgres.scope import detect_scope
 from mirage.core.postgres.semantic import build_entity_semantic_json
 from mirage.core.postgres.stat import stat
@@ -34,38 +36,62 @@ def _entity_kind(match: ScopeMatch) -> str:
     return "table" if match.slots["kind"] == "tables" else "view"
 
 
-async def _read_database_json(accessor: PostgresAccessor, match: ScopeMatch,
-                              path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_database_json(
+    accessor: PostgresAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     doc = await build_database_json(accessor)
     return orjson.dumps(doc, option=orjson.OPT_INDENT_2)
 
 
-async def _read_entity_schema(accessor: PostgresAccessor, match: ScopeMatch,
-                              path: PathSpec, index: IndexCacheStore) -> bytes:
-    doc = await build_entity_schema_json(accessor, match.slots["schema"],
-                                         match.slots["entity"],
-                                         _entity_kind(match))
+async def _read_entity_schema(
+    accessor: PostgresAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    doc = await build_entity_schema_json(
+        accessor,
+        match.slots["schema"],
+        match.slots["entity"],
+        _entity_kind(match),
+    )
     return orjson.dumps(doc, option=orjson.OPT_INDENT_2)
 
 
-async def _read_entity_semantic(accessor: PostgresAccessor, match: ScopeMatch,
-                                path: PathSpec,
-                                index: IndexCacheStore) -> bytes:
-    doc = await build_entity_semantic_json(accessor, match.slots["schema"],
-                                           match.slots["entity"],
-                                           _entity_kind(match))
+async def _read_entity_semantic(
+    accessor: PostgresAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    doc = await build_entity_semantic_json(
+        accessor,
+        match.slots["schema"],
+        match.slots["entity"],
+        _entity_kind(match),
+    )
     return orjson.dumps(doc, option=orjson.OPT_INDENT_2)
 
 
-async def _read_entity_rows(accessor: PostgresAccessor, match: ScopeMatch,
-                            path: PathSpec, index: IndexCacheStore,
-                            limit: int | None, offset: int | None) -> bytes:
-    return await read_rows(accessor,
-                           match.slots["schema"],
-                           match.slots["entity"],
-                           path=path,
-                           limit=limit,
-                           offset=offset)
+async def _read_entity_rows(
+    accessor: PostgresAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+    limit: int | None,
+    offset: int | None,
+) -> bytes:
+    return await read_rows(
+        accessor,
+        match.slots["schema"],
+        match.slots["entity"],
+        path=path,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def row_line(row: dict[str, Any]) -> str:
@@ -77,13 +103,15 @@ def row_line(row: dict[str, Any]) -> str:
     return orjson.dumps(row, default=str).decode()
 
 
-async def read_rows(accessor: PostgresAccessor,
-                    schema: str,
-                    entity: str,
-                    *,
-                    path: str | PathSpec,
-                    limit: int | None = None,
-                    offset: int | None = None) -> bytes:
+async def read_rows(
+    accessor: PostgresAccessor,
+    schema: str,
+    entity: str,
+    *,
+    path: str | PathSpec,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> bytes:
     """Render a relation's rows.jsonl, or the window ``limit``/``offset`` pick.
 
     The whole file when neither is given, under the size guard: past
@@ -105,8 +133,10 @@ async def read_rows(accessor: PostgresAccessor,
         pool = await accessor.pool()
         async with pool.acquire() as conn:
             rows, width = await client.estimate_size(conn, schema, entity)
-        if (rows > cfg.max_read_rows
-                or rows * max(width, 1) > cfg.max_read_bytes):
+        if (
+            rows > cfg.max_read_rows
+            or rows * max(width, 1) > cfg.max_read_bytes
+        ):
             raise efbig(path)
         # The estimate only refuses; it never limits. It is planner
         # statistics, which lag the table (a bulk load before the next
@@ -128,13 +158,16 @@ async def read_rows(accessor: PostgresAccessor,
                 schema,
                 entity,
                 limit=effective_limit,
-                max_bytes=cfg.max_read_bytes)
+                max_bytes=cfg.max_read_bytes,
+            )
         else:
-            data = await client.fetch_rows(conn,
-                                           schema,
-                                           entity,
-                                           limit=effective_limit,
-                                           offset=effective_offset)
+            data = await client.fetch_rows(
+                conn,
+                schema,
+                entity,
+                limit=effective_limit,
+                offset=effective_offset,
+            )
     if data is None or whole and len(data) > cfg.max_read_rows:
         raise efbig(path)
     if not data:
@@ -148,10 +181,13 @@ async def read_rows(accessor: PostgresAccessor,
     return bytes(body)
 
 
-read = make_read(detect_scope, {
-    "database_json": _read_database_json,
-    "entity_schema": _read_entity_schema,
-    "entity_semantic": _read_entity_semantic,
-},
-                 windowed={"entity_rows": _read_entity_rows},
-                 stat=stat)
+read = make_read(
+    detect_scope,
+    {
+        "database_json": _read_database_json,
+        "entity_schema": _read_entity_schema,
+        "entity_semantic": _read_entity_semantic,
+    },
+    windowed={"entity_rows": _read_entity_rows},
+    stat=stat,
+)

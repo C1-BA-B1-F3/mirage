@@ -23,8 +23,9 @@ def has_rules(rules: AdmissionRules | None) -> bool:
     Args:
         rules (AdmissionRules | None): the session's admission rules.
     """
-    return rules is not None and (rules.allow is not None or bool(rules.ask)
-                                  or bool(rules.deny))
+    return rules is not None and (
+        rules.allow is not None or bool(rules.ask) or bool(rules.deny)
+    )
 
 
 def _rule_reads_args(rule: CommandRule, name: str) -> bool:
@@ -37,14 +38,16 @@ def _rule_reads_args(rule: CommandRule, name: str) -> bool:
         name (str): the command name.
     """
     names = not rule.commands or any(
-        pattern_names(p, name) for p in rule.commands)
+        pattern_names(p, name) for p in rule.commands
+    )
     if not names:
         return False
     if rule.paths or rule.mount:
         return True
     return any(
         pattern_names(p, name) and len(split_pattern(p)) > 1
-        for p in rule.commands)
+        for p in rule.commands
+    )
 
 
 def reads_args(rules: AdmissionRules | None, name: str) -> bool:
@@ -67,7 +70,8 @@ def reads_args(rules: AdmissionRules | None, name: str) -> bool:
         if pattern_names(pattern, name) and len(split_pattern(pattern)) > 1:
             return True
     return any(
-        _rule_reads_args(rule, name) for rule in (*rules.ask, *rules.deny))
+        _rule_reads_args(rule, name) for rule in (*rules.ask, *rules.deny)
+    )
 
 
 def scopes_paths(rules: AdmissionRules | None, name: str) -> bool:
@@ -92,6 +96,7 @@ def scopes_paths(rules: AdmissionRules | None, name: str) -> bool:
         if not rule.paths and not rule.mount:
             continue
         if not rule.commands or any(
-                pattern_names(p, name) for p in rule.commands):
+            pattern_names(p, name) for p in rule.commands
+        ):
             return True
     return False

@@ -21,10 +21,16 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.shell.constants import BUILTIN_GROUP
 from mirage.shell.types import BuiltinGroup
 from mirage.types import LsLinkMode, PathSpec
-from mirage.workspace.names import (BASH_BUILTINS, JOB_BUILTINS, KEYWORDS,
-                                    NAMESPACE_COMMANDS, NO_FOLLOW_COMMANDS,
-                                    SHELL_NAMES, SHELL_ONLY_BUILTINS,
-                                    UNSUPPORTED_BUILTINS)
+from mirage.workspace.names import (
+    BASH_BUILTINS,
+    JOB_BUILTINS,
+    KEYWORDS,
+    NAMESPACE_COMMANDS,
+    NO_FOLLOW_COMMANDS,
+    SHELL_NAMES,
+    SHELL_ONLY_BUILTINS,
+    UNSUPPORTED_BUILTINS,
+)
 
 # The pools live in workspace/names.py (a leaf shared with the CLI
 # registry's collision rule); this module keeps lookup's public surface.
@@ -41,8 +47,10 @@ __all__ = [
 
 # Interpreter names select runtime adapters; session builtins stay in Mirage.
 INTERPRETER_NAMES = frozenset(
-    str(name) for name, group in BUILTIN_GROUP.items()
-    if group is BuiltinGroup.INTERPRETERS)
+    str(name)
+    for name, group in BUILTIN_GROUP.items()
+    if group is BuiltinGroup.INTERPRETERS
+)
 
 # Shell words a native runtime's captures can take from the session: the
 # interpreters, and the process tools whose host programs see that
@@ -52,9 +60,9 @@ CAPTURABLE_BUILTINS = INTERPRETER_NAMES | frozenset({"ps", "kill"})
 # Per-command flags that turn a no-follow command back into a following
 # one, GNU's -L / --dereference.
 DEREFERENCE_FLAGS = {
-    "stat": ("L", ("dereference", )),
-    "file": ("L", ("dereference", )),
-    "du": ("L", ("dereference", )),
+    "stat": ("L", ("dereference",)),
+    "file": ("L", ("dereference",)),
+    "du": ("L", ("dereference",)),
 }
 
 # find states its link policy as a leading option rather than a flag, and
@@ -79,8 +87,12 @@ PROGRAM_OPTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _cluster_handoff(word: str, index: int, carriers: tuple[str, ...],
-                     value_spellings: tuple[str, ...]) -> int | None:
+def _cluster_handoff(
+    word: str,
+    index: int,
+    carriers: tuple[str, ...],
+    value_spellings: tuple[str, ...],
+) -> int | None:
     """Where a short cluster's program value ends, or None if it has one.
 
     Args:
@@ -93,7 +105,7 @@ def _cluster_handoff(word: str, index: int, carriers: tuple[str, ...],
     """
     for j in range(1, len(word)):
         letter = f"-{word[j]}"
-        rest = word[j + 1:]
+        rest = word[j + 1 :]
         if letter in carriers:
             # Attached (`-cCODE`) carries its value in this word; the
             # detached form takes the next one.
@@ -113,7 +125,7 @@ def _cluster_words(word: str, value_spellings: tuple[str, ...]) -> int:
     """
     for j in range(1, len(word)):
         if f"-{word[j]}" in value_spellings:
-            return 1 if word[j + 1:] else 2
+            return 1 if word[j + 1 :] else 2
     return 1
 
 
@@ -158,8 +170,7 @@ def end_options_after_program(name: str, words: list[str]) -> list[str]:
             return words
         if word.startswith("--"):
             long_name = word.split("=", 1)[0]
-            detached = ("=" not in word
-                        and long_name in cs.long_value_spellings)
+            detached = "=" not in word and long_name in cs.long_value_spellings
             i += 2 if detached else 1
             continue
         after = _cluster_handoff(word, i, carriers, cs.value_spellings)
@@ -183,7 +194,7 @@ def end_options_after_program(name: str, words: list[str]) -> list[str]:
 # absent: a mount rule has nothing to say about a walk that never
 # enters it.
 WALK_COMMANDS = frozenset({"find", "du", "tree", "rg"})
-WALK_FLAGS = {"grep": ("rR", ("recursive", )), "ls": ("R", ("recursive", ))}
+WALK_FLAGS = {"grep": ("rR", ("recursive",)), "ls": ("R", ("recursive",))}
 
 # Commands whose reads exceed the words the gate judged even inside one
 # mount: the walkers above plus the subtree readers that stop at a
@@ -192,9 +203,9 @@ WALK_FLAGS = {"grep": ("rR", ("recursive", )), "ls": ("R", ("recursive", ))}
 # such a command refuses the captured line instead of running it
 # unguarded.
 SUBTREE_READ_FLAGS = {
-    "tar": ("c", ("create", )),
-    "zip": ("r", ("recurse-paths", )),
-    "cp": ("rR", ("recursive", )),
+    "tar": ("c", ("create",)),
+    "zip": ("r", ("recurse-paths",)),
+    "cp": ("rR", ("recursive",)),
 }
 
 
@@ -243,8 +254,9 @@ def reads_subtrees(name: str, words: Sequence[str | PathSpec]) -> bool:
 SLASH_KEEPS_LAST = {"tar", "rm", "rmdir", "mv", "unlink", "mkdir"}
 
 
-def _has_option(words: Sequence[str | PathSpec], shorts: str,
-                longs: tuple[str, ...]) -> bool:
+def _has_option(
+    words: Sequence[str | PathSpec], shorts: str, longs: tuple[str, ...]
+) -> bool:
     """Whether any of the given options appears among a command's words.
 
     Read off the command line rather than the parsed flags because
@@ -273,8 +285,9 @@ def _has_option(words: Sequence[str | PathSpec], shorts: str,
     return False
 
 
-def _last_link_option(words: list[str | PathSpec], policy: dict[str,
-                                                                bool]) -> bool:
+def _last_link_option(
+    words: list[str | PathSpec], policy: dict[str, bool]
+) -> bool:
     """Resolve a leading run of link options to its last one's mode.
 
     Args:
@@ -335,8 +348,15 @@ def ls_link_mode(words: Sequence[str | PathSpec]) -> LsLinkMode:
 # `touch flink/` is "Not a directory"), which is why they are separate
 # from SLASH_KEEPS_LAST.
 SELF_RESOLVING = {
-    "chmod", "chown", "chgrp", "touch", "ln", "readlink", "mkdir", "getfattr",
-    "setfattr"
+    "chmod",
+    "chown",
+    "chgrp",
+    "touch",
+    "ln",
+    "readlink",
+    "mkdir",
+    "getfattr",
+    "setfattr",
 }
 
 

@@ -19,8 +19,9 @@ from mirage.types import FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS
 
 
-def extract_dest(explicit: PathSpec | str | None, cwd: PathSpec | str,
-                 relay: bool) -> str:
+def extract_dest(
+    explicit: PathSpec | str | None, cwd: PathSpec | str, relay: bool
+) -> str:
     """Where extraction lands: the explicit operand, else the cwd.
 
     Relay doors route by full virtual path, accessor doors by
@@ -54,8 +55,12 @@ async def dir_exists(stat: StatFn, level: str) -> bool:
     return found is not None and found.type == FileType.DIRECTORY
 
 
-async def ensure_dir(dir_path: str, mkdir_fn: Callable[..., Awaitable[None]],
-                     stat: StatFn, made: set[str]) -> None:
+async def ensure_dir(
+    dir_path: str,
+    mkdir_fn: Callable[..., Awaitable[None]],
+    stat: StatFn,
+    made: set[str],
+) -> None:
     """Create one directory chain top-down, skipping what exists.
 
     The dispatch mkdir op is single-level on most backends (the

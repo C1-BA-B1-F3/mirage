@@ -1,38 +1,65 @@
 import logging
 import re
-from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
-                             Sequence)
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import replace
 from functools import partial
 
-from mirage.cache.read_through import (cache_aware_bound_bytes,
-                                       cache_aware_bound_stream)
+from mirage.cache.read_through import (
+    cache_aware_bound_bytes,
+    cache_aware_bound_stream,
+)
 from mirage.commands.builtin.grep_offsets import decode_line, encode_line
-from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, resolve_pattern,
-                                                  rust_escape)
+from mirage.commands.builtin.grep_pattern import (
+    NEVER_MATCH,
+    resolve_pattern,
+    rust_escape,
+)
 from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.rg_filetypes import FileTypes, type_listing
 from mirage.commands.builtin.rg_glob import Overrides
-from mirage.commands.builtin.rg_scan import (Haystack, WalkFilter,
-                                             on_other_mount, open_error_line,
-                                             walk_error_line, walk_haystacks)
-from mirage.commands.builtin.rg_search import (RgFlags, Tally, prints_context,
-                                               search_haystack,
-                                               smart_case_folds)
+from mirage.commands.builtin.rg_scan import (
+    Haystack,
+    WalkFilter,
+    on_other_mount,
+    open_error_line,
+    walk_error_line,
+    walk_haystacks,
+)
+from mirage.commands.builtin.rg_search import (
+    RgFlags,
+    Tally,
+    prints_context,
+    search_haystack,
+    smart_case_folds,
+)
 from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.links import LinkDoor, link_door
-from mirage.commands.builtin.utils.output import (format_optional_records,
-                                                  format_records)
+from mirage.commands.builtin.utils.output import (
+    format_optional_records,
+    format_records,
+)
 from mirage.commands.builtin.utils.pcre import PcreError, translate_pcre
-from mirage.commands.builtin.utils.rust_regex import (RustRegexError,
-                                                      translate_rust,
-                                                      whole_line, whole_word)
+from mirage.commands.builtin.utils.rust_regex import (
+    RustRegexError,
+    translate_rust,
+    whole_line,
+    whole_word,
+)
 from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
-from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
-                                                call_stat,
-                                                mount_parent_readdir,
-                                                mount_parent_stat)
+from mirage.commands.builtin.utils.wrap import (
+    call_read_bytes,
+    call_readdir,
+    call_stat,
+    mount_parent_readdir,
+    mount_parent_stat,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -53,7 +80,8 @@ RG_NO_PATTERN = "rg: ripgrep requires at least one pattern to execute a search"
 NOTHING_SEARCHED = (
     "rg: No files were searched, which means ripgrep probably applied a "
     "filter you didn't expect.\nRunning with --debug will show why files "
-    "are being skipped.")
+    "are being skipped."
+)
 # ripgrep's name for stdin wherever it names the file a line came from.
 STDIN_NAME = "<stdin>"
 # The synthetic cwd operand's spelling (routing.CWD_DEFAULT_RAW["rg"]):
@@ -120,8 +148,10 @@ def number_flag(fl: FlagView, dest: str) -> int | None:
     elif int(digits) > U64_MAX:
         reason = "number too large to fit in target type"
     if reason is not None:
-        raise UsageError(f"rg: error parsing flag {NUMBER_SPELLINGS[dest]}: "
-                         f"value is not a valid number: {reason}")
+        raise UsageError(
+            f"rg: error parsing flag {NUMBER_SPELLINGS[dest]}: "
+            f"value is not a valid number: {reason}"
+        )
     return int(digits)
 
 
@@ -143,12 +173,14 @@ def filesize_flag(fl: FlagView) -> int | None:
             "rg: error parsing flag --max-filesize: invalid size: invalid "
             f"format for size '{value}', which should be a non-empty "
             "sequence of digits followed by an optional 'K', 'M' or 'G' "
-            "suffix")
+            "suffix"
+        )
     return int(size.group(1)) * SIZE_UNIT[size.group(2)]
 
 
-def _choice(fl: FlagView, dest: str, spelling: str,
-            choices: Sequence[str]) -> str | None:
+def _choice(
+    fl: FlagView, dest: str, spelling: str, choices: Sequence[str]
+) -> str | None:
     """A value from a fixed set, refused in ripgrep's words.
 
     Args:
@@ -159,8 +191,10 @@ def _choice(fl: FlagView, dest: str, spelling: str,
     """
     value = fl.as_str(dest)
     if value is not None and value not in choices:
-        raise UsageError(f"rg: error parsing flag {spelling}: choice "
-                         f"'{value}' is unrecognized")
+        raise UsageError(
+            f"rg: error parsing flag {spelling}: choice "
+            f"'{value}' is unrecognized"
+        )
     return value
 
 
@@ -179,8 +213,11 @@ def unescape(value: str) -> str:
             out.append(chr(int(hexed.group(1), 16)))
             i = hexed.end()
             continue
-        if value[i] == "\\" and i + 1 < len(value) and value[i +
-                                                             1] in _ESCAPES:
+        if (
+            value[i] == "\\"
+            and i + 1 < len(value)
+            and value[i + 1] in _ESCAPES
+        ):
             out.append(_ESCAPES[value[i + 1]])
             i += 2
             continue
@@ -198,8 +235,11 @@ def _last(fl: FlagView, *names: str) -> str | None:
     """
     found = None
     for name in fl.typed_order(*names):
-        if fl.as_bool(name) or fl.raw(name) is not None and not isinstance(
-                fl.raw(name), bool):
+        if (
+            fl.as_bool(name)
+            or fl.raw(name) is not None
+            and not isinstance(fl.raw(name), bool)
+        ):
             found = name
     return found
 
@@ -229,8 +269,9 @@ def _context(fl: FlagView) -> tuple[bool, int, int]:
     """
     passthru = False
     counts: dict[str, int | None] = {}
-    for name in fl.typed_order("passthru", "passthrough", "after_context",
-                               "before_context", "context"):
+    for name in fl.typed_order(
+        "passthru", "passthrough", "after_context", "before_context", "context"
+    ):
         if name in ("passthru", "passthrough"):
             passthru = True
             counts = {}
@@ -240,8 +281,11 @@ def _context(fl: FlagView) -> tuple[bool, int, int]:
     both = counts.get("context")
     before = counts.get("before_context")
     after = counts.get("after_context")
-    return (passthru, before if before is not None else both or 0,
-            after if after is not None else both or 0)
+    return (
+        passthru,
+        before if before is not None else both or 0,
+        after if after is not None else both or 0,
+    )
 
 
 def _binary(fl: FlagView, unrestricted: int) -> bool:
@@ -254,8 +298,9 @@ def _binary(fl: FlagView, unrestricted: int) -> bool:
         unrestricted (int): how many -u the line gave.
     """
     on = False
-    for name in fl.typed_order("text", "no_text", "binary", "no_binary",
-                               "unrestricted"):
+    for name in fl.typed_order(
+        "text", "no_text", "binary", "no_binary", "unrestricted"
+    ):
         if name == "unrestricted":
             on = on or unrestricted >= 3
         else:
@@ -284,7 +329,8 @@ def path_separator(fl: FlagView) -> str | None:
             "rg: error parsing flag --path-separator: A path separator must "
             f"be exactly one byte, but the given separator is {len(raw)} "
             f"bytes: {value}\nIn some shells on Windows '/' is automatically "
-            "expanded. Use '//' instead.")
+            "expanded. Use '//' instead."
+        )
     return decode_line(raw)
 
 
@@ -312,8 +358,13 @@ def parse_flags(fl: FlagView) -> RgFlags:
     _choice(fl, "color", "--color", COLOR_CHOICES)
     case = _last(fl, "ignore_case", "case_sensitive", "smart_case")
     bounds = _last(fl, "word_regexp", "line_regexp")
-    listing = _last(fl, "count", "count_matches", "files_with_matches",
-                    "files_without_match")
+    listing = _last(
+        fl,
+        "count",
+        "count_matches",
+        "files_with_matches",
+        "files_without_match",
+    )
     numbers = _last(fl, "line_number", "no_line_number")
     vimgrep = fl.as_bool("vimgrep")
     columns = _last(fl, "column", "no_column")
@@ -339,45 +390,52 @@ def parse_flags(fl: FlagView) -> RgFlags:
     if sort == "created":
         raise UsageError(
             "rg: sorting by creation time is not supported by the virtual "
-            "filesystem")
-    selections = [(value, name == "type_not")
-                  for name, value in fl.occurrences("type", "type_not")
-                  if isinstance(value, str)]
-    changes = [("clear" if name == "type_clear" else "add", value)
-               for name, value in fl.occurrences("type_clear", "type_add")
-               if isinstance(value, str)]
+            "filesystem"
+        )
+    selections = [
+        (value, name == "type_not")
+        for name, value in fl.occurrences("type", "type_not")
+        if isinstance(value, str)
+    ]
+    changes = [
+        ("clear" if name == "type_clear" else "add", value)
+        for name, value in fl.occurrences("type_clear", "type_add")
+        if isinstance(value, str)
+    ]
     return RgFlags(
         engine=engine_flag(fl),
-        pcre2_unicode=_last(fl, "pcre2_unicode",
-                            "no_pcre2_unicode") != "no_pcre2_unicode",
+        pcre2_unicode=_last(fl, "pcre2_unicode", "no_pcre2_unicode")
+        != "no_pcre2_unicode",
         ignore_case=case == "ignore_case",
         smart_case=case == "smart_case",
         invert=_last(fl, "invert_match", "no_invert_match") == "invert_match",
         whole_word=bounds == "word_regexp",
         line_regexp=bounds == "line_regexp",
-        fixed_string=_last(fl, "fixed_strings",
-                           "no_fixed_strings") == "fixed_strings",
+        fixed_string=_last(fl, "fixed_strings", "no_fixed_strings")
+        == "fixed_strings",
         line_numbers=(numbers == "line_number")
-        if numbers else column or vimgrep,
+        if numbers
+        else column or vimgrep,
         column=column,
         vimgrep=vimgrep,
-        byte_offsets=_last(fl, "byte_offset",
-                           "no_byte_offset") == "byte_offset",
+        byte_offsets=_last(fl, "byte_offset", "no_byte_offset")
+        == "byte_offset",
         only_matching=fl.as_bool("only_matching"),
         replace=fl.as_str("replace"),
         trim=_last(fl, "trim", "no_trim") == "trim",
         max_columns=number_flag(fl, "max_columns"),
         max_columns_preview=_last(
-            fl, "max_columns_preview",
-            "no_max_columns_preview") == "max_columns_preview",
+            fl, "max_columns_preview", "no_max_columns_preview"
+        )
+        == "max_columns_preview",
         null=fl.as_bool("null"),
         null_data=fl.as_bool("null_data"),
         path_separator=path_separator(fl),
         quiet=fl.as_bool("quiet"),
         count_only=listing == "count",
         count_matches=listing == "count_matches",
-        include_zero=_last(fl, "include_zero",
-                           "no_include_zero") == "include_zero",
+        include_zero=_last(fl, "include_zero", "no_include_zero")
+        == "include_zero",
         files_only=listing == "files_with_matches",
         files_without_match=listing == "files_without_match",
         list_files=fl.as_bool("files"),
@@ -392,26 +450,33 @@ def parse_flags(fl: FlagView) -> RgFlags:
         stop_on_nonmatch=fl.as_bool("stop_on_nonmatch"),
         context_after=context_after,
         context_before=context_before,
-        context_separator=(None if separator == "no_context_separator" else
-                           unescape(typed_separator)
-                           if typed_separator is not None else "--"),
+        context_separator=(
+            None
+            if separator == "no_context_separator"
+            else unescape(typed_separator)
+            if typed_separator is not None
+            else "--"
+        ),
         field_match_separator=unescape(
-            fl.as_str("field_match_separator") or ":"),
+            fl.as_str("field_match_separator") or ":"
+        ),
         field_context_separator=unescape(
-            fl.as_str("field_context_separator") or "-"),
+            fl.as_str("field_context_separator") or "-"
+        ),
         globs=tuple(fl.as_list("glob")),
         iglobs=tuple(fl.as_list("iglob")),
         glob_case_insensitive=_last(
-            fl, "glob_case_insensitive",
-            "no_glob_case_insensitive") == "glob_case_insensitive",
+            fl, "glob_case_insensitive", "no_glob_case_insensitive"
+        )
+        == "glob_case_insensitive",
         type_changes=tuple(changes),
         type_selections=tuple(selections),
         hidden=hidden,
         max_depth=number_flag(fl, "max_depth"),
         max_filesize=filesize_flag(fl),
         follow=_last(fl, "follow", "no_follow") == "follow",
-        one_file_system=_last(fl, "one_file_system",
-                              "no_one_file_system") == "one_file_system",
+        one_file_system=_last(fl, "one_file_system", "no_one_file_system")
+        == "one_file_system",
         binary=_binary(fl, unrestricted),
         sort=sort,
         sort_reverse=sort_flag == "sortr",
@@ -450,13 +515,16 @@ def engine_flag(fl: FlagView) -> str:
         return "default"
     value = fl.as_str("engine") or ""
     if value not in ENGINES:
-        raise UsageError(f"rg: error parsing flag --engine: "
-                         f"unrecognized regex engine '{value}'")
+        raise UsageError(
+            f"rg: error parsing flag --engine: "
+            f"unrecognized regex engine '{value}'"
+        )
     return value
 
 
-def rust_matcher(patterns: list[str], fold: bool,
-                 f: RgFlags) -> re.Pattern[str]:
+def rust_matcher(
+    patterns: list[str], fold: bool, f: RgFlags
+) -> re.Pattern[str]:
     """The default engine's matcher, or its refusal in ripgrep's words.
 
     Args:
@@ -479,8 +547,9 @@ def rust_matcher(patterns: list[str], fold: bool,
     return re.compile(source, re.IGNORECASE if translated.ignore_case else 0)
 
 
-def pcre_matcher(patterns: list[str], fold: bool,
-                 f: RgFlags) -> re.Pattern[str]:
+def pcre_matcher(
+    patterns: list[str], fold: bool, f: RgFlags
+) -> re.Pattern[str]:
     """The PCRE2 engine's matcher, or its refusal in ripgrep's words.
 
     ripgrep hands PCRE2 the list joined as ``(?:a)|(?:b)``, wrapped for
@@ -500,11 +569,14 @@ def pcre_matcher(patterns: list[str], fold: bool,
     elif f.whole_word:
         display = f"(?<!\\w)(?:{display})(?!\\w)"
     try:
-        translated = translate_pcre(display, f.pcre2_unicode, fold,
-                                    f.null_data)
+        translated = translate_pcre(
+            display, f.pcre2_unicode, fold, f.null_data
+        )
     except PcreError as exc:
-        raise UsageError(f"rg: PCRE2: error compiling pattern at offset "
-                         f"{exc.offset}: {exc.message}") from exc
+        raise UsageError(
+            f"rg: PCRE2: error compiling pattern at offset "
+            f"{exc.offset}: {exc.message}"
+        ) from exc
     flags = re.IGNORECASE if translated.ignore_case else 0
     if not f.pcre2_unicode:
         flags |= re.ASCII
@@ -554,8 +626,9 @@ def pcre_escape(text: str) -> str:
     Args:
         text (str): the literal.
     """
-    return "".join("\\" + ch if ch.isascii() and not ch.isalnum() else ch
-                   for ch in text)
+    return "".join(
+        "\\" + ch if ch.isascii() and not ch.isalnum() else ch for ch in text
+    )
 
 
 def folds_case(pattern: str, fixed: bool, f: RgFlags) -> bool:
@@ -581,9 +654,15 @@ def walk_filter(f: RgFlags, types: FileTypes | None = None) -> WalkFilter:
         UsageError: a glob or a type ripgrep refuses.
     """
     return WalkFilter(
-        Overrides(f.globs, f.iglobs, f.glob_case_insensitive), types
-        if types is not None else FileTypes(f.type_changes, f.type_selections),
-        f.hidden, f.max_depth, f.max_filesize, f.binary)
+        Overrides(f.globs, f.iglobs, f.glob_case_insensitive),
+        types
+        if types is not None
+        else FileTypes(f.type_changes, f.type_selections),
+        f.hidden,
+        f.max_depth,
+        f.max_filesize,
+        f.binary,
+    )
 
 
 def needs_every_file(fl: FlagView, f: RgFlags) -> bool:
@@ -600,13 +679,21 @@ def needs_every_file(fl: FlagView, f: RgFlags) -> bool:
         fl (FlagView): the invocation's flags.
         f (RgFlags): the same flags parsed.
     """
-    return (f.invert or f.files_without_match or f.list_files or f.passthru
-            or f.include_zero or f.null_data or f.max_filesize is not None
-            or bool(fl.raw("file")))
+    return (
+        f.invert
+        or f.files_without_match
+        or f.list_files
+        or f.passthru
+        or f.include_zero
+        or f.null_data
+        or f.max_filesize is not None
+        or bool(fl.raw("file"))
+    )
 
 
-def refuse_missing_pattern(pattern: str | None, fl: FlagView,
-                           f: RgFlags) -> None:
+def refuse_missing_pattern(
+    pattern: str | None, fl: FlagView, f: RgFlags
+) -> None:
     """ripgrep's refusal of a search with no pattern, for a wrapper to
     raise before it spends a request on one.
 
@@ -621,8 +708,11 @@ def refuse_missing_pattern(pattern: str | None, fl: FlagView,
     Raises:
         UsageError: the line gave no pattern to search with.
     """
-    if (pattern is None and fl.raw("file") is None
-            and not (f.list_files or f.type_list)):
+    if (
+        pattern is None
+        and fl.raw("file") is None
+        and not (f.list_files or f.type_list)
+    ):
         raise UsageError(RG_NO_PATTERN)
 
 
@@ -739,7 +829,8 @@ async def rg(
     operand_stream = stdin_stream(
         read_stream if read_stream is not None else read_bytes,
         stdin,
-        sole=not paths)
+        sole=not paths,
+    )
     fl = FlagView(opts.flags, spec=SPECS["rg"])
     f = parse_flags(fl)
     types = FileTypes(f.type_changes, f.type_selections)
@@ -748,12 +839,14 @@ async def rg(
     walk = walk_filter(f, types)
     pat: re.Pattern[str] | None = None
     if not f.list_files:
-        pattern, never_match = await resolve_pattern(texts,
-                                                     fl,
-                                                     read_bytes,
-                                                     RG_NO_PATTERN,
-                                                     pattern_key="regexp",
-                                                     file_key="file")
+        pattern, never_match = await resolve_pattern(
+            texts,
+            fl,
+            read_bytes,
+            RG_NO_PATTERN,
+            pattern_key="regexp",
+            file_key="file",
+        )
         pat = rg_matcher(pattern, never_match, f)
 
     if not paths:
@@ -767,15 +860,19 @@ async def rg(
     mounts = opts.ns.mounts if opts.ns is not None else None
     mount_prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     rd = mount_parent_readdir(
-        partial(call_readdir, readdir, prefix=mount_prefix), mounts,
-        mount_prefix)
-    st = mount_parent_stat(partial(call_stat, stat, prefix=mount_prefix),
-                           mounts)
+        partial(call_readdir, readdir, prefix=mount_prefix),
+        mounts,
+        mount_prefix,
+    )
+    st = mount_parent_stat(
+        partial(call_stat, stat, prefix=mount_prefix), mounts
+    )
     rb = partial(call_read_bytes, read_bytes, prefix=mount_prefix)
 
     if pat is not None and len(paths) == 1:
-        single = await _single(paths[0], pat, f, st, rd, rb, read_stream,
-                               operand_stream)
+        single = await _single(
+            paths[0], pat, f, st, rd, rb, read_stream, operand_stream
+        )
         if single is not None:
             return single
 
@@ -785,24 +882,40 @@ async def rg(
     # while a fan-out searches the mounts below the cwd in runs of its own.
     # A typed '' shares the synthetic operand's spelling; the walk's
     # verdict is what tells them apart.
-    implicit = any(p.raw_path == IMPLICIT_CWD and p.walk_error is None and (
-        f.one_file_system
-        or not (mounts is not None and mounts.descendants(p.virtual)))
-                   for p in paths)
+    implicit = any(
+        p.raw_path == IMPLICIT_CWD
+        and p.walk_error is None
+        and (
+            f.one_file_system
+            or not (mounts is not None and mounts.descendants(p.virtual))
+        )
+        for p in paths
+    )
     # A mount below the operand shadows whatever the backend holds there;
     # the fan-out that would search the mount itself is off too.
     boundary = mounts if f.one_file_system else None
-    found = _haystacks(paths, rd, st, cwd, walk, f, warnings, boundary,
-                       link_door(opts))
-    if f.sort not in (None, "none") and not (f.sort == "path"
-                                             and not f.sort_reverse):
+    found = _haystacks(
+        paths, rd, st, cwd, walk, f, warnings, boundary, link_door(opts)
+    )
+    if f.sort not in (None, "none") and not (
+        f.sort == "path" and not f.sort_reverse
+    ):
         listed = [h async for h in found]
         found = _replay(sort_haystacks(listed, f))
     if f.list_files:
         return await _list_files(found, f, warnings)
     assert pat is not None
-    return await _search_all(found, paths, pat, f, rb, read_stream,
-                             operand_stream, warnings, implicit)
+    return await _search_all(
+        found,
+        paths,
+        pat,
+        f,
+        rb,
+        read_stream,
+        operand_stream,
+        warnings,
+        implicit,
+    )
 
 
 async def _replay(found: list[Haystack]) -> AsyncIterator[Haystack]:
@@ -849,8 +962,9 @@ async def _single(
         if s.type == FileType.DIRECTORY:
             return None
     name = printed_path(operand_name(p), f)
-    label = name if (f.with_filename or f.vimgrep) and not f.no_filename \
-        else None
+    label = (
+        name if (f.with_filename or f.vimgrep) and not f.no_filename else None
+    )
     if is_stdin(p):
         source: AsyncIterator[bytes] = operand_stream(p)
     elif read_stream is not None:
@@ -862,8 +976,14 @@ async def _single(
             return _refused(open_error_line(p.raw_path, exc), f)
     io = IOResult(exit_code=1)
     tally = Tally()
-    return _settled(search_haystack(source, pat, f, name, label, tally), f,
-                    label, tally, io, p.raw_path), io
+    return _settled(
+        search_haystack(source, pat, f, name, label, tally),
+        f,
+        label,
+        tally,
+        io,
+        p.raw_path,
+    ), io
 
 
 def _refused(line: str, f: RgFlags) -> tuple[ByteSource | None, IOResult]:
@@ -878,9 +998,14 @@ def _refused(line: str, f: RgFlags) -> tuple[ByteSource | None, IOResult]:
     return b"", IOResult(exit_code=2, stderr=stderr)
 
 
-async def _settled(chunks: AsyncIterator[bytes], f: RgFlags, label: str | None,
-                   tally: Tally, io: IOResult,
-                   shown: str) -> AsyncIterator[bytes]:
+async def _settled(
+    chunks: AsyncIterator[bytes],
+    f: RgFlags,
+    label: str | None,
+    tally: Tally,
+    io: IOResult,
+    shown: str,
+) -> AsyncIterator[bytes]:
     """One streamed haystack's output, headed when --heading names it,
     with the exit status settled as it goes.
 
@@ -896,15 +1021,19 @@ async def _settled(chunks: AsyncIterator[bytes], f: RgFlags, label: str | None,
     try:
         async for chunk in chunks:
             if not printed and label is not None and _headed(f):
-                yield encode_line(label) + (b"\0" if f.null or f.null_data else
-                                            b"\n")
+                yield encode_line(label) + (
+                    b"\0" if f.null or f.null_data else b"\n"
+                )
             printed = True
             yield chunk
     except FS_ERRORS as exc:
         # A read that fails once the stream is open is the searcher's to
         # report, exit 2, as ripgrep reports it for any file it searches.
-        io.stderr = (None if f.no_messages else
-                     f"{open_error_line(shown, exc)}\n".encode())
+        io.stderr = (
+            None
+            if f.no_messages
+            else f"{open_error_line(shown, exc)}\n".encode()
+        )
         io.exit_code = 2
         return
     listed = printed if f.files_without_match and not f.quiet else None
@@ -919,8 +1048,13 @@ def _headed(f: RgFlags) -> bool:
     Args:
         f (RgFlags): the parsed flags.
     """
-    return f.heading and not (f.count_only or f.count_matches or f.files_only
-                              or f.files_without_match or f.quiet)
+    return f.heading and not (
+        f.count_only
+        or f.count_matches
+        or f.files_only
+        or f.files_without_match
+        or f.quiet
+    )
 
 
 def printed_path(path: str, f: RgFlags) -> str:
@@ -944,8 +1078,11 @@ def walks_descendant_mounts(flags: Mapping[str, FlagValue]) -> bool:
         flags (Mapping[str, FlagValue]): the raw flag kwargs.
     """
     fl = FlagView(flags, spec=SPECS["rg"])
-    return not (fl.as_bool("type_list") or _last(
-        fl, "one_file_system", "no_one_file_system") == "one_file_system")
+    return not (
+        fl.as_bool("type_list")
+        or _last(fl, "one_file_system", "no_one_file_system")
+        == "one_file_system"
+    )
 
 
 def between_files(f: RgFlags) -> bytes:
@@ -968,12 +1105,17 @@ def between_files(f: RgFlags) -> bytes:
     return b""
 
 
-async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
-                                                         Awaitable[list[str]]],
-                     st: Callable[[str], Awaitable[FileStat]], cwd: str,
-                     walk: WalkFilter, f: RgFlags, warnings: list[str],
-                     boundary: MountView | None,
-                     door: LinkDoor | None) -> AsyncIterator[Haystack]:
+async def _haystacks(
+    paths: list[PathSpec],
+    rd: Callable[[str], Awaitable[list[str]]],
+    st: Callable[[str], Awaitable[FileStat]],
+    cwd: str,
+    walk: WalkFilter,
+    f: RgFlags,
+    warnings: list[str],
+    boundary: MountView | None,
+    door: LinkDoor | None,
+) -> AsyncIterator[Haystack]:
     """Every input the line searches, in order: a stdin operand, a named
     file as itself whatever the filters say, and a directory walked.
 
@@ -993,8 +1135,9 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
     """
     for p in paths:
         if is_stdin(p):
-            yield Haystack(p.virtual, operand_name(p), fifo_stat(p.raw_path),
-                           p)
+            yield Haystack(
+                p.virtual, operand_name(p), fifo_stat(p.raw_path), p
+            )
             continue
         if p.walk_error is not None:
             warnings.append(walk_error_line(p.raw_path, walk_refusal(p)))
@@ -1016,16 +1159,32 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
         if not is_dir:
             yield Haystack(p.virtual, p.raw_path, s, p)
             continue
-        crosses = (None if boundary is None else partial(
-            on_other_mount, boundary.root_of, boundary.root_of(p.virtual)))
+        crosses = (
+            None
+            if boundary is None
+            else partial(
+                on_other_mount, boundary.root_of, boundary.root_of(p.virtual)
+            )
+        )
         async for found in walk_haystacks(
-                rd, st, p.virtual, p.raw_path, cwd, walk, f.sort == "path"
-                and not f.sort_reverse, warnings, crosses, door, f.follow):
+            rd,
+            st,
+            p.virtual,
+            p.raw_path,
+            cwd,
+            walk,
+            f.sort == "path" and not f.sort_reverse,
+            warnings,
+            crosses,
+            door,
+            f.follow,
+        ):
             yield found
 
 
-async def _list_files(found: AsyncIterator[Haystack], f: RgFlags,
-                      warnings: list[str]) -> tuple[bytes, IOResult]:
+async def _list_files(
+    found: AsyncIterator[Haystack], f: RgFlags, warnings: list[str]
+) -> tuple[bytes, IOResult]:
     """--files: every path the search would read, and nothing searched.
 
     Args:
@@ -1041,18 +1200,22 @@ async def _list_files(found: AsyncIterator[Haystack], f: RgFlags,
             break
     code = exit_code_for(bool(out), bool(warnings), f.quiet)
     stderr = None if f.no_messages else format_optional_records(warnings)
-    return b"" if f.quiet else b"".join(out), IOResult(exit_code=code,
-                                                       stderr=stderr)
+    return b"" if f.quiet else b"".join(out), IOResult(
+        exit_code=code, stderr=stderr
+    )
 
 
-async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
-                      pat: re.Pattern[str], f: RgFlags,
-                      rb: Callable[[str], Awaitable[bytes]],
-                      read_stream: Callable[..., AsyncIterator[bytes]] | None,
-                      operand_stream: Callable[[PathSpec],
-                                               AsyncIterator[bytes]],
-                      warnings: list[str],
-                      implicit: bool) -> tuple[bytes, IOResult]:
+async def _search_all(
+    found: AsyncIterator[Haystack],
+    paths: list[PathSpec],
+    pat: re.Pattern[str],
+    f: RgFlags,
+    rb: Callable[[str], Awaitable[bytes]],
+    read_stream: Callable[..., AsyncIterator[bytes]] | None,
+    operand_stream: Callable[[PathSpec], AsyncIterator[bytes]],
+    warnings: list[str],
+    implicit: bool,
+) -> tuple[bytes, IOResult]:
     """Search every haystack in order and put the output together.
 
     ripgrep labels every line when the line named more than one path or
@@ -1082,8 +1245,12 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
         searched += 1
         walked = h.spec is None
         name = printed_path(h.shown, f)
-        label = (name if not f.no_filename and
-                 (walked or multi or f.with_filename or f.vimgrep) else None)
+        label = (
+            name
+            if not f.no_filename
+            and (walked or multi or f.with_filename or f.vimgrep)
+            else None
+        )
         tally = Tally()
         try:
             if h.spec is not None and is_stdin(h.spec):
@@ -1095,8 +1262,10 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
             else:
                 source = _wrap_bytes(await rb(h.virtual))
             chunks = [
-                c async for c in search_haystack(source, pat, f, name, label,
-                                                 tally)
+                c
+                async for c in search_haystack(
+                    source, pat, f, name, label, tally
+                )
             ]
         except FS_ERRORS as exc:
             # ripgrep reports the failed input and keeps searching the rest.
@@ -1108,8 +1277,9 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
                 if printed:
                     out.append(b"\n")
                 out.append(
-                    encode_line(label) +
-                    (b"\0" if f.null or f.null_data else b"\n"))
+                    encode_line(label)
+                    + (b"\0" if f.null or f.null_data else b"\n")
+                )
             elif context and printed and f.context_separator is not None:
                 out.append(encode_line(f.context_separator) + b"\n")
             out.extend(chunks)
@@ -1128,8 +1298,9 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
         if not f.no_messages:
             shown.append(NOTHING_SEARCHED)
         code = 2
-    return b"".join(out), IOResult(exit_code=code,
-                                   stderr=format_optional_records(shown))
+    return b"".join(out), IOResult(
+        exit_code=code, stderr=format_optional_records(shown)
+    )
 
 
 __all__ = ["rg"]

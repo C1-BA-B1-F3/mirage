@@ -26,8 +26,11 @@ from mirage.shell.variable import VarAttr
 from mirage.types import HiddenPaths, HiddenVars, MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.session import (env_snapshot, reset_current_session,
-                                      set_current_session)
+from mirage.workspace.session import (
+    env_snapshot,
+    reset_current_session,
+    set_current_session,
+)
 from mirage.workspace.session.state import seed_var, set_attr
 
 
@@ -56,12 +59,11 @@ def _two_mounts(policies=None) -> Workspace:
     a._store.files["/x.txt"] = b"public\n"
     b = RAMVFS()
     b._store.files["/y.txt"] = b"other\n"
-    return Workspace({
-        "/a": (a, MountMode.WRITE),
-        "/b": (b, MountMode.WRITE)
-    },
-                     mode=MountMode.WRITE,
-                     policies=policies)
+    return Workspace(
+        {"/a": (a, MountMode.WRITE), "/b": (b, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=policies,
+    )
 
 
 def test_fuse_symlink_on_hidden_turf_is_refused():
@@ -137,7 +139,8 @@ def test_scoped_shell_ln_does_not_follow_a_hidden_link_into_its_directory():
     io = asyncio.run(run())
     assert io.exit_code == 1
     assert io.stderr == (
-        b"ln: failed to create symbolic link '/a/hl': Permission denied\n")
+        b"ln: failed to create symbolic link '/a/hl': Permission denied\n"
+    )
     assert not ws.namespace.is_link("/a/d/x.txt")
 
 
@@ -157,7 +160,8 @@ def test_scoped_shell_hard_ln_of_a_hidden_link_has_nothing_to_copy():
     for io in asyncio.run(run()):
         assert io.exit_code == 1
         assert io.stderr == (
-            b"ln: failed to access '/a/hl': No such file or directory\n")
+            b"ln: failed to access '/a/hl': No such file or directory\n"
+        )
     assert not ws.namespace.is_link("/a/copy")
 
 
@@ -171,7 +175,8 @@ def test_scoped_shell_ln_onto_a_hidden_mount_root_does_not_say_it_exists():
     io = asyncio.run(run())
     assert io.exit_code == 1
     assert io.stderr == (
-        b"ln: failed to create symbolic link '/b': Permission denied\n")
+        b"ln: failed to create symbolic link '/b': Permission denied\n"
+    )
 
 
 def test_symlink_and_readlink_answer_on_the_ops_facade():
@@ -265,9 +270,11 @@ def test_overlay_setattr_fires_the_op_gates():
     # overlay; that write must clear the same gates as a native one.
     o = _OverlayRAMVFS()
     o._store.files["/f.txt"] = b"body\n"
-    ws = Workspace({"/o": (o, MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   policies=[DenyOp("setattr")])
+    ws = Workspace(
+        {"/o": (o, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        policies=[DenyOp("setattr")],
+    )
 
     async def run():
         return await ws.shell("chmod 600 /o/f.txt")
@@ -330,7 +337,8 @@ def test_every_declaring_spelling_fires_the_state_gate():
 
     async def run():
         return [
-            await ws.shell(line) for line in (
+            await ws.shell(line)
+            for line in (
                 "SECRET_A=1",
                 "export SECRET_B",
                 "readonly SECRET_C",
@@ -354,7 +362,7 @@ def test_a_hidden_name_cannot_be_marked_readonly():
     ws = _two_mounts()
     session = ws.get_session(ws.default_session_id)
     seed_var(session, "SECRET", "topsecret")
-    session.hidden_vars = HiddenVars(names=("SECRET", ), patterns=())
+    session.hidden_vars = HiddenVars(names=("SECRET",), patterns=())
 
     async def run():
         return await ws.shell("readonly SECRET")
@@ -370,8 +378,9 @@ def test_command_env_is_a_snapshot_not_the_live_dict():
     # parent's environment, so a mutation must not land in the session.
 
     @command("envpoke", vfs="ram", spec=CommandSpec())
-    async def envpoke(store, paths: list[PathSpec], texts: list[str],
-                      opts: CommandOpts):
+    async def envpoke(
+        store, paths: list[PathSpec], texts: list[str], opts: CommandOpts
+    ):
         assert opts.env is not None
         opts.env["INJECTED"] = "1"
         return b"", IOResult()
@@ -394,8 +403,9 @@ def test_a_command_can_opt_into_the_session_view():
     # CommandOpts, and reads answer through the view.
 
     @command("envread", vfs="ram", spec=CommandSpec())
-    async def envread(store, paths: list[PathSpec], texts: list[str],
-                      opts: CommandOpts):
+    async def envread(
+        store, paths: list[PathSpec], texts: list[str], opts: CommandOpts
+    ):
         assert opts.session_view is not None
         value = opts.session_view.get("MARKER") or "none"
         return value.encode(), IOResult()
@@ -751,7 +761,6 @@ def test_the_gate_learns_which_session_asked():
     seen: list[str] = []
 
     class CaptureSession(Policy):
-
         async def pre_session(self, ctx: SessionContext) -> Action | None:
             seen.append(ctx.session_id)
             return None
@@ -826,7 +835,7 @@ def _hidden_vars_ws() -> Workspace:
     # would make the hidden-vars assertions below vacuous.
     set_attr(sess, "SLACK_TOKEN", VarAttr.EXPORT)
     set_attr(sess, "PUBLIC", VarAttr.EXPORT)
-    sess.hidden_vars = HiddenVars(names=("SLACK_TOKEN", ))
+    sess.hidden_vars = HiddenVars(names=("SLACK_TOKEN",))
     return ws
 
 
@@ -834,8 +843,9 @@ def test_expansion_reads_a_hidden_var_as_unset():
     ws = _hidden_vars_ws()
 
     async def run():
-        io = await ws.shell('echo "[$SLACK_TOKEN][$PUBLIC]"',
-                            session_id="agent")
+        io = await ws.shell(
+            'echo "[$SLACK_TOKEN][$PUBLIC]"', session_id="agent"
+        )
         return io, await io.stdout_str()
 
     io, out = asyncio.run(run())
@@ -847,8 +857,9 @@ def test_assign_default_writes_raw_env_under_hidden_vars():
     ws = _hidden_vars_ws()
 
     async def run():
-        io = await ws.shell('echo "${NEWVAR:=seeded}" && echo "$NEWVAR"',
-                            session_id="agent")
+        io = await ws.shell(
+            'echo "${NEWVAR:=seeded}" && echo "$NEWVAR"', session_id="agent"
+        )
         return io, await io.stdout_str()
 
     io, out = asyncio.run(run())
@@ -865,8 +876,9 @@ def test_assign_default_of_a_hidden_var_is_refused():
     ws = _hidden_vars_ws()
 
     async def run():
-        return await ws.shell('echo "${SLACK_TOKEN:=fake}"',
-                              session_id="agent")
+        return await ws.shell(
+            'echo "${SLACK_TOKEN:=fake}"', session_id="agent"
+        )
 
     io = asyncio.run(run())
     assert io.exit_code != 0
@@ -879,8 +891,9 @@ def test_arith_assign_of_a_hidden_var_is_refused():
     ws = _hidden_vars_ws()
 
     async def run():
-        expansion = await ws.shell('echo "$((SLACK_TOKEN=5))"',
-                                   session_id="agent")
+        expansion = await ws.shell(
+            'echo "$((SLACK_TOKEN=5))"', session_id="agent"
+        )
         command = await ws.shell("((SLACK_TOKEN=7))", session_id="agent")
         return expansion, command
 
@@ -977,7 +990,7 @@ def _hidden_array_ws() -> Workspace:
     sess = ws.create_session("agent", mounts={"/a": "write"})
     seed_var(sess, "SLACK_TOKEN", ["xoxb-real", "xoxb-two"])
     seed_var(sess, "PUBLIC", "ok")
-    sess.hidden_vars = HiddenVars(names=("SLACK_TOKEN", ))
+    sess.hidden_vars = HiddenVars(names=("SLACK_TOKEN",))
     return ws
 
 
@@ -991,10 +1004,12 @@ def test_expansion_reads_a_hidden_array_as_unset():
         io = await ws.shell(
             'echo "[$SLACK_TOKEN][${SLACK_TOKEN[0]}]'
             '[${SLACK_TOKEN[@]}][${#SLACK_TOKEN[@]}]"',
-            session_id="agent")
+            session_id="agent",
+        )
         splat = await ws.shell(
             'for el in "${SLACK_TOKEN[@]}"; do echo "el=$el"; done; echo end',
-            session_id="agent")
+            session_id="agent",
+        )
         return io, await io.stdout_str(), splat, await splat.stdout_str()
 
     io, out, splat, splat_out = asyncio.run(run())
@@ -1082,7 +1097,7 @@ def test_subscript_arithmetic_resolves_against_the_visible_env():
     ws = _two_mounts()
     sess = ws.create_session("agent", mounts={"/a": "write"})
     seed_var(sess, "SECRET_IDX", "1")
-    sess.hidden_vars = HiddenVars(names=("SECRET_IDX", ))
+    sess.hidden_vars = HiddenVars(names=("SECRET_IDX",))
 
     async def run():
         await ws.shell("b=(x y)", session_id="agent")
@@ -1100,7 +1115,7 @@ def test_hidden_home_reads_as_unset_everywhere():
     ws = _two_mounts()
     sess = ws.create_session("agent", mounts={"/a": "write"})
     seed_var(sess, "HOME", "/a/homedir")
-    sess.hidden_vars = HiddenVars(names=("HOME", ))
+    sess.hidden_vars = HiddenVars(names=("HOME",))
 
     async def run():
         home = await ws.shell('echo "[$HOME]"', session_id="agent")
@@ -1132,8 +1147,7 @@ def _hidden_paths_ws() -> Workspace:
     a._store.dirs.add("/secrets")
     ws = Workspace({"/a": (a, MountMode.WRITE)}, mode=MountMode.WRITE)
     sess = ws.create_session("agent")
-    sess.hidden_paths = HiddenPaths(paths=("/a/secrets", ),
-                                    patterns=("*.key", ))
+    sess.hidden_paths = HiddenPaths(paths=("/a/secrets",), patterns=("*.key",))
     return ws
 
 
@@ -1208,8 +1222,11 @@ def test_ops_create_into_hidden_space_never_lands():
             reset_current_session(token)
 
     asyncio.run(run())
-    files = next(m for m in ws.namespace.registry.mounts()
-                 if m.prefix.rstrip("/") == "/a").vfs._store.files
+    files = next(
+        m
+        for m in ws.namespace.registry.mounts()
+        if m.prefix.rstrip("/") == "/a"
+    ).vfs._store.files
     assert "/secrets/new.txt" not in files
 
 
@@ -1328,8 +1345,11 @@ def test_find_predicates_evaluate_on_the_visible_tree():
     # unseen child exists. Under hidden paths the generic must walk
     # through the guarded readdir instead.
     ws = _hidden_paths_ws()
-    vfs = next(m for m in ws.namespace.registry.mounts()
-               if m.prefix.rstrip("/") == "/a").vfs
+    vfs = next(
+        m
+        for m in ws.namespace.registry.mounts()
+        if m.prefix.rstrip("/") == "/a"
+    ).vfs
     vfs._store.files["/vault/only.key"] = b"kkk\n"
     vfs._store.dirs.add("/vault")
 
@@ -1346,13 +1366,17 @@ def test_shell_redirect_into_hidden_space_fails_and_writes_nothing():
     ws = _hidden_paths_ws()
 
     async def run():
-        return await ws.shell("echo hi > /a/secrets/new.txt",
-                              session_id="agent")
+        return await ws.shell(
+            "echo hi > /a/secrets/new.txt", session_id="agent"
+        )
 
     io = asyncio.run(run())
     assert io.exit_code != 0
-    files = next(m for m in ws.namespace.registry.mounts()
-                 if m.prefix.rstrip("/") == "/a").vfs._store.files
+    files = next(
+        m
+        for m in ws.namespace.registry.mounts()
+        if m.prefix.rstrip("/") == "/a"
+    ).vfs._store.files
     assert "/secrets/new.txt" not in files
 
 
@@ -1388,7 +1412,7 @@ def test_a_whole_mount_hidden_by_prefix_disappears():
     # while mount_modes still lists the grant.
     ws = _two_mounts()
     sess = ws.create_session("agent", mounts={"/a": "write", "/b": "write"})
-    sess.hidden_paths = HiddenPaths(paths=("/b", ))
+    sess.hidden_paths = HiddenPaths(paths=("/b",))
 
     async def run():
         root = await ws.shell("ls /", session_id="agent")

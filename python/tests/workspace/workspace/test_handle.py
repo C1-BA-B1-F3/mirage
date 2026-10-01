@@ -24,15 +24,17 @@ PROFILES = {"reviewer": {"paths": {"hide": ["/repo/secrets"]}}}
 
 
 def _seeded() -> Workspace:
-    ws = Workspace({"/repo/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=PROFILES)
+    ws = Workspace(
+        {"/repo/": RAMVFS()}, mode=MountMode.WRITE, profiles=PROFILES
+    )
     return ws
 
 
 async def _seed(ws: Workspace) -> None:
-    await ws.shell("mkdir -p /repo/secrets && echo hello > /repo/README.md"
-                   " && echo PRIVATE > /repo/secrets/key.pem")
+    await ws.shell(
+        "mkdir -p /repo/secrets && echo hello > /repo/README.md"
+        " && echo PRIVATE > /repo/secrets/key.pem"
+    )
 
 
 @pytest.mark.asyncio
@@ -83,14 +85,18 @@ async def test_a_handle_adopts_a_persisted_session_before_creating_one():
     # flush a record that overwrote the stored profile. The door
     # hydrates first, so the stored session is adopted as is.
     store = RAMSessionStore()
-    first = Workspace({"/repo/": RAMVFS()},
-                      mode=MountMode.WRITE,
-                      profiles=PROFILES,
-                      session_store=store)
-    second = Workspace({"/repo/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       profiles=PROFILES,
-                       session_store=store)
+    first = Workspace(
+        {"/repo/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=PROFILES,
+        session_store=store,
+    )
+    second = Workspace(
+        {"/repo/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles=PROFILES,
+        session_store=store,
+    )
     try:
         created = await first.session("reviewer", profile="reviewer")
         assert created.state.hidden_paths is not None
@@ -113,15 +119,15 @@ async def test_a_handle_forwards_per_call_options():
         forked = await reviewer.shell("pwd", cwd="/repo")
         assert forked.stdout == b"/repo\n"
         assert reviewer.state.cwd != "/repo"
-        plan = await reviewer.shell("cat /repo/README.md", provision=True)
-        assert plan is not None
         token = set_current_session(ws.get_session(ws.default_session_id))
         try:
             # A session already bound is kept by the op door, so a
             # handle reached from inside the default session's own
             # command reads as that session, never wider.
-            assert await reviewer.vfs.read("/repo/secrets/key.pem"
-                                           ) == b"PRIVATE\n"
+            assert (
+                await reviewer.vfs.read("/repo/secrets/key.pem")
+                == b"PRIVATE\n"
+            )
         finally:
             reset_current_session(token)
     finally:

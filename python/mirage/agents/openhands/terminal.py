@@ -18,21 +18,27 @@ from typing import TYPE_CHECKING
 from openhands.sdk.llm import TextContent
 from openhands.sdk.tool import ToolAnnotations, ToolExecutor, register_tool
 from openhands.tools.terminal import TerminalTool
-from openhands.tools.terminal.definition import (TerminalAction,
-                                                 TerminalObservation)
-from openhands.tools.terminal.descriptions import (UNIX_TOOL_DESCRIPTION,
-                                                   WINDOWS_TOOL_DESCRIPTION)
+from openhands.tools.terminal.definition import (
+    TerminalAction,
+    TerminalObservation,
+)
+from openhands.tools.terminal.descriptions import (
+    UNIX_TOOL_DESCRIPTION,
+    WINDOWS_TOOL_DESCRIPTION,
+)
 from openhands.tools.terminal.metadata import CmdOutputMetadata
 
 from mirage.agents.openhands.workspace import MirageWorkspace
 
 if TYPE_CHECKING:
-    from openhands.sdk.conversation.impl.local_conversation import \
-        LocalConversation
+    from openhands.sdk.conversation.impl.local_conversation import (
+        LocalConversation,
+    )
 
 
-class MirageTerminalExecutor(ToolExecutor[TerminalAction,
-                                          TerminalObservation]):
+class MirageTerminalExecutor(
+    ToolExecutor[TerminalAction, TerminalObservation]
+):
     """Routes OpenHands TerminalTool actions through a Mirage Workspace.
 
     Args:
@@ -55,12 +61,17 @@ class MirageTerminalExecutor(ToolExecutor[TerminalAction,
             return TerminalObservation(
                 command=action.command,
                 content=[
-                    TextContent(text=("MirageTerminalExecutor does not "
-                                      "support is_input=True"))
+                    TextContent(
+                        text=(
+                            "MirageTerminalExecutor does not "
+                            "support is_input=True"
+                        )
+                    )
                 ],
                 exit_code=-1,
-                metadata=CmdOutputMetadata(exit_code=-1,
-                                           working_dir=self._mw.working_dir),
+                metadata=CmdOutputMetadata(
+                    exit_code=-1, working_dir=self._mw.working_dir
+                ),
             )
         timeout = action.timeout if action.timeout is not None else 30.0
         result = self._mw.execute_command(action.command, timeout=timeout)
@@ -93,8 +104,11 @@ def register_mirage_terminal(
         str: The registered tool name, ready to use as
         ``Tool(name=...)`` in the agent's tool list.
     """
-    description = (WINDOWS_TOOL_DESCRIPTION if platform.system() == "Windows"
-                   else UNIX_TOOL_DESCRIPTION)
+    description = (
+        WINDOWS_TOOL_DESCRIPTION
+        if platform.system() == "Windows"
+        else UNIX_TOOL_DESCRIPTION
+    )
     terminal = TerminalTool(
         action_type=TerminalAction,
         observation_type=TerminalObservation,

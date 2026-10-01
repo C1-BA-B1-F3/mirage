@@ -16,11 +16,17 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.crossmount.utils import (
-    relay, transfer_primitives)
+    relay,
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.csplit import csplit as generic_csplit
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -28,9 +34,13 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def csplit(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def csplit(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["csplit"])
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     prefix_flag = fl.raw("prefix")
@@ -60,7 +70,8 @@ async def csplit(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         keep_on_error=fl.as_bool("keep_files"),
         silent=fl.as_bool("quiet") or fl.as_bool("silent"),
         suppress_matched=fl.as_bool("suppress_matched"),
-        elide_empty=fl.as_bool("elide_empty_files"))
+        elide_empty=fl.as_bool("elide_empty_files"),
+    )
 
 
-BUILDER = Builder('csplit', csplit, write=True)
+BUILDER = Builder("csplit", csplit, write=True)

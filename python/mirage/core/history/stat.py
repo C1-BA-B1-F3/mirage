@@ -19,9 +19,11 @@ from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.filetype import content_type_for_path
 
 
-async def stat(accessor: HistoryAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: HistoryAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     """Stat the rendered histfile.
 
     Args:

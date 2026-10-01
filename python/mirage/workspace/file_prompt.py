@@ -17,7 +17,8 @@ from mirage.workspace.mount import MountEntry
 
 HELP_HINT = (
     "Tip: run `man` to list every available command grouped by VFS, "
-    "`man <cmd>` for a single entry, and `<cmd> --help` for flag details.")
+    "`man <cmd>` for a single entry, and `<cmd> --help` for flag details."
+)
 
 MODE_LINES = {
     MountMode.READ: "  Mode: read-only; writes are refused.",

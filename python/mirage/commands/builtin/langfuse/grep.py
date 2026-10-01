@@ -12,32 +12,24 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
 from functools import partial
 
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.commands.builtin.generic_bind.search import run_search
-from mirage.commands.builtin.langfuse._provision import file_read_provision
 from mirage.commands.builtin.langfuse.io import IO
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 
 _search = partial(run_search, IO, "grep")
 
 
-async def grep_provision(accessor: LangfuseAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep", vfs="langfuse", spec=SPECS["grep"], provision=grep_provision)
-async def grep(accessor: LangfuseAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("grep", vfs="langfuse", spec=SPECS["grep"])
+async def grep(
+    accessor: LangfuseAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     return await _search(accessor, paths, texts, opts)

@@ -23,15 +23,8 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Session, Workspace
 
 CARVE_PROFILE = {
-    "mounts": {
-        "/repo": "r"
-    },
-    "paths": {
-        "hide": ["/repo"],
-        "show": {
-            "/repo/public": "r"
-        }
-    },
+    "mounts": {"/repo": "r"},
+    "paths": {"hide": ["/repo"], "show": {"/repo/public": "r"}},
 }
 
 
@@ -44,7 +37,8 @@ def _seeded(mode: MountMode = MountMode.WRITE) -> Workspace:
             "printf 'hello repo\\n' > /repo/README.md && "
             "printf 'PRIVATE needle\\n' > /repo/secrets/key.pem && "
             "printf '<h1>needle</h1>\\n' > /repo/public/index.html && "
-            "printf 'docs needle\\n' > /repo/public/docs/a.txt")
+            "printf 'docs needle\\n' > /repo/public/docs/a.txt"
+        )
         assert io.exit_code == 0, io.stderr
 
     asyncio.run(seed())
@@ -72,7 +66,8 @@ def test_a_deeper_show_reopens_its_subtree():
     denied = _run(ws, "cat /repo/secrets/key.pem")
     assert denied.exit_code != 0
     assert (denied.stderr or b"") == (
-        b"cat: /repo/secrets/key.pem: No such file or directory\n")
+        b"cat: /repo/secrets/key.pem: No such file or directory\n"
+    )
 
 
 def test_every_enumeration_surface_agrees_on_the_carve_out():
@@ -85,11 +80,13 @@ def test_every_enumeration_surface_agrees_on_the_carve_out():
     globbed = _run(ws, "echo /repo/*")
     assert (globbed.stdout or b"") == b"/repo/public\n"
     found = _run(ws, "find /repo")
-    assert (found.stdout or b"") == (b"/repo\n"
-                                     b"/repo/public\n"
-                                     b"/repo/public/docs\n"
-                                     b"/repo/public/docs/a.txt\n"
-                                     b"/repo/public/index.html\n")
+    assert (found.stdout or b"") == (
+        b"/repo\n"
+        b"/repo/public\n"
+        b"/repo/public/docs\n"
+        b"/repo/public/docs/a.txt\n"
+        b"/repo/public/index.html\n"
+    )
     grepped = _run(ws, "grep -rl needle /repo")
     hits = sorted((grepped.stdout or b"").splitlines())
     assert hits == [b"/repo/public/docs/a.txt", b"/repo/public/index.html"]
@@ -122,11 +119,13 @@ def test_hide_speaks_before_the_mode():
     # refusal leaks that the region is read-only. Neither write lands.
     ws = _carved()
     create = _run(ws, "echo x > /repo/secrets/new.txt")
-    assert (create.stderr
-            or b"") == b"/repo/secrets/new.txt: No such file or directory\n"
+    assert (
+        create.stderr or b""
+    ) == b"/repo/secrets/new.txt: No such file or directory\n"
     clobber = _run(ws, "echo x > /repo/secrets/key.pem")
-    assert (clobber.stderr
-            or b"") == b"/repo/secrets/key.pem: No such file or directory\n"
+    assert (
+        clobber.stderr or b""
+    ) == b"/repo/secrets/key.pem: No such file or directory\n"
     kept = asyncio.run(ws.shell("cat /repo/secrets/key.pem"))
     assert kept.stdout == b"PRIVATE needle\n"
 
@@ -139,14 +138,12 @@ def test_the_op_door_runs_as_the_default_session():
     # A handle runs the same door as another session over the
     # same ledger; a session with an explicit empty profile is the
     # host's door to what the default profile hides.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles={"agent": {
-                       "paths": {
-                           "hide": ["/data/vault"]
-                       }
-                   }},
-                   profile="agent")
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles={"agent": {"paths": {"hide": ["/data/vault"]}}},
+        profile="agent",
+    )
     host = ws.create_session("host", profile={})
 
     async def run():
@@ -160,8 +157,9 @@ def test_the_op_door_runs_as_the_default_session():
         with pytest.raises(FileNotFoundError):
             await ws.stat("/data/vault")
         with pytest.raises(FileNotFoundError):
-            await ws.dispatch("read",
-                              PathSpec.from_str_path("/data/vault/secret"))
+            await ws.dispatch(
+                "read", PathSpec.from_str_path("/data/vault/secret")
+            )
         assert await ws.readdir("/data") == []
         assert await ws.vfs.readdir("/data") == []
         token = set_current_session(host)
@@ -174,14 +172,12 @@ def test_the_op_door_runs_as_the_default_session():
 
 
 def _hiding() -> Workspace:
-    return Workspace({"/data/": RAMVFS()},
-                     mode=MountMode.WRITE,
-                     profiles={"agent": {
-                         "paths": {
-                             "hide": ["/data/vault"]
-                         }
-                     }},
-                     profile="agent")
+    return Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles={"agent": {"paths": {"hide": ["/data/vault"]}}},
+        profile="agent",
+    )
 
 
 def test_the_op_door_does_not_adopt_another_workspaces_session():
@@ -245,8 +241,9 @@ def test_a_write_below_the_mode_reads_read_only_file_system():
     ws = _carved()
     refused = _run(ws, "echo x > /repo/public/new.txt")
     assert refused.exit_code != 0
-    assert (refused.stderr
-            or b"") == b"/repo/public/new.txt: Read-only file system\n"
+    assert (
+        refused.stderr or b""
+    ) == b"/repo/public/new.txt: Read-only file system\n"
 
 
 def test_a_deeper_show_mode_refines_the_mount_cap():
@@ -255,20 +252,18 @@ def test_a_deeper_show_mode_refines_the_mount_cap():
     # the whole-mount write command gate lets the line reach the op
     # door instead of refusing the command outright.
     ws = _seeded()
-    ws.create_session("rev",
-                      profile={
-                          "mounts": {
-                              "/repo": "r"
-                          },
-                          "paths": {
-                              "show": {
-                                  "/repo/build": "rw"
-                              }
-                          },
-                      })
+    ws.create_session(
+        "rev",
+        profile={
+            "mounts": {"/repo": "r"},
+            "paths": {"show": {"/repo/build": "rw"}},
+        },
+    )
     ok = _run(
-        ws, "mkdir /repo/build && echo out > /repo/build/a.txt && "
-        "cat /repo/build/a.txt")
+        ws,
+        "mkdir /repo/build && echo out > /repo/build/a.txt && "
+        "cat /repo/build/a.txt",
+    )
     assert ok.exit_code == 0, ok.stderr
     assert (ok.stdout or b"") == b"out\n"
     held = _run(ws, "echo x > /repo/README.md")
@@ -279,28 +274,23 @@ def test_a_show_mode_never_grants_past_the_configured_mode():
     # The mount's own mode stays the strongest answer possible: a show
     # stating rw on a READ-configured mount changes nothing.
     ws = Workspace({"/repo": (RAMVFS(), MountMode.READ)})
-    ws.create_session("rev",
-                      profile={"paths": {
-                          "show": {
-                              "/repo/build": "rw"
-                          }
-                      }})
+    ws.create_session(
+        "rev", profile={"paths": {"show": {"/repo/build": "rw"}}}
+    )
     refused = _run(ws, "echo x > /repo/build/a.txt")
     assert refused.exit_code != 0
-    assert (refused.stderr
-            or b"") == b"/repo/build/a.txt: Read-only file system\n"
+    assert (
+        refused.stderr or b""
+    ) == b"/repo/build/a.txt: Read-only file system\n"
 
 
 def test_a_show_without_a_covering_hide_restricts_nothing():
     # 12.3b: show is a carve-out and a mode statement, never an
     # allowlist; a path outside every show entry stays visible.
     ws = _seeded()
-    ws.create_session("rev",
-                      profile={"paths": {
-                          "show": {
-                              "/repo/public": "r"
-                          }
-                      }})
+    ws.create_session(
+        "rev", profile={"paths": {"show": {"/repo/public": "r"}}}
+    )
     ok = _run(ws, "cat /repo/README.md")
     assert ok.exit_code == 0 and b"hello" in (ok.stdout or b"")
 
@@ -310,36 +300,34 @@ def test_scripts_run_only_from_an_x_region():
     # script there runs and the same interpreter refuses one outside
     # it, in file-operand voice, exit 126.
     ws = _seeded(MountMode.EXEC)
-    ws.create_session("rev",
-                      profile={
-                          "mounts": {
-                              "/repo": "r"
-                          },
-                          "paths": {
-                              "show": {
-                                  "/repo/tools": "rwx"
-                              }
-                          },
-                      })
+    ws.create_session(
+        "rev",
+        profile={
+            "mounts": {"/repo": "r"},
+            "paths": {"show": {"/repo/tools": "rwx"}},
+        },
+    )
     seeded = _run(
-        ws, "mkdir /repo/tools && echo 'print(\"ran\")' > /repo/tools/go.py")
+        ws, "mkdir /repo/tools && echo 'print(\"ran\")' > /repo/tools/go.py"
+    )
     assert seeded.exit_code == 0, seeded.stderr
     ran = _run(ws, "python3 /repo/tools/go.py")
     assert ran.exit_code == 0 and (ran.stdout or b"") == b"ran\n"
     outside = _run(ws, "python3 /repo/public/index.html")
     assert outside.exit_code == 126
-    assert (outside.stderr
-            or b"") == b"python3: /repo/public/index.html: not in EXEC mode\n"
+    assert (
+        outside.stderr or b""
+    ) == b"python3: /repo/public/index.html: not in EXEC mode\n"
 
 
 def test_inline_permissions_cannot_add_show():
     ws = Workspace({"/repo": RAMVFS()})
     try:
-        ws.create_session("rev",
-                          profile=CARVE_PROFILE,
-                          permissions={"paths": {
-                              "show": ["/repo/secrets"]
-                          }})
+        ws.create_session(
+            "rev",
+            profile=CARVE_PROFILE,
+            permissions={"paths": {"show": ["/repo/secrets"]}},
+        )
     except Exception as exc:
         assert "not show entries" in str(exc)
     else:
@@ -351,17 +339,13 @@ def test_the_write_gate_holds_per_path_inside_an_admitted_command():
     # each write the handler then makes still answers for its own
     # region, so the whole-mount admission opens no side door.
     ws = _seeded()
-    ws.create_session("rev",
-                      profile={
-                          "mounts": {
-                              "/repo": "r"
-                          },
-                          "paths": {
-                              "show": {
-                                  "/repo/build": "rw"
-                              }
-                          },
-                      })
+    ws.create_session(
+        "rev",
+        profile={
+            "mounts": {"/repo": "r"},
+            "paths": {"show": {"/repo/build": "rw"}},
+        },
+    )
     ok = _run(ws, "mkdir /repo/build")
     assert ok.exit_code == 0, ok.stderr
     held = _run(ws, "mkdir /repo/probe")
@@ -389,24 +373,25 @@ def test_a_subtree_mutation_answers_for_the_regions_below_it():
     ws = _seeded()
 
     async def grow():
-        io = await ws.shell("mkdir -p /repo/tree/locked && "
-                            "printf 'kept\\n' > /repo/tree/locked/f.txt && "
-                            "printf 'open\\n' > /repo/tree/open.txt")
+        io = await ws.shell(
+            "mkdir -p /repo/tree/locked && "
+            "printf 'kept\\n' > /repo/tree/locked/f.txt && "
+            "printf 'open\\n' > /repo/tree/open.txt"
+        )
         assert io.exit_code == 0, io.stderr
 
     asyncio.run(grow())
-    ws.create_session("rev",
-                      profile={
-                          "paths": {
-                              "show": {
-                                  "/repo/tree/locked": "r"
-                              }
-                          },
-                      })
+    ws.create_session(
+        "rev",
+        profile={
+            "paths": {"show": {"/repo/tree/locked": "r"}},
+        },
+    )
     held = _run(ws, "rm -r /repo/tree")
     assert held.exit_code != 0
     assert (held.stderr or b"") == (
-        b"rm: cannot remove '/repo/tree/locked': Read-only file system\n")
+        b"rm: cannot remove '/repo/tree/locked': Read-only file system\n"
+    )
     assert _run(ws, "cat /repo/tree/locked/f.txt").exit_code == 0
     assert _run(ws, "cat /repo/tree/open.txt").exit_code == 0
     moved = _run(ws, "mv /repo/tree /repo/moved")
@@ -423,16 +408,13 @@ def test_a_globbed_show_reopens_and_stays_walkable():
     # exposes children of stays traversable, so the road to the matches
     # exists.
     ws = _seeded()
-    ws.create_session("rev",
-                      profile={
-                          "mounts": {
-                              "/repo": "r"
-                          },
-                          "paths": {
-                              "hide": ["/repo"],
-                              "show": ["/repo/public/*"]
-                          },
-                      })
+    ws.create_session(
+        "rev",
+        profile={
+            "mounts": {"/repo": "r"},
+            "paths": {"hide": ["/repo"], "show": ["/repo/public/*"]},
+        },
+    )
     walked = _run(ws, "ls /repo")
     assert (walked.stdout or b"").split() == [b"public"]
     listed = _run(ws, "ls /repo/public")
@@ -458,11 +440,13 @@ def _boxed(profile: dict) -> Workspace:
     ws = Workspace({"/repo": RAMVFS()}, mode=MountMode.WRITE)
 
     async def seed():
-        io = await ws.shell("mkdir -p /repo/box/sec /repo/only && "
-                            "printf 'v\\n' > /repo/box/a.txt && "
-                            "printf 's\\n' > /repo/box/sec/k && "
-                            "printf 't\\n' > /repo/box/x.tkn && "
-                            "printf 'h\\n' > /repo/only/h")
+        io = await ws.shell(
+            "mkdir -p /repo/box/sec /repo/only && "
+            "printf 'v\\n' > /repo/box/a.txt && "
+            "printf 's\\n' > /repo/box/sec/k && "
+            "printf 't\\n' > /repo/box/x.tkn && "
+            "printf 'h\\n' > /repo/only/h"
+        )
         assert io.exit_code == 0, io.stderr
 
     asyncio.run(seed())
@@ -486,7 +470,8 @@ def test_mv_that_would_reveal_hidden_content_refuses():
     refused = _run(ws, "mv /repo/box /repo/moved")
     assert refused.exit_code == 1
     assert (refused.stderr or b"") == (
-        b"mv: cannot move '/repo/box' to '/repo/moved': Permission denied\n")
+        b"mv: cannot move '/repo/box' to '/repo/moved': Permission denied\n"
+    )
     intact = _host(ws, "test -e /repo/box/sec/k")
     assert intact.exit_code == 0
 
@@ -542,8 +527,9 @@ def test_cp_r_copies_the_visible_view_silently():
     assert copied.exit_code == 0, copied.stderr
     assert (copied.stderr or b"") == b""
     listing = _host(ws, "find /repo/copy")
-    assert (listing.stdout
-            or b"") == (b"/repo/copy\n/repo/copy/a.txt\n/repo/copy/x.tkn\n")
+    assert (listing.stdout or b"") == (
+        b"/repo/copy\n/repo/copy/a.txt\n/repo/copy/x.tkn\n"
+    )
 
 
 def test_rmdir_takes_hidden_remnants_with_the_directory():
@@ -580,16 +566,13 @@ def test_a_read_only_hidden_remnant_keeps_the_refusal():
     # answers for its own path's mode, so the protected remnant
     # survives and the rmdir keeps a not-empty refusal.
     ws = _boxed(
-        {"paths": {
-            "hide": ["/repo/only/h"],
-            "show": {
-                "/repo/only/h": "r"
-            }
-        }})
+        {"paths": {"hide": ["/repo/only/h"], "show": {"/repo/only/h": "r"}}}
+    )
     refused = _run(ws, "rmdir /repo/only")
     assert refused.exit_code == 1
     assert (refused.stderr or b"") == (
-        b"rmdir: failed to remove '/repo/only': Directory not empty\n")
+        b"rmdir: failed to remove '/repo/only': Directory not empty\n"
+    )
     kept = _host(ws, "cat /repo/only/h")
     assert (kept.stdout or b"") == b"h\n"
 
@@ -601,15 +584,14 @@ def test_a_mounted_child_keeps_the_command_planes_refusal():
     # stamped children join the guard's emptiness judgment, so the
     # not-empty refusal stays instead of the cascade destroying the
     # hidden remnant and reporting success while the mount remains.
-    ws = Workspace({
-        "/repo": RAMVFS(),
-        "/repo/only/m": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/repo": RAMVFS(), "/repo/only/m": RAMVFS()}, mode=MountMode.WRITE
+    )
 
     async def seed():
         io = await ws.shell(
-            "mkdir -p /repo/only && printf 'h\\n' > /repo/only/h")
+            "mkdir -p /repo/only && printf 'h\\n' > /repo/only/h"
+        )
         assert io.exit_code == 0, io.stderr
 
     asyncio.run(seed())
@@ -617,7 +599,8 @@ def test_a_mounted_child_keeps_the_command_planes_refusal():
     refused = _run(ws, "rmdir /repo/only")
     assert refused.exit_code == 1
     assert (refused.stderr or b"") == (
-        b"rmdir: failed to remove '/repo/only': Directory not empty\n")
+        b"rmdir: failed to remove '/repo/only': Directory not empty\n"
+    )
     kept = _host(ws, "cat /repo/only/h")
     assert (kept.stdout or b"") == b"h\n"
 

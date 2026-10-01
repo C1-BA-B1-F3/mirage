@@ -16,8 +16,11 @@ import pytest
 
 from mirage.core.onedrive.read import read_bytes
 from mirage.core.onedrive.stream import read_stream
-from mirage.observe.context import (RecordingScope, push_revisions,
-                                    reset_revisions)
+from mirage.observe.context import (
+    RecordingScope,
+    push_revisions,
+    reset_revisions,
+)
 from mirage.types import MountMode, PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
@@ -32,20 +35,22 @@ CP = "cp /m/a.txt /r/x && cat /r/x"
 
 
 def _vfs(graph: FakeGraph):
-    return build_vfs("onedrive", {
-        "access_token": "t",
-        "graph_base_url": graph.url
-    })
+    return build_vfs(
+        "onedrive", {"access_token": "t", "graph_base_url": graph.url}
+    )
 
 
 def _ws(vfs) -> Workspace:
-    return Workspace({
-        "/m":
-        Mount(vfs=vfs,
-              mode=MountMode.WRITE,
-              read=ReadSpec(policy=ReadPolicy.FRESH)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs,
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.FRESH),
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _out(ws: Workspace, line: str) -> bytes:
@@ -57,10 +62,9 @@ async def _out(ws: Workspace, line: str) -> bytes:
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual="/" + path,
-                    directory="/",
-                    vfs_path=path,
-                    raw_path="/" + path)
+    return PathSpec(
+        virtual="/" + path, directory="/", vfs_path=path, raw_path="/" + path
+    )
 
 
 @pytest.mark.asyncio
@@ -108,16 +112,22 @@ async def test_a_recorded_read_keeps_the_revision_snapshots_pin(slot):
             if slot == "bytes":
                 data = await read_bytes(vfs.accessor, _spec("a.txt"))
             else:
-                data = b"".join([
-                    c async for c in read_stream(vfs.accessor, _spec("a.txt"))
-                ])
+                data = b"".join(
+                    [
+                        c
+                        async for c in read_stream(
+                            vfs.accessor, _spec("a.txt")
+                        )
+                    ]
+                )
         finally:
             scope.close()
             await vfs.accessor.close()
     assert data == NEW
     assert graph.queries("item") == ["$expand=versions"]
-    assert [(r.fingerprint, r.revision)
-            for r in scope.records] == [("c2", "2.0")]
+    assert [(r.fingerprint, r.revision) for r in scope.records] == [
+        ("c2", "2.0")
+    ]
 
 
 @pytest.mark.asyncio
@@ -158,17 +168,20 @@ WARM = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("line,items", WARM)
 async def test_a_warm_fresh_read_costs_one_item_per_probe(line, items):
-    with serve(FakeGraph(drives={ME: {
-            "a.txt": OLD
-    }}, children_allowed=1)) as graph:
+    with serve(
+        FakeGraph(drives={ME: {"a.txt": OLD}}, children_allowed=1)
+    ) as graph:
         ws = _ws(_vfs(graph))
         try:
             await _out(ws, "ls /m")
             await _out(ws, CAT)
             graph.log.clear()
             await _out(ws, line)
-            assert (graph.count("item"), graph.fetches(),
-                    graph.count("children")) == (items, 0, 0)
+            assert (
+                graph.count("item"),
+                graph.fetches(),
+                graph.count("children"),
+            ) == (items, 0, 0)
         finally:
             await ws.close()
 
@@ -179,10 +192,9 @@ async def test_a_ranged_read_stamps_the_whole_items_ctag():
         vfs = _vfs(graph)
         scope = RecordingScope()
         try:
-            data = await read_bytes(vfs.accessor,
-                                    _spec("a.txt"),
-                                    offset=2,
-                                    size=3)
+            data = await read_bytes(
+                vfs.accessor, _spec("a.txt"), offset=2, size=3
+            )
         finally:
             scope.close()
             await vfs.accessor.close()
@@ -193,9 +205,9 @@ async def test_a_ranged_read_stamps_the_whole_items_ctag():
 
 @pytest.mark.asyncio
 async def test_a_listed_ctag_never_answers_for_a_changed_file():
-    with serve(FakeGraph(drives={ME: {
-            "a.txt": OLD
-    }}, children_allowed=1)) as graph:
+    with serve(
+        FakeGraph(drives={ME: {"a.txt": OLD}}, children_allowed=1)
+    ) as graph:
         ws = _ws(_vfs(graph))
         try:
             # The listing leaves c1 in the mount index. A probe that trusted
@@ -205,9 +217,9 @@ async def test_a_listed_ctag_never_answers_for_a_changed_file():
             # no request of its own, so there is a stale row to trust.
             mount = ws.mount("/m")
             items = graph.count("item")
-            listed = await mount.execute_op("stat",
-                                            "/m/a.txt",
-                                            index=mount.index)
+            listed = await mount.execute_op(
+                "stat", "/m/a.txt", index=mount.index
+            )
             assert (listed.fingerprint, graph.count("item")) == ("c1", items)
             assert await _out(ws, CAT) == OLD
             graph.write(ME, "a.txt", NEW)
@@ -234,12 +246,15 @@ async def test_a_metadata_edit_does_not_refetch():
 
 
 def _bounded_ws(vfs) -> Workspace:
-    return Workspace({
-        "/m":
-        Mount(vfs=vfs,
-              mode=MountMode.WRITE,
-              read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=600)),
-    })
+    return Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs,
+                mode=MountMode.WRITE,
+                read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=600),
+            ),
+        }
+    )
 
 
 @pytest.mark.asyncio

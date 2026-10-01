@@ -19,15 +19,17 @@ import mirage.commands
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import spec_flag_names
 
-QUERY_METHODS = frozenset({
-    "as_bool",
-    "as_int",
-    "as_float",
-    "as_str",
-    "as_list",
-    "as_paths",
-    "raw",
-})
+QUERY_METHODS = frozenset(
+    {
+        "as_bool",
+        "as_int",
+        "as_float",
+        "as_str",
+        "as_list",
+        "as_paths",
+        "raw",
+    }
+)
 
 ROOT = Path(mirage.commands.__path__[0])
 
@@ -36,11 +38,13 @@ def _spec_keys(tree: ast.Module) -> set[str]:
     """Every SPECS[...] subscript with a literal key in the module."""
     keys: set[str] = set()
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "SPECS"
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)):
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "SPECS"
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
             keys.add(node.slice.value)
     return keys
 
@@ -54,10 +58,14 @@ def _literal_queries(tree: ast.Module) -> list[tuple[int, str, str]]:
     """
     out: list[tuple[int, str, str]] = []
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr in QUERY_METHODS and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in QUERY_METHODS
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
             out.append((node.lineno, node.func.attr, node.args[0].value))
     return out
 
@@ -92,7 +100,9 @@ def test_flag_query_names_are_declared_by_a_spec_in_the_module():
                 rel = path.relative_to(ROOT.parent.parent)
                 offenders.append(
                     f"{rel}:{lineno}: .{method}({name!r}) — not a dest of "
-                    f"{sorted(keys)}")
+                    f"{sorted(keys)}"
+                )
     assert not offenders, (
         "these FlagView queries name a flag no spec bound in the module "
-        "declares (typo, or the wrong spec):\n" + "\n".join(offenders))
+        "declares (typo, or the wrong spec):\n" + "\n".join(offenders)
+    )

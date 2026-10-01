@@ -66,15 +66,17 @@ class Ops:
     reaching this door from widening the view it was given.
     """
 
-    def __init__(self,
-                 mounts: list[OpsMount],
-                 dispatch: DispatchFn,
-                 observer: Any | None = None,
-                 agent_id: str = "default",
-                 session_id: str | None = None,
-                 links: NamespaceLinks | None = None,
-                 bind: SessionBind | None = None,
-                 records: list[OpRecord] | None = None) -> None:
+    def __init__(
+        self,
+        mounts: list[OpsMount],
+        dispatch: DispatchFn,
+        observer: Any | None = None,
+        agent_id: str = "default",
+        session_id: str | None = None,
+        links: NamespaceLinks | None = None,
+        bind: SessionBind | None = None,
+        records: list[OpRecord] | None = None,
+    ) -> None:
         self._mounts: list[OpsMount] = []
         self.set_mounts(mounts)
         self._observer = observer
@@ -105,14 +107,16 @@ class Ops:
         Args:
             session_id (str): the session whose profile judges the ops.
         """
-        derived = Ops([],
-                      self._dispatch,
-                      observer=self._observer,
-                      agent_id=self._agent_id,
-                      session_id=session_id,
-                      links=self._links,
-                      bind=self._bind,
-                      records=self.records)
+        derived = Ops(
+            [],
+            self._dispatch,
+            observer=self._observer,
+            agent_id=self._agent_id,
+            session_id=session_id,
+            links=self._links,
+            bind=self._bind,
+            records=self.records,
+        )
         derived._mounts = self._mounts
         return derived
 
@@ -141,9 +145,9 @@ class Ops:
         """
         # In place, so a facade derived for a session sees the
         # refreshed table through the list it shares.
-        self._mounts[:] = sorted(mounts,
-                                 key=lambda m: len(m.prefix),
-                                 reverse=True)
+        self._mounts[:] = sorted(
+            mounts, key=lambda m: len(m.prefix), reverse=True
+        )
 
     def unsized_mounts(self, root_prefix: str = "") -> list[tuple[str, str]]:
         """Mounts whose files cannot be sized without reading them.
@@ -160,8 +164,9 @@ class Ops:
         root = root_prefix.rstrip("/")
         found = []
         for m in self._mounts:
-            if root and not (m.prefix.rstrip("/") == root
-                             or m.prefix.startswith(root + "/")):
+            if root and not (
+                m.prefix.rstrip("/") == root or m.prefix.startswith(root + "/")
+            ):
                 continue
             if not m.sizes_always_known:
                 found.append((m.prefix, m.resource_type))
@@ -181,8 +186,9 @@ class Ops:
         root = root_prefix.rstrip("/")
         found = []
         for m in self._mounts:
-            if root and not (m.prefix.rstrip("/") == root
-                             or m.prefix.startswith(root + "/")):
+            if root and not (
+                m.prefix.rstrip("/") == root or m.prefix.startswith(root + "/")
+            ):
                 continue
             if m.mode is not MountMode.READ:
                 found.append((m.prefix, m.resource_type))
@@ -190,25 +196,33 @@ class Ops:
 
     def unmount(self, prefix: str) -> None:
         stripped = prefix.strip("/")
-        norm = ("/" + stripped + "/" if stripped else "/")
+        norm = "/" + stripped + "/" if stripped else "/"
         # In place, for the same reason ``set_mounts`` is: a facade
         # derived for a session shares this list, and a retained one
         # must stop reporting a mount the workspace dropped.
         self._mounts[:] = [m for m in self._mounts if m.prefix != norm]
 
-    def _record(self, op: str, path: str, source: str, nbytes: int,
-                timer: OpTimer, session: str) -> None:
+    def _record(
+        self,
+        op: str,
+        path: str,
+        source: str,
+        nbytes: int,
+        timer: OpTimer,
+        session: str,
+    ) -> None:
         rec = finish_record(
             op,
             path,
-            source.value if hasattr(source, 'value') else str(source),
+            source.value if hasattr(source, "value") else str(source),
             nbytes,
             timer,
         )
         self.records.append(rec)
         if self._observer is not None:
             asyncio.ensure_future(
-                self._observer.log_op(rec, self._agent_id, session))
+                self._observer.log_op(rec, self._agent_id, session)
+            )
 
     def _owner(self, path: str) -> OpsMount | None:
         """The mount owning ``path`` by longest prefix, or None."""
@@ -233,14 +247,17 @@ class Ops:
         if isinstance(result, (bytes, bytearray)):
             return len(result)
         return next(
-            (len(v)
-             for v in kwargs.values() if isinstance(v, (bytes, bytearray))), 0)
+            (
+                len(v)
+                for v in kwargs.values()
+                if isinstance(v, (bytes, bytearray))
+            ),
+            0,
+        )
 
-    async def _call(self,
-                    op: str,
-                    path: str,
-                    session_id: str | None = None,
-                    **kwargs) -> Any:
+    async def _call(
+        self, op: str, path: str, session_id: str | None = None, **kwargs
+    ) -> Any:
         """Run one op through the workspace dispatcher and record it.
 
         The door owns the whole pipeline (follow, grants, gates, cache,
@@ -268,8 +285,11 @@ class Ops:
             **kwargs: op arguments, by the op function's names.
         """
         timer = start_op()
-        follow = (self._links is not None and op not in NO_FOLLOW_OPS
-                  and not kwargs.get("nofollow"))
+        follow = (
+            self._links is not None
+            and op not in NO_FOLLOW_OPS
+            and not kwargs.get("nofollow")
+        )
         report = OpReport()
         seen: list[str] = []
         resolved = [path]
@@ -280,15 +300,18 @@ class Ops:
                 seen.append(sess.session_id)
             if follow and self._links is not None and path_allowed(path):
                 resolved[0] = self._links.follow(path)
-            return await self._dispatch(op,
-                                        PathSpec.from_str_path(resolved[0]),
-                                        report=report,
-                                        **kwargs)
+            return await self._dispatch(
+                op,
+                PathSpec.from_str_path(resolved[0]),
+                report=report,
+                **kwargs,
+            )
 
         try:
-            bound = (self._session_id if session_id is None else session_id)
-            result, _ = await (run() if self._bind is None else self._bind(
-                bound, run))
+            bound = self._session_id if session_id is None else session_id
+            result, _ = await (
+                run() if self._bind is None else self._bind(bound, run)
+            )
         except BaseException:
             # Anything raised after the op ran (a post_ops deny, a hard
             # output cap, a bookkeeping failure) suppresses the result,
@@ -298,15 +321,31 @@ class Ops:
             # never defined leaves the transfer on the books.
             owner = self._owner(resolved[0])
             if report.completed and owner is not None:
-                self._record_op(op, resolved[0], owner, report.source,
-                                report.bytes, None, kwargs, timer,
-                                self._session_for(seen))
+                self._record_op(
+                    op,
+                    resolved[0],
+                    owner,
+                    report.source,
+                    report.bytes,
+                    None,
+                    kwargs,
+                    timer,
+                    self._session_for(seen),
+                )
             raise
         owner = self._owner(resolved[0])
         if owner is not None:
-            self._record_op(op, resolved[0], owner, report.source,
-                            report.bytes, result, kwargs, timer,
-                            self._session_for(seen))
+            self._record_op(
+                op,
+                resolved[0],
+                owner,
+                report.source,
+                report.bytes,
+                result,
+                kwargs,
+                timer,
+                self._session_for(seen),
+            )
         return result
 
     def _session_for(self, seen: list[str]) -> str:
@@ -320,10 +359,18 @@ class Ops:
             return seen[0]
         return self._session_id if self._session_id is not None else ""
 
-    def _record_op(self, op: str, path: str, owner: OpsMount,
-                   source: str | None, moved: int | None, result: Any,
-                   kwargs: dict[str,
-                                Any], timer: OpTimer, session: str) -> None:
+    def _record_op(
+        self,
+        op: str,
+        path: str,
+        owner: OpsMount,
+        source: str | None,
+        moved: int | None,
+        result: Any,
+        kwargs: dict[str, Any],
+        timer: OpTimer,
+        session: str,
+    ) -> None:
         """Record one op from the door's report of who served it.
 
         The door names the server when it was not the owning mount (a
@@ -345,18 +392,22 @@ class Ops:
             timer (OpTimer): the stopwatch opened when the op started.
             session (str): the session the op ran as.
         """
-        nbytes = (moved if moved is not None else self._payload_bytes(
-            result, kwargs))
-        self._record(op, path, source or owner.resource_type, nbytes, timer,
-                     session)
+        nbytes = (
+            moved if moved is not None else self._payload_bytes(result, kwargs)
+        )
+        self._record(
+            op, path, source or owner.resource_type, nbytes, timer, session
+        )
 
-    async def read(self,
-                   path: str,
-                   offset: int = 0,
-                   size: int | None = None,
-                   raw: bool = False,
-                   *,
-                   session_id: str | None = None) -> bytes:
+    async def read(
+        self,
+        path: str,
+        offset: int = 0,
+        size: int | None = None,
+        raw: bool = False,
+        *,
+        session_id: str | None = None,
+    ) -> bytes:
         """Read file content.
 
         ``raw`` asks for the stored bytes, skipping a filetype-scoped
@@ -379,19 +430,14 @@ class Ops:
         """
         kwargs: dict[str, Any] = {"filetype": None} if raw else {}
         if offset or size is not None:
-            return await self._call("read",
-                                    path,
-                                    session_id,
-                                    offset=offset,
-                                    size=size,
-                                    **kwargs)
+            return await self._call(
+                "read", path, session_id, offset=offset, size=size, **kwargs
+            )
         return await self._call("read", path, session_id, **kwargs)
 
-    async def write(self,
-                    path: str,
-                    data: bytes,
-                    *,
-                    session_id: str | None = None) -> None:
+    async def write(
+        self, path: str, data: bytes, *, session_id: str | None = None
+    ) -> None:
         """Write file content.
 
         Args:
@@ -401,11 +447,9 @@ class Ops:
         """
         await self._call("write", path, session_id, data=data)
 
-    async def append(self,
-                     path: str,
-                     data: bytes,
-                     *,
-                     session_id: str | None = None) -> None:
+    async def append(
+        self, path: str, data: bytes, *, session_id: str | None = None
+    ) -> None:
         """Append data to a file.
 
         Args:
@@ -415,16 +459,14 @@ class Ops:
         """
         await self._call("append", path, session_id, data=data)
 
-    async def stat(self,
-                   path: str,
-                   *,
-                   session_id: str | None = None) -> FileStat:
+    async def stat(
+        self, path: str, *, session_id: str | None = None
+    ) -> FileStat:
         return await self._call("stat", path, session_id)
 
-    async def readdir(self,
-                      path: str,
-                      *,
-                      session_id: str | None = None) -> list[str]:
+    async def readdir(
+        self, path: str, *, session_id: str | None = None
+    ) -> list[str]:
         return await self._call("readdir", path, session_id)
 
     # The three probes below answer "is this path there?", so only a
@@ -433,10 +475,9 @@ class Ops:
     # failure, a timeout, or a backend bug is not an answer to that
     # question; swallowing it would let a caller act on a false
     # "missing" (overwrite, recreate, skip). Mirrors the TS facade.
-    async def exists(self,
-                     path: str,
-                     *,
-                     session_id: str | None = None) -> bool:
+    async def exists(
+        self, path: str, *, session_id: str | None = None
+    ) -> bool:
         """True when a stat answers for the path.
 
         Args:
@@ -449,10 +490,9 @@ class Ops:
             return False
         return True
 
-    async def is_dir(self,
-                     path: str,
-                     *,
-                     session_id: str | None = None) -> bool:
+    async def is_dir(
+        self, path: str, *, session_id: str | None = None
+    ) -> bool:
         """True when the path stats as a directory.
 
         Args:
@@ -465,10 +505,9 @@ class Ops:
             return False
         return st.type == FileType.DIRECTORY
 
-    async def is_file(self,
-                      path: str,
-                      *,
-                      session_id: str | None = None) -> bool:
+    async def is_file(
+        self, path: str, *, session_id: str | None = None
+    ) -> bool:
         """True when the path stats as anything but a directory.
 
         Args:
@@ -491,10 +530,9 @@ class Ops:
         data = await self.read(path, session_id=session_id)
         return data.decode("utf-8", errors="replace")
 
-    async def list_files(self,
-                         path: str,
-                         *,
-                         session_id: str | None = None) -> list[str]:
+    async def list_files(
+        self, path: str, *, session_id: str | None = None
+    ) -> list[str]:
         """Basenames of the directory's files, directories dropped.
 
         Args:
@@ -510,10 +548,9 @@ class Ops:
     async def mkdir(self, path: str, *, session_id: str | None = None) -> None:
         await self._call("mkdir", path, session_id)
 
-    async def unlink(self,
-                     path: str,
-                     *,
-                     session_id: str | None = None) -> None:
+    async def unlink(
+        self, path: str, *, session_id: str | None = None
+    ) -> None:
         """Delete file.
 
         Args:
@@ -525,11 +562,9 @@ class Ops:
     async def rmdir(self, path: str, *, session_id: str | None = None) -> None:
         await self._call("rmdir", path, session_id)
 
-    async def rename(self,
-                     src: str,
-                     dst: str,
-                     *,
-                     session_id: str | None = None) -> None:
+    async def rename(
+        self, src: str, dst: str, *, session_id: str | None = None
+    ) -> None:
         """Rename file or directory within one mount.
 
         Both ends must resolve to the same mount: a mount is a
@@ -548,24 +583,21 @@ class Ops:
                 mounts.
         """
         if self._mount_prefix(src) != self._mount_prefix(dst):
-            raise OSError(errno.EXDEV, "Invalid cross-device link", src, None,
-                          dst)
-        await self._call("rename",
-                         src,
-                         session_id,
-                         dst=PathSpec.from_str_path(dst))
+            raise OSError(
+                errno.EXDEV, "Invalid cross-device link", src, None, dst
+            )
+        await self._call(
+            "rename", src, session_id, dst=PathSpec.from_str_path(dst)
+        )
 
-    async def create(self,
-                     path: str,
-                     *,
-                     session_id: str | None = None) -> None:
+    async def create(
+        self, path: str, *, session_id: str | None = None
+    ) -> None:
         await self._call("create", path, session_id)
 
-    async def symlink(self,
-                      path: str,
-                      target: str,
-                      *,
-                      session_id: str | None = None) -> None:
+    async def symlink(
+        self, path: str, target: str, *, session_id: str | None = None
+    ) -> None:
         """Create a namespace symlink at ``path``.
 
         Routed through the door like every write: session grants and
@@ -589,10 +621,9 @@ class Ops:
         """
         await self._call("symlink", path, session_id, target=target)
 
-    async def readlink(self,
-                       path: str,
-                       *,
-                       session_id: str | None = None) -> str:
+    async def readlink(
+        self, path: str, *, session_id: str | None = None
+    ) -> str:
         """The stored target of the link at ``path``.
 
         Args:
@@ -604,16 +635,18 @@ class Ops:
         """
         return await self._call("readlink", path, session_id)
 
-    async def setattr(self,
-                      path: str,
-                      *,
-                      mode: int | None = None,
-                      uid: int | str | None = None,
-                      gid: int | str | None = None,
-                      atime: str | None = None,
-                      mtime: str | None = None,
-                      nofollow: bool = False,
-                      session_id: str | None = None) -> dict[str, int | str]:
+    async def setattr(
+        self,
+        path: str,
+        *,
+        mode: int | None = None,
+        uid: int | str | None = None,
+        gid: int | str | None = None,
+        atime: str | None = None,
+        mtime: str | None = None,
+        nofollow: bool = False,
+        session_id: str | None = None,
+    ) -> dict[str, int | str]:
         """Write metadata fields, natively where the backend can hold them.
 
         Every field is passed, unset ones as None, because the door
@@ -638,22 +671,26 @@ class Ops:
             dict[str, int | str]: the fields the backend could not keep,
                 which the door stored in the overlay instead.
         """
-        return await self._call("setattr",
-                                path,
-                                session_id,
-                                mode=mode,
-                                uid=uid,
-                                gid=gid,
-                                atime=atime,
-                                mtime=mtime,
-                                nofollow=nofollow)
+        return await self._call(
+            "setattr",
+            path,
+            session_id,
+            mode=mode,
+            uid=uid,
+            gid=gid,
+            atime=atime,
+            mtime=mtime,
+            nofollow=nofollow,
+        )
 
-    async def getxattr(self,
-                       path: str,
-                       name: str,
-                       *,
-                       nofollow: bool = False,
-                       session_id: str | None = None) -> bytes:
+    async def getxattr(
+        self,
+        path: str,
+        name: str,
+        *,
+        nofollow: bool = False,
+        session_id: str | None = None,
+    ) -> bytes:
         """One extended attribute's value.
 
         The node table answers with what a caller set.
@@ -669,17 +706,17 @@ class Ops:
             OSError: the attribute-not-set errno (ENODATA on Linux,
                 ENOATTR on macOS) when the path has no such attribute.
         """
-        return await self._call("getxattr",
-                                path,
-                                session_id,
-                                name=name,
-                                nofollow=nofollow)
+        return await self._call(
+            "getxattr", path, session_id, name=name, nofollow=nofollow
+        )
 
-    async def listxattr(self,
-                        path: str,
-                        *,
-                        nofollow: bool = False,
-                        session_id: str | None = None) -> list[str]:
+    async def listxattr(
+        self,
+        path: str,
+        *,
+        nofollow: bool = False,
+        session_id: str | None = None,
+    ) -> list[str]:
         """Every extended attribute name a path carries, sorted.
 
         Args:
@@ -687,20 +724,21 @@ class Ops:
             nofollow (bool): list a link entry's own attributes.
             session_id (str | None): Session to run as outside a line.
         """
-        return await self._call("listxattr",
-                                path,
-                                session_id,
-                                nofollow=nofollow)
+        return await self._call(
+            "listxattr", path, session_id, nofollow=nofollow
+        )
 
-    async def setxattr(self,
-                       path: str,
-                       name: str,
-                       value: bytes,
-                       *,
-                       create: bool = False,
-                       replace: bool = False,
-                       nofollow: bool = False,
-                       session_id: str | None = None) -> None:
+    async def setxattr(
+        self,
+        path: str,
+        name: str,
+        value: bytes,
+        *,
+        create: bool = False,
+        replace: bool = False,
+        nofollow: bool = False,
+        session_id: str | None = None,
+    ) -> None:
         """Store an extended attribute on a path.
 
         Stored on the path's namespace node, so it works on every
@@ -717,21 +755,25 @@ class Ops:
             nofollow (bool): write a link entry's own attributes.
             session_id (str | None): Session to run as outside a line.
         """
-        await self._call("setxattr",
-                         path,
-                         session_id,
-                         name=name,
-                         value=value,
-                         create=create,
-                         replace=replace,
-                         nofollow=nofollow)
+        await self._call(
+            "setxattr",
+            path,
+            session_id,
+            name=name,
+            value=value,
+            create=create,
+            replace=replace,
+            nofollow=nofollow,
+        )
 
-    async def removexattr(self,
-                          path: str,
-                          name: str,
-                          *,
-                          nofollow: bool = False,
-                          session_id: str | None = None) -> None:
+    async def removexattr(
+        self,
+        path: str,
+        name: str,
+        *,
+        nofollow: bool = False,
+        session_id: str | None = None,
+    ) -> None:
         """Drop an extended attribute from a path.
 
         Args:
@@ -743,17 +785,13 @@ class Ops:
         Raises:
             OSError: the attribute-not-set errno when it is not set.
         """
-        await self._call("removexattr",
-                         path,
-                         session_id,
-                         name=name,
-                         nofollow=nofollow)
+        await self._call(
+            "removexattr", path, session_id, name=name, nofollow=nofollow
+        )
 
-    async def truncate(self,
-                       path: str,
-                       length: int,
-                       *,
-                       session_id: str | None = None) -> None:
+    async def truncate(
+        self, path: str, length: int, *, session_id: str | None = None
+    ) -> None:
         """Truncate file to given length.
 
         Args:
@@ -800,6 +838,9 @@ class Ops:
         Returns:
             bool: True if path is under a mount other than the virtual root.
         """
-        return owner_prefix(
-            (m.prefix for m in self._mounts if m.prefix != "/"),
-            path) is not None
+        return (
+            owner_prefix(
+                (m.prefix for m in self._mounts if m.prefix != "/"), path
+            )
+            is not None
+        )

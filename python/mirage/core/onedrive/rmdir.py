@@ -15,16 +15,18 @@
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.msgraph.client import graph_delete
 from mirage.core.msgraph.drive import drive_root_empty
-from mirage.core.onedrive.client import (drive_loc, graph_delete, item_url,
-                                         split_path)
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 from mirage.utils.errors import enotempty
 
 
-async def rmdir(accessor: OneDriveAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: OneDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Remove an empty folder.
 
     A Graph ``DELETE /drives/{id}/items/{item}`` removes a folder and
@@ -38,16 +40,13 @@ async def rmdir(accessor: OneDriveAccessor,
     Args:
         accessor (OneDriveAccessor): OneDrive accessor.
         path (PathSpec): folder to remove.
-        index (IndexCacheStore): accepted for the rmdir slot's shape;
-            unused.
+        index (IndexCacheStore): the rmdir slot's shape (``RmdirOp``)
+            passes one; Graph needs none.
     """
-    _, stripped = split_path(path)
-    if not stripped:
+    if not path.vfs_path:
         return
-    loc = drive_loc(accessor.config, stripped)
+    loc = drive_loc(accessor.config, path.vfs_path)
     if not await drive_root_empty(accessor.config, loc, session=accessor.pool):
         raise enotempty(path)
-    await graph_delete(accessor.config,
-                       item_url(accessor.config, "/" + stripped),
-                       session=accessor.pool)
+    await graph_delete(accessor.config, loc.item(), session=accessor.pool)
     await invalidate_after_unlink(path)

@@ -26,12 +26,14 @@ from mirage.workspace.session import SessionState
 logger = logging.getLogger(__name__)
 
 
-async def create_file(dispatch: DispatchFn,
-                      session: SessionState,
-                      scope: PathSpec,
-                      data: bytes,
-                      *,
-                      append: bool = False) -> None:
+async def create_file(
+    dispatch: DispatchFn,
+    session: SessionState,
+    scope: PathSpec,
+    data: bytes,
+    *,
+    append: bool = False,
+) -> None:
     """Write or append, giving a newly created file the umask's mode.
 
     Every shell path that opens a file for writing goes through here, so
@@ -64,19 +66,25 @@ async def create_file(dispatch: DispatchFn,
     if not created:
         return
     try:
-        await dispatch("setattr",
-                       scope,
-                       mode=0o666 & ~session.umask,
-                       uid=None,
-                       gid=None,
-                       atime=None,
-                       mtime=None)
+        await dispatch(
+            "setattr",
+            scope,
+            mode=0o666 & ~session.umask,
+            uid=None,
+            gid=None,
+            atime=None,
+            mtime=None,
+        )
     except FS_ERRORS as exc:
         logger.debug("umask mode write failed for %s: %s", scope.raw_path, exc)
 
 
-async def write_description(dispatch: DispatchFn, session: SessionState,
-                            file: FileDescription, data: bytes) -> None:
+async def write_description(
+    dispatch: DispatchFn,
+    session: SessionState,
+    file: FileDescription,
+    data: bytes,
+) -> None:
     """Write through a shared open file description, preserving its offset.
 
     Args:
@@ -90,11 +98,13 @@ async def write_description(dispatch: DispatchFn, session: SessionState,
             await file.emit(data)
         return
     if not file.opened:
-        await create_file(dispatch,
-                          session,
-                          file.scope,
-                          b"" if file.source else data,
-                          append=file.append)
+        await create_file(
+            dispatch,
+            session,
+            file.scope,
+            b"" if file.source else data,
+            append=file.append,
+        )
         file.opened = True
         if file.source is None:
             file.offset += len(data)
@@ -107,9 +117,12 @@ async def write_description(dispatch: DispatchFn, session: SessionState,
     content, _ = await dispatch("read", file.scope)
     content = await materialize(content) or b""
     offset = file.offset + (file.source.lines.position if file.source else 0)
-    content = content[:offset].ljust(
-        offset, b"\0") + data + content[offset + len(data):]
+    content = (
+        content[:offset].ljust(offset, b"\0")
+        + data
+        + content[offset + len(data) :]
+    )
     await create_file(dispatch, session, file.scope, content)
     file.offset = offset + len(data)
     if file.source is not None:
-        file.source.lines = AsyncLineIterator(content[file.offset:])
+        file.source.lines = AsyncLineIterator(content[file.offset :])

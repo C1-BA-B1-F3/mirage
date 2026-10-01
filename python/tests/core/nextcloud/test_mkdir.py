@@ -33,8 +33,9 @@ class _RecordingInvalidator:
         return None
 
 
-async def _record(accessor, path: PathSpec,
-                  **kwargs: bool) -> _RecordingInvalidator:
+async def _record(
+    accessor, path: PathSpec, **kwargs: bool
+) -> _RecordingInvalidator:
     recorder = _RecordingInvalidator()
     previous = push_cache_manager(recorder)
     try:
@@ -66,8 +67,8 @@ async def test_mkdir_invalidates_every_ancestor_without_parents(make_acc):
 
 @pytest.mark.asyncio
 async def test_mkdir_parents_invalidates_the_same_chain(make_acc):
-    recorder = await _record(make_acc({}),
-                             PathSpec.from_str_path("/a/b/c"),
-                             parents=True)
+    recorder = await _record(
+        make_acc({}), PathSpec.from_str_path("/a/b/c"), parents=True
+    )
     assert recorder.writes == ["/a/b/c"]
     assert recorder.ancestors == ["/a/b/c"]

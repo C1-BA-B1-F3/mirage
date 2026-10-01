@@ -14,15 +14,29 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.onedrive.client import graph_put_bytes, item_url, split_path
+from mirage.core.msgraph.drive import write_item
+from mirage.core.onedrive.client import drive_loc
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
 async def create(accessor: OneDriveAccessor, path: PathSpec) -> None:
-    _, stripped = split_path(path)
+    """Create an empty file.
+
+    Not a delegation to ``write_bytes``: that records the op as "write",
+    so a guest creating a file and one writing one would be the same row
+    in the ledger.
+
+    Args:
+        accessor (OneDriveAccessor): OneDrive accessor.
+        path (PathSpec): the file to create.
+    """
     timer = start_op()
-    url = item_url(accessor.config, "/" + stripped, action="/content")
-    await graph_put_bytes(accessor.config, url, b"", session=accessor.pool)
+    await write_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        b"",
+        session=accessor.pool,
+    )
     record("create", path.virtual, "onedrive", 0, timer)
     await invalidate_after_write(path)

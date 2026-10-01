@@ -462,7 +462,7 @@ function repairForHeaders(parser: Parser, root: ShellNode, text: string): [Shell
   // Encode invalid names for runtime validation and supply omitted "$@".
   // Repeat to expose nested headers; accept only repairs adding no errors.
   let [repaired, retried] = [text, root]
-  for (let inserts = headerInserts(root, text); inserts.length > 0; ) {
+  for (let inserts = headerInserts(root, text); inserts.length > 0;) {
     for (const [offset, insert] of inserts.sort((a, b) => b[0] - a[0])) {
       repaired = repaired.slice(0, offset) + insert + repaired.slice(offset)
     }

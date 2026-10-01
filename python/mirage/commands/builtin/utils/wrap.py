@@ -25,9 +25,9 @@ from mirage.utils.key_prefix import mount_key
 def to_pathspec(path: Any, prefix: str = "") -> PathSpec:
     if isinstance(path, PathSpec):
         return path
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=mount_key(path, prefix))
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=mount_key(path, prefix)
+    )
 
 
 def mount_parent_readdir(
@@ -77,8 +77,11 @@ def mount_parent_readdir(
 
     async def listing(path: str | PathSpec) -> list[str]:
         virtual = path.virtual if isinstance(path, PathSpec) else path
-        if mounts.root_of(virtual).rstrip("/").startswith(
-                home.rstrip("/") + "/"):
+        if (
+            mounts.root_of(virtual)
+            .rstrip("/")
+            .startswith(home.rstrip("/") + "/")
+        ):
             return []
         try:
             return await readdir(path)
@@ -131,8 +134,10 @@ def mount_parent_stat(
             virtual = path.virtual if isinstance(path, PathSpec) else path
             if not mounts.visible_descendants(virtual):
                 raise
-            return FileStat(name=operand_name(to_pathspec(virtual)),
-                            type=FileType.DIRECTORY)
+            return FileStat(
+                name=operand_name(to_pathspec(virtual)),
+                type=FileType.DIRECTORY,
+            )
 
     return probe
 

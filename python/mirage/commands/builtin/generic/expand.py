@@ -1,11 +1,16 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    materialized_read,
+    merge_split_errors,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    read_stdin_async,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
@@ -46,6 +51,7 @@ class TabStops:
         extend (int): ``/N``'s multiple, 0 when unset.
         increment (int): ``+N``'s step, 0 when unset.
     """
+
     stops: tuple[int, ...] = ()
     extend: int = 0
     increment: int = 0
@@ -73,14 +79,16 @@ class _TabAccumulator:
         increment (int): ``+N``'s step, 0 while unset.
         problems (list[str]): stderr lines collected so far.
     """
+
     stops: list[int]
     extend: int
     increment: int
     problems: list[str]
 
 
-def _flush_stop(acc: _TabAccumulator, value: int, saw_extend: bool,
-                saw_increment: bool) -> None:
+def _flush_stop(
+    acc: _TabAccumulator, value: int, saw_extend: bool, saw_increment: bool
+) -> None:
     """Commit one scanned number, as ``/``, ``+`` or an ordinary stop.
 
     ``/`` wins when both specifiers were seen, matching GNU's
@@ -97,14 +105,16 @@ def _flush_stop(acc: _TabAccumulator, value: int, saw_extend: bool,
     """
     if saw_extend:
         if acc.extend:
-            acc.problems.append("expand: '/' specifier only allowed "
-                                "with the last value")
+            acc.problems.append(
+                "expand: '/' specifier only allowed with the last value"
+            )
         acc.extend = value
         return
     if saw_increment:
         if acc.increment:
-            acc.problems.append("expand: '+' specifier only allowed "
-                                "with the last value")
+            acc.problems.append(
+                "expand: '+' specifier only allowed with the last value"
+            )
         acc.increment = value
         return
     acc.stops.append(value)
@@ -179,7 +189,8 @@ def _scan_tab_stops(raw: str, acc: _TabAccumulator) -> None:
                 # flushes as an ordinary stop.
                 acc.problems.append(
                     f"expand: '{char}' specifier not at start of "
-                    f"number: '{quote_text(raw[index:])}'")
+                    f"number: '{quote_text(raw[index:])}'"
+                )
             else:
                 saw_extend = saw_extend or char == "/"
                 saw_increment = saw_increment or char == "+"
@@ -193,16 +204,20 @@ def _scan_tab_stops(raw: str, acc: _TabAccumulator) -> None:
                 end = index
                 while end < len(raw) and raw[end] in _DIGITS:
                     end += 1
-                acc.problems.append("expand: tab stop is too large "
-                                    f"'{quote_text(raw[digits_at:end])}'")
+                acc.problems.append(
+                    "expand: tab stop is too large "
+                    f"'{quote_text(raw[digits_at:end])}'"
+                )
                 index = end - 1
         elif char == "," or char in _BLANKS:
             if have:
                 _flush_stop(acc, value, saw_extend, saw_increment)
                 have = False
         else:
-            acc.problems.append("expand: tab size contains invalid "
-                                f"character(s): '{quote_text(raw[index:])}'")
+            acc.problems.append(
+                "expand: tab size contains invalid "
+                f"character(s): '{quote_text(raw[index:])}'"
+            )
             return
         index += 1
     if have and not acc.problems:
@@ -375,8 +390,9 @@ async def expand(
         # GNU reads its operands as one stream, so a line a file leaves
         # unfinished continues into the next one, column and all.
         texts = [(await read_bytes(p)).decode(errors="replace") for p in paths]
-        return apply_expand("".join(texts), stops,
-                            initial_only).encode(), IOResult()
+        return apply_expand(
+            "".join(texts), stops, initial_only
+        ).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
@@ -412,14 +428,24 @@ async def expand_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await expand(readable,
-                     read_bytes=materialized_read(stream),
-                     stdin=opts.stdin,
-                     tabs=parsed.tabs,
-                     initial_only=parsed.initial_only), err)
+        await expand(
+            readable,
+            read_bytes=materialized_read(stream),
+            stdin=opts.stdin,
+            tabs=parsed.tabs,
+            initial_only=parsed.initial_only,
+        ),
+        err,
+    )
 
 
 __all__ = [
-    "ExpandFlags", "TabStops", "apply_expand", "expand", "expand_generic",
-    "next_tab_stop", "parse_flags", "parse_tab_stops"
+    "ExpandFlags",
+    "TabStops",
+    "apply_expand",
+    "expand",
+    "expand_generic",
+    "next_tab_stop",
+    "parse_flags",
+    "parse_tab_stops",
 ]

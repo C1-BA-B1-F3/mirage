@@ -13,9 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import pytest
 
-from mirage.commands.builtin.generic.cmp import (cmp_cmd, parse_count,
-                                                 parse_flags, parse_skip,
-                                                 visible)
+from mirage.commands.builtin.generic.cmp import (
+    cmp_cmd,
+    parse_count,
+    parse_flags,
+    parse_skip,
+    visible,
+)
 from mirage.commands.errors import UsageError
 from mirage.io.stream import materialize
 from mirage.types import MountMode, PathSpec
@@ -37,9 +41,9 @@ def _reader(first: bytes, second: bytes):
 
 
 async def _run(first: bytes, second: bytes, **kwargs):
-    src, io = await cmp_cmd([P1, P2],
-                            read_bytes=_reader(first, second),
-                            **kwargs)
+    src, io = await cmp_cmd(
+        [P1, P2], read_bytes=_reader(first, second), **kwargs
+    )
     out = b"" if src is None else await materialize(src)
     return out.decode(), (io.stderr or b"").decode(), io.exit_code
 
@@ -69,9 +73,11 @@ def test_parse_count_names_the_long_option_it_was_given():
     # that coreutils' bare hint does not.
     with pytest.raises(UsageError) as excinfo:
         parse_count("abc", "--bytes")
-    assert str(excinfo.value) == ("cmp: invalid --bytes value 'abc'\n"
-                                  "cmp: Try 'cmp --help' for more "
-                                  "information.")
+    assert str(excinfo.value) == (
+        "cmp: invalid --bytes value 'abc'\n"
+        "cmp: Try 'cmp --help' for more "
+        "information."
+    )
     assert excinfo.value.exit_code == 2
 
 
@@ -113,16 +119,19 @@ def test_parse_skip_takes_one_count_for_both_files():
     assert parse_skip("3") == (3, 3)
 
 
-@pytest.mark.parametrize("raw,named", [
-    ("1b:1", "1b:1"),
-    ("1:1b", "1b"),
-    ("1:abc", "abc"),
-    ("abc:1", "abc:1"),
-    ("1:2:3", "2:3"),
-    ("1:", ""),
-    (":1", ":1"),
-    (":", ":"),
-])
+@pytest.mark.parametrize(
+    "raw,named",
+    [
+        ("1b:1", "1b:1"),
+        ("1:1b", "1b"),
+        ("1:abc", "abc"),
+        ("abc:1", "abc:1"),
+        ("1:2:3", "2:3"),
+        ("1:", ""),
+        (":1", ":1"),
+        (":", ":"),
+    ],
+)
 def test_parse_skip_names_the_operand_from_where_it_stopped(raw, named):
     # GNU prints the operand from the position xstrtoumax was reading,
     # so a bad SKIP1 names the whole pair and a bad SKIP2 names only
@@ -130,7 +139,8 @@ def test_parse_skip_names_the_operand_from_where_it_stopped(raw, named):
     with pytest.raises(UsageError) as excinfo:
         parse_skip(raw)
     assert str(excinfo.value).splitlines()[0] == (
-        f"cmp: invalid --ignore-initial value '{named}'")
+        f"cmp: invalid --ignore-initial value '{named}'"
+    )
 
 
 def test_parse_skip_takes_a_colon_pair_for_one_each():
@@ -138,15 +148,18 @@ def test_parse_skip_takes_a_colon_pair_for_one_each():
     assert parse_skip("1K:2") == (1024, 2)
 
 
-@pytest.mark.parametrize("byte,rendered", [
-    (ord("b"), "b"),
-    (9, "^I"),
-    (1, "^A"),
-    (127, "^?"),
-    (0xC3, "M-C"),
-    (0xA9, "M-)"),
-    (0x80, "M-^@"),
-])
+@pytest.mark.parametrize(
+    "byte,rendered",
+    [
+        (ord("b"), "b"),
+        (9, "^I"),
+        (1, "^A"),
+        (127, "^?"),
+        (0xC3, "M-C"),
+        (0xA9, "M-)"),
+        (0x80, "M-^@"),
+    ],
+)
 def test_visible_renders_one_byte_the_cat_v_way(byte, rendered):
     assert visible(byte) == rendered
 
@@ -157,8 +170,7 @@ async def test_print_bytes_switches_the_word_to_byte():
     plain, _, _ = await _run(b"abc", b"aXc")
     tagged, _, _ = await _run(b"abc", b"aXc", print_bytes=True)
     assert plain == "/F/one /F/two differ: char 2, line 1\n"
-    assert tagged == ("/F/one /F/two differ: byte 2, line 1"
-                      " is 142 b 130 X\n")
+    assert tagged == ("/F/one /F/two differ: byte 2, line 1 is 142 b 130 X\n")
 
 
 @pytest.mark.asyncio
@@ -219,37 +231,43 @@ def test_parse_count_leaves_the_value_unescaped(value):
     """
     with pytest.raises(UsageError) as exc:
         parse_count(value, "--bytes")
-    assert str(exc.value) == (f"cmp: invalid --bytes value '{value}'\n"
-                              "cmp: Try 'cmp --help' for more information.")
+    assert str(exc.value) == (
+        f"cmp: invalid --bytes value '{value}'\n"
+        "cmp: Try 'cmp --help' for more information."
+    )
 
 
-async def _run_with_stdin(paths: list[PathSpec], stdin: bytes, second: bytes,
-                          **kwargs):
+async def _run_with_stdin(
+    paths: list[PathSpec], stdin: bytes, second: bytes, **kwargs
+):
 
     async def read_bytes(path: PathSpec) -> bytes:
         assert path.virtual == P2.virtual, path
         return second
 
-    src, io = await cmp_cmd(paths,
-                            read_bytes=read_bytes,
-                            stdin=stdin,
-                            **kwargs)
+    src, io = await cmp_cmd(
+        paths, read_bytes=read_bytes, stdin=stdin, **kwargs
+    )
     out = b"" if src is None else await materialize(src)
     return out.decode(), (io.stderr or b"").decode(), io.exit_code
 
 
 @pytest.mark.asyncio
 async def test_a_dash_operand_reads_stdin_and_is_named_dash():
-    assert await _run_with_stdin(
-        [DASH, P2], b"one\n",
-        b"two\n") == ("- /F/two differ: char 1, line 1\n", "", 1)
+    assert await _run_with_stdin([DASH, P2], b"one\n", b"two\n") == (
+        "- /F/two differ: char 1, line 1\n",
+        "",
+        1,
+    )
 
 
 @pytest.mark.asyncio
 async def test_dev_stdin_reads_stdin_and_is_named_as_typed():
-    assert await _run_with_stdin(
-        [DEV_STDIN, P2], b"one\n",
-        b"two\n") == ("/dev/stdin /F/two differ: char 1, line 1\n", "", 1)
+    assert await _run_with_stdin([DEV_STDIN, P2], b"one\n", b"two\n") == (
+        "/dev/stdin /F/two differ: char 1, line 1\n",
+        "",
+        1,
+    )
 
 
 @pytest.mark.asyncio
@@ -263,8 +281,10 @@ async def test_a_lone_operand_is_compared_with_stdin():
 async def test_no_operand_is_gnus_missing_operand_usage_error():
     with pytest.raises(UsageError) as exc:
         await cmp_cmd([], read_bytes=_reader(b"", b""))
-    assert str(exc.value) == ("cmp: missing operand after 'cmp'\n"
-                              "cmp: Try 'cmp --help' for more information.")
+    assert str(exc.value) == (
+        "cmp: missing operand after 'cmp'\n"
+        "cmp: Try 'cmp --help' for more information."
+    )
     assert exc.value.exit_code == 2
 
 
@@ -274,27 +294,33 @@ async def test_two_stdin_operands_at_one_offset_are_equal_unread():
     async def unread(path: PathSpec) -> bytes:
         raise AssertionError(f"read {path.virtual}")
 
-    src, io = await cmp_cmd([DASH, DEV_STDIN],
-                            read_bytes=unread,
-                            stdin=b"abc",
-                            skip=(1, 1))
+    src, io = await cmp_cmd(
+        [DASH, DEV_STDIN], read_bytes=unread, stdin=b"abc", skip=(1, 1)
+    )
     assert (src, io.exit_code, io.stderr) == (None, 0, None)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("silent,err", [
-    (False, "cmp: EOF on - which is empty\ncmp: -: Bad file descriptor\n"),
-    (True, "cmp: -: Bad file descriptor\n"),
-])
+@pytest.mark.parametrize(
+    "silent,err",
+    [
+        (False, "cmp: EOF on - which is empty\ncmp: -: Bad file descriptor\n"),
+        (True, "cmp: -: Bad file descriptor\n"),
+    ],
+)
 async def test_two_stdin_operands_skipped_apart_share_one_descriptor(
-        silent, err):
+    silent, err
+):
     # diffutils 3.10 skips on the one descriptor twice, the first file
     # reads what is left and the second nothing, and closing it again
     # fails: `cmp - - 1 2 < a.txt`.
-    src, io = await cmp_cmd([DASH, DASH], ["1", "2"],
-                            read_bytes=_reader(b"", b""),
-                            stdin=b"hello\n",
-                            silent=silent)
+    src, io = await cmp_cmd(
+        [DASH, DASH],
+        ["1", "2"],
+        read_bytes=_reader(b"", b""),
+        stdin=b"hello\n",
+        silent=silent,
+    )
     assert (src, (io.stderr or b"").decode(), io.exit_code) == (None, err, 2)
 
 
@@ -313,13 +339,14 @@ async def test_two_stdin_operands_skipped_apart_share_one_descriptor(
         # Each file keeps the larger of -i's skip and its operand's.
         (["0", "2"], (1, 1), "/F/one /F/two differ: char 1, line 1\n", 1),
         (["0", "0"], (1, 0), "", 0),
-    ])
+    ],
+)
 async def test_the_skip_operands_read_as_i_and_keep_the_larger(
-        texts, skip, out, code):
-    src, io = await cmp_cmd([P1, P2],
-                            texts,
-                            read_bytes=_reader(b"xhello\n", b"hello\n"),
-                            skip=skip)
+    texts, skip, out, code
+):
+    src, io = await cmp_cmd(
+        [P1, P2], texts, read_bytes=_reader(b"xhello\n", b"hello\n"), skip=skip
+    )
     got = b"" if src is None else await materialize(src)
     assert (got.decode(), io.exit_code) == (out, code)
 
@@ -333,36 +360,45 @@ async def test_the_skip_operands_read_as_i_and_keep_the_larger(
         ([""], "cmp: invalid --ignore-initial value ''"),
         (["1:2"], "cmp: invalid --ignore-initial value '1:2'"),
         (["1 "], "cmp: invalid --ignore-initial value '1 '"),
-        (["9223372036854775808"
-          ], "cmp: invalid --ignore-initial value '9223372036854775808'"),
+        (
+            ["9223372036854775808"],
+            "cmp: invalid --ignore-initial value '9223372036854775808'",
+        ),
         # Both skips parse before the extra one is refused.
         (["1", "2", "3"], "cmp: extra operand '3'"),
         (["y", "1", "2"], "cmp: invalid --ignore-initial value 'y'"),
-    ])
+    ],
+)
 async def test_a_bad_or_extra_skip_operand_is_a_usage_error(texts, message):
     with pytest.raises(UsageError) as exc:
         await cmp_cmd([P1, P2], texts, read_bytes=_reader(b"", b""))
-    assert str(exc.value) == (f"{message}\n"
-                              "cmp: Try 'cmp --help' for more information.")
+    assert str(exc.value) == (
+        f"{message}\ncmp: Try 'cmp --help' for more information."
+    )
     assert exc.value.exit_code == 2
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("argv,after", [
-    ((), "cmp"),
-    (("-s", ), "-s"),
-    (("-n", "5"), "5"),
-    (("-i3", ), "-i3"),
-    (("--ignore-initial=3", ), "--ignore-initial=3"),
-    (("-s", "--"), "--"),
-])
+@pytest.mark.parametrize(
+    "argv,after",
+    [
+        ((), "cmp"),
+        (("-s",), "-s"),
+        (("-n", "5"), "5"),
+        (("-i3",), "-i3"),
+        (("--ignore-initial=3",), "--ignore-initial=3"),
+        (("-s", "--"), "--"),
+    ],
+)
 async def test_no_operand_names_the_lines_last_word(argv, after):
     # diffutils names argv[argc - 1], an option or its value included,
     # and the program itself on a bare line.
     with pytest.raises(UsageError) as exc:
         await cmp_cmd([], read_bytes=_reader(b"", b""), argv=argv)
-    assert str(exc.value) == (f"cmp: missing operand after '{after}'\n"
-                              "cmp: Try 'cmp --help' for more information.")
+    assert str(exc.value) == (
+        f"cmp: missing operand after '{after}'\n"
+        "cmp: Try 'cmp --help' for more information."
+    )
 
 
 @pytest.mark.asyncio
@@ -386,24 +422,24 @@ async def test_verbose_pads_offsets_to_the_smaller_regular_file():
 
 @pytest.mark.asyncio
 async def test_verbose_sizes_the_offsets_by_the_file_not_the_stream():
-    out, err, _ = await _run_with_stdin([DASH, P2],
-                                        b"hello\nx\n",
-                                        b"hello\nworld\nfoo\nbar\nbaz\n",
-                                        verbose=True)
+    out, err, _ = await _run_with_stdin(
+        [DASH, P2],
+        b"hello\nx\n",
+        b"hello\nworld\nfoo\nbar\nbaz\n",
+        verbose=True,
+    )
     assert out == " 7 170 167\n 8  12 157\n"
     assert err == "cmp: EOF on - after byte 8\n"
 
 
 @pytest.mark.asyncio
 async def test_operands_are_named_as_typed():
-    one = PathSpec(virtual="/F/one",
-                   directory="/F/",
-                   vfs_path="one",
-                   raw_path="one")
-    two = PathSpec(virtual="/F/two",
-                   directory="/F/",
-                   vfs_path="two",
-                   raw_path="two")
+    one = PathSpec(
+        virtual="/F/one", directory="/F/", vfs_path="one", raw_path="one"
+    )
+    two = PathSpec(
+        virtual="/F/two", directory="/F/", vfs_path="two", raw_path="two"
+    )
     src, _ = await cmp_cmd([one, two], read_bytes=_reader(b"a", b"b"))
     assert await materialize(src) == b"one two differ: char 1, line 1\n"
 
@@ -416,8 +452,10 @@ async def test_silent_keeps_exit_2_for_an_operand_it_cannot_read():
     async def missing(path: PathSpec) -> bytes:
         raise FileNotFoundError(path.virtual)
 
-    for silent, want in ((True, ""),
-                         (False, "cmp: /F/one: No such file or directory\n")):
+    for silent, want in (
+        (True, ""),
+        (False, "cmp: /F/one: No such file or directory\n"),
+    ):
         src, io = await cmp_cmd([P1, P2], read_bytes=missing, silent=silent)
         assert src is None
         assert (io.stderr or b"").decode() == want
@@ -437,28 +475,31 @@ def _dirs(*dirs: str):
 
 
 def _spec(name: str) -> PathSpec:
-    return PathSpec(virtual=f"/F/{name}",
-                    directory="/F/",
-                    vfs_path=name,
-                    raw_path=name)
+    return PathSpec(
+        virtual=f"/F/{name}", directory="/F/", vfs_path=name, raw_path=name
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("names,silent,code,stderr", [
-    (("dir", "one"), True, 2, "cmp: dir: Is a directory\n"),
-    (("one", "dir"), True, 2, "cmp: dir: Is a directory\n"),
-    (("dir", "nope"), True, 2, ""),
-    (("dir", "nope"), False, 2, "cmp: nope: No such file or directory\n"),
-    (("dir", "dir"), False, 0, ""),
-])
+@pytest.mark.parametrize(
+    "names,silent,code,stderr",
+    [
+        (("dir", "one"), True, 2, "cmp: dir: Is a directory\n"),
+        (("one", "dir"), True, 2, "cmp: dir: Is a directory\n"),
+        (("dir", "nope"), True, 2, ""),
+        (("dir", "nope"), False, 2, "cmp: nope: No such file or directory\n"),
+        (("dir", "dir"), False, 0, ""),
+    ],
+)
 async def test_a_directory_fails_at_its_read_after_both_opens(
-        names, silent, code, stderr):
+    names, silent, code, stderr
+):
     # diffutils 3.10 opens both operands, then reads: -s drops only a
     # failed open, a directory opens and fails reading, and one file
     # named twice at the same offset is equal unread.
-    _, io = await cmp_cmd([_spec(n) for n in names],
-                          read_bytes=_dirs("/F/dir"),
-                          silent=silent)
+    _, io = await cmp_cmd(
+        [_spec(n) for n in names], read_bytes=_dirs("/F/dir"), silent=silent
+    )
     assert ((io.stderr or b"").decode(), io.exit_code) == (stderr, code)
 
 
@@ -470,17 +511,25 @@ def test_parse_flags_reads_the_long_spellings_and_refuses_l_with_s():
     assert parse_flags({"verbose": True}).verbose
     with pytest.raises(UsageError) as info:
         parse_flags({"verbose": True, "silent": True})
-    assert str(info.value) == ("cmp: options -l and -s are incompatible\n"
-                               "cmp: Try 'cmp --help' for more information.")
+    assert str(info.value) == (
+        "cmp: options -l and -s are incompatible\n"
+        "cmp: Try 'cmp --help' for more information."
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,out,err", [
-    ("cmp /data/x /other/f 1; echo rc=$?", "rc=0\n", ""),
-    ("cmp /data/x /other/f z; echo rc=$?", "rc=2\n",
-     "cmp: invalid --ignore-initial value 'z'\n"
-     "cmp: Try 'cmp --help' for more information.\n"),
-])
+@pytest.mark.parametrize(
+    "line,out,err",
+    [
+        ("cmp /data/x /other/f 1; echo rc=$?", "rc=0\n", ""),
+        (
+            "cmp /data/x /other/f z; echo rc=$?",
+            "rc=2\n",
+            "cmp: invalid --ignore-initial value 'z'\n"
+            "cmp: Try 'cmp --help' for more information.\n",
+        ),
+    ],
+)
 async def test_the_skips_reach_a_cmp_across_mounts(line, out, err):
     # The relay reads the skips too, and refuses a bad one as cmp's own
     # result, so the rest of the line still runs.
@@ -489,8 +538,11 @@ async def test_the_skips_reach_a_cmp_across_mounts(line, out, err):
             "/data": (RAMVFS(), MountMode.WRITE),
             "/other": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     await ws.shell("printf 'xro\\n' > /data/x && printf 'ro\\n' > /other/f")
     r = await ws.shell(line)
-    assert ((await r.materialize_stdout()).decode(),
-            (await r.materialize_stderr()).decode()) == (out, err)
+    assert (
+        (await r.materialize_stdout()).decode(),
+        (await r.materialize_stderr()).decode(),
+    ) == (out, err)

@@ -19,9 +19,9 @@ def _accessor() -> SharePointAccessor:
 
 @pytest.mark.asyncio
 async def test_resolve_root():
-    path = PathSpec(vfs_path=mount_key("/sp/", "/sp"),
-                    virtual="/sp/",
-                    directory="/sp/")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/", "/sp"), virtual="/sp/", directory="/sp/"
+    )
     result = await resolve(_accessor(), path)
     assert result.level == "root"
 
@@ -30,9 +30,11 @@ async def test_resolve_root():
 async def test_resolve_site():
     accessor = _accessor()
     accessor.site_cache["Engineering"] = _SITE_ID
-    path = PathSpec(vfs_path=mount_key("/sp/Engineering", "/sp"),
-                    virtual="/sp/Engineering",
-                    directory="/sp/Engineering")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering", "/sp"),
+        virtual="/sp/Engineering",
+        directory="/sp/Engineering",
+    )
     result = await resolve(accessor, path)
     assert result.level == "site"
     assert result.site_id == _SITE_ID
@@ -43,9 +45,11 @@ async def test_resolve_drive():
     accessor = _accessor()
     accessor.site_cache["Engineering"] = _SITE_ID
     accessor.drive_cache[(_SITE_ID, "Documents")] = _DRIVE_ID
-    path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
-                    virtual="/sp/Engineering/Documents",
-                    directory="/sp/Engineering/Documents")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+        virtual="/sp/Engineering/Documents",
+        directory="/sp/Engineering/Documents",
+    )
     result = await resolve(accessor, path)
     assert result.level == "drive"
     assert result.drive_id == _DRIVE_ID
@@ -56,10 +60,11 @@ async def test_resolve_item():
     accessor = _accessor()
     accessor.site_cache["Engineering"] = _SITE_ID
     accessor.drive_cache[(_SITE_ID, "Documents")] = _DRIVE_ID
-    path = PathSpec(vfs_path=mount_key(
-        "/sp/Engineering/Documents/sub/file.txt", "/sp"),
-                    virtual="/sp/Engineering/Documents/sub/file.txt",
-                    directory="/sp/Engineering/Documents/sub/file.txt")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering/Documents/sub/file.txt", "/sp"),
+        virtual="/sp/Engineering/Documents/sub/file.txt",
+        directory="/sp/Engineering/Documents/sub/file.txt",
+    )
     result = await resolve(accessor, path)
     assert result.level == "item"
     assert result.drive_id == _DRIVE_ID
@@ -69,19 +74,23 @@ async def test_resolve_item():
 @pytest.mark.asyncio
 async def test_resolve_unknown_site():
     with aioresponses() as m:
-        m.get(_SITES_RE,
-              payload={
-                  "value": [
-                      {
-                          "id": "other-id",
-                          "displayName": "Other",
-                          "name": "other"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/NoSuchSite", "/sp"),
-                        virtual="/sp/NoSuchSite",
-                        directory="/sp/NoSuchSite")
+        m.get(
+            _SITES_RE,
+            payload={
+                "value": [
+                    {
+                        "id": "other-id",
+                        "displayName": "Other",
+                        "name": "other",
+                    },
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/NoSuchSite", "/sp"),
+            virtual="/sp/NoSuchSite",
+            directory="/sp/NoSuchSite",
+        )
         result = await resolve(_accessor(), path)
     assert result.level == "site"
     assert result.site_id is None
@@ -91,33 +100,85 @@ async def test_resolve_unknown_site():
 async def test_site_entries_caches_display_name_and_name():
     accessor = _accessor()
     with aioresponses() as m:
-        m.get(_SITES_RE,
-              payload={
-                  "value": [{
-                      "id": _SITE_ID,
-                      "displayName": "Engineering",
-                      "name": "eng"
-                  }]
-              })
+        m.get(
+            _SITES_RE,
+            payload={
+                "value": [
+                    {
+                        "id": _SITE_ID,
+                        "displayName": "Engineering",
+                        "name": "eng",
+                    }
+                ]
+            },
+        )
         entries = await site_entries(accessor)
     assert entries == [("Engineering", _SITE_ID)]
     assert accessor.site_cache["Engineering"] == _SITE_ID
     assert accessor.site_cache["eng"] == _SITE_ID
 
 
+_TEAM = {
+    "id": _SITE_ID,
+    "displayName": "Engineering",
+    "webUrl": "https://tenant.sharepoint.com/sites/eng",
+}
+_OTHER = {
+    "id": "other-id",
+    "displayName": "Other",
+    "webUrl": "https://other.sharepoint.com/sites/o",
+}
+
+
+@pytest.mark.asyncio
+async def test_site_entries_skips_a_site_nothing_could_address():
+    with aioresponses() as m:
+        m.get(
+            _SITES_RE,
+            payload={
+                "value": [_TEAM, {"displayName": "No id"}, {"id": "nameless"}]
+            },
+        )
+        entries = await site_entries(_accessor())
+    assert entries == [("Engineering", _SITE_ID)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tenant_host,names",
+    [
+        (None, ["Engineering", "Other"]),
+        ("tenant.sharepoint.com", ["Engineering"]),
+        ("TENANT.sharepoint.com", ["Engineering"]),
+    ],
+)
+async def test_site_entries_keep_the_tenant_host(tenant_host, names):
+    accessor = SharePointAccessor(
+        SharePointConfig(access_token="tok", tenant_host=tenant_host)
+    )
+    with aioresponses() as m:
+        m.get(_SITES_RE, payload={"value": [_TEAM, _OTHER]})
+        entries = await site_entries(accessor)
+    assert [name for name, _ in entries] == names
+
+
 def _scoped_accessor() -> SharePointAccessor:
     return SharePointAccessor(
-        SharePointConfig(access_token="tok",
-                         site="Engineering",
-                         drive="Documents"))
+        SharePointConfig(
+            access_token="tok", site="Engineering", drive="Documents"
+        )
+    )
 
 
 def _prefix_scoped_accessor() -> SharePointAccessor:
     return SharePointAccessor(
-        SharePointConfig(access_token="tok",
-                         site="Engineering",
-                         drive="Documents",
-                         key_prefix="/team/reports/"))
+        SharePointConfig(
+            access_token="tok",
+            site="Engineering",
+            drive="Documents",
+            key_prefix="/team/reports/",
+        )
+    )
 
 
 def _seed_scoped(accessor: SharePointAccessor) -> None:
@@ -126,9 +187,9 @@ def _seed_scoped(accessor: SharePointAccessor) -> None:
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
@@ -173,10 +234,12 @@ async def test_prefix_scoped_resolve_path_is_prefix_relative_item():
 
 def test_prefix_scoped_config_rejects_parent_segments():
     with pytest.raises(ValueError, match="must not contain"):
-        SharePointConfig(access_token="tok",
-                         site="Engineering",
-                         drive="Documents",
-                         key_prefix="team/../private")
+        SharePointConfig(
+            access_token="tok",
+            site="Engineering",
+            drive="Documents",
+            key_prefix="team/../private",
+        )
 
 
 @pytest.mark.asyncio

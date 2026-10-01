@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.lookup import (SHELL_CONSUMERS, Consumer, WordPolicy,
-                                     word_policy)
+from mirage.workspace.lookup import (
+    SHELL_CONSUMERS,
+    Consumer,
+    WordPolicy,
+    word_policy,
+)
 
 
 def test_shell_consumers_get_shell_policy():

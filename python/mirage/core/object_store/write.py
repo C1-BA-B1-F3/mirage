@@ -13,17 +13,29 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.cache.context import invalidate_after_write, invalidate_ancestors
-from mirage.core.object_store.driver import (A, C, MkdirFn, ObjectMeta,
-                                             ObjectStoreDriver, PathFn,
-                                             TruncateFn, WriteFn)
+from mirage.core.object_store.driver import (
+    A,
+    C,
+    MkdirFn,
+    ObjectMeta,
+    ObjectStoreDriver,
+    PathFn,
+    TruncateFn,
+    WriteFn,
+)
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
 from mirage.utils.errors import enoent, enotsup
 
 
-async def _put(driver: ObjectStoreDriver[A, C], conn: C, key: str, data: bytes,
-               path_spec: PathSpec) -> ObjectMeta | None:
+async def _put(
+    driver: ObjectStoreDriver[A, C],
+    conn: C,
+    key: str,
+    data: bytes,
+    path_spec: PathSpec,
+) -> ObjectMeta | None:
     """Put one object, translating a missing container to ENOENT.
 
     The driver primitives speak keys, so a store error for a missing
@@ -63,19 +75,22 @@ def make_write_bytes(driver: ObjectStoreDriver[A, C]) -> WriteFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def write_bytes(accessor: A, path_spec: PathSpec,
-                          data: bytes) -> None:
+    async def write_bytes(
+        accessor: A, path_spec: PathSpec, data: bytes
+    ) -> None:
         path = path_spec.mount_path
         key = kp.apply(driver.key_prefix_of(accessor), path)
         timer = start_op()
         async with driver.connect(accessor) as conn:
             meta = await _put(driver, conn, key, data, path_spec)
-        record("write",
-               path_spec.virtual,
-               driver.vfs,
-               len(data),
-               timer,
-               fingerprint=meta.fingerprint if meta else None)
+        record(
+            "write",
+            path_spec.virtual,
+            driver.vfs,
+            len(data),
+            timer,
+            fingerprint=meta.fingerprint if meta else None,
+        )
         await invalidate_after_write(path_spec)
         # A put materializes every missing level of the key at once, so
         # the listings above the immediate parent gained entries too.
@@ -97,12 +112,14 @@ def make_create(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
         timer = start_op()
         async with driver.connect(accessor) as conn:
             meta = await _put(driver, conn, key, b"", path_spec)
-        record("create",
-               path_spec.virtual,
-               driver.vfs,
-               0,
-               timer,
-               fingerprint=meta.fingerprint if meta else None)
+        record(
+            "create",
+            path_spec.virtual,
+            driver.vfs,
+            0,
+            timer,
+            fingerprint=meta.fingerprint if meta else None,
+        )
         await invalidate_after_write(path_spec)
         # An empty put materializes missing parents exactly like write.
         await invalidate_ancestors(path_spec)
@@ -117,10 +134,9 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def truncate(accessor: A,
-                       path_spec: PathSpec,
-                       length: int,
-                       no_create: bool = False) -> None:
+    async def truncate(
+        accessor: A, path_spec: PathSpec, length: int, no_create: bool = False
+    ) -> None:
         if no_create:
             raise enotsup(driver.vfs, "truncate --no-create", path_spec)
         path = path_spec.mount_path
@@ -132,12 +148,14 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
                 data = b""
             result = data[:length].ljust(length, b"\0")
             meta = await _put(driver, conn, key, result, path_spec)
-        record("truncate",
-               path_spec.virtual,
-               driver.vfs,
-               0,
-               timer,
-               fingerprint=meta.fingerprint if meta else None)
+        record(
+            "truncate",
+            path_spec.virtual,
+            driver.vfs,
+            0,
+            timer,
+            fingerprint=meta.fingerprint if meta else None,
+        )
         await invalidate_after_write(path_spec)
         # Truncating a missing key creates it, parents included.
         await invalidate_ancestors(path_spec)
@@ -152,9 +170,9 @@ def make_mkdir(driver: ObjectStoreDriver[A, C]) -> MkdirFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def mkdir(accessor: A,
-                    path_spec: PathSpec,
-                    parents: bool = False) -> None:
+    async def mkdir(
+        accessor: A, path_spec: PathSpec, parents: bool = False
+    ) -> None:
         if not driver.markers_supported:
             # The store refuses the marker client-side (hf: create_dir is
             # unsupported and a slash-terminated write is IsADirectory),

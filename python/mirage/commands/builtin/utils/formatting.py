@@ -19,11 +19,20 @@ from enum import Enum
 
 from mirage.commands.builtin.constants import UINTMAX
 from mirage.commands.builtin.utils import constants
-from mirage.commands.builtin.utils.identity import (UNKNOWN_NAME, Identity,
-                                                    group_name, owner_name)
+from mirage.commands.builtin.utils.identity import (
+    UNKNOWN_NAME,
+    Identity,
+    group_name,
+    owner_name,
+)
 from mirage.commands.builtin.utils.strftime import gnu_strftime
-from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
-                          FileType, LsTimeKind)
+from mirage.types import (
+    DEVICE_NUMBERS_KEY,
+    LINK_TARGET_KEY,
+    FileStat,
+    FileType,
+    LsTimeKind,
+)
 from mirage.utils.stat_view import content_size, is_dir
 
 # GNU's --block-size units: the letter, its 1024-based factor and the two
@@ -48,6 +57,7 @@ class BlockSize:
         human_base (int | None): 1024 for ``human-readable``, 1000 for
             ``si``, None for a fixed divisor.
     """
+
     divisor: int = 1
     suffix: str = ""
     human_base: int | None = None
@@ -69,6 +79,7 @@ class LsColumns:
             ``full-iso``, ``long-iso``, ``iso``, or ``+FORMAT``.
         block_size (BlockSize | None): ``--block-size``, None for bytes.
     """
+
     owner: bool = True
     group: bool = True
     inode: bool = False
@@ -250,11 +261,16 @@ def _perm_triplet(bits: int, special: str | None = None) -> str:
 
 def ls_mode_string(s: FileStat) -> str:
     type_char = constants.TYPE_CHARS.get(s.type, "-")
-    mode = s.mode if s.mode is not None else constants.DEFAULT_MODES.get(
-        s.type, 0o644)
-    perms = (_perm_triplet(mode >> 6, "s" if mode & 0o4000 else None) +
-             _perm_triplet(mode >> 3, "s" if mode & 0o2000 else None) +
-             _perm_triplet(mode, "t" if mode & 0o1000 else None))
+    mode = (
+        s.mode
+        if s.mode is not None
+        else constants.DEFAULT_MODES.get(s.type, 0o644)
+    )
+    perms = (
+        _perm_triplet(mode >> 6, "s" if mode & 0o4000 else None)
+        + _perm_triplet(mode >> 3, "s" if mode & 0o2000 else None)
+        + _perm_triplet(mode, "t" if mode & 0o1000 else None)
+    )
     return f"{type_char}{perms}"
 
 
@@ -284,8 +300,10 @@ def _is_recent(when: float, *, find_rule: bool) -> bool:
     """
     now = time.time()
     if find_rule:
-        return not (now > when + constants.FIND_OLD_SECONDS
-                    or when > now + constants.FIND_FUTURE_SECONDS)
+        return not (
+            now > when + constants.FIND_OLD_SECONDS
+            or when > now + constants.FIND_FUTURE_SECONDS
+        )
     return now - constants.LS_RECENT_SECONDS < when < now
 
 
@@ -369,11 +387,13 @@ def ls_name(s: FileStat) -> str:
     return f"{s.name} -> {target}" if target else s.name
 
 
-def _ls_size_and_time(s: FileStat,
-                      human: bool,
-                      *,
-                      find_rule: bool = False,
-                      columns: LsColumns = DEFAULT_COLUMNS) -> tuple[str, str]:
+def _ls_size_and_time(
+    s: FileStat,
+    human: bool,
+    *,
+    find_rule: bool = False,
+    columns: LsColumns = DEFAULT_COLUMNS,
+) -> tuple[str, str]:
     """The size and time columns of one ``ls -l`` row.
 
     A device row carries its major and minor numbers where GNU puts
@@ -394,12 +414,19 @@ def _ls_size_and_time(s: FileStat,
     known_time = columns.time_kind is not LsTimeKind.BIRTH
     dev = s.extra.get(DEVICE_NUMBERS_KEY) if s.extra else None
     if dev:
-        when = (UNKNOWN_NAME if not known_time or when_iso is None else
-                _ls_time_string(when_iso, find_rule=find_rule)
-                if find_rule else styled_time(when_iso, columns.time_style))
+        when = (
+            UNKNOWN_NAME
+            if not known_time or when_iso is None
+            else _ls_time_string(when_iso, find_rule=find_rule)
+            if find_rule
+            else styled_time(when_iso, columns.time_style)
+        )
         return f"{dev[0]}, {dev[1]}", when
-    size = (UNKNOWN_NAME if not is_dir(s) and s.size is None else scaled_size(
-        content_size(s), columns.block_size, human))
+    size = (
+        UNKNOWN_NAME
+        if not is_dir(s) and s.size is None
+        else scaled_size(content_size(s), columns.block_size, human)
+    )
     if not known_time or when_iso is None:
         return size, UNKNOWN_NAME
     if find_rule:
@@ -454,27 +481,36 @@ def format_ls_long(
         names (list[str] | None): the name column per row when the
             caller decorated it (``--hyperlink``), else the row's own.
     """
-    cells = [(UNKNOWN_STAT_FIELD,
-              UNKNOWN_STAT_FIELD) if s.extra.get(STAT_FAILED_KEY) else
-             _ls_size_and_time(s, human, columns=columns) for s in stats]
-    width = size_width if size_width is not None else max(
-        (len(size) for size, _ in cells), default=1)
+    cells = [
+        (UNKNOWN_STAT_FIELD, UNKNOWN_STAT_FIELD)
+        if s.extra.get(STAT_FAILED_KEY)
+        else _ls_size_and_time(s, human, columns=columns)
+        for s in stats
+    ]
+    width = (
+        size_width
+        if size_width is not None
+        else max((len(size) for size, _ in cells), default=1)
+    )
     time_width = max((len(when) for _, when in cells), default=1)
     out: list[str] = []
     for i, (s, (raw_size, when)) in enumerate(zip(stats, cells)):
         failed = bool(s.extra.get(STAT_FAILED_KEY))
         if failed:
-            type_char = ("d" if s.type == FileType.DIRECTORY else
-                         UNKNOWN_STAT_FIELD)
+            type_char = (
+                "d" if s.type == FileType.DIRECTORY else UNKNOWN_STAT_FIELD
+            )
             fields = [type_char + UNKNOWN_STAT_FIELD * 9, UNKNOWN_STAT_FIELD]
         else:
             fields = [ls_mode_string(s), "1"]
         if columns.owner:
             fields.append(
-                UNKNOWN_STAT_FIELD if failed else owner_name(s.uid, identity))
+                UNKNOWN_STAT_FIELD if failed else owner_name(s.uid, identity)
+            )
         if columns.group:
             fields.append(
-                UNKNOWN_STAT_FIELD if failed else group_name(s.gid, identity))
+                UNKNOWN_STAT_FIELD if failed else group_name(s.gid, identity)
+            )
         if columns.context:
             fields.append(UNKNOWN_STAT_FIELD)
         fields.append(raw_size.rjust(width))
@@ -547,6 +583,8 @@ def format_find_ls(s: FileStat, identity: Identity | None) -> str:
     size, when = _ls_size_and_time(s, False, find_rule=True)
     who = owner_name(s.uid, identity)
     grp = group_name(s.gid, identity)
-    return (f"{UNKNOWN_STAT_FIELD:>9} {UNKNOWN_STAT_FIELD:>6} "
-            f"{ls_mode_string(s)} {1:>3} {who:<8} {grp:<8} {size:>8} {when} "
-            f"{_find_ls_name(s)}")
+    return (
+        f"{UNKNOWN_STAT_FIELD:>9} {UNKNOWN_STAT_FIELD:>6} "
+        f"{ls_mode_string(s)} {1:>3} {who:<8} {grp:<8} {size:>8} {when} "
+        f"{_find_ls_name(s)}"
+    )

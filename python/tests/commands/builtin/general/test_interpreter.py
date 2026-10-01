@@ -14,10 +14,14 @@
 
 import pytest
 
-from mirage.commands.builtin.general.interpreter import (Argv0Rules, Source,
-                                                         resolve_source,
-                                                         run_code, run_output,
-                                                         skip_first_line)
+from mirage.commands.builtin.general.interpreter import (
+    Argv0Rules,
+    Source,
+    resolve_source,
+    run_code,
+    run_output,
+    skip_first_line,
+)
 from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.types import RunArgs, RunResult
 from mirage.types import PathSpec
@@ -47,8 +51,9 @@ def spec(path: str) -> PathSpec:
 
 @pytest.mark.asyncio
 async def test_exec_gate_reports_126():
-    error, prepared = await resolve_source("python3", [], (), None, None, None,
-                                           None, False)
+    error, prepared = await resolve_source(
+        "python3", [], (), None, None, None, None, False
+    )
     assert prepared is None
     assert error is not None
     _, io = error
@@ -58,20 +63,27 @@ async def test_exec_gate_reports_126():
 
 @pytest.mark.asyncio
 async def test_payload_wins_and_operands_become_argv():
-    error, prepared = await resolve_source("python3", [spec("/a.py")], ("x", ),
-                                           "print(1)", None, None, None, True)
+    error, prepared = await resolve_source(
+        "python3", [spec("/a.py")], ("x",), "print(1)", None, None, None, True
+    )
     assert error is None
-    assert prepared == Source(code="print(1)",
-                              args=["/a.py", "x"],
-                              stdin=None,
-                              script_path=None)
+    assert prepared == Source(
+        code="print(1)", args=["/a.py", "x"], stdin=None, script_path=None
+    )
 
 
 @pytest.mark.asyncio
 async def test_script_operand_reads_through_dispatch():
-    error, prepared = await resolve_source("python3", [spec("/script.py")],
-                                           ("--flag", ), None, None,
-                                           fake_dispatch, None, True)
+    error, prepared = await resolve_source(
+        "python3",
+        [spec("/script.py")],
+        ("--flag",),
+        None,
+        None,
+        fake_dispatch,
+        None,
+        True,
+    )
     assert error is None
     assert prepared is not None
     assert prepared.code == "print('from-script')"
@@ -81,8 +93,9 @@ async def test_script_operand_reads_through_dispatch():
 
 @pytest.mark.asyncio
 async def test_missing_script_reports_no_such_file():
-    error, prepared = await resolve_source("js", [spec("/nope.js")], (), None,
-                                           None, fake_dispatch, None, True)
+    error, prepared = await resolve_source(
+        "js", [spec("/nope.js")], (), None, None, fake_dispatch, None, True
+    )
     assert prepared is None
     assert error is not None
     _, io = error
@@ -92,8 +105,9 @@ async def test_missing_script_reports_no_such_file():
 
 @pytest.mark.asyncio
 async def test_no_input_reports_error():
-    error, prepared = await resolve_source("python3", [], (), None, None, None,
-                                           None, True)
+    error, prepared = await resolve_source(
+        "python3", [], (), None, None, None, None, True
+    )
     assert prepared is None
     assert error is not None
     _, io = error
@@ -104,8 +118,9 @@ async def test_no_input_reports_error():
 async def test_run_source_uses_bound_runtime_and_flags():
     runtime = EchoRuntime()
     prepared = Source(code="hi")
-    stdout, io = await run_code("js", prepared, {"K": "V"}, {"module": True},
-                                runtime, None)
+    stdout, io = await run_code(
+        "js", prepared, {"K": "V"}, {"module": True}, runtime, None
+    )
     assert io.exit_code == 0
     assert runtime.seen[0].flags == {"module": True}
     assert runtime.seen[0].env == {"K": "V"}
@@ -115,8 +130,9 @@ async def test_run_source_uses_bound_runtime_and_flags():
 async def test_run_source_unbound_reports_recorded_hint():
     """A default entry's build error surfaces as the 127 hint."""
     prepared = Source(code="hi")
-    stdout, io = await run_code("python3", prepared, None, {}, None,
-                                "needs the broken extra")
+    stdout, io = await run_code(
+        "python3", prepared, None, {}, None, "needs the broken extra"
+    )
     assert io.exit_code == 127
     assert io.stderr == b"python3: needs the broken extra\n"
 
@@ -132,7 +148,8 @@ async def test_run_source_unbound_refuses_without_hint():
 
 def test_run_output_is_the_one_result_mapping():
     stdout, io = run_output(
-        RunResult(stdout=b"out", stderr=b"err", exit_code=3))
+        RunResult(stdout=b"out", stderr=b"err", exit_code=3)
+    )
     assert stdout == b"out"
     assert io.exit_code == 3
     assert io.stderr == b"err"
@@ -157,9 +174,19 @@ def test_skip_first_line_on_a_one_line_file_leaves_nothing():
 
 @pytest.mark.asyncio
 async def test_skip_line_applies_to_a_script_operand():
-    _, prepared = await resolve_source("python3", [spec("/script.py")], (),
-                                       None, None, fake_dispatch, None, True,
-                                       None, Argv0Rules(), True)
+    _, prepared = await resolve_source(
+        "python3",
+        [spec("/script.py")],
+        (),
+        None,
+        None,
+        fake_dispatch,
+        None,
+        True,
+        None,
+        Argv0Rules(),
+        True,
+    )
     assert prepared is not None
     # The fixture script is a single line, so -x leaves nothing of it.
     assert prepared.code == ""
@@ -169,9 +196,19 @@ async def test_skip_line_applies_to_a_script_operand():
 async def test_skip_line_leaves_a_payload_alone():
     # CPython's -x reads the script file; -c, -m and stdin are
     # untouched by it.
-    _, prepared = await resolve_source("python3", [], (), "print(1)",
-                                       None, None, None, True, None,
-                                       Argv0Rules(), True)
+    _, prepared = await resolve_source(
+        "python3",
+        [],
+        (),
+        "print(1)",
+        None,
+        None,
+        None,
+        True,
+        None,
+        Argv0Rules(),
+        True,
+    )
     assert prepared is not None
     assert prepared.code == "print(1)"
 
@@ -179,9 +216,13 @@ async def test_skip_line_leaves_a_payload_alone():
 @pytest.mark.asyncio
 async def test_run_source_passes_virtual_cwd():
     runtime = EchoRuntime()
-    await run_code("python3",
-                   Source(code="pass"), {}, {},
-                   runtime,
-                   None,
-                   cwd=spec("/data"))
+    await run_code(
+        "python3",
+        Source(code="pass"),
+        {},
+        {},
+        runtime,
+        None,
+        cwd=spec("/data"),
+    )
     assert runtime.seen[0].cwd == spec("/data")

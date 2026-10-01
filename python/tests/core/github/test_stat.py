@@ -48,29 +48,33 @@ def _index_from_tree(tree: dict[str, TreeEntry]) -> RAMIndexCacheStore:
         )
         dirs[parent].append((name, idx_entry))
     for parent, entries in dirs.items():
-        index._entries.update({
-            ("/" + parent.strip("/") + "/" + name).replace("//", "/"):
-            e
-            for name, e in entries
-        })
+        index._entries.update(
+            {
+                ("/" + parent.strip("/") + "/" + name).replace("//", "/"): e
+                for name, e in entries
+            }
+        )
         child_keys = sorted(
             ("/" + parent.strip("/") + "/" + name).replace("//", "/")
-            for name, _ in entries)
+            for name, _ in entries
+        )
         index._children[parent] = child_keys
-        index._expiry[parent] = datetime.now(
-            timezone.utc) + timedelta(days=365)
+        index._expiry[parent] = datetime.now(timezone.utc) + timedelta(
+            days=365
+        )
     return index
 
 
 @pytest.fixture
 def tree():
     return {
-        "src":
-        TreeEntry(path="src", type="tree", sha="aaa", size=None),
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="bbb", size=120),
-        "README.md":
-        TreeEntry(path="README.md", type="blob", sha="ccc", size=50),
+        "src": TreeEntry(path="src", type="tree", sha="aaa", size=None),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="bbb", size=120
+        ),
+        "README.md": TreeEntry(
+            path="README.md", type="blob", sha="ccc", size=50
+        ),
     }
 
 
@@ -79,9 +83,13 @@ async def test_stat_file(tree):
     index = _index_from_tree(tree)
     result = await stat(
         None,
-        PathSpec(vfs_path="src/main.py",
-                 virtual="/src/main.py",
-                 directory="/src/main.py"), index)
+        PathSpec(
+            vfs_path="src/main.py",
+            virtual="/src/main.py",
+            directory="/src/main.py",
+        ),
+        index,
+    )
     assert result.name == "main.py"
     assert result.size == 120
     assert result.content == ContentType.TEXT
@@ -92,8 +100,8 @@ async def test_stat_file(tree):
 async def test_stat_directory(tree):
     index = _index_from_tree(tree)
     result = await stat(
-        None, PathSpec(vfs_path="src", virtual="/src", directory="/src"),
-        index)
+        None, PathSpec(vfs_path="src", virtual="/src", directory="/src"), index
+    )
     assert result.name == "src"
     assert result.type == FileType.DIRECTORY
 
@@ -101,8 +109,9 @@ async def test_stat_directory(tree):
 @pytest.mark.asyncio
 async def test_stat_root(tree):
     index = _index_from_tree(tree)
-    result = await stat(None, PathSpec(vfs_path="", virtual="/",
-                                       directory="/"), index)
+    result = await stat(
+        None, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert result.name == "/"
     assert result.type == FileType.DIRECTORY
 
@@ -113,9 +122,13 @@ async def test_stat_not_found(tree):
     with pytest.raises(FileNotFoundError):
         await stat(
             None,
-            PathSpec(vfs_path="nonexistent.py",
-                     virtual="/nonexistent.py",
-                     directory="/nonexistent.py"), index)
+            PathSpec(
+                vfs_path="nonexistent.py",
+                virtual="/nonexistent.py",
+                directory="/nonexistent.py",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -123,9 +136,11 @@ async def test_stat_strip_slashes(tree):
     index = _index_from_tree(tree)
     result = await stat(
         None,
-        PathSpec(vfs_path="README.md",
-                 virtual="/README.md",
-                 directory="/README.md"), index)
+        PathSpec(
+            vfs_path="README.md", virtual="/README.md", directory="/README.md"
+        ),
+        index,
+    )
     assert result.name == "README.md"
     assert result.size == 50
 
@@ -137,9 +152,11 @@ async def test_stat_propagates_parent_refresh_failure():
     # A live root keeps the one-directory route out, so the failure comes
     # from the listing lookup itself.
     await index.set_dir("/", [])
-    with patch("mirage.core.github.lookup._readdir",
-               new_callable=AsyncMock,
-               side_effect=failure):
+    with patch(
+        "mirage.core.github.lookup._readdir",
+        new_callable=AsyncMock,
+        side_effect=failure,
+    ):
         with pytest.raises(RuntimeError, match="github unavailable"):
             await stat(None, PathSpec.from_str_path("/missing.py"), index)
 
@@ -149,43 +166,51 @@ async def test_stat_propagates_parent_refresh_failure():
 @pytest.mark.parametrize("truncated", [False, True])
 @pytest.mark.parametrize("deleted", [False, True])
 @pytest.mark.parametrize("reader", [stat, read])
-async def test_direct_lookup_after_invalidation(backend, truncated, deleted,
-                                                reader, monkeypatch):
+async def test_direct_lookup_after_invalidation(
+    backend, truncated, deleted, reader, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     accessor = MagicMock()
     accessor.ref = "main"
     accessor.truncated = truncated
     old_tree = {
-        "src":
-        TreeEntry(path="src", type="tree", sha="old-tree", size=None),
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="old-blob", size=3),
+        "src": TreeEntry(path="src", type="tree", sha="old-tree", size=None),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="old-blob", size=3
+        ),
     }
     entries, children = index_rows(old_tree, "/repo")
-    index.seed(entries, children,
-               datetime.now(timezone.utc) + timedelta(days=1))
+    index.seed(
+        entries, children, datetime.now(timezone.utc) + timedelta(days=1)
+    )
     new_tree = {
         "src": TreeEntry(path="src", type="tree", sha="new-tree", size=None)
     }
-    new_files = [] if deleted else [
-        TreeEntry(path="main.py", type="blob", sha="new-blob", size=9)
-    ]
+    new_files = (
+        []
+        if deleted
+        else [TreeEntry(path="main.py", type="blob", sha="new-blob", size=9)]
+    )
     if not deleted:
-        new_tree["src/main.py"] = TreeEntry(path="src/main.py",
-                                            type="blob",
-                                            sha="new-blob",
-                                            size=9)
+        new_tree["src/main.py"] = TreeEntry(
+            path="src/main.py", type="blob", sha="new-blob", size=9
+        )
     tree_fetch = AsyncMock(return_value=(new_tree, False))
     dir_fetch = AsyncMock(side_effect=[[new_tree["src"]], new_files])
     blob_fetch = AsyncMock(return_value=b"new bytes")
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", tree_fetch)
     monkeypatch.setitem(readdir.__globals__, "fetch_dir_tree", dir_fetch)
     monkeypatch.setitem(read.__globals__, "read_bytes", blob_fetch)
-    path = PathSpec(vfs_path="src/main.py",
-                    virtual="/repo/src/main.py",
-                    directory="/repo/src")
+    path = PathSpec(
+        vfs_path="src/main.py",
+        virtual="/repo/src/main.py",
+        directory="/repo/src",
+    )
     try:
         await index.invalidate()
         for _ in range(2):
@@ -200,15 +225,19 @@ async def test_direct_lookup_after_invalidation(backend, truncated, deleted,
             else:
                 assert await read(accessor, path, index) == b"new bytes"
         if reader is read and not deleted:
-            assert all(call.args[3] == "new-blob"
-                       for call in blob_fetch.await_args_list)
+            assert all(
+                call.args[3] == "new-blob"
+                for call in blob_fetch.await_args_list
+            )
         else:
             blob_fetch.assert_not_awaited()
         assert tree_fetch.await_count == (0 if truncated else 1)
         assert dir_fetch.await_count == (2 if truncated else 0)
         if truncated:
-            assert [call.args[3] for call in dir_fetch.await_args_list
-                    ] == ["main", "new-tree"]
+            assert [call.args[3] for call in dir_fetch.await_args_list] == [
+                "main",
+                "new-tree",
+            ]
     finally:
         await index.close()
         await client.aclose()
@@ -217,19 +246,22 @@ async def test_direct_lookup_after_invalidation(backend, truncated, deleted,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 async def test_parallel_snapshot_readers_share_one_replacement(
-        backend, monkeypatch):
+    backend, monkeypatch
+):
     import asyncio
 
     from mirage.accessor.github import GitHubAccessor
     from mirage.core.github.config import GitHubConfig
 
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
-    accessor = GitHubAccessor(GitHubConfig(token="test"),
-                              "acme",
-                              "repo",
-                              ref="main")
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
+    accessor = GitHubAccessor(
+        GitHubConfig(token="test"), "acme", "repo", ref="main"
+    )
     fresh = {"a.txt": TreeEntry(path="a.txt", type="blob", sha="new", size=9)}
 
     async def fetch(*args):
@@ -241,13 +273,20 @@ async def test_parallel_snapshot_readers_share_one_replacement(
     path = PathSpec(virtual="/repo/a.txt", directory="/repo", vfs_path="a.txt")
     root = PathSpec(virtual="/repo", directory="/repo", vfs_path="")
     try:
-        await index.set_dir("/repo", [
-            ("a.txt", IndexEntry(id="old", name="a.txt", resource_type="file"))
-        ])
+        await index.set_dir(
+            "/repo",
+            [
+                (
+                    "a.txt",
+                    IndexEntry(id="old", name="a.txt", resource_type="file"),
+                )
+            ],
+        )
         await index.invalidate()
         results = await asyncio.gather(
             *(stat(accessor, path, index) for _ in range(8)),
-            readdir(accessor, root, index))
+            readdir(accessor, root, index),
+        )
         assert [row.fingerprint for row in results[:-1]] == ["new"] * 8
         assert results[-1] == ["/repo/a.txt"]
         fetch_mock.assert_awaited_once()

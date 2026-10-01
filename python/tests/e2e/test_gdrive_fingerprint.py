@@ -48,9 +48,9 @@ async def test_gdrive_under_fresh_sees_an_out_of_band_change():
     fake.add_file("file.txt", b"v1")
     ws = _fresh_ws()
     with patch_gdrive(fake):
-        assert (await
-                (await
-                 ws.shell("cat /gd/file.txt")).materialize_stdout()) == b"v1"
+        assert (
+            await (await ws.shell("cat /gd/file.txt")).materialize_stdout()
+        ) == b"v1"
         fake.add_file("file.txt", b"v2-external")
         got = await (await ws.shell("cat /gd/file.txt")).materialize_stdout()
     assert got == b"v2-external"
@@ -76,11 +76,12 @@ async def test_gdrive_under_fresh_does_not_refetch_an_unchanged_file():
         # `cat` stopped routing through the counted download entirely.
         assert fake.calls["download_file"] == 1
         fake.calls.clear()
-        assert (await
-                (await
-                 ws.shell("cat /gd/file.txt")).materialize_stdout()) == b"v1"
+        assert (
+            await (await ws.shell("cat /gd/file.txt")).materialize_stdout()
+        ) == b"v1"
     assert fake.calls["download_file"] == 0, (
-        "a warm read whose token still matches must serve from cache")
+        "a warm read whose token still matches must serve from cache"
+    )
 
 
 @pytest.mark.asyncio
@@ -89,35 +90,44 @@ async def test_a_native_gdoc_under_fresh_renders_once_until_it_changes():
     # listing's modifiedTime, and it reaches the cache only through the
     # native read's own record.
     fake = FakeGDrive()
-    fake.add_file("doc",
-                  b'{"v": 1}',
-                  mime="application/vnd.google-apps.document")
+    fake.add_file(
+        "doc", b'{"v": 1}', mime="application/vnd.google-apps.document"
+    )
     ws = _fresh_ws()
     with patch_gdrive(fake):
-        first = await (await
-                       ws.shell("cat /gd/doc.gdoc.json")).materialize_stdout()
+        first = await (
+            await ws.shell("cat /gd/doc.gdoc.json")
+        ).materialize_stdout()
         # The positive control: a Counter answers 0 for a key nobody
         # increments, so the warm assertion below needs this to mean anything.
         assert fake.calls["render"] == 1
         second = await (
-            await ws.shell("cat /gd/doc.gdoc.json")).materialize_stdout()
+            await ws.shell("cat /gd/doc.gdoc.json")
+        ).materialize_stdout()
         warm_renders = fake.calls["render"] - 1
         fake.add_file("doc", b'{"v": 2}')
         fake.set_modified("doc", "2026-05-01T00:00:00Z")
-        third = await (await
-                       ws.shell("cat /gd/doc.gdoc.json")).materialize_stdout()
+        third = await (
+            await ws.shell("cat /gd/doc.gdoc.json")
+        ).materialize_stdout()
         # The refetch has to stamp the new token, or every later read renders.
         fourth = await (
-            await ws.shell("cat /gd/doc.gdoc.json")).materialize_stdout()
-    assert (first, second, third, fourth) == (b'{"v": 1}', b'{"v": 1}',
-                                              b'{"v": 2}', b'{"v": 2}')
+            await ws.shell("cat /gd/doc.gdoc.json")
+        ).materialize_stdout()
+    assert (first, second, third, fourth) == (
+        b'{"v": 1}',
+        b'{"v": 1}',
+        b'{"v": 2}',
+        b'{"v": 2}',
+    )
     assert warm_renders == 0
     assert fake.calls["render"] == 2
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path,listings", [("file.txt", 1),
-                                           ("a/b/c/file.txt", 4)])
+@pytest.mark.parametrize(
+    "path,listings", [("file.txt", 1), ("a/b/c/file.txt", 4)]
+)
 async def test_a_warm_gdrive_read_costs_one_walk_per_probe(path, listings):
     """Cost is the contract, and the routing probe is the cost.
 
@@ -150,18 +160,24 @@ async def test_a_warm_fresh_stat_prints_what_a_bounded_one_does(path):
 
     fake = FakeGDrive()
     fake.add_file("file.txt", b"v1")
-    fake.add_file("doc",
-                  b'{"v": 1}',
-                  mime="application/vnd.google-apps.document")
+    fake.add_file(
+        "doc", b'{"v": 1}', mime="application/vnd.google-apps.document"
+    )
     bounded = Workspace(
         {
-            "/gd": (GoogleDriveVFS(
-                GoogleDriveConfig(
-                    client_id="fake-id",
-                    client_secret="fake-secret",
-                    refresh_token="fake-refresh")), MountMode.WRITE)
+            "/gd": (
+                GoogleDriveVFS(
+                    GoogleDriveConfig(
+                        client_id="fake-id",
+                        client_secret="fake-secret",
+                        refresh_token="fake-refresh",
+                    )
+                ),
+                MountMode.WRITE,
+            )
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     with patch_gdrive(fake):
         fresh_out = await warm_stat(_fresh_ws())
         bounded_out = await warm_stat(bounded)
@@ -195,8 +211,9 @@ async def test_a_captured_gdrive_read_carries_a_revision():
     with patch_gdrive(fake):
         await ws.shell("cat /gd/file.txt")
         entries = capture_fingerprints(ws)
-    entry = next(e for e in entries
-                 if e[FingerprintKey.PATH] == "/gd/file.txt")
+    entry = next(
+        e for e in entries if e[FingerprintKey.PATH] == "/gd/file.txt"
+    )
     assert entry.get(FingerprintKey.REVISION) is not None
 
 
@@ -225,4 +242,5 @@ async def test_gdrive_bounded_may_serve_stale():
         io2 = await ws.shell("cat /gd/file.txt")
         got = await io2.materialize_stdout()
         assert got in (b"v1", b"v2-external"), (
-            "LAZY allowed to serve cache; just confirming no crash")
+            "LAZY allowed to serve cache; just confirming no crash"
+        )

@@ -27,6 +27,6 @@ def render_stub(name: str, note: str) -> bytes:
         name (str): the program name.
         note (str): the line the file says about the program.
     """
-    return (f"#!/bin/sh\n"
-            f"# {note}\n"
-            f"command {shell_quote(name)} \"$@\"\n").encode()
+    return (
+        f'#!/bin/sh\n# {note}\ncommand {shell_quote(name)} "$@"\n'
+    ).encode()

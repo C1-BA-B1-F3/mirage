@@ -13,8 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -23,9 +26,13 @@ from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 
 
-async def touch(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def touch(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     c = FlagView(opts.flags, spec=SPECS["touch"]).as_bool("c")
     if not ops.is_mounted(accessor) or not paths:
         raise ValueError("touch: missing operand")
@@ -44,14 +51,15 @@ async def touch(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         except FS_ERRORS as exc:
             # One unusable operand is not an aborted command: GNU reports
             # it and still touches the remaining ones.
-            errors.append(f"touch: cannot touch '{p.virtual}': "
-                          f"{fs_strerror(exc)}")
+            errors.append(
+                f"touch: cannot touch '{p.virtual}': {fs_strerror(exc)}"
+            )
             continue
         created[p.mount_path] = b""
     stderr = ("\n".join(errors) + "\n").encode() if errors else None
-    return None, IOResult(writes=created,
-                          stderr=stderr,
-                          exit_code=1 if errors else 0)
+    return None, IOResult(
+        writes=created, stderr=stderr, exit_code=1 if errors else 0
+    )
 
 
-BUILDER = Builder('touch', touch, write=True)
+BUILDER = Builder("touch", touch, write=True)

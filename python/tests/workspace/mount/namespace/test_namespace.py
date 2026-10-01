@@ -27,13 +27,14 @@ def namespace(registry):
 
 def test_resolve_delegates_to_registry(namespace, registry):
     assert namespace.resolve("/data/hello.txt") == registry.resolve(
-        "/data/hello.txt")
+        "/data/hello.txt"
+    )
 
 
 def test_resolve_follow_noop_without_links(namespace):
     assert namespace.resolve(
-        "/data/hello.txt", follow=True) == namespace.resolve("/data/hello.txt",
-                                                             follow=False)
+        "/data/hello.txt", follow=True
+    ) == namespace.resolve("/data/hello.txt", follow=False)
 
 
 def test_resolve_unknown_path_raises(namespace):
@@ -43,7 +44,8 @@ def test_resolve_unknown_path_raises(namespace):
 
 def test_mount_for_delegates_to_registry(namespace, registry):
     assert namespace.mount_for("/data/hello.txt") is registry.mount_for(
-        "/data/hello.txt")
+        "/data/hello.txt"
+    )
 
 
 @pytest.mark.asyncio
@@ -82,20 +84,23 @@ async def test_rename_moves_link(namespace):
 @pytest.mark.asyncio
 async def test_resolve_follows_link_to_target_mount(namespace):
     await namespace.symlink("/data/link", "/data/hello.txt", 1.0)
-    assert namespace.resolve(
-        "/data/link", follow=True) == namespace.resolve("/data/hello.txt")
+    assert namespace.resolve("/data/link", follow=True) == namespace.resolve(
+        "/data/hello.txt"
+    )
 
 
 @pytest.mark.asyncio
 async def test_resolve_no_follow_keeps_link_path(namespace, registry):
     await namespace.symlink("/data/link", "/data/hello.txt", 1.0)
-    assert namespace.resolve("/data/link",
-                             follow=False) == registry.resolve("/data/link")
+    assert namespace.resolve("/data/link", follow=False) == registry.resolve(
+        "/data/link"
+    )
 
 
 @pytest.mark.asyncio
 async def test_resolve_cycle_raises(namespace):
     from mirage.utils.path import CycleError
+
     await namespace.symlink("/data/a", "/data/b", 1.0)
     await namespace.symlink("/data/b", "/data/a", 1.0)
     with pytest.raises(CycleError):
@@ -190,11 +195,13 @@ async def test_rename_moves_overlay_node(namespace):
 
 @pytest.mark.asyncio
 async def test_clear_times_keeps_mode_and_ownership(namespace):
-    await namespace.set_attrs("/data/f.txt",
-                              mode=0o601,
-                              uid=500,
-                              mtime=1.0,
-                              atime="2026-03-04T12:00:00+00:00")
+    await namespace.set_attrs(
+        "/data/f.txt",
+        mode=0o601,
+        uid=500,
+        mtime=1.0,
+        atime="2026-03-04T12:00:00+00:00",
+    )
     await namespace.clear_times("/data/f.txt")
     meta = namespace.meta_for("/data/f.txt")
     assert meta.mtime is None
@@ -440,7 +447,8 @@ async def test_link_names_under_is_one_level_of_names(namespace):
 
 @pytest.mark.asyncio
 async def test_link_names_under_answers_for_the_directory_a_link_names(
-        namespace):
+    namespace,
+):
     # A readdir of an alias is dispatched at its target and answers with
     # that directory's entries, so the marks come from there. Asking the
     # typed path left every link inside an aliased directory unmarked,
@@ -462,7 +470,8 @@ async def test_link_stats_below_spans_the_whole_subtree(namespace):
 
 @pytest.mark.asyncio
 async def test_link_stats_below_does_not_match_a_sibling_name_prefix(
-        namespace):
+    namespace,
+):
     await namespace.symlink("/data/a", "/t1", 1.0)
     await namespace.symlink("/database/b", "/t2", 1.0)
     found = [path for path, _ in namespace.link_stats_below("/data")]

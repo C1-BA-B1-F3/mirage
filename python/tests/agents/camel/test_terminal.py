@@ -39,15 +39,16 @@ def test_shell_exec_blocking_returns_stdout(toolkit):
 
 
 def test_shell_exec_blocking_captures_stderr(toolkit):
-    out = toolkit.shell_exec(id="t1",
-                             command="ls /nonexistent-zzz",
-                             block=True)
+    out = toolkit.shell_exec(
+        id="t1", command="ls /nonexistent-zzz", block=True
+    )
     assert out, "expected non-empty output for failing command"
 
 
 def test_shell_write_content_to_file(toolkit, workspace):
-    msg = toolkit.shell_write_content_to_file(content="line1\nline2\n",
-                                              file_path="/note.txt")
+    msg = toolkit.shell_write_content_to_file(
+        content="line1\nline2\n", file_path="/note.txt"
+    )
     assert "note.txt" in msg
     out = toolkit.shell_exec(id="t1", command="cat /note.txt", block=True)
     assert "line1" in out and "line2" in out

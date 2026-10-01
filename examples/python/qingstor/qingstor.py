@@ -51,11 +51,6 @@ async def main():
     r = await ws.shell("find /qs/ -name '*.json' | head -n 5")
     print("find *.json:\n" + await r.stdout_str())
 
-    r = await ws.shell("grep -m 1 mirage /qs/data/example.jsonl",
-                       provision=True)
-    print(f"plan grep -m 1: network_read={r.network_read} "
-          f"precision={r.precision}")
-
     print(f"\nStats: {ops_summary()}")
 
     # chmod/chown/touch never hit the QingStor API: attrs land in the
@@ -65,12 +60,16 @@ async def main():
     meta_res = await ws.shell(
         'chmod 640 "/qs/data/example.jsonl"'
         ' && chown 500:dev "/qs/data/example.jsonl"'
-        ' && touch -t 202601021530 "/qs/data/example.jsonl"')
+        ' && touch -t 202601021530 "/qs/data/example.jsonl"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/qs/data/example.jsonl"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/qs/data/example.jsonl")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
 
 if __name__ == "__main__":

@@ -25,17 +25,13 @@ class CacheInvalidator(Protocol):
     ``mirage.cache.manager.CacheManager`` satisfies this structurally.
     """
 
-    async def invalidate_after_write(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_after_write(self, path: PathSpec) -> None: ...
 
-    async def invalidate_after_unlink(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_after_unlink(self, path: PathSpec) -> None: ...
 
-    async def invalidate_subtree(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_subtree(self, path: PathSpec) -> None: ...
 
-    async def invalidate_ancestors(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_ancestors(self, path: PathSpec) -> None: ...
 
 
 class WatchMount(Protocol):
@@ -48,12 +44,10 @@ class WatchMount(Protocol):
     """
 
     @property
-    def prefix(self) -> str:
-        ...
+    def prefix(self) -> str: ...
 
     @property
-    def cache_manager(self) -> CacheInvalidator | None:
-        ...
+    def cache_manager(self) -> CacheInvalidator | None: ...
 
 
 class WatchRegistry(Protocol):
@@ -63,8 +57,7 @@ class WatchRegistry(Protocol):
     structurally.
     """
 
-    def mount_for(self, path: str) -> WatchMount:
-        ...
+    def mount_for(self, path: str) -> WatchMount: ...
 
 
 class DeltaHook(Protocol):
@@ -94,10 +87,12 @@ class WatchRuntime(Protocol):
     this protocol so the dependency arrow stays watch -> workspace.
     """
 
-    def watch(self,
-              path: PathSpec | Sequence[PathSpec],
-              *,
-              queue: WatchQueue | None = None) -> AsyncIterator[FileEvent]:
+    def watch(
+        self,
+        path: PathSpec | Sequence[PathSpec],
+        *,
+        queue: WatchQueue | None = None,
+    ) -> AsyncIterator[FileEvent]:
         """Stream changes under ``path``; see ``Watcher.watch``."""
         ...
 

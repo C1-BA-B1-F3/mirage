@@ -31,16 +31,19 @@ def _seed_directory(files, path: str) -> None:
     parent = path.rsplit("/", 1)[0]
     if parent and parent != path:
         files.directories.setdefault(parent, []).append(
-            SimpleNamespace(path=path, is_directory=True, file_size=None))
+            SimpleNamespace(path=path, is_directory=True, file_size=None)
+        )
 
 
 def _seed_file(files, path: str, data: bytes = b"x") -> None:
     parent = path.rsplit("/", 1)[0]
     files.downloads[path] = data
-    files.metadata[path] = SimpleNamespace(is_directory=False,
-                                           file_size=len(data))
+    files.metadata[path] = SimpleNamespace(
+        is_directory=False, file_size=len(data)
+    )
     files.directories.setdefault(parent, []).append(
-        SimpleNamespace(path=path, is_directory=False, file_size=len(data)))
+        SimpleNamespace(path=path, is_directory=False, file_size=len(data))
+    )
 
 
 @pytest.mark.asyncio
@@ -73,8 +76,9 @@ async def test_rm_recursive_nested_tree(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_rm_recursive_missing_raises(accessor, files, remote_root,
-                                           index):
+async def test_rm_recursive_missing_raises(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):

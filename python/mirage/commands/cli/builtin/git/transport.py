@@ -30,9 +30,11 @@ from mirage.commands.builtin.errors import HttpConnectError
 from mirage.commands.builtin.utils.http import http_request
 from mirage.commands.cli.builtin.git.constants import GITLINK
 from mirage.commands.cli.builtin.git.discover import discover
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    MissingRepositoryError,
-                                                    NoWorkspaceError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    MissingRepositoryError,
+    NoWorkspaceError,
+)
 from mirage.commands.cli.builtin.git.refs import read_head
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.types import CLIDoors
@@ -43,8 +45,9 @@ SERVICE = "git-upload-pack"
 # the side band so an error can interrupt them, offset deltas, and the
 # annotated tags that point into what is sent. Never thin-pack: a thin pack
 # names bases outside itself, which a stored pack cannot hold.
-CAPABILITIES = ("side-band-64k ofs-delta include-tag no-progress "
-                "agent=git/mirage")
+CAPABILITIES = (
+    "side-band-64k ofs-delta include-tag no-progress agent=git/mirage"
+)
 USER_AGENT = "git/mirage"
 PACK_BAND, PROGRESS_BAND, ERROR_BAND = 1, 2, 3
 REMOTE_HELPER = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://")
@@ -66,6 +69,7 @@ class Advertisement:
         head (str | None): the ref HEAD points at, None when it is
             detached or the remote does not say.
     """
+
     refs: dict[str, str] = field(default_factory=dict)
     peeled: dict[str, str] = field(default_factory=dict)
     head: str | None = None
@@ -88,17 +92,19 @@ def pkt_lines(data: bytes) -> Iterator[bytes | None]:
     """
     at = 0
     while at < len(data):
-        head = data[at:at + 4]
+        head = data[at : at + 4]
         try:
             size = int(head, 16)
         except ValueError:
-            raise GitError("protocol error: bad line length character: "
-                           f"{head.decode('latin-1')}") from None
+            raise GitError(
+                "protocol error: bad line length character: "
+                f"{head.decode('latin-1')}"
+            ) from None
         if size == 0:
             yield None
             at += 4
             continue
-        yield data[at + 4:at + size]
+        yield data[at + 4 : at + size]
         at += size
 
 
@@ -119,12 +125,12 @@ def parse_advertisement(lines: Iterator[bytes | None]) -> Advertisement:
             text, caps = text.split(b"\0", 1)
             for cap in caps.decode().split():
                 if cap.startswith(SYMREF_HEAD):
-                    head = cap[len(SYMREF_HEAD):]
+                    head = cap[len(SYMREF_HEAD) :]
         oid, _, name = text.decode().partition(" ")
         if name == "capabilities^{}":
             continue
         if name.endswith(PEELED):
-            peeled[name[:-len(PEELED)]] = oid
+            peeled[name[: -len(PEELED)]] = oid
         else:
             refs[name] = oid
     return Advertisement(refs, peeled, head)
@@ -143,8 +149,9 @@ def display_url(url: str) -> str:
     return url[:-4] if url.endswith(".git") and len(url) > 4 else url
 
 
-def missing_objects(repo: BaseRepo, wants: list[str],
-                    has: Callable[[ObjectID], bool]) -> list[ShaFile]:
+def missing_objects(
+    repo: BaseRepo, wants: list[str], has: Callable[[ObjectID], bool]
+) -> list[ShaFile]:
     """Every object reachable from ``wants`` that the other side lacks.
 
     Commits the other side has stop the walk; the trees of those boundary
@@ -187,8 +194,12 @@ def missing_objects(repo: BaseRepo, wants: list[str],
     return sending
 
 
-def _walk_tree(repo: BaseRepo, tree: bytes, held: set[bytes],
-               sending: list[ShaFile] | None) -> None:
+def _walk_tree(
+    repo: BaseRepo,
+    tree: bytes,
+    held: set[bytes],
+    sending: list[ShaFile] | None,
+) -> None:
     """Visit a tree once, collecting what is new into ``sending``.
 
     Args:
@@ -208,8 +219,9 @@ def _walk_tree(repo: BaseRepo, tree: bytes, held: set[bytes],
         if sending is not None:
             sending.append(obj)
         if isinstance(obj, Tree):
-            stack.extend(sha for _, mode, sha in obj.iteritems()
-                         if mode != GITLINK)
+            stack.extend(
+                sha for _, mode, sha in obj.iteritems() if mode != GITLINK
+            )
 
 
 class LocalTransport:
@@ -247,8 +259,12 @@ class LocalTransport:
                 peeled[name.decode()] = obj.id.decode()
         return Advertisement(refs, peeled, self._head)
 
-    async def fetch_pack(self, wants: list[str], haves: list[str],
-                         has: Callable[[ObjectID], bool]) -> bytes:
+    async def fetch_pack(
+        self,
+        wants: list[str],
+        haves: list[str],
+        has: Callable[[ObjectID], bool],
+    ) -> bytes:
         """A pack of everything reachable from ``wants`` the receiver lacks.
 
         Args:
@@ -260,8 +276,9 @@ class LocalTransport:
         """
         return await asyncio.to_thread(self._packed, wants, has)
 
-    def _packed(self, wants: list[str], has: Callable[[ObjectID],
-                                                      bool]) -> bytes:
+    def _packed(
+        self, wants: list[str], has: Callable[[ObjectID], bool]
+    ) -> bytes:
         objects = missing_objects(self._repo, wants, has)
         if not objects:
             return b""
@@ -285,42 +302,52 @@ class HttpTransport:
             userinfo spelled, empty for none.
     """
 
-    def __init__(self, url: str, headers: dict[str, str],
-                 credentials: dict[str, str]) -> None:
+    def __init__(
+        self, url: str, headers: dict[str, str], credentials: dict[str, str]
+    ) -> None:
         self._url = url.rstrip("/")
         self._headers = {"User-Agent": USER_AGENT, **headers}
         self._credentials = credentials
         self._configured = "Authorization" in headers
 
-    async def _request(self, url: str, method: str, headers: dict[str, str],
-                       body: bytes | None) -> bytes:
+    async def _request(
+        self,
+        url: str,
+        method: str,
+        headers: dict[str, str],
+        body: bytes | None,
+    ) -> bytes:
         try:
-            resp = await asyncio.to_thread(http_request,
-                                           url,
-                                           method, {
-                                               **self._headers,
-                                               **self._credentials,
-                                               **headers
-                                           },
-                                           body,
-                                           None,
-                                           follow_redirects=True)
+            resp = await asyncio.to_thread(
+                http_request,
+                url,
+                method,
+                {**self._headers, **self._credentials, **headers},
+                body,
+                None,
+                follow_redirects=True,
+            )
         except ImportError as exc:
-            raise GitError("https remotes need httpx: "
-                           "pip install 'mirage[http]'") from exc
+            raise GitError(
+                "https remotes need httpx: pip install 'mirage[http]'"
+            ) from exc
         except HttpConnectError as exc:
             raise GitError(f"unable to access '{self._url}/': {exc}") from exc
         if resp.status in (401, 403):
             if self._configured or self._credentials:
                 raise GitError(f"Authentication failed for '{self._url}/'")
             host = urlunsplit(urlsplit(self._url)._replace(path="", query=""))
-            raise GitError(f"could not read Username for '{host}': "
-                           "terminal prompts disabled")
+            raise GitError(
+                f"could not read Username for '{host}': "
+                "terminal prompts disabled"
+            )
         if resp.status == 404:
             raise GitError(f"repository '{self._url}/' not found")
         if resp.is_error:
-            raise GitError(f"unable to access '{self._url}/': The requested "
-                           f"URL returned error: {resp.status}")
+            raise GitError(
+                f"unable to access '{self._url}/': The requested "
+                f"URL returned error: {resp.status}"
+            )
         if method == "GET":
             moved = resp.url.split("/info/refs", 1)[0]
             if _origin(moved) != _origin(self._url):
@@ -330,18 +357,26 @@ class HttpTransport:
 
     async def advertise(self) -> Advertisement:
         """GET ``info/refs`` for upload-pack and read what it lists."""
-        body = await self._request(f"{self._url}/info/refs?service={SERVICE}",
-                                   "GET", {}, None)
+        body = await self._request(
+            f"{self._url}/info/refs?service={SERVICE}", "GET", {}, None
+        )
         lines = pkt_lines(body)
         first = next(lines, None)
-        if first is None or first.rstrip(
-                b"\n") != f"# service={SERVICE}".encode():
-            raise GitError(f"repository '{self._url}/' is not a smart "
-                           "HTTP git server")
+        if (
+            first is None
+            or first.rstrip(b"\n") != f"# service={SERVICE}".encode()
+        ):
+            raise GitError(
+                f"repository '{self._url}/' is not a smart HTTP git server"
+            )
         return parse_advertisement(lines)
 
-    async def fetch_pack(self, wants: list[str], haves: list[str],
-                         has: Callable[[ObjectID], bool]) -> bytes:
+    async def fetch_pack(
+        self,
+        wants: list[str],
+        haves: list[str],
+        has: Callable[[ObjectID], bool],
+    ) -> bytes:
         """POST the wants and haves to upload-pack; return the pack.
 
         Args:
@@ -359,10 +394,14 @@ class HttpTransport:
         body += [pkt_line(f"have {have}\n".encode()) for have in haves]
         body.append(pkt_line(b"done\n"))
         reply = await self._request(
-            f"{self._url}/{SERVICE}", "POST", {
+            f"{self._url}/{SERVICE}",
+            "POST",
+            {
                 "Content-Type": f"application/x-{SERVICE}-request",
-                "Accept": f"application/x-{SERVICE}-result"
-            }, b"".join(body))
+                "Accept": f"application/x-{SERVICE}-result",
+            },
+            b"".join(body),
+        )
         pack = bytearray()
         for line in pkt_lines(reply):
             if line is None or line.startswith((b"NAK", b"ACK ")):
@@ -371,8 +410,10 @@ class HttpTransport:
             if band == PACK_BAND:
                 pack += payload
             elif band == ERROR_BAND:
-                raise GitError("remote error: " +
-                               payload.decode("utf-8", "replace").strip())
+                raise GitError(
+                    "remote error: "
+                    + payload.decode("utf-8", "replace").strip()
+                )
         return bytes(pack)
 
 
@@ -417,8 +458,8 @@ def extra_headers(values: list[bytes]) -> dict[str, str]:
 
 
 async def open_transport(
-        url: str, start: str, doors: CLIDoors,
-        headers: dict[str, str]) -> LocalTransport | HttpTransport:
+    url: str, start: str, doors: CLIDoors, headers: dict[str, str]
+) -> LocalTransport | HttpTransport:
     """The transport a remote URL or workspace path names.
 
     ``https://`` and ``http://`` speak smart HTTP; a path, or a
@@ -452,8 +493,13 @@ async def open_transport(
         if info is None:
             continue
         try:
-            location = await discover(dispatch, stat_path, mounts.root_of,
-                                      posixpath.dirname(candidate), candidate)
+            location = await discover(
+                dispatch,
+                stat_path,
+                mounts.root_of,
+                posixpath.dirname(candidate),
+                candidate,
+            )
         except GitError:
             continue
         head = await read_head(dispatch, location.gitdir)

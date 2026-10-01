@@ -21,11 +21,21 @@ from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.shell.console import Channel
-from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
-                                    FD_STDOUT)
-from mirage.shell.descriptors import (Descriptor, FileDescription, FileInput,
-                                      Inherited, bad_descriptor_line,
-                                      unsupported_descriptor)
+from mirage.shell.constants import (
+    FD_BOTH,
+    FD_CLOSE,
+    FD_STDERR,
+    FD_STDIN,
+    FD_STDOUT,
+)
+from mirage.shell.descriptors import (
+    Descriptor,
+    FileDescription,
+    FileInput,
+    Inherited,
+    bad_descriptor_line,
+    unsupported_descriptor,
+)
 from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import get_redirects
 from mirage.shell.types import NodeType as NT
@@ -33,8 +43,14 @@ from mirage.shell.types import Redirect, RedirectKind
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.exec.constants import (
-    CLOSED, EXEC_STREAM_FIELDS, OPEN_FOR_READ_WRITE, OPEN_FOR_READING,
-    TO_STDERR, TO_STDIN, TO_STDOUT)
+    CLOSED,
+    EXEC_STREAM_FIELDS,
+    OPEN_FOR_READ_WRITE,
+    OPEN_FOR_READING,
+    TO_STDERR,
+    TO_STDIN,
+    TO_STDOUT,
+)
 from mirage.workspace.executor.builtins.scope import _to_scope
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.executor.create import create_file, write_description
@@ -65,12 +81,15 @@ async def handle_exec_command(
     """
     if not args:
         return None, IOResult(), ExecutionNode(command="exec", exit_code=0)
-    err = (f"mirage: exec: {args[0]}: process replacement is not supported "
-           "(no OS process to replace)\n").encode()
-    return None, IOResult(exit_code=2,
-                          stderr=err), ExecutionNode(command="exec",
-                                                     exit_code=2,
-                                                     stderr=err)
+    err = (
+        f"mirage: exec: {args[0]}: process replacement is not supported "
+        "(no OS process to replace)\n"
+    ).encode()
+    return (
+        None,
+        IOResult(exit_code=2, stderr=err),
+        ExecutionNode(command="exec", exit_code=2, stderr=err),
+    )
 
 
 async def install_exec_redirects(
@@ -110,9 +129,12 @@ async def install_exec_redirects(
     return await _roll_back(dispatch, session, saved, err)
 
 
-async def _install(dispatch: DispatchFn, session: SessionState,
-                   redirects: list[Redirect],
-                   stdin: ByteSource | None) -> bytes | None:
+async def _install(
+    dispatch: DispatchFn,
+    session: SessionState,
+    redirects: list[Redirect],
+    stdin: ByteSource | None,
+) -> bytes | None:
     for redirect in redirects:
         error = await _install_descriptor(dispatch, session, redirect, stdin)
         if error is not None:
@@ -120,28 +142,35 @@ async def _install(dispatch: DispatchFn, session: SessionState,
     return None
 
 
-async def _install_descriptor(dispatch: DispatchFn, session: SessionState,
-                              redirect: Redirect,
-                              stdin: ByteSource | None) -> bytes | None:
+async def _install_descriptor(
+    dispatch: DispatchFn,
+    session: SessionState,
+    redirect: Redirect,
+    stdin: ByteSource | None,
+) -> bytes | None:
     fd = redirect.fd
     target = redirect.target
     if redirect.kind == RedirectKind.AMBIGUOUS:
         word = target.raw_path if isinstance(target, PathSpec) else str(target)
         return f"{word}: ambiguous redirect\n".encode()
     if redirect.kind == RedirectKind.UNEXPANDED and isinstance(
-            target, ExitSignal):
+        target, ExitSignal
+    ):
         return target.stderr
     if redirect.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
-        text = str(target) + ("\n" if redirect.kind == RedirectKind.HERESTRING
-                              else "")
+        text = str(target) + (
+            "\n" if redirect.kind == RedirectKind.HERESTRING else ""
+        )
         _bind(session, fd, OPEN_FOR_READING, False, SharedInput(text.encode()))
         return None
     if isinstance(target, int):
         if target == fd:
             return None
-        identity, append = (CLOSED,
-                            False) if target == FD_CLOSE else _identity(
-                                session, target)
+        identity, append = (
+            (CLOSED, False)
+            if target == FD_CLOSE
+            else _identity(session, target)
+        )
         if identity == CLOSED and target != FD_CLOSE:
             return bad_descriptor_line(target)
         # Copies share the open description, including its offset, and
@@ -150,14 +179,25 @@ async def _install_descriptor(dispatch: DispatchFn, session: SessionState,
         source = _read_end(session, target, stdin)
         original = session.descriptors.get(target)
         stream = original.stream if original is not None else None
-        if (stream is None and fd > FD_STDERR
-                and (original is None or original.file is None)
-                and identity in (TO_STDOUT, TO_STDERR)):
+        if (
+            stream is None
+            and fd > FD_STDERR
+            and (original is None or original.file is None)
+            and identity in (TO_STDOUT, TO_STDERR)
+        ):
             stream = Inherited(
                 session.terminal,
-                Channel.STDOUT if identity == TO_STDOUT else Channel.STDERR)
-        _bind(session, fd, identity, append, source,
-              original.file if original is not None else None, stream)
+                Channel.STDOUT if identity == TO_STDOUT else Channel.STDERR,
+            )
+        _bind(
+            session,
+            fd,
+            identity,
+            append,
+            source,
+            original.file if original is not None else None,
+            stream,
+        )
         return None
     scope = _to_scope(target) if isinstance(target, str) else target
     try:
@@ -172,20 +212,28 @@ async def _install_descriptor(dispatch: DispatchFn, session: SessionState,
                 await create_file(dispatch, session, scope, b"", append=True)
                 file = FileDescription(scope, opened=True)
                 file.source = FileInput(file, await materialize(data) or b"")
-                _bind(session, fd, OPEN_FOR_READ_WRITE + scope.virtual, False,
-                      file.source)
+                _bind(
+                    session,
+                    fd,
+                    OPEN_FOR_READ_WRITE + scope.virtual,
+                    False,
+                    file.source,
+                )
             else:
-                _bind(session, fd, OPEN_FOR_READING + scope.virtual, False,
-                      SharedInput(await materialize(data) or b""))
+                _bind(
+                    session,
+                    fd,
+                    OPEN_FOR_READING + scope.virtual,
+                    False,
+                    SharedInput(await materialize(data) or b""),
+                )
         else:
             await _open_target(dispatch, session, scope, redirect.append)
             file = FileDescription(scope, append=redirect.append, opened=True)
-            for claimed in ([1, 2] if fd == FD_BOTH else [fd]):
-                _bind(session,
-                      claimed,
-                      scope.virtual,
-                      redirect.append,
-                      file=file)
+            for claimed in [1, 2] if fd == FD_BOTH else [fd]:
+                _bind(
+                    session, claimed, scope.virtual, redirect.append, file=file
+                )
     except FS_ERRORS as exc:
         return _error_line(scope.raw_path, exc)
     return None
@@ -216,13 +264,15 @@ async def _roll_back(
     partial = session.exec_stderr
     for name, value in saved.items():
         setattr(session, name, value)
-    out, err_bytes, _ = await _route(dispatch, session, partial, err,
-                                     TO_STDERR)
+    out, err_bytes, _ = await _route(
+        dispatch, session, partial, err, TO_STDERR
+    )
     return _exec_failure(err_bytes, out)
 
 
-async def _open_target(dispatch: DispatchFn, session: SessionState,
-                       scope: PathSpec, append: bool) -> bool:
+async def _open_target(
+    dispatch: DispatchFn, session: SessionState, scope: PathSpec, append: bool
+) -> bool:
     """Open an `exec` redirect target, the way bash does at `exec` time.
 
     Truncating creates the file empty; appending creates it only when it
@@ -265,10 +315,11 @@ def _exec_failure(
         out (bytes | None): the diagnostic again, when that redirect
             pointed at the terminal's stdout.
     """
-    return out, IOResult(exit_code=1,
-                         stderr=err), ExecutionNode(command="exec",
-                                                    exit_code=1,
-                                                    stderr=err or b"")
+    return (
+        out,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command="exec", exit_code=1, stderr=err or b""),
+    )
 
 
 def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
@@ -290,8 +341,11 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
     """
     if fd > FD_STDERR:
         descriptor = session.descriptors.get(fd)
-        return (descriptor.identity,
-                descriptor.append) if descriptor else (CLOSED, False)
+        return (
+            (descriptor.identity, descriptor.append)
+            if descriptor
+            else (CLOSED, False)
+        )
     if fd == FD_STDIN:
         # fd 0 is its own read end unless an `exec` rebound it: closed,
         # or a writing stream's identity (`exec 0<&1`), which a later dup
@@ -299,15 +353,19 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
         identity = session.exec_stdin_identity
         return (TO_STDIN if identity is None else identity), False
     if fd == FD_STDERR:
-        return (TO_STDERR if session.exec_stderr is None else
-                session.exec_stderr, session.exec_stderr_append)
-    return (TO_STDOUT if session.exec_stdout is None else session.exec_stdout,
-            session.exec_stdout_append)
+        return (
+            TO_STDERR if session.exec_stderr is None else session.exec_stderr,
+            session.exec_stderr_append,
+        )
+    return (
+        TO_STDOUT if session.exec_stdout is None else session.exec_stdout,
+        session.exec_stdout_append,
+    )
 
 
-def _read_end(session: SessionState,
-              fd: int,
-              stdin: ByteSource | None = None) -> SharedInput | None:
+def _read_end(
+    session: SessionState, fd: int, stdin: ByteSource | None = None
+) -> SharedInput | None:
     """A new descriptor on the read end a descriptor holds, as a dup
     makes one: it shares the offset, so a read through either moves
     both. None when the descriptor holds no file's read end.
@@ -322,18 +380,25 @@ def _read_end(session: SessionState,
     if fd > FD_STDERR:
         descriptor = session.descriptors.get(fd)
         return descriptor.source if descriptor else None
-    held = (session.exec_stdin if fd == FD_STDIN else session.exec_stderr_input
-            if fd == FD_STDERR else session.exec_stdout_input)
+    held = (
+        session.exec_stdin
+        if fd == FD_STDIN
+        else session.exec_stderr_input
+        if fd == FD_STDERR
+        else session.exec_stdout_input
+    )
     return held.dup() if held is not None else None
 
 
-def _bind(session: SessionState,
-          fd: int,
-          identity: str,
-          append: bool,
-          read_end: SharedInput | None = None,
-          file: FileDescription | None = None,
-          stream: Inherited | None = None) -> None:
+def _bind(
+    session: SessionState,
+    fd: int,
+    identity: str,
+    append: bool,
+    read_end: SharedInput | None = None,
+    file: FileDescription | None = None,
+    stream: Inherited | None = None,
+) -> None:
     """Point a writing stream at an identity.
 
     A stream on its own terminal end is stored as None, the undiverted
@@ -350,17 +415,22 @@ def _bind(session: SessionState,
         stream (Inherited | None): the terminal stream it copies.
     """
     session.descriptors[fd] = Descriptor(
-        identity, append, read_end,
+        identity,
+        append,
+        read_end,
         read_end.description if isinstance(read_end, FileInput) else file,
-        stream)
+        stream,
+    )
     if fd > FD_STDERR:
         return
     if fd == FD_STDIN:
         session.exec_stdin = read_end
-        session.exec_stdin_identity = (None
-                                       if identity == TO_STDIN else identity)
-        session.exec_stdin_unreadable = (read_end is None
-                                         and identity != TO_STDIN)
+        session.exec_stdin_identity = (
+            None if identity == TO_STDIN else identity
+        )
+        session.exec_stdin_unreadable = (
+            read_end is None and identity != TO_STDIN
+        )
     elif fd == FD_STDERR:
         session.exec_stderr = None if identity == TO_STDERR else identity
         session.exec_stderr_append = append
@@ -395,16 +465,23 @@ async def _route(
     """
     target = own if binding is None else binding
     descriptor = session.descriptors.get(1 if own == TO_STDOUT else 2)
-    if (descriptor is not None and descriptor.file is not None
-            and descriptor.identity == target):
+    if (
+        descriptor is not None
+        and descriptor.file is not None
+        and descriptor.identity == target
+    ):
         await write_description(dispatch, session, descriptor.file, data)
         return None, None, False
     if target.startswith(OPEN_FOR_READ_WRITE):
-        source = (session.exec_stdout_input
-                  if own == TO_STDOUT else session.exec_stderr_input)
+        source = (
+            session.exec_stdout_input
+            if own == TO_STDOUT
+            else session.exec_stderr_input
+        )
         if isinstance(source, FileInput):
-            await write_description(dispatch, session, source.description,
-                                    data)
+            await write_description(
+                dispatch, session, source.description, data
+            )
             return None, None, False
     if target == TO_STDOUT:
         return data, None, False
@@ -432,8 +509,11 @@ def stdout_to_stderr(node: Any) -> bool:
         return False
     _, redirects = get_redirects(node)
     return any(
-        isinstance(r.target, int) and r.target == FD_STDERR and r.fd in (
-            FD_STDOUT, FD_BOTH) for r in redirects)
+        isinstance(r.target, int)
+        and r.target == FD_STDERR
+        and r.fd in (FD_STDOUT, FD_BOTH)
+        for r in redirects
+    )
 
 
 async def divert_statement(
@@ -471,29 +551,38 @@ async def divert_statement(
             stderr (``>&2``), so an unwritable stderr is the writer's
             failure.
     """
-    stdout = b"".join(data for channel, data, kept in written
-                      if channel == Channel.STDOUT and not kept)
+    stdout = b"".join(
+        data
+        for channel, data, kept in written
+        if channel == Channel.STDOUT and not kept
+    )
     out_parts: list[bytes] = []
     err_parts: list[bytes] = []
     failed = False
     if stdout:
-        out, err, failed = await _route(dispatch, session, session.exec_stdout,
-                                        stdout, TO_STDOUT)
-        out_parts.extend(x for x in (out, ) if x)
-        err_parts.extend(x for x in (err, ) if x)
-    stderr = b"".join(data for channel, data, kept in written
-                      if channel == Channel.STDERR and not kept)
+        out, err, failed = await _route(
+            dispatch, session, session.exec_stdout, stdout, TO_STDOUT
+        )
+        out_parts.extend(x for x in (out,) if x)
+        err_parts.extend(x for x in (err,) if x)
+    stderr = b"".join(
+        data
+        for channel, data, kept in written
+        if channel == Channel.STDERR and not kept
+    )
     if failed:
         words = command.split()
-        stderr += (f"{words[0] if words else 'bash'}: write error: "
-                   "Bad file descriptor\n").encode()
+        stderr += (
+            f"{words[0] if words else 'bash'}: write error: "
+            "Bad file descriptor\n"
+        ).encode()
         io.exit_code = 1
     if stderr:
-        out, err, unwritable = await _route(dispatch, session,
-                                            session.exec_stderr, stderr,
-                                            TO_STDERR)
-        out_parts.extend(x for x in (out, ) if x)
-        err_parts.extend(x for x in (err, ) if x)
+        out, err, unwritable = await _route(
+            dispatch, session, session.exec_stderr, stderr, TO_STDERR
+        )
+        out_parts.extend(x for x in (out,) if x)
+        err_parts.extend(x for x in (err,) if x)
         if unwritable and stdout_diverted and io.exit_code == 0:
             # The statement's own output was what could not be written,
             # so the write error is its failure (bash's `echo hi >&2`
@@ -508,8 +597,9 @@ async def divert_statement(
     return rest
 
 
-async def _append(dispatch: DispatchFn, session: SessionState, target: str,
-                  data: bytes) -> None:
+async def _append(
+    dispatch: DispatchFn, session: SessionState, target: str, data: bytes
+) -> None:
     """Append bytes to an `exec` target, or drop them if it is closed.
 
     Args:

@@ -20,13 +20,17 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def readlink(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                   texts: list[str],
-                   opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def readlink(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not paths:
         raise ValueError("readlink: missing operand")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
     return await readlink_generic(resolved, list(texts), opts)
 
 
-BUILDER = Builder('readlink', readlink, None, False, None)
+BUILDER = Builder("readlink", readlink)

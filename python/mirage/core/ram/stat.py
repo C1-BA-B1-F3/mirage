@@ -20,9 +20,11 @@ from mirage.utils.filetype import content_type_for_path
 from mirage.utils.path import norm
 
 
-async def stat(accessor: RAMAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: RAMAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     path = path_spec.mount_path
     store = accessor.store
     p = norm(path)

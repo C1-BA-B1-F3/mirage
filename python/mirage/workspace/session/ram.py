@@ -34,8 +34,9 @@ class RAMSessionStore(SessionStore):
     async def set(self, session_id: str, fields: SessionFields) -> None:
         self._entries[session_id] = dict(fields)
 
-    async def cas_set(self, session_id: str, fields: SessionFields,
-                      expected_generation: int) -> bool:
+    async def cas_set(
+        self, session_id: str, fields: SessionFields, expected_generation: int
+    ) -> bool:
         stored = self._entries.get(session_id)
         if generation_of(stored) != expected_generation:
             return False

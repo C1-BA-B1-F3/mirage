@@ -17,14 +17,20 @@ from mirage.policy.errors import PolicyError
 from mirage.policy.match import head_visible, split_pattern
 from mirage.policy.types import AdmissionRules, CommandRule
 
-UNINSTALLED = ("{verb} rule names {command}, which the allow list never "
-               "installs, so the rule can never fire")
+UNINSTALLED = (
+    "{verb} rule names {command}, which the allow list never "
+    "installs, so the rule can never fire"
+)
 
-SHADOWED = ("ask rule {ask} can never fire: the deny rule {deny} refuses "
-            "the same commands and outranks it")
+SHADOWED = (
+    "ask rule {ask} can never fire: the deny rule {deny} refuses "
+    "the same commands and outranks it"
+)
 
-UNKNOWN_VERB = ("{verb} rule names {line}, which the {cli} CLI has no verb "
-                "for, so the rule can never fire")
+UNKNOWN_VERB = (
+    "{verb} rule names {line}, which the {cli} CLI has no verb "
+    "for, so the rule can never fire"
+)
 
 
 def _head(pattern: str) -> str:
@@ -84,8 +90,8 @@ def _shadowed(ask: CommandRule, deny: CommandRule) -> bool:
     if not ask.commands:
         return False
     return all(
-        any(_covers_pattern(d, a) for d in deny.commands)
-        for a in ask.commands)
+        any(_covers_pattern(d, a) for d in deny.commands) for a in ask.commands
+    )
 
 
 def _uninstalled(rules: AdmissionRules) -> str | None:
@@ -127,8 +133,10 @@ def _dead_ask(rules: AdmissionRules) -> str | None:
     for ask in rules.ask:
         for deny in rules.deny:
             if _shadowed(ask, deny):
-                return SHADOWED.format(ask=", ".join(ask.commands) or "*",
-                                       deny=", ".join(deny.commands) or "*")
+                return SHADOWED.format(
+                    ask=", ".join(ask.commands) or "*",
+                    deny=", ".join(deny.commands) or "*",
+                )
     return None
 
 
@@ -155,8 +163,9 @@ def check_rules(rules: AdmissionRules | None) -> None:
             raise PolicyError(problem)
 
 
-def check_cli_verbs(rules: AdmissionRules | None,
-                    verbs: dict[str, frozenset[str]]) -> None:
+def check_cli_verbs(
+    rules: AdmissionRules | None, verbs: dict[str, frozenset[str]]
+) -> None:
     """Refuse a rule naming a verb the CLI it names does not have.
 
     Deferred to ``create_session`` rather than done beside the other
@@ -185,5 +194,5 @@ def check_cli_verbs(rules: AdmissionRules | None,
                 if tokens[1] == "*" or tokens[1] in verbs[tokens[0]]:
                     continue
                 raise PolicyError(
-                    UNKNOWN_VERB.format(verb=verb, line=pattern,
-                                        cli=tokens[0]))
+                    UNKNOWN_VERB.format(verb=verb, line=pattern, cli=tokens[0])
+                )

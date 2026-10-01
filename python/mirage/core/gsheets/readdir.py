@@ -19,6 +19,6 @@ from mirage.core.gsheets.scope import detect_scope
 from mirage.core.hierarchy.probe import ReaddirFn
 from mirage.vfs.gsheets.sheet_entry import make_filename
 
-readdir: ReaddirFn[GSheetsAccessor] = make_app_readdir(MIME, detect_scope,
-                                                       make_filename,
-                                                       "gsheets/file")
+readdir: ReaddirFn[GSheetsAccessor] = make_app_readdir(
+    MIME, detect_scope, make_filename, "gsheets/file"
+)

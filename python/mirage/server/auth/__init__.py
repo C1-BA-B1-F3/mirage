@@ -16,25 +16,37 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mirage.server.auth.config import (AuthConfig, AuthMode, JWTConfig,
-                                           resolve_auth_config,
-                                           resolve_local_token)
+    from mirage.server.auth.config import (
+        AuthConfig,
+        AuthMode,
+        JWTConfig,
+        resolve_auth_config,
+        resolve_local_token,
+    )
     from mirage.server.auth.middleware import AuthMiddleware
-    from mirage.server.auth.storage import (default_token_file,
-                                            ensure_token_file, read_token_file)
+    from mirage.server.auth.storage import (
+        default_token_file,
+        ensure_token_file,
+        read_token_file,
+    )
 
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.server.auth.config":
-    ("AuthConfig", "AuthMode", "JWTConfig", "resolve_auth_config",
-     "resolve_local_token"),
-    "mirage.server.auth.middleware": ("AuthMiddleware", ),
-    "mirage.server.auth.storage":
-    ("default_token_file", "ensure_token_file", "read_token_file"),
+    "mirage.server.auth.config": (
+        "AuthConfig",
+        "AuthMode",
+        "JWTConfig",
+        "resolve_auth_config",
+        "resolve_local_token",
+    ),
+    "mirage.server.auth.middleware": ("AuthMiddleware",),
+    "mirage.server.auth.storage": (
+        "default_token_file",
+        "ensure_token_file",
+        "read_token_file",
+    ),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = [

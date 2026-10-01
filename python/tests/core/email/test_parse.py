@@ -19,13 +19,15 @@ from mirage.core.email._parse import parse_rfc822
 
 
 def test_parse_simple_text_email():
-    raw = (b"From: Alice <alice@example.com>\r\n"
-           b"To: Bob <bob@example.com>\r\n"
-           b"Subject: Hello\r\n"
-           b"Date: Mon, 14 Apr 2026 10:30:00 +0000\r\n"
-           b"Message-ID: <abc123@example.com>\r\n"
-           b"\r\n"
-           b"Hello, world!")
+    raw = (
+        b"From: Alice <alice@example.com>\r\n"
+        b"To: Bob <bob@example.com>\r\n"
+        b"Subject: Hello\r\n"
+        b"Date: Mon, 14 Apr 2026 10:30:00 +0000\r\n"
+        b"Message-ID: <abc123@example.com>\r\n"
+        b"\r\n"
+        b"Hello, world!"
+    )
     result = parse_rfc822(raw)
     assert result["from"] == {"name": "Alice", "email": "alice@example.com"}
     assert result["to"] == [{"name": "Bob", "email": "bob@example.com"}]
@@ -52,48 +54,57 @@ def test_parse_multipart_email():
 
 
 def test_parse_headers_only():
-    raw = (b"From: Alice <alice@example.com>\r\n"
-           b"Subject: Test\r\n"
-           b"\r\n"
-           b"Body text here")
+    raw = (
+        b"From: Alice <alice@example.com>\r\n"
+        b"Subject: Test\r\n"
+        b"\r\n"
+        b"Body text here"
+    )
     result = parse_rfc822(raw, headers_only=True)
     assert result["subject"] == "Test"
     assert result["body_text"] == ""
 
 
 def test_parse_reply_headers():
-    raw = (b"From: Bob <bob@example.com>\r\n"
-           b"To: Alice <alice@example.com>\r\n"
-           b"Subject: Re: Hello\r\n"
-           b"In-Reply-To: <abc123@example.com>\r\n"
-           b"References: <abc123@example.com> <def456@example.com>\r\n"
-           b"\r\n"
-           b"Thanks!")
+    raw = (
+        b"From: Bob <bob@example.com>\r\n"
+        b"To: Alice <alice@example.com>\r\n"
+        b"Subject: Re: Hello\r\n"
+        b"In-Reply-To: <abc123@example.com>\r\n"
+        b"References: <abc123@example.com> <def456@example.com>\r\n"
+        b"\r\n"
+        b"Thanks!"
+    )
     result = parse_rfc822(raw)
     assert result["in_reply_to"] == "<abc123@example.com>"
     assert result["references"] == [
-        "<abc123@example.com>", "<def456@example.com>"
+        "<abc123@example.com>",
+        "<def456@example.com>",
     ]
 
 
 def test_parse_address_without_name():
-    raw = (b"From: alice@example.com\r\n"
-           b"To: bob@example.com\r\n"
-           b"Subject: Test\r\n"
-           b"\r\n"
-           b"Body")
+    raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Subject: Test\r\n"
+        b"\r\n"
+        b"Body"
+    )
     result = parse_rfc822(raw)
     assert result["from"]["email"] == "alice@example.com"
     assert result["from"]["name"] == ""
 
 
 def test_parse_cc():
-    raw = (b"From: alice@example.com\r\n"
-           b"To: bob@example.com\r\n"
-           b"Cc: Charlie <charlie@example.com>, dave@example.com\r\n"
-           b"Subject: Test\r\n"
-           b"\r\n"
-           b"Body")
+    raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Cc: Charlie <charlie@example.com>, dave@example.com\r\n"
+        b"Subject: Test\r\n"
+        b"\r\n"
+        b"Body"
+    )
     result = parse_rfc822(raw)
     assert len(result["cc"]) == 2
     assert result["cc"][0]["email"] == "charlie@example.com"

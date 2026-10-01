@@ -21,8 +21,10 @@ from mirage.vfs.types import ReadOps
 # A presentation is written through the bespoke gws_slides_* API commands, not
 # by writing raw bytes, so only the read ops feed the generic factory; the
 # generic byte-mutation commands (cp/mv/tee/...) are intentionally absent.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

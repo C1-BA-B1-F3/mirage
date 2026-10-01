@@ -15,10 +15,15 @@
 import pytest
 
 from mirage.core.github.config import GhConfig
-from mirage.core.github.pull import (PullListFilter, comment_pull,
-                                     commit_statuses, list_pull_request_fields,
-                                     list_pulls, pull_checks,
-                                     pull_request_fields)
+from mirage.core.github.pull import (
+    PullListFilter,
+    comment_pull,
+    commit_statuses,
+    list_pull_request_fields,
+    list_pulls,
+    pull_checks,
+    pull_request_fields,
+)
 from mirage.core.github.repo import RepoRef
 
 
@@ -29,8 +34,11 @@ async def test_pull_checks_follow_the_head_sha(monkeypatch):
         return {"head": {"sha": "abc"}}
 
     async def pages(config, path, *, limit, key):
-        assert (path, limit, key) == ("/repos/o/r/commits/abc/check-runs", 100,
-                                      "check_runs")
+        assert (path, limit, key) == (
+            "/repos/o/r/commits/abc/check-runs",
+            100,
+            "check_runs",
+        )
         return [{"name": "test"}]
 
     async def statuses(config, ref, sha):
@@ -41,10 +49,9 @@ async def test_pull_checks_follow_the_head_sha(monkeypatch):
     monkeypatch.setitem(pull_checks.__globals__, "github_pages", pages)
     monkeypatch.setitem(pull_checks.__globals__, "commit_statuses", statuses)
 
-    assert await pull_checks(GhConfig(token="t"), RepoRef("o", "r"), 3) == [{
-        "name":
-        "test"
-    }]
+    assert await pull_checks(GhConfig(token="t"), RepoRef("o", "r"), 3) == [
+        {"name": "test"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -57,17 +64,20 @@ async def test_pull_checks_merge_commit_status_contexts(monkeypatch):
         return []
 
     async def statuses(config, ref, sha):
-        return [{
-            "context": "ci/legacy",
-            "state": "failure",
-            "target_url": "https://ci.test/1",
-            "description": "boom",
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:01:00Z",
-        }, {
-            "context": "ci/slow",
-            "state": "pending",
-        }]
+        return [
+            {
+                "context": "ci/legacy",
+                "state": "failure",
+                "target_url": "https://ci.test/1",
+                "description": "boom",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:01:00Z",
+            },
+            {
+                "context": "ci/slow",
+                "state": "pending",
+            },
+        ]
 
     monkeypatch.setitem(pull_checks.__globals__, "get_pull", get_pull)
     monkeypatch.setitem(pull_checks.__globals__, "github_pages", pages)
@@ -75,27 +85,26 @@ async def test_pull_checks_merge_commit_status_contexts(monkeypatch):
 
     rows = await pull_checks(GhConfig(token="t"), RepoRef("o", "r"), 3)
 
-    assert rows == [{
-        "name": "ci/legacy",
-        "status": "completed",
-        "conclusion": "failure",
-        "details_url": "https://ci.test/1",
-        "output": {
-            "summary": "boom"
+    assert rows == [
+        {
+            "name": "ci/legacy",
+            "status": "completed",
+            "conclusion": "failure",
+            "details_url": "https://ci.test/1",
+            "output": {"summary": "boom"},
+            "started_at": "2026-01-01T00:00:00Z",
+            "completed_at": "2026-01-01T00:01:00Z",
         },
-        "started_at": "2026-01-01T00:00:00Z",
-        "completed_at": "2026-01-01T00:01:00Z",
-    }, {
-        "name": "ci/slow",
-        "status": "pending",
-        "conclusion": None,
-        "details_url": "",
-        "output": {
-            "summary": ""
+        {
+            "name": "ci/slow",
+            "status": "pending",
+            "conclusion": None,
+            "details_url": "",
+            "output": {"summary": ""},
+            "started_at": None,
+            "completed_at": None,
         },
-        "started_at": None,
-        "completed_at": None,
-    }]
+    ]
 
 
 @pytest.mark.asyncio
@@ -139,21 +148,21 @@ async def test_list_pulls_filters_before_applying_the_limit(monkeypatch):
 
     async def pages(config, path, *, params, limit, include):
         seen.append((path, params, limit))
-        rows = [{
-            "number": 2,
-            "merged_at": None
-        }, {
-            "number": 1,
-            "merged_at": "now"
-        }]
+        rows = [
+            {"number": 2, "merged_at": None},
+            {"number": 1, "merged_at": "now"},
+        ]
         return [row for row in rows if include(row)][:limit]
 
     monkeypatch.setitem(list_pulls.__globals__, "github_pages", pages)
 
-    rows = await list_pulls(GhConfig(token="t"),
-                            RepoRef("o", "r"), {"state": "closed"},
-                            1,
-                            include=lambda row: row["merged_at"] is not None)
+    rows = await list_pulls(
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        {"state": "closed"},
+        1,
+        include=lambda row: row["merged_at"] is not None,
+    )
 
     assert rows == [{"number": 1, "merged_at": "now"}]
     assert seen == [("/repos/o/r/pulls", {"state": "closed"}, 1)]
@@ -174,11 +183,13 @@ class GraphQL:
 @pytest.mark.asyncio
 async def test_pull_request_fields_ask_for_one_pull_by_number(monkeypatch):
     graphql = GraphQL({"repository": {"pullRequest": {"title": "t"}}})
-    monkeypatch.setitem(pull_request_fields.__globals__, "graphql_data",
-                        graphql)
+    monkeypatch.setitem(
+        pull_request_fields.__globals__, "graphql_data", graphql
+    )
 
-    node = await pull_request_fields(GhConfig(token="t"), RepoRef("o", "r"), 7,
-                                     "title")
+    node = await pull_request_fields(
+        GhConfig(token="t"), RepoRef("o", "r"), 7, "title"
+    )
 
     assert node == {"title": "t"}
     query, variables = graphql.sent[0]
@@ -189,14 +200,20 @@ async def test_pull_request_fields_ask_for_one_pull_by_number(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pull_request_fields_declare_the_cursor_only_for_a_page(
-        monkeypatch):
+    monkeypatch,
+):
     graphql = GraphQL({"repository": {"pullRequest": {}}})
-    monkeypatch.setitem(pull_request_fields.__globals__, "graphql_data",
-                        graphql)
+    monkeypatch.setitem(
+        pull_request_fields.__globals__, "graphql_data", graphql
+    )
 
     await pull_request_fields(
-        GhConfig(token="t"), RepoRef("o", "r"), 7,
-        "reviews(first: 100, after: $endCursor) {nodes {id}}", "c1")
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        7,
+        "reviews(first: 100, after: $endCursor) {nodes {id}}",
+        "c1",
+    )
 
     query, variables = graphql.sent[0]
     assert "$pr_number: Int!, $endCursor: String)" in query
@@ -207,12 +224,10 @@ def _page(numbers, following):
     return {
         "repository": {
             "pullRequests": {
-                "nodes": [{
-                    "number": number
-                } for number in numbers],
+                "nodes": [{"number": number} for number in numbers],
                 "pageInfo": {
                     "hasNextPage": following is not None,
-                    "endCursor": following
+                    "endCursor": following,
                 },
             }
         }
@@ -221,15 +236,20 @@ def _page(numbers, following):
 
 @pytest.mark.asyncio
 async def test_pull_listing_pages_to_the_limit_and_lists_a_repeat_once(
-        monkeypatch):
+    monkeypatch,
+):
     graphql = GraphQL(_page([9, 8], "c1"), _page([8, 7, 6], None))
-    monkeypatch.setitem(list_pull_request_fields.__globals__, "graphql_data",
-                        graphql)
+    monkeypatch.setitem(
+        list_pull_request_fields.__globals__, "graphql_data", graphql
+    )
 
-    rows = await list_pull_request_fields(GhConfig(token="t"),
-                                          RepoRef("o", "r"),
-                                          PullListFilter(("OPEN", ),
-                                                         "main"), 3, "number")
+    rows = await list_pull_request_fields(
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        PullListFilter(("OPEN",), "main"),
+        3,
+        "number",
+    )
 
     assert rows == [{"number": 9}, {"number": 8}, {"number": 7}]
     assert graphql.sent[0][1] == {
@@ -247,13 +267,17 @@ async def test_pull_listing_pages_to_the_limit_and_lists_a_repeat_once(
 @pytest.mark.asyncio
 async def test_pull_listing_asks_nothing_for_a_zero_limit(monkeypatch):
     graphql = GraphQL()
-    monkeypatch.setitem(list_pull_request_fields.__globals__, "graphql_data",
-                        graphql)
+    monkeypatch.setitem(
+        list_pull_request_fields.__globals__, "graphql_data", graphql
+    )
 
-    rows = await list_pull_request_fields(GhConfig(token="t"),
-                                          RepoRef("o", "r"),
-                                          PullListFilter(
-                                              ("OPEN", )), 0, "number")
+    rows = await list_pull_request_fields(
+        GhConfig(token="t"),
+        RepoRef("o", "r"),
+        PullListFilter(("OPEN",)),
+        0,
+        "number",
+    )
 
     assert rows == []
     assert graphql.sent == []

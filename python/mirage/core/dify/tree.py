@@ -1,15 +1,18 @@
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from mirage.accessor.dify import DifyAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.dify.client import list_all_documents
-from mirage.core.slug_tree.rows import (dir_rows, drop_collisions,
-                                        normalize_slug)
+from mirage.core.slug_tree.rows import (
+    dir_rows,
+    drop_collisions,
+    normalize_slug,
+)
 from mirage.core.slug_tree.tree import SlugTree
 from mirage.core.slug_tree.types import DirRows
 from mirage.types import JsonValue
+from mirage.utils.dates import epoch_to_iso
 from mirage.utils.path import gnu_basename
 
 logger = logging.getLogger(__name__)
@@ -19,8 +22,11 @@ SLUG_NOUN = "Dify document slug"
 
 async def load_tree(accessor: DifyAccessor, prefix: str) -> DirRows:
     # list_all_documents already filters to visible documents.
-    return build_dir_entries(await list_all_documents(accessor), prefix,
-                             accessor.config.slug_metadata_name)
+    return build_dir_entries(
+        await list_all_documents(accessor),
+        prefix,
+        accessor.config.slug_metadata_name,
+    )
 
 
 def build_dir_entries(
@@ -39,8 +45,11 @@ def build_dir_entries(
             slug, has_slug = extract_slug(document, slug_metadata_name)
             path = normalize_slug(slug, SLUG_NOUN)
         except ValueError as exc:
-            logger.warning("Skipping invalid Dify document %r: %s",
-                           document.get("id"), exc)
+            logger.warning(
+                "Skipping invalid Dify document %r: %s",
+                document.get("id"),
+                exc,
+            )
             continue
         if path in files:
             logger.warning(
@@ -66,14 +75,16 @@ def build_dir_entries(
         )
 
     def file_entry(path: str, document: dict[str, Any]) -> IndexEntry:
+        # No size: the API's is the uploaded source file (a PDF, say), not
+        # the segment text this mount serves, so it rides in extra.
         return IndexEntry(
             id=str(document["id"]),
             name=gnu_basename(path),
             resource_type="file",
-            size=extract_document_size(document),
-            remote_time=timestamp_to_iso(document.get("created_at")),
+            remote_time=epoch_text(document.get("created_at")) or "",
             extra={
                 "slug": path.strip("/"),
+                "source_size": extract_document_size(document),
                 "slug_metadata_name": slug_metadata_name,
                 "raw_slug": raw_slugs[path],
                 "has_slug": has_slugs[path],
@@ -86,18 +97,23 @@ def build_dir_entries(
     return dir_rows(drop_collisions(files, skip_collision), prefix, file_entry)
 
 
-def extract_slug(document: dict[str, Any],
-                 slug_metadata_name: str = "slug") -> tuple[str, bool]:
+def extract_slug(
+    document: dict[str, Any], slug_metadata_name: str = "slug"
+) -> tuple[str, bool]:
     metadata = document.get("doc_metadata")
     if isinstance(metadata, list):
         for item in metadata:
-            if (isinstance(item, dict)
-                    and item.get("name") == slug_metadata_name):
+            if (
+                isinstance(item, dict)
+                and item.get("name") == slug_metadata_name
+            ):
                 value = item.get("value")
                 if value is not None:
                     return str(value), True
-    if (isinstance(metadata, dict)
-            and metadata.get(slug_metadata_name) is not None):
+    if (
+        isinstance(metadata, dict)
+        and metadata.get(slug_metadata_name) is not None
+    ):
         return str(metadata[slug_metadata_name]), True
     name = document.get("name")
     if name is None:
@@ -120,11 +136,17 @@ def extract_document_size(document: dict[str, Any]) -> int | None:
     return None
 
 
-def timestamp_to_iso(value: JsonValue) -> str:
+def epoch_text(value: JsonValue) -> str | None:
+    """A Dify timestamp as ``YYYY-MM-DDTHH:MM:SSZ``.
+
+    Args:
+        value (JsonValue): The API field, epoch seconds; a string passes
+            through.
+    """
     if value is None:
-        return ""
+        return None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, timezone.utc).isoformat()
+        return epoch_to_iso(value)
     return str(value)
 
 

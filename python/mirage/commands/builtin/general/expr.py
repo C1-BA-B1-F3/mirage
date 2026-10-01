@@ -15,7 +15,6 @@
 import re
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.provision import pure_provision
 from mirage.commands.builtin.utils.bre import BreError, compile_bre
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.quote import quote_word
@@ -47,8 +46,9 @@ DIVISION_BY_ZERO = "expr: division by zero"
 # the line leaves zero expression words -- `expr` and `expr --`, since
 # `--` is consumed as the options terminator. Every other refusal is one
 # `syntax error: <detail>` line.
-MISSING_OPERAND = ("expr: missing operand\n"
-                   "Try 'expr --help' for more information.\n")
+MISSING_OPERAND = (
+    "expr: missing operand\nTry 'expr --help' for more information.\n"
+)
 
 # GNU declares no nesting limit and segfaults on a C-stack overflow at
 # somewhere past 10000 parentheses, with nothing on stderr, so there is
@@ -56,8 +56,7 @@ MISSING_OPERAND = ("expr: missing operand\n"
 # well inside CPython's default recursion limit (eight frames per level)
 # and is far past any expression written by hand.
 MAX_NESTING = 64
-NESTING_TOO_DEEP = ("expr: expression nesting too deep "
-                    f"(limit {MAX_NESTING})")
+NESTING_TOO_DEEP = f"expr: expression nesting too deep (limit {MAX_NESTING})"
 
 
 class ExprError(Exception):
@@ -147,8 +146,8 @@ def int_of_digits(text: str) -> int:
     digits = text[1:] if negative else text
     value = 0
     for start in range(0, len(digits), DIGIT_CHUNK):
-        chunk = digits[start:start + DIGIT_CHUNK]
-        value = value * 10**len(chunk) + int(chunk)
+        chunk = digits[start : start + DIGIT_CHUNK]
+        value = value * 10 ** len(chunk) + int(chunk)
     return -value if negative else value
 
 
@@ -232,10 +231,10 @@ def expecting_close(current: str | None, prev: str) -> str:
         str: the full diagnostic line, without its newline.
     """
     if current is None:
-        return ("expr: syntax error: expecting ')' after "
-                f"'{quote_word(prev)}'")
-    return ("expr: syntax error: expecting ')' instead of "
-            f"'{quote_word(current)}'")
+        return f"expr: syntax error: expecting ')' after '{quote_word(prev)}'"
+    return (
+        f"expr: syntax error: expecting ')' instead of '{quote_word(current)}'"
+    )
 
 
 # The one detail clause with no `argument` noun in it, for a `)` where a
@@ -485,7 +484,7 @@ def do_substr(text: str, pos_arg: str, len_arg: str) -> str:
         return ""
     if start < 1 or count < 0 or start > len(text):
         return ""
-    return text[start - 1:start - 1 + count]
+    return text[start - 1 : start - 1 + count]
 
 
 class ExprParser:
@@ -800,13 +799,17 @@ def _expr_eval(args: list[str]) -> tuple[str, int]:
     return value, 1 if is_null(value) else 0
 
 
-@command("expr", vfs=None, spec=SPECS["expr"], provision=pure_provision)
-async def expr(accessor: Accessor, paths: list[PathSpec] | None,
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("expr", vfs=None, spec=SPECS["expr"])
+async def expr(
+    accessor: Accessor,
+    paths: list[PathSpec] | None,
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not texts:
-        return None, IOResult(exit_code=2,
-                              stderr=from_byte_view(MISSING_OPERAND))
+        return None, IOResult(
+            exit_code=2, stderr=from_byte_view(MISSING_OPERAND)
+        )
     try:
         result, exit_code = _expr_eval([to_byte_view(t) for t in texts])
     except ExprError as exc:

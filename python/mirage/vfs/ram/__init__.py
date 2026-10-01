@@ -25,5 +25,6 @@ __all__ = ["RAMVFS", "RAMStore"]
 def __getattr__(name: str) -> "type[RAMVFS]":
     if name == "RAMVFS":
         from mirage.vfs.ram.ram import RAMVFS
+
         return RAMVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

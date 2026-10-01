@@ -34,16 +34,19 @@ def _patch_read(monkeypatch):
 def _scope(path: str, resolved: bool = True) -> PathSpec:
     norm = "/" + path.lstrip("/")
     directory = norm.rsplit("/", 1)[0] + "/"
-    return PathSpec(vfs_path=(norm).strip("/"),
-                    virtual=norm,
-                    directory=directory,
-                    resolved=resolved)
+    return PathSpec(
+        vfs_path=(norm).strip("/"),
+        virtual=norm,
+        directory=directory,
+        resolved=resolved,
+    )
 
 
 async def _run(accessor, index, paths, pattern, **kwargs):
     scopes = [_scope(p, resolved=("." in p.split("/")[-1])) for p in paths]
-    stdout, io = await grep(accessor, scopes, [pattern],
-                            CommandOpts(index=index, flags={**kwargs}))
+    stdout, io = await grep(
+        accessor, scopes, [pattern], CommandOpts(index=index, flags={**kwargs})
+    )
     data = await materialize(stdout)
     return data.decode(errors="replace"), io
 
@@ -119,11 +122,9 @@ async def test_grep_no_match(mock_github_api, github_env):
 @pytest.mark.asyncio
 async def test_grep_files_only(mock_github_api, github_env):
     accessor, index = github_env
-    text, io = await _run(accessor,
-                          index, ["src"],
-                          "dataclass",
-                          r=True,
-                          args_l=True)
+    text, io = await _run(
+        accessor, index, ["src"], "dataclass", r=True, args_l=True
+    )
     assert io.exit_code == 0
     lines = text.strip().splitlines()
     assert any("user.py" in ln for ln in lines)
@@ -134,8 +135,9 @@ async def test_grep_files_only(mock_github_api, github_env):
 async def test_grep_stdin(github_env):
     accessor, index = github_env
     stdin_data = b"hello world\nfoo bar\nhello again\n"
-    stdout, io = await grep(accessor, [], ['hello'],
-                            CommandOpts(stdin=stdin_data, index=index))
+    stdout, io = await grep(
+        accessor, [], ["hello"], CommandOpts(stdin=stdin_data, index=index)
+    )
     data = await materialize(stdout)
     text = data.decode(errors="replace")
     lines = text.strip().splitlines()
@@ -148,17 +150,19 @@ async def test_grep_stdin(github_env):
 async def test_grep_files_only_with_prefix(mock_github_api, github_env):
     accessor, index = github_env
     scopes = [
-        PathSpec(vfs_path=mount_key("/gh/src", "/gh"),
-                 virtual="/gh/src",
-                 directory="/gh/src/",
-                 resolved=False)
+        PathSpec(
+            vfs_path=mount_key("/gh/src", "/gh"),
+            virtual="/gh/src",
+            directory="/gh/src/",
+            resolved=False,
+        )
     ]
     stdout, io = await grep(
-        accessor, scopes, ['dataclass'],
-        CommandOpts(index=index, flags={
-            'r': True,
-            'args_l': True
-        }))
+        accessor,
+        scopes,
+        ["dataclass"],
+        CommandOpts(index=index, flags={"r": True, "args_l": True}),
+    )
     data = await materialize(stdout)
     text = data.decode()
     assert io.exit_code == 0

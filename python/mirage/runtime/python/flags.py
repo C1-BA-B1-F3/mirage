@@ -38,22 +38,24 @@ VALUE_FLAGS: dict[str, str] = {
 # int_max_str_digits, pycache_prefix, tracemalloc). An arbitrary name is
 # deliberately absent: on CPython it does nothing but land in the dict
 # either. Pinned against `python3 --help-xoptions` on 3.13.7.
-X_EFFECTS: frozenset[str] = frozenset({
-    "cpu_count",
-    "dev",
-    "faulthandler",
-    "frozen_modules",
-    "importtime",
-    "int_max_str_digits",
-    "no_debug_ranges",
-    "perf",
-    "perf_jit",
-    "pycache_prefix",
-    "showrefcount",
-    "tracemalloc",
-    "utf8",
-    "warn_default_encoding",
-})
+X_EFFECTS: frozenset[str] = frozenset(
+    {
+        "cpu_count",
+        "dev",
+        "faulthandler",
+        "frozen_modules",
+        "importtime",
+        "int_max_str_digits",
+        "no_debug_ranges",
+        "perf",
+        "perf_jit",
+        "pycache_prefix",
+        "showrefcount",
+        "tracemalloc",
+        "utf8",
+        "warn_default_encoding",
+    }
+)
 
 
 def init_argv(flags: dict[str, Any]) -> list[str]:
@@ -86,8 +88,8 @@ def init_argv(flags: dict[str, Any]) -> list[str]:
 
 
 def unhonored(
-        flags: dict[str, Any],
-        honored: tuple[str, ...] = (),
+    flags: dict[str, Any],
+    honored: tuple[str, ...] = (),
 ) -> list[str]:
     """The init switches on a line that this engine did not act on.
 
@@ -122,9 +124,9 @@ def unhonored(
 
 
 def unhonored_notice(
-        flags: dict[str, Any],
-        runtime_name: str,
-        honored: tuple[str, ...] = (),
+    flags: dict[str, Any],
+    runtime_name: str,
+    honored: tuple[str, ...] = (),
 ) -> bytes:
     """One stderr line per init switch this runtime cannot act on.
 

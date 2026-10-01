@@ -17,7 +17,6 @@ from mirage.core.linear.config import LinearConfig
 
 
 class LinearAccessor(SessionAccessor):
-
     def __init__(self, config: LinearConfig) -> None:
         super().__init__()
         self.config = config

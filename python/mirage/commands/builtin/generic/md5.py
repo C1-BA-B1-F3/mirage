@@ -1,9 +1,11 @@
 import hashlib
 from collections.abc import Awaitable, Callable
 
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable)
+from mirage.commands.builtin.utils.operands import (
+    materialized_read,
+    merge_split_errors,
+    split_readable,
+)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.config import CommandOpts
@@ -52,9 +54,11 @@ async def md5_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await md5(readable,
-                  read_bytes=materialized_read(stream),
-                  stdin=opts.stdin), err)
+        await md5(
+            readable, read_bytes=materialized_read(stream), stdin=opts.stdin
+        ),
+        err,
+    )
 
 
 __all__ = ["md5", "md5_generic"]

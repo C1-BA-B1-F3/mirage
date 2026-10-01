@@ -21,9 +21,8 @@ from mirage.core.discord.paginate import after_id_pages
 
 
 def list_guilds_stream(
-        config: DiscordConfig,
-        page_size: int = 200,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: DiscordConfig, page_size: int = 200, session: SessionArg = None
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Page-streaming variant of list_guilds.
 
     Args:
@@ -34,17 +33,19 @@ def list_guilds_stream(
     Yields:
         list[dict]: guild dicts per page.
     """
-    return after_id_pages(config,
-                          "/users/@me/guilds",
-                          base_params={},
-                          last_id_fn=lambda g: g["id"],
-                          page_size=page_size,
-                          session=session)
+    return after_id_pages(
+        config,
+        "/users/@me/guilds",
+        base_params={},
+        last_id_fn=lambda g: g["id"],
+        page_size=page_size,
+        session=session,
+    )
 
 
-async def list_guilds(config: DiscordConfig,
-                      page_size: int = 200,
-                      session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_guilds(
+    config: DiscordConfig, page_size: int = 200, session: SessionArg = None
+) -> list[dict[str, Any]]:
     """List all guilds the bot is in (paginated).
 
     Args:

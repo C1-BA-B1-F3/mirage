@@ -65,9 +65,9 @@ async def test_unset_readonly_array_element_is_rejected():
     session = make_session()
     seed_var(session, "arr", ["x", "y"])
     set_attr(session, "arr", VarAttr.READONLY)
-    _, io, node = await handle_unset(["arr[1]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["arr[1]"], session, state=session_view(session)
+    )
     assert node.exit_code == 1
     assert io.stderr == b"bash: unset: arr: cannot unset: readonly variable\n"
     assert session.arrays["arr"] == ["x", "y"]
@@ -77,9 +77,9 @@ async def test_unset_readonly_array_element_is_rejected():
 async def test_unset_element_zero_of_a_scalar_removes_it():
     session = make_session()
     seed_var(session, "Y", "sc")
-    _, io, node = await handle_unset(["Y[0]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["Y[0]"], session, state=session_view(session)
+    )
     assert node.exit_code == 0
     assert "Y" not in session.env
 
@@ -88,9 +88,9 @@ async def test_unset_element_zero_of_a_scalar_removes_it():
 async def test_unset_nonzero_element_of_a_scalar_errors():
     session = make_session()
     seed_var(session, "Y", "sc")
-    _, io, node = await handle_unset(["Y[1]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["Y[1]"], session, state=session_view(session)
+    )
     assert node.exit_code == 1
     assert io.stderr == b"bash: unset: Y: not an array variable\n"
     assert session.env["Y"] == "sc"
@@ -100,9 +100,9 @@ async def test_unset_nonzero_element_of_a_scalar_errors():
 async def test_unset_negative_element_outside_the_extent_errors():
     session = make_session()
     seed_var(session, "arr", ["x"])
-    _, io, node = await handle_unset(["arr[-2]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["arr[-2]"], session, state=session_view(session)
+    )
     assert node.exit_code == 1
     # bash prints only the bracketed part here, not the base name.
     assert io.stderr == b"bash: unset: [-2]: bad array subscript\n"
@@ -113,9 +113,9 @@ async def test_unset_negative_element_outside_the_extent_errors():
 async def test_unset_negative_element_inside_the_extent_works():
     session = make_session()
     seed_var(session, "arr", ["x", "y"])
-    _, io, node = await handle_unset(["arr[-2]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["arr[-2]"], session, state=session_view(session)
+    )
     assert node.exit_code == 0
     assert session.arrays["arr"] == [None, "y"]
 
@@ -123,17 +123,17 @@ async def test_unset_negative_element_inside_the_extent_works():
 @pytest.mark.asyncio
 async def test_unset_element_of_an_unset_name_is_a_no_op():
     session = make_session()
-    _, io, node = await handle_unset(["GONE[3]"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["GONE[3]"], session, state=session_view(session)
+    )
     assert node.exit_code == 0
 
 
 @pytest.mark.asyncio
 async def test_unset_invalid_option_errors():
     session = make_session()
-    _, io, node = await handle_unset(["-z", "x"],
-                                     session,
-                                     state=session_view(session))
+    _, io, node = await handle_unset(
+        ["-z", "x"], session, state=session_view(session)
+    )
     assert node.exit_code == 2
     assert b"invalid option" in (io.stderr or b"")

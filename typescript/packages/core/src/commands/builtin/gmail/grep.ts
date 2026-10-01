@@ -29,7 +29,6 @@ import { specOf } from '../../spec/builtins.ts'
 import { grepGeneric } from '../generic/grep.ts'
 import { patternArg } from '../grep_pattern.ts'
 import { pushdownOperand, textSearchResults } from '../grep_pushdown.ts'
-import { fileReadProvision } from './_provision.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const resolveGlob = resolveGlobOf(GMAIL_IO)
@@ -101,5 +100,4 @@ export const GMAIL_GREP = command({
   vfs: VFSName.GMAIL,
   spec: specOf('grep'),
   fn: grepCommand,
-  provision: fileReadProvision,
 })

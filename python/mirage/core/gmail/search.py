@@ -15,9 +15,13 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from mirage.core.gmail.messages import (_decode_body, _extract_header,
-                                        get_message_processed, get_message_raw,
-                                        list_messages)
+from mirage.core.gmail.messages import (
+    _decode_body,
+    _extract_header,
+    get_message_processed,
+    get_message_raw,
+    list_messages,
+)
 from mirage.core.gmail.readdir import _msg_filename
 from mirage.core.google.client import TokenManager
 
@@ -39,8 +43,9 @@ def _extract_excerpt(text: str, pattern: str) -> str:
     return f"{prefix}{flat[start:end]}{suffix}"
 
 
-def _build_query(pattern: str, label_name: str | None,
-                 date_str: str | None) -> str:
+def _build_query(
+    pattern: str, label_name: str | None, date_str: str | None
+) -> str:
     parts = [pattern]
     if label_name:
         parts.append(f"label:{label_name}")
@@ -92,15 +97,17 @@ async def search_messages(
         snippet = raw.get("snippet", "")
         body_text = _decode_body(raw.get("payload", {}))
         msg_date = _date_from_internal(raw.get("internalDate", "0"))
-        rows.append({
-            "id": mid,
-            "subject": subject,
-            "snippet": snippet,
-            "sender": sender,
-            "date": msg_date,
-            "label": label_name or "",
-            "body_text": body_text,
-        })
+        rows.append(
+            {
+                "id": mid,
+                "subject": subject,
+                "snippet": snippet,
+                "sender": sender,
+                "date": msg_date,
+                "label": label_name or "",
+                "body_text": body_text,
+            }
+        )
     return rows
 
 
@@ -125,8 +132,11 @@ def format_grep_results(
         excerpt = _extract_excerpt(haystack, pattern) if pattern else ""
         if not excerpt:
             excerpt = (row.get("snippet") or "").replace("\n", " ")
-        path = (f"{prefix}/{label}/{date}/{filename}"
-                if date else f"{prefix}/{label}/{filename}")
+        path = (
+            f"{prefix}/{label}/{date}/{filename}"
+            if date
+            else f"{prefix}/{label}/{filename}"
+        )
         lines.append(f"{path}:[{sender}] {excerpt}")
     return lines
 

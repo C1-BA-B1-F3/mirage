@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.linear.util import (first_text, resolve_issue,
-                                                     text_or_stdin)
+from mirage.commands.cli.builtin.linear.util import (
+    first_text,
+    resolve_issue,
+    text_or_stdin,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.linear.client import comment_create
@@ -24,13 +27,15 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def add(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
-    issue_id = await resolve_issue(inv.config,
-                                   first_text(inv.texts, "issue key"))
-    body = await text_or_stdin(fl.as_str("body"), inv.stdin,
-                               "comment body is required")
+    issue_id = await resolve_issue(
+        inv.config, first_text(inv.texts, "issue key")
+    )
+    body = await text_or_stdin(
+        fl.as_str("body"), inv.stdin, "comment body is required"
+    )
     comment = await comment_create(inv.config, issue_id=issue_id, body=body)
     payload = normalize_comment(comment, issue_id=issue_id, issue_key=None)
     return yield_bytes(to_json_bytes(payload)), IOResult()

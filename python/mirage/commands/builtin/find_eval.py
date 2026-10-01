@@ -48,6 +48,7 @@ class FindEntry:
     key, the basename (the start point's own name at depth 0) and the
     kind ``f``, ``d``, ``l`` or ``c``.
     """
+
     key: str
     name: str
     kind: str
@@ -72,6 +73,7 @@ class Path:
     evaluation and entry keys stay mount-relative (#396). An empty
     ``root`` leaves the row as the display path.
     """
+
     pattern: str
     prefix: str = ""
     root: str = ""
@@ -127,6 +129,7 @@ class Action:
     walk, so the parser lets it stand only where nothing follows it;
     ``batch`` marks ``-exec ... {} +``, true whatever the command exits.
     """
+
     kind: ActionKind
     batch: bool = False
 
@@ -146,6 +149,7 @@ class Mtime:
     recorded as pending (``PendingPrune``) for the caller to settle once
     it has statted the directory.
     """
+
     lo: float | None
     hi: float | None
 
@@ -161,6 +165,7 @@ class PendingPrune:
     failing test may send GNU down another arm that prunes anyway
     (``( -mtime 1 -o -type d ) -prune``).
     """
+
     entry: FindEntry
 
 
@@ -177,12 +182,24 @@ class Prune:
     evaluates the directory again with its mtime, it counts as pruned,
     the most a walk without times can say.
     """
+
     pruned: list[str] = field(default_factory=list)
     pending: list[PendingPrune] = field(default_factory=list)
 
 
-PredNode = (Name | Path | Type | Empty | Not | And | Or | TrueNode | Action
-            | Prune | Mtime)
+PredNode = (
+    Name
+    | Path
+    | Type
+    | Empty
+    | Not
+    | And
+    | Or
+    | TrueNode
+    | Action
+    | Prune
+    | Mtime
+)
 
 
 @dataclass(slots=True)
@@ -193,6 +210,7 @@ class Effects:
     mtime for on the path that decided the answer so far; a branch whose
     outcome they could not have changed drops them again.
     """
+
     acted: bool = False
     pruned: bool = False
     deferred: list[Mtime] = field(default_factory=list)
@@ -214,10 +232,9 @@ def display_path(prefix: str, key: str) -> str:
     return prefix if not rel else prefix + "/" + rel
 
 
-def bind_tree(node: PredNode,
-              prefix: str,
-              root: str = "",
-              raw: str = "") -> PredNode:
+def bind_tree(
+    node: PredNode, prefix: str, root: str = "", raw: str = ""
+) -> PredNode:
     """Copy of a predicate tree bound to one start point.
 
     ``-path`` matches the row as printed, but backend find ops evaluate
@@ -446,8 +463,11 @@ def settle_prunes(node: PredNode, mtimes: Mapping[str, float | None]) -> None:
     decided: dict[str, FindEntry] = {}
     for prune in _prune_nodes(node):
         still = [p for p in prune.pending if p.entry.key not in mtimes]
-        decided.update((p.entry.key, p.entry) for p in prune.pending
-                       if p.entry.key in mtimes)
+        decided.update(
+            (p.entry.key, p.entry)
+            for p in prune.pending
+            if p.entry.key in mtimes
+        )
         prune.pending[:] = still
     for key, entry in decided.items():
         mtime = mtimes[key]
@@ -455,9 +475,9 @@ def settle_prunes(node: PredNode, mtimes: Mapping[str, float | None]) -> None:
         evaluate(tree, replace(entry, mtime=mtime), Effects())
 
 
-def drop_pruned(rows: list[str],
-                tree: PredNode,
-                prefix: str = "") -> list[str]:
+def drop_pruned(
+    rows: list[str], tree: PredNode, prefix: str = ""
+) -> list[str]:
     """The rows minus everything under a directory ``-prune`` reached.
 
     The pruned directory itself stays, the root spelled ``/`` included:
@@ -482,8 +502,8 @@ def drop_pruned(rows: list[str],
 
 
 async def settle_pending_prunes(
-        node: PredNode, mtime_of: Callable[[str],
-                                           Awaitable[float | None]]) -> None:
+    node: PredNode, mtime_of: Callable[[str], Awaitable[float | None]]
+) -> None:
     """Decide every pending prune by asking for its directory's mtime.
 
     The backend judged its entries without their mtimes, so a prune
@@ -520,6 +540,16 @@ def tree_has_empty(node: PredNode) -> bool:
         return tree_has_empty(node.kid)
     if isinstance(node, (And, Or)):
         return any(tree_has_empty(kid) for kid in node.kids)
+    return False
+
+
+def tree_has_mtime(node: PredNode) -> bool:
+    if isinstance(node, Mtime):
+        return True
+    if isinstance(node, Not):
+        return tree_has_mtime(node.kid)
+    if isinstance(node, (And, Or)):
+        return any(tree_has_mtime(kid) for kid in node.kids)
     return False
 
 
@@ -618,17 +648,16 @@ def emit_start_path(
         return
     if maxdepth is not None and maxdepth < 0:
         return
-    entry = FindEntry(key=start_key,
-                      name=start_name,
-                      kind=kind,
-                      depth=0,
-                      is_empty=is_empty)
+    entry = FindEntry(
+        key=start_key, name=start_name, kind=kind, depth=0, is_empty=is_empty
+    )
     if not keep(entry, tree, mindepth):
         return
     if min_size is not None or max_size is not None:
         # Unknown rendered sizes count as zero, like walked entries.
-        effective = (size
-                     or 0) if kind == "f" else DIR_SIZE if kind == "d" else 0
+        effective = (
+            (size or 0) if kind == "f" else DIR_SIZE if kind == "d" else 0
+        )
         if min_size is not None and effective < min_size:
             return
         if max_size is not None and effective > max_size:
@@ -709,13 +738,15 @@ class FindArgs:
 def args_to_tree(args: FindArgs) -> PredNode:
     if args.tree is not None:
         return args.tree
-    return build_tree(name=args.name,
-                      iname=args.iname,
-                      path_pattern=args.path_pattern,
-                      type=args.type,
-                      name_exclude=args.name_exclude,
-                      or_names=args.or_names,
-                      empty=args.empty)
+    return build_tree(
+        name=args.name,
+        iname=args.iname,
+        path_pattern=args.path_pattern,
+        type=args.type,
+        name_exclude=args.name_exclude,
+        or_names=args.or_names,
+        empty=args.empty,
+    )
 
 
 def unrespell_raw(row: str, virtual: str, raw: str) -> str:
@@ -736,5 +767,5 @@ def unrespell_raw(row: str, virtual: str, raw: str) -> str:
         return virtual
     stem = raw if raw.endswith("/") else raw + "/"
     if row.startswith(stem):
-        return (virtual.rstrip("/") or "") + "/" + row[len(stem):]
+        return (virtual.rstrip("/") or "") + "/" + row[len(stem) :]
     return row

@@ -86,12 +86,6 @@ async function main(): Promise<void> {
     r = await ws.shell('jq .tags /minio/data/config.json')
     console.log(`  ${r.stdoutText.trim()}`)
 
-    console.log('\n--- PROVISION: cat (plan only) vs head -c (byte budget) ---')
-    let plan = await ws.shell('cat /minio/data/example.jsonl', { provision: true })
-    console.log(`  cat: network_read=${plan.networkRead} precision=${plan.precision}`)
-    plan = await ws.shell('head -c 20 /minio/data/example.jsonl', { provision: true })
-    console.log(`  head -c 20: network_read=${plan.networkRead} precision=${plan.precision}`)
-
     console.log('\n--- rm seeded objects ---')
     for (const key of ['/minio/data/example.jsonl', '/minio/data/config.json', '/minio/notes.txt']) {
       await ws.shell(`rm ${key}`)

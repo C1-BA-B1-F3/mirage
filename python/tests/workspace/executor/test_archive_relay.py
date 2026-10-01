@@ -48,10 +48,12 @@ def ws() -> Workspace:
     work = RAMVFS()
     work._store.files["/files.tar.gz"] = _tgz_bytes()
     work._store.files["/files.zip"] = _zip_bytes()
-    return Workspace(mounts={
-        "/": (RAMVFS(), MountMode.WRITE),
-        "/work/": (work, MountMode.WRITE),
-    })
+    return Workspace(
+        mounts={
+            "/": (RAMVFS(), MountMode.WRITE),
+            "/work/": (work, MountMode.WRITE),
+        }
+    )
 
 
 def _run(ws: Workspace, line: str):
@@ -81,22 +83,26 @@ def test_tar_extract_dash_C_into_another_mount(ws):
     assert out.stdout == b"content:./memory/memory.json\n"
 
 
-@pytest.mark.parametrize("mode, expected", [
-    ("t", b"./memory/memory.json\n./other.txt\n"),
-    ("xO", b"content:./memory/memory.json\ncontent:./other.txt\n"),
-    ("x", b""),
-])
+@pytest.mark.parametrize(
+    "mode, expected",
+    [
+        ("t", b"./memory/memory.json\n./other.txt\n"),
+        ("xO", b"content:./memory/memory.json\ncontent:./other.txt\n"),
+        ("x", b""),
+    ],
+)
 def test_tar_stdin_survives_relay_across_chdir_mounts(ws, mode, expected):
     assert _run(ws, "mkdir /dest").exit_code == 0
     result = _run(
-        ws, "cat /work/files.tar.gz | "
-        f"tar -{mode}zf - -C /work -C /dest")
+        ws, f"cat /work/files.tar.gz | tar -{mode}zf - -C /work -C /dest"
+    )
     assert result.exit_code == 0, result.stderr
     assert not result.stderr
     assert (result.stdout or b"") == expected
     if mode == "x":
         assert _run(ws, "cat /dest/memory/memory.json").stdout == (
-            b"content:./memory/memory.json\n")
+            b"content:./memory/memory.json\n"
+        )
 
 
 def _archive(ws: Workspace, path: str) -> bytes:
@@ -107,19 +113,22 @@ def test_tar_create_writes_the_archive_on_another_mount(ws):
     _run(ws, "mkdir -p /src && echo hi > /src/f.txt")
     result = _run(ws, "cd /src && tar -czf /work/backup.tgz .")
     assert result.exit_code == 0, result.stderr
-    with tarfile.open(fileobj=io.BytesIO(_archive(ws, "/work/backup.tgz")),
-                      mode="r:gz") as tf:
+    with tarfile.open(
+        fileobj=io.BytesIO(_archive(ws, "/work/backup.tgz")), mode="r:gz"
+    ) as tf:
         assert tf.getnames() == [".", "./f.txt"]
         assert tf.extractfile("./f.txt").read() == b"hi\n"
 
 
 def test_tar_create_gathers_operands_from_two_mounts(ws):
     _run(ws, "mkdir -p /src && echo hi > /src/f.txt")
-    result = _run(ws,
-                  "tar -cf /work/both.tar -C /src f.txt -C /work files.zip")
+    result = _run(
+        ws, "tar -cf /work/both.tar -C /src f.txt -C /work files.zip"
+    )
     assert result.exit_code == 0, result.stderr
     with tarfile.open(
-            fileobj=io.BytesIO(_archive(ws, "/work/both.tar"))) as tf:
+        fileobj=io.BytesIO(_archive(ws, "/work/both.tar"))
+    ) as tf:
         assert tf.getnames() == ["f.txt", "files.zip"]
 
 
@@ -130,7 +139,9 @@ def test_zip_dot_lands_on_another_mount_without_dot_slash(ws):
     assert result.exit_code == 0, result.stderr
     with zipfile.ZipFile(io.BytesIO(_archive(ws, "/work/doc.docx"))) as zf:
         assert zf.namelist() == [
-            "[Content_Types].xml", "_rels/", "_rels/.rels"
+            "[Content_Types].xml",
+            "_rels/",
+            "_rels/.rels",
         ]
         assert zf.read("[Content_Types].xml") == b"x\n"
 
@@ -142,26 +153,35 @@ def nested() -> Workspace:
             "/data": (RAMVFS(), MountMode.WRITE),
             "/data/d/inner": (RAMVFS(), MountMode.WRITE),
             "/out": (RAMVFS(), MountMode.WRITE),
-        })
+        }
+    )
     _run(
-        ws, "mkdir -p /data/d/real && echo r > /data/d/real/r.txt"
-        " && echo i > /data/d/inner/i.txt && ln -s real /data/d/lnk")
+        ws,
+        "mkdir -p /data/d/real && echo r > /data/d/real/r.txt"
+        " && echo i > /data/d/inner/i.txt && ln -s real /data/d/lnk",
+    )
     return ws
 
 
-@pytest.mark.parametrize("line", [
-    "cd /data/d && zip -r {} .",
-    "cd /data/d && zip -ry {} .",
-    "cd /data/d && tar -cvf {} .",
-    "cd /data/d && tar -chvf {} .",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "cd /data/d && zip -r {} .",
+        "cd /data/d && zip -ry {} .",
+        "cd /data/d && tar -cvf {} .",
+        "cd /data/d && tar -chvf {} .",
+    ],
+)
 def test_archive_on_another_mount_matches_one_on_the_same_mount(nested, line):
     kind = "zip" if "zip" in line else "tar"
     same = _run(nested, line.format(f"/data/out.{kind}"))
     _run(nested, f"rm /data/out.{kind}")
     cross = _run(nested, line.format(f"/out/out.{kind}"))
-    assert (cross.exit_code, cross.stdout,
-            cross.stderr) == (same.exit_code, same.stdout, same.stderr)
+    assert (cross.exit_code, cross.stdout, cross.stderr) == (
+        same.exit_code,
+        same.stdout,
+        same.stderr,
+    )
     assert b"file is on a different filesystem" in cross.stderr
     assert b"i.txt" not in cross.stdout
 

@@ -23,9 +23,11 @@ from mirage.utils.key_prefix import mount_key
 
 
 def _scope(path: str, prefix: str = "/gdocs") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -37,15 +39,17 @@ def accessor():
 async def test_read_calls_core(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gdocs.read.core_read",
-            new_callable=AsyncMock,
-            return_value=b"doc content",
+        "mirage.ops.gdocs.read.core_read",
+        new_callable=AsyncMock,
+        return_value=b"doc content",
     ) as mock:
         scope = _scope("/gdocs/owned/File__doc1.gdoc.json")
         result = await fn(accessor, scope, index=None)
         mock.assert_called_once_with(
             accessor,
-            _scope("/gdocs/owned/File__doc1.gdoc.json", prefix="/gdocs"), None)
+            _scope("/gdocs/owned/File__doc1.gdoc.json", prefix="/gdocs"),
+            None,
+        )
         assert result == b"doc content"
 
 
@@ -53,11 +57,13 @@ async def test_read_calls_core(accessor):
 async def test_read_not_found(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gdocs.read.core_read",
-            new_callable=AsyncMock,
-            side_effect=FileNotFoundError("not found"),
+        "mirage.ops.gdocs.read.core_read",
+        new_callable=AsyncMock,
+        side_effect=FileNotFoundError("not found"),
     ):
         with pytest.raises(FileNotFoundError):
-            await fn(accessor,
-                     _scope("/gdocs/owned/Nonexistent__doc9.gdoc.json"),
-                     index=None)
+            await fn(
+                accessor,
+                _scope("/gdocs/owned/Nonexistent__doc9.gdoc.json"),
+                index=None,
+            )

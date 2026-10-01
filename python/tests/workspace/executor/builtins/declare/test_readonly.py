@@ -41,7 +41,7 @@ async def test_readonly_invalid_option_exit_2():
 @pytest.mark.asyncio
 async def test_readonly_p_via_workspace():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell('readonly ZRP1=7; readonly -p | grep ZRP1')
+    io = await ws.shell("readonly ZRP1=7; readonly -p | grep ZRP1")
     assert io.exit_code == 0
     assert (io.stdout or b"") == b'declare -r ZRP1="7"\n'
 

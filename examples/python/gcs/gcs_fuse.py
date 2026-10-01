@@ -31,8 +31,8 @@ config = GCSConfig(
 vfs = GCSVFS(config)
 
 with Workspace(
-    {"/gcs/": Mount(vfs, mode=MountMode.READ,
-                    backend=MountBackend.FUSE)}) as ws:
+    {"/gcs/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

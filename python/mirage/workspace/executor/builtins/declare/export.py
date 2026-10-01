@@ -17,17 +17,30 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.variable import VarAttr
-from mirage.workspace.executor.builtins.declare.constants import (EXPORT_FLAGS,
-                                                                  EXPORT_USAGE)
+from mirage.workspace.executor.builtins.declare.constants import (
+    EXPORT_FLAGS,
+    EXPORT_USAGE,
+)
 from mirage.workspace.executor.builtins.declare.declare import (
-    declare_line, identifier_failure, identifier_refusal, split_decl_flags,
-    store_staged_arrays)
-from mirage.workspace.executor.builtins.shared import (readonly_refusal,
-                                                       refusal, require_view)
+    declare_line,
+    identifier_failure,
+    identifier_refusal,
+    split_decl_flags,
+    store_staged_arrays,
+)
+from mirage.workspace.executor.builtins.shared import (
+    readonly_refusal,
+    refusal,
+    require_view,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (exported_names, outlive_call,
-                                            session_view, set_attr)
+from mirage.workspace.session.state import (
+    exported_names,
+    outlive_call,
+    session_view,
+    set_attr,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -76,12 +89,14 @@ async def handle_export(
     """
     flags, names, bad = split_decl_flags(assignments, EXPORT_FLAGS)
     if bad is not None:
-        err = (f"bash: export: -{bad}: invalid option\n"
-               f"{EXPORT_USAGE}").encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="export",
-                                                         exit_code=2,
-                                                         stderr=err)
+        err = (
+            f"bash: export: -{bad}: invalid option\n{EXPORT_USAGE}"
+        ).encode()
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="export", exit_code=2, stderr=err),
+        )
     # -p with names is ignored for display; bare / -p alone print.
     if not names and not arrays:
         lines = _export_lines(session, flags)
@@ -95,13 +110,15 @@ async def handle_export(
     if arrays:
         # `export ARR=(a b)` marks the array as surely as it marks a
         # scalar: GNU prints `declare -ax ARR=([0]="a" [1]="b")`.
-        refused = await store_staged_arrays("export",
-                                            session,
-                                            view,
-                                            arrays,
-                                            mark=VarAttr.EXPORT,
-                                            on=on,
-                                            fatal=True)
+        refused = await store_staged_arrays(
+            "export",
+            session,
+            view,
+            arrays,
+            mark=VarAttr.EXPORT,
+            on=on,
+            fatal=True,
+        )
         if refused is not None:
             return refused
     errors: list[str] = []
@@ -145,5 +162,7 @@ async def export_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_export(
-        list(call.argv.args), call.session,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        session_view(call.session, call.namespace.registry.policies),
+    )

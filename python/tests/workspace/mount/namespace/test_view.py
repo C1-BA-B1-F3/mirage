@@ -12,12 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.mount.namespace.view import (link_view,
-                                                   registry_child_mounts)
+from mirage.workspace.mount.namespace.view import (
+    link_view,
+    registry_child_mounts,
+)
 
 
 class _FakeMount:
-
     def __init__(self, prefix: str) -> None:
         self.prefix = prefix
 
@@ -33,7 +34,6 @@ class _FakeRegistry:
 
 
 class _FakeLinks:
-
     def __init__(self, targets: dict[str, str]) -> None:
         self._targets = targets
 

@@ -7,10 +7,9 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_cut_backend(files: dict[str, bytes]):
@@ -37,9 +36,9 @@ async def _collect(src) -> bytes:
 @pytest.mark.asyncio
 async def test_cut_fields_default_delim():
     rs, _ = _make_cut_backend({"f.tsv": b"a\tb\tc\nd\te\tf\n"})
-    src, _ = await cut([_spec("f.tsv")],
-                       read_stream=rs,
-                       flags={"fields": "1,3"})
+    src, _ = await cut(
+        [_spec("f.tsv")], read_stream=rs, flags={"fields": "1,3"}
+    )
     out = await _collect(src)
     assert out == b"a\tc\nd\tf\n"
 
@@ -47,12 +46,11 @@ async def test_cut_fields_default_delim():
 @pytest.mark.asyncio
 async def test_cut_fields_custom_delim():
     rs, _ = _make_cut_backend({"f.csv": b"a,b,c\nd,e,f\n"})
-    src, _ = await cut([_spec("f.csv")],
-                       read_stream=rs,
-                       flags={
-                           "fields": "2",
-                           "delimiter": ","
-                       })
+    src, _ = await cut(
+        [_spec("f.csv")],
+        read_stream=rs,
+        flags={"fields": "2", "delimiter": ","},
+    )
     out = await _collect(src)
     assert out == b"b\ne\n"
 
@@ -60,9 +58,9 @@ async def test_cut_fields_custom_delim():
 @pytest.mark.asyncio
 async def test_cut_chars_range():
     rs, _ = _make_cut_backend({"f.txt": b"hello\nworld\n"})
-    src, _ = await cut([_spec("f.txt")],
-                       read_stream=rs,
-                       flags={"characters": "1-3"})
+    src, _ = await cut(
+        [_spec("f.txt")], read_stream=rs, flags={"characters": "1-3"}
+    )
     out = await _collect(src)
     assert out == b"hel\nwor\n"
 
@@ -70,12 +68,11 @@ async def test_cut_chars_range():
 @pytest.mark.asyncio
 async def test_cut_complement_fields():
     rs, _ = _make_cut_backend({"f.tsv": b"a\tb\tc\n"})
-    src, _ = await cut([_spec("f.tsv")],
-                       read_stream=rs,
-                       flags={
-                           "fields": "2",
-                           "complement": True
-                       })
+    src, _ = await cut(
+        [_spec("f.tsv")],
+        read_stream=rs,
+        flags={"fields": "2", "complement": True},
+    )
     out = await _collect(src)
     assert out == b"a\tc\n"
 
@@ -83,12 +80,11 @@ async def test_cut_complement_fields():
 @pytest.mark.asyncio
 async def test_cut_zero_terminated():
     rs, _ = _make_cut_backend({"f.bin": b"a\tb\x00c\td\x00"})
-    src, _ = await cut([_spec("f.bin")],
-                       read_stream=rs,
-                       flags={
-                           "fields": "1",
-                           "zero_terminated": True
-                       })
+    src, _ = await cut(
+        [_spec("f.bin")],
+        read_stream=rs,
+        flags={"fields": "1", "zero_terminated": True},
+    )
     out = await _collect(src)
     assert out == b"a\x00c\x00"
 
@@ -96,10 +92,9 @@ async def test_cut_zero_terminated():
 @pytest.mark.asyncio
 async def test_cut_stdin():
     rs, _ = _make_cut_backend({})
-    src, _ = await cut([],
-                       read_stream=rs,
-                       stdin=b"x\ty\tz\n",
-                       flags={"fields": "2"})
+    src, _ = await cut(
+        [], read_stream=rs, stdin=b"x\ty\tz\n", flags={"fields": "2"}
+    )
     out = await _collect(src)
     assert out == b"y\n"
 
@@ -115,11 +110,13 @@ async def test_cut_missing_operand():
 async def test_stat_default_format():
 
     async def stat_fn(path):
-        return FileStat(name=path.virtual,
-                        size=42,
-                        modified="2026-01-01",
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=path.virtual,
+            size=42,
+            modified="2026-01-01",
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     out, _ = await generic_stat([_spec("a.txt")], stat_fn=stat_fn)
     assert b"File: a.txt" in out
@@ -131,10 +128,9 @@ async def test_stat_default_format():
 async def test_stat_custom_format():
 
     async def stat_fn(path):
-        return FileStat(name="foo",
-                        size=10,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="foo", size=10, type=FileType.FILE, content=ContentType.TEXT
+        )
 
     out, _ = await generic_stat([_spec("foo")], stat_fn=stat_fn, c="%n=%s")
     assert out == b"foo=10\n"
@@ -164,14 +160,16 @@ async def test_stat_format_F_regular():
 async def test_stat_multiple_paths():
 
     async def stat_fn(path):
-        return FileStat(name=path.virtual,
-                        size=1,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=path.virtual,
+            size=1,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
-    out, _ = await generic_stat([_spec("a"), _spec("b")],
-                                stat_fn=stat_fn,
-                                c="%n")
+    out, _ = await generic_stat(
+        [_spec("a"), _spec("b")], stat_fn=stat_fn, c="%n"
+    )
     assert out == b"a\nb\n"
 
 
@@ -189,17 +187,19 @@ async def test_stat_missing_operand():
 async def test_file_text_default():
 
     async def stat_fn(path):
-        return FileStat(name=path.virtual,
-                        size=5,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=path.virtual,
+            size=5,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     async def read_bytes(path):
         return b"hello"
 
-    out, _ = await file_cmd([_spec("a.txt")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn)
+    out, _ = await file_cmd(
+        [_spec("a.txt")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert b"a.txt:" in out
     assert b"text" in out
 
@@ -208,18 +208,16 @@ async def test_file_text_default():
 async def test_file_brief_mode():
 
     async def stat_fn(path):
-        return FileStat(name="f",
-                        size=4,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="f", size=4, type=FileType.FILE, content=ContentType.TEXT
+        )
 
     async def read_bytes(path):
         return b"abcd"
 
-    out, _ = await file_cmd([_spec("f")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn,
-                            b=True)
+    out, _ = await file_cmd(
+        [_spec("f")], read_bytes=read_bytes, stat_fn=stat_fn, b=True
+    )
     assert b":" not in out
 
 
@@ -227,18 +225,19 @@ async def test_file_brief_mode():
 async def test_file_mime_mode():
 
     async def stat_fn(path):
-        return FileStat(name="f.json",
-                        size=10,
-                        type=FileType.FILE,
-                        content=ContentType.JSON)
+        return FileStat(
+            name="f.json",
+            size=10,
+            type=FileType.FILE,
+            content=ContentType.JSON,
+        )
 
     async def read_bytes(path):
         return b'{"a": 1}'
 
-    out, _ = await file_cmd([_spec("f.json")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn,
-                            i=True)
+    out, _ = await file_cmd(
+        [_spec("f.json")], read_bytes=read_bytes, stat_fn=stat_fn, i=True
+    )
     assert b"application/json" in out
 
 
@@ -251,9 +250,9 @@ async def test_file_directory():
     async def read_bytes(path):
         raise AssertionError("should not be read for directory")
 
-    out, _ = await file_cmd([_spec("d")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn)
+    out, _ = await file_cmd(
+        [_spec("d")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert b"d: directory\n" == out
 
 
@@ -261,17 +260,19 @@ async def test_file_directory():
 async def test_file_multiple_paths():
 
     async def stat_fn(path):
-        return FileStat(name=path.virtual,
-                        size=3,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name=path.virtual,
+            size=3,
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+        )
 
     async def read_bytes(path):
         return b"abc"
 
-    out, _ = await file_cmd([_spec("a"), _spec("b")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn)
+    out, _ = await file_cmd(
+        [_spec("a"), _spec("b")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert b"a:" in out
     assert b"b:" in out
     assert out.count(b"\n") == 2
@@ -281,17 +282,16 @@ async def test_file_multiple_paths():
 async def test_file_read_error_logs_and_falls_back():
 
     async def stat_fn(path):
-        return FileStat(name="x",
-                        size=1,
-                        type=FileType.FILE,
-                        content=ContentType.TEXT)
+        return FileStat(
+            name="x", size=1, type=FileType.FILE, content=ContentType.TEXT
+        )
 
     async def read_bytes(path):
         raise OSError("denied")
 
-    out, _ = await file_cmd([_spec("x")],
-                            read_bytes=read_bytes,
-                            stat_fn=stat_fn)
+    out, _ = await file_cmd(
+        [_spec("x")], read_bytes=read_bytes, stat_fn=stat_fn
+    )
     assert b"x:" in out
 
 

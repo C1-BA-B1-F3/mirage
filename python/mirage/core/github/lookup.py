@@ -16,8 +16,12 @@ import logging
 from dataclasses import dataclass
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
 from mirage.cache.index.lock import index_lock
 from mirage.core.github.readdir import _readdir
 from mirage.core.github.tree import index_entry, point_row
@@ -97,9 +101,11 @@ async def lookup(
         try:
             children = await _readdir(
                 accessor,
-                PathSpec(virtual=parent,
-                         directory=parent,
-                         vfs_path=mount_key(parent, prefix)),
+                PathSpec(
+                    virtual=parent,
+                    directory=parent,
+                    vfs_path=mount_key(parent, prefix),
+                ),
                 index=index,
             )
         except FileNotFoundError as exc:

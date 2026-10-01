@@ -17,8 +17,13 @@ from typing import Generic
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, LookupStatus
 from mirage.cache.index.config import IndexSnapshot
 from mirage.core.slug_tree.rows import mount_root
-from mirage.core.slug_tree.types import (A, LoadRows, ResolvedDirectory,
-                                         ResolvedFile, ResolvedPath)
+from mirage.core.slug_tree.types import (
+    A,
+    LoadRows,
+    ResolvedDirectory,
+    ResolvedFile,
+    ResolvedPath,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 from mirage.utils.key_prefix import mount_prefix_of, rekey
@@ -39,15 +44,17 @@ class SlugTree(Generic[A]):
     def __init__(self, load: LoadRows[A]) -> None:
         self.load = load
 
-    async def ensure(self, accessor: A, index: IndexCacheStore,
-                     prefix: str) -> dict[str, list[str]] | None:
+    async def ensure(
+        self, accessor: A, index: IndexCacheStore, prefix: str
+    ) -> dict[str, list[str]] | None:
         listing = await index.list_dir(mount_root(prefix))
         if listing.entries is not None:
             return None
         return await self.refill(accessor, index, prefix)
 
-    async def refill(self, accessor: A, index: IndexCacheStore,
-                     prefix: str) -> dict[str, list[str]]:
+    async def refill(
+        self, accessor: A, index: IndexCacheStore, prefix: str
+    ) -> dict[str, list[str]]:
         """Refetch the tree, write every folder's listing, return the rows.
 
         The rows are returned so a reader can answer from them when the
@@ -68,18 +75,19 @@ class SlugTree(Generic[A]):
             children[directory] = [stem + name for name, _ in entries]
         return index.scope_snapshot(IndexSnapshot({}, children)).children
 
-    async def resolve(self,
-                      accessor: A,
-                      path: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> ResolvedPath:
+    async def resolve(
+        self, accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> ResolvedPath:
         mount_prefix = mount_prefix_of(path.virtual, path.vfs_path) or ""
         refilled = await self.ensure(accessor, index, mount_prefix)
         virtual_key = virtual_key_for(path)
         result = await index.get(virtual_key)
         if result.entry is not None and result.entry.resource_type != "folder":
-            return ResolvedFile(virtual_key=virtual_key,
-                                mount_prefix=mount_prefix,
-                                entry=result.entry)
+            return ResolvedFile(
+                virtual_key=virtual_key,
+                mount_prefix=mount_prefix,
+                entry=result.entry,
+            )
         if result.entry is None:
             listing = await index.list_dir(virtual_key)
             if listing.entries is None:
@@ -92,12 +100,12 @@ class SlugTree(Generic[A]):
         return ResolvedDirectory(
             virtual_key=virtual_key,
             mount_prefix=mount_prefix,
-            children=None if refilled is None else refilled.get(virtual_key))
+            children=None if refilled is None else refilled.get(virtual_key),
+        )
 
-    async def readdir(self,
-                      accessor: A,
-                      path: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    async def readdir(
+        self, accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> list[str]:
         resolved = await self.resolve(accessor, path, index)
         if not resolved.is_dir:
             raise enotdir(path)
@@ -105,8 +113,9 @@ class SlugTree(Generic[A]):
             return resolved.children
         listing = await index.list_dir(resolved.virtual_key)
         if listing.entries is None and listing.status == LookupStatus.EXPIRED:
-            refilled = await self.refill(accessor, index,
-                                         resolved.mount_prefix)
+            refilled = await self.refill(
+                accessor, index, resolved.mount_prefix
+            )
             if resolved.virtual_key in refilled:
                 return refilled[resolved.virtual_key]
         if listing.entries is None:
@@ -143,15 +152,20 @@ class SlugTree(Generic[A]):
             raise
         for child in children:
             child_path = PathSpec.from_str_path(
-                child, rekey(path.virtual, path.vfs_path, child))
-            results.extend(await self.walk(accessor,
-                                           child_path,
-                                           index,
-                                           include_root=True,
-                                           maxdepth=maxdepth,
-                                           strip_prefix=strip_prefix,
-                                           ignore_missing=ignore_missing,
-                                           depth=depth + 1))
+                child, rekey(path.virtual, path.vfs_path, child)
+            )
+            results.extend(
+                await self.walk(
+                    accessor,
+                    child_path,
+                    index,
+                    include_root=True,
+                    maxdepth=maxdepth,
+                    strip_prefix=strip_prefix,
+                    ignore_missing=ignore_missing,
+                    depth=depth + 1,
+                )
+            )
         return results
 
 

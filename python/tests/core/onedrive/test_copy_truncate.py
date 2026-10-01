@@ -1,12 +1,15 @@
+import contextlib
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 from yarl import URL
 
 from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
+from mirage.cache.context import push_cache_manager
 from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.onedrive import COMMANDS
 from mirage.commands.config import CommandOpts
-from mirage.core.onedrive.client import GraphError
+from mirage.core.msgraph.client import GraphError
 from mirage.core.onedrive.copy import copy
 from mirage.core.onedrive.truncate import truncate
 from mirage.types import PathSpec
@@ -18,8 +21,11 @@ def _accessor(**kw) -> OneDriveAccessor:
 
 _BASE = "https://graph.microsoft.com/v1.0/me/drive"
 
-_cp = next(c for c in COMMANDS if any(
-    rc.name == "cp" for rc in getattr(c, "_registered_commands", [])))
+_cp = next(
+    c
+    for c in COMMANDS
+    if any(rc.name == "cp" for rc in getattr(c, "_registered_commands", []))
+)
 
 
 @pytest.mark.asyncio
@@ -29,29 +35,88 @@ async def test_copy_posts_copy_action_with_name():
 
     def _cb(url, **kwargs):
         body.update(kwargs.get("json") or {})
-        return CallbackResult(status=202,
-                              payload={},
-                              headers={"Location": monitor})
+        return CallbackResult(
+            status=202, payload={}, headers={"Location": monitor}
+        )
 
     with aioresponses() as m:
         m.post(_BASE + "/root:/a.txt:/copy", callback=_cb)
         m.get(monitor, payload={"status": "completed"})
-        await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                   PathSpec.from_str_path("/sub/b.txt"))
+        await copy(
+            _accessor(),
+            PathSpec.from_str_path("/a.txt"),
+            PathSpec.from_str_path("/sub/b.txt"),
+        )
     assert body["name"] == "b.txt"
     assert "/root:/sub" in body["parentReference"]["path"]
+
+
+class _Invalidations:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    async def invalidate_after_write(self, path: PathSpec) -> None:
+        self.seen.append(f"write {path.virtual}")
+
+    async def invalidate_subtree(self, path: PathSpec) -> None:
+        self.seen.append(f"subtree {path.virtual}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_copy_invalidates_the_destination_subtree_under_its_own_path(
+    status,
+):
+    # A key named like its mount: the mount-relative `/m/k.txt` names
+    # another file under a `/m` mount. A failed copy invalidates too: a
+    # merge may have landed some children first.
+    monitor = "https://monitor.example/op/inv"
+    manager = _Invalidations()
+    previous = push_cache_manager(manager)
+    try:
+        with aioresponses() as m:
+            m.post(
+                _BASE + "/root:/a.txt:/copy",
+                status=202,
+                headers={"Location": monitor},
+            )
+            m.get(monitor, payload={"status": status, "error": {}})
+            with (
+                pytest.raises(GraphError)
+                if status == "failed"
+                else contextlib.nullcontext()
+            ):
+                await copy(
+                    _accessor(),
+                    PathSpec(
+                        virtual="/m/a.txt", directory="/m/", vfs_path="a.txt"
+                    ),
+                    PathSpec(
+                        virtual="/m/m/k.txt",
+                        directory="/m/m/",
+                        vfs_path="m/k.txt",
+                    ),
+                )
+    finally:
+        push_cache_manager(previous)
+    assert manager.seen == ["subtree /m/m/k.txt"]
 
 
 @pytest.mark.asyncio
 async def test_copy_polls_monitor_until_completed():
     monitor = "https://monitor.example/op/123"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": monitor})
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
         m.get(monitor, payload={"status": "completed"})
-        await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                   PathSpec.from_str_path("/b.txt"))
+        await copy(
+            _accessor(),
+            PathSpec.from_str_path("/a.txt"),
+            PathSpec.from_str_path("/b.txt"),
+        )
         # Without this the test passes when copy returns straight after
         # the 202 and never fetches the monitor at all.
         assert ("GET", URL(monitor)) in m.requests
@@ -61,20 +126,24 @@ async def test_copy_polls_monitor_until_completed():
 async def test_copy_raises_when_monitor_reports_failed():
     monitor = "https://monitor.example/op/456"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": monitor})
-        m.get(monitor,
-              payload={
-                  "status": "failed",
-                  "error": {
-                      "code": "generalException",
-                      "message": "x"
-                  }
-              })
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
+        m.get(
+            monitor,
+            payload={
+                "status": "failed",
+                "error": {"code": "generalException", "message": "x"},
+            },
+        )
         with pytest.raises(GraphError):
-            await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                       PathSpec.from_str_path("/b.txt"))
+            await copy(
+                _accessor(),
+                PathSpec.from_str_path("/a.txt"),
+                PathSpec.from_str_path("/b.txt"),
+            )
 
 
 @pytest.mark.asyncio
@@ -82,8 +151,11 @@ async def test_copy_raises_without_monitor_location():
     with aioresponses() as m:
         m.post(_BASE + "/root:/a.txt:/copy", status=202, payload={})
         with pytest.raises(GraphError) as exc:
-            await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                       PathSpec.from_str_path("/b.txt"))
+            await copy(
+                _accessor(),
+                PathSpec.from_str_path("/a.txt"),
+                PathSpec.from_str_path("/b.txt"),
+            )
     assert exc.value.code == "missingMonitor"
 
 
@@ -91,13 +163,18 @@ async def test_copy_raises_without_monitor_location():
 async def test_copy_rejects_monitor_without_status():
     monitor = "https://monitor.example/op/missing-status"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": monitor})
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
         m.get(monitor, payload={})
         with pytest.raises(GraphError) as exc:
-            await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                       PathSpec.from_str_path("/b.txt"))
+            await copy(
+                _accessor(),
+                PathSpec.from_str_path("/a.txt"),
+                PathSpec.from_str_path("/b.txt"),
+            )
     assert exc.value.code == "invalidMonitorResponse"
 
 
@@ -105,13 +182,18 @@ async def test_copy_rejects_monitor_without_status():
 async def test_copy_rejects_non_object_monitor_response():
     monitor = "https://monitor.example/op/invalid"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": monitor})
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
         m.get(monitor, payload=[])
         with pytest.raises(GraphError) as exc:
-            await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                       PathSpec.from_str_path("/b.txt"))
+            await copy(
+                _accessor(),
+                PathSpec.from_str_path("/a.txt"),
+                PathSpec.from_str_path("/b.txt"),
+            )
     assert exc.value.code == "invalidMonitorResponse"
 
 
@@ -120,41 +202,42 @@ async def test_copy_file_conflict_deletes_destination_and_retries():
     monitor = "https://monitor.example/op/789"
     retry_monitor = "https://monitor.example/op/789-retry"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": monitor})
-        m.get(monitor,
-              payload={
-                  "status": "failed",
-                  "error": {
-                      "code": "nameAlreadyExists",
-                      "message": "x"
-                  }
-              })
-        m.get(_BASE + "/root:/a.txt",
-              payload={
-                  "id": "1",
-                  "name": "a.txt",
-                  "size": 1,
-                  "file": {}
-              })
-        m.get(_BASE + "/root:/b.txt",
-              payload={
-                  "id": "2",
-                  "name": "b.txt",
-                  "size": 1,
-                  "file": {}
-              })
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
+        m.get(
+            monitor,
+            payload={
+                "status": "failed",
+                "error": {"code": "nameAlreadyExists", "message": "x"},
+            },
+        )
+        m.get(
+            _BASE + "/root:/a.txt",
+            payload={"id": "1", "name": "a.txt", "size": 1, "file": {}},
+        )
+        m.get(
+            _BASE + "/root:/b.txt",
+            payload={"id": "2", "name": "b.txt", "size": 1, "file": {}},
+        )
         m.delete(_BASE + "/root:/b.txt", status=204)
-        m.post(_BASE + "/root:/a.txt:/copy",
-               status=202,
-               headers={"Location": retry_monitor})
+        m.post(
+            _BASE + "/root:/a.txt:/copy",
+            status=202,
+            headers={"Location": retry_monitor},
+        )
         m.get(retry_monitor, payload={"status": "completed"})
-        await copy(_accessor(), PathSpec.from_str_path("/a.txt"),
-                   PathSpec.from_str_path("/b.txt"))
+        await copy(
+            _accessor(),
+            PathSpec.from_str_path("/a.txt"),
+            PathSpec.from_str_path("/b.txt"),
+        )
         assert ("DELETE", URL(_BASE + "/root:/b.txt")) in m.requests
-        assert len(m.requests[("POST",
-                               URL(_BASE + "/root:/a.txt:/copy"))]) == 2
+        assert (
+            len(m.requests[("POST", URL(_BASE + "/root:/a.txt:/copy"))]) == 2
+        )
         assert ("GET", URL(retry_monitor)) in m.requests
 
 
@@ -163,48 +246,43 @@ async def test_copy_dir_conflict_merges_per_child():
     monitor = "https://monitor.example/op/m1"
     child_monitor = "https://monitor.example/op/m1-child"
     with aioresponses() as m:
-        m.post(_BASE + "/root:/src:/copy",
-               status=202,
-               headers={"Location": monitor})
-        m.get(monitor,
-              payload={
-                  "status": "failed",
-                  "error": {
-                      "code": "nameAlreadyExists",
-                      "message": "x"
-                  }
-              })
-        m.get(_BASE + "/root:/src",
-              payload={
-                  "id": "1",
-                  "name": "src",
-                  "folder": {
-                      "childCount": 1
-                  }
-              })
-        m.get(_BASE + "/root:/dst",
-              payload={
-                  "id": "2",
-                  "name": "dst",
-                  "folder": {
-                      "childCount": 0
-                  }
-              })
-        m.get(_BASE + "/root:/src:/children",
-              payload={
-                  "value": [{
-                      "id": "3",
-                      "name": "f.txt",
-                      "size": 1,
-                      "file": {}
-                  }]
-              })
-        m.post(_BASE + "/root:/src/f.txt:/copy",
-               status=202,
-               headers={"Location": child_monitor})
+        m.post(
+            _BASE + "/root:/src:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
+        m.get(
+            monitor,
+            payload={
+                "status": "failed",
+                "error": {"code": "nameAlreadyExists", "message": "x"},
+            },
+        )
+        m.get(
+            _BASE + "/root:/src",
+            payload={"id": "1", "name": "src", "folder": {"childCount": 1}},
+        )
+        m.get(
+            _BASE + "/root:/dst",
+            payload={"id": "2", "name": "dst", "folder": {"childCount": 0}},
+        )
+        m.get(
+            _BASE + "/root:/src:/children",
+            payload={
+                "value": [{"id": "3", "name": "f.txt", "size": 1, "file": {}}]
+            },
+        )
+        m.post(
+            _BASE + "/root:/src/f.txt:/copy",
+            status=202,
+            headers={"Location": child_monitor},
+        )
         m.get(child_monitor, payload={"status": "completed"})
-        await copy(_accessor(), PathSpec.from_str_path("/src"),
-                   PathSpec.from_str_path("/dst"))
+        await copy(
+            _accessor(),
+            PathSpec.from_str_path("/src"),
+            PathSpec.from_str_path("/dst"),
+        )
         # Merge, not replace: the child is copied one level down and the
         # existing destination folder is never deleted.
         assert ("GET", URL(_BASE + "/root:/src:/children")) in m.requests
@@ -218,57 +296,46 @@ async def test_cp_recursive_uses_server_side_folder_copy():
     src = PathSpec.from_str_path("/src")
     dst = PathSpec.from_str_path("/dst")
     with aioresponses() as m:
-        m.get(_BASE + "/root:/src:/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "a.txt",
-                          "size": 3,
-                          "file": {}
-                      },
-                      {
-                          "id": "2",
-                          "name": "sub",
-                          "folder": {
-                              "childCount": 1
-                          }
-                      },
-                  ]
-              })
-        m.get(_BASE + "/root:/src/sub:/children",
-              payload={
-                  "value": [{
-                      "id": "3",
-                      "name": "b.txt",
-                      "size": 4,
-                      "file": {}
-                  }]
-              })
+        m.get(
+            _BASE + "/root:/src:/children",
+            payload={
+                "value": [
+                    {"id": "1", "name": "a.txt", "size": 3, "file": {}},
+                    {"id": "2", "name": "sub", "folder": {"childCount": 1}},
+                ]
+            },
+        )
+        m.get(
+            _BASE + "/root:/src/sub:/children",
+            payload={
+                "value": [{"id": "3", "name": "b.txt", "size": 4, "file": {}}]
+            },
+        )
         # Statted twice: once for the directory-destination probe, once
         # for the GNU overwrite type guard on the mapped target.
-        m.get(_BASE + "/root:/dst",
-              status=404,
-              payload={"error": {
-                  "code": "itemNotFound"
-              }},
-              repeat=True)
-        m.get(_BASE + "/root:/src",
-              payload={
-                  "id": "0",
-                  "name": "src",
-                  "folder": {
-                      "childCount": 2
-                  }
-              })
+        m.get(
+            _BASE + "/root:/dst",
+            status=404,
+            payload={"error": {"code": "itemNotFound"}},
+            repeat=True,
+        )
+        m.get(
+            _BASE + "/root:/src",
+            payload={"id": "0", "name": "src", "folder": {"childCount": 2}},
+        )
         monitor = "https://monitor.example/op/folder-copy"
-        m.post(_BASE + "/root:/src:/copy",
-               status=202,
-               headers={"Location": monitor})
+        m.post(
+            _BASE + "/root:/src:/copy",
+            status=202,
+            headers={"Location": monitor},
+        )
         m.get(monitor, payload={"status": "completed"})
         _out, io = await _cp.__wrapped__(
-            _accessor(), [src, dst], [],
-            CommandOpts(index=NULL_INDEX, flags={"r": True}))
+            _accessor(),
+            [src, dst],
+            [],
+            CommandOpts(index=NULL_INDEX, flags={"r": True}),
+        )
     assert set(io.writes) == {"/dst/a.txt", "/dst/sub/b.txt"}
 
 

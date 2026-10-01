@@ -21,14 +21,17 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 
 HEAD_MAIN = b"ref: refs/heads/main\n"
-NOT_A_REPO = (b"fatal: not a git repository (or any of the parent "
-              b"directories): .git\n")
+NOT_A_REPO = (
+    b"fatal: not a git repository (or any of the parent directories): .git\n"
+)
 # These repositories are a bare HEAD file and nothing else, which is
 # what discovery needs and all these tests are about. Status still
 # renders the whole report for one, and it is the report git gives a
 # repository with no commits in it.
-NOTHING_YET = (b'\n\nNo commits yet\n\nnothing to commit (create/copy files '
-               b'and use "git add" to track)\n')
+NOTHING_YET = (
+    b"\n\nNo commits yet\n\nnothing to commit (create/copy files "
+    b'and use "git add" to track)\n'
+)
 ON_MAIN = b"On branch main" + NOTHING_YET
 
 
@@ -44,11 +47,37 @@ def leaf(name: str):
 def test_tree_shape():
     assert GIT.name == "git"
     assert [v.name for v in GIT.subcommands] == [
-        "reflog", "for-each-ref", "ls-files", "fetch", "clone", "help", "init",
-        "fsck", "stash", "version", "remote", "config", "show-ref", "shortlog",
-        "rev-parse", "rev-list", "diff-tree", "status", "log", "show", "diff",
-        "branch", "add", "reset", "commit", "checkout", "switch", "restore",
-        "rm", "mv", "tag"
+        "reflog",
+        "for-each-ref",
+        "ls-files",
+        "fetch",
+        "clone",
+        "help",
+        "init",
+        "fsck",
+        "stash",
+        "version",
+        "remote",
+        "config",
+        "show-ref",
+        "shortlog",
+        "rev-parse",
+        "rev-list",
+        "diff-tree",
+        "status",
+        "log",
+        "show",
+        "diff",
+        "branch",
+        "add",
+        "reset",
+        "commit",
+        "checkout",
+        "switch",
+        "restore",
+        "rm",
+        "mv",
+        "tag",
     ]
 
 
@@ -111,10 +140,13 @@ async def test_discovery_walks_up_from_a_subdirectory():
 async def test_discovery_stops_at_the_mount_root():
     # The .git sits above the mount, on another backend entirely, so
     # git's filesystem-boundary rule must not reach it.
-    with Workspace({
+    with Workspace(
+        {
             "/": RAMVFS(),
             "/data/": RAMVFS(),
-    }, mode=MountMode.WRITE) as ws:
+        },
+        mode=MountMode.WRITE,
+    ) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /.git")
         await ws.vfs.write("/.git/HEAD", HEAD_MAIN)
@@ -129,8 +161,10 @@ async def test_a_detached_head_no_checkout_moved_is_on_no_branch():
     with Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /data/repo/.git")
-        await ws.vfs.write("/data/repo/.git/HEAD",
-                           b"cdd6234342b147880f5d86c55dad6c1fbe222bfe\n")
+        await ws.vfs.write(
+            "/data/repo/.git/HEAD",
+            b"cdd6234342b147880f5d86c55dad6c1fbe222bfe\n",
+        )
         result = await ws.shell("git -C /data/repo status")
     assert result.exit_code == 0
     assert result.stdout == b"Not currently on any branch." + NOTHING_YET

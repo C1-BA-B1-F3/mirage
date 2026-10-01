@@ -13,17 +13,21 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic.crossmount.fanout.du import (
-    du_total, merge_du_totals)
+    du_total,
+    merge_du_totals,
+)
 from mirage.commands.builtin.generic.crossmount.types import OperandRun
 from mirage.io import IOResult
 from mirage.types import PathSpec
 
 
 def _scope(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path="",
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path="",
+        resolved=True,
+    )
 
 
 def _op(data: bytes, exit_code: int = 0) -> OperandRun:
@@ -62,8 +66,8 @@ def testmerge_du_totals_takes_rendered_blocks():
     # The mount fan-out has no OperandRun to hand over: its blocks are one
     # per mount, not one per operand.
     out = merge_du_totals(
-        [b"10\t/base\n10\ttotal\n", b"7\t/base/inner\n7\ttotal\n"],
-        human=False).decode()
+        [b"10\t/base\n10\ttotal\n", b"7\t/base/inner\n7\ttotal\n"], human=False
+    ).decode()
     assert out == "10\t/base\n7\t/base/inner\n17\ttotal\n"
 
 

@@ -115,13 +115,14 @@ def push_mount_context(mount_id: str | None):
         mount_id (str | None): instance identity, absent outside a mount.
     """
     rec = _recorder.get()
-    return _recorder.set(None if rec is
-                         None else Recorder(sink=rec.sink, mount_id=mount_id))
+    return _recorder.set(
+        None if rec is None else Recorder(sink=rec.sink, mount_id=mount_id)
+    )
 
 
 async def with_mount_context(
-        it: AsyncIterator[bytes],
-        mount_id: str | None = None) -> AsyncIterator[bytes]:
+    it: AsyncIterator[bytes], mount_id: str | None = None
+) -> AsyncIterator[bytes]:
     """Wrap an async iterator so the recorder's mount_id is ``mount_id``
     during each ``__anext__`` of the underlying stream.
 
@@ -139,8 +140,13 @@ async def with_mount_context(
     try:
         while True:
             previous = _recorder.get()
-            token = push_mount_context(mount_id if mount_id is not None else
-                                       previous.mount_id if previous else None)
+            token = push_mount_context(
+                mount_id
+                if mount_id is not None
+                else previous.mount_id
+                if previous
+                else None
+            )
             try:
                 chunk = await aiter.__anext__()
             except StopAsyncIteration:
@@ -163,7 +169,7 @@ class OpTimer:
     at finish time, not here.
     """
 
-    __slots__ = ("_start_ms", )
+    __slots__ = ("_start_ms",)
 
     def __init__(self) -> None:
         self._start_ms = int(time.monotonic() * 1000)
@@ -184,13 +190,15 @@ def start_op() -> OpTimer:
     return OpTimer()
 
 
-def finish_record(op: str,
-                  path: str,
-                  source: str,
-                  nbytes: int,
-                  timer: OpTimer,
-                  fingerprint: str | None = None,
-                  revision: str | None = None) -> OpRecord:
+def finish_record(
+    op: str,
+    path: str,
+    source: str,
+    nbytes: int,
+    timer: OpTimer,
+    fingerprint: str | None = None,
+    revision: str | None = None,
+) -> OpRecord:
     """Close ``timer`` and build the finished record.
 
     The one place an op's duration and wall-clock stamp are read, shared
@@ -223,13 +231,15 @@ def finish_record(op: str,
     )
 
 
-def record(op: str,
-           path: str,
-           source: str,
-           nbytes: int,
-           timer: OpTimer,
-           fingerprint: str | None = None,
-           revision: str | None = None) -> None:
+def record(
+    op: str,
+    path: str,
+    source: str,
+    nbytes: int,
+    timer: OpTimer,
+    fingerprint: str | None = None,
+    revision: str | None = None,
+) -> None:
     """Record a byte transfer event. No-op if no recording context is active.
 
     Args:
@@ -249,20 +259,25 @@ def record(op: str,
     if rec is None:
         return
     rec.sink.append(
-        finish_record(op,
-                      path,
-                      source,
-                      nbytes,
-                      timer,
-                      fingerprint=fingerprint,
-                      revision=revision))
+        finish_record(
+            op,
+            path,
+            source,
+            nbytes,
+            timer,
+            fingerprint=fingerprint,
+            revision=revision,
+        )
+    )
 
 
-def record_stream(op: str,
-                  path: str,
-                  source: str,
-                  fingerprint: str | None = None,
-                  revision: str | None = None) -> OpRecord | None:
+def record_stream(
+    op: str,
+    path: str,
+    source: str,
+    fingerprint: str | None = None,
+    revision: str | None = None,
+) -> OpRecord | None:
     """Start recording a streaming transfer. Returns a mutable OpRecord.
 
     The caller updates ``rec.bytes`` as chunks flow through. The record
@@ -304,8 +319,9 @@ def record_stream(op: str,
     return op_rec
 
 
-_revisions: ContextVar[dict[str, str] | None] = ContextVar("_revisions",
-                                                           default=None)
+_revisions: ContextVar[dict[str, str] | None] = ContextVar(
+    "_revisions", default=None
+)
 
 
 def push_revisions(revisions: dict[str, str] | None):
@@ -357,8 +373,9 @@ def revision_for(path: str) -> str | None:
     return revs.get(path)
 
 
-async def with_revisions(revisions: dict[str, str] | None,
-                         it: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+async def with_revisions(
+    revisions: dict[str, str] | None, it: AsyncIterator[bytes]
+) -> AsyncIterator[bytes]:
     """Wrap an async iterator so the active revisions map is ``revisions``
     during each ``__anext__`` of the underlying stream.
 

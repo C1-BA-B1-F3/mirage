@@ -34,7 +34,8 @@ vfs = GDocsVFS(config=config)
 async def main() -> None:
     with Workspace({"/gdocs/": vfs}, mode=MountMode.READ) as ws:
         print(
-            "=== VFS MODE: open() reads from Google Docs transparently ===\n")
+            "=== VFS MODE: open() reads from Google Docs transparently ===\n"
+        )
 
         print("--- os.listdir() root ---")
         dirs = os.listdir("/gdocs")

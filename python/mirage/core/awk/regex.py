@@ -19,11 +19,11 @@ from mirage.utils.posix import POSIX_CLASSES, translate_bracket
 
 WORD_BOUNDARY_ESCAPES = {"y": "\\b", "<": "\\b", ">": "\\b", "B": "\\B"}
 
-ALNUM = ("abcdefghijklmnopqrstuvwxyz"
-         "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-REGEX_ERROR = ("awk: syntax error in regular expression {pattern} "
-               "at source line 1")
+REGEX_ERROR = (
+    "awk: syntax error in regular expression {pattern} at source line 1"
+)
 
 CACHE: dict[str, re.Pattern[str]] = {}
 

@@ -32,23 +32,25 @@ def store():
 
 @pytest.mark.asyncio
 async def test_size_root(store):
-    total = await size(store, PathSpec(vfs_path="", virtual="/",
-                                       directory="/"))
+    total = await size(
+        store, PathSpec(vfs_path="", virtual="/", directory="/")
+    )
     assert total == 5 + 6 + 4
 
 
 @pytest.mark.asyncio
 async def test_size_subdir(store):
     total = await size(
-        store, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"))
+        store, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub")
+    )
     assert total == 6 + 4
 
 
 @pytest.mark.asyncio
 async def test_size_single_file(store):
     total = await size(
-        store, PathSpec(vfs_path="a.txt", virtual="/a.txt",
-                        directory="/a.txt"))
+        store, PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/a.txt")
+    )
     assert total == 5
 
 

@@ -220,7 +220,7 @@ GIT_LONG_OPTIONS: dict[str, tuple[str, ...]] = {
         "[no-]force",
         "[no-]sparse",
     ),
-    "remote": ("[no-]verbose", ),
+    "remote": ("[no-]verbose",),
     "reset": (
         "[no-]quiet",
         "no-refresh",
@@ -339,5 +339,5 @@ GIT_LONG_OPTIONS: dict[str, tuple[str, ...]] = {
         "[no-]color",
         "[no-]ignore-case",
     ),
-    "version": ("[no-]build-options", ),
+    "version": ("[no-]build-options",),
 }

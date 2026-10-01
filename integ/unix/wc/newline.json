@@ -5,6 +5,7 @@
       "seq": 917206,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/wcnl && printf 'x\\ny\\n' > \"/data/wcnl/n$(printf '\\nq')\" && printf 'z\\n' > /data/wcnl/c && wc -l /data/wcnl/n* /data/wcnl/c; rm -r /data/wcnl",

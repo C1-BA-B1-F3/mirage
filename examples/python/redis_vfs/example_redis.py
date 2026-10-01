@@ -19,11 +19,6 @@ import tempfile
 import uuid
 
 from mirage import MountMode, Workspace
-from mirage.commands.builtin.redis._provision import (file_read_provision,
-                                                      head_tail_provision,
-                                                      metadata_provision)
-from mirage.commands.config import CommandOpts
-from mirage.types import PathSpec
 from mirage.vfs.redis import RedisVFS
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -37,10 +32,12 @@ async def main() -> None:
     print("=== tee (create files) ===")
     await ws.shell('echo "hello world" | tee /data/hello.txt')
     await ws.shell(
-        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json')
+        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json'
+    )
     await ws.shell("mkdir /data/reports")
-    await ws.shell('echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
-                   )
+    await ws.shell(
+        'echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
+    )
 
     print("=== ls /data/ ===")
     result = await ws.shell("ls /data/")
@@ -80,12 +77,16 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
-                "stat /data/missing.txt"):
+    for cmd in (
+        "cat /data/missing.txt",
+        "head /data/missing.txt",
+        "stat /data/missing.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== nl /data/reports/q1.csv ===")
     result = await ws.shell("nl /data/reports/q1.csv")
@@ -171,50 +172,6 @@ async def main() -> None:
     result = await ws.shell("base64 /data/hello.txt")
     print(await result.stdout_str())
 
-    # ── provision: cost estimates before execution ─────────────────
-    print("\n=== PROVISION (cost estimates before execution) ===\n")
-    print(
-        "  Redis ops have no ranged GET — every read fetches the full value.")
-    print("  Provision lets the agent budget IO / compute before running.\n")
-
-    # 1. ws.shell(cmd, provision=True) returns a ProvisionResult
-    ws_prov = await ws.shell("cat /data/hello.txt", provision=True)
-    print("  ws.shell('cat /data/hello.txt', provision=True):")
-    print(f"    command        = {ws_prov.command!r}")
-    print(f"    network_read   = {ws_prov.network_read}")
-    print(f"    read_ops       = {ws_prov.read_ops}")
-    print(f"    precision      = {ws_prov.precision}")
-    print()
-
-    # 2. Redis-specific helpers — exact Redis cost, callable standalone
-    paths = [
-        PathSpec(virtual="/data/hello.txt",
-                 directory="/data",
-                 vfs_path="hello.txt"),
-        PathSpec(virtual="/data/user.json",
-                 directory="/data",
-                 vfs_path="user.json"),
-    ]
-    accessor = vfs.accessor
-
-    read_cost = await file_read_provision(accessor, paths, [],
-                                          CommandOpts(command="cat"))
-    print("  file_read_provision(accessor, [hello.txt, user.json]):")
-    print(f"    network_read   = {read_cost.network_read} bytes "
-          f"({read_cost.read_ops} reads)")
-    print(f"    precision      = {read_cost.precision}")
-
-    head_cost = await head_tail_provision(accessor, paths, [],
-                                          CommandOpts(command="head -n 1"))
-    print("  head_tail_provision(...) — Redis fetches full value regardless:")
-    print(f"    network_read   = {head_cost.network_read} bytes")
-
-    meta_cost = await metadata_provision(accessor, paths, [],
-                                         CommandOpts(command="stat"))
-    print("  metadata_provision(...) — stat/ls/find cost zero network bytes:")
-    print(f"    network_read   = {meta_cost.network_read} bytes")
-    print(f"    read_ops       = {meta_cost.read_ops}")
-
     # ── persistence: save / load / copy / deepcopy ──────────────────
     # Redis has redacted connection config: saved state contains the full
     # key+value dump, but caller must supply a fresh RedisVFS (often
@@ -232,24 +189,27 @@ async def main() -> None:
             await Workspace.load(snap)
             print("  ✗ load() should have raised without mounts=")
         except ValueError as e:
-            print(f"  ✓ load() w/o mounts raises: "
-                  f"{str(e).splitlines()[0][:70]}…")
+            print(
+                f"  ✓ load() w/o mounts raises: {str(e).splitlines()[0][:70]}…"
+            )
 
         # Load into a fresh Redis prefix (same instance, isolated namespace)
         loaded = await Workspace.load(
             snap,
-            mounts={"/data": RedisVFS(url=REDIS_URL, key_prefix=dst_prefix)})
+            mounts={"/data": RedisVFS(url=REDIS_URL, key_prefix=dst_prefix)},
+        )
         r = await loaded.shell("ls /data/")
-        print(f"  loaded ws ls /data: "
-              f"{(await r.stdout_str()).strip()[:60]}…")
+        print(f"  loaded ws ls /data: {(await r.stdout_str()).strip()[:60]}…")
 
         # copy(): in-process, reuses same RedisVFS, both copies
         # see the same Redis state
         cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")
@@ -261,6 +221,7 @@ async def main() -> None:
         # namespaces outlive the process, so leaving either behind makes
         # the next run open on this run's `ls`.
         import redis as sync_redis
+
         sc = sync_redis.Redis.from_url(REDIS_URL)
         for prefix in (dst_prefix, KEY_PREFIX):
             for key in sc.scan_iter(f"{prefix}*"):

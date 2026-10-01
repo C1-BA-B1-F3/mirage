@@ -64,7 +64,9 @@ def test_read_reflects_new_events_without_invalidation():
                 timestamp=2000,
                 command="pwd",
                 exit_code=0,
-            )))
+            )
+        )
+    )
     second = asyncio.run(mount.execute_op("read", "/.bash_history"))
     assert first != second
     assert second.endswith(b"#2\npwd\n")

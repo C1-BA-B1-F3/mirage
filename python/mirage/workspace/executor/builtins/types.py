@@ -61,6 +61,7 @@ class BuiltinCall:
             place (``eval``, ``source``, a nested shell) writes its
             statements as they finish, None to return them.
     """
+
     argv: Argv
     session: SessionState
     stdin: ByteSource | None

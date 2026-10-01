@@ -52,7 +52,7 @@ class MockVFS extends BaseVFS {
 }
 
 describe('Workspace lifecycle', () => {
-  it.each(['glob', 'midpath', 'provision', 'metadata', 'touch', 'chmod', 'chown', 'chgrp'])(
+  it.each(['glob', 'midpath', 'metadata', 'touch', 'chmod', 'chown', 'chgrp'])(
     'prepares the first %s access to a dynamic mount',
     async (action) => {
       class IndexedRAM extends RAMVFS {
@@ -60,30 +60,29 @@ describe('Workspace lifecycle', () => {
           super()
         }
         override ops(): readonly RegisteredOp[] {
-          return super.ops().map(
-            (o): RegisteredOp =>
-              o.name === 'glob'
-                ? {
-                    ...o,
-                    fn: async (accessor, path, args, kwargs) => {
-                      const parent = path.directory.replace(/\/$/, '')
-                      const directory = parent === '' ? '/' : parent
-                      const listing = await this.shared.listDir(directory)
-                      if (listing.entries != null) {
-                        const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-                        return listing.entries
-                          .filter((key) =>
-                            globNameMatches(
-                              key.split('/').at(-1) ?? '',
-                              globPattern(path.pattern ?? '*'),
-                            ),
-                          )
-                          .map((key) => PathSpec.fromStrPath(key, mountKey(key, prefix)))
-                      }
-                      return o.fn(accessor, path, args, kwargs)
-                    },
-                  }
-                : o,
+          return super.ops().map((o): RegisteredOp =>
+            o.name === 'glob'
+              ? {
+                  ...o,
+                  fn: async (accessor, path, args, kwargs) => {
+                    const parent = path.directory.replace(/\/$/, '')
+                    const directory = parent === '' ? '/' : parent
+                    const listing = await this.shared.listDir(directory)
+                    if (listing.entries != null) {
+                      const prefix = mountPrefixOf(path.virtual, path.vfsPath)
+                      return listing.entries
+                        .filter((key) =>
+                          globNameMatches(
+                            key.split('/').at(-1) ?? '',
+                            globPattern(path.pattern ?? '*'),
+                          ),
+                        )
+                        .map((key) => PathSpec.fromStrPath(key, mountKey(key, prefix)))
+                    }
+                    return o.fn(accessor, path, args, kwargs)
+                  },
+                }
+              : o,
           )
         }
       }
@@ -108,11 +107,7 @@ describe('Workspace lifecycle', () => {
       await ws.cache.set('/data/file', bytes.encode('old'))
       ws.addMount('/data', replacement, MountMode.WRITE)
       try {
-        if (action === 'provision') {
-          const result = await ws.provision('cat /data/file')
-          expect(result.cacheHits).toBe(0)
-          expect((await ws.shell('cat /data/file')).stdout).toEqual(bytes.encode('new'))
-        } else if (action === 'metadata') {
+        if (action === 'metadata') {
           const expanded = await expandOperands(ws.namespace, [
             new PathSpec({
               virtual: '/data/*.txt',
@@ -1206,23 +1201,22 @@ it('unmount drains metadata globs and their index writes', async () => {
   let closed = false
   class GatedGlobRAM extends RAMVFS {
     override ops(): readonly RegisteredOp[] {
-      return super.ops().map(
-        (o): RegisteredOp =>
-          o.name === 'glob'
-            ? {
-                ...o,
-                fn: async (_accessor, _path, _args, { index }) => {
-                  enter()
-                  await release
-                  expect(closed).toBe(false)
-                  if (index === undefined) throw new Error('missing index')
-                  await index.setDir('/data', [
-                    ['late', new IndexEntry({ id: 'late', name: 'late', resourceType: 'file' })],
-                  ])
-                  return []
-                },
-              }
-            : o,
+      return super.ops().map((o): RegisteredOp =>
+        o.name === 'glob'
+          ? {
+              ...o,
+              fn: async (_accessor, _path, _args, { index }) => {
+                enter()
+                await release
+                expect(closed).toBe(false)
+                if (index === undefined) throw new Error('missing index')
+                await index.setDir('/data', [
+                  ['late', new IndexEntry({ id: 'late', name: 'late', resourceType: 'file' })],
+                ])
+                return []
+              },
+            }
+          : o,
       )
     }
   }

@@ -16,19 +16,33 @@ import functools
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
-from mirage.policy.constants import (ASK_SECOND, DENY_FIRST, METADATA_OPS,
-                                     SUBTREE_COMMANDS, SUBTREE_OPS)
+from mirage.policy.constants import (
+    ASK_SECOND,
+    DENY_FIRST,
+    METADATA_OPS,
+    SUBTREE_COMMANDS,
+    SUBTREE_OPS,
+)
 from mirage.policy.match.allow import line_tokens
 from mirage.policy.match.pattern import pattern_matches
-from mirage.policy.types import (AdmissionRules, CommandContext, CommandRule,
-                                 OpsContext)
+from mirage.policy.types import (
+    AdmissionRules,
+    CommandContext,
+    CommandRule,
+    OpsContext,
+)
 from mirage.types import HiddenPaths, PathSpec
-from mirage.utils.hidden import (anchor_depth, classify_paths, path_covers,
-                                 path_hidden)
+from mirage.utils.hidden import (
+    anchor_depth,
+    classify_paths,
+    path_covers,
+    path_hidden,
+)
 
 
-def better_match(current: tuple[int, int] | None, depth: int,
-                 verb: int) -> bool:
+def better_match(
+    current: tuple[int, int] | None, depth: int, verb: int
+) -> bool:
     """Whether a match beats the best one so far: deeper anchor first,
     then the stronger verb, then the earlier rule (which is why this is
     strict).
@@ -116,12 +130,15 @@ def subjects(ctx: CommandContext) -> tuple[Subject, ...]:
         ctx (CommandContext): the classified command.
     """
     if not ctx.paths:
-        return (Subject(None), )
+        return (Subject(None),)
     subs = [Subject(p) for p in ctx.paths]
     if ctx.command in SUBTREE_COMMANDS:
         operands = list(ctx.operands)
-        dst = (operands.pop()
-               if ctx.command == "mv" and len(operands) > 1 else None)
+        dst = (
+            operands.pop()
+            if ctx.command == "mv" and len(operands) > 1
+            else None
+        )
         subs.extend(Subject(p, holds=True) for p in operands)
         if dst is not None:
             subs.append(Subject(dst, holds=True, ancestors=False))
@@ -171,8 +188,9 @@ def rule_applies(rule: CommandRule, ctx: CommandContext) -> bool:
     return not rule.mount or _touches(rule.mount, ctx)
 
 
-def rule_reach(rule: CommandRule, scope: HiddenPaths | None,
-               subject: Subject) -> int | None:
+def rule_reach(
+    rule: CommandRule, scope: HiddenPaths | None, subject: Subject
+) -> int | None:
     """How deep a rule reaches at one subject of a line, None when it
     says nothing about that subject.
 
@@ -216,8 +234,9 @@ def matched_operand(rule: CommandRule, subject: Subject) -> str | None:
     return subject.path.raw_path or subject.path.virtual
 
 
-def match_rule(rule: CommandRule, scope: HiddenPaths | None,
-               ctx: CommandContext) -> RuleMatch | None:
+def match_rule(
+    rule: CommandRule, scope: HiddenPaths | None, ctx: CommandContext
+) -> RuleMatch | None:
     """Whether one rule applies to a line, and to which operand: the
     first subject it reaches, which is what a single rule read as a
     policy of its own has to answer.
@@ -251,7 +270,7 @@ def _entry_scope(entry: str) -> HiddenPaths | None:
     Args:
         entry (str): one entry of a rule's ``paths``.
     """
-    return classify_paths((entry, ))
+    return classify_paths((entry,))
 
 
 def hidden_depth(rule: CommandRule, virtual: str) -> int:
@@ -262,14 +281,19 @@ def hidden_depth(rule: CommandRule, virtual: str) -> int:
         rule (CommandRule): the rule that matched.
         virtual (str): absolute virtual path the rule matched on.
     """
-    return max((anchor_depth(e)
-                for e in rule.paths if path_hidden(_entry_scope(e), virtual)),
-               default=0)
+    return max(
+        (
+            anchor_depth(e)
+            for e in rule.paths
+            if path_hidden(_entry_scope(e), virtual)
+        ),
+        default=0,
+    )
 
 
-def covers_depth(rule: CommandRule,
-                 virtual: str,
-                 ancestors: bool = True) -> int:
+def covers_depth(
+    rule: CommandRule, virtual: str, ancestors: bool = True
+) -> int:
     """The anchor depth of the deepest entry of a rule that sits at or
     under this path, 0 when none does.
 
@@ -281,9 +305,14 @@ def covers_depth(rule: CommandRule,
         virtual (str): absolute virtual path of the subtree operand.
         ancestors (bool): whether an ancestor of the scope counts.
     """
-    return max((anchor_depth(e) for e in rule.paths
-                if path_covers(_entry_scope(e), virtual, ancestors)),
-               default=0)
+    return max(
+        (
+            anchor_depth(e)
+            for e in rule.paths
+            if path_covers(_entry_scope(e), virtual, ancestors)
+        ),
+        default=0,
+    )
 
 
 @functools.lru_cache(maxsize=1024)
@@ -298,8 +327,12 @@ def rule_scope(rule: CommandRule) -> HiddenPaths | None:
     return classify_paths(rule.paths)
 
 
-def match_io(rule: CommandRule, scope: HiddenPaths | None,
-             tokens: Sequence[str], virtual: str) -> bool:
+def match_io(
+    rule: CommandRule,
+    scope: HiddenPaths | None,
+    tokens: Sequence[str],
+    virtual: str,
+) -> bool:
     """Whether a rule reaches an entry a command touches on its own,
     below its operands: the rule names the line (its command patterns
     against the line's tokens, none meaning every command) and its
@@ -319,13 +352,18 @@ def match_io(rule: CommandRule, scope: HiddenPaths | None,
     if scope is None:
         return False
     if rule.commands and not any(
-            pattern_matches(p, tokens) for p in rule.commands):
+        pattern_matches(p, tokens) for p in rule.commands
+    ):
         return False
     return path_hidden(scope, virtual)
 
 
-def io_refusal(rules: AdmissionRules | None, tokens: Sequence[str],
-               virtual: str, granted: Collection[CommandRule]) -> str | None:
+def io_refusal(
+    rules: AdmissionRules | None,
+    tokens: Sequence[str],
+    virtual: str,
+    granted: Collection[CommandRule],
+) -> str | None:
     """The reason a command may not touch an entry it reached on its
     own, None when it may.
 
@@ -371,8 +409,9 @@ def io_refusal(rules: AdmissionRules | None, tokens: Sequence[str],
     return rule.reason
 
 
-def op_reach(rule: CommandRule, scope: HiddenPaths | None,
-             ctx: OpsContext) -> int | None:
+def op_reach(
+    rule: CommandRule, scope: HiddenPaths | None, ctx: OpsContext
+) -> int | None:
     """The anchor depth at which a rule reaches an op, None when it does
     not reach it at all.
 
@@ -404,8 +443,9 @@ def op_reach(rule: CommandRule, scope: HiddenPaths | None,
     return None
 
 
-def match_op(rule: CommandRule, scope: HiddenPaths | None,
-             ctx: OpsContext) -> bool:
+def match_op(
+    rule: CommandRule, scope: HiddenPaths | None, ctx: OpsContext
+) -> bool:
     """Whether a rule refuses an op. The boolean case of
     :func:`op_reach`.
 
@@ -417,8 +457,11 @@ def match_op(rule: CommandRule, scope: HiddenPaths | None,
     return op_reach(rule, scope, ctx) is not None
 
 
-def op_refusal(rules: AdmissionRules | None, ctx: OpsContext,
-               granted: Collection[CommandRule]) -> str | None:
+def op_refusal(
+    rules: AdmissionRules | None,
+    ctx: OpsContext,
+    granted: Collection[CommandRule],
+) -> str | None:
     """The reason an op may not run, None when it may.
 
     The op-door twin of :func:`io_refusal`, and the same law: anchor

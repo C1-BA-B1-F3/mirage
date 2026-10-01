@@ -13,14 +13,23 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic.rg import (filters_files, labelled,
-                                                needs_every_file, parse_flags)
+from mirage.commands.builtin.generic.rg import (
+    filters_files,
+    labelled,
+    needs_every_file,
+    parse_flags,
+    walk_filter,
+)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import walk_filter
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op)
-from mirage.commands.builtin.generic_bind.search import (narrow_scope,
-                                                         run_search)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+)
+from mirage.commands.builtin.generic_bind.search import (
+    narrow_scope,
+    run_search,
+)
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.builtin.rg_scan import walk_candidates
 from mirage.commands.config import CommandOpts
@@ -30,9 +39,13 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def rg(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if ops.search is not None:
         return await run_search(ops, "rg", accessor, paths, texts, opts)
     if paths and ops.is_mounted(accessor) and ops.content_search is None:
@@ -55,8 +68,9 @@ async def rg(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
             exact_file_set=needs_every_file(fl, f) or filters_files(f),
         )
         if used_search:
-            narrowed = walk_candidates(narrowed, paths, walk_filter(f),
-                                       opts.cwd.virtual)
+            narrowed = walk_candidates(
+                narrowed, paths, walk_filter(f), opts.cwd.virtual
+            )
             if not narrowed:
                 return b"", IOResult(exit_code=1)
             opts = labelled(opts)
@@ -73,4 +87,4 @@ async def rg(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('rg', rg, None, False, None, read=True)
+BUILDER = Builder("rg", rg, read=True)

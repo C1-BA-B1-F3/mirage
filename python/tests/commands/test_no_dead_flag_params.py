@@ -23,24 +23,24 @@ from mirage.commands.spec import SPECS
 from mirage.commands.spec.types import CommandSpec
 
 # The dispatcher calls every handler with exactly four positional
-# arguments (`Mount.execute_cmd`), and the provision path with the same
-# four (`handle_command_provision`); everything else -- flags, stdin,
-# cwd, the namespace facts -- rides the CommandOpts bag. A handler that
-# names anything else in its signature can never receive it.
+# arguments (`Mount.execute_cmd`); everything else -- flags, stdin, cwd,
+# the namespace facts -- rides the CommandOpts bag. A handler that names
+# anything else in its signature can never receive it.
 HANDLER_PARAMS = ("accessor", "paths", "texts", "opts")
-BUILDER_PARAMS = ("ops", ) + HANDLER_PARAMS
-AGGREGATE_PARAMS = ("results", )
+BUILDER_PARAMS = ("ops",) + HANDLER_PARAMS
+AGGREGATE_PARAMS = ("results",)
 
 
 def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
     """Every registered command handler and generic-bind builder.
 
     Yields (command name, source label, spec, function) for the handler
-    itself and for any provision/aggregate function registered with it.
+    itself and for any aggregate function registered with it.
     """
     seen: set[int] = set()
-    for info in pkgutil.walk_packages(mirage.commands.__path__,
-                                      prefix="mirage.commands."):
+    for info in pkgutil.walk_packages(
+        mirage.commands.__path__, prefix="mirage.commands."
+    ):
         module = importlib.import_module(info.name)
         for value in vars(module).values():
             if not callable(value):
@@ -52,16 +52,18 @@ def _handlers() -> Iterator[tuple[str, str, CommandSpec, Callable[..., Any]]]:
                 source = inspect.getsourcefile(inspect.unwrap(rc.fn)) or "?"
                 label = source.split("/mirage/")[-1]
                 yield rc.name, label, rc.spec, rc.fn
-                if rc.provision_fn is not None:
-                    yield rc.name, f"{label} [provision]", rc.spec, \
-                        rc.provision_fn
                 if rc.aggregate is not None:
-                    yield rc.name, f"{label} [aggregate]", rc.spec, \
-                        rc.aggregate
+                    yield (
+                        rc.name,
+                        f"{label} [aggregate]",
+                        rc.spec,
+                        rc.aggregate,
+                    )
 
     for info in pkgutil.iter_modules(builders_pkg.__path__):
         module = importlib.import_module(
-            f"{builders_pkg.__name__}.{info.name}")
+            f"{builders_pkg.__name__}.{info.name}"
+        )
         builder = getattr(module, "BUILDER", None)
         spec = SPECS.get(getattr(builder, "name", ""))
         if builder is None or spec is None:
@@ -78,7 +80,7 @@ def _param_names(fn: Callable[..., Any]) -> tuple[str, ...] | None:
 
 
 def test_handlers_take_accessor_paths_texts_opts():
-    """Registered handlers and provisions have the one dispatcher shape.
+    """Registered handlers have the one dispatcher shape.
 
     Flags, stdin, cwd, and the namespace facts all ride ``CommandOpts``;
     a parameter named after any of them is dead the moment the
@@ -92,14 +94,15 @@ def test_handlers_take_accessor_paths_texts_opts():
         if params is None:
             continue
         if label.startswith("builders/"):
-            expected: tuple[tuple[str, ...], ...] = (BUILDER_PARAMS, )
+            expected: tuple[tuple[str, ...], ...] = (BUILDER_PARAMS,)
         elif label.endswith("[aggregate]"):
-            expected = (AGGREGATE_PARAMS, )
+            expected = (AGGREGATE_PARAMS,)
         else:
-            expected = (HANDLER_PARAMS, )
+            expected = (HANDLER_PARAMS,)
         if params not in expected:
             offenders.append(f"{label}: {name}({', '.join(params)})")
     assert not offenders, (
         "handlers are called as fn(accessor, paths, texts, opts) — flags "
         "and dispatcher facts ride CommandOpts, so any other parameter "
-        "is never filled:\n" + "\n".join(sorted(set(offenders))))
+        "is never filled:\n" + "\n".join(sorted(set(offenders)))
+    )

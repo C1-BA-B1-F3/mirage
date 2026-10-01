@@ -5,16 +5,18 @@ from mirage.shell.helpers import get_function_body
 from mirage.shell.parse import parse
 from mirage.shell.types import FunctionBody
 from mirage.workspace.cli.registry import CLIRegistry
-from mirage.workspace.executor.builtins.lookup.lookup import (handle_type,
-                                                              handle_which)
+from mirage.workspace.executor.builtins.lookup.lookup import (
+    handle_type,
+    handle_which,
+)
 from mirage.workspace.session.session import SessionState
 
-TREE = CLISpec(name="linear",
-               subcommands=(CLISpec(name="issue", fn=lambda: None), ))
+TREE = CLISpec(
+    name="linear", subcommands=(CLISpec(name="issue", fn=lambda: None),)
+)
 
 
 class FakeRegistry:
-
     def __init__(self, commands: set[str], with_cli: bool = False):
         self._commands = commands
         self.runtime_bindings = {}
@@ -51,62 +53,86 @@ def test_type_reports_builtin():
 
 
 def test_type_reports_keyword():
-    assert _out(handle_type(["if"], make_session(),
-                            make_registry())) == "if is a shell keyword\n"
+    assert (
+        _out(handle_type(["if"], make_session(), make_registry()))
+        == "if is a shell keyword\n"
+    )
 
 
 def test_type_a_prints_the_function_under_a_keyword():
     session = make_session()
     session.functions["then"] = _body("then() { echo x; }")
-    assert _out(handle_type(
-        ["-a", "then"], session,
-        make_registry())) == ("then is a shell keyword\nthen is a function\n"
-                              "function then () \n{ \n    echo x\n}\n")
+    assert _out(handle_type(["-a", "then"], session, make_registry())) == (
+        "then is a shell keyword\nthen is a function\n"
+        "function then () \n{ \n    echo x\n}\n"
+    )
 
 
 def test_type_reports_installed_cli_by_its_file():
-    assert _out(
-        handle_type(["linear"], make_session(),
-                    make_registry(True))) == "linear is /usr/bin/linear\n"
-    assert _out(
-        handle_type(["-t", "linear"], make_session(),
-                    make_registry(True))) == "file\n"
+    assert (
+        _out(handle_type(["linear"], make_session(), make_registry(True)))
+        == "linear is /usr/bin/linear\n"
+    )
+    assert (
+        _out(
+            handle_type(["-t", "linear"], make_session(), make_registry(True))
+        )
+        == "file\n"
+    )
 
 
 def test_type_t_prints_word():
-    assert _out(handle_type(["-t", "cd"], make_session(),
-                            make_registry())) == "builtin\n"
-    assert _out(handle_type(["-t", "if"], make_session(),
-                            make_registry())) == "keyword\n"
+    assert (
+        _out(handle_type(["-t", "cd"], make_session(), make_registry()))
+        == "builtin\n"
+    )
+    assert (
+        _out(handle_type(["-t", "if"], make_session(), make_registry()))
+        == "keyword\n"
+    )
 
 
 def test_type_last_of_t_and_p_wins():
     # bash: `type -tp cd` prints a path (empty here), `type -pt cd` the
     # type word.
-    assert _out(handle_type(["-tp", "cd"], make_session(),
-                            make_registry())) == ""
-    assert _out(handle_type(["-pt", "cd"], make_session(),
-                            make_registry())) == "builtin\n"
-    assert _out(handle_type(["-P", "cd"], make_session(),
-                            make_registry())) == ""
+    assert (
+        _out(handle_type(["-tp", "cd"], make_session(), make_registry())) == ""
+    )
+    assert (
+        _out(handle_type(["-pt", "cd"], make_session(), make_registry()))
+        == "builtin\n"
+    )
+    assert (
+        _out(handle_type(["-P", "cd"], make_session(), make_registry())) == ""
+    )
 
 
 def test_type_mount_command_is_its_file():
-    assert _out(handle_type(["cat"], make_session(),
-                            make_registry())) == "cat is /usr/bin/cat\n"
+    assert (
+        _out(handle_type(["cat"], make_session(), make_registry()))
+        == "cat is /usr/bin/cat\n"
+    )
 
 
 def test_type_p_prints_a_programs_file_and_P_searches_past_a_builtin():
     # bash 5.2: -p is quiet for a builtin (still found), -P finds the
     # file behind one, and misses one that has none.
-    assert _out(handle_type(["-p", "cat"], make_session(),
-                            make_registry())) == "/usr/bin/cat\n"
-    assert _out(handle_type(["-p", "echo"], make_session(),
-                            make_registry())) == ""
-    assert _out(handle_type(["-P", "echo"], make_session(),
-                            make_registry())) == "/usr/bin/echo\n"
-    assert _out(handle_type(["-ap", "echo"], make_session(),
-                            make_registry())) == "/usr/bin/echo\n"
+    assert (
+        _out(handle_type(["-p", "cat"], make_session(), make_registry()))
+        == "/usr/bin/cat\n"
+    )
+    assert (
+        _out(handle_type(["-p", "echo"], make_session(), make_registry()))
+        == ""
+    )
+    assert (
+        _out(handle_type(["-P", "echo"], make_session(), make_registry()))
+        == "/usr/bin/echo\n"
+    )
+    assert (
+        _out(handle_type(["-ap", "echo"], make_session(), make_registry()))
+        == "/usr/bin/echo\n"
+    )
     _, io, _ = handle_type(["-P", "cd"], make_session(), make_registry())
     assert io.exit_code == 1
 
@@ -114,24 +140,29 @@ def test_type_p_prints_a_programs_file_and_P_searches_past_a_builtin():
 def test_type_a_prints_every_layer():
     session = make_session()
     session.functions["linear"] = _body("linear() { :; }")
-    assert _out(handle_type(
-        ["-a", "linear"], session, make_registry(True))) == (
-            "linear is a function\nlinear () \n{ \n    :\n}\n"
-            "linear is /usr/bin/linear\n")
-    assert _out(handle_type(["-at", "linear"], session,
-                            make_registry(True))) == "function\nfile\n"
-    assert _out(handle_type(
-        ["-a", "echo"], make_session(), make_registry())) == (
-            "echo is a shell builtin\necho is /usr/bin/echo\n")
+    assert _out(
+        handle_type(["-a", "linear"], session, make_registry(True))
+    ) == (
+        "linear is a function\nlinear () \n{ \n    :\n}\n"
+        "linear is /usr/bin/linear\n"
+    )
+    assert (
+        _out(handle_type(["-at", "linear"], session, make_registry(True)))
+        == "function\nfile\n"
+    )
+    assert _out(
+        handle_type(["-a", "echo"], make_session(), make_registry())
+    ) == ("echo is a shell builtin\necho is /usr/bin/echo\n")
 
 
 def test_type_f_skips_functions_without_touching_the_session():
     session = make_session()
     body: list[str] = []
     session.functions["linear"] = body
-    assert _out(
-        handle_type(["-f", "linear"], session,
-                    make_registry(True))) == "linear is /usr/bin/linear\n"
+    assert (
+        _out(handle_type(["-f", "linear"], session, make_registry(True)))
+        == "linear is /usr/bin/linear\n"
+    )
     assert session.functions["linear"] is body
 
 
@@ -238,8 +269,12 @@ def test_which_s_reports_through_the_status():
     out, io, _ = handle_which(["-s", "cat"], make_session(), make_registry())
     assert out is None
     assert io.exit_code == 0
-    assert handle_which(["-s", "nope"], make_session(),
-                        make_registry())[1].exit_code == 1
+    assert (
+        handle_which(["-s", "nope"], make_session(), make_registry())[
+            1
+        ].exit_code
+        == 1
+    )
 
 
 def test_which_invalid_option():

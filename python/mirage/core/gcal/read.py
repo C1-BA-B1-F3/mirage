@@ -15,8 +15,12 @@
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.gcal.client import list_events
-from mirage.core.gcal.readdir import (bucket_zone, calendar_index,
-                                      calendar_payload, scoped_day_bounds)
+from mirage.core.gcal.readdir import (
+    bucket_zone,
+    calendar_index,
+    calendar_payload,
+    scoped_day_bounds,
+)
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
@@ -26,8 +30,12 @@ from mirage.utils.errors import enoent
 from mirage.vfs.gcal.event_entry import parse_event_filename
 
 
-async def _read_calendar_json(accessor: GCalAccessor, match: ScopeMatch,
-                              path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_calendar_json(
+    accessor: GCalAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     calendars = await calendar_index(accessor)
     entry = calendars.get(match.slots["calendar"])
     if entry is None:
@@ -35,8 +43,12 @@ async def _read_calendar_json(accessor: GCalAccessor, match: ScopeMatch,
     return calendar_payload(entry, bucket_zone(accessor, calendars))
 
 
-async def _read_event(accessor: GCalAccessor, match: ScopeMatch,
-                      path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_event(
+    accessor: GCalAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     """Read one event's raw API payload.
 
     The event file holds the events.list item unmodified: the directory
@@ -59,14 +71,17 @@ async def _read_event(accessor: GCalAccessor, match: ScopeMatch,
     if not isinstance(cal_id, str):
         raise enoent(path.virtual)
     event_id, _ = parse_event_filename(match.slots["event"])
-    time_min, time_max = scoped_day_bounds(accessor, match.slots["day"], tz,
-                                           path.virtual)
-    for event in await list_events(accessor.token_manager,
-                                   cal_id,
-                                   time_min,
-                                   time_max,
-                                   tz,
-                                   scope=accessor.time_range):
+    time_min, time_max = scoped_day_bounds(
+        accessor, match.slots["day"], tz, path.virtual
+    )
+    for event in await list_events(
+        accessor.token_manager,
+        cal_id,
+        time_min,
+        time_max,
+        tz,
+        scope=accessor.time_range,
+    ):
         if event.get("id") == event_id:
             return compact_json_bytes(event)
     raise enoent(path.virtual)

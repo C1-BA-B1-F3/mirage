@@ -471,7 +471,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/fe/d/sub && printf 'a\\n' > /data/fe/d/a.txt && printf 'bb\\n' > /data/fe/d/b.txt && printf x > /data/fe/d/sub/c.txt && cd /data/fe && touch -d '2020-01-01 00:00:00' d/a.txt && find d -newer d/a.txt -name '*.txt' | sort; find d -newermt 2020-01-01 -name a.txt; find -newer d/a.txt -name '*.txt' | sort ; cd / && rm -r /data/fe",
       "expect": {

@@ -16,15 +16,18 @@ def test_parse_time_honors_the_offset_and_milliseconds():
     assert parse_time("2026-06-01T00:00:00.250Z") == JUNE_1 + 0.25
 
 
-@pytest.mark.parametrize("value", [
-    "2026-06-01",
-    "2026-06-01T00:00:00",
-    "2026-06-01T00:00:00.000001Z",
-    "2026-06-01T24:00:00Z",
-    "2026-02-30T00:00:00Z",
-    "2026-06-01T00:00:00+24:00",
-    "2026-06-01T00:00:00+01:60",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-06-01",
+        "2026-06-01T00:00:00",
+        "2026-06-01T00:00:00.000001Z",
+        "2026-06-01T24:00:00Z",
+        "2026-02-30T00:00:00Z",
+        "2026-06-01T00:00:00+24:00",
+        "2026-06-01T00:00:00+01:60",
+    ],
+)
 def test_parse_time_refuses_what_rfc3339_with_a_zone_does_not_spell(value):
     with pytest.raises(ValueError):
         parse_time(value)
@@ -67,8 +70,11 @@ def test_listing_days_stop_before_an_exclusive_midnight_end():
 
 def test_listing_days_clip_to_a_glob_span():
     scope = TimeRange(None, JUNE_2)
-    days = scope.listing_days(date(2026, 1, 1), date(2026, 6, 30),
-                              (date(2026, 5, 30), date(2026, 6, 1)))
+    days = scope.listing_days(
+        date(2026, 1, 1),
+        date(2026, 6, 30),
+        (date(2026, 5, 30), date(2026, 6, 1)),
+    )
     assert days == ["2026-05-30", "2026-05-31"]
 
 
@@ -89,12 +95,18 @@ async def test_guard_day_reads_the_day_slot():
     accessor = _Scoped(TimeRange(JUNE_1, JUNE_2))
     await guard_day(
         accessor,
-        ScopeMatch(kind="day",
-                   vfs_path="/c/2026-06-01",
-                   slots={"day": "2026-06-01"}), "/m/c/2026-06-01")
+        ScopeMatch(
+            kind="day", vfs_path="/c/2026-06-01", slots={"day": "2026-06-01"}
+        ),
+        "/m/c/2026-06-01",
+    )
     with pytest.raises(FileNotFoundError, match="/m/c/2026-06-02"):
         await guard_day(
             accessor,
-            ScopeMatch(kind="day",
-                       vfs_path="/c/2026-06-02",
-                       slots={"day": "2026-06-02"}), "/m/c/2026-06-02")
+            ScopeMatch(
+                kind="day",
+                vfs_path="/c/2026-06-02",
+                slots={"day": "2026-06-02"},
+            ),
+            "/m/c/2026-06-02",
+        )

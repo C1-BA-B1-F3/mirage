@@ -16,11 +16,16 @@ import asyncio
 
 import pytest
 
-from mirage.commands.builtin.general.expr import (DIGIT_CHUNK, ExprError,
-                                                  _expr_eval, digits_of_int,
-                                                  from_byte_view,
-                                                  int_of_digits, is_null,
-                                                  to_byte_view)
+from mirage.commands.builtin.general.expr import (
+    DIGIT_CHUNK,
+    ExprError,
+    _expr_eval,
+    digits_of_int,
+    from_byte_view,
+    int_of_digits,
+    is_null,
+    to_byte_view,
+)
 from mirage.commands.builtin.utils.bre import translate_bre
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -103,10 +108,14 @@ def test_expr_exits_one_when_the_result_is_zero():
 
 
 def test_expr_is_arbitrary_precision():
-    assert _expr_eval(["9223372036854775807", "+",
-                       "1"]) == ("9223372036854775808", 0)
-    assert _expr_eval(["2", "*",
-                       "99999999999999999999"]) == ("199999999999999999998", 0)
+    assert _expr_eval(["9223372036854775807", "+", "1"]) == (
+        "9223372036854775808",
+        0,
+    )
+    assert _expr_eval(["2", "*", "99999999999999999999"]) == (
+        "199999999999999999998",
+        0,
+    )
 
 
 # An operand past every float's range, which is where a float64 host
@@ -133,12 +142,18 @@ def test_expr_arithmetic_on_an_operand_past_every_float():
 def test_expr_never_prints_exponential_notation():
     # `expr` cannot print `1e+24`, and could not read it back as an
     # operand either, so a product this size has to render in full.
-    assert _expr_eval(["1000000000000", "*",
-                       "1000000000000"]) == ("1" + "0" * 24, 0)
-    assert _expr_eval(["999999999999999999999", "+",
-                       "1"]) == ("1" + "0" * 21, 0)
-    assert _expr_eval(["2147483647", "*",
-                       "2147483647"]) == ("4611686014132420609", 0)
+    assert _expr_eval(["1000000000000", "*", "1000000000000"]) == (
+        "1" + "0" * 24,
+        0,
+    )
+    assert _expr_eval(["999999999999999999999", "+", "1"]) == (
+        "1" + "0" * 21,
+        0,
+    )
+    assert _expr_eval(["2147483647", "*", "2147483647"]) == (
+        "4611686014132420609",
+        0,
+    )
 
 
 def test_expr_substr_clamps_a_length_past_every_float():
@@ -169,8 +184,17 @@ def test_expr_accepts_leading_zeros_as_decimal():
 def test_expr_rejects_operands_python_int_would_accept():
     # GNU's operand grammar is narrower than `int()`: no explicit plus,
     # no surrounding whitespace, no digit separator, no hex, no float.
-    for operand in ("+5", " 5 ", " 5", "5 ", "1_0", "0x10", "1e3", "abc",
-                    "1.5"):
+    for operand in (
+        "+5",
+        " 5 ",
+        " 5",
+        "5 ",
+        "1_0",
+        "0x10",
+        "1e3",
+        "abc",
+        "1.5",
+    ):
         with pytest.raises(ExprError) as caught:
             _expr_eval([operand, "+", "1"])
         assert str(caught.value) == "expr: non-integer argument"
@@ -304,8 +328,9 @@ def test_expr_refuses_nesting_past_our_own_limit():
     assert _expr_eval(["("] * 64 + ["1"] + [")"] * 64) == ("1", 0)
     with pytest.raises(ExprError) as caught:
         _expr_eval(["("] * 65 + ["1"] + [")"] * 65)
-    assert str(caught.value) == ("expr: expression nesting too deep "
-                                 "(limit 64)")
+    assert str(caught.value) == (
+        "expr: expression nesting too deep (limit 64)"
+    )
 
 
 QUOTING = [
@@ -501,7 +526,8 @@ COMPARISONS = [
 
 @pytest.mark.parametrize("args,value,code", COMPARISONS)
 def test_expr_comparison_is_numeric_only_when_both_sides_are(
-        args, value, code):
+    args, value, code
+):
     assert _expr_eval(list(args)) == (value, code)
 
 
@@ -512,8 +538,8 @@ def test_expr_zero_expression_words_is_the_only_two_line_diagnostic():
         stdout, io = _out(line)
         assert stdout == b""
         assert _stderr_text(io) == (
-            "expr: missing operand\n"
-            "Try 'expr --help' for more information.\n")
+            "expr: missing operand\nTry 'expr --help' for more information.\n"
+        )
         assert io.exit_code == 2
 
 
@@ -590,12 +616,18 @@ def test_expr_digit_chunker_fast_path_agrees_with_the_chunked_path():
     # width, because that is the path every operand anyone writes takes
     # and rebuilding `10**4000` for a two-digit sum made rendering one
     # 250x slower than `str`. The shortcut has to answer identically.
-    for body in ("0", "7", "1" + "0" * 3999, "1" + "0" * 4000,
-                 "1" + "0" * 4000 + "1", "9" * 4301):
+    for body in (
+        "0",
+        "7",
+        "1" + "0" * 3999,
+        "1" + "0" * 4000,
+        "1" + "0" * 4000 + "1",
+        "9" * 4301,
+    ):
         chunked = 0
         for start in range(0, len(body), DIGIT_CHUNK):
-            chunk = body[start:start + DIGIT_CHUNK]
-            chunked = chunked * 10**len(chunk) + int(chunk)
+            chunk = body[start : start + DIGIT_CHUNK]
+            chunked = chunked * 10 ** len(chunk) + int(chunk)
         assert int_of_digits(body) == chunked
         assert int_of_digits("-" + body) == -chunked
 
@@ -605,12 +637,21 @@ def test_expr_digit_chunker_round_trips_past_the_cpython_cap():
     # both conversions work in chunks. The awkward widths are the chunk
     # boundary itself and a value with interior zeros, which a chunker
     # that forgot to zero-pad would silently shorten.
-    for body in ("0", "7", "1" + "0" * 3999, "1" + "0" * 4000,
-                 "1" + "0" * 4000 + "1", "9" * 4301, "1" + "0" * 8000,
-                 "9" * 8001, "1" + "0" * 4000 + "1" + "0" * 4000):
+    for body in (
+        "0",
+        "7",
+        "1" + "0" * 3999,
+        "1" + "0" * 4000,
+        "1" + "0" * 4000 + "1",
+        "9" * 4301,
+        "1" + "0" * 8000,
+        "9" * 8001,
+        "1" + "0" * 4000 + "1" + "0" * 4000,
+    ):
         assert digits_of_int(int_of_digits(body)) == body
-        assert digits_of_int(
-            int_of_digits("-" + body)) == ("-" + body if body != "0" else "0")
+        assert digits_of_int(int_of_digits("-" + body)) == (
+            "-" + body if body != "0" else "0"
+        )
 
 
 def test_expr_is_arbitrary_precision_past_the_cpython_cap():
@@ -626,7 +667,7 @@ def test_expr_is_arbitrary_precision_past_the_cpython_cap():
     # though neither operand is.
     value, code = _expr_eval(["9" * 2200, "*", "9" * 2200])
     assert (len(value), code) == (4400, 0)
-    assert value == digits_of_int(int_of_digits("9" * 2200)**2)
+    assert value == digits_of_int(int_of_digits("9" * 2200) ** 2)
 
 
 def test_expr_syntax_error_wordings():
@@ -637,10 +678,10 @@ def test_expr_syntax_error_wordings():
         (["1", "?", "2"], "unexpected argument '?'"),
         (["1", "+", "2", ")"], "unexpected argument ')'"),
         (["(", "1", "+", "2"], "expecting ')' after '2'"),
-            # The same error with a word standing in the `)`'s place is
-            # a different clause naming a different word.
+        # The same error with a word standing in the `)`'s place is
+        # a different clause naming a different word.
         (["(", "1", "1"], "expecting ')' instead of '1'"),
-            # The one detail clause with no `argument` noun in it.
+        # The one detail clause with no `argument` noun in it.
         (["(", ")"], "unexpected ')'"),
     ):
         with pytest.raises(ExprError) as caught:
@@ -772,10 +813,18 @@ SHELL_LINES = [
     ("expr 1 '==' 1", "1\n", "", 0),
     ("expr -- 1 + 2", "3\n", "", 0),
     ("expr -- --version", "--version\n", "", 0),
-    ("expr", "", "expr: missing operand\n"
-     "Try 'expr --help' for more information.\n", 2),
-    ("expr --", "", "expr: missing operand\n"
-     "Try 'expr --help' for more information.\n", 2),
+    (
+        "expr",
+        "",
+        "expr: missing operand\nTry 'expr --help' for more information.\n",
+        2,
+    ),
+    (
+        "expr --",
+        "",
+        "expr: missing operand\nTry 'expr --help' for more information.\n",
+        2,
+    ),
     ("expr 1 +", "", "expr: syntax error: missing argument after '+'\n", 2),
     ("expr 1 2 3", "", "expr: syntax error: unexpected argument '2'\n", 2),
     ("expr '(' 1 + 2", "", "expr: syntax error: expecting ')' after '2'\n", 2),
@@ -794,29 +843,60 @@ SHELL_LINES = [
     (r"expr $'12\n' + 1", "", "expr: non-integer argument\n", 2),
     # The two diagnostic-wording families, through the whole shell path:
     # gnulib's quote() escaping the word, and the `instead of` clause.
-    (r"expr a '\(' 2", "", "expr: syntax error: unexpected argument '\\\\('\n",
-     2),
-    (r"expr '(' '\('", "", "expr: syntax error: expecting ')' after '\\\\('\n",
-     2),
-    ("expr '(' \u00e9", "",
-     "expr: syntax error: expecting ')' after '\\303\\251'\n", 2),
-    (r"expr '(' $'a\tb'", "",
-     "expr: syntax error: expecting ')' after 'a\\tb'\n", 2),
-    ("expr '(' 1 1", "", "expr: syntax error: expecting ')' instead of '1'\n",
-     2),
-    ("expr '(' 1 2 ')'", "",
-     "expr: syntax error: expecting ')' instead of '2'\n", 2),
+    (
+        r"expr a '\(' 2",
+        "",
+        "expr: syntax error: unexpected argument '\\\\('\n",
+        2,
+    ),
+    (
+        r"expr '(' '\('",
+        "",
+        "expr: syntax error: expecting ')' after '\\\\('\n",
+        2,
+    ),
+    (
+        "expr '(' \u00e9",
+        "",
+        "expr: syntax error: expecting ')' after '\\303\\251'\n",
+        2,
+    ),
+    (
+        r"expr '(' $'a\tb'",
+        "",
+        "expr: syntax error: expecting ')' after 'a\\tb'\n",
+        2,
+    ),
+    (
+        "expr '(' 1 1",
+        "",
+        "expr: syntax error: expecting ')' instead of '1'\n",
+        2,
+    ),
+    (
+        "expr '(' 1 2 ')'",
+        "",
+        "expr: syntax error: expecting ')' instead of '2'\n",
+        2,
+    ),
     ("expr '(' 1", "", "expr: syntax error: expecting ')' after '1'\n", 2),
-    ("expr '(' 1 +", "", "expr: syntax error: missing argument after '+'\n",
-     2),
+    (
+        "expr '(' 1 +",
+        "",
+        "expr: syntax error: missing argument after '+'\n",
+        2,
+    ),
 ]
 
 
 @pytest.mark.parametrize("line,out,err,code", SHELL_LINES)
 def test_expr_through_the_shell(line, out, err, code):
     stdout, io = _out(line)
-    assert (stdout.decode(), _stderr_text(io), io.exit_code) == (out, err,
-                                                                 code)
+    assert (stdout.decode(), _stderr_text(io), io.exit_code) == (
+        out,
+        err,
+        code,
+    )
 
 
 def test_expr_writes_the_bytes_a_split_character_leaves():

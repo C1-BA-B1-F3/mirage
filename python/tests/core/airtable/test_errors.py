@@ -16,11 +16,13 @@ from mirage.core.airtable.errors import AirtableAPIError, error_parts
 
 
 def test_error_parts_reads_every_body_shape():
-    assert error_parts('{"error": {"type": "X", "message": "m"}}') == ("X",
-                                                                       "m")
+    assert error_parts('{"error": {"type": "X", "message": "m"}}') == (
+        "X",
+        "m",
+    )
     assert error_parts(
-        '{"error": {"type": "LIST_RECORDS_ITERATOR_NOT_'
-        'AVAILABLE"}}') == ("LIST_RECORDS_ITERATOR_NOT_AVAILABLE", None)
+        '{"error": {"type": "LIST_RECORDS_ITERATOR_NOT_AVAILABLE"}}'
+    ) == ("LIST_RECORDS_ITERATOR_NOT_AVAILABLE", None)
     assert error_parts('{"error": "NOT_FOUND"}') == ("NOT_FOUND", None)
     assert error_parts("not json") == (None, None)
     assert error_parts("[1]") == (None, None)
@@ -29,10 +31,11 @@ def test_error_parts_reads_every_body_shape():
 def test_not_found_covers_airtables_403_answer():
     assert AirtableAPIError("m", status=404).not_found
     assert AirtableAPIError(
-        "m", status=403,
-        error_type="INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND").not_found
-    assert not AirtableAPIError("m", status=422,
-                                error_type="INVALID_REQUEST").not_found
+        "m", status=403, error_type="INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND"
+    ).not_found
+    assert not AirtableAPIError(
+        "m", status=422, error_type="INVALID_REQUEST"
+    ).not_found
 
 
 def test_a_missing_view_is_not_found_by_id_or_by_name():

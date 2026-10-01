@@ -30,8 +30,11 @@ def help_spec(spec: CommandSpec) -> CommandSpec:
         spec (CommandSpec): the command's declared grammar.
     """
     extras = [
-        option for option, spelling in ((HELP_OPTION, "--help"),
-                                        (VERSION_OPTION, "--version"))
+        option
+        for option, spelling in (
+            (HELP_OPTION, "--help"),
+            (VERSION_OPTION, "--version"),
+        )
         if not any(o.long == spelling for o in spec.options)
     ]
     if not extras:
@@ -44,8 +47,7 @@ def help_spec(spec: CommandSpec) -> CommandSpec:
 # backend that registers the command, which is what makes the identity
 # test below a pointer compare instead of a field-by-field probe.
 BUILTIN_HELP_SPECS: dict[str, CommandSpec] = {
-    _spec_name: help_spec(_spec)
-    for _spec_name, _spec in SPECS.items()
+    _spec_name: help_spec(_spec) for _spec_name, _spec in SPECS.items()
 }
 
 

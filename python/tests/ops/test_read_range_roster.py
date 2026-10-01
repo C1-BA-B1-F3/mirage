@@ -58,7 +58,8 @@ def _io_tables() -> dict[str, object]:
             continue
         try:
             io = importlib.import_module(
-                f"mirage.commands.builtin.{mod.name}.io")
+                f"mirage.commands.builtin.{mod.name}.io"
+            )
         except ImportError:
             continue
         table = getattr(io, "IO", None)

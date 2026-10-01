@@ -16,9 +16,13 @@ import posixpath
 from dataclasses import replace
 
 from mirage.commands.cli.builtin.git.constants import GIT_DIR
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    InvalidGitFileError, NotARepositoryError, NotAWorkTreeError,
-    NoWorkingDirectoryError, WorkTreeChdirError)
+from mirage.commands.cli.builtin.git.errors import (
+    InvalidGitFileError,
+    NotARepositoryError,
+    NotAWorkTreeError,
+    NoWorkingDirectoryError,
+    WorkTreeChdirError,
+)
 from mirage.commands.cli.builtin.git.io import read_file, read_optional
 from mirage.commands.cli.builtin.git.repo import config_bool, config_values
 from mirage.commands.cli.builtin.git.types import RepoLocation
@@ -64,8 +68,9 @@ def _against(base: str, target: str) -> str:
     return _normalize(posixpath.normpath(posixpath.join(base, target)))
 
 
-async def _follow_gitfile(dispatch: DispatchFn, stat_path: StatPath,
-                          gitfile: str) -> str:
+async def _follow_gitfile(
+    dispatch: DispatchFn, stat_path: StatPath, gitfile: str
+) -> str:
     """Read a ``.git`` file and return the directory it points at.
 
     A ``.git`` that is a file rather than a directory holds one
@@ -79,12 +84,13 @@ async def _follow_gitfile(dispatch: DispatchFn, stat_path: StatPath,
         stat_path (StatPath): dispatcher-backed stat, both channels.
         gitfile (str): absolute virtual path of the ``.git`` file.
     """
-    text = (await read_file(dispatch, gitfile)).decode("utf-8",
-                                                       errors="replace")
+    text = (await read_file(dispatch, gitfile)).decode(
+        "utf-8", errors="replace"
+    )
     line = text.strip()
     if not line.startswith(GITDIR_PREFIX):
         raise InvalidGitFileError(gitfile)
-    target = line[len(GITDIR_PREFIX):].strip()
+    target = line[len(GITDIR_PREFIX) :].strip()
     if not target:
         raise InvalidGitFileError(gitfile)
     resolved = _against(_parent(gitfile), target)
@@ -117,8 +123,9 @@ async def _common_dir(dispatch: DispatchFn, gitdir: str) -> str:
     return _against(gitdir, target) if target else gitdir
 
 
-async def _validated(dispatch: DispatchFn, stat_path: StatPath,
-                     gitdir: str) -> str | None:
+async def _validated(
+    dispatch: DispatchFn, stat_path: StatPath, gitdir: str
+) -> str | None:
     """git's ``is_git_directory``: the common directory, or None.
 
     A git directory holds its own HEAD and finds objects and refs in its
@@ -142,12 +149,14 @@ async def _validated(dispatch: DispatchFn, stat_path: StatPath,
     return common
 
 
-async def discover(dispatch: DispatchFn,
-                   stat_path: StatPath,
-                   mount_root: MountRoot,
-                   start: str,
-                   gitdir: str | None = None,
-                   worktree: str | None = None) -> RepoLocation:
+async def discover(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    mount_root: MountRoot,
+    start: str,
+    gitdir: str | None = None,
+    worktree: str | None = None,
+) -> RepoLocation:
     """Find the repository governing a path, or raise git's own fatal.
 
     Walks up from ``start`` looking for a ``.git`` entry, stopping at the
@@ -191,25 +200,43 @@ async def discover(dispatch: DispatchFn,
         # git names the target a pointer leads to unquoted, as it does for
         # one met on the way up.
         pointer = info.type is not FileType.DIRECTORY
-        resolved = (await _follow_gitfile(dispatch, stat_path, candidate)
-                    if pointer else candidate)
+        resolved = (
+            await _follow_gitfile(dispatch, stat_path, candidate)
+            if pointer
+            else candidate
+        )
         common = await _validated(dispatch, stat_path, resolved)
         if common is None:
-            raise (NotARepositoryError(resolved, quoted=False)
-                   if pointer else NotARepositoryError(gitdir))
-        return await _location(dispatch, stat_path, resolved, common, start,
-                               start, worktree, root)
+            raise (
+                NotARepositoryError(resolved, quoted=False)
+                if pointer
+                else NotARepositoryError(gitdir)
+            )
+        return await _location(
+            dispatch, stat_path, resolved, common, start, start, worktree, root
+        )
     current = _normalize(start)
     first = True
     while True:
         candidate = posixpath.join(current, GIT_DIR)
         info = await stat_path(candidate)
         if info is not None:
-            gitdir = (candidate if info.type is FileType.DIRECTORY else await
-                      _follow_gitfile(dispatch, stat_path, candidate))
+            gitdir = (
+                candidate
+                if info.type is FileType.DIRECTORY
+                else await _follow_gitfile(dispatch, stat_path, candidate)
+            )
             common = await _common_dir(dispatch, gitdir)
-            return await _location(dispatch, stat_path, gitdir, common, start,
-                                   current, worktree, root)
+            return await _location(
+                dispatch,
+                stat_path,
+                gitdir,
+                common,
+                start,
+                current,
+                worktree,
+                root,
+            )
         if first:
             # git enters ``-C`` before it looks for anything, so a path it
             # cannot enter fails on its own terms even when a directory
@@ -230,9 +257,16 @@ async def discover(dispatch: DispatchFn,
         current = _parent(current)
 
 
-async def _location(dispatch: DispatchFn, stat_path: StatPath, gitdir: str,
-                    common: str, start: str, default_worktree: str,
-                    worktree: str | None, root: str) -> RepoLocation:
+async def _location(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    gitdir: str,
+    common: str,
+    start: str,
+    default_worktree: str,
+    worktree: str | None,
+    root: str,
+) -> RepoLocation:
     """Resolve the work tree once for every verb, after locating metadata.
 
     CLI/environment paths are relative to -C; core.worktree is relative
@@ -291,12 +325,17 @@ async def is_bare(dispatch: DispatchFn, location: RepoLocation) -> bool:
         dispatch (DispatchFn): workspace op dispatcher.
         location (RepoLocation): the discovered repository.
     """
-    return (location.gitdir == location.commondir
-            and await config_bool(dispatch, location, b"core", b"bare", False))
+    return location.gitdir == location.commondir and await config_bool(
+        dispatch, location, b"core", b"bare", False
+    )
 
 
-async def require_work_tree(dispatch: DispatchFn, stat_path: StatPath,
-                            location: RepoLocation, named: bool) -> None:
+async def require_work_tree(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    location: RepoLocation,
+    named: bool,
+) -> None:
     """git's ``setup_work_tree``: refuse when there is no tree to enter.
 
     Asked by every verb that reads or writes working files, so a bare

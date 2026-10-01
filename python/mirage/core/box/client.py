@@ -21,8 +21,12 @@ import aiohttp
 
 from mirage.core.api.client import api_request
 from mirage.core.api.oauth import TokenManager as OAuthTokenManager
-from mirage.core.box.constants import (BOX_API_BASE, BOX_TOKEN_URL,
-                                       BOX_UPLOAD_BASE, TOKEN_BUFFER_SECONDS)
+from mirage.core.box.constants import (
+    BOX_API_BASE,
+    BOX_TOKEN_URL,
+    BOX_UPLOAD_BASE,
+    TOKEN_BUFFER_SECONDS,
+)
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.box.config import BoxConfig
 from mirage.vfs.secrets import reveal_secret
@@ -45,25 +49,28 @@ def upload_base_of(config: BoxConfig) -> str:
 
 
 class BoxApiError(RuntimeError):
-
     def __init__(self, message: str, status: int) -> None:
         self.status = status
         super().__init__(message)
 
 
-def _error_of(resp: aiohttp.ClientResponse, text: str, *, label: str,
-              url: str) -> Exception:
-    return BoxApiError(f"Box {label} {url} -> {resp.status} {text}",
-                       resp.status)
+def _error_of(
+    resp: aiohttp.ClientResponse, text: str, *, label: str, url: str
+) -> Exception:
+    return BoxApiError(
+        f"Box {label} {url} -> {resp.status} {text}", resp.status
+    )
 
 
-def _flow_error(resp: aiohttp.ClientResponse, text: str, *,
-                flow: str) -> Exception:
+def _flow_error(
+    resp: aiohttp.ClientResponse, text: str, *, flow: str
+) -> Exception:
     return BoxApiError(f"{flow} -> {resp.status} {text}", resp.status)
 
 
 async def refresh_access_token(
-        config: BoxConfig, current_refresh_token: str) -> tuple[str, str, int]:
+    config: BoxConfig, current_refresh_token: str
+) -> tuple[str, str, int]:
     """Exchange the refresh token for a new access token.
 
     Args:
@@ -83,11 +90,12 @@ async def refresh_access_token(
     client_secret = reveal_secret(config.client_secret)
     if client_secret:
         data["client_secret"] = client_secret
-    body = await api_request("POST",
-                             token_url_of(config),
-                             error_of=partial(_flow_error,
-                                              flow="Box token refresh"),
-                             data=data)
+    body = await api_request(
+        "POST",
+        token_url_of(config),
+        error_of=partial(_flow_error, flow="Box token refresh"),
+        data=data,
+    )
     return (body["access_token"], body["refresh_token"], body["expires_in"])
 
 
@@ -112,11 +120,12 @@ async def fetch_ccg_token(config: BoxConfig) -> tuple[str, int]:
         "box_subject_type": "enterprise",
         "box_subject_id": config.enterprise_id or "",
     }
-    body = await api_request("POST",
-                             token_url_of(config),
-                             error_of=partial(_flow_error,
-                                              flow="Box CCG token"),
-                             data=data)
+    body = await api_request(
+        "POST",
+        token_url_of(config),
+        error_of=partial(_flow_error, flow="Box CCG token"),
+        data=data,
+    )
     return body["access_token"], body["expires_in"]
 
 
@@ -133,27 +142,32 @@ class BoxTokenManager(OAuthTokenManager):
         self.upload_base = upload_base_of(config)
         self._dev_token_mode = bool(reveal_secret(config.access_token))
         self._ccg_mode = not self._dev_token_mode and bool(
-            config.enterprise_id)
+            config.enterprise_id
+        )
         if self._ccg_mode:
             if not config.client_id:
                 raise ValueError(
                     "BoxTokenManager: client_id is required when using "
-                    "enterprise_id")
+                    "enterprise_id"
+                )
             if not reveal_secret(config.client_secret):
                 raise ValueError(
                     "BoxTokenManager: client_secret is required when using "
-                    "enterprise_id")
+                    "enterprise_id"
+                )
         elif not self._dev_token_mode:
             if not reveal_secret(config.refresh_token):
                 raise ValueError(
                     "BoxTokenManager: provide access_token (developer "
                     "token), client_id + client_secret + enterprise_id "
                     "(client credentials), or client_id + refresh_token "
-                    "(OAuth)")
+                    "(OAuth)"
+                )
             if not config.client_id:
                 raise ValueError(
                     "BoxTokenManager: client_id is required when using "
-                    "refresh_token")
+                    "refresh_token"
+                )
         self._current_refresh_token = reveal_secret(config.refresh_token) or ""
         if self._dev_token_mode:
             # Mark as never-expires from our side; Box itself will 401 after
@@ -172,16 +186,20 @@ class BoxTokenManager(OAuthTokenManager):
         if self._dev_token_mode:
             raise BoxApiError(
                 "Box developer token expired (~1 hour lifetime). "
-                "Regenerate it in the app console.", 401)
+                "Regenerate it in the app console.",
+                401,
+            )
         if self._ccg_mode:
             token, expires_in = await fetch_ccg_token(self._config)
             return token, expires_in
         if self._config.refresh_fn is not None:
             token, new_refresh, expires_in = await self._config.refresh_fn(
-                self._current_refresh_token)
+                self._current_refresh_token
+            )
         else:
             token, new_refresh, expires_in = await refresh_access_token(
-                self._config, self._current_refresh_token)
+                self._config, self._current_refresh_token
+            )
         if new_refresh != self._current_refresh_token:
             self._current_refresh_token = new_refresh
             if self._config.on_refresh_token_rotated is not None:
@@ -205,27 +223,25 @@ async def box_get(
     url: str,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("GET",
-                                             url,
-                                             error_of=partial(_error_of,
-                                                              label="GET",
-                                                              url=url),
-                                             headers=await
-                                             box_auth_headers(tm),
-                                             params=_str_params(params),
-                                             session=tm.pool)
+    data: dict[str, Any] = await api_request(
+        "GET",
+        url,
+        error_of=partial(_error_of, label="GET", url=url),
+        headers=await box_auth_headers(tm),
+        params=_str_params(params),
+        session=tm.pool,
+    )
     return data
 
 
 async def box_options(tm: BoxTokenManager, url: str) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("OPTIONS",
-                                             url,
-                                             error_of=partial(_error_of,
-                                                              label="OPTIONS",
-                                                              url=url),
-                                             headers=await
-                                             box_auth_headers(tm),
-                                             session=tm.pool)
+    data: dict[str, Any] = await api_request(
+        "OPTIONS",
+        url,
+        error_of=partial(_error_of, label="OPTIONS", url=url),
+        headers=await box_auth_headers(tm),
+        session=tm.pool,
+    )
     return data
 
 
@@ -244,16 +260,16 @@ async def box_get_bytes(
         window (ByteWindow | None): the byte window, or None for the
             whole body.
     """
-    data: bytes = await api_request("GET",
-                                    url,
-                                    error_of=partial(_error_of,
-                                                     label="GET",
-                                                     url=url),
-                                    headers=await box_auth_headers(tm),
-                                    params=_str_params(params),
-                                    read="bytes",
-                                    window=window,
-                                    session=tm.pool)
+    data: bytes = await api_request(
+        "GET",
+        url,
+        error_of=partial(_error_of, label="GET", url=url),
+        headers=await box_auth_headers(tm),
+        params=_str_params(params),
+        read="bytes",
+        window=window,
+        session=tm.pool,
+    )
     return data
 
 
@@ -267,13 +283,14 @@ async def box_get_stream(
     # The manager's shared pool, not a per-call session: the response
     # context releases its connection back to the pool when the stream
     # ends, so streaming holds one connection, never a whole session.
-    async with tm.session().get(url,
-                                headers=headers,
-                                params=_str_params(params)) as resp:
+    async with tm.session().get(
+        url, headers=headers, params=_str_params(params)
+    ) as resp:
         if resp.status >= 400:
             text = await resp.text()
-            raise BoxApiError(f"Box GET {url} -> {resp.status} {text}",
-                              resp.status)
+            raise BoxApiError(
+                f"Box GET {url} -> {resp.status} {text}", resp.status
+            )
         async for chunk in resp.content.iter_chunked(chunk_size):
             yield chunk
 
@@ -283,15 +300,14 @@ async def box_post_json(
     url: str,
     body: dict[str, Any],
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("POST",
-                                             url,
-                                             error_of=partial(_error_of,
-                                                              label="POST",
-                                                              url=url),
-                                             headers=await
-                                             box_auth_headers(tm),
-                                             json_body=body,
-                                             session=tm.pool)
+    data: dict[str, Any] = await api_request(
+        "POST",
+        url,
+        error_of=partial(_error_of, label="POST", url=url),
+        headers=await box_auth_headers(tm),
+        json_body=body,
+        session=tm.pool,
+    )
     return data
 
 
@@ -300,15 +316,14 @@ async def box_put_json(
     url: str,
     body: dict[str, Any],
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("PUT",
-                                             url,
-                                             error_of=partial(_error_of,
-                                                              label="PUT",
-                                                              url=url),
-                                             headers=await
-                                             box_auth_headers(tm),
-                                             json_body=body,
-                                             session=tm.pool)
+    data: dict[str, Any] = await api_request(
+        "PUT",
+        url,
+        error_of=partial(_error_of, label="PUT", url=url),
+        headers=await box_auth_headers(tm),
+        json_body=body,
+        session=tm.pool,
+    )
     return data
 
 
@@ -317,13 +332,15 @@ async def box_delete(
     url: str,
     params: dict[str, Any] | None = None,
 ) -> None:
-    await api_request("DELETE",
-                      url,
-                      error_of=partial(_error_of, label="DELETE", url=url),
-                      headers=await box_auth_headers(tm),
-                      params=_str_params(params),
-                      read="none",
-                      session=tm.pool)
+    await api_request(
+        "DELETE",
+        url,
+        error_of=partial(_error_of, label="DELETE", url=url),
+        headers=await box_auth_headers(tm),
+        params=_str_params(params),
+        read="none",
+        session=tm.pool,
+    )
 
 
 async def box_upload_multipart(
@@ -335,17 +352,18 @@ async def box_upload_multipart(
 ) -> dict[str, Any]:
     form = aiohttp.FormData()
     form.add_field("attributes", json.dumps(attributes))
-    form.add_field("file",
-                   data,
-                   filename=filename,
-                   content_type="application/octet-stream")
-    payload: dict[str,
-                  Any] = await api_request("POST",
-                                           url,
-                                           error_of=partial(_error_of,
-                                                            label="upload",
-                                                            url=url),
-                                           headers=await box_auth_headers(tm),
-                                           data=form,
-                                           session=tm.pool)
+    form.add_field(
+        "file",
+        data,
+        filename=filename,
+        content_type="application/octet-stream",
+    )
+    payload: dict[str, Any] = await api_request(
+        "POST",
+        url,
+        error_of=partial(_error_of, label="upload", url=url),
+        headers=await box_auth_headers(tm),
+        data=form,
+        session=tm.pool,
+    )
     return payload

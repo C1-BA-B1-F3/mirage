@@ -14,7 +14,8 @@ class _OverlayRAMVFS(RAMVFS):
 
 
 def _make_overlay_ws(
-        files: dict[str, bytes]) -> tuple[Workspace, _OverlayRAMVFS]:
+    files: dict[str, bytes],
+) -> tuple[Workspace, _OverlayRAMVFS]:
     vfs = _OverlayRAMVFS()
     vfs._store.files.update(files)
     ws = Workspace({"/data/": (vfs, MountMode.WRITE)}, mode=MountMode.WRITE)
@@ -101,8 +102,10 @@ async def test_chmod_recursive_covers_the_whole_subtree():
     code, _, err = await _run(ws, "chmod -R 700 /data/tree")
     assert code == 0, err
     _, out, _ = await _run(
-        ws, "stat -c '%A %n' /data/tree /data/tree/a.txt "
-        "/data/tree/sub /data/tree/sub/b.txt")
+        ws,
+        "stat -c '%A %n' /data/tree /data/tree/a.txt "
+        "/data/tree/sub /data/tree/sub/b.txt",
+    )
     assert out.splitlines() == [
         "drwx------ /data/tree",
         "-rwx------ /data/tree/a.txt",
@@ -122,7 +125,8 @@ async def test_chmod_recursive_skips_a_traversed_link():
     assert code == 0, err
     # GNU changes neither the traversed link nor its referent.
     _, out, _ = await _run(
-        ws, "stat -c '%A %n' /data/outside.txt /data/tree/link.txt")
+        ws, "stat -c '%A %n' /data/outside.txt /data/tree/link.txt"
+    )
     assert out.splitlines() == [
         "-rw------- /data/outside.txt",
         "lrwxrwxrwx /data/tree/link.txt",
@@ -146,5 +150,6 @@ async def test_chmod_recursive_reports_a_missing_operand():
     ws = _make_ws()
     code, _, err = await _run(ws, "chmod -R 700 /data/nope")
     assert code == 1
-    assert err == ("chmod: cannot access '/data/nope': "
-                   "No such file or directory\n")
+    assert err == (
+        "chmod: cannot access '/data/nope': No such file or directory\n"
+    )

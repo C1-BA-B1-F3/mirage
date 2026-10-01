@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 NUMERIC_STRING = re.compile(
-    r"^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?\Z")
+    r"^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?\Z"
+)
 
 NUMERIC_PREFIX = re.compile(
-    r"^[ \t\n]*[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?")
+    r"^[ \t\n]*[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?"
+)
 
 CONVFMT_SPEC = re.compile(r"^%([-+ #0]*)([0-9]*)(\.[0-9]*)?([eEfFgG])\Z")
 

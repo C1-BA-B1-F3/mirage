@@ -26,29 +26,26 @@ app = typer.Typer(invoke_without_command=True, help="Execute a command.")
 
 @app.callback(invoke_without_command=True)
 def execute_cmd(
-    workspace_id: str = typer.Option(...,
-                                     "--workspace_id",
-                                     "--workspace",
-                                     "-w",
-                                     help="Workspace id."),
-    command: str = typer.Option(...,
-                                "--command",
-                                "-c",
-                                help="Shell command to execute."),
-    session_id: str | None = typer.Option(None,
-                                          "--session_id",
-                                          "--session",
-                                          "-s",
-                                          help="Session id."),
+    workspace_id: str = typer.Option(
+        ..., "--workspace_id", "--workspace", "-w", help="Workspace id."
+    ),
+    command: str = typer.Option(
+        ..., "--command", "-c", help="Shell command to execute."
+    ),
+    session_id: str | None = typer.Option(
+        None, "--session_id", "--session", "-s", help="Session id."
+    ),
     cwd: str | None = typer.Option(
         None,
         "--cwd",
-        help="Working directory for this line (a workspace path)."),
+        help="Working directory for this line (a workspace path).",
+    ),
     runtime: str | None = typer.Option(
         None,
         "--runtime",
         help="Workspace runtime entry to place this line's captured "
-        "stages on."),
+        "stages on.",
+    ),
     background: bool = typer.Option(
         False,
         "--background",
@@ -56,12 +53,8 @@ def execute_cmd(
         help="Don't wait; return job_id immediately.",
     ),
 ) -> None:
-    """Execute a command in a workspace.
-
-    For dry-run / cost-estimate output, use ``mirage provision``
-    instead.
-    """
-    payload: dict[str, Any] = {"command": command, "provision": False}
+    """Execute a command in a workspace."""
+    payload: dict[str, Any] = {"command": command}
     if session_id:
         payload["session_id"] = session_id
     if cwd:
@@ -76,10 +69,16 @@ def execute_cmd(
         if not sys.stdin.isatty() and not background:
             stdin_bytes = sys.stdin.buffer.read()
             files = {
-                "request":
-                ("request.json", json.dumps(payload), "application/json"),
-                "stdin":
-                ("stdin.bin", stdin_bytes, "application/octet-stream"),
+                "request": (
+                    "request.json",
+                    json.dumps(payload),
+                    "application/json",
+                ),
+                "stdin": (
+                    "stdin.bin",
+                    stdin_bytes,
+                    "application/octet-stream",
+                ),
             }
             r = client.request("POST", path, files=files)
         else:

@@ -80,7 +80,8 @@ async def _stdout(ws: Workspace, cmd: str) -> str:
 async def test_heredoc_expands_braced_var_and_cmdsub():
     ws = await _workspace_at("/data")
     out = await _stdout(
-        ws, 'v=mirage\ncat <<END\nval=$v\nbrace=${v}\nsub=$(echo inner)\nEND')
+        ws, "v=mirage\ncat <<END\nval=$v\nbrace=${v}\nsub=$(echo inner)\nEND"
+    )
     assert out == "val=mirage\nbrace=mirage\nsub=inner\n"
 
 
@@ -199,9 +200,10 @@ async def test_redirect_single_quoted_stderr_target_captures():
     ws = await _workspace_at("/data")
     io = await ws.shell("cat /data/missing 2> '/data/ERR'")
     assert io.exit_code != 0
-    assert b"No such file or directory" in (await
-                                            _stdout(ws,
-                                                    "cat /data/ERR")).encode()
+    assert (
+        b"No such file or directory"
+        in (await _stdout(ws, "cat /data/ERR")).encode()
+    )
 
 
 @pytest.mark.asyncio
@@ -283,15 +285,19 @@ async def test_redirect_three_unbraced_vars_no_suffix():
 @pytest.mark.asyncio
 async def test_word_second_unbraced_var_stays_one_argument():
     ws = await _workspace_at("/data")
-    assert await _stdout(
-        ws, "c=aa; id=1; echo /api/$c/$id.json") == "/api/aa/1.json\n"
+    assert (
+        await _stdout(ws, "c=aa; id=1; echo /api/$c/$id.json")
+        == "/api/aa/1.json\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_assignment_second_unbraced_var_stays_assignment():
     ws = await _workspace_at("/data")
-    assert await _stdout(
-        ws, "c=aa; id=1; p=/api/$c/$id.json; echo $p") == "/api/aa/1.json\n"
+    assert (
+        await _stdout(ws, "c=aa; id=1; p=/api/$c/$id.json; echo $p")
+        == "/api/aa/1.json\n"
+    )
 
 
 # tree-sitter-bash used to lex a heredoc body line opening with a backslash
@@ -317,8 +323,10 @@ async def test_heredoc_leading_backslash_line_round_trips_through_a_file():
 @pytest.mark.asyncio
 async def test_heredoc_keeps_indentation_after_a_backslash_line():
     ws = await _workspace_at("/data")
-    body = ("\\begin{table}[!ht]\n  \\begin{center}\n"
-            "  \\end{center}\n\\end{table}\n")
+    body = (
+        "\\begin{table}[!ht]\n  \\begin{center}\n"
+        "  \\end{center}\n\\end{table}\n"
+    )
     assert await _stdout(ws, f"cat <<'END'\n{body}END") == body
 
 
@@ -347,10 +355,12 @@ async def test_heredoc_backslash_line_does_not_reach_the_pipeline():
 async def test_heredoc_apostrophe_on_a_backslash_line_is_body_text():
     ws = await _workspace_at("/data")
     io = await ws.shell(
-        "cat <<'END'\n\\item Don't stop; echo not-a-command\nsecond\nEND")
+        "cat <<'END'\n\\item Don't stop; echo not-a-command\nsecond\nEND"
+    )
     assert io.exit_code == 0
     assert (io.stdout or b"").decode() == (
-        "\\item Don't stop; echo not-a-command\nsecond\n")
+        "\\item Don't stop; echo not-a-command\nsecond\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -459,24 +469,28 @@ async def test_heredoc_body_expanding_to_the_delimiter_is_kept():
 @pytest.mark.asyncio
 async def test_heredoc_body_after_a_case_pattern_paren():
     ws = await _workspace_at("/data")
-    line = ("cat <<EOF $(case x in\nx)\n  :\n  ;;\nesac\n)\n"
-            "\\first\nsecond\nEOF\n")
+    line = (
+        "cat <<EOF $(case x in\nx)\n  :\n  ;;\nesac\n)\n\\first\nsecond\nEOF\n"
+    )
     assert await _stdout(ws, line) == "\\first\nsecond\n"
 
 
 @pytest.mark.asyncio
 async def test_heredoc_body_after_a_case_pattern_keeps_indentation():
     ws = await _workspace_at("/data")
-    line = ("cat <<EOF $(case x in\nx)\n  :\n  ;;\nesac\n)\n"
-            "  spaced\nsecond\nEOF\n")
+    line = (
+        "cat <<EOF $(case x in\nx)\n  :\n  ;;\nesac\n)\n"
+        "  spaced\nsecond\nEOF\n"
+    )
     assert await _stdout(ws, line) == "  spaced\nsecond\n"
 
 
 @pytest.mark.asyncio
 async def test_heredoc_body_after_a_quote_inside_a_substitution():
     ws = await _workspace_at("/data")
-    line = ('cat <<EOF >"$( : "a\n  b"; echo /data/HB8)"\n'
-            "\\first\nsecond\nEOF\n")
+    line = (
+        'cat <<EOF >"$( : "a\n  b"; echo /data/HB8)"\n\\first\nsecond\nEOF\n'
+    )
     await ws.shell(line)
     assert await _stdout(ws, "cat /data/HB8") == "\\first\nsecond\n"
 
@@ -484,15 +498,18 @@ async def test_heredoc_body_after_a_quote_inside_a_substitution():
 @pytest.mark.asyncio
 async def test_heredoc_body_after_a_quote_inside_a_backtick():
     ws = await _workspace_at("/data")
-    line = ('cat <<EOF >"`  : "a\n  b"; echo /data/HB9 `"\n'
-            "\\first\nsecond\nEOF\n")
+    line = (
+        'cat <<EOF >"`  : "a\n  b"; echo /data/HB9 `"\n\\first\nsecond\nEOF\n'
+    )
     await ws.shell(line)
     assert await _stdout(ws, "cat /data/HB9") == "\\first\nsecond\n"
 
 
 HEREDOC_CASES = json.loads(
-    (Path(__file__).resolve().parents[4] /
-     "integ/bash/heredoc/reader.json").read_text())["cases"]
+    (
+        Path(__file__).resolve().parents[4] / "integ/bash/heredoc/reader.json"
+    ).read_text()
+)["cases"]
 
 
 @pytest.mark.asyncio
@@ -504,41 +521,42 @@ async def test_heredoc_reader_integration(case):
         assert {
             "exit": io.exit_code,
             "stdout": await io.stdout_str(),
-            "stderr": (await io.materialize_stderr()).decode()
+            "stderr": (await io.materialize_stderr()).decode(),
         } == case["expect"]
     finally:
         await ws.close()
 
 
 NESTED_HEREDOC_CASES = json.loads(
-    (Path(__file__).resolve().parents[4] /
-     "integ/crossmount/nested/heredoc.json").read_text())["cases"]
+    (
+        Path(__file__).resolve().parents[4]
+        / "integ/crossmount/nested/heredoc.json"
+    ).read_text()
+)["cases"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case",
-                         NESTED_HEREDOC_CASES,
-                         ids=lambda case: case["id"])
+@pytest.mark.parametrize(
+    "case", NESTED_HEREDOC_CASES, ids=lambda case: case["id"]
+)
 async def test_heredoc_nested_mount_integration(case):
     parent, child, ghost = RAMVFS(), RAMVFS(), RAMVFS()
     ws = Workspace(
-        {
-            "/data": parent,
-            "/data/inner": child,
-            "/ghost/deep": ghost
-        },
-        mode=MountMode.WRITE)
+        {"/data": parent, "/data/inner": child, "/ghost/deep": ghost},
+        mode=MountMode.WRITE,
+    )
     try:
         io = await ws.shell(case["command"])
         assert {
             "exit": io.exit_code,
             "stdout": await io.stdout_str(),
-            "stderr": (await io.materialize_stderr()).decode()
+            "stderr": (await io.materialize_stderr()).decode(),
         } == case["expect"]
         # A longest-prefix routing bug can read back its own misplaced write;
         # inspect ownership too, so a false round trip cannot pass.
         assert not any(
-            key.startswith("/inner/") for key in parent._store.files)
+            key.startswith("/inner/") for key in parent._store.files
+        )
         assert child._store.files or ghost._store.files
     finally:
         await ws.close()

@@ -27,34 +27,33 @@ A_contra = TypeVar("A_contra", bound=Accessor, contravariant=True)
 
 
 class ReaddirFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str]]:
-        ...
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[str]]: ...
 
 
 class StatFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 index: IndexCacheStore = ...) -> Awaitable[FileStat]:
-        ...
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[FileStat]: ...
 
 
 class ExistsFn(Protocol[A_contra]):
-
-    def __call__(self, accessor: A_contra, path: PathSpec) -> Awaitable[bool]:
-        ...
+    def __call__(
+        self, accessor: A_contra, path: PathSpec
+    ) -> Awaitable[bool]: ...
 
 
 class PathFn(Protocol[A_contra]):
-
-    def __call__(self, accessor: A_contra,
-                 path_spec: PathSpec) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: A_contra, path_spec: PathSpec
+    ) -> Awaitable[None]: ...
 
 
 class RmdirFn(Protocol[A_contra]):
@@ -62,64 +61,58 @@ class RmdirFn(Protocol[A_contra]):
     the call for the command tier's hidden-remnant listing; the store
     itself never consults it."""
 
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 index: IndexCacheStore = ...) -> Awaitable[None]:
-        ...
-
-
-class PairFn(Protocol[A_contra]):
-
-    def __call__(self, accessor: A_contra, src_spec: PathSpec,
-                 dst_spec: PathSpec) -> Awaitable[None]:
-        ...
-
-
-class WriteFn(Protocol[A_contra]):
-
-    def __call__(self, accessor: A_contra, path_spec: PathSpec,
-                 data: bytes) -> Awaitable[None]:
-        ...
-
-
-class MkdirFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 parents: bool = ...) -> Awaitable[None]:
-        ...
-
-
-class TruncateFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 length: int,
-                 no_create: bool = False) -> Awaitable[None]:
-        ...
-
-
-class DuEntriesFn(Protocol[A_contra]):
-
     def __call__(
         self,
         accessor: A_contra,
         path_spec: PathSpec,
-        index: IndexCacheStore = ...
-    ) -> Awaitable[tuple[list[tuple[str, int]], int]]:
-        ...
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[None]: ...
+
+
+class PairFn(Protocol[A_contra]):
+    def __call__(
+        self, accessor: A_contra, src_spec: PathSpec, dst_spec: PathSpec
+    ) -> Awaitable[None]: ...
+
+
+class WriteFn(Protocol[A_contra]):
+    def __call__(
+        self, accessor: A_contra, path_spec: PathSpec, data: bytes
+    ) -> Awaitable[None]: ...
+
+
+class MkdirFn(Protocol[A_contra]):
+    def __call__(
+        self, accessor: A_contra, path_spec: PathSpec, parents: bool = ...
+    ) -> Awaitable[None]: ...
+
+
+class TruncateFn(Protocol[A_contra]):
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        length: int,
+        no_create: bool = False,
+    ) -> Awaitable[None]: ...
+
+
+class DuEntriesFn(Protocol[A_contra]):
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[tuple[list[tuple[str, int]], int]]: ...
 
 
 class DuSizeFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 index: IndexCacheStore = ...) -> Awaitable[int]:
-        ...
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[int]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +134,7 @@ class ChildEntry:
             report one.
         modified (str): ISO-8601 mtime; empty when unknown.
     """
+
     key: str
     kind: Literal["f", "d", "marker"]
     size: int | None = None
@@ -157,6 +151,7 @@ class TreeEntry:
         size (int | None): byte size; None when unknown, markers report 0.
         modified (str): ISO-8601 mtime, empty when unknown.
     """
+
     key: str
     size: int | None = 0
     modified: str = ""
@@ -175,6 +170,7 @@ class ObjectMeta:
         extra (dict[str, str]): backend-shaped stat extras, forwarded
             into ``FileStat.extra`` verbatim.
     """
+
     size: int
     modified: str | None = None
     fingerprint: str | None = None
@@ -197,6 +193,7 @@ class FindHints:
         pushdown (bool): a ``-type f`` find with no complex predicate
             tree; only the prefix condition may be used otherwise.
     """
+
     name: str | None
     iname: str | None
     min_size: int | None
@@ -280,6 +277,7 @@ class ObjectStoreDriver(Generic[A, C]):
             query was narrowed beyond the prefix; None means find walks
             ``list_tree`` unnarrowed.
     """
+
     vfs: str
     scope_error: int
     key_prefix_of: Callable[[A], str]
@@ -298,5 +296,7 @@ class ObjectStoreDriver(Generic[A, C]):
     move_prefix: Callable[[C, str, str], Awaitable[bool]] | None = None
     copy_file: Callable[[C, str, str], Awaitable[bool]] | None = None
     markers_supported: bool = True
-    find_tree: Callable[[C, str, FindHints], tuple[AsyncIterator[TreeEntry],
-                                                   bool]] | None = None
+    find_tree: (
+        Callable[[C, str, FindHints], tuple[AsyncIterator[TreeEntry], bool]]
+        | None
+    ) = None

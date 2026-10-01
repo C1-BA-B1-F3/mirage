@@ -16,26 +16,34 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.sort import sort as generic_sort
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def sort(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def sort(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     return await generic_sort(
         paths,
         read_bytes=bound_op(ops.read_bytes, accessor, opts.index),
-        write_bytes=(partial(ops.write, accessor)
-                     if ops.write is not None else None),
+        write_bytes=(
+            partial(ops.write, accessor) if ops.write is not None else None
+        ),
         stdin=opts.stdin,
         flags=opts.flags,
     )
 
 
-BUILDER = Builder('sort', sort, None, False, None, read=True)
+BUILDER = Builder("sort", sort, read=True)

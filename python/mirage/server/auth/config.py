@@ -79,8 +79,9 @@ def resolve_local_token(
     val = e.get(ENV_AUTH_TOKEN, "").strip()
     if val:
         return val
-    path = (token_file
-            if token_file is not None else _storage.default_token_file())
+    path = (
+        token_file if token_file is not None else _storage.default_token_file()
+    )
     return _storage.read_token_file(path)
 
 
@@ -92,7 +93,8 @@ def _read_jwt_key(env: Mapping[str, str]) -> str:
     if path:
         return Path(path).read_text()
     raise RuntimeError(
-        f"mode=jwt requires {ENV_JWT_PUBKEY} or {ENV_JWT_PUBKEY_FILE}")
+        f"mode=jwt requires {ENV_JWT_PUBKEY} or {ENV_JWT_PUBKEY_FILE}"
+    )
 
 
 def _parse_csv(value: str) -> tuple[str, ...]:
@@ -110,8 +112,9 @@ _CONFIG_ENV_KEYS = {
 }
 
 
-def _merge_config_table(env: Mapping[str, str],
-                        table: Mapping[str, JsonValue]) -> dict[str, str]:
+def _merge_config_table(
+    env: Mapping[str, str], table: Mapping[str, JsonValue]
+) -> dict[str, str]:
     """Fold config.toml auth keys under their env names, env winning.
 
     Only non-secret keys have config counterparts: the raw
@@ -164,8 +167,9 @@ def resolve_auth_config(
     if table is None:
         table = read_daemon_table(mirage_home()) if env is None else {}
     e = _merge_config_table(env if env is not None else os.environ, table)
-    raw_mode = (e.get(ENV_AUTH_MODE, "")
-                or AuthMode.LOCAL.value).strip().lower()
+    raw_mode = (
+        (e.get(ENV_AUTH_MODE, "") or AuthMode.LOCAL.value).strip().lower()
+    )
     try:
         mode = AuthMode(raw_mode)
     except ValueError as exc:
@@ -184,7 +188,8 @@ def resolve_auth_config(
         token = e.get(ENV_AUTH_TOKEN, "").strip()
         if not token:
             raise RuntimeError(
-                f"mode=token requires {ENV_AUTH_TOKEN} to be set")
+                f"mode=token requires {ENV_AUTH_TOKEN} to be set"
+            )
         return AuthConfig(mode=mode, bearer_token=token)
 
     key = _read_jwt_key(e)

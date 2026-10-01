@@ -35,17 +35,24 @@ def _ops(stat_calls: list[str], find_op=None) -> CommandIO:
 
     async def stat(_accessor, path, index=None):
         stat_calls.append(path.virtual)
-        if path.virtual not in TREE and path.virtual not in TREE.get(
-                "/mnt", []) and path.virtual != "/mnt/table1/rows.jsonl":
+        if (
+            path.virtual not in TREE
+            and path.virtual not in TREE.get("/mnt", [])
+            and path.virtual != "/mnt/table1/rows.jsonl"
+        ):
             raise FileNotFoundError(path.virtual)
         if path.virtual in DIRS:
-            return FileStat(name=path.virtual,
-                            type=FileType.DIRECTORY,
-                            modified="2099-01-01T00:00:00+00:00")
-        return FileStat(type=FileType.FILE,
-                        name=path.virtual,
-                        size=3,
-                        modified="2099-01-01T00:00:00+00:00")
+            return FileStat(
+                name=path.virtual,
+                type=FileType.DIRECTORY,
+                modified="2099-01-01T00:00:00+00:00",
+            )
+        return FileStat(
+            type=FileType.FILE,
+            name=path.virtual,
+            size=3,
+            modified="2099-01-01T00:00:00+00:00",
+        )
 
     async def read_stream(_accessor, _path, _index):
         yield b"data"
@@ -53,20 +60,21 @@ def _ops(stat_calls: list[str], find_op=None) -> CommandIO:
     async def unused(*_args):
         raise AssertionError("not used")
 
-    return CommandIO(readdir=readdir,
-                     read_bytes=unused,
-                     read_stream=read_stream,
-                     stat=stat,
-                     is_mounted=lambda _a: True,
-                     local=False,
-                     find=find_op)
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=unused,
+        read_stream=read_stream,
+        stat=stat,
+        is_mounted=lambda _a: True,
+        local=False,
+        find=find_op,
+    )
 
 
 def _root() -> PathSpec:
-    return PathSpec(virtual="/mnt",
-                    directory="/mnt",
-                    resolved=False,
-                    vfs_path="")
+    return PathSpec(
+        virtual="/mnt", directory="/mnt", resolved=False, vfs_path=""
+    )
 
 
 async def _lines(ops: CommandIO) -> list[str]:
@@ -92,14 +100,18 @@ async def test_walk_honors_multiple_start_points():
     stat_calls: list[str] = []
     ops = _ops(stat_calls)
     roots = [
-        PathSpec(virtual="/mnt/table1",
-                 directory="/mnt/table1",
-                 resolved=False,
-                 vfs_path="table1"),
-        PathSpec(virtual="/mnt/notes.txt",
-                 directory="/mnt",
-                 resolved=False,
-                 vfs_path="notes.txt"),
+        PathSpec(
+            virtual="/mnt/table1",
+            directory="/mnt/table1",
+            resolved=False,
+            vfs_path="table1",
+        ),
+        PathSpec(
+            virtual="/mnt/notes.txt",
+            directory="/mnt",
+            resolved=False,
+            vfs_path="notes.txt",
+        ),
     ]
     stdout, _io = await find(ops, None, roots, [], CommandOpts())
     data = await materialize(stdout)
@@ -108,7 +120,8 @@ async def test_walk_honors_multiple_start_points():
     assert "/mnt/table1/rows.jsonl" in lines
     assert "/mnt/notes.txt" in lines
     assert lines.index("/mnt/table1/rows.jsonl") < lines.index(
-        "/mnt/notes.txt")
+        "/mnt/notes.txt"
+    )
 
 
 @pytest.mark.asyncio
@@ -116,8 +129,7 @@ async def test_native_find_honors_multiple_start_points():
     stat_calls: list[str] = []
 
     async def find_op(_accessor, path, **_kw):
-        key = "/" + path.vfs_path.strip("/") if path.vfs_path \
-            else "/"
+        key = "/" + path.vfs_path.strip("/") if path.vfs_path else "/"
         if key == "/table1":
             return ["/table1/rows.jsonl"]
         if key == "/notes.txt":
@@ -126,14 +138,18 @@ async def test_native_find_honors_multiple_start_points():
 
     ops = _ops(stat_calls, find_op=find_op)
     roots = [
-        PathSpec(virtual="/mnt/table1",
-                 directory="/mnt/table1",
-                 resolved=False,
-                 vfs_path="table1"),
-        PathSpec(virtual="/mnt/notes.txt",
-                 directory="/mnt",
-                 resolved=False,
-                 vfs_path="notes.txt"),
+        PathSpec(
+            virtual="/mnt/table1",
+            directory="/mnt/table1",
+            resolved=False,
+            vfs_path="table1",
+        ),
+        PathSpec(
+            virtual="/mnt/notes.txt",
+            directory="/mnt",
+            resolved=False,
+            vfs_path="notes.txt",
+        ),
     ]
     stdout, _io = await find(ops, None, roots, [], CommandOpts())
     data = await materialize(stdout)
@@ -143,4 +159,5 @@ async def test_native_find_honors_multiple_start_points():
     assert "/mnt/table1/rows.jsonl" in lines
     assert "/mnt/notes.txt" in lines
     assert lines.index("/mnt/table1/rows.jsonl") < lines.index(
-        "/mnt/notes.txt")
+        "/mnt/notes.txt"
+    )

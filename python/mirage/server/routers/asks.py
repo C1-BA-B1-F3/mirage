@@ -69,10 +69,10 @@ def _to_response(record: Decision) -> AskResponse:
 
 @router.get("", response_model=list[AskResponse])
 async def list_asks(
-        workspace_id: str,
-        request: Request,
-        session_id: str = "",
-        include_settled: bool = Query(False, alias="all"),
+    workspace_id: str,
+    request: Request,
+    session_id: str = "",
+    include_settled: bool = Query(False, alias="all"),
 ) -> list[AskResponse]:
     """The workspace's asks: pending by default, every decision under
     ``all=true``. The ledger already serves both views from one store,
@@ -82,18 +82,23 @@ async def list_asks(
     # The ledger reads a named session through SessionManager.get, which
     # raises for an unknown id; a mistyped filter is the caller's error,
     # answered in the sessions router's voice rather than as a 500.
-    if session_id and not any(s.session_id == session_id
-                              for s in entry.runner.ws.list_sessions()):
+    if session_id and not any(
+        s.session_id == session_id for s in entry.runner.ws.list_sessions()
+    ):
         raise HTTPException(status_code=404, detail="session not found")
     decisions = entry.runner.ws.decisions
-    records = (decisions.list(session_id)
-               if include_settled else decisions.pending(session_id))
+    records = (
+        decisions.list(session_id)
+        if include_settled
+        else decisions.pending(session_id)
+    )
     return [_to_response(r) for r in records]
 
 
 @router.post("/{ask_id}", response_model=AskResponse)
-async def answer_ask(workspace_id: str, ask_id: str, req: AnswerAskRequest,
-                     request: Request) -> AskResponse:
+async def answer_ask(
+    workspace_id: str, ask_id: str, req: AnswerAskRequest, request: Request
+) -> AskResponse:
     """Answer one waiting ask, allow or deny, and return the settled
     record. A known id with nothing waiting is 409 rather than 404, so
     an operator retrying a click reads "already answered", not "not
@@ -106,28 +111,33 @@ async def answer_ask(workspace_id: str, ask_id: str, req: AnswerAskRequest,
         # record. Recording one would be a rule that can never speak.
         raise HTTPException(
             status_code=422,
-            detail="a deny answers once; asking again raises a new record")
+            detail="a deny answers once; asking again raises a new record",
+        )
     decisions = entry.runner.ws.decisions
     held = decisions.list()
-    waiting = next((r for r in held if r.id == ask_id and r.outcome is None),
-                   None)
+    waiting = next(
+        (r for r in held if r.id == ask_id and r.outcome is None), None
+    )
     if waiting is None:
         if any(r.id == ask_id for r in held):
-            raise HTTPException(status_code=409,
-                                detail=f"ask already answered: {ask_id}")
+            raise HTTPException(
+                status_code=409, detail=f"ask already answered: {ask_id}"
+            )
         raise HTTPException(status_code=404, detail="ask not found")
     outcome = Outcome.ALLOW if req.answer == "allow" else Outcome.DENY
     scope = Scope(req.scope)
     try:
         await entry.runner.call(
-            decisions.answer(ask_id, outcome, scope, req.note))
+            decisions.answer(ask_id, outcome, scope, req.note)
+        )
     except KeyError as exc:
         # Answered between our read and the write: the id exists but
         # nothing is waiting under it any more.
-        raise HTTPException(status_code=409,
-                            detail=f"ask already answered: {ask_id}") from exc
+        raise HTTPException(
+            status_code=409, detail=f"ask already answered: {ask_id}"
+        ) from exc
     return _to_response(
-        dataclasses.replace(waiting,
-                            outcome=outcome,
-                            scope=scope,
-                            note=req.note))
+        dataclasses.replace(
+            waiting, outcome=outcome, scope=scope, note=req.note
+        )
+    )

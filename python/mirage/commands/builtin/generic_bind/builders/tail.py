@@ -15,25 +15,39 @@
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.aggregators import header_aggregate
 from mirage.commands.builtin.generic.tail import tail_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          dir_aware_stat,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    dir_aware_stat,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def tail(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def tail(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     resolved = await resolve_or_empty(ops, accessor, paths, opts.index)
-    read_range = (bound_op(ops.read_range, accessor, opts.index)
-                  if ops.read_range is not None else None)
-    return await tail_generic(resolved, list(texts), opts,
-                              dir_aware_stat(ops, accessor, opts),
-                              bound_op(ops.read_stream, accessor, opts.index),
-                              read_range)
+    read_range = (
+        bound_op(ops.read_range, accessor, opts.index)
+        if ops.read_range is not None
+        else None
+    )
+    return await tail_generic(
+        resolved,
+        list(texts),
+        opts,
+        dir_aware_stat(ops, accessor, opts),
+        bound_op(ops.read_stream, accessor, opts.index),
+        read_range,
+    )
 
 
-BUILDER = Builder('tail', tail, None, False, header_aggregate, read=True)
+BUILDER = Builder("tail", tail, aggregate=header_aggregate, read=True)

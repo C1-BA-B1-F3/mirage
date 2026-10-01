@@ -66,7 +66,8 @@ def jq_all(backend, path, expression):
     """Every output of a program run on each document of a file in turn,
     the way jq runs it."""
     return [
-        output for doc in documents(backend, path)
+        output
+        for doc in documents(backend, path)
         for output in jq_eval(doc, expression.strip())
     ]
 
@@ -127,9 +128,11 @@ def collect(stdout):
     return b"".join(stdout)
 
 
-SAMPLE_JSONL = (b'{"name": "alice", "age": 30}\n'
-                b'{"name": "bob", "age": 25}\n'
-                b'{"name": "carol", "age": 35}\n')
+SAMPLE_JSONL = (
+    b'{"name": "alice", "age": 30}\n'
+    b'{"name": "bob", "age": 25}\n'
+    b'{"name": "carol", "age": 35}\n'
+)
 
 DATA_DIR = Path(__file__).resolve().parents[5] / "data"
 EXAMPLE_JSON = DATA_DIR / "example.json"

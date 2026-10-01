@@ -14,12 +14,9 @@
 
 import type { GSheetsAccessor } from '../../../accessor/gsheets.ts'
 import { VFSName } from '../../../types.ts'
-import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
+import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GSHEETS_IO } from './io.ts'
-import { fileReadProvision } from './_provision.ts'
 import { GSHEETS_RM } from './rm.ts'
 
 // Sheets verbs and API passthroughs live in the gws CLI
@@ -28,15 +25,6 @@ import { GSHEETS_RM } from './rm.ts'
 export const GSHEETS_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<GSheetsAccessor>(VFSName.GSHEETS, GSHEETS_IO, {
     overrides: new Set(['rm']),
-    provisionOverrides: {
-      grep: fileReadProvision as ProvisionFn,
-      rg: fileReadProvision as ProvisionFn,
-    },
   }),
-  ...withDefaultProvisions(
-    [...GSHEETS_RM],
-    GSHEETS_IO.stat,
-    resolveGlobOf(GSHEETS_IO),
-    GSHEETS_IO.readdir,
-  ),
+  ...GSHEETS_RM,
 ]

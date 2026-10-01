@@ -1,28 +1,56 @@
 import dataclasses
 import re
-from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
-                             Sequence)
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from typing import Any
 
-from mirage.commands.builtin.generic.program import (program_file_refusal,
-                                                     read_program_file)
+from mirage.commands.builtin.generic.program import (
+    program_file_refusal,
+    read_program_file,
+)
 from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
-from mirage.commands.config import CommandOpts, help_page, version_line
+from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.constants import OPERAND, REFUSED
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.standard import help_page, version_line
 from mirage.commands.spec.types import FlagValue
-from mirage.core.jq import (args_text, decode_utf8, error_report,
-                            format_jq_output, halt_report, jq_check,
-                            jq_run_texts, load_failure, printable, read_texts,
-                            references_args, stream_reads, string_text,
-                            value_text)
+from mirage.core.jq import (
+    args_text,
+    decode_utf8,
+    error_report,
+    format_jq_output,
+    halt_report,
+    jq_check,
+    jq_run_texts,
+    load_failure,
+    printable,
+    read_texts,
+    references_args,
+    stream_reads,
+    string_text,
+    value_text,
+)
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.stream import InputReader
-from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
-                                  InputSource, JqError, JqHalt, JqOptions,
-                                  JqParseError, JqRun, StreamReads)
+from mirage.core.jq.types import (
+    DEFAULT_INDENT,
+    NO_VALUE,
+    STDIN_NAME,
+    InputSource,
+    JqError,
+    JqHalt,
+    JqOptions,
+    JqParseError,
+    JqRun,
+    StreamReads,
+)
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.runtime.types import DispatchFn
@@ -60,18 +88,19 @@ NULL_KIND = frozenset(("null", "false"))
 ERROR_COMPILE = 3
 ERROR_SYSTEM = 2
 
-USAGE_HINT = ("Use jq --help for help with command-line options,\n"
-              "or see the jq manpage, or online docs at https://jqlang.org")
+USAGE_HINT = (
+    "Use jq --help for help with command-line options,\n"
+    "or see the jq manpage, or online docs at https://jqlang.org"
+)
 
 # What jq says for an option the line ends before the values of (main.c).
 TAKES = {
     "--arg": "--arg takes two parameters (e.g. --arg varname value)",
-    "--argjson":
-    "--argjson takes two parameters (e.g. --argjson varname text)",
-    "--rawfile":
-    "--rawfile takes two parameters (e.g. --rawfile varname filename)",
-    "--slurpfile":
-    "--slurpfile takes two parameters (e.g. --slurpfile varname filename)",
+    "--argjson": "--argjson takes two parameters (e.g. --argjson varname text)",
+    "--rawfile": "--rawfile takes two parameters (e.g. --rawfile varname filename)",
+    "--slurpfile": (
+        "--slurpfile takes two parameters (e.g. --slurpfile varname filename)"
+    ),
     "--indent": "--indent takes one parameter",
 }
 
@@ -88,13 +117,14 @@ SHORT_USAGE = (
     "standard output.\n\n"
     "The simplest filter is ., which copies jq's input to its output\n"
     "unmodified except for formatting. For more advanced filters see\n"
-    "the jq(1) manpage (\"man jq\") and/or https://jqlang.org/.\n\n"
+    'the jq(1) manpage ("man jq") and/or https://jqlang.org/.\n\n'
     "Example:\n\n"
     "\t$ echo '{\"foo\": 0}' | jq .\n"
     "\t{\n"
-    "\t  \"foo\": 0\n"
+    '\t  "foo": 0\n'
     "\t}\n\n"
-    "For listing the command options, use jq --help.")
+    "For listing the command options, use jq --help."
+)
 
 
 def _pair_args(values: Sequence[Any]) -> list[tuple[str, Any]]:
@@ -105,9 +135,9 @@ def _pair_args(values: Sequence[Any]) -> list[tuple[str, Any]]:
             A "path" pair (--rawfile, --slurpfile) carries a PathSpec in
             every value slot.
     """
-    return [(str(values[i]), values[i + 1])
-            for i in range(0,
-                           len(values) - 1, 2)]
+    return [
+        (str(values[i]), values[i + 1]) for i in range(0, len(values) - 1, 2)
+    ]
 
 
 def _pair_flag(fl: FlagView, name: str) -> list[tuple[str, Any]]:
@@ -138,7 +168,8 @@ def positional_value(mode: str, word: str) -> str:
     text = value_text(word.encode())
     if text is NO_VALUE:
         raise UsageError(
-            f"jq: invalid JSON text passed to --jsonargs\n{USAGE_HINT}", 2)
+            f"jq: invalid JSON text passed to --jsonargs\n{USAGE_HINT}", 2
+        )
     return text
 
 
@@ -156,8 +187,12 @@ def option_refusal(word: str) -> UsageError:
     return UsageError(f"jq: {line}\n{USAGE_HINT}", 2)
 
 
-async def _binding(dest: str, name: str, value: str | PathSpec,
-                   read_file: Callable[..., Awaitable[bytes]]) -> str:
+async def _binding(
+    dest: str,
+    name: str,
+    value: str | PathSpec,
+    read_file: Callable[..., Awaitable[bytes]],
+) -> str:
     """The JSON text one binding gives its name: --arg a string,
     --argjson one JSON value, --rawfile a file's text, and --slurpfile the
     array of documents in a file, which is the same difference -R draws
@@ -181,7 +216,8 @@ async def _binding(dest: str, name: str, value: str | PathSpec,
         text = value_text(value.encode())
         if text is NO_VALUE:
             raise UsageError(
-                f"jq: invalid JSON text passed to --argjson\n{USAGE_HINT}", 2)
+                f"jq: invalid JSON text passed to --argjson\n{USAGE_HINT}", 2
+            )
         return text
     data = await _load_file(read_file, dest, name, value)
     if dest == "rawfile":
@@ -190,13 +226,18 @@ async def _binding(dest: str, name: str, value: str | PathSpec,
     texts, failure = await read_texts(InputSource(shown, yield_bytes(data)))
     if failure is not None:
         raise UsageError(
-            f"jq: Bad JSON in --slurpfile {name} {shown}: "
-            f"{failure.message}", ERROR_SYSTEM)
+            f"jq: Bad JSON in --slurpfile {name} {shown}: {failure.message}",
+            ERROR_SYSTEM,
+        )
     return f"[{','.join(texts)}]"
 
 
-async def _load_file(read_bytes: Callable[..., Awaitable[bytes]], option: str,
-                     name: str, path: PathSpec) -> bytes:
+async def _load_file(
+    read_bytes: Callable[..., Awaitable[bytes]],
+    option: str,
+    name: str,
+    path: PathSpec,
+) -> bytes:
     """One --rawfile or --slurpfile file's bytes.
 
     Args:
@@ -215,7 +256,9 @@ async def _load_file(read_bytes: Callable[..., Awaitable[bytes]], option: str,
         shown = flag_file_name(path)
         raise UsageError(
             f"jq: Bad JSON in --{option} {name} {shown}: "
-            f"{load_failure(shown, exc)}", ERROR_SYSTEM) from exc
+            f"{load_failure(shown, exc)}",
+            ERROR_SYSTEM,
+        ) from exc
     return data
 
 
@@ -232,12 +275,17 @@ def indent_width(word: str) -> int:
         UsageError: for any other word, in jq's words.
     """
     match = INDENT_WORD.fullmatch(word)
-    width = (int(match[2]) * (-1 if match[1] == "-" else 1)
-             if match is not None else INDENT_MAX + 1)
+    width = (
+        int(match[2]) * (-1 if match[1] == "-" else 1)
+        if match is not None
+        else INDENT_MAX + 1
+    )
     if not INDENT_MIN <= width <= INDENT_MAX:
         raise UsageError(
             f"jq: --indent takes a number between {INDENT_MIN} and "
-            f"{INDENT_MAX}\n{USAGE_HINT}", 2)
+            f"{INDENT_MAX}\n{USAGE_HINT}",
+            2,
+        )
     return width
 
 
@@ -320,14 +368,17 @@ async def read_options(
     words = iter(texts[1:] if program else texts)
     pairs = {dest: iter(_pair_flag(fl, dest)) for dest in BINDINGS}
     tape = iter(
-        fl.occurrences(*LAYOUT, *BINDINGS, *MODES, *STANDARD, OPERAND,
-                       REFUSED))
+        fl.occurrences(*LAYOUT, *BINDINGS, *MODES, *STANDARD, OPERAND, REFUSED)
+    )
     for dest, value in tape:
         if dest == REFUSED:
             raise option_refusal(str(value))
         if dest in STANDARD:
-            return (help_page("jq", SPECS["jq"])
-                    if dest == "help" else version_line("jq"))
+            return (
+                help_page("jq", SPECS["jq"])
+                if dest == "help"
+                else version_line("jq")
+            )
         if dest == OPERAND:
             if program:
                 program = False
@@ -357,12 +408,14 @@ async def read_options(
                 named[name] = await _binding(dest, name, bound, read_file)
     if mode is not None:
         positional.extend(positional_value(mode, word) for word in words)
-    return dataclasses.replace(parse_flags(fl),
-                               compact=compact,
-                               tab=tab,
-                               indent=indent,
-                               named_args=named,
-                               positional_args=tuple(positional))
+    return dataclasses.replace(
+        parse_flags(fl),
+        compact=compact,
+        tab=tab,
+        indent=indent,
+        named_args=named,
+        positional_args=tuple(positional),
+    )
 
 
 def input_name(path: PathSpec) -> str:
@@ -470,8 +523,15 @@ class MainLoop:
         io (IOResult): the result to settle.
     """
 
-    def __init__(self, sources: list[InputSource], expr: str, opts: JqOptions,
-                 reads: StreamReads, args: str | None, io: IOResult) -> None:
+    def __init__(
+        self,
+        sources: list[InputSource],
+        expr: str,
+        opts: JqOptions,
+        reads: StreamReads,
+        args: str | None,
+        io: IOResult,
+    ) -> None:
         self._reports: list[str] = []
         self._reader = InputReader(sources, opts, self._reports.append)
         self._expr = expr
@@ -485,8 +545,9 @@ class MainLoop:
         """The invocation's stdout, run by run."""
         try:
             if self._opts.null_input:
-                run, position = await self._run("null",
-                                                self._reader.position())
+                run, position = await self._run(
+                    "null", self._reader.position()
+                )
                 if run.outputs:
                     yield format_jq_output(run.outputs, self._opts)
                 self._settle(run, position)
@@ -506,10 +567,14 @@ class MainLoop:
                 if self._settle(run, position):
                     return
         finally:
-            self._io.exit_code = (ERROR_SYSTEM if self._reader.failures() else
-                                  exit_code(self._statuses, self._opts))
+            self._io.exit_code = (
+                ERROR_SYSTEM
+                if self._reader.failures()
+                else exit_code(self._statuses, self._opts)
+            )
             if self._reports:
                 self._io.stderr = "".join(self._reports).encode()
+            await self._reader.close()
 
     async def _run(self, doc: str, position: str) -> tuple[JqRun[str], str]:
         """Run the program on one document, and say where the reader
@@ -534,8 +599,9 @@ class MainLoop:
         """
         reads = self._reads
         if not (reads.input or reads.inputs):
-            run = jq_run_texts(doc, self._expr, self._opts.named_args, None,
-                               self._args)
+            run = jq_run_texts(
+                doc, self._expr, self._opts.named_args, None, self._args
+            )
             return printable(run, self._opts), position
         docs: list[str] = []
         failure: JqParseError | None = None
@@ -550,9 +616,14 @@ class MainLoop:
             docs.append(item)
             if not reads.inputs:
                 break
-        run = jq_run_texts(doc, self._expr, self._opts.named_args, docs,
-                           self._args,
-                           None if failure is None else failure.message)
+        run = jq_run_texts(
+            doc,
+            self._expr,
+            self._opts.named_args,
+            docs,
+            self._args,
+            None if failure is None else failure.message,
+        )
         return printable(run, self._opts), position
 
     def _settle(self, run: JqRun[str], position: str) -> bool:
@@ -588,8 +659,15 @@ async def jq_generic(
     flag bag on whole: the bag records the order the flags were typed in,
     which read_options reads and keywords would lose.
     """
-    return await _jq(paths, texts, opts.flags, read_bytes, read_stream,
-                     opts.stdin, opts.dispatch)
+    return await _jq(
+        paths,
+        texts,
+        opts.flags,
+        read_bytes,
+        read_stream,
+        opts.stdin,
+        opts.dispatch,
+    )
 
 
 async def jq(
@@ -603,8 +681,9 @@ async def jq(
 ) -> tuple[ByteSource | None, IOResult]:
     """jq over keyword flags, the historical shape; keywords keep no record
     of the order they were typed in (see jq_generic)."""
-    return await _jq(paths, texts, flags, read_bytes, read_stream, stdin,
-                     dispatch)
+    return await _jq(
+        paths, texts, flags, read_bytes, read_stream, stdin, dispatch
+    )
 
 
 async def _jq(
@@ -647,8 +726,9 @@ async def _jq(
     program_file = fl.raw("from_file")
     # jq reads its options before its program, so a refused option is
     # reported before an -f file is read.
-    opts = await read_options(fl, texts, isinstance(program_file, PathSpec),
-                              read_flag_file)
+    opts = await read_options(
+        fl, texts, isinstance(program_file, PathSpec), read_flag_file
+    )
     if isinstance(opts, bytes):
         return yield_bytes(opts), IOResult()
     if isinstance(program_file, PathSpec):
@@ -660,7 +740,8 @@ async def _jq(
         if b"\0" in data:
             return None, IOResult(
                 exit_code=ERROR_SYSTEM,
-                stderr=b"jq: program file contains NUL bytes\n")
+                stderr=b"jq: program file contains NUL bytes\n",
+            )
         expression = data.decode(errors="replace")
     else:
         # jq defaults the filter to "." when no expression is given.
@@ -674,8 +755,9 @@ async def _jq(
     except JqCompileError as exc:
         # jq compiles its program before it opens a single input, so a
         # refusal is all it prints.
-        return None, IOResult(exit_code=ERROR_COMPILE,
-                              stderr=f"{exc}\n".encode())
+        return None, IOResult(
+            exit_code=ERROR_COMPILE, stderr=f"{exc}\n".encode()
+        )
 
     sources: list[InputSource] = []
     # -n does not read its inputs at all unless the program asks for them
@@ -688,8 +770,11 @@ async def _jq(
                 sources.append(InputSource(input_name(path), read_input(path)))
         elif stdin is not None:
             sources.append(
-                InputSource(STDIN_NAME,
-                            read_input(PathSpec.from_str_path("/dev/stdin"))))
+                InputSource(
+                    STDIN_NAME,
+                    read_input(PathSpec.from_str_path("/dev/stdin")),
+                )
+            )
     io = IOResult()
     loop = MainLoop(sources, expr, opts, reads, args, io)
     return loop.outputs(), io

@@ -25,12 +25,25 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.bytes import encode_text
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
-from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
-                                    FD_STDOUT)
-from mirage.shell.descriptors import (ENCLOSING, Descriptor, FileDescription,
-                                      FileInput, Inherited, Recorder,
-                                      bad_descriptor_line, deliver,
-                                      unreadable_stdin, unsupported_descriptor)
+from mirage.shell.constants import (
+    FD_BOTH,
+    FD_CLOSE,
+    FD_STDERR,
+    FD_STDIN,
+    FD_STDOUT,
+)
+from mirage.shell.descriptors import (
+    ENCLOSING,
+    Descriptor,
+    FileDescription,
+    FileInput,
+    Inherited,
+    Recorder,
+    bad_descriptor_line,
+    deliver,
+    unreadable_stdin,
+    unsupported_descriptor,
+)
 from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.types import Redirect, RedirectKind, TSNodeLike
@@ -38,8 +51,13 @@ from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins import _to_scope
 from mirage.workspace.executor.builtins.exec.constants import (
-    CLOSED, OPEN_FOR_READ_WRITE, OPEN_FOR_READING, TO_STDERR, TO_STDIN,
-    TO_STDOUT)
+    CLOSED,
+    OPEN_FOR_READ_WRITE,
+    OPEN_FOR_READING,
+    TO_STDERR,
+    TO_STDIN,
+    TO_STDOUT,
+)
 from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.create import write_description
 from mirage.workspace.executor.jobs import drained, pump
@@ -58,6 +76,7 @@ class _Fd(Enum):
     written there are dropped, and a command whose stdout was closed
     reports the write failure the way GNU echo does.
     """
+
     TO_STDOUT = auto()
     TO_STDERR = auto()
     CLOSED = auto()
@@ -104,8 +123,11 @@ def _stdin_dest(session: SessionState) -> _Fd | str:
         session (SessionState): shell session state.
     """
     identity = session.exec_stdin_identity
-    if (identity is None or identity == CLOSED
-            or identity.startswith(OPEN_FOR_READING)):
+    if (
+        identity is None
+        or identity == CLOSED
+        or identity.startswith(OPEN_FOR_READING)
+    ):
         return _CLOSED
     if identity == TO_STDOUT:
         return _TO_STDOUT
@@ -149,27 +171,29 @@ async def handle_redirect(
     inputs: dict[int, ByteSource | None | _Unreadable] = {
         0: share(stdin),
         1: _Unreadable.TOKEN,
-        2: _Unreadable.TOKEN
+        2: _Unreadable.TOKEN,
     }
     outputs: dict[int, _Fd | FileDescription | Inherited] = {
         0: _CLOSED,
         1: _TO_STDOUT,
-        2: _TO_STDERR
+        2: _TO_STDERR,
     }
     stdin_dest = _stdin_dest(session)
-    outputs[0] = (FileDescription(
-        _ensure_scope(stdin_dest), append=True, opened=True) if isinstance(
-            stdin_dest, str) else stdin_dest)
+    outputs[0] = (
+        FileDescription(_ensure_scope(stdin_dest), append=True, opened=True)
+        if isinstance(stdin_dest, str)
+        else stdin_dest
+    )
     if 0 in session.descriptors and session.descriptors[0].file is not None:
         outputs[0] = session.descriptors[0].file
     if isinstance(stdin, FileInput):
         outputs[0] = stdin.description
     if isinstance(session.exec_stdin, FileInput):
         outputs[0] = session.exec_stdin.description
-    for fd, binding, held_input in ((1, session.exec_stdout,
-                                     session.exec_stdout_input),
-                                    (2, session.exec_stderr,
-                                     session.exec_stderr_input)):
+    for fd, binding, held_input in (
+        (1, session.exec_stdout, session.exec_stdout_input),
+        (2, session.exec_stderr, session.exec_stderr_input),
+    ):
         if binding is not None and binding.startswith(OPEN_FOR_READING):
             inputs[fd] = held_input
         elif binding == TO_STDIN:
@@ -178,8 +202,11 @@ async def handle_redirect(
     for fd, descriptor in session.descriptors.items():
         if fd <= 2:
             continue
-        inputs[fd] = (descriptor.source
-                      if descriptor.source is not None else _Unreadable.TOKEN)
+        inputs[fd] = (
+            descriptor.source
+            if descriptor.source is not None
+            else _Unreadable.TOKEN
+        )
         outputs[fd] = _descriptor_output(descriptor)
         if descriptor.identity == CLOSED:
             closed.add(fd)
@@ -187,9 +214,11 @@ async def handle_redirect(
     for r in redirects:
         if r.kind == RedirectKind.AMBIGUOUS:
             return _shell_failure(
-                f"{_redirect_word(r)}: ambiguous redirect\n".encode())
+                f"{_redirect_word(r)}: ambiguous redirect\n".encode()
+            )
         if r.kind == RedirectKind.UNEXPANDED and isinstance(
-                r.target, ExitSignal):
+            r.target, ExitSignal
+        ):
             return _shell_failure(r.target.stderr, r.target.exit_code)
         if isinstance(r.target, int):
             if r.target == FD_CLOSE:
@@ -213,8 +242,11 @@ async def handle_redirect(
             data = r.target
             if isinstance(data, str):
                 if r.kind == RedirectKind.HERESTRING:
-                    if len(data
-                           ) >= 2 and data[0] == data[-1] and data[0] in "\"'":
+                    if (
+                        len(data) >= 2
+                        and data[0] == data[-1]
+                        and data[0] in "\"'"
+                    ):
                         data = data[1:-1]
                     data += "\n"
                 data = encode_text(data)
@@ -223,8 +255,10 @@ async def handle_redirect(
         scope = _ensure_scope(r.target)
         if r.kind in (RedirectKind.STDIN, RedirectKind.READWRITE):
             try:
-                if (scope.virtual == "/dev/stdin"
-                        and r.kind == RedirectKind.STDIN):
+                if (
+                    scope.virtual == "/dev/stdin"
+                    and r.kind == RedirectKind.STDIN
+                ):
                     inputs[r.fd] = stdin
                     continue
                 data, _ = await dispatch("read", scope)
@@ -241,10 +275,13 @@ async def handle_redirect(
                 files.append(file)
                 inputs[r.fd], outputs[r.fd] = file.source, file
             else:
-                inputs[
-                    r.fd] = DeviceInput() if data == b"" and await _is_device(
-                        dispatch,
-                        scope) else data if r.fd == 0 else SharedInput(data)
+                inputs[r.fd] = (
+                    DeviceInput()
+                    if data == b"" and await _is_device(dispatch, scope)
+                    else data
+                    if r.fd == 0
+                    else SharedInput(data)
+                )
         else:
             file = FileDescription(scope, append=r.append)
             files.append(file)
@@ -264,21 +301,25 @@ async def handle_redirect(
     refused = False
     saved = session.descriptors
     claimed = {
-        fd
-        for r in redirects
-        for fd in ([1, 2] if r.fd == FD_BOTH else [r.fd])
+        fd for r in redirects for fd in ([1, 2] if r.fd == FD_BOTH else [r.fd])
     }
     session.descriptors = dict(saved)
     for fd in outputs:
         if fd > 2 or fd in claimed:
-            session.descriptors[fd] = _describe(outputs[fd], inputs[fd],
-                                                recorder if fd > 2 else None)
+            session.descriptors[fd] = _describe(
+                outputs[fd], inputs[fd], recorder if fd > 2 else None
+            )
     targets = tuple(
-        _ensure_scope(r.target) for r in redirects
-        if not isinstance(r.target, int) and r.kind not in (
-            RedirectKind.HEREDOC, RedirectKind.HERESTRING))
-    token = set_redirect_paths(command.id,
-                               targets) if command is not None else None
+        _ensure_scope(r.target)
+        for r in redirects
+        if not isinstance(r.target, int)
+        and r.kind not in (RedirectKind.HEREDOC, RedirectKind.HERESTRING)
+    )
+    token = (
+        set_redirect_paths(command.id, targets)
+        if command is not None
+        else None
+    )
     terminal_output = session.terminal_output
     session.terminal_output = terminal_output and outputs[1] is _TO_STDOUT
     enclosing = ENCLOSING.set(recorder)
@@ -289,13 +330,17 @@ async def handle_redirect(
             io = IOResult()
         else:
             _, io, exec_node = await drained(
-                recorder, *await
-                execute_node(command,
-                             session,
-                             unreadable_stdin() if isinstance(
-                                 inputs[0], _Unreadable) else inputs[0],
-                             call_stack,
-                             sink=recorder))
+                recorder,
+                *await execute_node(
+                    command,
+                    session,
+                    unreadable_stdin()
+                    if isinstance(inputs[0], _Unreadable)
+                    else inputs[0],
+                    call_stack,
+                    sink=recorder,
+                ),
+            )
             refused = exec_node.refused
     except UNWINDING as sig:
         unwound, io = sig, IOResult()
@@ -317,8 +362,11 @@ async def handle_redirect(
         for r in redirects:
             if isinstance(r.target, int):
                 outputs[r.fd] = outputs.get(r.target, _CLOSED)
-    if outputs[1] is _CLOSED and command is not None and any(
-            c == Channel.STDOUT for c, _ in chunks):
+    if (
+        outputs[1] is _CLOSED
+        and command is not None
+        and any(c == Channel.STDOUT for c, _ in chunks)
+    ):
         chunks.append((Channel.STDERR, _closed_write_line(command)))
         io.exit_code = 1
 
@@ -330,18 +378,29 @@ async def handle_redirect(
         return _TO_STDOUT if key.channel == Channel.STDOUT else _TO_STDERR
 
     routed: list[tuple[Channel | Inherited, bytes]] = []
-    write_token = set_redirect_paths(command.id,
-                                     targets) if command is not None else None
+    write_token = (
+        set_redirect_paths(command.id, targets)
+        if command is not None
+        else None
+    )
     consumed: set[int] = set()
     failed_scope: PathSpec | None = None
     try:
         if not refused:
             for file in files:
                 failed_scope = file.scope
-                unique = sum(other.scope.virtual == file.scope.virtual
-                             for other in files) == 1
-                data = b"".join(data for key, data in chunks
-                                if dest(key) is file) if unique else b""
+                unique = (
+                    sum(
+                        other.scope.virtual == file.scope.virtual
+                        for other in files
+                    )
+                    == 1
+                )
+                data = (
+                    b"".join(data for key, data in chunks if dest(key) is file)
+                    if unique
+                    else b""
+                )
                 await write_description(dispatch, session, file, data)
                 if unique:
                     consumed.add(id(file))
@@ -355,15 +414,18 @@ async def handle_redirect(
                 routed.append((Channel.STDERR, data))
             elif isinstance(target, Inherited):
                 routed.append((target, data))
-            elif isinstance(target,
-                            FileDescription) and id(target) not in consumed:
+            elif (
+                isinstance(target, FileDescription)
+                and id(target) not in consumed
+            ):
                 failed_scope = target.scope
                 await write_description(dispatch, session, target, data)
                 io.writes[target.scope.virtual] = data
     except FS_ERRORS as exc:
         assert failed_scope is not None
-        routed.append((Channel.STDERR, _redirect_error_line(failed_scope,
-                                                            exc)))
+        routed.append(
+            (Channel.STDERR, _redirect_error_line(failed_scope, exc))
+        )
         io.exit_code = 1
     finally:
         if write_token is not None:
@@ -387,13 +449,18 @@ async def handle_redirect(
         io.stderr = b"".join(d for c, d in kept if c == Channel.STDERR) or None
     if unwound is not None:
         raise await carried(unwound, stdout, IOResult(stderr=io.stderr))
-    return stdout, io, ExecutionNode(command="redirect",
-                                     exit_code=io.exit_code,
-                                     refused=refused)
+    return (
+        stdout,
+        io,
+        ExecutionNode(
+            command="redirect", exit_code=io.exit_code, refused=refused
+        ),
+    )
 
 
 def _descriptor_output(
-        descriptor: Descriptor) -> _Fd | FileDescription | Inherited:
+    descriptor: Descriptor,
+) -> _Fd | FileDescription | Inherited:
     if descriptor.stream is not None:
         return descriptor.stream
     if descriptor.file is not None:
@@ -403,15 +470,17 @@ def _descriptor_output(
     if descriptor.identity == TO_STDERR:
         return _TO_STDERR
     if descriptor.identity.startswith("/"):
-        return FileDescription(_ensure_scope(descriptor.identity),
-                               append=True,
-                               opened=True)
+        return FileDescription(
+            _ensure_scope(descriptor.identity), append=True, opened=True
+        )
     return _CLOSED
 
 
-def _describe(output: _Fd | FileDescription | Inherited,
-              source: ByteSource | None | _Unreadable,
-              owner: Recorder | None = None) -> Descriptor:
+def _describe(
+    output: _Fd | FileDescription | Inherited,
+    source: ByteSource | None | _Unreadable,
+    owner: Recorder | None = None,
+) -> Descriptor:
     """The binding a descriptor holds for the command a level runs.
 
     A copy of the level's own stdout or stderr (``3>&1``) names it
@@ -426,22 +495,34 @@ def _describe(output: _Fd | FileDescription | Inherited,
     if isinstance(output, Inherited):
         return Descriptor(
             TO_STDOUT if output.channel == Channel.STDOUT else TO_STDERR,
-            stream=output)
+            stream=output,
+        )
     if owner is not None and output in (_TO_STDOUT, _TO_STDERR):
         channel = Channel.STDOUT if output is _TO_STDOUT else Channel.STDERR
-        return Descriptor(TO_STDOUT if output is _TO_STDOUT else TO_STDERR,
-                          stream=Inherited(owner, channel))
+        return Descriptor(
+            TO_STDOUT if output is _TO_STDOUT else TO_STDERR,
+            stream=Inherited(owner, channel),
+        )
     if isinstance(output, FileDescription):
         return Descriptor(
-            (OPEN_FOR_READ_WRITE if isinstance(source, FileInput) else "") +
-            output.scope.virtual, output.append,
-            source if isinstance(source, SharedInput) else None, output)
-    identity = (TO_STDOUT if output is _TO_STDOUT else
-                TO_STDERR if output is _TO_STDERR else CLOSED)
+            (OPEN_FOR_READ_WRITE if isinstance(source, FileInput) else "")
+            + output.scope.virtual,
+            output.append,
+            source if isinstance(source, SharedInput) else None,
+            output,
+        )
+    identity = (
+        TO_STDOUT
+        if output is _TO_STDOUT
+        else TO_STDERR
+        if output is _TO_STDERR
+        else CLOSED
+    )
     if isinstance(source, SharedInput) and output is _CLOSED:
         identity = OPEN_FOR_READING
     return Descriptor(
-        identity, source=source if isinstance(source, SharedInput) else None)
+        identity, source=source if isinstance(source, SharedInput) else None
+    )
 
 
 def _redirect_error_line(scope: PathSpec, exc: OSError) -> bytes:
@@ -492,12 +573,14 @@ def _redirect_word(r: Redirect) -> str:
     Args:
         r (Redirect): the redirect, its target expanded or not.
     """
-    return r.target.raw_path if isinstance(r.target, PathSpec) else str(
-        r.target)
+    return (
+        r.target.raw_path if isinstance(r.target, PathSpec) else str(r.target)
+    )
 
 
-def _redirect_failure(scope: PathSpec,
-                      exc: OSError) -> tuple[None, IOResult, ExecutionNode]:
+def _redirect_failure(
+    scope: PathSpec, exc: OSError
+) -> tuple[None, IOResult, ExecutionNode]:
     """Shell-attributed IOResult for a redirect target that cannot be opened.
 
     Args:
@@ -507,8 +590,9 @@ def _redirect_failure(scope: PathSpec,
     return _shell_failure(_redirect_error_line(scope, exc))
 
 
-def _shell_failure(line: bytes,
-                   status: int = 1) -> tuple[None, IOResult, ExecutionNode]:
+def _shell_failure(
+    line: bytes, status: int = 1
+) -> tuple[None, IOResult, ExecutionNode]:
     """Shell-attributed IOResult that replaces the command's whole run.
 
     bash never runs the command and stops processing redirects at the
@@ -536,8 +620,9 @@ async def _is_device(dispatch: DispatchFn, scope: PathSpec) -> bool:
     try:
         stat, _ = await dispatch("stat", scope)
     except FS_ERRORS as exc:
-        logger.debug("stdin device probe failed at %s: %s", scope.raw_path,
-                     exc)
+        logger.debug(
+            "stdin device probe failed at %s: %s", scope.raw_path, exc
+        )
         return False
     return isinstance(stat, FileStat) and stat.type == FileType.CHAR_DEVICE
 
@@ -605,9 +690,12 @@ async def _open_refusal(
     opened: set[str] = set()
     pending: list[PathSpec] = []
     for r in redirects:
-        if (r.kind in (RedirectKind.STDIN, RedirectKind.READWRITE,
-                       RedirectKind.HEREDOC, RedirectKind.HERESTRING)
-                or isinstance(r.target, int)):
+        if r.kind in (
+            RedirectKind.STDIN,
+            RedirectKind.READWRITE,
+            RedirectKind.HEREDOC,
+            RedirectKind.HERESTRING,
+        ) or isinstance(r.target, int):
             continue
         scope = _ensure_scope(r.target)
         if scope.raw_path.endswith("/"):
@@ -615,7 +703,8 @@ async def _open_refusal(
             if earlier is not None:
                 return earlier
             return _shell_failure(
-                f"{scope.raw_path}: Is a directory\n".encode())
+                f"{scope.raw_path}: Is a directory\n".encode()
+            )
         path = scope.virtual
         is_dir = False
         exists = path in opened
@@ -623,8 +712,11 @@ async def _open_refusal(
             try:
                 stat, _ = await dispatch("stat", scope)
             except FS_ERRORS as exc:
-                logger.debug("noclobber probe found no target at %s: %s",
-                             scope.raw_path, exc)
+                logger.debug(
+                    "noclobber probe found no target at %s: %s",
+                    scope.raw_path,
+                    exc,
+                )
                 stat = None
             exists = stat is not None
             is_dir = stat is not None and stat.type == FileType.DIRECTORY
@@ -632,8 +724,11 @@ async def _open_refusal(
             earlier = await _apply_pending_opens(dispatch, pending)
             if earlier is not None:
                 return earlier
-            detail = ("Is a directory"
-                      if is_dir else "cannot overwrite existing file")
+            detail = (
+                "Is a directory"
+                if is_dir
+                else "cannot overwrite existing file"
+            )
             return _shell_failure(f"{scope.raw_path}: {detail}\n".encode())
         # This open succeeds, so the target exists for every redirect
         # after it, and a truncating one leaves it empty to be found.

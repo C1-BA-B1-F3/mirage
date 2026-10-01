@@ -1,5 +1,10 @@
-from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
-                             Sequence)
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -23,23 +28,15 @@ OperationFn = Callable[..., Any]
 
 
 class ReaddirOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str]]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[list[str]]: ...
 
 
 class ReadBytesOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[bytes]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[bytes]: ...
 
 
 class ReadStreamOp(Protocol):
@@ -49,22 +46,15 @@ class ReadStreamOp(Protocol):
     the cache wrapper and the dir-refusing chokepoint both ``async
     for`` over this directly."""
 
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> AsyncIterator[bytes]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> AsyncIterator[bytes]: ...
 
 
 class StatOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[FileStat]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[FileStat]: ...
 
 
 class ReadRangeOp(Protocol):
@@ -75,33 +65,33 @@ class ReadRangeOp(Protocol):
     window.
     """
 
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...,
-                 offset: int = ...,
-                 size: int | None = ...) -> Awaitable[bytes]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        path: PathSpec,
+        /,
+        index: IndexCacheStore = ...,
+        offset: int = ...,
+        size: int | None = ...,
+    ) -> Awaitable[bytes]: ...
 
 
 class WriteOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, data: bytes,
-                 /) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, data: bytes, /
+    ) -> Awaitable[None]: ...
 
 
 class ExistsOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[bool]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /
+    ) -> Awaitable[bool]: ...
 
 
 class PathOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /
+    ) -> Awaitable[None]: ...
 
 
 class RmdirOp(Protocol):
@@ -111,12 +101,9 @@ class RmdirOp(Protocol):
     list a nested path through ``NULL_INDEX``; the backend itself does
     not consult it."""
 
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[None]: ...
 
 
 class RmTreeOp(Protocol):
@@ -124,26 +111,21 @@ class RmTreeOp(Protocol):
     (databricks reports the removed keys for its own rename path), so
     the return stays loose where unlink/rmdir pin None."""
 
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[Any]:
-        ...
+    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[Any]: ...
 
 
 class MkdirOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 parents: bool = ...) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, parents: bool = ...
+    ) -> Awaitable[None]: ...
 
 
 class PairOp(Protocol):
     """Rename/copy/dir-copy: two paths on the same backend."""
 
-    def __call__(self, accessor: Any, src: PathSpec, dst: PathSpec,
-                 /) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, accessor: Any, src: PathSpec, dst: PathSpec, /
+    ) -> Awaitable[None]: ...
 
 
 class TruncateOp(Protocol):
@@ -152,39 +134,30 @@ class TruncateOp(Protocol):
     Backends unable to enforce no-create must raise ENOTSUP before writing.
     """
 
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 length: int,
-                 no_create: bool = False,
-                 /) -> Awaitable[None]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        path: PathSpec,
+        length: int,
+        no_create: bool = False,
+        /,
+    ) -> Awaitable[None]: ...
 
 
 class IsMountedOp(Protocol):
-
-    def __call__(self, accessor: Any, /) -> bool:
-        ...
+    def __call__(self, accessor: Any, /) -> bool: ...
 
 
 class DuSizeOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[int]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[int]: ...
 
 
 class DuEntriesOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[DuEntries]:
-        ...
+    def __call__(
+        self, accessor: Any, path: PathSpec, /, index: IndexCacheStore = ...
+    ) -> Awaitable[DuEntries]: ...
 
 
 class ResolveGlobOp(Protocol):
@@ -196,12 +169,13 @@ class ResolveGlobOp(Protocol):
     where a word really can be either, leaking one layer down.
     """
 
-    def __call__(self,
-                 accessor: Any,
-                 paths: Sequence[PathSpec],
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[PathSpec]]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        paths: Sequence[PathSpec],
+        /,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[PathSpec]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,9 +249,9 @@ class NarrowPathsOp(Protocol):
     None means the index cannot answer and the scan walks everything.
     """
 
-    def __call__(self, accessor: Any, query: str, paths: list[PathSpec],
-                 /) -> Awaitable[list[PathSpec] | None]:
-        ...
+    def __call__(
+        self, accessor: Any, query: str, paths: list[PathSpec], /
+    ) -> Awaitable[list[PathSpec] | None]: ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -291,6 +265,7 @@ class ContentSearchOps:
         narrow_paths (NarrowPathsOp): candidate files under the scopes.
         enabled (IsMountedOp): whether this mount opted in.
     """
+
     narrow_paths: NarrowPathsOp
     enabled: IsMountedOp
 
@@ -304,6 +279,7 @@ class SearchQuery:
         options (Mapping[str, JsonValue]): filters, limits, or namespaced
             integration options. The backend validates the keys it supports.
     """
+
     query: str
     options: Mapping[str, JsonValue] = field(default_factory=dict)
 
@@ -316,25 +292,27 @@ class SearchOp(Protocol):
     Errors and incomplete results must be reported, never treated as misses.
     """
 
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 query: SearchQuery,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str] | None]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        path: PathSpec,
+        query: SearchQuery,
+        /,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[str] | None]: ...
 
 
 class SearchManyOp(Protocol):
     """Search several scopes as one ranked query."""
 
-    def __call__(self,
-                 accessor: Any,
-                 paths: list[PathSpec],
-                 query: SearchQuery,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str] | None]:
-        ...
+    def __call__(
+        self,
+        accessor: Any,
+        paths: list[PathSpec],
+        query: SearchQuery,
+        /,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[str] | None]: ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -347,6 +325,7 @@ class SearchOps:
         meta (Mapping[str, JsonValue]): static capabilities; consumers
             validate their own namespace. No grep compatibility is assumed.
     """
+
     search: SearchOp
     search_many: SearchManyOp | None = None
     meta: Mapping[str, JsonValue] = field(default_factory=dict)

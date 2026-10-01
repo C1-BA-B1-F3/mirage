@@ -39,6 +39,7 @@ async def test_output_is_read_inside_the_running_command():
 
     async with command_scope():
         started = command_started()
-        stdout, _ = await run_dispatch(Builder("grep", fn), [], [], {},
-                                       dispatch, "/")
+        stdout, _ = await run_dispatch(
+            Builder("grep", fn), [], [], {}, dispatch, "/"
+        )
     assert (stdout, seen) == (b"hit\n", [started])

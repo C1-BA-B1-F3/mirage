@@ -18,6 +18,7 @@ import type { SetAttrFields } from '../../../../types.ts'
 import { BLKSIZE, LINK_MODE, SEEK_CUR, SEEK_END } from './constants.ts'
 import { errnoError } from './errors.ts'
 import { classify } from '../../../../errors/index.ts'
+import { isMissingPath } from '../../../../utils/errors.ts'
 import { isUnclassified, type VFSEntry, type VFSStat } from '../../../vfs.ts'
 import type { MutationJournal } from './journal.ts'
 import type { MirageFsSeed } from './seed.ts'
@@ -133,6 +134,21 @@ export function changedAttrs(node: FSNode, attr: SetAttr): SetAttrFields | null 
  * `planFlush`; what is left here is one method per Emscripten callback,
  * plus the errno translation only this layer performs.
  */
+/**
+ * A name a repeat listing found, classified by its own stat as the
+ * first listing's door classifies it, or left as the listing's row
+ * when that stat fails, the way the door degrades one.
+ */
+function ownRow(sync: SyncVFS, path: string, entry: VFSEntry): VFSEntry | VFSStat {
+  if (entry.isDir) return entry
+  try {
+    return sync.stat(path)
+  } catch (error) {
+    if (!isMissingPath(error)) console.warn(`mirage: cannot stat ${path}: ${String(error)}`)
+    return entry
+  }
+}
+
 export class MirageFs {
   readonly type: FSType
   private readonly host: FSHost
@@ -368,14 +384,26 @@ export class MirageFs {
     this.journal.markRmdir(path)
   }
 
+  /**
+   * The directory's names, asking the mount for any it has gained.
+   *
+   * The first listing is classified, since Emscripten's getdents reads
+   * every name's kind off its node. A node is never re-asked about once
+   * placed, so a later listing asks for names alone and stats only the
+   * names the tree lacks, rather than classifying every entry again.
+   */
   private readdir(node: FSNode): string[] {
     const sync = this.sync
     if (sync !== undefined) {
       this.readThrough(() => {
-        for (const entry of sync.readdir(this.tree.pathOf(node) + '/')) {
+        const dir = this.tree.pathOf(node) + '/'
+        const again = node.listed === true
+        for (const entry of sync.readdir(dir, !again)) {
           const name = entry.path.replace(/\/$/, '').split('/').pop() ?? ''
-          if (this.tree.childOf(node, name) === undefined) this.placeEntry(node, name, entry)
+          if (this.tree.childOf(node, name) !== undefined) continue
+          this.placeEntry(node, name, again ? ownRow(sync, dir + name, entry) : entry)
         }
+        node.listed = true
       })
     }
     return ['.', '..', ...this.tree.childNames(node)]

@@ -38,7 +38,7 @@ class HfHubWalk:
 
     def __init__(self, accessor: HfHubAccessor) -> None:
         """Args:
-            accessor (HfHubAccessor): Backend handle.
+        accessor (HfHubAccessor): Backend handle.
         """
         self._accessor = accessor
 
@@ -67,15 +67,20 @@ class HfHubWalk:
         for entry in tree.values():
             if base and not entry.path.startswith(base):
                 continue
-            virtual = (prefix.rstrip("/") + "/" +
-                       entry.path if prefix else "/" + entry.path)
+            virtual = (
+                prefix.rstrip("/") + "/" + entry.path
+                if prefix
+                else "/" + entry.path
+            )
             if entry.is_dir:
                 yield WalkEntry(virtual=virtual, is_dir=True, fingerprint=None)
                 continue
-            yield WalkEntry(virtual=virtual,
-                            is_dir=False,
-                            fingerprint=entry.oid,
-                            size=entry.size)
+            yield WalkEntry(
+                virtual=virtual,
+                is_dir=False,
+                fingerprint=entry.oid,
+                size=entry.size,
+            )
 
 
 def build_delta_hook(accessor: HfHubAccessor) -> DeltaHook:

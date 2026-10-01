@@ -1,5 +1,8 @@
-from mirage.commands.builtin.generic.tar.types import (CompressionSuffix,
-                                                       ReadMode, WriteMode)
+from mirage.commands.builtin.generic.tar.types import (
+    CompressionSuffix,
+    ReadMode,
+    WriteMode,
+)
 
 WRITE_MODES: dict[CompressionSuffix, WriteMode] = {
     "": "w",
@@ -22,10 +25,14 @@ EMPTY_ARCHIVE = "tar: Cowardly refusing to create an empty archive"
 # argp's mode refusals: a second main operation where the first one is
 # already set, and a line that never names one. The double space is
 # GNU's.
-MODE_CONFLICT = ("tar: You may not specify more than one '-Acdtrux', "
-                 "'--delete' or  '--test-label' option")
-NO_MODE = ("tar: You must specify one of the '-Acdtrux', '--delete' or "
-           "'--test-label' options")
+MODE_CONFLICT = (
+    "tar: You may not specify more than one '-Acdtrux', "
+    "'--delete' or  '--test-label' option"
+)
+NO_MODE = (
+    "tar: You must specify one of the '-Acdtrux', '--delete' or "
+    "'--test-label' options"
+)
 MULTIPLE_ARCHIVES = "tar: Multiple archive files require '-M' option"
 # A --strip-components value that is no count, named first.
 STRIP_COUNT = "tar: {}: Invalid number of elements"
@@ -47,10 +54,12 @@ CHILD_NAME = "tar (child)"
 # advice that mirage does not reproduce.
 EMPTY_PIPE = {
     ":gz": ("", "gzip: stdin: unexpected end of file"),
-    ":xz": ("xz: (stdin): File format not recognized", ),
+    ":xz": ("xz: (stdin): File format not recognized",),
 }
-INVALID_ARCHIVE = ("tar: This does not look like a tar archive",
-                   "tar: Skipping to next header")
+INVALID_ARCHIVE = (
+    "tar: This does not look like a tar archive",
+    "tar: Skipping to next header",
+)
 ERROR_TRAILER = "tar: Exiting with failure status due to previous errors"
 SELF_DUMP = "archive cannot contain itself; not dumped"
 # The exit GNU gives an operand it could not read, and a -C it could not

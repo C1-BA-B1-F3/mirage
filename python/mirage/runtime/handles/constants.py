@@ -19,5 +19,10 @@ MODE_CHARS = frozenset("rwaxbt+")
 
 # The legal base-letter sets: CPython's four plus C fopen's wx
 # (exclusive create), which CPython spells as a bare x.
-MODE_BASES = (frozenset("r"), frozenset("w"), frozenset("a"), frozenset("x"),
-              frozenset("wx"))
+MODE_BASES = (
+    frozenset("r"),
+    frozenset("w"),
+    frozenset("a"),
+    frozenset("x"),
+    frozenset("wx"),
+)

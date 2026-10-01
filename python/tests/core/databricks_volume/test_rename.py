@@ -31,16 +31,19 @@ def _seed_directory(files, path: str) -> None:
     parent = path.rsplit("/", 1)[0]
     if parent and parent != path:
         files.directories.setdefault(parent, []).append(
-            SimpleNamespace(path=path, is_directory=True, file_size=None))
+            SimpleNamespace(path=path, is_directory=True, file_size=None)
+        )
 
 
 def _seed_file(files, path: str, data: bytes) -> None:
     parent = path.rsplit("/", 1)[0]
     files.downloads[path] = data
-    files.metadata[path] = SimpleNamespace(is_directory=False,
-                                           file_size=len(data))
+    files.metadata[path] = SimpleNamespace(
+        is_directory=False, file_size=len(data)
+    )
     files.directories.setdefault(parent, []).append(
-        SimpleNamespace(path=path, is_directory=False, file_size=len(data)))
+        SimpleNamespace(path=path, is_directory=False, file_size=len(data))
+    )
 
 
 @pytest.mark.asyncio
@@ -55,13 +58,15 @@ async def test_rename_file_moves_bytes(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_rename_missing_source_fails(accessor, files, remote_root,
-                                           index):
+async def test_rename_missing_source_fails(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):
-        await rename(accessor, _path("/dbx/missing.txt"),
-                     _path("/dbx/dst.txt"), index)
+        await rename(
+            accessor, _path("/dbx/missing.txt"), _path("/dbx/dst.txt"), index
+        )
 
 
 @pytest.mark.asyncio
@@ -76,18 +81,24 @@ async def test_rename_same_path_is_noop(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_rename_same_missing_path_fails(accessor, files, remote_root,
-                                              index):
+async def test_rename_same_missing_path_fails(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):
-        await rename(accessor, _path("/dbx/missing.txt"),
-                     _path("/dbx/missing.txt"), index)
+        await rename(
+            accessor,
+            _path("/dbx/missing.txt"),
+            _path("/dbx/missing.txt"),
+            index,
+        )
 
 
 @pytest.mark.asyncio
-async def test_rename_directory_moves_tree(accessor, files, remote_root,
-                                           index):
+async def test_rename_directory_moves_tree(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_directory(files, f"{remote_root}/d")
     _seed_file(files, f"{remote_root}/d/a.txt", b"aaa")
@@ -99,8 +110,9 @@ async def test_rename_directory_moves_tree(accessor, files, remote_root,
 
 
 @pytest.mark.asyncio
-async def test_rename_into_own_subtree_fails(accessor, files, remote_root,
-                                             index):
+async def test_rename_into_own_subtree_fails(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_directory(files, f"{remote_root}/d")
     _seed_file(files, f"{remote_root}/d/a.txt", b"aaa")

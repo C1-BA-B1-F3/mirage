@@ -42,13 +42,11 @@ UNLISTABLE = b"unlistable"
 
 
 class NoAuthServer(asyncssh.SSHServer):
-
     def begin_auth(self, username: str) -> bool:
         return False
 
 
 class ChrootSFTPServer(asyncssh.SFTPServer):
-
     def __init__(self, root: str, chan: asyncssh.SSHServerChannel) -> None:
         super().__init__(chan, chroot=root)
 
@@ -83,8 +81,10 @@ async def main() -> None:
     args = parser.parse_args()
     root = args.root or tempfile.mkdtemp(prefix="mirage-integ-ssh-")
     server = await start_server(root, args.port)
-    print(f"SSH_HOST=127.0.0.1 SSH_PORT={server.get_port()} ROOT={root}",
-          flush=True)
+    print(
+        f"SSH_HOST=127.0.0.1 SSH_PORT={server.get_port()} ROOT={root}",
+        flush=True,
+    )
     await asyncio.Event().wait()
 
 

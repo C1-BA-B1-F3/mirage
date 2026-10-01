@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 async def entries(
-        accessor: NextcloudAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
 ) -> tuple[list[tuple[str, int]], int]:
     """Per-file sizes under a path plus their total.
 
@@ -53,7 +53,8 @@ async def entries(
             found.append(("/" + rel.lstrip("/"), size))
             total += size
     except NotFound:
-        logger.debug("nextcloud du: listing raced a delete under %s",
-                     scan_path)
+        logger.debug(
+            "nextcloud du: listing raced a delete under %s", scan_path
+        )
     found.sort()
     return found, total

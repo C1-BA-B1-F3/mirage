@@ -34,13 +34,16 @@ async def main():
     ws = Workspace({"/slack": vfs}, mode=MountMode.READ)
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /slack/__nf_missing__.txt",
-                "head /slack/__nf_missing__.txt",
-                "stat /slack/__nf_missing__.txt"):
+    for cmd in (
+        "cat /slack/__nf_missing__.txt",
+        "head /slack/__nf_missing__.txt",
+        "stat /slack/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     # ── discover structure ────────────────────────────
     print("=== ls /slack/ (root) ===")
@@ -105,7 +108,7 @@ async def main():
         print(f"  {out[:200]}")
     else:
         print("  (empty)")
-    if (await r.stderr_str()):
+    if await r.stderr_str():
         print(f"  stderr: {await r.stderr_str()}")
 
     # ── stat ─────────────────────────────────────────
@@ -138,13 +141,17 @@ async def main():
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"\n=== metadata overlay on {target} ===")
-    r = await ws.shell(f'chmod 640 "{file_path}" && chown 500:dev'
-                       f' "{file_path}" && touch -t 202601021530'
-                       f' "{file_path}"')
+    r = await ws.shell(
+        f'chmod 640 "{file_path}" && chown 500:dev'
+        f' "{file_path}" && touch -t 202601021530'
+        f' "{file_path}"'
+    )
     print(f"  chmod/chown/touch exit={r.exit_code}")
     st, _ = await ws.dispatch("stat", PathSpec.from_str_path(file_path))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     # ── basename / dirname / realpath (path ops) ─────
     print(f"\n=== basename {file_path} ===")
@@ -170,13 +177,17 @@ async def main():
     print(f"  exit={r.exit_code} {(await r.stdout_str()).strip()}")
     assert r.exit_code == 0, (
         "regression: realpath -e failed for existing file; "
-        f"stderr={await r.stderr_str()}")
+        f"stderr={await r.stderr_str()}"
+    )
 
     # ── grep at FILE level ───────────────────────────
     print(f"\n=== grep message {target} ===")
     r = await ws.shell(f'grep message "{file_path}"')
-    lines = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    lines = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  matches: {len(lines)}")
     if lines:
         print(f"  first: {lines[0][:120]}...")
@@ -188,14 +199,20 @@ async def main():
     # ── rg (directory scan) ──────────────────────────
     print(f"\n=== rg message {base}/ ===")
     r = await ws.shell(f'rg message "{base}/"')
-    lines = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    lines = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  matches across dates: {len(lines)}")
 
     print(f"\n=== rg -l message {base}/ ===")
     r = await ws.shell(f'rg -l message "{base}/"')
-    files = (await r.stdout_str()).strip().splitlines() if (
-        await r.stdout_str()).strip() else []
+    files = (
+        (await r.stdout_str()).strip().splitlines()
+        if (await r.stdout_str()).strip()
+        else []
+    )
     print(f"  files with matches: {len(files)}")
     for f in files:
         print(f"  {f}")
@@ -226,12 +243,16 @@ async def main():
     # Note: Slack's search.messages API requires a user token (xoxp-)
     # with search:read scope. Bot tokens (xoxb-) get not_allowed_token_type.
     for label, cmd in [
-        (f"grep hello {date_path}/chat.jsonl (date scope)",
-         f'grep hello "{date_path}/chat.jsonl"'),
+        (
+            f"grep hello {date_path}/chat.jsonl (date scope)",
+            f'grep hello "{date_path}/chat.jsonl"',
+        ),
         (f"grep hello {base}/ (channel scope)", f'grep hello "{base}/"'),
-        ("grep hello /slack/channels/ (workspace scope)",
-         'grep hello /slack/channels/'),
-        ("rg hello /slack/ (workspace scope)", 'rg hello /slack/'),
+        (
+            "grep hello /slack/channels/ (workspace scope)",
+            "grep hello /slack/channels/",
+        ),
+        ("rg hello /slack/ (workspace scope)", "rg hello /slack/"),
     ]:
         print(f"\n=== {label} ===")
         r = await ws.shell(cmd)
@@ -263,7 +284,7 @@ async def main():
 
     # ── tree ─────────────────────────────────────────
     print("\n=== tree -L 1 /slack/ ===")
-    r = await ws.shell('tree -L 1 /slack/')
+    r = await ws.shell("tree -L 1 /slack/")
     print(f"  exit={r.exit_code}")
     out = (await r.stdout_str()).strip()
     if out:
@@ -346,8 +367,10 @@ async def main():
     r = await ws.shell('find /slack/ -name "chat.jsonl" | wc -l')
     count = int((await r.stdout_str()).strip() or "0")
     print(f"  matches: {count}")
-    assert r.exit_code == 0, ("regression: workspace-wide find aborted; "
-                              f"stderr={await r.stderr_str()}")
+    assert r.exit_code == 0, (
+        "regression: workspace-wide find aborted; "
+        f"stderr={await r.stderr_str()}"
+    )
     assert count > 0, "regression: workspace-wide find returned no matches"
 
     # ── glob expansion: mid-path segments walk like bash, so
@@ -362,7 +385,8 @@ async def main():
 
     print(f"\n=== for f in {base}/* (date glob loop) ===")
     r = await ws.shell(
-        f'for f in "{base}/"*; do echo found:$f; done | head -n 3')
+        f'for f in "{base}/"*; do echo found:$f; done | head -n 3'
+    )
     out = (await r.stdout_str()).strip()
     for line in out.splitlines():
         print(f"  {line[:120]}")

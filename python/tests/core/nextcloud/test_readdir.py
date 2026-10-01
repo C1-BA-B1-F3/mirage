@@ -8,21 +8,21 @@ from mirage.types import PathSpec
 @pytest.mark.asyncio
 async def test_readdir_root_returns_children(make_acc):
     acc = make_acc({"hello.txt": b"x", "data/file.txt": b"y"})
-    entries = await readdir(acc, PathSpec.from_str_path("/"),
-                            RAMIndexCacheStore(ttl=60))
+    entries = await readdir(
+        acc, PathSpec.from_str_path("/"), RAMIndexCacheStore(ttl=60)
+    )
     assert "/data" in entries
     assert "/hello.txt" in entries
 
 
 @pytest.mark.asyncio
 async def test_readdir_subdir(make_acc):
-    acc = make_acc({
-        "data/a.txt": b"a",
-        "data/sub/b.txt": b"b",
-        "other.txt": b"o"
-    })
-    entries = await readdir(acc, PathSpec.from_str_path("/data"),
-                            RAMIndexCacheStore(ttl=60))
+    acc = make_acc(
+        {"data/a.txt": b"a", "data/sub/b.txt": b"b", "other.txt": b"o"}
+    )
+    entries = await readdir(
+        acc, PathSpec.from_str_path("/data"), RAMIndexCacheStore(ttl=60)
+    )
     assert sorted(entries) == ["/data/a.txt", "/data/sub"]
 
 
@@ -30,8 +30,11 @@ async def test_readdir_subdir(make_acc):
 async def test_readdir_file_raises_enotdir(make_acc):
     acc = make_acc({"data/a.txt": b"a"})
     with pytest.raises(NotADirectoryError):
-        await readdir(acc, PathSpec.from_str_path("/data/a.txt"),
-                      RAMIndexCacheStore(ttl=60))
+        await readdir(
+            acc,
+            PathSpec.from_str_path("/data/a.txt"),
+            RAMIndexCacheStore(ttl=60),
+        )
 
 
 @pytest.mark.asyncio
@@ -59,24 +62,33 @@ async def test_readdir_stores_remote_time_for_files(make_acc):
 async def test_readdir_missing_path_is_enoent(make_acc):
     acc = make_acc({"data/a.txt": b"a"})
     with pytest.raises(FileNotFoundError):
-        await readdir(acc, PathSpec.from_str_path("/never.txt"),
-                      RAMIndexCacheStore(ttl=60))
+        await readdir(
+            acc,
+            PathSpec.from_str_path("/never.txt"),
+            RAMIndexCacheStore(ttl=60),
+        )
 
 
 @pytest.mark.asyncio
 async def test_readdir_missing_nested_path_is_enoent(make_acc):
     acc = make_acc({"data/a.txt": b"a"})
     with pytest.raises(FileNotFoundError):
-        await readdir(acc, PathSpec.from_str_path("/nodir/deep"),
-                      RAMIndexCacheStore(ttl=60))
+        await readdir(
+            acc,
+            PathSpec.from_str_path("/nodir/deep"),
+            RAMIndexCacheStore(ttl=60),
+        )
 
 
 @pytest.mark.asyncio
 async def test_readdir_below_a_file_is_enotdir(make_acc):
     acc = make_acc({"data/a.txt": b"a"})
     with pytest.raises(NotADirectoryError):
-        await readdir(acc, PathSpec.from_str_path("/data/a.txt/x"),
-                      RAMIndexCacheStore(ttl=60))
+        await readdir(
+            acc,
+            PathSpec.from_str_path("/data/a.txt/x"),
+            RAMIndexCacheStore(ttl=60),
+        )
 
 
 @pytest.mark.asyncio
@@ -85,6 +97,7 @@ async def test_readdir_empty_directory_is_empty_not_missing(make_acc):
     # tells an empty directory apart from a path the server does not have.
     acc = make_acc({})
     await acc.operator().create_dir("empty/")
-    entries = await readdir(acc, PathSpec.from_str_path("/empty"),
-                            RAMIndexCacheStore(ttl=60))
+    entries = await readdir(
+        acc, PathSpec.from_str_path("/empty"), RAMIndexCacheStore(ttl=60)
+    )
     assert entries == []

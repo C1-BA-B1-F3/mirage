@@ -15,21 +15,33 @@
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.msgraph.drive import read_item
-from mirage.core.onedrive.client import drive_loc, split_path
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
-async def read_bytes(accessor: OneDriveAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
-    virtual = path.virtual if isinstance(path, PathSpec) else path
-    _, stripped = split_path(path)
-    return await read_item(accessor.config,
-                           drive_loc(accessor.config, stripped),
-                           virtual,
-                           "onedrive",
-                           offset=offset,
-                           size=size,
-                           session=accessor.pool)
+async def read_bytes(
+    accessor: OneDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
+    """Read a file, optionally only a byte range of it.
+
+    Args:
+        accessor (OneDriveAccessor): OneDrive accessor.
+        path (PathSpec): the path to read.
+        index (IndexCacheStore): unused; Graph resolves the item from the
+            path itself.
+        offset (int): first byte of the window.
+        size (int | None): window length, or None for the rest.
+    """
+    return await read_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        path.virtual,
+        "onedrive",
+        offset=offset,
+        size=size,
+        session=accessor.pool,
+    )

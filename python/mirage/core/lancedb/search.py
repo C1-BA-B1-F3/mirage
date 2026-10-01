@@ -14,7 +14,7 @@
 
 from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.core.hierarchy.codec import PATH_SAFE
-from mirage.core.lancedb.render import render_card
+from mirage.core.lancedb.render import cell_text, render_card
 from mirage.core.vector.types import Row
 
 
@@ -27,7 +27,11 @@ def hit(accessor: LanceDBAccessor, row: Row) -> tuple[list[str], bytes]:
     """
     config = accessor.config
     segments = [
-        PATH_SAFE.encode(str(row[column])) for column in config.group_by
+        PATH_SAFE.encode(cell_text(row[column]))
+        for column in config.group_by
         if row.get(column) is not None
     ]
-    return segments + [f"{row[config.id_column]}.md"], render_card(row, config)
+    return (
+        segments + [f"{cell_text(row[config.id_column])}.md"],
+        render_card(row, config),
+    )

@@ -58,19 +58,23 @@ async def test_create_puts_empty_content():
 @pytest.mark.asyncio
 async def test_create_records_the_virtual_path():
     # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         with aioresponses() as m:
-            m.put(_BASE + "/root:/m/k.txt:/content",
-                  status=201,
-                  payload={"id": "X"})
+            m.put(
+                _BASE + "/root:/m/k.txt:/content",
+                status=201,
+                payload={"id": "X"},
+            )
             await create(_accessor(), spec)
     finally:
         scope.close()
-    assert [r.path for r in scope.records] == ["/m/m/k.txt"]
+    assert [(r.op, r.path) for r in scope.records] == [
+        ("create", "/m/m/k.txt")
+    ]
 
 
 @pytest.mark.asyncio
@@ -112,28 +116,31 @@ async def test_rename_patches_name():
 
     with aioresponses() as m:
         m.patch(_BASE + "/root:/a.txt", callback=_cb)
-        await rename(_accessor(), PathSpec.from_str_path("/a.txt"),
-                     PathSpec.from_str_path("/b.txt"))
+        await rename(
+            _accessor(),
+            PathSpec.from_str_path("/a.txt"),
+            PathSpec.from_str_path("/b.txt"),
+        )
     assert body["name"] == "b.txt"
 
 
 @pytest.mark.asyncio
 async def test_exists_true_and_false():
     with aioresponses() as m:
-        m.get(_BASE + "/root:/a.txt",
-              payload={
-                  "id": "X",
-                  "name": "a.txt",
-                  "file": {}
-              })
-        assert await exists(_accessor(),
-                            PathSpec.from_str_path("/a.txt")) is True
+        m.get(
+            _BASE + "/root:/a.txt",
+            payload={"id": "X", "name": "a.txt", "file": {}},
+        )
+        assert (
+            await exists(_accessor(), PathSpec.from_str_path("/a.txt")) is True
+        )
     with aioresponses() as m:
-        m.get(_BASE + "/root:/missing.txt",
-              status=404,
-              payload={"error": {
-                  "code": "itemNotFound",
-                  "message": "no"
-              }})
-        assert await exists(_accessor(),
-                            PathSpec.from_str_path("/missing.txt")) is False
+        m.get(
+            _BASE + "/root:/missing.txt",
+            status=404,
+            payload={"error": {"code": "itemNotFound", "message": "no"}},
+        )
+        assert (
+            await exists(_accessor(), PathSpec.from_str_path("/missing.txt"))
+            is False
+        )

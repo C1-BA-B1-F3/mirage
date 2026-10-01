@@ -18,8 +18,10 @@ from mirage.core.gcal.stat import stat as _stat
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import ReadOps
 
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

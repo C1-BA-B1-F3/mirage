@@ -15,17 +15,22 @@
 from functools import partial
 
 from mirage.commands.builtin.generic.realpath import canonicalize, door_stat
-from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
-                                                 typed_spec)
+from mirage.commands.builtin.utils.paths import (
+    dispatch_stat,
+    dot_refusal,
+    typed_spec,
+)
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.links.ln import operand_abs
-from mirage.workspace.executor.builtins.shared import (fail, operand_text,
-                                                       split_flags)
+from mirage.workspace.executor.builtins.shared import (
+    fail,
+    operand_text,
+    split_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
-from mirage.workspace.mount.namespace.probe import path_exists
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
@@ -53,7 +58,7 @@ async def handle_readlink(
     if not operands:
         return fail("readlink", "readlink: missing operand\n")
     # The last of -e, -f and -m wins, as in GNU readlink.
-    typed = "".join(map(operand_text, args[:len(args) - len(operands)]))
+    typed = "".join(map(operand_text, args[: len(args) - len(operands)]))
     last = next((c for c in reversed(typed) if c in "efm"), None)
     mode = None if last is None else "" if last == "f" else last
     lines: list[str] = []
@@ -70,17 +75,29 @@ async def handle_readlink(
             if mode is not None:
                 if namespace.is_link(abs_op):
                     await dispatch("readlink", PathSpec.from_str_path(abs_op))
-                lines.append(await canonicalize(spec.raw_path, session.cwd,
-                                                mode, False, namespace.follow,
-                                                door_stat(dispatch)))
+                lines.append(
+                    await canonicalize(
+                        spec.raw_path,
+                        session.cwd,
+                        mode,
+                        False,
+                        namespace.follow,
+                        door_stat(dispatch),
+                    )
+                )
                 continue
-            if spec.walk_error is not None or await dot_refusal(
-                    partial(dispatch_stat, dispatch), spec,
-                    namespace.follow) is not None:
+            if (
+                spec.walk_error is not None
+                or await dot_refusal(
+                    partial(dispatch_stat, dispatch), spec, namespace.follow
+                )
+                is not None
+            ):
                 exit_code = 1
                 continue
-            target, _ = await dispatch("readlink",
-                                       PathSpec.from_str_path(abs_op))
+            target, _ = await dispatch(
+                "readlink", PathSpec.from_str_path(abs_op)
+            )
         except OSError:
             exit_code = 1
             continue
@@ -89,5 +106,8 @@ async def handle_readlink(
         text = "".join(lines)
     else:
         text = "".join(line + "\n" for line in lines)
-    return (text.encode() if text else None, IOResult(exit_code=exit_code),
-            ExecutionNode(command="readlink", exit_code=exit_code))
+    return (
+        text.encode() if text else None,
+        IOResult(exit_code=exit_code),
+        ExecutionNode(command="readlink", exit_code=exit_code),
+    )

@@ -13,8 +13,9 @@ def make_session() -> SessionState:
 async def test_shift_non_numeric_errors_like_bash():
     _, io, _ = await handle_shift(["x"], None, session=make_session())
     assert io.exit_code == 1
-    assert (await
-            materialize(io.stderr)) == b"shift: x: numeric argument required\n"
+    assert (
+        await materialize(io.stderr)
+    ) == b"shift: x: numeric argument required\n"
 
 
 @pytest.mark.asyncio
@@ -49,5 +50,6 @@ async def test_shift_past_the_count_is_a_silent_one():
 async def test_shift_negative_count_is_out_of_range():
     _, io, _ = await handle_shift(["-1"], None, session=make_session())
     assert io.exit_code == 1
-    assert (await
-            materialize(io.stderr)) == b"shift: -1: shift count out of range\n"
+    assert (
+        await materialize(io.stderr)
+    ) == b"shift: -1: shift count out of range\n"

@@ -5,6 +5,7 @@
       "seq": 991042,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf --zzz",
@@ -19,6 +20,7 @@
       "seq": 991058,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf --help",
@@ -33,6 +35,7 @@
       "seq": 991110,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\0003' | od -An -tx1",
@@ -47,6 +50,7 @@
       "seq": 991111,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\0003' | od -An -tx1",
@@ -61,6 +65,7 @@
       "seq": 991112,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\0' | od -An -tx1",
@@ -75,6 +80,7 @@
       "seq": 991113,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\0' | od -An -tx1",
@@ -89,6 +95,7 @@
       "seq": 991114,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\00' | od -An -tx1",
@@ -103,6 +110,7 @@
       "seq": 991115,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\00' | od -An -tx1",
@@ -117,6 +125,7 @@
       "seq": 991116,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\000' | od -An -tx1",
@@ -131,6 +140,7 @@
       "seq": 991117,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\000' | od -An -tx1",
@@ -145,6 +155,7 @@
       "seq": 991118,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\0000' | od -An -tx1",
@@ -159,6 +170,7 @@
       "seq": 991119,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\0000' | od -An -tx1",
@@ -173,6 +185,7 @@
       "seq": 991120,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\08' | od -An -tx1",
@@ -187,6 +200,7 @@
       "seq": 991121,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\08' | od -An -tx1",
@@ -201,6 +215,7 @@
       "seq": 991122,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\101' | od -An -tx1",
@@ -215,6 +230,7 @@
       "seq": 991123,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\101' | od -An -tx1",
@@ -229,6 +245,7 @@
       "seq": 991124,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\1011' | od -An -tx1",
@@ -243,6 +260,7 @@
       "seq": 991125,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\1011' | od -An -tx1",
@@ -257,6 +275,7 @@
       "seq": 991126,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\400' | od -An -tx1",
@@ -271,6 +290,7 @@
       "seq": 991140,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x|' | od -An -tc",
@@ -285,6 +305,7 @@
       "seq": 991141,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b' '\\x|' | od -An -tc",
@@ -299,6 +320,7 @@
       "seq": 991142,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\u|\\U|' | od -An -tc",
@@ -313,6 +335,7 @@
       "seq": 991143,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x\\u\\U\\n'",
@@ -327,6 +350,7 @@
       "seq": 991144,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x%d\\n' abc",
@@ -341,6 +365,7 @@
       "seq": 991145,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d\\x\\n' abc",
@@ -355,6 +380,7 @@
       "seq": 991146,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d%b\\n' abc '\\x'",
@@ -369,6 +395,7 @@
       "seq": 991147,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x%s\\n' a b",
@@ -383,6 +410,7 @@
       "seq": 991148,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x\\n' a b",
@@ -397,6 +425,7 @@
       "seq": 991149,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b\\n' 'a\\cb\\x'",
@@ -411,6 +440,7 @@
       "seq": 991150,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%.1b\\n' '\\xy'",
@@ -425,6 +455,7 @@
       "seq": 991151,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf -v v '\\x|'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
@@ -439,6 +470,7 @@
       "seq": 991152,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf -v v '\\x%d' abc; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
@@ -453,6 +485,7 @@
       "seq": 991153,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d%b' abc '\\c'; echo \" rc=$?\"",
@@ -467,6 +500,7 @@
       "seq": 991154,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d%b\\n' abc 'x\\cy'; echo \" rc=$?\"",
@@ -481,6 +515,7 @@
       "seq": 991155,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d%b' abc x def '\\c'; echo \" rc=$?\"",
@@ -495,6 +530,7 @@
       "seq": 991156,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%b%d' '\\c' abc; echo \" rc=$?\"",
@@ -509,6 +545,7 @@
       "seq": 991157,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '%d%b' abc x; echo \" rc=$?\"",
@@ -523,6 +560,7 @@
       "seq": 991158,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '\\x%d%b' abc '\\c'; echo \" rc=$?\"",
@@ -537,6 +575,7 @@
       "seq": 991159,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf -v v '%d%b' abc '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
@@ -551,6 +590,7 @@
       "seq": 991160,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf -v v '%d%b' abc x def '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",

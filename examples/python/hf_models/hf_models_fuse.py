@@ -28,7 +28,8 @@ config = HfModelsConfig(
 vfs = HfModelsVFS(config)
 
 with Workspace(
-    {"/m/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}) as ws:
+    {"/m/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
     print(f"=== FUSE: mounted at {mp} ===\n")
 

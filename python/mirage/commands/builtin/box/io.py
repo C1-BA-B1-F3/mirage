@@ -33,25 +33,31 @@ from mirage.vfs.types import ContentSearchOps, NativeReadOps, ReadOps, WriteOps
 
 # Box exposes the full write surface (upload/overwrite, mkdir, unlink, rmdir,
 # mv, cp) alongside reads.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read,
-                                     read_stream=_stream,
-                                     du=make_walked_du(_stat, _readdir),
-                                     exists=_exists),
-                writes=WriteOps(write=_write,
-                                mkdir=_mkdir,
-                                unlink=_unlink,
-                                rmdir=_rmdir,
-                                rm_r=_rm_r,
-                                rename=_rename,
-                                copy=_copy,
-                                dir_copy=_copy,
-                                create=_create,
-                                truncate=_truncate),
-                content_search=ContentSearchOps(
-                    narrow_paths=narrow_paths,
-                    enabled=lambda a: a.config.content_search),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(
+        read_range=_read,
+        read_stream=_stream,
+        du=make_walked_du(_stat, _readdir),
+        exists=_exists,
+    ),
+    writes=WriteOps(
+        write=_write,
+        mkdir=_mkdir,
+        unlink=_unlink,
+        rmdir=_rmdir,
+        rm_r=_rm_r,
+        rename=_rename,
+        copy=_copy,
+        dir_copy=_copy,
+        create=_create,
+        truncate=_truncate,
+    ),
+    content_search=ContentSearchOps(
+        narrow_paths=narrow_paths, enabled=lambda a: a.config.content_search
+    ),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

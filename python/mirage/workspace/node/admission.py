@@ -21,16 +21,39 @@ from typing import Any
 from mirage.commands.spec.types import ValueType
 from mirage.context.session_context import session_path_allowed
 from mirage.io.types import ByteSource
-from mirage.policy import (Abandoned, AdmissionRules, Ask, Claimant,
-                           CommandContext, CommandRule, Deny, HandOff, Pending,
-                           PolicyDenied, Scope, ask_rule, refusal_of,
-                           render_deny, render_pending)
-from mirage.policy.match import (Outcome, has_rules, io_refusal, reads_args,
-                                 scopes_paths)
+from mirage.policy import (
+    Abandoned,
+    AdmissionRules,
+    Ask,
+    Claimant,
+    CommandContext,
+    CommandRule,
+    Deny,
+    HandOff,
+    Pending,
+    PolicyDenied,
+    Scope,
+    ask_rule,
+    refusal_of,
+    render_deny,
+    render_pending,
+)
+from mirage.policy.match import (
+    Outcome,
+    has_rules,
+    io_refusal,
+    reads_args,
+    scopes_paths,
+)
 from mirage.runtime.routing import command_nodes
 from mirage.shell import parse
-from mirage.shell.helpers import (get_parts, get_redirects, get_text,
-                                  literal_word, split_env_prefix)
+from mirage.shell.helpers import (
+    get_parts,
+    get_redirects,
+    get_text,
+    literal_word,
+    split_env_prefix,
+)
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import RedirectKind
 from mirage.types import PathSpec, Refusal
@@ -39,27 +62,44 @@ from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins.links.links import follow_paths
 from mirage.workspace.executor.builtins.scope import _to_scope
-from mirage.workspace.executor.command.routing import (CWD_DEFAULT_RAW,
-                                                       default_cwd_operand,
-                                                       path_flag_scopes,
-                                                       positional_scopes,
-                                                       program_tokens)
+from mirage.workspace.executor.command.routing import (
+    CWD_DEFAULT_RAW,
+    default_cwd_operand,
+    path_flag_scopes,
+    positional_scopes,
+    program_tokens,
+)
 from mirage.workspace.expand.classify import classify_parts
 from mirage.workspace.expand.classify.path import classify_bare_path
-from mirage.workspace.expand.spec_hints import (spec_for_command,
-                                                spec_word_bases,
-                                                spec_word_kinds)
-from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, Consumer,
-                                     WordPolicy, follows_last_component,
-                                     is_tool, listed, lookup, reads_subtrees,
-                                     walks_mounts, word_policy)
+from mirage.workspace.expand.spec_hints import (
+    spec_for_command,
+    spec_word_bases,
+    spec_word_kinds,
+)
+from mirage.workspace.lookup import (
+    SLASH_KEEPS_LAST,
+    Consumer,
+    WordPolicy,
+    follows_last_component,
+    is_tool,
+    listed,
+    lookup,
+    reads_subtrees,
+    walks_mounts,
+    word_policy,
+)
 from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.inner_lines import Word, inner_lines
-from mirage.workspace.node.occurrence import (Frame, argv_frame, line_frame,
-                                              occurrence_in, root_frame,
-                                              whole_occurrence)
+from mirage.workspace.node.occurrence import (
+    Frame,
+    argv_frame,
+    line_frame,
+    occurrence_in,
+    root_frame,
+    whole_occurrence,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.shell_dirs import home_dir
 
@@ -138,13 +178,13 @@ class Admitted:
 
 
 def policy_scopes(
-        name: str,
-        args: list[str],
-        operands: Sequence[str | PathSpec],
-        namespace: Namespace | None,
-        cwd: str,
-        implied: PathSpec | None = None,
-        redirects: Sequence[PathSpec] = (),
+    name: str,
+    args: list[str],
+    operands: Sequence[str | PathSpec],
+    namespace: Namespace | None,
+    cwd: str,
+    implied: PathSpec | None = None,
+    redirects: Sequence[PathSpec] = (),
 ) -> list[PathSpec]:
     """The paths a path-pattern guard reads for a line.
 
@@ -189,18 +229,19 @@ def policy_scopes(
         # would never see it without this row.
         scopes.insert(0, _to_scope(resolve_path(name, cwd)))
     if namespace is not None and namespace.nodes and operands:
-        followed = follow_paths(namespace,
-                                list(operands),
-                                follows_last_component(name, [name, *args]),
-                                slash_follows=name not in SLASH_KEEPS_LAST)
+        followed = follow_paths(
+            namespace,
+            list(operands),
+            follows_last_component(name, [name, *args]),
+            slash_follows=name not in SLASH_KEEPS_LAST,
+        )
         seen = {p.virtual for p in scopes}
         for item in followed:
             if isinstance(item, PathSpec) and item.virtual not in seen:
                 seen.add(item.virtual)
                 scopes.append(item)
     if implied is not None and implied.virtual not in {
-            p.virtual
-            for p in scopes
+        p.virtual for p in scopes
     }:
         scopes.append(implied)
     if redirects:
@@ -216,8 +257,9 @@ def policy_scopes(
     return scopes
 
 
-def _seen(session: SessionState,
-          specs: list[PathSpec]) -> tuple[PathSpec, ...]:
+def _seen(
+    session: SessionState, specs: list[PathSpec]
+) -> tuple[PathSpec, ...]:
     """The paths of a line the session can see.
 
     A hidden path is nonexistent for the session, so no policy may
@@ -243,7 +285,6 @@ async def gate(
     agent_id: str = "",
     stdin: ByteSource | None = None,
     redirects: Sequence[PathSpec] = (),
-    defined_fn: bool = False,
     intrinsic: bool = False,
 ) -> Refused | tuple[CommandContext, Deny | Ask | None]:
     """Everything the gate decides about one command before anything is
@@ -270,46 +311,49 @@ async def gate(
             redirect targets, empty when it has none.
         intrinsic (bool): judge a shell-provided operation as a tool even
             when a function shadows its policy name.
-        defined_fn (bool): the caller vouches the head word is a shell
-            function defined by run time. The provision walk vouches
-            for a function its own script defines: the run stores that
-            definition in the session before the call, a dry run keeps
-            it in plan state, where neither ``command_visible`` nor
-            ``is_tool`` can see it. The word is then judged exactly as
-            the run would judge it — exempt from the allow lists unless
-            a builtin shadows it (``SHELL_NAMES``), and ``ctx.tool``
-            False accordingly.
 
     Returns:
         A Refused when the session cannot see the head word, else the
         context and whatever the policy chain answered.
     """
-    tool = intrinsic or (
-        (name in SHELL_NAMES) if defined_fn else is_tool(name, session))
+    tool = intrinsic or is_tool(name, session)
     if tool and not listed(name, session):
         return Refused(f"{name}: command not found\n".encode(), 127)
     tokens, program = program_tokens(registry, name, args, session.cwd)
-    implied = (default_cwd_operand([name, *operands], name, registry,
-                                   session.cwd, stdin)
-               if name in CWD_DEFAULT_RAW else None)
-    ctx = CommandContext(command=name,
-                         paths=_seen(
-                             session,
-                             policy_scopes(name, args, operands, namespace,
-                                           session.cwd, implied, redirects)),
-                         operands=_seen(
-                             session,
-                             positional_scopes(name, args, session.cwd,
-                                               list(operands))),
-                         argv=tuple(args),
-                         cwd=session.cwd,
-                         registry=registry,
-                         session_id=session.session_id,
-                         agent_id=agent_id,
-                         tokens=tokens,
-                         program=program,
-                         tool=tool,
-                         walks=walks_mounts(name, [name, *args]))
+    implied = (
+        default_cwd_operand(
+            [name, *operands], name, registry, session.cwd, stdin
+        )
+        if name in CWD_DEFAULT_RAW
+        else None
+    )
+    ctx = CommandContext(
+        command=name,
+        paths=_seen(
+            session,
+            policy_scopes(
+                name,
+                args,
+                operands,
+                namespace,
+                session.cwd,
+                implied,
+                redirects,
+            ),
+        ),
+        operands=_seen(
+            session, positional_scopes(name, args, session.cwd, list(operands))
+        ),
+        argv=tuple(args),
+        cwd=session.cwd,
+        registry=registry,
+        session_id=session.session_id,
+        agent_id=agent_id,
+        tokens=tokens,
+        program=program,
+        tool=tool,
+        walks=walks_mounts(name, [name, *args]),
+    )
     return ctx, await registry.policies.pre_command(ctx)
 
 
@@ -373,16 +417,18 @@ async def admit(
             such care -- the record refuses the agent's retry from the
             ledger either way.
     """
-    gated = await gate(name,
-                       args,
-                       operands,
-                       session,
-                       registry,
-                       namespace,
-                       agent_id,
-                       stdin,
-                       redirects,
-                       intrinsic=intrinsic)
+    gated = await gate(
+        name,
+        args,
+        operands,
+        session,
+        registry,
+        namespace,
+        agent_id,
+        stdin,
+        redirects,
+        intrinsic=intrinsic,
+    )
     if isinstance(gated, Refused):
         return gated
     ctx, asked = gated
@@ -391,7 +437,9 @@ async def admit(
     # an answer never re-opens a deny.
     action: Deny | Pending | Abandoned | None = (
         await registry.decisions.resolve(ctx, asked, cancel, claimant)
-        if isinstance(asked, Ask) else asked)
+        if isinstance(asked, Ask)
+        else asked
+    )
     # The ledger stopped waiting on a host because this run was killed
     # while it was deciding. That is the kill landing late, not a ruling,
     # so it joins every other abandoned wait rather than being rendered
@@ -400,19 +448,25 @@ async def admit(
         raise MirageAbortError()
     if action is None:
         granted = [
-            r.rule for r in session.decisions
+            r.rule
+            for r in session.decisions
             if r.scope is Scope.SESSION and r.outcome is Outcome.ALLOW
         ]
         if isinstance(asked, Ask):
             granted.insert(0, ask_rule(ctx, asked))
         rules = session.commands
-        return Admitted(rules=rules,
-                        tokens=ctx.tokens,
-                        judged=frozenset(_norm(p.virtual) for p in ctx.paths),
-                        granted=tuple(granted),
-                        scoped=scopes_paths(rules, name))
-    err, code = (render_pending(name, action)
-                 if isinstance(action, Pending) else render_deny(name, action))
+        return Admitted(
+            rules=rules,
+            tokens=ctx.tokens,
+            judged=frozenset(_norm(p.virtual) for p in ctx.paths),
+            granted=tuple(granted),
+            scoped=scopes_paths(rules, name),
+        )
+    err, code = (
+        render_pending(name, action)
+        if isinstance(action, Pending)
+        else render_deny(name, action)
+    )
     return Refused(err, code, refusal_of(action))
 
 
@@ -475,8 +529,10 @@ def _word_hints(
     joined = " ".join(line[:consumed])
     consumer = lookup(joined, session, registry)
     if joined in session.functions or not (
-            word_policy(consumer) is WordPolicy.MOUNT
-            or consumer is Consumer.EXTERNAL or joined in INTERPRETER_NAMES):
+        word_policy(consumer) is WordPolicy.MOUNT
+        or consumer is Consumer.EXTERNAL
+        or joined in INTERPRETER_NAMES
+    ):
         return None, None
     spec = spec_for_command(joined, registry, session.cwd)
     if not spec:
@@ -489,8 +545,9 @@ def _word_hints(
     return word_kinds, word_bases
 
 
-def classified_words(name: str, args: list[str], session: SessionState,
-                     registry: MountRegistry) -> list[str | PathSpec]:
+def classified_words(
+    name: str, args: list[str], session: SessionState, registry: MountRegistry
+) -> list[str | PathSpec]:
     """One command's literal words, classified the way the runtime would
     classify them, so the gate and the run name the same paths.
 
@@ -502,15 +559,18 @@ def classified_words(name: str, args: list[str], session: SessionState,
     """
     line = [name, *args]
     word_kinds, word_bases = _word_hints(line, session, registry)
-    return classify_parts(line,
-                          registry,
-                          session.cwd,
-                          word_kinds=word_kinds,
-                          word_bases=word_bases)
+    return classify_parts(
+        line,
+        registry,
+        session.cwd,
+        word_kinds=word_kinds,
+        word_bases=word_bases,
+    )
 
 
-def redirect_paths(words: Sequence[Word], registry: MountRegistry,
-                   cwd: str) -> tuple[PathSpec, ...]:
+def redirect_paths(
+    words: Sequence[Word], registry: MountRegistry, cwd: str
+) -> tuple[PathSpec, ...]:
     """The paths a statement's redirect targets name.
 
     Shared by admission and by the dry run, because a rule reads a
@@ -525,7 +585,8 @@ def redirect_paths(words: Sequence[Word], registry: MountRegistry,
         cwd (str): session working directory.
     """
     targets = [
-        classify_bare_path(w.value, registry, cwd) for w in words
+        classify_bare_path(w.value, registry, cwd)
+        for w in words
         if w.text is not None
     ]
     return tuple(p for p in targets if isinstance(p, PathSpec))
@@ -570,16 +631,18 @@ async def _admit_words(
     line = [name, *args]
     classified = classified_words(name, args, session, registry)
     redirects = redirect_paths(redirect_words, registry, session.cwd)
-    action = await admit(name,
-                         args,
-                         classified[1:],
-                         session,
-                         registry,
-                         namespace,
-                         agent_id,
-                         redirects=redirects,
-                         cancel=cancel,
-                         claimant=claimant)
+    action = await admit(
+        name,
+        args,
+        classified[1:],
+        session,
+        registry,
+        namespace,
+        agent_id,
+        redirects=redirects,
+        cancel=cancel,
+        claimant=claimant,
+    )
     if isinstance(action, Refused):
         return action
     if action.scoped:
@@ -589,45 +652,68 @@ async def _admit_words(
         if reads_subtrees(name, line):
             return _refuse(name, "walks a tree the gate cannot follow")
         if any(
-                is_glob(p.raw_path or p.virtual)
-                for p in (*classified[1:], *redirects)
-                if isinstance(p, PathSpec)):
+            is_glob(p.raw_path or p.virtual)
+            for p in (*classified[1:], *redirects)
+            if isinstance(p, PathSpec)
+        ):
             return _refuse(name, "expands a pattern only the runtime can read")
     unread = next(
-        (w.raw for w in (*words[1:], *redirect_words) if w.text is None), None)
+        (w.raw for w in (*words[1:], *redirect_words) if w.text is None), None
+    )
     if (unread is not None or open_) and reads_args(rules, name):
         return _refuse(
             name,
             _unreadable(unread)
-            if unread is not None else "runs on operands the gate cannot read")
+            if unread is not None
+            else "runs on operands the gate cannot read",
+        )
     for inner in inner_lines(name, words[1:]):
         if not inner.readable:
             if has_rules(rules):
                 return _refuse(name, "runs lines the gate cannot read")
             continue
         if inner.line is not None:
-            frame = (line_frame(inner.line, claimant.occurrence)
-                     if claimant is not None else None)
-            refusal = await admit_line(parse(inner.line), session, registry,
-                                       namespace, agent_id, cancel,
-                                       claimant.line if claimant else None,
-                                       frame, inner.open)
+            frame = (
+                line_frame(inner.line, claimant.occurrence)
+                if claimant is not None
+                else None
+            )
+            refusal = await admit_line(
+                parse(inner.line),
+                session,
+                registry,
+                namespace,
+                agent_id,
+                cancel,
+                claimant.line if claimant else None,
+                frame,
+                inner.open,
+            )
         else:
             argv = list(inner.argv)
-            within = (Claimant(
-                claimant.line,
-                whole_occurrence(
-                    argv_frame([w.value for w in argv], claimant.occurrence)))
-                      if claimant is not None else None)
-            refusal = await _admit_words(argv,
-                                         inner.open,
-                                         session,
-                                         registry,
-                                         namespace,
-                                         agent_id,
-                                         rules,
-                                         cancel=cancel,
-                                         claimant=within)
+            within = (
+                Claimant(
+                    claimant.line,
+                    whole_occurrence(
+                        argv_frame(
+                            [w.value for w in argv], claimant.occurrence
+                        )
+                    ),
+                )
+                if claimant is not None
+                else None
+            )
+            refusal = await _admit_words(
+                argv,
+                inner.open,
+                session,
+                registry,
+                namespace,
+                agent_id,
+                rules,
+                cancel=cancel,
+                claimant=within,
+            )
         if refusal is not None:
             return refusal
     return None
@@ -718,7 +804,9 @@ async def admit_line(
             redirect_words=statement_redirects(node, home),
             cancel=cancel,
             claimant=Claimant(handed, occurrence_in(node, frame))
-            if handed is not None else None)
+            if handed is not None
+            else None,
+        )
         if refusal is not None:
             return refusal
     return None
@@ -749,19 +837,30 @@ def statement_redirects(node: Any, home: str | None) -> tuple[Word, ...]:
     owner = node
     parent = owner.parent
     while parent is not None and parent.type in REDIRECT_CHAIN:
-        if (not parent.named_children
-                or parent.named_children[-1].start_byte != owner.start_byte):
+        if (
+            not parent.named_children
+            or parent.named_children[-1].start_byte != owner.start_byte
+        ):
             return ()
         owner = parent
         parent = owner.parent
-    if (parent is None or parent.type != NT.REDIRECTED_STATEMENT
-            or not parent.named_children
-            or parent.named_children[0].start_byte != owner.start_byte):
+    if (
+        parent is None
+        or parent.type != NT.REDIRECTED_STATEMENT
+        or not parent.named_children
+        or parent.named_children[0].start_byte != owner.start_byte
+    ):
         return ()
     _, redirects = get_redirects(parent)
     return tuple(
         Word(str(r.target), literal_word(r.target_node, home))
         for r in redirects
-        if r.kind not in (RedirectKind.HEREDOC, RedirectKind.HERESTRING,
-                          RedirectKind.AMBIGUOUS)
-        and not isinstance(r.target, int) and r.target_node is not None)
+        if r.kind
+        not in (
+            RedirectKind.HEREDOC,
+            RedirectKind.HERESTRING,
+            RedirectKind.AMBIGUOUS,
+        )
+        and not isinstance(r.target, int)
+        and r.target_node is not None
+    )

@@ -25,17 +25,12 @@ interface IoResultDict {
   refusal: Refusal | null
 }
 
-interface ProvisionResultDict {
-  kind: 'provision'
-  [k: string]: unknown
-}
-
 interface RawResultDict {
   kind: 'raw'
   value: string
 }
 
-export type ResultDict = IoResultDict | ProvisionResultDict | RawResultDict
+export type ResultDict = IoResultDict | RawResultDict
 
 export function ioResultToDict(result: unknown): ResultDict {
   if (result instanceof ExecuteResult) {
@@ -46,9 +41,6 @@ export function ioResultToDict(result: unknown): ResultDict {
       stderr: result.stderrText,
       refusal: result.refusal,
     }
-  }
-  if (typeof result === 'object' && result !== null) {
-    return { kind: 'provision', ...(result as Record<string, unknown>) }
   }
   return { kind: 'raw', value: String(result) }
 }

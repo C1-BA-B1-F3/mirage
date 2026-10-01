@@ -19,8 +19,10 @@ from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
 from mirage.types import PathSpec
-from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
-                                          DatabricksVolumeVFS)
+from mirage.vfs.databricks_volume import (
+    DatabricksVolumeConfig,
+    DatabricksVolumeVFS,
+)
 
 load_dotenv(".env.development")
 
@@ -57,12 +59,16 @@ async def main():
     ws = Workspace({"/dbx/": vfs}, mode=MountMode.READ)
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /dbx/__nf_missing__.txt", "head /dbx/__nf_missing__.txt",
-                "stat /dbx/__nf_missing__.txt"):
+    for cmd in (
+        "cat /dbx/__nf_missing__.txt",
+        "head /dbx/__nf_missing__.txt",
+        "stat /dbx/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     await _run(ws, "ls /dbx/")
     await _run(ws, "tree -L 2 /dbx/")
@@ -75,16 +81,21 @@ async def main():
         # chmod/chown/touch never hit the Databricks API: attrs land in
         # the workspace namespace and merge into dispatch-level stat.
         print(f"=== metadata overlay on {target} ===")
-        meta_res = await ws.shell(f'chmod 640 "{target}"'
-                                  f' && chown 500:dev "{target}"'
-                                  f' && touch -t 202601021530 "{target}"')
+        meta_res = await ws.shell(
+            f'chmod 640 "{target}"'
+            f' && chown 500:dev "{target}"'
+            f' && touch -t 202601021530 "{target}"'
+        )
         print(f"  chmod/chown/touch exit={meta_res.exit_code}")
         try:
-            meta_st, _ = await ws.dispatch("stat",
-                                           PathSpec.from_str_path(target))
-            print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} "
-                  f"uid={meta_st.uid} gid={meta_st.gid} "
-                  f"mtime={meta_st.modified}")
+            meta_st, _ = await ws.dispatch(
+                "stat", PathSpec.from_str_path(target)
+            )
+            print(
+                f"  dispatch stat: mode={oct(meta_st.mode)[2:]} "
+                f"uid={meta_st.uid} gid={meta_st.gid} "
+                f"mtime={meta_st.modified}"
+            )
         except FileNotFoundError:
             print("  dispatch stat: target missing in this environment")
         await _run(ws, f'head -n 20 "{target}"')

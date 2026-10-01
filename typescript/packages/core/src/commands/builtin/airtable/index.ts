@@ -16,8 +16,6 @@ import type { AirtableAccessor } from '../../../accessor/airtable.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { AIRTABLE_HEAD } from './head.ts'
 import { AIRTABLE_IO } from './io.ts'
 
@@ -25,10 +23,5 @@ export const AIRTABLE_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<AirtableAccessor>(VFSName.AIRTABLE, AIRTABLE_IO, {
     overrides: new Set(['head']),
   }),
-  ...withDefaultProvisions(
-    [...AIRTABLE_HEAD],
-    AIRTABLE_IO.stat,
-    resolveGlobOf(AIRTABLE_IO),
-    AIRTABLE_IO.readdir,
-  ),
+  ...AIRTABLE_HEAD,
 ]

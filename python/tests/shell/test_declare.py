@@ -19,17 +19,20 @@ def test_declare_assigns_at_top_level(shell):
 
 def test_declare_is_local_inside_function(shell):
     out = shell.mirage(
-        "zf1() { declare dz=in; echo $dz; }; zf1; echo ${dz:-unset}")
+        "zf1() { declare dz=in; echo $dz; }; zf1; echo ${dz:-unset}"
+    )
     assert out == "in\nunset\n"
 
 
 def test_typeset_is_local_inside_function(shell):
     out = shell.mirage(
-        "zf2() { typeset tz=in; echo $tz; }; zf2; echo ${tz:-unset}")
+        "zf2() { typeset tz=in; echo $tz; }; zf2; echo ${tz:-unset}"
+    )
     assert out == "in\nunset\n"
 
 
 def test_declare_shadows_global_inside_function(shell):
     out = shell.mirage(
-        "gv=g; zf3() { declare gv=l; echo $gv; }; zf3; echo $gv")
+        "gv=g; zf3() { declare gv=l; echo $gv; }; zf3; echo $gv"
+    )
     assert out == "l\ng\n"

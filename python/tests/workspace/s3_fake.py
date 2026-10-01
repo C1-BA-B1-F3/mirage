@@ -19,7 +19,6 @@ from botocore.exceptions import ClientError
 
 
 class _Body:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
 
@@ -36,16 +35,15 @@ def etag_of(data: bytes) -> str:
 
 
 class _Paginator:
-
     def __init__(self, client: "FakeConditionalS3Client") -> None:
         self._client = client
 
     async def paginate(self, Bucket: str, Prefix: str = ""):
-        contents = [{
-            "Key": key,
-            "Size": len(data)
-        } for (bucket, key), data in sorted(self._client.objects.items())
-                    if bucket == Bucket and key.startswith(Prefix)]
+        contents = [
+            {"Key": key, "Size": len(data)}
+            for (bucket, key), data in sorted(self._client.objects.items())
+            if bucket == Bucket and key.startswith(Prefix)
+        ]
         yield {"Contents": contents}
 
 
@@ -62,17 +60,20 @@ class FakeConditionalS3Client:
             raise _error("NoSuchKey", "GetObject")
         return {"Body": _Body(data), "ETag": etag_of(data)}
 
-    async def put_object(self,
-                         Bucket: str,
-                         Key: str,
-                         Body: bytes,
-                         IfMatch: str | None = None,
-                         IfNoneMatch: str | None = None) -> dict:
+    async def put_object(
+        self,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        IfMatch: str | None = None,
+        IfNoneMatch: str | None = None,
+    ) -> dict:
         current = self.objects.get((Bucket, Key))
         if IfNoneMatch == "*" and current is not None:
             raise _error("PreconditionFailed", "PutObject")
-        if IfMatch is not None and (current is None
-                                    or etag_of(current) != IfMatch):
+        if IfMatch is not None and (
+            current is None or etag_of(current) != IfMatch
+        ):
             raise _error("PreconditionFailed", "PutObject")
         self.objects[(Bucket, Key)] = Body
         return {}
@@ -88,7 +89,6 @@ class FakeConditionalS3Client:
 
 
 class _ClientContext:
-
     def __init__(self, client: FakeConditionalS3Client) -> None:
         self._client = client
 
@@ -100,7 +100,6 @@ class _ClientContext:
 
 
 class FakeSession:
-
     def __init__(self, client: FakeConditionalS3Client) -> None:
         self._client = client
 
@@ -111,5 +110,6 @@ class FakeSession:
 def patch_record_s3(client: FakeConditionalS3Client):
     """Patch the record stores' session factory to serve ``client``."""
     session = FakeSession(client)
-    return patch("mirage.workspace.record.s3.async_session",
-                 lambda config: session)
+    return patch(
+        "mirage.workspace.record.s3.async_session", lambda config: session
+    )

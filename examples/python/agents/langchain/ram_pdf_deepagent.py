@@ -32,13 +32,17 @@ agent = create_deep_agent(
     backend=backend,
 )
 
-task = ("Read /example.pdf and explain the paper's purpose and main idea "
-        "in two concise sentences.")
+task = (
+    "Read /example.pdf and explain the paper's purpose and main idea "
+    "in two concise sentences."
+)
 result = agent.invoke({"messages": [{"role": "user", "content": task}]})
 
 for text in extract_text(result["messages"][-1:]):
     print(text)
 
-pdf_read_count = sum(record.op == "read" and record.path == "/example.pdf"
-                     for record in ws.vfs.records)
+pdf_read_count = sum(
+    record.op == "read" and record.path == "/example.pdf"
+    for record in ws.vfs.records
+)
 print(f"\nPDF reads through Mirage: {pdf_read_count}")

@@ -19,8 +19,10 @@ from mirage.vfs.qdrant.config import QdrantConfig
 
 
 def test_source_url_can_render_as_its_basename():
-    assert group_name("s3://docs/policies/refund-2026.pdf",
-                      basename=True) == "refund-2026.pdf"
+    assert (
+        group_name("s3://docs/policies/refund-2026.pdf", basename=True)
+        == "refund-2026.pdf"
+    )
 
 
 def test_group_name_renders_through_the_shared_path_safe_codec():
@@ -51,10 +53,12 @@ def test_dotted_id_field_is_read_as_the_literal_synthetic_key():
 
 
 def test_row_stem_reserves_room_for_every_enabled_suffix():
-    config = QdrantConfig(name_field="title",
-                          text_field="text",
-                          blob_field="blob",
-                          blob_ext="very-long-extension")
+    config = QdrantConfig(
+        name_field="title",
+        text_field="text",
+        blob_field="blob",
+        blob_ext="very-long-extension",
+    )
     stem = row_stem({"id": 17, "title": "界" * 200}, config)
     for suffix in (".json", ".txt", ".very-long-extension"):
         assert byte_len(f"{stem}{suffix}") <= NAME_MAX_BYTES

@@ -15,8 +15,9 @@
 from pathlib import PurePosixPath
 
 
-def merge_entries(path: PurePosixPath, local: list[PurePosixPath],
-                  remote: list[str]) -> list[PurePosixPath]:
+def merge_entries(
+    path: PurePosixPath, local: list[PurePosixPath], remote: list[str]
+) -> list[PurePosixPath]:
     merged = {str(p): p for p in local}
     for name in remote:
         child = path / name.rstrip("/")

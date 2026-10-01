@@ -24,12 +24,14 @@ ANON = HfConfig()
 
 def inv(texts=(), flags=None, config=CONFIG, doors=None, stdin=None):
     """One `hf` invocation, as the executor would build it."""
-    return CLIInvocation(config,
-                         argv=tuple(texts),
-                         texts=tuple(texts),
-                         flags=flags or {},
-                         stdin=None if stdin is None else yield_bytes(stdin),
-                         doors=doors)
+    return CLIInvocation(
+        config,
+        argv=tuple(texts),
+        texts=tuple(texts),
+        flags=flags or {},
+        stdin=None if stdin is None else yield_bytes(stdin),
+        doors=doors,
+    )
 
 
 class FakeDoors(CLIDoors):
@@ -54,19 +56,22 @@ def doors():
             return tree[path], None
         if op == "stat":
             from mirage.types import FileStat, FileType
+
             if path in dirs:
                 return FileStat(name=path, type=FileType.DIRECTORY), None
             if path in tree:
-                return FileStat(name=path,
-                                type=FileType.FILE,
-                                size=len(tree[path])), None
+                return FileStat(
+                    name=path, type=FileType.FILE, size=len(tree[path])
+                ), None
             raise FileNotFoundError(path)
         if op == "readdir":
-            children = sorted({
-                p
-                for p in list(tree) + sorted(dirs)
-                if p.rsplit("/", 1)[0] == path.rstrip("/") and p != path
-            })
+            children = sorted(
+                {
+                    p
+                    for p in list(tree) + sorted(dirs)
+                    if p.rsplit("/", 1)[0] == path.rstrip("/") and p != path
+                }
+            )
             return children, None
         if op == "mkdir":
             if path in dirs:

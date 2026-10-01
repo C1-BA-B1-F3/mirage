@@ -22,15 +22,13 @@ if TYPE_CHECKING:
     from mirage.workspace.workspace import Session, Workspace
 
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.workspace.runner": ("WorkspaceRunner", ),
-    "mirage.workspace.session": ("SessionState", ),
-    "mirage.workspace.types": ("ExecutionNode", ),
+    "mirage.workspace.runner": ("WorkspaceRunner",),
+    "mirage.workspace.session": ("SessionState",),
+    "mirage.workspace.types": ("ExecutionNode",),
     "mirage.workspace.workspace": ("Session", "Workspace"),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = [

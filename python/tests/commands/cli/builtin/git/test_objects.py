@@ -17,10 +17,12 @@ import asyncio
 import pytest
 from dulwich.pack import Pack
 
-from mirage.commands.cli.builtin.git.objects import (LooseObjects,
-                                                     VfsObjectStore,
-                                                     load_object_store,
-                                                     load_packs)
+from mirage.commands.cli.builtin.git.objects import (
+    LooseObjects,
+    VfsObjectStore,
+    load_object_store,
+    load_packs,
+)
 
 from .conftest import mounted, pack_everything
 
@@ -61,8 +63,9 @@ async def test_an_absent_id_reads_as_absent_rather_than_raising(workspace):
 
 @pytest.mark.asyncio
 async def test_pack_directory_is_empty_before_packing(workspace):
-    packs = await load_packs(workspace.dispatch, GITDIR,
-                             asyncio.get_running_loop())
+    packs = await load_packs(
+        workspace.dispatch, GITDIR, asyncio.get_running_loop()
+    )
     assert packs == []
 
 
@@ -70,15 +73,17 @@ async def test_pack_directory_is_empty_before_packing(workspace):
 async def test_packed_objects_are_served_from_the_pack(repo_path, workspace):
     pack_everything(repo_path)
     with mounted(repo_path) as packed_ws:
-        packs = await load_packs(packed_ws.dispatch, GITDIR,
-                                 asyncio.get_running_loop())
+        packs = await load_packs(
+            packed_ws.dispatch, GITDIR, asyncio.get_running_loop()
+        )
         assert len(packs) == 1
         assert await asyncio.to_thread(len, packs[0]) > 0
 
 
 @pytest.mark.asyncio
 async def test_the_store_serves_the_same_objects_either_way(
-        repo_path, workspace):
+    repo_path, workspace
+):
     before = await load_object_store(workspace.dispatch, GITDIR)
     shas = await asyncio.to_thread(lambda: set(before))
     # Read them out before packing, not after: a lazy store reflects
@@ -103,7 +108,8 @@ async def test_missing_object_raises_key_error(workspace):
 
 @pytest.mark.asyncio
 async def test_contains_loose_distinguishes_the_two_forms(
-        repo_path, workspace):
+    repo_path, workspace
+):
     store = await load_object_store(workspace.dispatch, GITDIR)
     sha = (await asyncio.to_thread(lambda: list(store)))[0]
     assert await asyncio.to_thread(store.contains_loose, sha)
@@ -132,14 +138,16 @@ async def test_prefix_search_finds_packed_ids_too(repo_path, workspace):
     with mounted(repo_path) as packed_ws:
         packed = await load_object_store(packed_ws.dispatch, GITDIR)
         found = await asyncio.to_thread(
-            lambda: list(packed.iter_prefix(sha[:7])))
+            lambda: list(packed.iter_prefix(sha[:7]))
+        )
     assert sha in found
 
 
 @pytest.mark.parametrize("width", [1, 2, 3, 7, 40])
 @pytest.mark.asyncio
 async def test_packed_prefix_search_reads_the_fanout_bucket(
-        repo_path, workspace, width):
+    repo_path, workspace, width
+):
     # The pack half answers from the index's fan-out bucket, odd-length
     # prefixes included, and finds exactly what a full walk finds.
     pack_everything(repo_path)
@@ -148,13 +156,15 @@ async def test_packed_prefix_search_reads_the_fanout_bucket(
         every = await asyncio.to_thread(lambda: list(packed))
         prefix = every[0][:width]
         found = await asyncio.to_thread(
-            lambda: sorted(packed.iter_prefix(prefix)))
+            lambda: sorted(packed.iter_prefix(prefix))
+        )
     assert found == sorted(oid for oid in every if oid.startswith(prefix))
 
 
 @pytest.mark.asyncio
 async def test_a_prefix_search_never_walks_a_whole_pack(
-        repo_path, workspace, monkeypatch):
+    repo_path, workspace, monkeypatch
+):
     # One search per abbreviated id: walking every packed id each time
     # made a verbose listing of many branches quadratic.
     pack_everything(repo_path)
@@ -167,19 +177,22 @@ async def test_a_prefix_search_never_walks_a_whole_pack(
 
         monkeypatch.setattr(Pack, "__iter__", walked)
         found = await asyncio.to_thread(
-            lambda: list(packed.iter_prefix(sha[:4])))
+            lambda: list(packed.iter_prefix(sha[:4]))
+        )
     assert sha in found
 
 
 @pytest.mark.parametrize("prefix", [b"zz", b"ABCD", b"g1"])
 @pytest.mark.asyncio
 async def test_a_prefix_that_is_not_lowercase_hex_names_nothing(
-        repo_path, workspace, prefix):
+    repo_path, workspace, prefix
+):
     pack_everything(repo_path)
     with mounted(repo_path) as packed_ws:
         packed = await load_object_store(packed_ws.dispatch, GITDIR)
         found = await asyncio.to_thread(
-            lambda: list(packed.iter_prefix(prefix)))
+            lambda: list(packed.iter_prefix(prefix))
+        )
     assert found == []
 
 

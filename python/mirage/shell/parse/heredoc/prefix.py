@@ -15,8 +15,11 @@
 from dataclasses import replace
 
 from mirage.shell.parse.heredoc.body import heredoc_bodies
-from mirage.shell.parse.heredoc.constants import (HEREDOC_BODY, HEREDOC_START,
-                                                  SKIPPED_BLANKS)
+from mirage.shell.parse.heredoc.constants import (
+    HEREDOC_BODY,
+    HEREDOC_START,
+    SKIPPED_BLANKS,
+)
 from mirage.shell.parse.heredoc.shield import heredoc_operators
 from mirage.shell.types import TSNodeLike
 
@@ -68,18 +71,26 @@ def body_prefix(redirect_node: TSNodeLike) -> str:
     origin = root.start_byte
     data = root.text or b""
     operators = [
-        replace(operator,
-                word_start=operator.word_start - origin,
-                word_end=operator.word_end - origin)
+        replace(
+            operator,
+            word_start=operator.word_start - origin,
+            word_end=operator.word_end - origin,
+        )
         for operator in heredoc_operators(root)
     ]
     word_start = start.start_byte - origin
     spans = heredoc_bodies(data, operators, nested=True)
-    span = next((span for operator, span in zip(operators, spans)
-                 if operator.word_start == word_start), None)
+    span = next(
+        (
+            span
+            for operator, span in zip(operators, spans)
+            if operator.word_start == word_start
+        ),
+        None,
+    )
     if span is None:
         return ""
-    gap = data[span[0]:body.start_byte - origin]
+    gap = data[span[0] : body.start_byte - origin]
     if not gap or any(byte not in SKIPPED_BLANKS for byte in gap):
         return ""
     return gap.decode()

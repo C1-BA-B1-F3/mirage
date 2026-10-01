@@ -34,8 +34,12 @@ import asyncio
 import os
 
 from mirage import Workspace
-from mirage.cache.index import (IndexEntry, LookupStatus, RedisIndexCacheStore,
-                                RedisIndexConfig)
+from mirage.cache.index import (
+    IndexEntry,
+    LookupStatus,
+    RedisIndexCacheStore,
+    RedisIndexConfig,
+)
 from mirage.vfs.ram import RAMVFS
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -65,14 +69,16 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 def make_store(prefix: str) -> tuple[Workspace, RedisIndexCacheStore]:
     """A RAM mount whose index the workspace config points at Redis."""
-    ws = Workspace({DIR: RAMVFS()},
-                   index=RedisIndexConfig(url=REDIS_URL,
-                                          key_prefix=prefix,
-                                          ttl=TTL))
+    ws = Workspace(
+        {DIR: RAMVFS()},
+        index=RedisIndexConfig(url=REDIS_URL, key_prefix=prefix, ttl=TTL),
+    )
     store = ws.mount(DIR).index_store
     if not isinstance(store, RedisIndexCacheStore):
-        raise SystemExit(f"py: workspace index config did not reach the "
-                         f"mount, got {type(store).__name__}")
+        raise SystemExit(
+            f"py: workspace index config did not reach the "
+            f"mount, got {type(store).__name__}"
+        )
     return ws, store
 
 
@@ -85,25 +91,33 @@ async def write(prefix: str) -> None:
     """Record one listing with a file and a folder under it, and one
     empty listing."""
     ws, store = make_store(prefix)
-    file_entry = IndexEntry(id=FILE,
-                            name=FILE_NAME,
-                            resource_type="file",
-                            remote_time=REMOTE_TIME,
-                            size=6,
-                            extra=dict(EXTRA))
-    folder_entry = IndexEntry(id=f"{DIR}/{FOLDER_NAME}",
-                              name=FOLDER_NAME,
-                              resource_type="folder",
-                              remote_time=REMOTE_TIME)
-    await store.set_dir(DIR, [(FILE_NAME, file_entry),
-                              (FOLDER_NAME, folder_entry)])
+    file_entry = IndexEntry(
+        id=FILE,
+        name=FILE_NAME,
+        resource_type="file",
+        remote_time=REMOTE_TIME,
+        size=6,
+        extra=dict(EXTRA),
+    )
+    folder_entry = IndexEntry(
+        id=f"{DIR}/{FOLDER_NAME}",
+        name=FOLDER_NAME,
+        resource_type="folder",
+        remote_time=REMOTE_TIME,
+    )
+    await store.set_dir(
+        DIR, [(FILE_NAME, file_entry), (FOLDER_NAME, folder_entry)]
+    )
     await store.set_dir(f"{DIR}/{FOLDER_NAME}", [(FILE_NAME, file_entry)])
     await store.put(f"{DIR}/{FOLDER_NAME}/unlisted", file_entry)
     await store.set_dir(EMPTY_DIR, [])
     await store.set_partial_dir(PARTIAL_DIR, [(FILE_NAME, file_entry)])
     listing = await store.list_dir(DIR)
-    check("py write: listing reads back", listing.entries == CHILDREN,
-          f"got {listing!r}")
+    check(
+        "py write: listing reads back",
+        listing.entries == CHILDREN,
+        f"got {listing!r}",
+    )
     await close(ws, store)
 
 
@@ -113,58 +127,100 @@ async def read(prefix: str) -> None:
     got = await store.get(FILE)
     entry = got.entry
     check(
-        "py read: entry field by field", entry is not None
-        and got.status is None and entry.id == FILE and entry.name == FILE_NAME
-        and entry.resource_type == "file" and entry.remote_time == REMOTE_TIME
-        and entry.size == 6 and entry.extra == EXTRA
-        and entry.index_time != "", f"got {got!r}")
+        "py read: entry field by field",
+        entry is not None
+        and got.status is None
+        and entry.id == FILE
+        and entry.name == FILE_NAME
+        and entry.resource_type == "file"
+        and entry.remote_time == REMOTE_TIME
+        and entry.size == 6
+        and entry.extra == EXTRA
+        and entry.index_time != "",
+        f"got {got!r}",
+    )
     listing = await store.list_dir(DIR)
-    check("py read: listing in order", listing.status is None
-          and listing.entries == CHILDREN, f"got {listing!r}")
+    check(
+        "py read: listing in order",
+        listing.status is None and listing.entries == CHILDREN,
+        f"got {listing!r}",
+    )
     empty = await store.list_dir(EMPTY_DIR)
-    check("py read: empty listing is listed, not missing", empty.status is None
-          and empty.entries == [], f"got {empty!r}")
+    check(
+        "py read: empty listing is listed, not missing",
+        empty.status is None and empty.entries == [],
+        f"got {empty!r}",
+    )
     missing = await store.list_dir(UNLISTED_DIR)
-    check("py read: unlisted directory is not found", missing.status
-          is LookupStatus.NOT_FOUND, f"got {missing!r}")
+    check(
+        "py read: unlisted directory is not found",
+        missing.status is LookupStatus.NOT_FOUND,
+        f"got {missing!r}",
+    )
     partial = await store.list_dir(PARTIAL_DIR)
     check(
         "py read: partial listing proves only observed children",
-        partial.entries is None and partial.status is None
+        partial.entries is None
+        and partial.status is None
         and partial.partial_entries == [f"{PARTIAL_DIR}/{FILE_NAME}"],
-        f"got {partial!r}")
+        f"got {partial!r}",
+    )
     await store.invalidate()
     partial = await store.list_dir(PARTIAL_DIR)
     check(
         "py read: invalidate expires partial membership",
         partial.status is LookupStatus.EXPIRED
-        and partial.partial_entries is None, f"got {partial!r}")
+        and partial.partial_entries is None,
+        f"got {partial!r}",
+    )
     stale = await store.list_dir(DIR)
-    check("py read: invalidate expires the foreign listing", stale.status
-          is LookupStatus.EXPIRED, f"got {stale!r}")
+    check(
+        "py read: invalidate expires the foreign listing",
+        stale.status is LookupStatus.EXPIRED,
+        f"got {stale!r}",
+    )
     kept = await store.get(FILE)
-    check("py read: invalidate keeps the entries", kept.entry is not None,
-          f"got {kept!r}")
-    await store.set_dir(DIR, [
-        (FOLDER_NAME,
-         IndexEntry(id="replacement", name=FOLDER_NAME, resource_type="file"))
-    ])
+    check(
+        "py read: invalidate keeps the entries",
+        kept.entry is not None,
+        f"got {kept!r}",
+    )
+    await store.set_dir(
+        DIR,
+        [
+            (
+                FOLDER_NAME,
+                IndexEntry(
+                    id="replacement", name=FOLDER_NAME, resource_type="file"
+                ),
+            )
+        ],
+    )
     replaced = await store.get(f"{DIR}/{FOLDER_NAME}")
     check(
         "py read: replacement file survives foreign subtree eviction",
-        replaced.entry is not None and replaced.entry.resource_type == "file")
+        replaced.entry is not None and replaced.entry.resource_type == "file",
+    )
     for path in [
-            f"{DIR}/{FOLDER_NAME}/{FILE_NAME}", f"{DIR}/{FOLDER_NAME}/unlisted"
+        f"{DIR}/{FOLDER_NAME}/{FILE_NAME}",
+        f"{DIR}/{FOLDER_NAME}/unlisted",
     ]:
-        check("py read: foreign descendant evicted " + path,
-              (await store.get(path)).status is LookupStatus.NOT_FOUND)
-    check("py read: foreign directory listing evicted",
-          (await store.list_dir(f"{DIR}/{FOLDER_NAME}")).status
-          is LookupStatus.NOT_FOUND)
+        check(
+            "py read: foreign descendant evicted " + path,
+            (await store.get(path)).status is LookupStatus.NOT_FOUND,
+        )
+    check(
+        "py read: foreign directory listing evicted",
+        (await store.list_dir(f"{DIR}/{FOLDER_NAME}")).status
+        is LookupStatus.NOT_FOUND,
+    )
     await store.clear()
     gone = await store.list_dir(DIR)
-    check("py read: clear forgets the listing", gone.status
-          is LookupStatus.NOT_FOUND, f"got {gone!r}")
+    check(
+        "py read: clear forgets the listing",
+        gone.status is LookupStatus.NOT_FOUND,
+        f"got {gone!r}",
+    )
     await close(ws, store)
 
 

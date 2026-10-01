@@ -16,8 +16,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langfuse.api.commons.types.trace_with_full_details import \
-    TraceWithFullDetails
+from langfuse.api.commons.types.trace_with_full_details import (
+    TraceWithFullDetails,
+)
 from langfuse.api.core.pydantic_utilities import parse_obj_as
 
 from mirage.core.langfuse.client import fetch_trace
@@ -26,7 +27,8 @@ from mirage.core.langfuse.client import fetch_trace
 @pytest.mark.asyncio
 async def test_fetch_trace_keeps_the_api_numbers():
     trace = parse_obj_as(
-        TraceWithFullDetails, {
+        TraceWithFullDetails,
+        {
             "id": "trace-alpha",
             "timestamp": "2026-01-01T00:00:00.000Z",
             "htmlPath": "/project/p/traces/trace-alpha",
@@ -37,11 +39,9 @@ async def test_fetch_trace_keeps_the_api_numbers():
             "totalCost": 0.25,
             "observations": [],
             "scores": [],
-            "metadata": {
-                "ratio": 0.5,
-                "count": 2
-            },
-        })
+            "metadata": {"ratio": 0.5, "count": 2},
+        },
+    )
     api = MagicMock()
     api.trace.get = AsyncMock(return_value=trace)
 

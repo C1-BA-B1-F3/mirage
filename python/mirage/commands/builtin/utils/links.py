@@ -39,8 +39,11 @@ def name_location(links: LinkView, path: PathSpec, cwd: str) -> str | None:
         cwd (str): the directory a relative name resolves against.
     """
     typed = path.raw_path or path.virtual
-    if (path.walk_error is not None or typed.endswith("/")
-            or typed.rsplit("/", 1)[-1] in (".", "..")):
+    if (
+        path.walk_error is not None
+        or typed.endswith("/")
+        or typed.rsplit("/", 1)[-1] in (".", "..")
+    ):
         return None
     parent, _, name = resolve_path(typed, cwd).rpartition("/")
     return f"{links.resolve(parent or '/').rstrip('/')}/{name}"
@@ -107,8 +110,11 @@ class LinkDoor:
             path (PathSpec): the operand, as the router followed it.
         """
         where = name_location(self.links, path, self.cwd)
-        return (where is not None and where != path.virtual
-                and self.links.stat_at(where) is None)
+        return (
+            where is not None
+            and where != path.virtual
+            and self.links.stat_at(where) is None
+        )
 
     def children(self, directory: str) -> list[str]:
         """The links standing directly in a directory, as virtual paths.
@@ -154,8 +160,9 @@ class LinkDoor:
         Args:
             virtual (str): the directory's virtual path, on any mount.
         """
-        entries, _ = await self.dispatch("readdir",
-                                         PathSpec.from_str_path(virtual))
+        entries, _ = await self.dispatch(
+            "readdir", PathSpec.from_str_path(virtual)
+        )
         return list(entries)
 
     async def lstat(self, path: PathSpec) -> FileStat:
@@ -184,9 +191,9 @@ class LinkDoor:
             virtual (str): the file's virtual path.
             data (bytes): its whole content.
         """
-        await self.dispatch("write",
-                            PathSpec.from_str_path(virtual),
-                            data=data)
+        await self.dispatch(
+            "write", PathSpec.from_str_path(virtual), data=data
+        )
 
     async def unlink(self, virtual: str) -> None:
         """Remove the name itself, a link rather than what it leads to.

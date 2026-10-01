@@ -11,10 +11,12 @@ from mirage.utils.key_prefix import mount_key
 
 
 def _spec(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path,
+        resolved=True,
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -43,9 +45,9 @@ def _make_backend(files: dict[str, bytes]):
 
 
 async def _stat_file(path) -> FileStat:
-    return FileStat(name=path.virtual,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT)
+    return FileStat(
+        name=path.virtual, type=FileType.FILE, content=ContentType.TEXT
+    )
 
 
 @pytest.mark.asyncio
@@ -70,7 +72,8 @@ async def test_tsort_odd_tokens():
     out, io = await tsort([_spec("deps")], read_bytes=rb)
     assert out is None
     assert io.stderr == (
-        b"tsort: deps: input contains an odd number of tokens\n")
+        b"tsort: deps: input contains an odd number of tokens\n"
+    )
     assert io.exit_code == 1
 
 
@@ -84,10 +87,9 @@ async def test_tsort_stdin():
 @pytest.mark.asyncio
 async def test_jq_simple_object():
     rb, _, rs, _, _ = _make_backend({"a.json": b'{"name":"alice","age":30}'})
-    source, _ = await jq([_spec("a.json")],
-                         ".name",
-                         read_bytes=rb,
-                         read_stream=rs)
+    source, _ = await jq(
+        [_spec("a.json")], ".name", read_bytes=rb, read_stream=rs
+    )
     out = await materialize(source)
     assert b'"alice"' in out
 
@@ -95,11 +97,13 @@ async def test_jq_simple_object():
 @pytest.mark.asyncio
 async def test_jq_raw_output():
     rb, _, rs, _, _ = _make_backend({"a.json": b'{"name":"alice"}'})
-    source, _ = await jq([_spec("a.json")],
-                         ".name",
-                         read_bytes=rb,
-                         read_stream=rs,
-                         raw_output=True)
+    source, _ = await jq(
+        [_spec("a.json")],
+        ".name",
+        read_bytes=rb,
+        read_stream=rs,
+        raw_output=True,
+    )
     out = await materialize(source)
     assert b"alice" in out
     assert b'"' not in out
@@ -108,11 +112,9 @@ async def test_jq_raw_output():
 @pytest.mark.asyncio
 async def test_jq_stdin():
     rb, _, rs, _, _ = _make_backend({})
-    source, _ = await jq([],
-                         ".x",
-                         read_bytes=rb,
-                         read_stream=rs,
-                         stdin=b'{"x":42}')
+    source, _ = await jq(
+        [], ".x", read_bytes=rb, read_stream=rs, stdin=b'{"x":42}'
+    )
     out = await materialize(source)
     assert b"42" in out
 
@@ -143,15 +145,15 @@ async def test_jq_no_input():
 async def test_unzip_extracts():
     import io as _io
     import zipfile
+
     buf = _io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("a.txt", b"hello")
         zf.writestr("sub/b.txt", b"world")
     rb, wb, _, mk, store = _make_backend({"a.zip": buf.getvalue()})
-    out, io_res = await unzip([_spec("a.zip")],
-                              read_bytes=rb,
-                              write_bytes=wb,
-                              mkdir_fn=mk)
+    out, io_res = await unzip(
+        [_spec("a.zip")], read_bytes=rb, write_bytes=wb, mkdir_fn=mk
+    )
     assert b"inflating" in out
     assert "/a.txt" in io_res.writes
     assert "/sub/b.txt" in io_res.writes
@@ -161,15 +163,18 @@ async def test_unzip_extracts():
 async def test_unzip_list():
     import io as _io
     import zipfile
+
     buf = _io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("file.txt", b"data")
     rb, wb, _, mk, _ = _make_backend({"a.zip": buf.getvalue()})
-    out, _ = await unzip([_spec("a.zip")],
-                         read_bytes=rb,
-                         write_bytes=wb,
-                         mkdir_fn=mk,
-                         args_l=True)
+    out, _ = await unzip(
+        [_spec("a.zip")],
+        read_bytes=rb,
+        write_bytes=wb,
+        mkdir_fn=mk,
+        args_l=True,
+    )
     assert b"file.txt" in out
 
 
@@ -177,15 +182,14 @@ async def test_unzip_list():
 async def test_unzip_test_mode():
     import io as _io
     import zipfile
+
     buf = _io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("ok.txt", b"x")
     rb, wb, _, mk, _ = _make_backend({"a.zip": buf.getvalue()})
-    out, _ = await unzip([_spec("a.zip")],
-                         read_bytes=rb,
-                         write_bytes=wb,
-                         mkdir_fn=mk,
-                         t=True)
+    out, _ = await unzip(
+        [_spec("a.zip")], read_bytes=rb, write_bytes=wb, mkdir_fn=mk, t=True
+    )
     assert b"No errors" in out
 
 
@@ -193,15 +197,14 @@ async def test_unzip_test_mode():
 async def test_unzip_pipe_mode():
     import io as _io
     import zipfile
+
     buf = _io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("a.txt", b"hello")
     rb, wb, _, mk, _ = _make_backend({"a.zip": buf.getvalue()})
-    out, _ = await unzip([_spec("a.zip")],
-                         read_bytes=rb,
-                         write_bytes=wb,
-                         mkdir_fn=mk,
-                         p=True)
+    out, _ = await unzip(
+        [_spec("a.zip")], read_bytes=rb, write_bytes=wb, mkdir_fn=mk, p=True
+    )
     assert out == b"hello"
 
 
@@ -212,10 +215,12 @@ async def test_diff_identical_files():
     async def rd(path):
         return []
 
-    out, io_res = await diff([_spec("a"), _spec("b")],
-                             read_bytes=rb,
-                             readdir_fn=rd,
-                             stat_fn=_stat_file)
+    out, io_res = await diff(
+        [_spec("a"), _spec("b")],
+        read_bytes=rb,
+        readdir_fn=rd,
+        stat_fn=_stat_file,
+    )
     assert out == b""
     assert io_res.exit_code == 0
 
@@ -227,30 +232,33 @@ async def test_diff_quiet_differ():
     async def rd(path):
         return []
 
-    out, io_res = await diff([_spec("a"), _spec("b")],
-                             read_bytes=rb,
-                             readdir_fn=rd,
-                             stat_fn=_stat_file,
-                             q=True)
+    out, io_res = await diff(
+        [_spec("a"), _spec("b")],
+        read_bytes=rb,
+        readdir_fn=rd,
+        stat_fn=_stat_file,
+        q=True,
+    )
     assert b"differ" in out
     assert io_res.exit_code == 1
 
 
 @pytest.mark.asyncio
 async def test_diff_unified():
-    rb, _, _, _, _ = _make_backend({
-        "a": b"hello\nworld\n",
-        "b": b"hello\nuniverse\n"
-    })
+    rb, _, _, _, _ = _make_backend(
+        {"a": b"hello\nworld\n", "b": b"hello\nuniverse\n"}
+    )
 
     async def rd(path):
         return []
 
-    out, _ = await diff([_spec("a"), _spec("b")],
-                        read_bytes=rb,
-                        readdir_fn=rd,
-                        stat_fn=_stat_file,
-                        u=True)
+    out, _ = await diff(
+        [_spec("a"), _spec("b")],
+        read_bytes=rb,
+        readdir_fn=rd,
+        stat_fn=_stat_file,
+        u=True,
+    )
     assert b"-world" in out
     assert b"+universe" in out
 
@@ -263,39 +271,41 @@ async def test_diff_too_few_paths():
         return []
 
     with pytest.raises(ValueError, match="^diff: missing operand after "):
-        await diff([_spec("a")],
-                   read_bytes=rb,
-                   readdir_fn=rd,
-                   stat_fn=_stat_file)
+        await diff(
+            [_spec("a")], read_bytes=rb, readdir_fn=rd, stat_fn=_stat_file
+        )
 
 
 @pytest.mark.asyncio
 async def test_patch_apply():
-    diff_text = (b"--- a/hello.txt\n+++ b/hello.txt\n@@ -1,2 +1,2 @@\n"
-                 b" hello\n-world\n+universe\n")
+    diff_text = (
+        b"--- a/hello.txt\n+++ b/hello.txt\n@@ -1,2 +1,2 @@\n"
+        b" hello\n-world\n+universe\n"
+    )
     rb, wb, _, _, store = _make_backend({"/hello.txt": b"hello\nworld\n"})
-    _, io_res = await patch([],
-                            read_bytes=rb,
-                            write_bytes=wb,
-                            has_vfs=True,
-                            stdin=diff_text,
-                            p="1")
+    _, io_res = await patch(
+        [], read_bytes=rb, write_bytes=wb, has_vfs=True, stdin=diff_text, p="1"
+    )
     assert b"universe" in store["/hello.txt"]
     assert "/hello.txt" in io_res.writes
 
 
 @pytest.mark.asyncio
 async def test_patch_reverse():
-    diff_text = (b"--- a/x.txt\n+++ b/x.txt\n@@ -1,2 +1,2 @@\n"
-                 b" hello\n-world\n+universe\n")
+    diff_text = (
+        b"--- a/x.txt\n+++ b/x.txt\n@@ -1,2 +1,2 @@\n"
+        b" hello\n-world\n+universe\n"
+    )
     rb, wb, _, _, store = _make_backend({"/x.txt": b"hello\nuniverse\n"})
-    await patch([],
-                read_bytes=rb,
-                write_bytes=wb,
-                has_vfs=True,
-                stdin=diff_text,
-                R=True,
-                p="1")
+    await patch(
+        [],
+        read_bytes=rb,
+        write_bytes=wb,
+        has_vfs=True,
+        stdin=diff_text,
+        R=True,
+        p="1",
+    )
     assert b"world" in store["/x.txt"]
 
 

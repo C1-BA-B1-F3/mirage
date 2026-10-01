@@ -18,7 +18,7 @@ from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.find_eval import PredNode, start_basename
 from mirage.core.msgraph.drive import find_items
-from mirage.core.onedrive.client import drive_loc, split_path
+from mirage.core.onedrive.client import drive_loc
 from mirage.core.onedrive.stat import stat
 from mirage.types import FileType, PathSpec
 
@@ -50,21 +50,22 @@ async def find(
     tree: PredNode | None = None,
     index: IndexCacheStore = NULL_INDEX,
 ) -> list[str]:
-    _, base = split_path(path)
-    return await find_items(accessor.config,
-                            drive_loc(accessor.config, base),
-                            start_basename(path),
-                            partial(_dir_exists, accessor, path),
-                            name=name,
-                            type=type,
-                            min_size=min_size,
-                            max_size=max_size,
-                            maxdepth=maxdepth,
-                            name_exclude=name_exclude,
-                            or_names=or_names,
-                            iname=iname,
-                            path_pattern=path_pattern,
-                            mindepth=mindepth,
-                            empty=empty,
-                            tree=tree,
-                            session=accessor.pool)
+    return await find_items(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        start_basename(path),
+        partial(_dir_exists, accessor, path),
+        name=name,
+        type=type,
+        min_size=min_size,
+        max_size=max_size,
+        maxdepth=maxdepth,
+        name_exclude=name_exclude,
+        or_names=or_names,
+        iname=iname,
+        path_pattern=path_pattern,
+        mindepth=mindepth,
+        empty=empty,
+        tree=tree,
+        session=accessor.pool,
+    )

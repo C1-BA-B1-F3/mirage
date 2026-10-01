@@ -27,8 +27,11 @@ from mirage.types import FileStat, FileType, PathSpec
 async def _readdir(_accessor, path, _index):
     if path.virtual == "/db/sealed":
         raise PermissionError(13, "Permission denied", path.virtual)
-    return ["/db/a", "/db/empty", "/db/sealed", "/db/walled"
-            ] if path.virtual == "/db" else []
+    return (
+        ["/db/a", "/db/empty", "/db/sealed", "/db/walled"]
+        if path.virtual == "/db"
+        else []
+    )
 
 
 async def _stat(_accessor, path, _index):
@@ -37,7 +40,8 @@ async def _stat(_accessor, path, _index):
     return FileStat(
         name=path.virtual,
         type=FileType.FILE if path.virtual == "/db/a" else FileType.DIRECTORY,
-        size=3 if path.virtual == "/db/a" else None)
+        size=3 if path.virtual == "/db/a" else None,
+    )
 
 
 async def _resolve(_accessor, paths, _index):
@@ -46,21 +50,29 @@ async def _resolve(_accessor, paths, _index):
 
 @pytest.mark.asyncio
 async def test_truncated_du_preserves_directory_rows_and_permission_errors(
-        monkeypatch):
-    ops = CommandIO(readdir=_readdir,
-                    stat=_stat,
-                    read_bytes=AsyncMock(),
-                    read_stream=AsyncMock(),
-                    is_mounted=lambda _: True)
+    monkeypatch,
+):
+    ops = CommandIO(
+        readdir=_readdir,
+        stat=_stat,
+        read_bytes=AsyncMock(),
+        read_stream=AsyncMock(),
+        is_mounted=lambda _: True,
+    )
     monkeypatch.setitem(du.__wrapped__.__globals__, "IO", ops)
     monkeypatch.setitem(du.__wrapped__.__globals__, "ensure_tree", AsyncMock())
     monkeypatch.setitem(du.__wrapped__.__globals__, "resolve_glob", _resolve)
-    stream, io = await du.__wrapped__(SimpleNamespace(truncated=True),
-                                      [PathSpec.from_str_path("/db")], [],
-                                      CommandOpts())
-    assert (await materialize(stream)
-            ).decode() == "0\t/db/empty\n0\t/db/sealed\n3\t/db\n"
+    stream, io = await du.__wrapped__(
+        SimpleNamespace(truncated=True),
+        [PathSpec.from_str_path("/db")],
+        [],
+        CommandOpts(),
+    )
+    assert (
+        await materialize(stream)
+    ).decode() == "0\t/db/empty\n0\t/db/sealed\n3\t/db\n"
     assert io.exit_code == 1
     assert await io.stderr_str() == (
         "du: cannot read directory '/db/sealed': Permission denied\n"
-        "du: cannot read directory '/db/walled': Permission denied\n")
+        "du: cannot read directory '/db/walled': Permission denied\n"
+    )

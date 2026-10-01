@@ -18,8 +18,11 @@ from collections.abc import Sequence
 from dulwich.config import ConfigFile
 
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BadConfigValueError, GitError, UnrecognizedArgumentError)
+from mirage.commands.cli.builtin.git.errors import (
+    BadConfigValueError,
+    GitError,
+    UnrecognizedArgumentError,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -34,15 +37,18 @@ TRUE_WORDS = (b"true", b"yes", b"on")
 FALSE_WORDS = (b"false", b"no", b"off", b"")
 # git_parse_signed: strtoimax in base 0 after C-locale space, then at most
 # one unit, and the product has to fit an int.
-INTEGER = re.compile(rb"[ \t\n\v\f\r]*([-+]?)"
-                     rb"(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)")
+INTEGER = re.compile(
+    rb"[ \t\n\v\f\r]*([-+]?)"
+    rb"(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)"
+)
 UNIT_SHIFTS = {b"": 0, b"k": 10, b"m": 20, b"g": 30}
 INT_BITS = 31
 VALUE_ESCAPES = {"\n": "\\n", "\t": "\\t", '"': '\\"', "\\": "\\\\"}
 COMMENT_STARTS = (";", "#")
 COMMENT_BYTES = (b";", b"#")
 QUOTED_HEADER = re.compile(
-    rb'\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]')
+    rb'\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]'
+)
 DOTTED_HEADER = re.compile(rb"\s*\[([A-Za-z0-9-]+)\.([^\]\s]*)\]")
 ESCAPED = re.compile(rb"\\(.)")
 
@@ -125,7 +131,7 @@ def escaped(argv: tuple[str, ...]) -> frozenset[str]:
     """
     if MARKER not in argv:
         return frozenset()
-    return frozenset(argv[argv.index(MARKER) + 1:])
+    return frozenset(argv[argv.index(MARKER) + 1 :])
 
 
 def switches(inv: CLIInvocation[None]) -> frozenset[str]:
@@ -140,8 +146,11 @@ def switches(inv: CLIInvocation[None]) -> frozenset[str]:
     """
     if inv.spec is None:
         return frozenset()
-    return frozenset(option.short[1:] for option in inv.spec.options
-                     if option.short is not None and len(option.short) == 2)
+    return frozenset(
+        option.short[1:]
+        for option in inv.spec.options
+        if option.short is not None and len(option.short) == 2
+    )
 
 
 def offending_switch(text: str, known: frozenset[str] | None) -> str:
@@ -270,8 +279,9 @@ def git_bool(values: Sequence[bytes], key: str, default: bool) -> bool:
     return answer
 
 
-def multivar(config: ConfigFile, section: tuple[bytes, ...],
-             name: bytes) -> list[bytes]:
+def multivar(
+    config: ConfigFile, section: tuple[bytes, ...], name: bytes
+) -> list[bytes]:
     """Every value of one variable, empty when it is not set.
 
     Args:
@@ -285,8 +295,9 @@ def multivar(config: ConfigFile, section: tuple[bytes, ...],
         return []
 
 
-def config_section(section: str, name: str,
-                   pairs: Sequence[tuple[str, str]]) -> str:
+def config_section(
+    section: str, name: str, pairs: Sequence[tuple[str, str]]
+) -> str:
     """One ``[section "name"]`` block the way git's config writer spells it.
 
     The subsection escapes ``"`` and ``\\``; a value escapes those plus
@@ -304,8 +315,11 @@ def config_section(section: str, name: str,
     text = f'[{section} "{quoted}"]\n'
     for key, value in pairs:
         body = "".join(VALUE_ESCAPES.get(ch, ch) for ch in value)
-        if value.startswith(" ") or value.endswith(" ") or any(
-                ch in value for ch in COMMENT_STARTS):
+        if (
+            value.startswith(" ")
+            or value.endswith(" ")
+            or any(ch in value for ch in COMMENT_STARTS)
+        ):
             body = f'"{body}"'
         text += f"\t{key} = {body}\n"
     return text
@@ -343,13 +357,13 @@ def without_section(data: bytes, section: str, name: str) -> bytes:
             if line.lstrip().startswith(b"["):
                 quoted = QUOTED_HEADER.match(line)
                 dotted = DOTTED_HEADER.match(line)
-                dropping = (quoted is not None and
-                            (quoted.group(1),
-                             ESCAPED.sub(rb"\1", quoted.group(2)))
-                            == want) or (dotted is not None
-                                         and dotted.groups() == want)
+                dropping = (
+                    quoted is not None
+                    and (quoted.group(1), ESCAPED.sub(rb"\1", quoted.group(2)))
+                    == want
+                ) or (dotted is not None and dotted.groups() == want)
                 header = quoted or dotted
-                rest = line[header.end() if header else line.find(b"]") + 1:]
+                rest = line[header.end() if header else line.find(b"]") + 1 :]
             _, equals, value = rest.partition(b"=")
             if not equals or rest.lstrip().startswith(COMMENT_BYTES):
                 value = b""
@@ -375,7 +389,7 @@ def _continues(value: bytes, inside: bool) -> tuple[bool, bool]:
     body = value.removesuffix(b"\n").removesuffix(b"\r")
     at = 0
     while at < len(body):
-        ch = body[at:at + 1]
+        ch = body[at : at + 1]
         if ch == b"\\":
             if at == len(body) - 1:
                 return True, inside

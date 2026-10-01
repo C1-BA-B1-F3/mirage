@@ -22,16 +22,14 @@ from mirage.ops import Ops
 from mirage.ops.file import MirageFile
 from mirage.ops.host_io import in_host_io
 
-OpenPath: TypeAlias = (str | bytes | int | os.PathLike[str]
-                       | os.PathLike[bytes])
+OpenPath: TypeAlias = str | bytes | int | os.PathLike[str] | os.PathLike[bytes]
 OpenResult: TypeAlias = IO[str] | IO[bytes] | MirageFile
 
 
 class MountedOpen:
-
-    def __init__(self,
-                 ops: Ops,
-                 loop: asyncio.AbstractEventLoop | None = None) -> None:
+    def __init__(
+        self, ops: Ops, loop: asyncio.AbstractEventLoop | None = None
+    ) -> None:
         self._ops = ops
         self._loop = loop
         self._original = builtins.open
@@ -52,8 +50,11 @@ class MountedOpen:
         # on a disk mount rooted at its own prefix is spelled exactly
         # like the virtual one; routing it would hand the read back to
         # the backend doing it (see ops/host_io.py).
-        if (isinstance(path, str) and not in_host_io()
-                and self._ops.is_mounted(path)):
+        if (
+            isinstance(path, str)
+            and not in_host_io()
+            and self._ops.is_mounted(path)
+        ):
             if not closefd:
                 raise ValueError("Cannot use closefd=False with file name")
             if opener is not None:
@@ -73,12 +74,22 @@ class MountedOpen:
             )
         return cast(
             IO[str] | IO[bytes],
-            self._original(file, mode, buffering, encoding, errors, newline,
-                           closefd, opener))
+            self._original(
+                file,
+                mode,
+                buffering,
+                encoding,
+                errors,
+                newline,
+                closefd,
+                opener,
+            ),
+        )
 
 
-def make_open(ops: Ops,
-              loop: asyncio.AbstractEventLoop | None = None) -> MountedOpen:
+def make_open(
+    ops: Ops, loop: asyncio.AbstractEventLoop | None = None
+) -> MountedOpen:
     """Create a patched open() that routes mounted paths through ops.
 
     Args:

@@ -28,6 +28,7 @@ class RepoEditField:
         short (str | None): Optional short spelling.
         choices (tuple[str, ...]): Allowed explicit values.
     """
+
     flag: str
     field: str
     kind: Literal["value", "toggle", "security"]

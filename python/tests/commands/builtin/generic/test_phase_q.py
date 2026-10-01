@@ -1,16 +1,14 @@
 import pytest
 
-from mirage.commands.builtin.generic.join import join_cmd
 from mirage.commands.builtin.generic.split import parse_chunks_value, split
 from mirage.commands.builtin.generic.tee import tee
 from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -38,11 +36,13 @@ def _make_backend(files: dict[str, bytes]):
 @pytest.mark.asyncio
 async def test_split_by_lines_default():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"a\nb\nc\nd\ne\n",
-                        lines_per_file=2)
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"a\nb\nc\nd\ne\n",
+        lines_per_file=2,
+    )
     assert len(io.writes) == 3
     assert b"a\nb\n" in io.writes["/xaa"]
     assert b"c\nd\n" in io.writes["/xab"]
@@ -51,11 +51,9 @@ async def test_split_by_lines_default():
 @pytest.mark.asyncio
 async def test_split_by_bytes():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"abcdefghij",
-                        byte_limit=4)
+    _, io = await split(
+        [], read_stream=rs, write_bytes=wb, stdin=b"abcdefghij", byte_limit=4
+    )
     assert io.writes["/xaa"] == b"abcd"
     assert io.writes["/xab"] == b"efgh"
     assert io.writes["/xac"] == b"ij"
@@ -64,81 +62,41 @@ async def test_split_by_bytes():
 @pytest.mark.asyncio
 async def test_split_n_chunks():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"aaaabbbbcc",
-                        chunks=parse_chunks_value("3"))
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"aaaabbbbcc",
+        chunks=parse_chunks_value("3"),
+    )
     assert len(io.writes) == 3
 
 
 @pytest.mark.asyncio
 async def test_split_numeric_suffix():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"a\nb\n",
-                        lines_per_file=1,
-                        numeric_suffix=True)
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"a\nb\n",
+        lines_per_file=1,
+        numeric_suffix=True,
+    )
     assert "/x00" in io.writes
     assert "/x01" in io.writes
 
 
 @pytest.mark.asyncio
-async def test_join_basic_inner_join():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1 alpha\n2 beta\n3 gamma\n",
-        "/b.txt": b"1 x\n2 y\n4 z\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
-    decoded = output.decode()
-    assert "1 alpha x" in decoded
-    assert "2 beta y" in decoded
-    assert "3" not in decoded.split("\n")[0]
-    assert "4" not in decoded
-
-
-@pytest.mark.asyncio
-async def test_join_requires_two_paths():
-    rb, _, _, _ = _make_backend({"/a.txt": b"x"})
-    with pytest.raises(ValueError, match="^join: missing operand after "):
-        await join_cmd([_spec("/a.txt")], read_bytes=rb)
-
-
-@pytest.mark.asyncio
-async def test_join_custom_separator():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1,alpha\n2,beta\n",
-        "/b.txt": b"1,x\n2,y\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, separator=",")
-    decoded = output.decode()
-    assert "1,alpha,x" in decoded
-
-
-@pytest.mark.asyncio
-async def test_join_outer_via_a_flag():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"1 alpha\n2 beta\n3 gamma\n",
-        "/b.txt": b"1 x\n",
-    })
-    output, _ = await join_cmd(
-        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, also_unpairable="1")
-    decoded = output.decode()
-    assert "2 beta" in decoded
-    assert "3 gamma" in decoded
-
-
-@pytest.mark.asyncio
 async def test_tee_writes_to_file_and_passes_through():
     _, wb, rs, store = _make_backend({})
-    output, io = await tee([_spec("/out.txt")], (),
-                           read_stream=rs,
-                           write_bytes=wb,
-                           stdin=b"hello tee")
+    output, io = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"hello tee",
+    )
     assert output == b"hello tee"
     assert store["/out.txt"] == b"hello tee"
     assert io.writes == {"/out.txt": b"hello tee"}
@@ -147,11 +105,14 @@ async def test_tee_writes_to_file_and_passes_through():
 @pytest.mark.asyncio
 async def test_tee_append_concatenates():
     _, wb, rs, store = _make_backend({"/out.txt": b"existing\n"})
-    output, _ = await tee([_spec("/out.txt")], (),
-                          read_stream=rs,
-                          write_bytes=wb,
-                          stdin=b"new",
-                          flags={"append": True})
+    output, _ = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"new",
+        flags={"append": True},
+    )
     assert store["/out.txt"] == b"existing\nnew"
     assert output == b"new"
 
@@ -159,9 +120,8 @@ async def test_tee_append_concatenates():
 @pytest.mark.asyncio
 async def test_tee_without_a_path_copies_stdin():
     _, wb, rs, store = _make_backend({})
-    output, io = await tee([], (),
-                           read_stream=rs,
-                           write_bytes=wb,
-                           stdin=b"data")
+    output, io = await tee(
+        [], (), read_stream=rs, write_bytes=wb, stdin=b"data"
+    )
     assert (output, io.exit_code) == (b"data", 0)
     assert store == {}

@@ -23,8 +23,13 @@ class ProcessResult:
 class ChildProcess:
     """Async byte streams and a control handle for one admitted execution."""
 
-    def __init__(self, process: ProcessHandle, stdin: ProcessInput,
-                 output: ProcessOutput, cancel: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        process: ProcessHandle,
+        stdin: ProcessInput,
+        output: ProcessOutput,
+        cancel: Callable[[], None],
+    ) -> None:
 
         def finished(_: asyncio.Task[int]) -> None:
             stdin.stop()
@@ -43,8 +48,9 @@ class ChildProcess:
         return self._process.info.pid
 
     def close_output(self, stream: Literal["stdout", "stderr"]) -> None:
-        (self._output.stdout
-         if stream == "stdout" else self._output.stderr).stop()
+        (
+            self._output.stdout if stream == "stdout" else self._output.stderr
+        ).stop()
 
     def poll(self) -> int | None:
         return self._process.info.exit_code
@@ -67,11 +73,16 @@ class ChildProcess:
 
         try:
             _, stdout, stderr, info = await asyncio.gather(
-                feed(), materialize(self.stdout), materialize(self.stderr),
-                self.wait())
+                feed(),
+                materialize(self.stdout),
+                materialize(self.stderr),
+                self.wait(),
+            )
             return ProcessResult(
-                stdout, stderr,
-                info.exit_code if info.exit_code is not None else 1)
+                stdout,
+                stderr,
+                info.exit_code if info.exit_code is not None else 1,
+            )
         except BaseException:
             self.terminate()
             raise

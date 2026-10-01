@@ -1,13 +1,19 @@
-from mirage.commands.builtin.grep_select import (FileGlob, WalkFilters,
-                                                 file_admitted,
-                                                 parse_file_globs)
+from mirage.commands.builtin.grep_select import (
+    FileGlob,
+    WalkFilters,
+    file_admitted,
+    parse_file_globs,
+)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 
 
 def _rules(*pairs: tuple[str, bool]) -> WalkFilters:
-    return WalkFilters(file_globs=tuple(
-        FileGlob(glob=glob, admit=admit) for glob, admit in pairs))
+    return WalkFilters(
+        file_globs=tuple(
+            FileGlob(glob=glob, admit=admit) for glob, admit in pairs
+        )
+    )
 
 
 def test_file_admitted_resolves_rules_in_line_order():
@@ -32,20 +38,16 @@ def test_file_admitted_empty_rules_admit_everything():
 
 
 def test_parse_file_globs_reads_dests_in_typed_order():
-    exc_first = FlagView({
-        "exclude": ["notes.*"],
-        "include": ["*.tex"]
-    },
-                         spec=SPECS["grep"])
+    exc_first = FlagView(
+        {"exclude": ["notes.*"], "include": ["*.tex"]}, spec=SPECS["grep"]
+    )
     assert parse_file_globs(exc_first) == (
         FileGlob(glob="notes.*", admit=False),
         FileGlob(glob="*.tex", admit=True),
     )
-    inc_first = FlagView({
-        "include": ["*.tex"],
-        "exclude": ["notes.*"]
-    },
-                         spec=SPECS["grep"])
+    inc_first = FlagView(
+        {"include": ["*.tex"], "exclude": ["notes.*"]}, spec=SPECS["grep"]
+    )
     assert parse_file_globs(inc_first) == (
         FileGlob(glob="*.tex", admit=True),
         FileGlob(glob="notes.*", admit=False),

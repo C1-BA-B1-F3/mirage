@@ -10,21 +10,33 @@ from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
 _TREE = [
-    ("reports/a.txt", {
-        "name": "a.txt",
-        "size": 10,
-        "lastModifiedDateTime": "2026-07-15T12:00:00Z"
-    }, False),
-    ("reports/sub", {
-        "name": "sub",
-        "lastModifiedDateTime": "2026-07-14T12:00:00Z",
-        "folder": {}
-    }, True),
-    ("reports/sub/b.txt", {
-        "name": "b.txt",
-        "size": 20,
-        "lastModifiedDateTime": "2026-07-13T12:00:00Z"
-    }, False),
+    (
+        "reports/a.txt",
+        {
+            "name": "a.txt",
+            "size": 10,
+            "lastModifiedDateTime": "2026-07-15T12:00:00Z",
+        },
+        False,
+    ),
+    (
+        "reports/sub",
+        {
+            "name": "sub",
+            "lastModifiedDateTime": "2026-07-14T12:00:00Z",
+            "folder": {},
+        },
+        True,
+    ),
+    (
+        "reports/sub/b.txt",
+        {
+            "name": "b.txt",
+            "size": 20,
+            "lastModifiedDateTime": "2026-07-13T12:00:00Z",
+        },
+        False,
+    ),
 ]
 
 
@@ -44,9 +56,11 @@ def _patched(monkeypatch):
 
 
 def _spec() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/sp/reports", "/sp"),
-                    virtual="/sp/reports",
-                    directory="/sp/reports")
+    return PathSpec(
+        vfs_path=mount_key("/sp/reports", "/sp"),
+        virtual="/sp/reports",
+        directory="/sp/reports",
+    )
 
 
 @pytest.mark.asyncio
@@ -54,7 +68,10 @@ async def test_find_emits_mount_root(_patched):
     acc = SimpleNamespace(config=None, pool=SessionPool())
     out = await find_mod.find(acc, _spec())
     assert out == [
-        "/reports", "/reports/a.txt", "/reports/sub", "/reports/sub/b.txt"
+        "/reports",
+        "/reports/a.txt",
+        "/reports/sub",
+        "/reports/sub/b.txt",
     ]
 
 
@@ -80,16 +97,8 @@ async def test_find_maxdepth_one(_patched):
 
 
 _LIB_TREE = [
-    ("Team/Documents/a.txt", {
-        "name": "a.txt",
-        "size": 10
-    }, False),
-    ("Team/Documents/sub", {
-        "name": "sub",
-        "folder": {
-            "childCount": 0
-        }
-    }, True),
+    ("Team/Documents/a.txt", {"name": "a.txt", "size": 10}, False),
+    ("Team/Documents/sub", {"name": "sub", "folder": {"childCount": 0}}, True),
 ]
 
 
@@ -125,16 +134,20 @@ def _root_spec() -> PathSpec:
 
 
 def _site_spec() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/sp/Team", "/sp"),
-                    virtual="/sp/Team",
-                    directory="/sp/Team")
+    return PathSpec(
+        vfs_path=mount_key("/sp/Team", "/sp"),
+        virtual="/sp/Team",
+        directory="/sp/Team",
+    )
 
 
 @pytest.mark.asyncio
 async def test_find_unscoped_root_walks_sites_and_libraries(
-        _unscoped, monkeypatch):
-    monkeypatch.setattr(find_mod, "resolve",
-                        lambda accessor, path: _resolved("root", None))
+    _unscoped, monkeypatch
+):
+    monkeypatch.setattr(
+        find_mod, "resolve", lambda accessor, path: _resolved("root", None)
+    )
     acc = SimpleNamespace(config=None, pool=SessionPool())
     out = await find_mod.find(acc, _root_spec())
     assert out == [
@@ -148,9 +161,11 @@ async def test_find_unscoped_root_walks_sites_and_libraries(
 
 @pytest.mark.asyncio
 async def test_find_unscoped_root_maxdepth_stops_at_sites(
-        _unscoped, monkeypatch):
-    monkeypatch.setattr(find_mod, "resolve",
-                        lambda accessor, path: _resolved("root", None))
+    _unscoped, monkeypatch
+):
+    monkeypatch.setattr(
+        find_mod, "resolve", lambda accessor, path: _resolved("root", None)
+    )
     acc = SimpleNamespace(config=None, pool=SessionPool())
     out = await find_mod.find(acc, _root_spec(), maxdepth=1)
     assert out == ["/", "/Team"]
@@ -158,8 +173,9 @@ async def test_find_unscoped_root_maxdepth_stops_at_sites(
 
 @pytest.mark.asyncio
 async def test_find_unscoped_site_walks_libraries(_unscoped, monkeypatch):
-    monkeypatch.setattr(find_mod, "resolve",
-                        lambda accessor, path: _resolved("site", "s"))
+    monkeypatch.setattr(
+        find_mod, "resolve", lambda accessor, path: _resolved("site", "s")
+    )
     acc = SimpleNamespace(config=None, pool=SessionPool())
     out = await find_mod.find(acc, _site_spec(), type="f")
     assert out == ["/Team/Documents/a.txt"]

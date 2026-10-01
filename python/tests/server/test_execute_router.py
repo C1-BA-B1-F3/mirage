@@ -25,12 +25,7 @@ from mirage.server import build_app
 def _minimal_config() -> dict:
     return {
         "config": {
-            "mounts": {
-                "/": {
-                    "vfs": "ram",
-                    "mode": "WRITE"
-                }
-            },
+            "mounts": {"/": {"vfs": "ram", "mode": "WRITE"}},
         },
     }
 
@@ -45,8 +40,9 @@ async def _create_workspace(client: AsyncClient) -> str:
 async def test_execute_sync_returns_io_result():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
@@ -61,11 +57,28 @@ async def test_execute_sync_returns_io_result():
 
 
 @pytest.mark.asyncio
+async def test_execute_refuses_an_unknown_field():
+    app = build_app(idle_grace_seconds=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        wid = await _create_workspace(client)
+        r = await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={"command": "echo hello", "provision": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "provision" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_execute_honors_cwd():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
@@ -74,10 +87,7 @@ async def test_execute_honors_cwd():
         assert r.status_code == 200, r.text
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
-            json={
-                "command": "cat f.txt",
-                "cwd": "/sub"
-            },
+            json={"command": "cat f.txt", "cwd": "/sub"},
         )
         assert r.status_code == 200, r.text
         body = r.json()
@@ -89,17 +99,15 @@ async def test_execute_honors_cwd():
 async def test_execute_passes_runtime_through():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         # An unknown entry name fails loud inside Workspace.shell,
         # proving the field reaches the runtime argument.
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
-            json={
-                "command": "echo hi",
-                "runtime": "no-such-runtime"
-            },
+            json={"command": "echo hi", "runtime": "no-such-runtime"},
         )
         assert r.status_code == 500, r.text
         assert "unknown runtime" in r.json()["detail"]
@@ -109,8 +117,9 @@ async def test_execute_passes_runtime_through():
 async def test_execute_record_false_leaves_no_history_entry():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
@@ -119,10 +128,7 @@ async def test_execute_record_false_leaves_no_history_entry():
         assert r.status_code == 200, r.text
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
-            json={
-                "command": "echo hidden",
-                "record": False
-            },
+            json={"command": "echo hidden", "record": False},
         )
         assert r.status_code == 200, r.text
         r = await client.post(
@@ -139,8 +145,9 @@ async def test_execute_record_false_leaves_no_history_entry():
 async def test_execute_sync_records_a_job_in_done_state():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
@@ -159,8 +166,9 @@ async def test_execute_sync_records_a_job_in_done_state():
 async def test_execute_background_returns_job_id_immediately():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute?background=true",
@@ -176,8 +184,9 @@ async def test_execute_background_returns_job_id_immediately():
 async def test_background_job_completes_and_result_is_readable():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute?background=true",
@@ -194,16 +203,18 @@ async def test_background_job_completes_and_result_is_readable():
 async def test_wait_with_timeout_returns_running_status():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute?background=true",
             json={"command": "sleep 1.0"},
         )
         job_id = r.json()["job_id"]
-        rw = await client.post(f"/v1/jobs/{job_id}/wait",
-                               json={"timeout_s": 0.1})
+        rw = await client.post(
+            f"/v1/jobs/{job_id}/wait", json={"timeout_s": 0.1}
+        )
         assert rw.status_code == 200
         assert rw.json()["status"] == "running"
 
@@ -212,8 +223,9 @@ async def test_wait_with_timeout_returns_running_status():
 async def test_cancel_running_job():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute?background=true",
@@ -235,8 +247,9 @@ async def test_cancel_running_job():
 async def test_list_jobs_filtered_by_workspace():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid_a = await _create_workspace(client)
         wid_b = await _create_workspace(client)
         await client.post(
@@ -260,15 +273,19 @@ async def test_list_jobs_filtered_by_workspace():
 async def test_execute_with_stdin_multipart():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         r = await client.post(
             f"/v1/workspaces/{wid}/execute",
             data={"request": json.dumps({"command": "wc -l"})},
             files={
-                "stdin":
-                ("stdin.bin", b"a\nb\nc\n", "application/octet-stream"),
+                "stdin": (
+                    "stdin.bin",
+                    b"a\nb\nc\n",
+                    "application/octet-stream",
+                ),
             },
         )
         assert r.status_code == 200, r.text
@@ -283,38 +300,45 @@ async def test_execute_with_stdin_multipart():
 async def test_large_multipart_stdin_roundtrip(tmp_path, vfs, background):
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         mount = {"vfs": vfs, "mode": "WRITE"}
         if vfs == "disk":
             mount["config"] = {"root": str(tmp_path)}
         created = await client.post(
-            "/v1/workspaces", json={"config": {
-                "mounts": {
-                    "/work": mount
-                }
-            }})
+            "/v1/workspaces", json={"config": {"mounts": {"/work": mount}}}
+        )
         assert created.status_code == 201, created.text
         wid = created.json()["id"]
         try:
             for stdin in [("α\0\r\n" * 240_000).encode(), b""]:
-                payload = json.dumps({
-                    "command": "cat > input.bin",
-                    "cwd": "/work",
-                    "record": False
-                })
+                payload = json.dumps(
+                    {
+                        "command": "cat > input.bin",
+                        "cwd": "/work",
+                        "record": False,
+                    }
+                )
                 result = await client.post(
                     f"/v1/workspaces/{wid}/execute",
                     params={"background": str(background).lower()},
                     files={
-                        "request":
-                        ("request.json", payload, "application/json"),
-                        "stdin":
-                        ("stdin.bin", stdin, "application/octet-stream")
+                        "request": (
+                            "request.json",
+                            payload,
+                            "application/json",
+                        ),
+                        "stdin": (
+                            "stdin.bin",
+                            stdin,
+                            "application/octet-stream",
+                        ),
                     },
                 )
-                assert result.status_code == (202 if background else
-                                              200), result.text
+                assert result.status_code == (202 if background else 200), (
+                    result.text
+                )
                 if background:
                     job = result.json()["job_id"]
                     waited = await client.post(f"/v1/jobs/{job}/wait", json={})
@@ -323,7 +347,8 @@ async def test_large_multipart_stdin_roundtrip(tmp_path, vfs, background):
                     assert result.json()["exit_code"] == 0, result.text
                 read = await client.post(
                     f"/v1/workspaces/{wid}/execute",
-                    json={"command": "base64 /work/input.bin"})
+                    json={"command": "base64 /work/input.bin"},
+                )
                 assert read.status_code == 200, read.text
                 assert read.json()["exit_code"] == 0
                 assert base64.b64decode(read.json()["stdout"]) == stdin
@@ -335,8 +360,9 @@ async def test_large_multipart_stdin_roundtrip(tmp_path, vfs, background):
 async def test_unknown_workspace_404():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.post(
             "/v1/workspaces/ws_doesnotexist/execute",
             json={"command": "echo hi"},
@@ -348,7 +374,8 @@ async def test_unknown_workspace_404():
 async def test_unknown_job_404():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         r = await client.get("/v1/jobs/job_doesnotexist")
         assert r.status_code == 404

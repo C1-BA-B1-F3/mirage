@@ -55,9 +55,7 @@ def make_touch(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 writes[p.mount_path] = b""
         return None, IOResult(writes=writes)
 
-    wrapped: Callable[..., Any] = command("touch",
-                                          vfs=vfs,
-                                          spec=SPECS["touch"],
-                                          write=True,
-                                          path_guarded=True)(touch)
+    wrapped: Callable[..., Any] = command(
+        "touch", vfs=vfs, spec=SPECS["touch"], write=True, path_guarded=True
+    )(touch)
     return wrapped

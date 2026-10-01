@@ -12,8 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.shell.constants import (RANDOM_A, RANDOM_M, RANDOM_MAX, RANDOM_Q,
-                                    RANDOM_R, RANDOM_ZERO_SEED)
+from mirage.shell.constants import (
+    RANDOM_A,
+    RANDOM_M,
+    RANDOM_MAX,
+    RANDOM_Q,
+    RANDOM_R,
+    RANDOM_ZERO_SEED,
+)
 
 
 def step_state(state: int) -> int:

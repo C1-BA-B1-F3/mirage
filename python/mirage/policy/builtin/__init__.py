@@ -13,9 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.policy.builtin.mount_root import MountRootPolicy
-from mirage.policy.builtin.output_cap import (DEFAULT_COMMAND_LIMITS,
-                                              FALLBACK_LIMIT, OutputCapPolicy,
-                                              resolve_limit, resolve_producer)
+from mirage.policy.builtin.output_cap import (
+    DEFAULT_COMMAND_LIMITS,
+    FALLBACK_LIMIT,
+    OutputCapPolicy,
+    resolve_limit,
+    resolve_producer,
+)
 from mirage.policy.builtin.permissions import PermissionsPolicy
 
 __all__ = [

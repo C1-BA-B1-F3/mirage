@@ -22,22 +22,38 @@ from dulwich.repo import BaseRepo
 from mirage.commands.cli.builtin.git.add import stage_tracked
 from mirage.commands.cli.builtin.git.changes import head_entries
 from mirage.commands.cli.builtin.git.diff_output import commit_summary
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    AllWithPathsError, GitError, MissingMessageError, NothingToCommitError,
-    NoWorkspaceError, PartialCommitError, UnknownSwitchError,
-    UnmergedIndexError)
+from mirage.commands.cli.builtin.git.errors import (
+    AllWithPathsError,
+    GitError,
+    MissingMessageError,
+    NothingToCommitError,
+    NoWorkspaceError,
+    PartialCommitError,
+    UnknownSwitchError,
+    UnmergedIndexError,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.reflog import record
-from mirage.commands.cli.builtin.git.refs import (HEAD_REF, detach_head,
-                                                  read_head, write_ref)
+from mirage.commands.cli.builtin.git.refs import (
+    HEAD_REF,
+    detach_head,
+    read_head,
+    write_ref,
+)
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.status import render_report
 from mirage.commands.cli.builtin.git.summary import report
 from mirage.commands.cli.builtin.git.types import IndexState
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, start_point, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    start_point,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -87,15 +103,23 @@ def identity(fl: FlagView, session: SessionView | None = None) -> bytes:
         return author.encode()
     name = session.get(AUTHOR_NAME) if session is not None else None
     if name:
-        email = (session.get(AUTHOR_EMAIL)
-                 or session.get(FALLBACK_EMAIL)) if session else None
+        email = (
+            (session.get(AUTHOR_EMAIL) or session.get(FALLBACK_EMAIL))
+            if session
+            else None
+        )
         return f"{name} <{email or DEFAULT_EMAIL}>".encode()
     return f"{DEFAULT_NAME} <{DEFAULT_EMAIL}>".encode()
 
 
-def build_commit(repo: BaseRepo, state: IndexState, message: str,
-                 author: bytes, parents: list[ObjectID],
-                 when: int) -> tuple[Commit, dict[bytes, tuple[int, bytes]]]:
+def build_commit(
+    repo: BaseRepo,
+    state: IndexState,
+    message: str,
+    author: bytes,
+    parents: list[ObjectID],
+    when: int,
+) -> tuple[Commit, dict[bytes, tuple[int, bytes]]]:
     """Write the trees the index describes and the commit above them.
 
     Synchronous, and called on a worker thread: every tree written goes
@@ -111,8 +135,10 @@ def build_commit(repo: BaseRepo, state: IndexState, message: str,
         when (int): the commit timestamp, in epoch seconds.
     """
     store = repo.object_store
-    blobs = [(path, entry.sha, entry.mode)
-             for path, entry in sorted(state.entries.items())]
+    blobs = [
+        (path, entry.sha, entry.mode)
+        for path, entry in sorted(state.entries.items())
+    ]
     tree = commit_tree(store, blobs)
     commit = Commit()
     commit.tree = tree
@@ -127,13 +153,13 @@ def build_commit(repo: BaseRepo, state: IndexState, message: str,
     commit.message = message.encode() + b"\n"
     store.add_object(commit)
     return commit, {
-        path: (entry.mode, entry.sha)
-        for path, entry in state.entries.items()
+        path: (entry.mode, entry.sha) for path, entry in state.entries.items()
     }
 
 
 async def commit(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Record the index as a new commit on the current branch.
 
     The message must come from ``-m``: git would otherwise open an
@@ -160,12 +186,14 @@ async def commit(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(inv.texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            inv.texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         staging = fl.as_bool("all")
         if inv.texts:
             raise (AllWithPathsError if staging else PartialCommitError)(
-                inv.texts[0])
+                inv.texts[0]
+            )
         message = fl.as_str("message")
         if not message:
             raise MissingMessageError()
@@ -174,8 +202,9 @@ async def commit(
         if state.conflicts:
             raise UnmergedIndexError()
         if staging:
-            await stage_tracked(dispatch, stat_path, location, state,
-                                links_of(doors))
+            await stage_tracked(
+                dispatch, stat_path, location, state, links_of(doors)
+            )
         head = await read_head(dispatch, location.gitdir)
         before = await asyncio.to_thread(head_entries, repo)
         after = {
@@ -183,16 +212,23 @@ async def commit(
             for path, entry in state.entries.items()
         }
         if before is not None and before == after:
-            raise NothingToCommitError(await
-                                       render_report(dispatch, stat_path, repo,
-                                                     location, head,
-                                                     start_point(fl),
-                                                     links_of(doors)))
+            raise NothingToCommitError(
+                await render_report(
+                    dispatch,
+                    stat_path,
+                    repo,
+                    location,
+                    head,
+                    start_point(fl),
+                    links_of(doors),
+                )
+            )
         parents = [] if before is None else [repo.refs[HEAD_REF]]
         who = identity(fl, doors.session_view)
         when = int(time.time())
-        written, tree = await asyncio.to_thread(build_commit, repo, state,
-                                                message, who, parents, when)
+        written, tree = await asyncio.to_thread(
+            build_commit, repo, state, message, who, parents, when
+        )
         if head.ref is not None:
             await write_ref(dispatch, location.commondir, head.ref, written.id)
         else:
@@ -200,18 +236,28 @@ async def commit(
         if staging:
             await write_index(dispatch, location.gitdir, state)
         await record(
-            dispatch, location.gitdir, location.commondir, head.ref,
-            parents[0] if parents else None, written.id, who, when,
+            dispatch,
+            location.gitdir,
+            location.commondir,
+            head.ref,
+            parents[0] if parents else None,
+            written.id,
+            who,
+            when,
             f"commit{ROOT_NOTE if before is None else ''}: "
-            f"{message.splitlines()[0]}")
-        fully = await config_bool(dispatch, location, b"core", b"quotepath",
-                                  True)
-        changes = await asyncio.to_thread(commit_summary, repo, before or {},
-                                          tree, fully)
+            f"{message.splitlines()[0]}",
+        )
+        fully = await config_bool(
+            dispatch, location, b"core", b"quotepath", True
+        )
+        changes = await asyncio.to_thread(
+            commit_summary, repo, before or {}, tree, fully
+        )
     except GitError as exc:
         return fatal(exc)
     if fl.as_bool("quiet"):
         return None, IOResult()
-    body = report(written, head.branch, changes, abbrev_for(repo), before
-                  is None)
+    body = report(
+        written, head.branch, changes, abbrev_for(repo), before is None
+    )
     return yield_bytes(body), IOResult()

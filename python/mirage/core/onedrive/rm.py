@@ -14,15 +14,17 @@
 
 from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.onedrive.client import graph_delete, item_url, split_path
+from mirage.core.msgraph.client import graph_delete
+from mirage.core.onedrive.client import item_url
 from mirage.types import PathSpec
 
 
 async def rm_r(accessor: OneDriveAccessor, path: PathSpec) -> None:
-    _, stripped = split_path(path)
-    if not stripped:
+    if not path.vfs_path:
         return
-    await graph_delete(accessor.config,
-                       item_url(accessor.config, "/" + stripped),
-                       session=accessor.pool)
+    await graph_delete(
+        accessor.config,
+        item_url(accessor.config, path.vfs_path),
+        session=accessor.pool,
+    )
     await invalidate_subtree(path)

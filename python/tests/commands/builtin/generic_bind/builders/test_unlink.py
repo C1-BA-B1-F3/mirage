@@ -46,24 +46,29 @@ def _ops(removed: list[str] | None = None) -> CommandIO:
         removed.append(path.virtual)
 
     writes = {} if removed is None else {"unlink": remove}
-    return CommandIO(readdir=readdir,
-                     read_bytes=read_bytes,
-                     read_stream=read_bytes,
-                     stat=stat,
-                     is_mounted=lambda _a: True,
-                     **writes)
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=read_bytes,
+        read_stream=read_bytes,
+        stat=stat,
+        is_mounted=lambda _a: True,
+        **writes,
+    )
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"),
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path=virtual.lstrip("/"),
+        resolved=True,
+    )
 
 
 async def _unlink(ops: CommandIO, path: str) -> tuple[int, str]:
-    _, io = await unlink(ops, object(), [_spec(path)], [],
-                         CommandOpts(index=INDEX))
+    _, io = await unlink(
+        ops, object(), [_spec(path)], [], CommandOpts(index=INDEX)
+    )
     return io.exit_code, io.stderr.decode() if io.stderr else ""
 
 
@@ -77,10 +82,14 @@ async def test_unlink_stats_its_operand_through_the_index():
 @pytest.mark.asyncio
 async def test_unlink_reports_an_existing_file_it_cannot_remove():
     assert await _unlink(_ops(), "/m/a.txt") == (
-        1, "unlink: cannot unlink '/m/a.txt': Operation not supported\n")
+        1,
+        "unlink: cannot unlink '/m/a.txt': Operation not supported\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_unlink_reports_a_refused_stat():
     assert await _unlink(_ops(), "/m/locked/f.txt") == (
-        1, "unlink: cannot unlink '/m/locked/f.txt': Permission denied\n")
+        1,
+        "unlink: cannot unlink '/m/locked/f.txt': Permission denied\n",
+    )

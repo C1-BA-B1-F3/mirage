@@ -15,10 +15,12 @@
 from mirage.commands.builtin.generic.crossmount.types import Cmd
 
 
-def combined_exit(cmd_name: str,
-                  codes: list[int],
-                  errored: list[bool] | None = None,
-                  quiet: bool = False) -> int:
+def combined_exit(
+    cmd_name: str,
+    codes: list[int],
+    errored: list[bool] | None = None,
+    quiet: bool = False,
+) -> int:
     # grep-style: ``-q`` with a match exits 0 whatever else failed (GNU
     # grep and ripgrep both), then a usage error (2) dominates, then a
     # failed operand (a read error, seen as exit 1 with stderr) forces 1

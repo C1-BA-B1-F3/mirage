@@ -38,9 +38,14 @@ class WorkspaceMeta:
             stored pointer must not override it.
     """
 
-    def __init__(self, workspace_id: str, store: WorkspaceStateStore,
-                 sessions: SessionManager, default_session_id: str,
-                 session_id_explicit: bool) -> None:
+    def __init__(
+        self,
+        workspace_id: str,
+        store: WorkspaceStateStore,
+        sessions: SessionManager,
+        default_session_id: str,
+        session_id_explicit: bool,
+    ) -> None:
         self._workspace_id = workspace_id
         self._store = store
         self._sessions = sessions
@@ -71,12 +76,15 @@ class WorkspaceMeta:
         existing = await self._store.load_meta(self._workspace_id)
         if existing is None:
             created = await self._store.cas_set_meta(
-                self._workspace_id, {
+                self._workspace_id,
+                {
                     "workspace_id": self._workspace_id,
                     "default_session_id": self._default_session_id,
                     "created_at": time.time(),
                     "generation": 1,
-                }, 0)
+                },
+                0,
+            )
             if not created:
                 # Lost the create race: a sibling registered first and
                 # its record wins, like any other existing record.

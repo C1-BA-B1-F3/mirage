@@ -23,39 +23,52 @@ TOP_LEVEL_DIRS = ["traces", "sessions", "prompts", "datasets"]
 # search surface cannot disagree about what a path means (they used to
 # be two hand-maintained dispatch ladders).
 SCOPES = (
-    Scope(kind="traces", segments=("traces", ), probed=False),
-    Scope(kind="trace",
-          segments=("traces", Slot("trace_id", JSON_NAME)),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="sessions", segments=("sessions", ), probed=False),
+    Scope(kind="traces", segments=("traces",), probed=False),
+    Scope(
+        kind="trace",
+        segments=("traces", Slot("trace_id", JSON_NAME)),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="sessions", segments=("sessions",), probed=False),
     Scope(kind="session", segments=("sessions", Slot("session_id"))),
-    Scope(kind="session_trace",
-          segments=("sessions", Slot("session_id"),
-                    Slot("trace_id", JSON_NAME)),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="prompts", segments=("prompts", ), probed=False),
+    Scope(
+        kind="session_trace",
+        segments=("sessions", Slot("session_id"), Slot("trace_id", JSON_NAME)),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="prompts", segments=("prompts",), probed=False),
     Scope(kind="prompt", segments=("prompts", Slot("prompt_name"))),
     # A version that is not a plain ASCII integer cannot name a prompt
     # version, so it fails the scope match and reads as ENOENT instead
     # of an int() crash (python) or a digit-prefix guess (typescript).
-    Scope(kind="prompt_version",
-          segments=("prompts", Slot("prompt_name"), Slot("version", INT_JSON)),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="datasets", segments=("datasets", ), probed=False),
+    Scope(
+        kind="prompt_version",
+        segments=("prompts", Slot("prompt_name"), Slot("version", INT_JSON)),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="datasets", segments=("datasets",), probed=False),
     Scope(kind="dataset", segments=("datasets", Slot("dataset_name"))),
-    Scope(kind="dataset_items",
-          segments=("datasets", Slot("dataset_name"), "items.jsonl"),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="dataset_items",
+        segments=("datasets", Slot("dataset_name"), "items.jsonl"),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
     Scope(kind="runs", segments=("datasets", Slot("dataset_name"), "runs")),
-    Scope(kind="dataset_run",
-          segments=("datasets", Slot("dataset_name"), "runs",
-                    Slot("run_name", JSONL_NAME)),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="dataset_run",
+        segments=(
+            "datasets",
+            Slot("dataset_name"),
+            "runs",
+            Slot("run_name", JSONL_NAME),
+        ),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

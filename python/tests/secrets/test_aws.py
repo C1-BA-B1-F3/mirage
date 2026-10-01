@@ -21,7 +21,6 @@ from mirage.secrets.errors import SecretsError
 
 
 class StubClientContext:
-
     def __init__(self, client):
         self.client = client
 
@@ -33,7 +32,6 @@ class StubClientContext:
 
 
 class StubClient:
-
     def __init__(self, response):
         self.response = response
         self.secret_ids = []
@@ -44,7 +42,6 @@ class StubClient:
 
 
 class StubSession:
-
     def __init__(self, client):
         self._client = client
         self.client_kwargs = None
@@ -57,22 +54,11 @@ class StubSession:
 @pytest.mark.parametrize(
     "text,fields",
     [
-        ('{"user": "u", "password": "p"}', {
-            "user": "u",
-            "password": "p"
-        }),
-        ("plain-token", {
-            "value": "plain-token"
-        }),
-        ("[1, 2]", {
-            "value": "[1, 2]"
-        }),
-        ('{"port": 5432}', {
-            "value": '{"port": 5432}'
-        }),
-        ("123", {
-            "value": "123"
-        }),
+        ('{"user": "u", "password": "p"}', {"user": "u", "password": "p"}),
+        ("plain-token", {"value": "plain-token"}),
+        ("[1, 2]", {"value": "[1, 2]"}),
+        ('{"port": 5432}', {"value": '{"port": 5432}'}),
+        ("123", {"value": "123"}),
     ],
 )
 def test_fields_from_secret_string(text, fields):
@@ -88,10 +74,12 @@ async def test_fetch_aws_sm_reads_the_secret_through_the_client(monkeypatch):
         return session
 
     monkeypatch.setattr(aws, "aws_session", stub_session)
-    config = AWSSMConfig(region="us-east-1",
-                         aws_access_key_id="AKIA",
-                         aws_secret_access_key="shh",
-                         aws_session_token="tok")
+    config = AWSSMConfig(
+        region="us-east-1",
+        aws_access_key_id="AKIA",
+        aws_secret_access_key="shh",
+        aws_session_token="tok",
+    )
     secret = await fetch_aws_sm(config, "prod/tokens")
     assert secret.fields == {"api": "tok"}
     assert secret.expires_at is None

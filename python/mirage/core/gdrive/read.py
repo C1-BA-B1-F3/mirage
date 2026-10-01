@@ -23,14 +23,20 @@ from mirage.core.gdocs.read import read_doc
 from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES, NATIVE_RESOURCE_TYPES
 from mirage.core.gdrive.fingerprint import drive_fingerprint, entry_fingerprint
 from mirage.core.gdrive.readdir import readdir
-from mirage.core.gdrive.versions import (capture_file_metadata,
-                                         download_revision)
+from mirage.core.gdrive.versions import (
+    capture_file_metadata,
+    download_revision,
+)
 from mirage.core.google.client import TokenManager
 from mirage.core.google.drive import download_file
 from mirage.core.gsheets.read import read_spreadsheet
 from mirage.core.gslides.read import read_presentation
-from mirage.observe.context import (active_recorder, record, revision_for,
-                                    start_op)
+from mirage.observe.context import (
+    active_recorder,
+    record,
+    revision_for,
+    start_op,
+)
 from mirage.types import JsonValue, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
@@ -67,16 +73,21 @@ def _stale_md5(md5: JsonValue, data: bytes) -> bool:
         md5 (JsonValue): Drive's ``md5Checksum`` for the file.
         data (bytes): the whole file as downloaded.
     """
-    return (isinstance(md5, str) and bool(md5)
-            and hashlib.md5(data).hexdigest() != md5)
+    return (
+        isinstance(md5, str)
+        and bool(md5)
+        and hashlib.md5(data).hexdigest() != md5
+    )
 
 
-async def read_file_versioned(token_manager: TokenManager,
-                              file_id: str,
-                              virtual: str,
-                              entry: IndexEntry,
-                              offset: int = 0,
-                              size: int | None = None) -> bytes:
+async def read_file_versioned(
+    token_manager: TokenManager,
+    file_id: str,
+    virtual: str,
+    entry: IndexEntry,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Download a binary file honouring snapshot revision pins.
 
     A pinned path reads that revision's content. Otherwise the token
@@ -109,19 +120,22 @@ async def read_file_versioned(token_manager: TokenManager,
         if whole and _stale_md5(md5, data):
             revision = None
         elif whole:
-            fingerprint = drive_fingerprint(entry.resource_type, md5, revision,
-                                            entry.remote_time)
+            fingerprint = drive_fingerprint(
+                entry.resource_type, md5, revision, entry.remote_time
+            )
     else:
         data = await download_file(token_manager, file_id, window)
         if whole and not _stale_md5(entry.extra.get("md5_checksum"), data):
             fingerprint = entry_fingerprint(entry)
-    record("read",
-           virtual,
-           "gdrive",
-           len(data),
-           timer,
-           fingerprint=fingerprint,
-           revision=revision)
+    record(
+        "read",
+        virtual,
+        "gdrive",
+        len(data),
+        timer,
+        fingerprint=fingerprint,
+        revision=revision,
+    )
     return data
 
 
@@ -150,18 +164,23 @@ async def read(
     key = path.vfs_path
     virtual_key = prefix + "/" + key if prefix else "/" + key
     parent_key = posixpath.dirname(virtual_key) or "/"
-    parent_path = PathSpec.from_str_path(parent_key,
-                                         mount_key(parent_key, prefix))
-    warm = (partial(readdir, accessor, parent_path, index)
-            if parent_key != virtual_key else None)
+    parent_path = PathSpec.from_str_path(
+        parent_key, mount_key(parent_key, prefix)
+    )
+    warm = (
+        partial(readdir, accessor, parent_path, index)
+        if parent_key != virtual_key
+        else None
+    )
     entry = await entry_or_warm(index, virtual_key, warm)
     if entry is None:
         raise enoent(virtual)
     if entry.resource_type in DIRECTORY_RESOURCE_TYPES:
         raise IsADirectoryError(virtual)
     if entry.resource_type not in NATIVE_RESOURCE_TYPES:
-        return await read_file_versioned(accessor.token_manager, entry.id,
-                                         virtual, entry, offset, size)
+        return await read_file_versioned(
+            accessor.token_manager, entry.id, virtual, entry, offset, size
+        )
     timer = start_op()
     if entry.resource_type == "gdrive/gdoc":
         rendered = await read_doc(accessor.token_manager, entry.id)
@@ -171,13 +190,16 @@ async def read(
         rendered = await read_presentation(accessor.token_manager, entry.id)
     sliced = slice_window(rendered, offset, size)
     # No revision: a pin would replace the drift check a render relies on.
-    fingerprint = entry_fingerprint(entry) if _whole_file(offset,
-                                                          size) else None
-    record("read",
-           virtual,
-           "gdrive",
-           len(sliced),
-           timer,
-           fingerprint=fingerprint,
-           revision=None)
+    fingerprint = (
+        entry_fingerprint(entry) if _whole_file(offset, size) else None
+    )
+    record(
+        "read",
+        virtual,
+        "gdrive",
+        len(sliced),
+        timer,
+        fingerprint=fingerprint,
+        revision=None,
+    )
     return sliced

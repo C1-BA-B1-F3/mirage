@@ -20,7 +20,6 @@ from mirage.vfs.secrets import reveal_secret
 
 
 class PostgresAccessor(Accessor):
-
     def __init__(self, config: PostgresConfig) -> None:
         self.config = config
         self._pool: asyncpg.Pool | None = None

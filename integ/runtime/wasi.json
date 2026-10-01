@@ -500,6 +500,13 @@
             "exit": 0,
             "stdout": "d dir\ndlk link\nlk link\nt.txt file\n"
           }
+        },
+        {
+          "command": "python3 -c \"import os\nfor e in sorted(os.scandir('/dev'), key=lambda x: x.name):\n    print(e.name, e.is_file(), e.is_dir())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "null False False\nzero False False\n"
+          }
         }
       ]
     },

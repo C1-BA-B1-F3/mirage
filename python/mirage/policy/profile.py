@@ -19,12 +19,23 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from mirage.policy.constants import DEFAULT_ASK_REASON, DEFAULT_DENY_REASON
-from mirage.policy.types import (AdmissionRules, CommandRule, HideReason,
-                                 ProfileScript)
+from mirage.policy.types import (
+    AdmissionRules,
+    CommandRule,
+    HideReason,
+    ProfileScript,
+)
 from mirage.process.config import ProcessPermissions
 from mirage.runtime.types import ScriptSource
-from mirage.types import (HiddenPaths, HiddenVars, Limit, MountMode, ShowEntry,
-                          ShownPaths, parse_mount_mode)
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    Limit,
+    MountMode,
+    ShowEntry,
+    ShownPaths,
+    parse_mount_mode,
+)
 from mirage.utils.hidden import is_glob
 
 _DOC = ConfigDict(extra="forbid", frozen=True)
@@ -56,9 +67,9 @@ def _list(value: Any, where: str, expected: str = "a list") -> tuple[Any, ...]:
     return tuple(value)
 
 
-def _string_list(value: Any,
-                 where: str,
-                 names: str | None = None) -> tuple[str, ...]:
+def _string_list(
+    value: Any, where: str, names: str | None = None
+) -> tuple[str, ...]:
     """A document list field, refused unless every item is a string.
 
     A scalar ``commands: rm`` would otherwise ``tuple()`` into
@@ -105,8 +116,10 @@ def _absolute_paths(entries: tuple[str, ...], where: str) -> None:
     for i, entry in enumerate(entries):
         if entry.startswith("/") or (is_glob(entry) and "/" not in entry):
             continue
-        raise ValueError(f"{where}[{i}] must be an absolute path or a name "
-                         f"pattern: {entry!r} is relative")
+        raise ValueError(
+            f"{where}[{i}] must be an absolute path or a name "
+            f"pattern: {entry!r} is relative"
+        )
 
 
 def _under_mount(entries: tuple[str, ...], root: str, where: str) -> None:
@@ -134,12 +147,15 @@ def _under_mount(entries: tuple[str, ...], root: str, where: str) -> None:
             continue
         if entry == root or entry.startswith(root + "/"):
             continue
-        raise ValueError(f"{where}[{i}] is outside the mount it is written "
-                         f"under: {entry!r} is not below {root!r}")
+        raise ValueError(
+            f"{where}[{i}] is outside the mount it is written "
+            f"under: {entry!r} is not below {root!r}"
+        )
 
 
-def _scoped_rules(commands: Mapping[Any, Any], reason: str,
-                  where: str) -> list[CommandRule]:
+def _scoped_rules(
+    commands: Mapping[Any, Any], reason: str, where: str
+) -> list[CommandRule]:
     """The rules of a ``commands`` mapping: each command on its own paths.
 
     One rule per entry, so the document never states a command beside
@@ -158,14 +174,16 @@ def _scoped_rules(commands: Mapping[Any, Any], reason: str,
     for pattern, paths in commands.items():
         if not isinstance(pattern, str) or not pattern.split():
             raise ValueError(f"{where} commands keys must name a command")
-        entries = _string_list(paths,
-                               f"{where} commands[{pattern}]",
-                               names="a path")
+        entries = _string_list(
+            paths, f"{where} commands[{pattern}]", names="a path"
+        )
         if not entries:
             raise ValueError(
-                f"{where} commands[{pattern}] must list at least one path")
+                f"{where} commands[{pattern}] must list at least one path"
+            )
         rules.append(
-            CommandRule(reason=reason, commands=(pattern, ), paths=entries))
+            CommandRule(reason=reason, commands=(pattern,), paths=entries)
+        )
     return rules
 
 
@@ -194,10 +212,12 @@ def _rule(entry: Any, where: str, default_reason: str) -> list[CommandRule]:
         return [entry]
     if isinstance(entry, str):
         return [
-            CommandRule(reason=default_reason,
-                        commands=_string_list((entry, ),
-                                              f"{where} commands",
-                                              names="a command"))
+            CommandRule(
+                reason=default_reason,
+                commands=_string_list(
+                    (entry,), f"{where} commands", names="a command"
+                ),
+            )
         ]
     if not isinstance(entry, Mapping):
         raise ValueError(f"{where} must be a command pattern or a mapping")
@@ -210,29 +230,36 @@ def _rule(entry: Any, where: str, default_reason: str) -> list[CommandRule]:
     commands, paths = entry.get("commands"), entry.get("paths")
     if isinstance(commands, Mapping):
         if paths is not None:
-            raise ValueError(f"{where} maps each command to its paths, "
-                             "so it takes no paths of its own")
+            raise ValueError(
+                f"{where} maps each command to its paths, "
+                "so it takes no paths of its own"
+            )
         return _scoped_rules(commands, reason, where)
     if commands is not None and paths is not None:
-        raise ValueError(f"{where} lists commands beside paths; map each "
-                         "command to its paths instead")
+        raise ValueError(
+            f"{where} lists commands beside paths; map each "
+            "command to its paths instead"
+        )
     if commands is None and paths is None:
         raise ValueError(f"{where} names no command and no path")
     return [
-        CommandRule(reason=reason,
-                    commands=_string_list(commands,
-                                          f"{where} commands",
-                                          names="a command"),
-                    paths=_string_list(paths, f"{where} paths",
-                                       names="a path"))
+        CommandRule(
+            reason=reason,
+            commands=_string_list(
+                commands, f"{where} commands", names="a command"
+            ),
+            paths=_string_list(paths, f"{where} paths", names="a path"),
+        )
     ]
 
 
 def _rules(v: Any, where: str) -> Any:
     default = DEFAULT_ASK_REASON if where == "ask" else DEFAULT_DENY_REASON
-    return tuple(rule
-                 for entry in _list(v, f"commands.{where}", "a list of rules")
-                 for rule in _rule(entry, f"{where} rule", default))
+    return tuple(
+        rule
+        for entry in _list(v, f"commands.{where}", "a list of rules")
+        for rule in _rule(entry, f"{where} rule", default)
+    )
 
 
 def _patterns(v: Any) -> Any:
@@ -285,7 +312,8 @@ class PathsBlock(BaseModel):
             return data
         raw = data.get("hide")
         if not isinstance(raw, (list, tuple)) or not any(
-                isinstance(e, Mapping) for e in raw):
+            isinstance(e, Mapping) for e in raw
+        ):
             return data
         flat: list[Any] = []
         groups: list[Any] = list(data.get("reasons") or ())
@@ -295,18 +323,24 @@ class PathsBlock(BaseModel):
                 continue
             unknown = sorted(set(entry) - {"patterns", "reason"})
             if unknown:
-                raise ValueError("paths.hide group has unknown field(s): " +
-                                 ", ".join(str(u) for u in unknown))
-            patterns = _string_list(entry.get("patterns"),
-                                    "paths.hide group patterns",
-                                    names="a path")
+                raise ValueError(
+                    "paths.hide group has unknown field(s): "
+                    + ", ".join(str(u) for u in unknown)
+                )
+            patterns = _string_list(
+                entry.get("patterns"),
+                "paths.hide group patterns",
+                names="a path",
+            )
             if not patterns:
                 raise ValueError(
-                    "paths.hide group must list at least one pattern")
+                    "paths.hide group must list at least one pattern"
+                )
             reason = entry.get("reason")
             if not isinstance(reason, str) or not reason.split():
                 raise ValueError(
-                    "paths.hide group reason must be a non-empty string")
+                    "paths.hide group reason must be a non-empty string"
+                )
             flat.extend(patterns)
             groups.append(HideReason(patterns=patterns, reason=reason))
         out = dict(data)
@@ -336,15 +370,19 @@ class PathsBlock(BaseModel):
                 else:
                     pairs.append((entry, None))
         else:
-            raise ValueError("paths.show must be a mapping of path to mode "
-                             "or a list of paths")
+            raise ValueError(
+                "paths.show must be a mapping of path to mode "
+                "or a list of paths"
+            )
         entries = []
         for path, mode in pairs:
             if not isinstance(path, str) or not path.split():
                 raise ValueError("paths.show entries must name a path")
             if not path.startswith("/"):
-                raise ValueError("paths.show entries anchor to a place, so "
-                                 f"each is absolute: {path!r} is not")
+                raise ValueError(
+                    "paths.show entries anchor to a place, so "
+                    f"each is absolute: {path!r} is not"
+                )
             parsed: MountMode | None = None
             if mode is not None:
                 if isinstance(mode, MountMode):
@@ -353,7 +391,8 @@ class PathsBlock(BaseModel):
                     parsed = parse_mount_mode(mode)
                 else:
                     raise ValueError(
-                        "paths.show modes must be a mode name or alias")
+                        "paths.show modes must be a mode name or alias"
+                    )
             entries.append(ShowEntry(path=path, mode=parsed))
         return tuple(entries)
 
@@ -367,13 +406,20 @@ class PathsBlock(BaseModel):
                 out.append(entry)
                 continue
             if not isinstance(entry, Mapping):
-                raise ValueError("paths.reasons entries must be groups of "
-                                 "patterns and a reason")
+                raise ValueError(
+                    "paths.reasons entries must be groups of "
+                    "patterns and a reason"
+                )
             out.append(
-                HideReason(patterns=_string_list(entry.get("patterns"),
-                                                 "paths.reasons patterns",
-                                                 names="a path"),
-                           reason=str(entry.get("reason", ""))))
+                HideReason(
+                    patterns=_string_list(
+                        entry.get("patterns"),
+                        "paths.reasons patterns",
+                        names="a path",
+                    ),
+                    reason=str(entry.get("reason", "")),
+                )
+            )
         return tuple(out)
 
 
@@ -608,7 +654,8 @@ class SessionProfile(BaseModel):
             raise ValueError(
                 "script and runtime are now one policy block, policy: "
                 "{script: <file>, runtime: <engine>}; its program defines "
-                "pre_command(ctx) and answers with return")
+                "pre_command(ctx) and answers with return"
+            )
         return data
 
     @field_validator("mounts", mode="before")
@@ -621,14 +668,15 @@ class SessionProfile(BaseModel):
             # means nothing at all, so it fails loudly rather than
             # quietly dropping the confinement it used to carry.
             raise ValueError(
-                "mounts must be a mapping of prefix to its settings")
+                "mounts must be a mapping of prefix to its settings"
+            )
         entries: dict[str, Any] = {}
         for prefix, entry in v.items():
             if not isinstance(prefix, str):
                 raise ValueError("mounts keys must be strings")
-            entries[_norm_prefix(prefix)] = ({
-                "mode": entry
-            } if isinstance(entry, str) else entry)
+            entries[_norm_prefix(prefix)] = (
+                {"mode": entry} if isinstance(entry, str) else entry
+            )
         return entries
 
     @model_validator(mode="after")
@@ -642,15 +690,21 @@ class SessionProfile(BaseModel):
             if entry.paths is not None:
                 _absolute_paths(entry.paths.hide, f"{where}.paths.hide")
                 _under_mount(entry.paths.hide, prefix, f"{where}.paths.hide")
-                _under_mount(tuple(e.path for e in entry.paths.show), prefix,
-                             f"{where}.paths.show")
+                _under_mount(
+                    tuple(e.path for e in entry.paths.show),
+                    prefix,
+                    f"{where}.paths.show",
+                )
             if entry.commands is not None:
-                for verb, rules in (("ask", entry.commands.ask),
-                                    ("deny", entry.commands.deny)):
+                for verb, rules in (
+                    ("ask", entry.commands.ask),
+                    ("deny", entry.commands.deny),
+                ):
                     for rule in rules:
                         _absolute_paths(rule.paths, f"{where}.commands.{verb}")
-                        _under_mount(rule.paths, prefix,
-                                     f"{where}.commands.{verb}")
+                        _under_mount(
+                            rule.paths, prefix, f"{where}.commands.{verb}"
+                        )
         return self
 
 

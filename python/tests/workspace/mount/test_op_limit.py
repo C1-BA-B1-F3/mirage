@@ -43,7 +43,8 @@ async def _dispatch_read(ws):
     # Op caps are policy and fire at the op doors, not inside
     # Mount.execute_op; route through the dispatcher door.
     result, _ = await ws._dispatcher.dispatch(
-        "read", PathSpec.from_str_path("/data/f.txt"))
+        "read", PathSpec.from_str_path("/data/f.txt")
+    )
     return result
 
 
@@ -92,6 +93,7 @@ async def test_vfs_stat_not_capped_by_byte_limit(monkeypatch):
     ws, mount = await _ws_mount()
     mount.command_limits["stat"] = Limit(max_bytes=1)
     result, _ = await ws._dispatcher.dispatch(
-        "stat", PathSpec.from_str_path("/data/f.txt"))
+        "stat", PathSpec.from_str_path("/data/f.txt")
+    )
     assert result is not None
     assert not isinstance(result, (bytes, bytearray))

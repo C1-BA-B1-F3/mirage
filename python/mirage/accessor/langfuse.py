@@ -20,7 +20,6 @@ from mirage.vfs.secrets import reveal_secret
 
 
 class LangfuseAccessor(Accessor):
-
     def __init__(self, config: LangfuseConfig) -> None:
         self.config = config
         self.client = Langfuse(

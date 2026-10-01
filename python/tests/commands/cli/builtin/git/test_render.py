@@ -14,11 +14,15 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.git.render import (branch_line, long_format,
-                                                    quote_path,
-                                                    relative_entries,
-                                                    short_format, short_line,
-                                                    tracking_lines)
+from mirage.commands.cli.builtin.git.render import (
+    branch_line,
+    long_format,
+    quote_path,
+    relative_entries,
+    short_format,
+    short_line,
+    tracking_lines,
+)
 from mirage.commands.cli.builtin.git.types import StatusEntry, Upstream
 
 
@@ -40,7 +44,7 @@ def row(path: str, index: str, tree: str, original: str | None = None):
 QUOTING = [
     ("plain.txt", "plain.txt", "plain.txt"),
     ("has space.txt", '"has space.txt"', "has space.txt"),
-    ("quo\"te.txt", '"quo\\"te.txt"', '"quo\\"te.txt"'),
+    ('quo"te.txt', '"quo\\"te.txt"', '"quo\\"te.txt"'),
     ("back\\slash.txt", '"back\\\\slash.txt"', '"back\\\\slash.txt"'),
     ("héllo.txt", '"h\\303\\251llo.txt"', '"h\\303\\251llo.txt"'),
     ("tab\there.txt", '"tab\\there.txt"', '"tab\\there.txt"'),
@@ -58,8 +62,10 @@ def test_a_short_line_is_two_columns_then_the_path():
 
 
 def test_a_rename_names_both_sides():
-    assert short_line(row("new.txt", "R", " ",
-                          "old.txt")) == "R  old.txt -> new.txt"
+    assert (
+        short_line(row("new.txt", "R", " ", "old.txt"))
+        == "R  old.txt -> new.txt"
+    )
 
 
 def test_the_branch_line_is_absent_without_the_flag():
@@ -80,9 +86,9 @@ def test_a_detached_head_has_no_branch_to_name():
 
 
 def test_a_clean_tree_is_two_lines():
-    assert long_format(
-        [], "main", "", False, False,
-        False) == ("On branch main\nnothing to commit, working tree clean\n")
+    assert long_format([], "main", "", False, False, False) == (
+        "On branch main\nnothing to commit, working tree clean\n"
+    )
 
 
 def test_an_unborn_repository_announces_it_before_anything_else():
@@ -93,21 +99,24 @@ def test_an_unborn_repository_announces_it_before_anything_else():
 def test_the_unborn_repository_offers_a_different_unstage_hint():
     # `git restore --staged` has nothing to restore to before the first
     # commit, so git names `git rm --cached` instead.
-    body = long_format([row("a.txt", "A", " ")], "main", "", True, False,
-                       False)
+    body = long_format(
+        [row("a.txt", "A", " ")], "main", "", True, False, False
+    )
     assert '(use "git rm --cached <file>..." to unstage)' in body
 
 
 def test_a_merge_in_progress_drops_the_unstage_hint():
-    body = long_format([row("a.txt", "M", " ")], "main", "", False, True,
-                       False)
+    body = long_format(
+        [row("a.txt", "M", " ")], "main", "", False, True, False
+    )
     assert "to unstage" not in body
     assert "All conflicts fixed but you are still merging." in body
 
 
 def test_an_unresolved_merge_says_which_conflicts_remain():
-    body = long_format([row("f.txt", "U", "U")], "main", "", False, True,
-                       False)
+    body = long_format(
+        [row("f.txt", "U", "U")], "main", "", False, True, False
+    )
     assert "You have unmerged paths." in body
     assert "\tboth modified:   f.txt" in body
 
@@ -123,41 +132,50 @@ def test_every_conflict_shape_has_its_own_label():
         ("U", "U"): "both modified:",
     }
     for (index, tree), label in labels.items():
-        body = long_format([row("f.txt", index, tree)], "main", "", False,
-                           True, False)
+        body = long_format(
+            [row("f.txt", index, tree)], "main", "", False, True, False
+        )
         assert f"\t{label:<17}f.txt" in body
 
 
 def test_a_staged_change_silences_the_trailer():
-    body = long_format([row("a.txt", "M", " ")], "main", "", False, False,
-                       False)
+    body = long_format(
+        [row("a.txt", "M", " ")], "main", "", False, False, False
+    )
     assert "nothing to commit" not in body
     assert "no changes added" not in body
 
 
 def test_untracked_alone_says_nothing_was_added():
-    body = long_format([row("a.txt", "?", "?")], "main", "", False, False,
-                       False)
-    assert body.endswith('nothing added to commit but untracked files '
-                         'present (use "git add" to track)\n')
+    body = long_format(
+        [row("a.txt", "?", "?")], "main", "", False, False, False
+    )
+    assert body.endswith(
+        "nothing added to commit but untracked files "
+        'present (use "git add" to track)\n'
+    )
 
 
 def test_hiding_untracked_changes_the_clean_line_rather_than_adding_one():
     body = long_format([], "main", "", False, False, True)
-    assert body == ("On branch main\n"
-                    "nothing to commit (use -u to show untracked files)\n")
+    assert body == (
+        "On branch main\nnothing to commit (use -u to show untracked files)\n"
+    )
 
 
 def test_hiding_untracked_notes_the_omission_when_something_is_staged():
-    body = long_format([row("a.txt", "M", " ")], "main", "", False, False,
-                       True)
-    assert body.endswith("Untracked files not listed (use -u option to show "
-                         "untracked files)\n")
+    body = long_format(
+        [row("a.txt", "M", " ")], "main", "", False, False, True
+    )
+    assert body.endswith(
+        "Untracked files not listed (use -u option to show untracked files)\n"
+    )
 
 
 def test_the_two_sections_can_name_the_same_path():
-    body = long_format([row("a.txt", "M", "M")], "main", "", False, False,
-                       False)
+    body = long_format(
+        [row("a.txt", "M", "M")], "main", "", False, False, False
+    )
     assert body.count("\tmodified:   a.txt") == 2
 
 
@@ -190,14 +208,16 @@ def test_an_undecodable_byte_is_quoted_as_itself():
         ("new", "new/", "./"),
         ("new/deep", "new/", "../"),
         ("new/deep", "new/deep/f.txt", "f.txt"),
-    ])
+    ],
+)
 def test_rows_read_from_the_invocation_directory(prefix, path, shown):
     assert relative_entries([row(path, "?", "?")], prefix)[0].path == shown
 
 
 def test_a_rename_shows_both_sides_from_the_invocation_directory():
     moved = relative_entries(
-        [row("docs/numbers.txt", "R", " ", "numbers.txt")], "docs")[0]
+        [row("docs/numbers.txt", "R", " ", "numbers.txt")], "docs"
+    )[0]
     assert (moved.original, moved.path) == ("../numbers.txt", "numbers.txt")
 
 
@@ -206,37 +226,68 @@ def test_rows_stay_repository_relative_at_the_top():
     assert relative_entries(rows, "") is rows
 
 
-@pytest.mark.parametrize("ahead,behind,gone,expected", [
-    (0, 0, False, ["Your branch is up to date with 'origin/main'."]),
-    (1, 0, False, [
-        "Your branch is ahead of 'origin/main' by 1 commit.",
-        '  (use "git push" to publish your local commits)'
-    ]),
-    (0, 2, False, [
-        "Your branch is behind 'origin/main' by 2 commits, and can be "
-        "fast-forwarded.", '  (use "git pull" to update your local branch)'
-    ]),
-    (1, 1, False, [
-        "Your branch and 'origin/main' have diverged,",
-        "and have 1 and 1 different commits each, respectively.",
-        '  (use "git pull" if you want to integrate the remote branch with '
-        'yours)'
-    ]),
-    (0, 0, True, [
-        "Your branch is based on 'origin/main', but the upstream is gone.",
-        '  (use "git branch --unset-upstream" to fixup)'
-    ]),
-])
+@pytest.mark.parametrize(
+    "ahead,behind,gone,expected",
+    [
+        (0, 0, False, ["Your branch is up to date with 'origin/main'."]),
+        (
+            1,
+            0,
+            False,
+            [
+                "Your branch is ahead of 'origin/main' by 1 commit.",
+                '  (use "git push" to publish your local commits)',
+            ],
+        ),
+        (
+            0,
+            2,
+            False,
+            [
+                "Your branch is behind 'origin/main' by 2 commits, and can be "
+                "fast-forwarded.",
+                '  (use "git pull" to update your local branch)',
+            ],
+        ),
+        (
+            1,
+            1,
+            False,
+            [
+                "Your branch and 'origin/main' have diverged,",
+                "and have 1 and 1 different commits each, respectively.",
+                '  (use "git pull" if you want to integrate the remote branch with '
+                "yours)",
+            ],
+        ),
+        (
+            0,
+            0,
+            True,
+            [
+                "Your branch is based on 'origin/main', but the upstream is gone.",
+                '  (use "git branch --unset-upstream" to fixup)',
+            ],
+        ),
+    ],
+)
 def test_tracking_lines_read_as_git_writes_them(ahead, behind, gone, expected):
-    assert tracking_lines(Upstream("origin/main", ahead, behind,
-                                   gone)) == expected
+    assert (
+        tracking_lines(Upstream("origin/main", ahead, behind, gone))
+        == expected
+    )
 
 
-@pytest.mark.parametrize("upstream,expected", [
-    (Upstream("origin/main", 0, 0, False), "## main...origin/main"),
-    (Upstream("origin/main", 1, 2,
-              False), "## main...origin/main [ahead 1, behind 2]"),
-    (Upstream("origin/gone", 0, 0, True), "## main...origin/gone [gone]"),
-])
+@pytest.mark.parametrize(
+    "upstream,expected",
+    [
+        (Upstream("origin/main", 0, 0, False), "## main...origin/main"),
+        (
+            Upstream("origin/main", 1, 2, False),
+            "## main...origin/main [ahead 1, behind 2]",
+        ),
+        (Upstream("origin/gone", 0, 0, True), "## main...origin/gone [gone]"),
+    ],
+)
 def test_the_branch_line_names_the_upstream(upstream, expected):
     assert branch_line("main", False, upstream) == expected

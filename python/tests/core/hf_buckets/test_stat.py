@@ -66,17 +66,20 @@ async def test_stat_root_is_directory(make_acc):
 
 @pytest.mark.asyncio
 async def test_stat_size_matches_read_for_every_file(make_acc):
-    acc = make_acc({
-        "poem.txt": b"a rose is a rose",
-        "empty.txt": b"",
-        "data/sub/nested.txt": b"deep",
-    })
+    acc = make_acc(
+        {
+            "poem.txt": b"a rose is a rose",
+            "empty.txt": b"",
+            "data/sub/nested.txt": b"deep",
+        }
+    )
     index = RAMIndexCacheStore(ttl=60)
     pending = ["/"]
     while pending:
         directory = pending.pop()
-        for child in await readdir(acc, PathSpec.from_str_path(directory),
-                                   index):
+        for child in await readdir(
+            acc, PathSpec.from_str_path(directory), index
+        ):
             st = await stat(acc, PathSpec.from_str_path(child), index)
             if st.type == FileType.DIRECTORY:
                 pending.append(child)
@@ -90,10 +93,12 @@ async def test_stat_size_matches_read_for_every_file(make_acc):
 # bucket that does not exist gets 401 (measured 2026-09-25); a 404 with a
 # valid token was not measured and is mapped the same conservative way.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status,code", [(401, ""), (403, ""),
-                                         (404, "RepoNotFound")])
+@pytest.mark.parametrize(
+    "status,code", [(401, ""), (403, ""), (404, "RepoNotFound")]
+)
 async def test_a_refused_bucket_is_permission_denied_never_absent(
-        make_acc, fake_hub, status, code):
+    make_acc, fake_hub, status, code
+):
     acc = make_acc({"a.txt": b"x"})
     fake_hub.fail["bucket_paths_info"] = (status, code)
     with pytest.raises(PermissionError):
@@ -111,10 +116,8 @@ async def test_a_hub_fault_on_stat_stays_a_hub_error(make_acc, fake_hub):
 
 @pytest.mark.asyncio
 async def test_stat_under_a_key_prefix_reads_the_prefixed_object(make_acc):
-    acc = make_acc({
-        "pfx/a.txt": b"seed",
-        "a.txt": b"decoy"
-    },
-                   key_prefix="pfx/")
+    acc = make_acc(
+        {"pfx/a.txt": b"seed", "a.txt": b"decoy"}, key_prefix="pfx/"
+    )
     s = await stat(acc, PathSpec.from_str_path("/a.txt"))
     assert s.fingerprint == xet_hash(b"seed")

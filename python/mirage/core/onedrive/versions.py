@@ -15,14 +15,22 @@
 from typing import Any
 
 from mirage.accessor.onedrive import OneDriveAccessor
-from mirage.core.onedrive.client import drive_loc, graph_list, split_path
+from mirage.core.msgraph.client import graph_list
+from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
-async def list_versions(accessor: OneDriveAccessor,
-                        path: PathSpec) -> list[dict[str, Any]]:
-    _, stripped = split_path(path)
-    loc = drive_loc(accessor.config, stripped)
-    return await graph_list(accessor.config,
-                            loc.item("/versions"),
-                            session=accessor.pool)
+async def list_versions(
+    accessor: OneDriveAccessor, path: PathSpec
+) -> list[dict[str, Any]]:
+    """The item's version history, as Graph lists it.
+
+    Args:
+        accessor (OneDriveAccessor): OneDrive accessor.
+        path (PathSpec): the file whose versions to list.
+    """
+    return await graph_list(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path).item("/versions"),
+        session=accessor.pool,
+    )

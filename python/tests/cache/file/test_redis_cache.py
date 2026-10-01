@@ -135,11 +135,15 @@ async def test_add_existing(cache):
 
 @pytest.mark.asyncio
 async def test_concurrent_add_has_one_winner(cache):
-    contenders = [(f"value-{i}".encode(), f"fingerprint-{i}")
-                  for i in range(32)]
+    contenders = [
+        (f"value-{i}".encode(), f"fingerprint-{i}") for i in range(32)
+    ]
     inserted = await asyncio.gather(
-        *(cache.add("/shared.txt", data, fingerprint=fingerprint)
-          for data, fingerprint in contenders))
+        *(
+            cache.add("/shared.txt", data, fingerprint=fingerprint)
+            for data, fingerprint in contenders
+        )
+    )
 
     assert sum(inserted) == 1
     winner = inserted.index(True)
@@ -197,13 +201,15 @@ async def test_apply_io_drains_stream_into_cache(cache):
     stream = CachableAsyncIterator(_gen())
     io = IOResult(reads={"/file.txt": stream}, cache=["/file.txt"])
     records = [
-        OpRecord(op="read",
-                 path="/file.txt",
-                 source="s3",
-                 bytes=0,
-                 timestamp=0,
-                 duration_ms=0,
-                 fingerprint="etag-9")
+        OpRecord(
+            op="read",
+            path="/file.txt",
+            source="s3",
+            bytes=0,
+            timestamp=0,
+            duration_ms=0,
+            fingerprint="etag-9",
+        )
     ]
     await cache_io.apply_io(cache, io, records=records)
     tasks = list(cache._drain_tasks.values())
@@ -285,8 +291,9 @@ def test_the_two_add_lua_copies_are_byte_identical():
     # hosts run the same script.
     root = pathlib.Path(__file__).resolve().parents[3].parent
     py = (root / "python/mirage/cache/file/add.lua").read_bytes()
-    ts = (root /
-          "typescript/packages/node/src/cache/file/add.lua").read_bytes()
+    ts = (
+        root / "typescript/packages/node/src/cache/file/add.lua"
+    ).read_bytes()
     assert py == ts
 
 
@@ -317,7 +324,8 @@ async def test_a_tokenless_set_deletes_a_stale_meta_key(cache):
 
 @pytest.mark.asyncio
 async def test_a_tokenless_add_deletes_a_meta_key_that_outlived_its_data(
-        cache):
+    cache,
+):
     """`add.lua` only checks the data key, so a surviving meta key is
     invisible to its insert-only guard and has to be dropped explicitly."""
     await cache.set("/a", b"old", fingerprint="etag-old")
@@ -338,10 +346,14 @@ async def test_an_empty_token_is_treated_as_absent(cache):
 
 @pytest.mark.asyncio
 async def test_prefix_eviction_preserves_nested_mount(cache):
-    for key in ("/data/sub/old", "/data/sub/nested", "/data/sub/nested/file",
-                "/data/sub/nested2"):
+    for key in (
+        "/data/sub/old",
+        "/data/sub/nested",
+        "/data/sub/nested/file",
+        "/data/sub/nested2",
+    ):
         await cache.set(key, b"value")
-    await cache.evict_prefix("/data/sub/", excluded=("/data/sub/nested", ))
+    await cache.evict_prefix("/data/sub/", excluded=("/data/sub/nested",))
     assert await cache.get("/data/sub/nested") == b"value"
     assert await cache.get("/data/sub/nested/file") == b"value"
     assert await cache.get("/data/sub/old") is None

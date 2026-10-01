@@ -25,10 +25,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_comm(scopes: list[PathSpec],
-                   flag_kwargs: dict[str, FlagValue],
-                   dispatch: DispatchFn,
-                   stdin: ByteSource | None = None) -> CrossResult:
+async def run_comm(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    stdin: ByteSource | None = None,
+) -> CrossResult:
     """Compare two sorted files on different mounts via the generic comm.
 
     Pure wiring: both sides are read through dispatch-relayed primitives
@@ -42,11 +44,12 @@ async def run_comm(scopes: list[PathSpec],
             ``/dev/stdin`` operand reads.
     """
     fl = FlagView(flag_kwargs, spec=SPECS["comm"])
-    return await generic_comm(flat_scopes(scopes),
-                              stdin=stdin,
-                              read_bytes=functools.partial(
-                                  relay, dispatch, "read"),
-                              suppress1=fl.as_bool("args_1"),
-                              suppress2=fl.as_bool("2"),
-                              suppress3=fl.as_bool("3"),
-                              check_order=fl.as_bool("check_order"))
+    return await generic_comm(
+        flat_scopes(scopes),
+        stdin=stdin,
+        read_bytes=functools.partial(relay, dispatch, "read"),
+        suppress1=fl.as_bool("args_1"),
+        suppress2=fl.as_bool("2"),
+        suppress3=fl.as_bool("3"),
+        check_order=fl.as_bool("check_order"),
+    )

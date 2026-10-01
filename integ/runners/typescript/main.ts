@@ -273,7 +273,8 @@ export async function runTarget(
           stderr: err,
           check: checkOut,
         })
-      } else if (report !== null) {
+      }
+      if (report !== null) {
         report.record(
           target.id,
           bound.id,
@@ -308,8 +309,10 @@ export async function runTarget(
         exit: run.exitCode,
         stdout: run.out,
         stderr: run.stderr,
+        check: null,
       })
-    } else if (report !== null) {
+    }
+    if (report !== null) {
       report.record(target.id, c.id, compare(c, run.exitCode, run.out, run.stderr, 0))
     }
   }
@@ -334,7 +337,7 @@ async function main(): Promise<void> {
   } else {
     ids = targets.length ? targets : [...manifest.keys()]
   }
-  const report = emitPath ? null : new Report()
+  const report = new Report()
   const emit: EmitRow[] | null = emitPath ? [] : null
   let ran = 0
   // A facet can be split across CI jobs (core's databases and vector stores
@@ -410,18 +413,12 @@ async function main(): Promise<void> {
     )
     process.exit(2)
   }
-  if (emitPath) {
-    // No file, deliberately, where the report path prints partial counts:
-    // parity.py diffs two emits by (target, id), so a short one reads as a
-    // pile of ONLY-PY/ONLY-TS rows rather than as the run that broke.
-    if (threw) {
-      process.stderr.write(`${String(threw)} target(s) failed to run\n`)
-      process.exit(1)
-    }
-    writeFileSync(emitPath, JSON.stringify(emit))
-    return
-  }
-  if (report === null) return
+  // No file, deliberately, when a target threw: parity.py diffs two emits by
+  // (target, id), so a short one reads as a pile of ONLY-PY/ONLY-TS rows
+  // rather than as the run that broke. The emit rides beside the report rather
+  // than replacing it, so a battery job hands parity its outputs without a
+  // second run.
+  if (emitPath && !threw) writeFileSync(emitPath, JSON.stringify(emit))
   process.stdout.write(`\n${report.summary()}\n`)
   if (threw) {
     process.stderr.write(`${String(threw)} target(s) failed to run\n`)

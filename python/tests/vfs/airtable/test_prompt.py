@@ -37,7 +37,8 @@ def test_write_prompt_names_the_write_verbs_and_the_help():
     rendered = WRITE_PROMPT.replace("{prefix}", "/airtable")
     for verb in ("record create", "record update", "comment add"):
         assert f"airtable {verb} --base <base-id> --table <table-id>" in (
-            rendered)
+            rendered
+        )
     assert "/airtable/bases/<base>/<table>/records.jsonl" in rendered
     assert rendered.rstrip().endswith("See airtable --help for every verb.")
     assert AirtableVFS.write_prompt == WRITE_PROMPT

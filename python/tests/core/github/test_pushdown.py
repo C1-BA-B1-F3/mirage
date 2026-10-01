@@ -16,10 +16,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from mirage.core.github.pushdown import (count_scope_files, is_directory_key,
-                                         is_repo_root, scope_blobs,
-                                         scope_relative_key, search_safe,
-                                         unsearchable_keys)
+from mirage.core.github.pushdown import (
+    count_scope_files,
+    is_directory_key,
+    is_repo_root,
+    scope_blobs,
+    scope_relative_key,
+    search_safe,
+    unsearchable_keys,
+)
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -46,16 +51,18 @@ def entries():
 
 
 def test_scope_relative_key_strips_mount_prefix():
-    path = PathSpec(vfs_path=mount_key("/gh/src", "/gh"),
-                    virtual="/gh/src",
-                    directory="/gh/src")
+    path = PathSpec(
+        vfs_path=mount_key("/gh/src", "/gh"),
+        virtual="/gh/src",
+        directory="/gh/src",
+    )
     assert scope_relative_key(path) == "/src"
 
 
 def test_scope_relative_key_root_becomes_slash():
-    path = PathSpec(vfs_path=mount_key("/gh", "/gh"),
-                    virtual="/gh",
-                    directory="/gh")
+    path = PathSpec(
+        vfs_path=mount_key("/gh", "/gh"), virtual="/gh", directory="/gh"
+    )
     assert scope_relative_key(path) == "/"
 
 
@@ -86,13 +93,20 @@ def test_scope_blobs_lists_the_files_at_or_below_a_key(entries):
     # itself, and a sibling sharing the spelling (srcx/) is outside.
     entries["srcx/other.py"] = entries["src/main.py"]
     assert [p for p, _ in scope_blobs(entries, "/")] == [
-        "README.md", "src/main.py", "src/utils.py", "src/models/user.py",
-        "srcx/other.py"
+        "README.md",
+        "src/main.py",
+        "src/utils.py",
+        "src/models/user.py",
+        "srcx/other.py",
     ]
-    assert [p for p, _ in scope_blobs(entries, "/src")
-            ] == ["src/main.py", "src/utils.py", "src/models/user.py"]
-    assert [p for p, _ in scope_blobs(entries, "/src/main.py")
-            ] == ["src/main.py"]
+    assert [p for p, _ in scope_blobs(entries, "/src")] == [
+        "src/main.py",
+        "src/utils.py",
+        "src/models/user.py",
+    ]
+    assert [p for p, _ in scope_blobs(entries, "/src/main.py")] == [
+        "src/main.py"
+    ]
     assert scope_blobs(entries, "/nope") == []
 
 
@@ -101,37 +115,43 @@ def test_scope_blobs_lists_the_files_at_or_below_a_key(entries):
 # an operator, each narrowing the answer; lowercase `not` and `OR` are plain
 # terms. Word characters are ASCII here, the same rule the TypeScript twin
 # applies, so the two hosts gate the same literals.
-@pytest.mark.parametrize("query", [
-    "foo path:docs",
-    'say "hi"',
-    "foo -bar",
-    "-foo",
-    "foo NOT bar",
-    "NOT",
-    "a\tNOT\tb",
-    "   ",
-    "\t",
-    "a\x1c-b",
-    "a\ufeff-b",
-    "x(-y",
-    "\u00e9-b",
-    "\u00e9NOT x",
-    "\u00e9",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "foo path:docs",
+        'say "hi"',
+        "foo -bar",
+        "-foo",
+        "foo NOT bar",
+        "NOT",
+        "a\tNOT\tb",
+        "   ",
+        "\t",
+        "a\x1c-b",
+        "a\ufeff-b",
+        "x(-y",
+        "\u00e9-b",
+        "\u00e9NOT x",
+        "\u00e9",
+    ],
+)
 def test_search_safe_refuses_a_literal_that_narrows_the_search(query):
     assert not search_safe(query)
 
 
-@pytest.mark.parametrize("query", [
-    "foo",
-    "foo bar",
-    "foo-bar",
-    "not",
-    "OR",
-    "NOTE",
-    "NOTHING x",
-    "a_NOT",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "foo",
+        "foo bar",
+        "foo-bar",
+        "not",
+        "OR",
+        "NOTE",
+        "NOTHING x",
+        "a_NOT",
+    ],
+)
 def test_search_safe_accepts_plain_terms(query):
     assert search_safe(query)
 
@@ -153,7 +173,10 @@ def test_unsearchable_keys_lists_what_code_search_never_indexes():
     # srcx/ shares src's spelling but is not under it.
     assert unsearchable_keys(tree, "/src") == ["src/big.bin", "src/none.py"]
     assert unsearchable_keys(tree, "/") == [
-        "docs/big.md", "src/big.bin", "src/none.py", "srcx/big.bin"
+        "docs/big.md",
+        "src/big.bin",
+        "src/none.py",
+        "srcx/big.bin",
     ]
 
 

@@ -22,8 +22,9 @@ from mirage.core.hierarchy.unlink import make_unlink
 from mirage.utils.errors import enoent
 
 
-async def _delete(accessor: GCalAccessor, match: ScopeMatch,
-                  entry: IndexEntry) -> None:
+async def _delete(
+    accessor: GCalAccessor, match: ScopeMatch, entry: IndexEntry
+) -> None:
     """Delete the event the entry names, on the slotted calendar.
 
     The entry already carries the event id (rm resolves through the name

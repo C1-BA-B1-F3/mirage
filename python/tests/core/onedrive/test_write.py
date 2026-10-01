@@ -2,7 +2,6 @@ import pytest
 from aioresponses import CallbackResult, aioresponses
 
 import mirage.core.msgraph.drive as drive_ops
-import mirage.core.onedrive.write as write_mod
 from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
 from mirage.core.onedrive.write import write_bytes
 from mirage.observe.context import RecordingScope
@@ -28,16 +27,16 @@ async def test_write_small_file_puts_content():
 
     with aioresponses() as m:
         m.put(_CONTENT, callback=_cb)
-        result = await write_bytes(_accessor(),
-                                   PathSpec.from_str_path("/Docs/a.txt"),
-                                   b"hello")
+        result = await write_bytes(
+            _accessor(), PathSpec.from_str_path("/Docs/a.txt"), b"hello"
+        )
     assert result is None
     assert captured["body"] == b"hello"
 
 
 @pytest.mark.asyncio
 async def test_write_large_file_uses_upload_session(monkeypatch):
-    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(drive_ops, "SIMPLE_UPLOAD_MAX", 4)
     monkeypatch.setattr(drive_ops, "UPLOAD_CHUNK", 4)
     ranges = []
 
@@ -54,14 +53,15 @@ async def test_write_large_file_uses_upload_session(monkeypatch):
         m.post(_SESSION, payload={"uploadUrl": upload_url})
         m.put(upload_url, callback=_chunk_cb)
         m.put(upload_url, callback=_final_cb)
-        await write_bytes(_accessor(), PathSpec.from_str_path("/Docs/a.txt"),
-                          b"abcdef")
+        await write_bytes(
+            _accessor(), PathSpec.from_str_path("/Docs/a.txt"), b"abcdef"
+        )
     assert ranges == ["bytes 0-3/6", "bytes 4-5/6"]
 
 
 @pytest.mark.asyncio
 async def test_upload_session_requests_replace(monkeypatch):
-    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(drive_ops, "SIMPLE_UPLOAD_MAX", 4)
     monkeypatch.setattr(drive_ops, "UPLOAD_CHUNK", 8)
     captured = {}
 
@@ -73,22 +73,24 @@ async def test_upload_session_requests_replace(monkeypatch):
     with aioresponses() as m:
         m.post(_SESSION, callback=_session_cb)
         m.put(upload_url, status=201, payload={"id": "X"})
-        await write_bytes(_accessor(), PathSpec.from_str_path("/Docs/a.txt"),
-                          b"abcdef")
+        await write_bytes(
+            _accessor(), PathSpec.from_str_path("/Docs/a.txt"), b"abcdef"
+        )
     behavior = captured["item"]["@microsoft.graph.conflictBehavior"]
     assert behavior == "replace"
 
 
 @pytest.mark.asyncio
 async def test_upload_resumes_from_next_expected_ranges(monkeypatch):
-    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(drive_ops, "SIMPLE_UPLOAD_MAX", 4)
     monkeypatch.setattr(drive_ops, "UPLOAD_CHUNK", 4)
     ranges = []
 
     def _chunk_cb(url, **kwargs):
         ranges.append(kwargs["headers"]["Content-Range"])
-        return CallbackResult(status=202,
-                              payload={"nextExpectedRanges": ["2-5"]})
+        return CallbackResult(
+            status=202, payload={"nextExpectedRanges": ["2-5"]}
+        )
 
     def _final_cb(url, **kwargs):
         ranges.append(kwargs["headers"]["Content-Range"])
@@ -99,23 +101,26 @@ async def test_upload_resumes_from_next_expected_ranges(monkeypatch):
         m.post(_SESSION, payload={"uploadUrl": upload_url})
         m.put(upload_url, callback=_chunk_cb)
         m.put(upload_url, callback=_final_cb)
-        await write_bytes(_accessor(), PathSpec.from_str_path("/Docs/a.txt"),
-                          b"abcdef")
+        await write_bytes(
+            _accessor(), PathSpec.from_str_path("/Docs/a.txt"), b"abcdef"
+        )
     assert ranges == ["bytes 0-3/6", "bytes 2-5/6"]
 
 
 @pytest.mark.asyncio
 async def test_write_records_the_virtual_path():
     # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         with aioresponses() as m:
-            m.put(_BASE + "/root:/m/k.txt:/content",
-                  status=201,
-                  payload={"id": "X"})
+            m.put(
+                _BASE + "/root:/m/k.txt:/content",
+                status=201,
+                payload={"id": "X"},
+            )
             await write_bytes(_accessor(), spec, b"hello")
     finally:
         scope.close()

@@ -14,22 +14,33 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.sha256sum import sha256sum_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          dir_aware_stat,
-                                                          dir_aware_stream,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    dir_aware_stat,
+    dir_aware_stream,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def sha256sum(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                    texts: list[str],
-                    opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def sha256sum(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     resolved = await resolve_or_empty(ops, accessor, paths, opts.index)
-    return await sha256sum_generic(resolved, list(texts), opts,
-                                   dir_aware_stat(ops, accessor, opts),
-                                   dir_aware_stream(ops, accessor, opts))
+    return await sha256sum_generic(
+        resolved,
+        list(texts),
+        opts,
+        dir_aware_stat(ops, accessor, opts),
+        dir_aware_stream(ops, accessor, opts),
+    )
 
 
-BUILDER = Builder('sha256sum', sha256sum, None, False, None, read=True)
+BUILDER = Builder("sha256sum", sha256sum, read=True)

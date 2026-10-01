@@ -68,7 +68,8 @@ async def test_two_runners_are_isolated():
     runner_b = WorkspaceRunner(ws_b)
     try:
         slow = asyncio.create_task(
-            runner_a.call(runner_a.ws.shell("sleep 1.0")))
+            runner_a.call(runner_a.ws.shell("sleep 1.0"))
+        )
         await asyncio.sleep(0.05)
         start = time.monotonic()
         fast_result = await runner_b.call(runner_b.ws.shell("echo quick"))
@@ -76,7 +77,8 @@ async def test_two_runners_are_isolated():
         assert fast_result.exit_code == 0
         assert elapsed < 0.5, (
             f"workspace B's quick command took {elapsed:.2f}s "
-            "while workspace A was sleeping; isolation violated")
+            "while workspace A was sleeping; isolation violated"
+        )
         await slow
     finally:
         await runner_a.stop()

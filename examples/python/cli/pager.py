@@ -24,6 +24,7 @@ from mirage.io import IOResult
 
 class PagerConfig(BaseModel):
     """Configuration belonging to one installed account."""
+
     account: Literal["engineering", "support"]
 
 
@@ -47,14 +48,19 @@ INCIDENTS: dict[str, dict[str, Incident]] = {
 
 
 async def list_incidents(
-        inv: CLIInvocation[PagerConfig]) -> tuple[bytes, IOResult]:
+    inv: CLIInvocation[PagerConfig],
+) -> tuple[bytes, IOResult]:
     incidents = INCIDENTS[inv.config.account]
     lines = []
     for incident_id, incident in sorted(incidents.items()):
-        state = ("open" if incident.acknowledged_by is None else
-                 f"acknowledged-by={incident.acknowledged_by}")
+        state = (
+            "open"
+            if incident.acknowledged_by is None
+            else f"acknowledged-by={incident.acknowledged_by}"
+        )
         lines.append(
-            f"[{inv.config.account}] {incident_id} {state} {incident.summary}")
+            f"[{inv.config.account}] {incident_id} {state} {incident.summary}"
+        )
     return ("\n".join(lines) + "\n").encode(), IOResult()
 
 
@@ -63,7 +69,8 @@ async def list_incidents(
 # awaits is not made async for the executor's sake, and one that raises
 # before any await is refused exactly like one that raises after.
 def acknowledge(
-        inv: CLIInvocation[PagerConfig]) -> tuple[bytes | None, IOResult]:
+    inv: CLIInvocation[PagerConfig],
+) -> tuple[bytes | None, IOResult]:
     # Operand.required is enforced by the executor only under the CLAP
     # dialect; an argparse-style leaf words its own missing-operand refusal.
     if not inv.texts:
@@ -100,14 +107,17 @@ PAGER = CLISpec(
             # write labels the leaf for policy; the handler still owns the
             # service mutation and its cache/invalidation semantics.
             write=True,
-            positional=(Operand(name="INCIDENT_ID", type="str",
-                                required=True), ),
-            options=(Option(
-                long="--by",
-                type="str",
-                required=True,
-                description="Person acknowledging the incident",
-            ), ),
+            positional=(
+                Operand(name="INCIDENT_ID", type="str", required=True),
+            ),
+            options=(
+                Option(
+                    long="--by",
+                    type="str",
+                    required=True,
+                    description="Person acknowledging the incident",
+                ),
+            ),
         ),
     ),
 )

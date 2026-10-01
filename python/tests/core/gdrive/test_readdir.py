@@ -60,54 +60,77 @@ def index():
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 @pytest.mark.parametrize("change", ["updated", "deleted", "renamed-folder"])
 async def test_direct_stat_after_invalidation_refreshes_ids(
-        accessor, backend, change, monkeypatch):
+    accessor, backend, change, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     refreshed = False
     calls = []
 
     async def list_files(_tm, folder_id="root", **kwargs):
         calls.append(folder_id)
         if folder_id == "root":
-            if refreshed and change == "renamed-folder" and kwargs.get(
-                    "name") == "docs":
+            if (
+                refreshed
+                and change == "renamed-folder"
+                and kwargs.get("name") == "docs"
+            ):
                 return []
-            return [{
-                "id": "new-folder",
-                "name": "renamed" if change == "renamed-folder" else "docs",
-                "mimeType": "application/vnd.google-apps.folder"
-            }] if refreshed else [
-                {
-                    "id": "old-folder",
-                    "name": "docs",
-                    "mimeType": "application/vnd.google-apps.folder"
-                }
-            ]
+            return (
+                [
+                    {
+                        "id": "new-folder",
+                        "name": "renamed"
+                        if change == "renamed-folder"
+                        else "docs",
+                        "mimeType": "application/vnd.google-apps.folder",
+                    }
+                ]
+                if refreshed
+                else [
+                    {
+                        "id": "old-folder",
+                        "name": "docs",
+                        "mimeType": "application/vnd.google-apps.folder",
+                    }
+                ]
+            )
         assert folder_id == ("new-folder" if refreshed else "old-folder")
         if refreshed and change == "deleted":
             return []
-        return [{
-            "id": "new-file" if refreshed else "old-file",
-            "name": "report.pdf",
-            "mimeType": "application/pdf",
-            "size": "42" if refreshed else "3"
-        }]
+        return [
+            {
+                "id": "new-file" if refreshed else "old-file",
+                "name": "report.pdf",
+                "mimeType": "application/pdf",
+                "size": "42" if refreshed else "3",
+            }
+        ]
 
     monkeypatch.setattr("mirage.core.gdrive.readdir.list_files", list_files)
     monkeypatch.setattr("mirage.core.gdrive.resolve.list_files", list_files)
-    monkeypatch.setattr("mirage.core.gdrive.readdir.list_shared_drives",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.gdrive.resolve.list_shared_drives",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.gdrive.readdir.list_shared_drives",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.gdrive.resolve.list_shared_drives",
+        AsyncMock(return_value=[]),
+    )
     try:
-        await readdir(accessor, PathSpec.from_str_path("/drive/docs", "docs"),
-                      index)
+        await readdir(
+            accessor, PathSpec.from_str_path("/drive/docs", "docs"), index
+        )
         await index.invalidate()
         refreshed = True
         calls.clear()
-        path = PathSpec.from_str_path("/drive/docs/report.pdf",
-                                      "docs/report.pdf")
+        path = PathSpec.from_str_path(
+            "/drive/docs/report.pdf", "docs/report.pdf"
+        )
         if change == "updated":
             result = await stat(accessor, path, index)
             assert result.extra["file_id"] == "new-file"
@@ -130,22 +153,18 @@ async def test_readdir_root(accessor, index):
             "name": "readme.txt",
             "mimeType": "text/plain",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
-            "owners": [{
-                "me": True,
-                "emailAddress": "me@gmail.com"
-            }],
-            "capabilities": {
-                "canEdit": True
-            },
+            "owners": [{"me": True, "emailAddress": "me@gmail.com"}],
+            "capabilities": {"canEdit": True},
         },
     ]
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new_callable=AsyncMock,
-            return_value=files,
+        "mirage.core.gdrive.readdir.list_files",
+        new_callable=AsyncMock,
+        return_value=files,
     ):
         result = await readdir(
-            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index)
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
         assert "/readme.txt" in result
 
 
@@ -159,22 +178,29 @@ async def test_readdir_cached(accessor, index):
         vfs_name="cached.txt",
     )
     await index.set_dir("/", [("cached.txt", entry)])
-    result = await readdir(accessor,
-                           PathSpec(vfs_path="", virtual="/", directory="/"),
-                           index)
+    result = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert any("cached.txt" in r for r in result)
 
 
 @pytest.mark.asyncio
 async def test_readdir_subfolder(accessor, index):
-    await index.set_dir('/', [('docs',
-                               IndexEntry(
-                                   id="folder1",
-                                   name="docs",
-                                   resource_type="gdrive/folder",
-                                   remote_time="2026-04-01T00:00:00.000Z",
-                                   vfs_name="docs",
-                               ))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "docs",
+                IndexEntry(
+                    id="folder1",
+                    name="docs",
+                    resource_type="gdrive/folder",
+                    remote_time="2026-04-01T00:00:00.000Z",
+                    vfs_name="docs",
+                ),
+            )
+        ],
+    )
 
     files = [
         {
@@ -183,44 +209,47 @@ async def test_readdir_subfolder(accessor, index):
             "mimeType": "text/plain",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
             "owners": [],
-            "capabilities": {
-                "canEdit": False
-            },
+            "capabilities": {"canEdit": False},
         },
     ]
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new_callable=AsyncMock,
-            return_value=files,
+        "mirage.core.gdrive.readdir.list_files",
+        new_callable=AsyncMock,
+        return_value=files,
     ) as mock_list:
         result = await readdir(
             accessor,
             PathSpec(vfs_path="docs", virtual="/docs", directory="/docs"),
-            index)
+            index,
+        )
         assert "/docs/notes.txt" in result
-        mock_list.assert_called_once_with(accessor.token_manager,
-                                          folder_id="folder1",
-                                          drive_id=None)
+        mock_list.assert_called_once_with(
+            accessor.token_manager, folder_id="folder1", drive_id=None
+        )
 
 
 @pytest.mark.asyncio
 async def test_readdir_repopulates_evicted_subfolder(accessor, index):
-    root_files = [{
-        "id": "folder1",
-        "name": "docs",
-        "mimeType": "application/vnd.google-apps.folder",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
-    docs_files = [{
-        "id": "f2",
-        "name": "notes.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
+    root_files = [
+        {
+            "id": "folder1",
+            "name": "docs",
+            "mimeType": "application/vnd.google-apps.folder",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
+    docs_files = [
+        {
+            "id": "f2",
+            "name": "notes.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
 
     async def fake_list_files(_tm, folder_id, drive_id=None):
         if folder_id == "root":
@@ -230,27 +259,31 @@ async def test_readdir_repopulates_evicted_subfolder(accessor, index):
         raise AssertionError(f"unexpected folder_id={folder_id}")
 
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new=fake_list_files,
+        "mirage.core.gdrive.readdir.list_files",
+        new=fake_list_files,
     ):
         result = await readdir(
             accessor,
             PathSpec(vfs_path="docs", virtual="/docs", directory="/docs"),
-            index)
+            index,
+        )
         assert "/docs/notes.txt" in result
 
 
 @pytest.mark.asyncio
 async def test_readdir_missing_subfolder_raises_after_recursion(
-        accessor, index):
-    root_files = [{
-        "id": "f1",
-        "name": "other.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
+    accessor, index
+):
+    root_files = [
+        {
+            "id": "f1",
+            "name": "other.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
 
     async def fake_list_files(_tm, folder_id, drive_id=None):
         if folder_id == "root":
@@ -258,14 +291,15 @@ async def test_readdir_missing_subfolder_raises_after_recursion(
         raise AssertionError(f"should not list folder_id={folder_id}")
 
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new=fake_list_files,
+        "mirage.core.gdrive.readdir.list_files",
+        new=fake_list_files,
     ):
         with pytest.raises(FileNotFoundError):
             await readdir(
                 accessor,
                 PathSpec(vfs_path="docs", virtual="/docs", directory="/docs"),
-                index)
+                index,
+            )
 
 
 @pytest.mark.asyncio
@@ -273,14 +307,16 @@ async def test_readdir_under_a_file_is_not_a_directory(accessor, index):
     # Listing a file's own id answers with an empty child set rather than
     # an error, so the recursion below has to refuse at the file itself or
     # `/a.txt/x` comes back ENOENT where opendir(2) says ENOTDIR.
-    root_files = [{
-        "id": "f1",
-        "name": "a.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
+    root_files = [
+        {
+            "id": "f1",
+            "name": "a.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
 
     async def fake_list_files(_tm, folder_id, drive_id=None):
         if folder_id == "root":
@@ -288,34 +324,49 @@ async def test_readdir_under_a_file_is_not_a_directory(accessor, index):
         raise AssertionError(f"should not list folder_id={folder_id}")
 
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new=fake_list_files,
+        "mirage.core.gdrive.readdir.list_files",
+        new=fake_list_files,
     ):
         with pytest.raises(NotADirectoryError):
             await readdir(
                 accessor,
-                PathSpec(vfs_path="a.txt/x",
-                         virtual="/a.txt/x",
-                         directory="/a.txt/x"), index)
+                PathSpec(
+                    vfs_path="a.txt/x",
+                    virtual="/a.txt/x",
+                    directory="/a.txt/x",
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_readdir_root_includes_shared_drives(accessor, index):
-    files = [{
-        "id": "f1",
-        "name": "readme.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
+    files = [
+        {
+            "id": "f1",
+            "name": "readme.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
     drives = [{"id": "drive1", "name": "Team Drive"}]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=drives):
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=drives,
+        ),
+    ):
         result = await readdir(
-            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index)
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
         assert "/readme.txt" in result
         # Shared Drives appear as top-level directories.
         assert "/Team Drive/" in result
@@ -327,27 +378,28 @@ async def test_readdir_root_includes_shared_drives(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_root_uniquifies_duplicate_shared_drive_names(
-        accessor, index):
+    accessor, index
+):
     drives = [
-        {
-            "id": "drive1",
-            "name": "Team"
-        },
-        {
-            "id": "drive2",
-            "name": "Team"
-        },
-        {
-            "id": "drive3",
-            "name": "Team"
-        },
+        {"id": "drive1", "name": "Team"},
+        {"id": "drive2", "name": "Team"},
+        {"id": "drive3", "name": "Team"},
     ]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=[]), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=drives):
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=drives,
+        ),
+    ):
         result = await readdir(
-            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index)
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     assert result == [
         "/Team/",
@@ -362,26 +414,38 @@ async def test_readdir_root_uniquifies_duplicate_shared_drive_names(
 @pytest.mark.asyncio
 async def test_readdir_root_shared_drives_best_effort(accessor, index):
     """If Shared Drive enumeration fails, My Drive listing still succeeds."""
-    files = [{
-        "id": "f1",
-        "name": "readme.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, side_effect=RuntimeError("no scope")):
+    files = [
+        {
+            "id": "f1",
+            "name": "readme.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("no scope"),
+        ),
+    ):
         result = await readdir(
-            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index)
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
         assert "/readme.txt" in result
 
 
 @pytest.mark.asyncio
 async def test_readdir_failed_shared_drives_leaves_root_uncached(
-        accessor, index):
+    accessor, index
+):
     """A short root listing must not be cached as the directory.
 
     Caching it would keep the mount My-Drive-only until the entry expires,
@@ -389,28 +453,46 @@ async def test_readdir_failed_shared_drives_leaves_root_uncached(
     so they stay cached; only the directory listing is withheld, so the
     next readdir retries enumeration and picks the Shared Drive up.
     """
-    files = [{
-        "id": "f1",
-        "name": "readme.txt",
-        "mimeType": "text/plain",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [],
-        "capabilities": {},
-    }]
+    files = [
+        {
+            "id": "f1",
+            "name": "readme.txt",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [],
+            "capabilities": {},
+        }
+    ]
     root = PathSpec(vfs_path="", virtual="/", directory="/")
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, side_effect=RuntimeError("no scope")):
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("no scope"),
+        ),
+    ):
         await readdir(accessor, root, index)
     assert (await index.list_dir("/")).entries is None
     assert (await index.get("/readme.txt")).entry.id == "f1"
 
     drives = [{"id": "drive1", "name": "Team"}]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=drives):
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=drives,
+        ),
+    ):
         result = await readdir(accessor, root, index)
     assert "/Team/" in result
     assert (await index.list_dir("/")).entries is not None
@@ -424,13 +506,8 @@ async def test_readdir_workspace_files_get_extensions(accessor, index):
             "name": "My Document",
             "mimeType": "application/vnd.google-apps.document",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
-            "owners": [{
-                "me": True,
-                "emailAddress": "me@gmail.com"
-            }],
-            "capabilities": {
-                "canEdit": True
-            },
+            "owners": [{"me": True, "emailAddress": "me@gmail.com"}],
+            "capabilities": {"canEdit": True},
         },
         {
             "id": "s1",
@@ -438,9 +515,7 @@ async def test_readdir_workspace_files_get_extensions(accessor, index):
             "mimeType": "application/vnd.google-apps.spreadsheet",
             "modifiedTime": "2026-04-01T00:00:00.000Z",
             "owners": [],
-            "capabilities": {
-                "canEdit": False
-            },
+            "capabilities": {"canEdit": False},
         },
         {
             "id": "p1",
@@ -452,12 +527,13 @@ async def test_readdir_workspace_files_get_extensions(accessor, index):
         },
     ]
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new_callable=AsyncMock,
-            return_value=files,
+        "mirage.core.gdrive.readdir.list_files",
+        new_callable=AsyncMock,
+        return_value=files,
     ):
         result = await readdir(
-            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index)
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
         assert "/My Document.gdoc.json" in result
         assert "/My Sheet.gsheet.json" in result
         assert "/My Slides.gslide.json" in result
@@ -486,12 +562,13 @@ async def test_readdir_size_binary_kept_google_apps_in_extra(accessor, index):
         },
     ]
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new_callable=AsyncMock,
-            return_value=files,
+        "mirage.core.gdrive.readdir.list_files",
+        new_callable=AsyncMock,
+        return_value=files,
     ):
-        await readdir(accessor,
-                      PathSpec(vfs_path="", virtual="/", directory="/"), index)
+        await readdir(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     # Binary files download raw: Drive's size is the rendered byte length.
     binary = (await index.get("/report.pdf")).entry
@@ -505,7 +582,8 @@ async def test_readdir_size_binary_kept_google_apps_in_extra(accessor, index):
 
 @pytest.mark.asyncio
 async def test_readdir_scoped_mount_lists_folder_children(
-        fake_drive, scoped_accessor):
+    fake_drive, scoped_accessor
+):
     scope = fake_drive.folder("scope")
     fake_drive.add("in.txt", parent=scope, content=b"x")
     fake_drive.add("out.txt", content=b"y")
@@ -519,36 +597,49 @@ async def test_readdir_scoped_mount_lists_folder_children(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reported_size, expected", [("0", 0), ("42", 42),
-                                                     (None, None)])
+@pytest.mark.parametrize(
+    "reported_size, expected", [("0", 0), ("42", 42), (None, None)]
+)
 async def test_binary_size_preserves_zero_and_never_uses_quota(
-        accessor, index, reported_size, expected):
+    accessor, index, reported_size, expected
+):
     item = {
         "id": "binary",
         "name": "file.txt",
         "mimeType": "text/plain",
-        "quotaBytesUsed": "99"
+        "quotaBytesUsed": "99",
     }
     if reported_size is not None:
         item["size"] = reported_size
     with (
-            patch("mirage.core.gdrive.readdir.list_files",
-                  new=AsyncMock(return_value=[item])),
-            patch("mirage.core.gdrive.readdir.list_shared_drives",
-                  new=AsyncMock(return_value=[])),
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new=AsyncMock(return_value=[item]),
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
-        rows = await readdir(accessor, PathSpec.from_str_path("/drive", ""),
-                             index)
+        rows = await readdir(
+            accessor, PathSpec.from_str_path("/drive", ""), index
+        )
         assert rows == ["/drive/file.txt"]
         result = await stat(
-            accessor, PathSpec.from_str_path("/drive/file.txt", "file.txt"),
-            index)
+            accessor,
+            PathSpec.from_str_path("/drive/file.txt", "file.txt"),
+            index,
+        )
         assert result.size == expected
     with (
-            patch("mirage.core.gdrive.resolve.list_files",
-                  new=AsyncMock(return_value=[item])),
-            patch("mirage.core.gdrive.stat.get_file",
-                  new=AsyncMock(return_value=item)),
+        patch(
+            "mirage.core.gdrive.resolve.list_files",
+            new=AsyncMock(return_value=[item]),
+        ),
+        patch(
+            "mirage.core.gdrive.stat.get_file",
+            new=AsyncMock(return_value=item),
+        ),
     ):
         result = await stat_from_api(accessor, "file.txt", "/drive/file.txt")
         assert result.size == expected
@@ -556,27 +647,39 @@ async def test_binary_size_preserves_zero_and_never_uses_quota(
 
 @pytest.mark.asyncio
 async def test_readdir_carries_both_content_tokens_onto_the_entry(
-        accessor, index):
+    accessor, index
+):
     """stat reads its token off the entry, so the listing has to store it.
 
     Asserted key by key rather than against the whole dict, so the two
     keys that were already there keep their own assertions below.
     """
-    files = [{
-        "id": "f1",
-        "name": "report.pdf",
-        "mimeType": "application/pdf",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "size": "2048",
-        "md5Checksum": "9f2b6c1d4e5a7b8c9d0e1f2a3b4c5d6e",
-        "headRevisionId": "f1-r3",
-    }]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=[]):
-        await readdir(accessor,
-                      PathSpec(vfs_path="", virtual="/", directory="/"), index)
+    files = [
+        {
+            "id": "f1",
+            "name": "report.pdf",
+            "mimeType": "application/pdf",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "size": "2048",
+            "md5Checksum": "9f2b6c1d4e5a7b8c9d0e1f2a3b4c5d6e",
+            "headRevisionId": "f1-r3",
+        }
+    ]
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        await readdir(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     entry = (await index.get("/report.pdf")).entry
     assert entry.extra["md5_checksum"] == "9f2b6c1d4e5a7b8c9d0e1f2a3b4c5d6e"
@@ -585,25 +688,37 @@ async def test_readdir_carries_both_content_tokens_onto_the_entry(
 
 @pytest.mark.asyncio
 async def test_readdir_omits_the_tokens_a_native_file_does_not_have(
-        accessor, index):
+    accessor, index
+):
     """A gdoc carries neither field, and the key must be absent, not None.
 
     Key presence is the observable because the listing omits what Drive did
     not send. If the fixture handed every item an md5 instead, the chain's
     second and third steps would never run in any test here.
     """
-    files = [{
-        "id": "d1",
-        "name": "My Document",
-        "mimeType": "application/vnd.google-apps.document",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-    }]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=[]):
-        await readdir(accessor,
-                      PathSpec(vfs_path="", virtual="/", directory="/"), index)
+    files = [
+        {
+            "id": "d1",
+            "name": "My Document",
+            "mimeType": "application/vnd.google-apps.document",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+        }
+    ]
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        await readdir(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     entry = (await index.get("/My Document.gdoc.json")).entry
     assert "md5_checksum" not in entry.extra
@@ -612,7 +727,8 @@ async def test_readdir_omits_the_tokens_a_native_file_does_not_have(
 
 @pytest.mark.asyncio
 async def test_readdir_adds_the_tokens_without_displacing_the_old_keys(
-        accessor, index):
+    accessor, index
+):
     """`extra` is extended, not replaced.
 
     The binary file is the case that separates the two: it is the only kind
@@ -640,12 +756,21 @@ async def test_readdir_adds_the_tokens_without_displacing_the_old_keys(
             "quotaBytesUsed": "9999",
         },
     ]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=files), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=[]):
-        await readdir(accessor,
-                      PathSpec(vfs_path="", virtual="/", directory="/"), index)
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=files,
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        await readdir(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     binary = (await index.get("/report.pdf")).entry
     assert binary.extra["drive_id"] == "drive1"
@@ -664,18 +789,31 @@ async def test_a_shared_drive_root_carries_no_content_token(accessor, index):
     unnoticed by every other test in this file.
     """
     drives = [{"id": "drive1", "name": "Team Drive"}]
-    with patch("mirage.core.gdrive.readdir.list_files",
-               new_callable=AsyncMock, return_value=[]), \
-         patch("mirage.core.gdrive.readdir.list_shared_drives",
-               new_callable=AsyncMock, return_value=drives):
-        await readdir(accessor,
-                      PathSpec(vfs_path="", virtual="/", directory="/"), index)
+    with (
+        patch(
+            "mirage.core.gdrive.readdir.list_files",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "mirage.core.gdrive.readdir.list_shared_drives",
+            new_callable=AsyncMock,
+            return_value=drives,
+        ),
+    ):
+        await readdir(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
 
     entry = (await index.get("/Team Drive")).entry
     assert "md5_checksum" not in entry.extra
     result = await stat(
         accessor,
-        PathSpec(vfs_path="Team Drive",
-                 virtual="/Team Drive",
-                 directory="/Team Drive"), index)
+        PathSpec(
+            vfs_path="Team Drive",
+            virtual="/Team Drive",
+            directory="/Team Drive",
+        ),
+        index,
+    )
     assert result.fingerprint is None

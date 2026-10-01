@@ -15,17 +15,30 @@
 import posixpath
 from dataclasses import dataclass
 
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    GitError, MoveOverlapError, MoveRefusedError, MoveUsageError,
-    NotADirectoryDestinationError, NoWorkspaceError, RenameFailedError,
-    UnknownSwitchError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    MoveOverlapError,
+    MoveRefusedError,
+    MoveUsageError,
+    NotADirectoryDestinationError,
+    NoWorkspaceError,
+    RenameFailedError,
+    UnknownSwitchError,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.io import remove_file, rename_path
 from mirage.commands.cli.builtin.git.pathspec import repo_relative, under
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.types import IndexState, RepoLocation
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, mounts_of, start_point, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    mounts_of,
+    start_point,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -63,6 +76,7 @@ class MvFlags:
         verbose (bool): ``-v``, print one line per move; implied by
             ``-n``.
     """
+
     force: bool
     skip: bool
     dry_run: bool
@@ -76,10 +90,12 @@ def parse_flags(fl: FlagView) -> MvFlags:
         fl (FlagView): spec-validated view over the raw flag kwargs.
     """
     dry_run = fl.as_bool("dry_run")
-    return MvFlags(force=fl.as_bool("force"),
-                   skip=fl.as_bool("k"),
-                   dry_run=dry_run,
-                   verbose=fl.as_bool("verbose") or dry_run)
+    return MvFlags(
+        force=fl.as_bool("force"),
+        skip=fl.as_bool("k"),
+        dry_run=dry_run,
+        verbose=fl.as_bool("verbose") or dry_run,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,14 +112,16 @@ class Move:
             directory.
         directory (bool): whether the source is a directory.
     """
+
     source: str
     destination: str
     paths: tuple[str, ...]
     directory: bool
 
 
-async def lstat(stat_path: StatPath, links: LinkView | None,
-                path: str) -> FileStat | None:
+async def lstat(
+    stat_path: StatPath, links: LinkView | None, path: str
+) -> FileStat | None:
     """What sits at a path, without following a link.
 
     Args:
@@ -127,7 +145,7 @@ def moved_path(move: Move, path: str) -> str:
     """
     if not move.directory:
         return move.destination
-    return f"{move.destination}{path[len(move.source):]}"
+    return f"{move.destination}{path[len(move.source) :]}"
 
 
 def conflicting(move: Move, conflicted: set[str]) -> tuple[str, str] | None:
@@ -204,10 +222,16 @@ def spanning(mounts: MountView | None, path: str, landing: str) -> bool:
     return mounts.root_of(path) != mounts.root_of(landing)
 
 
-async def check(stat_path: StatPath, links: LinkView | None,
-                location: RepoLocation, source: str, destination: str,
-                tracked: set[str], conflicted: set[str],
-                force: bool) -> tuple[str | None, tuple[str, ...], bool]:
+async def check(
+    stat_path: StatPath,
+    links: LinkView | None,
+    location: RepoLocation,
+    source: str,
+    destination: str,
+    tracked: set[str],
+    conflicted: set[str],
+    force: bool,
+) -> tuple[str | None, tuple[str, ...], bool]:
     """Whether one source can move, in git's own order of refusals.
 
     The index is read before the destination is looked at, which is
@@ -231,8 +255,9 @@ async def check(stat_path: StatPath, links: LinkView | None,
         tuple: the refusal wording or None, the tracked paths that move,
         and whether the source is a directory.
     """
-    info = await lstat(stat_path, links,
-                       posixpath.join(location.worktree, source))
+    info = await lstat(
+        stat_path, links, posixpath.join(location.worktree, source)
+    )
     if info is None:
         return BAD_SOURCE, (), False
     if destination == source or destination.startswith(f"{source}/"):
@@ -250,11 +275,11 @@ async def check(stat_path: StatPath, links: LinkView | None,
     if source not in tracked:
         return NOT_UNDER_VERSION_CONTROL, (), False
     if source in conflicted:
-        return CONFLICTED, (source, ), False
+        return CONFLICTED, (source,), False
     target = await lstat(stat_path, links, landing)
     if target is not None and (not force or target.type is FileType.DIRECTORY):
         return DESTINATION_EXISTS, (), False
-    return None, (source, ), False
+    return None, (source,), False
 
 
 def overlapping(moves: list[Move]) -> tuple[str, str] | None:
@@ -283,10 +308,17 @@ def overlapping(moves: list[Move]) -> tuple[str, str] | None:
     return None
 
 
-async def plan(stat_path: StatPath, links: LinkView | None,
-               mounts: MountView | None, location: RepoLocation, start: str,
-               operands: tuple[str, ...], tracked: set[str],
-               conflicted: set[str], flags: MvFlags) -> list[Move]:
+async def plan(
+    stat_path: StatPath,
+    links: LinkView | None,
+    mounts: MountView | None,
+    location: RepoLocation,
+    start: str,
+    operands: tuple[str, ...],
+    tracked: set[str],
+    conflicted: set[str],
+    flags: MvFlags,
+) -> list[Move]:
     """Decide every move before making any, which is git's order too.
 
     The last operand is the destination. With several sources it has to
@@ -306,21 +338,33 @@ async def plan(stat_path: StatPath, links: LinkView | None,
         flags (MvFlags): the parsed flags.
     """
     destination = repo_relative(location, start, operands[-1])
-    target = await lstat(stat_path, links,
-                         posixpath.join(location.worktree, destination))
-    into = destination == "" or (target is not None
-                                 and target.type is FileType.DIRECTORY)
+    target = await lstat(
+        stat_path, links, posixpath.join(location.worktree, destination)
+    )
+    into = destination == "" or (
+        target is not None and target.type is FileType.DIRECTORY
+    )
     if len(operands) > 2 and not into:
         raise NotADirectoryDestinationError(destination)
     moves: list[Move] = []
     claimed: set[str] = set()
     for operand in operands[:-1]:
         source = repo_relative(location, start, operand)
-        landing = (posixpath.join(destination, posixpath.basename(source))
-                   if into else destination)
-        reason, paths, directory = await check(stat_path, links, location,
-                                               source, landing, tracked,
-                                               conflicted, flags.force)
+        landing = (
+            posixpath.join(destination, posixpath.basename(source))
+            if into
+            else destination
+        )
+        reason, paths, directory = await check(
+            stat_path,
+            links,
+            location,
+            source,
+            landing,
+            tracked,
+            conflicted,
+            flags.force,
+        )
         move = Move(source, landing, paths, directory)
         named = (source, landing)
         if reason == CONFLICTED:
@@ -337,8 +381,10 @@ async def plan(stat_path: StatPath, links: LinkView | None,
             if clash is not None:
                 reason, named = MULTIPLE_SOURCES, clash
         if reason is None and spanning(
-                mounts, posixpath.join(location.worktree, source),
-                posixpath.join(location.worktree, landing)):
+            mounts,
+            posixpath.join(location.worktree, source),
+            posixpath.join(location.worktree, landing),
+        ):
             # Last, after every check git itself makes, so a source git
             # would refuse anyway is refused in git's own words. ``-k``
             # skips it like any other rename this source cannot survive.
@@ -363,8 +409,13 @@ async def plan(stat_path: StatPath, links: LinkView | None,
     return moves
 
 
-async def apply(dispatch: DispatchFn, location: RepoLocation,
-                state: IndexState, move: Move, force: bool) -> None:
+async def apply(
+    dispatch: DispatchFn,
+    location: RepoLocation,
+    state: IndexState,
+    move: Move,
+    force: bool,
+) -> None:
     """Make one move in the working tree and the index.
 
     The working tree moves first, through the mount's own rename so a
@@ -421,34 +472,45 @@ async def mv(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         flags = parse_flags(fl)
         if len(texts) < 2:
             raise MoveUsageError()
         repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         conflicted = {
-            path.decode("utf-8", errors="replace")
-            for path in state.conflicts
+            path.decode("utf-8", errors="replace") for path in state.conflicts
         }
         # An unmerged path holds no ordinary entry, so a tracked set
         # built from the entries alone would call it untracked and let
         # a directory holding one move with its stages left behind.
         tracked = {
-            path.decode("utf-8", errors="replace")
-            for path in state.entries
+            path.decode("utf-8", errors="replace") for path in state.entries
         } | conflicted
-        moves = await plan(stat_path,
-                           links_of(doors), mounts_of(doors), location,
-                           start_point(fl), texts, tracked, conflicted, flags)
+        moves = await plan(
+            stat_path,
+            links_of(doors),
+            mounts_of(doors),
+            location,
+            start_point(fl),
+            texts,
+            tracked,
+            conflicted,
+            flags,
+        )
         lines: list[str] = []
         if flags.dry_run:
-            lines.extend(f"Checking rename of '{move.source}' to "
-                         f"'{move.destination}'" for move in moves)
+            lines.extend(
+                f"Checking rename of '{move.source}' to '{move.destination}'"
+                for move in moves
+            )
         if flags.verbose:
-            lines.extend(f"Renaming {move.source} to {move.destination}"
-                         for move in moves)
+            lines.extend(
+                f"Renaming {move.source} to {move.destination}"
+                for move in moves
+            )
         if not flags.dry_run:
             for move in moves:
                 await apply(dispatch, location, state, move, flags.force)
@@ -457,5 +519,6 @@ async def mv(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         return fatal(exc)
     if not lines:
         return None, IOResult()
-    return yield_bytes("".join(f"{line}\n"
-                               for line in lines).encode()), IOResult()
+    return yield_bytes(
+        "".join(f"{line}\n" for line in lines).encode()
+    ), IOResult()

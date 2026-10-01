@@ -14,8 +14,10 @@ def _root() -> PathSpec:
 
 
 async def _ws(tmp_path) -> Workspace:
-    return Workspace({"/d": (DiskVFS(root=str(tmp_path)), MountMode.READ)},
-                     mode=MountMode.READ)
+    return Workspace(
+        {"/d": (DiskVFS(root=str(tmp_path)), MountMode.READ)},
+        mode=MountMode.READ,
+    )
 
 
 @pytest.mark.asyncio
@@ -47,7 +49,8 @@ async def test_mapped_create_appears_in_a_warm_listing(tmp_path):
     (tmp_path / "day" / "b.txt").write_text("b")
     hook = DiskEventHook(ws.registry.mount_for("/d").vfs.accessor)
     for change in await hook.to_events(
-            _root(), "created", {"src_path": str(tmp_path / "day" / "b.txt")}):
+        _root(), "created", {"src_path": str(tmp_path / "day" / "b.txt")}
+    ):
         await ws.notify(change)
 
     assert "b.txt" in await (await ws.shell("ls /d/day")).stdout_str()
@@ -79,7 +82,8 @@ async def test_a_scoped_event_is_delivered_to_a_matching_watch(tmp_path):
 
     hook = DiskEventHook(ws.registry.mount_for("/d").vfs.accessor)
     for change in await hook.to_events(
-            _root(), "created", {"src_path": str(tmp_path / "day" / "c.txt")}):
+        _root(), "created", {"src_path": str(tmp_path / "day" / "c.txt")}
+    ):
         await ws.notify(change)
 
     got = await asyncio.wait_for(task, timeout=2)

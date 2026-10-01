@@ -88,7 +88,8 @@ def test_unzip_p_missing_member_exits_11(env):
     assert io.exit_code == 11
     assert _bytes_of(io.stdout) == b""
     assert _bytes_of(io.stderr).decode() == (
-        "caution: filename not matched:  NOSUCHFILE.xml\n")
+        "caution: filename not matched:  NOSUCHFILE.xml\n"
+    )
 
 
 def test_unzip_extract_member_writes_only_that_member(env):

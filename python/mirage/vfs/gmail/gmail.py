@@ -27,7 +27,6 @@ from mirage.vfs.gmail.prompt import PROMPT, WRITE_PROMPT
 
 
 class GmailVFS(BaseVFS):
-
     accessor: GmailAccessor
     name: str = VFSName.GMAIL
     caches_reads: bool = True

@@ -23,6 +23,7 @@ class ByteWindow:
     to check the answer against the same two numbers, so a helper handed
     only the rendered header cannot finish the job.
     """
+
     offset: int
     size: int | None
 
@@ -78,14 +79,15 @@ def slice_window(data: bytes, offset: int, size: int | None) -> bytes:
         offset (int): first byte to keep.
         size (int | None): how many bytes, or None for the rest.
     """
-    return data[offset:None if size is None else offset + size]
+    return data[offset : None if size is None else offset + size]
 
 
 PARTIAL_CONTENT = 206
 
 
-def window_if_unranged(data: bytes, status: int, offset: int,
-                       size: int | None) -> bytes:
+def window_if_unranged(
+    data: bytes, status: int, offset: int, size: int | None
+) -> bytes:
     """The window, whether or not the server honored the Range header.
 
     Sending a Range is a request, not an instruction: RFC 9110 lets a
@@ -196,7 +198,6 @@ def is_unsatisfiable_range(exc: BaseException) -> bool:
     # Asked for a window past the end, huggingface echoes a Content-Range
     # whose end precedes its start (``bytes 99-2/3`` for a 3-byte file)
     # and OpenDAL refuses to parse it rather than reporting a status.
-    if ("content range is invalid" in text
-            and "end is less than start" in text):
+    if "content range is invalid" in text and "end is less than start" in text:
         return True
     return "seek" in text and "beyond the end" in text

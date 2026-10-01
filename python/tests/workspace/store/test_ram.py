@@ -84,12 +84,14 @@ async def test_cas_set_meta_legacy_record_counts_as_generation_zero():
 async def test_replace_meta_preserves_created_at_and_serializes():
     store = RAMWorkspaceStateStore()
     await store.set_meta(
-        "a", {
+        "a",
+        {
             "workspace_id": "a",
             "default_session_id": "old",
             "created_at": 1.0,
             "generation": 4,
-        })
+        },
+    )
     written = await store.replace_meta("a", {"default_session_id": "new"})
     assert written["default_session_id"] == "new"
     assert written["created_at"] == 1.0
@@ -100,9 +102,12 @@ async def test_replace_meta_preserves_created_at_and_serializes():
 @pytest.mark.asyncio
 async def test_replace_meta_creates_when_absent():
     store = RAMWorkspaceStateStore()
-    written = await store.replace_meta("a", {
-        "workspace_id": "a",
-        "default_session_id": "s",
-    })
+    written = await store.replace_meta(
+        "a",
+        {
+            "workspace_id": "a",
+            "default_session_id": "s",
+        },
+    )
     assert written["generation"] == 1
     assert written["created_at"] > 0

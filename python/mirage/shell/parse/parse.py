@@ -19,13 +19,20 @@ import tree_sitter
 import tree_sitter_bash
 
 from mirage.shell.parameter import scan_parameter
-from mirage.shell.parse.constants import (ARITH_OPEN_TOKEN, QUOTES,
-                                          VERBATIM_TYPES)
+from mirage.shell.parse.constants import (
+    ARITH_OPEN_TOKEN,
+    QUOTES,
+    VERBATIM_TYPES,
+)
 from mirage.shell.parse.expansion import expansion_source
 from mirage.shell.parse.heredoc import heredoc_operators, protected_source
 from mirage.shell.parse.heredoc.constants import BACKSLASH
-from mirage.shell.parse.heredoc.lower import (drop_bytes, drop_source_bytes,
-                                              lower_heredocs, rebase_source)
+from mirage.shell.parse.heredoc.lower import (
+    drop_bytes,
+    drop_source_bytes,
+    lower_heredocs,
+    rebase_source,
+)
 from mirage.shell.parse.heredoc.node import HeredocNode
 from mirage.shell.parse.heredoc.reader import delimiter_end, discover_heredocs
 from mirage.shell.parse.heredoc.types import HeredocSource
@@ -56,7 +63,7 @@ def _balanced_end(data: bytes, start: int) -> int | None:
     index = start
     quote: bytes | None = None
     while index < len(data):
-        char = data[index:index + 1]
+        char = data[index : index + 1]
         if quote is not None:
             if char == b"\\" and quote == b'"':
                 index += 2
@@ -101,11 +108,21 @@ def _is_arithmetic(data: bytes, start: int) -> bool:
     return not TS_PARSER.parse(data[start:end]).root_node.has_error
 
 
-_UNLEXED = frozenset({
-    "test_command", "arithmetic_expansion", "string_content", "raw_string",
-    "ansi_c_string", "expansion", "heredoc_content", "comment",
-    "binary_expression", "unary_expression", "postfix_expression"
-})
+_UNLEXED = frozenset(
+    {
+        "test_command",
+        "arithmetic_expansion",
+        "string_content",
+        "raw_string",
+        "ansi_c_string",
+        "expansion",
+        "heredoc_content",
+        "comment",
+        "binary_expression",
+        "unary_expression",
+        "postfix_expression",
+    }
+)
 _WORD_START = b" \t\n;&|(){}"
 _DIGITS = re.compile(rb"\d+")
 _LAST_ARM = re.compile(rb"\s*esac(?![^\s;&|()<>])")
@@ -148,17 +165,21 @@ def _respelled(data: bytes, root: TSNodeLike) -> bytes:
             continue
         stack.extend(node.children)
         start = node.start_byte
-        if node.type == "<" and data[start:start + 2] == b"<>":
+        if node.type == "<" and data[start : start + 2] == b"<>":
             out[start] = ord(">")
-        elif node.type in ("<<<", "<<") and data[start:start + 3] == b"<<<":
-            out[start + 1:start + 3] = b"  "
+        elif node.type in ("<<<", "<<") and data[start : start + 3] == b"<<<":
+            out[start + 1 : start + 3] = b"  "
         elif node.type in (";&", ";;&") and _LAST_ARM.match(
-                data, node.end_byte):
-            out[start:node.end_byte] = b";;".ljust(node.end_byte - start)
+            data, node.end_byte
+        ):
+            out[start : node.end_byte] = b";;".ljust(node.end_byte - start)
         digits = None if node.children else _DIGITS.match(data, start)
-        if (digits is not None and data[start] == ord("0")
-                and data[digits.end():digits.end() + 1] in (b"<", b">")
-                and (start == 0 or data[start - 1] in _WORD_START)):
+        if (
+            digits is not None
+            and data[start] == ord("0")
+            and data[digits.end() : digits.end() + 1] in (b"<", b">")
+            and (start == 0 or data[start - 1] in _WORD_START)
+        ):
             out[start] = ord("1")
     return bytes(out)
 
@@ -184,7 +205,7 @@ class SourceNode:
 
     @property
     def text(self) -> bytes:
-        return self._data[self._node.start_byte:self._node.end_byte]
+        return self._data[self._node.start_byte : self._node.end_byte]
 
     @property
     def children(self) -> list["SourceNode"]:
@@ -225,8 +246,9 @@ def _parse_bytes(data: bytes) -> TSNodeLike:
         data (bytes): encoded shell source.
     """
     tree = TS_PARSER.parse(data)
-    shielded_data = (protected_source(data, tree.root_node)
-                     if b"<<" in data else None) or data
+    shielded_data = (
+        protected_source(data, tree.root_node) if b"<<" in data else None
+    ) or data
     shielded_data = expansion_source(shielded_data, tree.root_node)
     shielded_data = _operator_source(shielded_data, tree.root_node)
     if shielded_data == data:
@@ -307,8 +329,11 @@ def continuation_bytes(data: bytes) -> list[int]:
         while at < len(spans) and spans[at][1] <= end - 1:
             at += 1
         verbatim = at < len(spans) and spans[at][0] <= end - 1
-        if ((end - index) % 2 and not verbatim
-                and data[end:end + 1] in (b"", b"\n")):
+        if (
+            (end - index) % 2
+            and not verbatim
+            and data[end : end + 1] in (b"", b"\n")
+        ):
             dropped.extend(range(end - 1, min(end + 1, len(data))))
         index = data.find(b"\\", end)
     return dropped
@@ -345,11 +370,14 @@ def _orphaned_dollar_offsets(root: TSNodeLike, data: bytes) -> list[int]:
     while stack:
         node = stack.pop()
         for child in node.children:
-            if (not child.is_named and child.type == "$"
-                    and node.type != "simple_expansion"
-                    and data[child.end_byte:child.end_byte + 1] != b"{"
-                    and scan_parameter(data[child.start_byte:].decode(),
-                                       0) is not None):
+            if (
+                not child.is_named
+                and child.type == "$"
+                and node.type != "simple_expansion"
+                and data[child.end_byte : child.end_byte + 1] != b"{"
+                and scan_parameter(data[child.start_byte :].decode(), 0)
+                is not None
+            ):
                 offsets.append(child.start_byte)
             stack.append(child)
     return offsets
@@ -373,8 +401,13 @@ def _rebrace_dollar(data: bytes, offset: int) -> bytes:
     name, consumed = ref
     # References contain only ASCII, so their character and byte lengths
     # agree even when the source before or after them is multibyte.
-    return (data[:offset] + b"${" + name.encode() + b"}" +
-            data[offset + consumed:])
+    return (
+        data[:offset]
+        + b"${"
+        + name.encode()
+        + b"}"
+        + data[offset + consumed :]
+    )
 
 
 def _repair_orphaned_dollars(root: TSNodeLike, data: bytes) -> TSNodeLike:
@@ -401,8 +434,9 @@ def _repair_orphaned_dollars(root: TSNodeLike, data: bytes) -> TSNodeLike:
     return root
 
 
-def _repair_redirect_dashes(root: TSNodeLike,
-                            data: bytes) -> tuple[TSNodeLike, bytes]:
+def _repair_redirect_dashes(
+    root: TSNodeLike, data: bytes
+) -> tuple[TSNodeLike, bytes]:
     # tree-sitter-bash drops a bare dash immediately before an explicit fd.
     # Quote only a dash in an uncovered gap, never text inside a word/body.
     offsets: list[int] = []
@@ -411,7 +445,7 @@ def _repair_redirect_dashes(root: TSNodeLike,
         node = stack.pop()
         end = node.start_byte
         for child in node.children:
-            gap = data[end:child.start_byte]
+            gap = data[end : child.start_byte]
             if child.type == "file_redirect" and gap.strip() == b"-":
                 offsets.append(end + gap.index(b"-"))
             end = child.end_byte
@@ -420,7 +454,7 @@ def _repair_redirect_dashes(root: TSNodeLike,
         return root, data
     repaired = data
     for offset in sorted(set(offsets), reverse=True):
-        repaired = repaired[:offset] + b"'-'" + repaired[offset + 1:]
+        repaired = repaired[:offset] + b"'-'" + repaired[offset + 1 :]
     retried = _parse_bytes(repaired)
     return (root, data) if retried.has_error else (retried, repaired)
 
@@ -436,8 +470,11 @@ def _header_inserts(root: TSNodeLike, data: bytes) -> list[tuple[int, bytes]]:
         node = stack.pop()
         stack.extend(node.children)
         if node.type in ("for_statement", "ERROR"):
-            heads.extend(kid.end_byte for kid in node.children
-                         if kid.type in ("for", "select"))
+            heads.extend(
+                kid.end_byte
+                for kid in node.children
+                if kid.type in ("for", "select")
+            )
     inserts: list[tuple[int, bytes]] = []
     for head in heads:
         start = len(data) - len(data[head:].lstrip(b" \t"))
@@ -448,14 +485,17 @@ def _header_inserts(root: TSNodeLike, data: bytes) -> list[tuple[int, bytes]]:
         if end == start or named and word == b"in":
             continue
         tail = b";" if word == b"do" else b""
-        inserts += ([(end, b' in "$@"' + tail)] if named else [(start,
-                                                                b"0 in "),
-                                                               (end, tail)])
+        inserts += (
+            [(end, b' in "$@"' + tail)]
+            if named
+            else [(start, b"0 in "), (end, tail)]
+        )
     return inserts
 
 
-def _repair_for_headers(root: TSNodeLike,
-                        data: bytes) -> tuple[TSNodeLike, bytes]:
+def _repair_for_headers(
+    root: TSNodeLike, data: bytes
+) -> tuple[TSNodeLike, bytes]:
     # Encode invalid names for runtime validation and supply omitted "$@".
     # Repeat to expose nested headers; accept only repairs adding no errors.
     repaired, retried = data, root
@@ -497,11 +537,14 @@ def _statement_boundaries(data: bytes) -> bytes:
     while stack:
         node = stack.pop()
         stack.extend(node.children)
-        if node.type not in ("command", "file_redirect",
-                             "redirected_statement"):
+        if node.type not in (
+            "command",
+            "file_redirect",
+            "redirected_statement",
+        ):
             continue
         for left, right in zip(node.children, node.children[1:]):
-            gap = data[left.end_byte:right.start_byte]
+            gap = data[left.end_byte : right.start_byte]
             if b"\n" in gap and not gap.strip():
                 offsets.add(left.end_byte + gap.index(b"\n"))
     for offset in sorted(offsets, reverse=True):
@@ -551,8 +594,11 @@ def parse(command: str) -> TSNodeLike:
             source = lower_heredocs(original, documents)
     if source is not None:
         source = drop_source_bytes(source, continuation_bytes(source.source))
-    data = (source.source
-            if source is not None else join_continuations(command).encode())
+    data = (
+        source.source
+        if source is not None
+        else join_continuations(command).encode()
+    )
     timing_marks: list[tuple[int, str, bool, int, int]] = []
     if b"time" in data or b"!" in data:
         if source is None:
@@ -571,14 +617,18 @@ def parse(command: str) -> TSNodeLike:
         # in byte space throughout, because the offsets tree-sitter
         # reports are byte offsets.
         offsets = [
-            offset for offset in set(_failed_arith_openers(root))
+            offset
+            for offset in set(_failed_arith_openers(root))
             if not _is_arithmetic(data, offset)
         ]
         if offsets:
             retried_data = data
             for offset in sorted(offsets, reverse=True):
-                retried_data = (retried_data[:offset + 1] + b" " +
-                                retried_data[offset + 1:])
+                retried_data = (
+                    retried_data[: offset + 1]
+                    + b" "
+                    + retried_data[offset + 1 :]
+                )
             retried = _parse_bytes(retried_data)
             if not retried.has_error:
                 root = retried
@@ -590,8 +640,9 @@ def parse(command: str) -> TSNodeLike:
         root = _repair_orphaned_dollars(root, data)
     if source is None:
         return root
-    repaired = source.source[:root.start_byte] + (root.text or b"")
+    repaired = source.source[: root.start_byte] + (root.text or b"")
     source = rebase_source(source, repaired)
     mapped = HeredocNode(root, source)
-    return wrap_timing(mapped, source,
-                       timing_marks) if timing_marks else mapped
+    return (
+        wrap_timing(mapped, source, timing_marks) if timing_marks else mapped
+    )

@@ -42,8 +42,10 @@ agent = Agent(
             "/ram": "In-memory filesystem",
             "/disk": "Read-only repo files",
         },
-        extra_instructions=("You will be shown attachments inline. "
-                            "Describe what you see in 1-2 sentences."),
+        extra_instructions=(
+            "You will be shown attachments inline. "
+            "Describe what you see in 1-2 sentences."
+        ),
     ),
 )
 
@@ -59,8 +61,9 @@ async def main():
         await ws.vfs.write(png_path, png_bytes)
 
     txt_path = "/ram/notes.txt"
-    await ws.vfs.write(txt_path,
-                       b"Status: green. INP < 200ms across all routes.\n")
+    await ws.vfs.write(
+        txt_path, b"Status: green. INP < 200ms across all routes.\n"
+    )
 
     client = AsyncOpenAI()
     runner = MirageRunner(ws, client=client)
@@ -71,11 +74,13 @@ async def main():
 
     print("=== build_blocks ===")
     blocks = await runner.build_blocks(
-        "Summarize the attachments. List each by type.", paths)
+        "Summarize the attachments. List each by type.", paths
+    )
     for b in blocks:
         kind = b["type"]
-        head = (b.get("text") or b.get("image_url") or b.get("file_id")
-                or "")[:60]
+        head = (b.get("text") or b.get("image_url") or b.get("file_id") or "")[
+            :60
+        ]
         print(f"  {kind}: {head}...")
 
     print()

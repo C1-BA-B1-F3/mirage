@@ -13,8 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.utils.stream import \
-    resolve_text_input as _resolve_text_input
+from mirage.commands.builtin.utils.stream import (
+    resolve_text_input as _resolve_text_input,
+)
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.trello.read import read
 from mirage.io.types import ByteSource
@@ -56,9 +57,11 @@ async def resolve_text_input(
     stdin: ByteSource | None,
     error_message: str,
 ) -> str:
-    return await _resolve_text_input(_read_file,
-                                     accessor,
-                                     inline_text=inline_text,
-                                     file_path=file_path,
-                                     stdin=stdin,
-                                     error_message=error_message)
+    return await _resolve_text_input(
+        _read_file,
+        accessor,
+        inline_text=inline_text,
+        file_path=file_path,
+        stdin=stdin,
+        error_message=error_message,
+    )

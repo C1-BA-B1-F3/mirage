@@ -28,8 +28,16 @@ from mirage.types import FileStat, PathSpec
 
 # integ/runtime holds the runtime suite (its own schema and runners,
 # integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
-CASE_DIRS = ("unix", "bash", "crossmount", "vfs", "cli", "session", "console",
-             "secrets")
+CASE_DIRS = (
+    "unix",
+    "bash",
+    "crossmount",
+    "vfs",
+    "cli",
+    "session",
+    "console",
+    "secrets",
+)
 
 # A service entry names the env vars each host needs, and may declare
 # ``shared``: the fake behind it holds ONE world rather than a namespace per
@@ -42,7 +50,8 @@ SERVICE_KEYS = frozenset({"python", "typescript", "shared"})
 # show: every service-free target finishes in one event-loop tick.
 TargetRunner = Callable[
     [dict, list[dict], Path, "Report | None", "list[dict] | None"],
-    Awaitable[None]]
+    Awaitable[None],
+]
 
 
 def integ_root() -> Path:
@@ -76,9 +85,11 @@ def validate_targets(data: dict) -> list[dict]:
     for target in data["targets"]:
         flag = target.get("exclusive")
         if flag is not None and not isinstance(flag, bool):
-            raise KeyError(f"targets.json: target {target['id']!r} declares "
-                           f"'exclusive' as {type(flag).__name__}, must be a "
-                           f"boolean")
+            raise KeyError(
+                f"targets.json: target {target['id']!r} declares "
+                f"'exclusive' as {type(flag).__name__}, must be a "
+                f"boolean"
+            )
     return data["targets"]
 
 
@@ -114,29 +125,38 @@ def validate_services(data: dict) -> dict:
     named = {t["service"] for t in data["targets"] if t.get("service")}
     undeclared = sorted(named - set(services))
     if undeclared:
-        raise KeyError(f"targets.json: services missing an entry: "
-                       f"{', '.join(undeclared)}")
+        raise KeyError(
+            f"targets.json: services missing an entry: {', '.join(undeclared)}"
+        )
     unused = sorted(set(services) - named)
     if unused:
-        raise KeyError(f"targets.json: services entry names no target: "
-                       f"{', '.join(unused)}")
+        raise KeyError(
+            f"targets.json: services entry names no target: "
+            f"{', '.join(unused)}"
+        )
     for name, hosts in services.items():
         if not {"python", "typescript"} <= set(hosts):
-            raise KeyError(f"targets.json: service {name!r} must declare "
-                           f"both 'python' and 'typescript'")
+            raise KeyError(
+                f"targets.json: service {name!r} must declare "
+                f"both 'python' and 'typescript'"
+            )
         unknown = sorted(set(hosts) - SERVICE_KEYS)
         if unknown:
-            raise KeyError(f"targets.json: service {name!r} declares unknown "
-                           f"key(s): {', '.join(unknown)}")
+            raise KeyError(
+                f"targets.json: service {name!r} declares unknown "
+                f"key(s): {', '.join(unknown)}"
+            )
         # The value, not only the key. One file is read by two hosts, and
         # python reads `shared` for truth where typescript reads it for
         # `=== true`, so a hand-edited `"shared": 1` would serialize the
         # lane here and pool it there -- two targets on a one-world fake
         # in flight together, as a typescript-only flake.
         if "shared" in hosts and not isinstance(hosts["shared"], bool):
-            raise KeyError(f"targets.json: service {name!r} declares "
-                           f"'shared' as {type(hosts['shared']).__name__}, "
-                           f"must be a boolean")
+            raise KeyError(
+                f"targets.json: service {name!r} declares "
+                f"'shared' as {type(hosts['shared']).__name__}, "
+                f"must be a boolean"
+            )
     return services
 
 
@@ -156,8 +176,9 @@ def parse_allow_skip(services: dict, value: str) -> set[str]:
     names = {n.strip() for n in value.split(",") if n.strip()}
     unknown = sorted(names - set(services))
     if unknown:
-        raise KeyError(f"--allow-skip names unknown service(s): "
-                       f"{', '.join(unknown)}")
+        raise KeyError(
+            f"--allow-skip names unknown service(s): {', '.join(unknown)}"
+        )
     return names
 
 
@@ -218,13 +239,19 @@ def validate_cases(root: Path, cases: list[dict]) -> None:
     unknown: list[str] = []
     for case in cases:
         targets = case.get("targets")
-        if not isinstance(targets, list) or not targets or any(
-                not isinstance(target, str) for target in targets):
+        if (
+            not isinstance(targets, list)
+            or not targets
+            or any(not isinstance(target, str) for target in targets)
+        ):
             raise ValueError(
-                f"case {case['id']}: targets must be a nonempty string list")
+                f"case {case['id']}: targets must be a nonempty string list"
+            )
         if "mount_read" in case and "read" not in case:
-            raise ValueError(f"case {case['id']}: mount_read needs read, "
-                             "the policy every other mount inherits")
+            raise ValueError(
+                f"case {case['id']}: mount_read needs read, "
+                "the policy every other mount inherits"
+            )
         first = seen.get(case["id"])
         if first is not None:
             duplicates.append(f"{case['id']} ({first} and {case['_source']})")
@@ -232,18 +259,18 @@ def validate_cases(root: Path, cases: list[dict]) -> None:
             seen[case["id"]] = case["_source"]
         for target in case["targets"]:
             if target not in known:
-                unknown.append(f"{case['id']} -> {target}"
-                               f" ({case['_source']})")
+                unknown.append(f"{case['id']} -> {target} ({case['_source']})")
     if duplicates:
         raise ValueError("duplicate case ids: " + "; ".join(duplicates))
     if unknown:
-        raise ValueError("cases naming an unknown target: " +
-                         "; ".join(unknown))
+        raise ValueError(
+            "cases naming an unknown target: " + "; ".join(unknown)
+        )
 
 
 def build_fixture(
-        base: Path) -> tuple[Path, tempfile.TemporaryDirectory
-                             | None]:
+    base: Path,
+) -> tuple[Path, tempfile.TemporaryDirectory | None]:
     """Where a fixture's files are, building them first if it says to.
 
     A fixture holding a ``build.sh`` generates its own contents into a
@@ -266,8 +293,9 @@ def build_fixture(
     return built, holder
 
 
-async def seed_fixture(ws, fixture: str | None, mount_path: str,
-                       root: Path) -> None:
+async def seed_fixture(
+    ws, fixture: str | None, mount_path: str, root: Path
+) -> None:
     if not fixture:
         return
     base, holder = build_fixture(root / "fixtures" / fixture)
@@ -333,24 +361,21 @@ async def stat_check(ws, check: dict) -> str:
         check (dict): the case's ``check`` block.
     """
     if "read" in check:
-        data, _ = await ws.dispatch("read",
-                                    PathSpec.from_str_path(check["read"]),
-                                    offset=check.get("offset", 0),
-                                    size=check.get("size"))
+        data, _ = await ws.dispatch(
+            "read",
+            PathSpec.from_str_path(check["read"]),
+            offset=check.get("offset", 0),
+            size=check.get("size"),
+        )
         return data.decode("utf-8", "replace")
     try:
-        st, _ = await ws.dispatch("stat",
-                                  PathSpec.from_str_path(check["stat"]))
+        st, _ = await ws.dispatch(
+            "stat", PathSpec.from_str_path(check["stat"])
+        )
     except FileNotFoundError:
         return "absent\n"
     line = " ".join(_check_field(st, name) for name in check["fields"])
     return line + "\n"
-
-
-def provision_line(result) -> str:
-    return (f"net={result.network_read} write={result.network_write} "
-            f"cache={result.cache_read} ops={result.read_ops} "
-            f"hits={result.cache_hits} precision={result.precision.value}")
 
 
 def bind_mount(case: dict, mount_path: str) -> dict:
@@ -388,7 +413,8 @@ def bind_mount(case: dict, mount_path: str) -> dict:
             if isinstance(check.get(name), str):
                 for token, value in tokens.items():
                     bound["check"][name] = bound["check"][name].replace(
-                        token, value)
+                        token, value
+                    )
     expect = dict(bound["expect"])
     for name in ("stdout", "stderr", "check"):
         if isinstance(expect.get(name), str):
@@ -490,9 +516,14 @@ def rule_reasons(doc: dict) -> tuple[str, ...]:
     return tuple(sorted(set(found)))
 
 
-def explain_notes(predicted: tuple[int, str] | None, recorded: int,
-                  exit_code: int, out: str, err: str,
-                  reasons: tuple[str, ...]) -> list[str]:
+def explain_notes(
+    predicted: tuple[int, str] | None,
+    recorded: int,
+    exit_code: int,
+    out: str,
+    err: str,
+    reasons: tuple[str, ...],
+) -> list[str]:
     """Where the dry run and the run disagreed, empty when they agree.
 
     Three properties, checked against every policy case rather than only
@@ -524,12 +555,15 @@ def explain_notes(predicted: tuple[int, str] | None, recorded: int,
     notes: list[str] = []
     if recorded:
         notes.append(
-            f"explain: recorded {recorded} question(s), must record none")
+            f"explain: recorded {recorded} question(s), must record none"
+        )
     spoke = next((r for r in reasons if r and (r in err or r in out)), None)
     if predicted is None:
         if spoke is not None:
-            notes.append(f"explain: said the line runs, but a rule refused it "
-                         f"with {spoke!r}")
+            notes.append(
+                f"explain: said the line runs, but a rule refused it "
+                f"with {spoke!r}"
+            )
         return notes
     code, text = predicted
     if code != exit_code:
@@ -573,10 +607,6 @@ async def run_case(
         for mount in ws.mounts():
             await mount.index_store.clear()
     start = time.monotonic()
-    if case.get("provision"):
-        plan = await ws.shell(case["command"], provision=True)
-        return 0, provision_line(
-            plan) + "\n", "", time.monotonic() - start, None, []
     if case.get("answer") is not None:
         await answer_decisions(ws, case["answer"])
     predicted = None
@@ -594,9 +624,11 @@ async def run_case(
     elapsed = time.monotonic() - start
     out = await result.stdout_str()
     err = await result.stderr_str()
-    notes = (explain_notes(predicted, recorded, result.exit_code, out, err,
-                           reasons)
-             if reasons and not case.get("explain_blind") else [])
+    notes = (
+        explain_notes(predicted, recorded, result.exit_code, out, err, reasons)
+        if reasons and not case.get("explain_blind")
+        else []
+    )
     check_out = None
     if read_paths:
         paths = [
@@ -608,8 +640,9 @@ async def run_case(
     return result.exit_code, out, err, elapsed, check_out, notes
 
 
-async def run_scenario(read_ws, mutate, mutate_line,
-                       steps: list[dict]) -> tuple[int, str, str]:
+async def run_scenario(
+    read_ws, mutate, mutate_line, steps: list[dict]
+) -> tuple[int, str, str]:
     outs: list[str] = []
     errs: list[str] = []
     exit_code = 0
@@ -628,13 +661,15 @@ async def run_scenario(read_ws, mutate, mutate_line,
     return exit_code, "".join(outs), "".join(errs)
 
 
-def compare(case: dict,
-            exit_code: int,
-            out: str,
-            err: str,
-            elapsed: float,
-            check_out: str | None = None,
-            notes: list[str] | None = None) -> list[str]:
+def compare(
+    case: dict,
+    exit_code: int,
+    out: str,
+    err: str,
+    elapsed: float,
+    check_out: str | None = None,
+    notes: list[str] | None = None,
+) -> list[str]:
     expect = case["expect"]
     diffs: list[str] = list(notes or [])
     if exit_code != expect["exit"]:
@@ -647,8 +682,10 @@ def compare(case: dict,
         diffs.append(f"check: expected {expect['check']!r}, got {check_out!r}")
     bounds = expect.get("elapsed")
     if bounds is not None and not bounds["min"] <= elapsed <= bounds["max"]:
-        diffs.append(f"elapsed: expected [{bounds['min']}, {bounds['max']}]"
-                     f", got {elapsed:.3f}")
+        diffs.append(
+            f"elapsed: expected [{bounds['min']}, {bounds['max']}]"
+            f", got {elapsed:.3f}"
+        )
     return diffs
 
 
@@ -721,8 +758,9 @@ def target_lane(target: dict, services: dict) -> str:
     return f"solo:{target['id']}"
 
 
-def plan_run(targets: list[dict],
-             services: dict) -> tuple[list[int], list[tuple[int, str]]]:
+def plan_run(
+    targets: list[dict], services: dict
+) -> tuple[list[int], list[tuple[int, str]]]:
     """Split eligible targets into the ones that run alone and the pool.
 
     A lane bounds a target against its own service's other targets; an
@@ -749,6 +787,9 @@ def plan_run(targets: list[dict],
         tuple: positions that run alone, and (position, lane) for the pool.
     """
     alone = [i for i, t in enumerate(targets) if t.get("exclusive") is True]
-    pool = [(i, target_lane(t, services)) for i, t in enumerate(targets)
-            if t.get("exclusive") is not True]
+    pool = [
+        (i, target_lane(t, services))
+        for i, t in enumerate(targets)
+        if t.get("exclusive") is not True
+    ]
     return alone, pool

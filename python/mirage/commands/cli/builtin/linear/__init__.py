@@ -14,8 +14,9 @@
 
 from mirage.commands.cli.builtin.linear import reads
 from mirage.commands.cli.builtin.linear.comment.add import add as comment_add
-from mirage.commands.cli.builtin.linear.comment.update import \
-    update as comment_update
+from mirage.commands.cli.builtin.linear.comment.update import (
+    update as comment_update,
+)
 from mirage.commands.cli.builtin.linear.issue.add_label import add_label
 from mirage.commands.cli.builtin.linear.issue.assign import assign
 from mirage.commands.cli.builtin.linear.issue.create import create
@@ -27,10 +28,12 @@ from mirage.commands.cli.types import CLISpec
 from mirage.commands.spec.types import Operand, Option
 from mirage.core.linear.config import LinearConfig
 
-TEAM_OPTION = Option(long="--team",
-                     type="str",
-                     required=True,
-                     description="Team key, name, or ID")
+TEAM_OPTION = Option(
+    long="--team",
+    type="str",
+    required=True,
+    description="Team key, name, or ID",
+)
 
 ARG = Operand(type="str")
 
@@ -75,7 +78,7 @@ LINEAR = CLISpec(
                     name="list",
                     description="List a team's issues",
                     fn=reads.issue_list,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
                 CLISpec(
                     name="get",
@@ -91,9 +94,11 @@ LINEAR = CLISpec(
                     options=(
                         TEAM_OPTION,
                         Option(long="--title", type="str", required=True),
-                        Option(long="--description",
-                               type="str",
-                               description="Body text (or pipe via stdin)"),
+                        Option(
+                            long="--description",
+                            type="str",
+                            description="Body text (or pipe via stdin)",
+                        ),
                     ),
                 ),
                 CLISpec(
@@ -104,9 +109,11 @@ LINEAR = CLISpec(
                     rest=ARG,
                     options=(
                         Option(long="--title", type="str"),
-                        Option(long="--description",
-                               type="str",
-                               description="Body text (or pipe via stdin)"),
+                        Option(
+                            long="--description",
+                            type="str",
+                            description="Body text (or pipe via stdin)",
+                        ),
                     ),
                 ),
                 CLISpec(
@@ -137,13 +144,15 @@ LINEAR = CLISpec(
                     fn=set_priority,
                     write=True,
                     rest=ARG,
-                    options=(Option(
-                        long="--priority",
-                        type="int",
-                        required=True,
-                        description="0=none, 1=urgent, 2=high, 3=medium, "
-                        "4=low",
-                    ), ),
+                    options=(
+                        Option(
+                            long="--priority",
+                            type="int",
+                            required=True,
+                            description="0=none, 1=urgent, 2=high, 3=medium, "
+                            "4=low",
+                        ),
+                    ),
                 ),
                 CLISpec(
                     name="set-project",
@@ -152,13 +161,17 @@ LINEAR = CLISpec(
                     write=True,
                     rest=ARG,
                     options=(
-                        Option(long="--project",
-                               type="str",
-                               description="Project ID"),
-                        Option(long="--project-name",
-                               type="str",
-                               description="Project name, looked up on "
-                               "the issue's team"),
+                        Option(
+                            long="--project",
+                            type="str",
+                            description="Project ID",
+                        ),
+                        Option(
+                            long="--project-name",
+                            type="str",
+                            description="Project name, looked up on "
+                            "the issue's team",
+                        ),
                     ),
                 ),
                 CLISpec(
@@ -168,13 +181,15 @@ LINEAR = CLISpec(
                     write=True,
                     rest=ARG,
                     options=(
-                        Option(long="--label",
-                               type="str",
-                               description="Label ID"),
-                        Option(long="--label-name",
-                               type="str",
-                               description="Label name, looked up on "
-                               "the issue's team"),
+                        Option(
+                            long="--label", type="str", description="Label ID"
+                        ),
+                        Option(
+                            long="--label-name",
+                            type="str",
+                            description="Label name, looked up on "
+                            "the issue's team",
+                        ),
                     ),
                 ),
             ),
@@ -187,14 +202,14 @@ LINEAR = CLISpec(
                     name="list",
                     description="List a team's projects",
                     fn=reads.project_list,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
                 CLISpec(
                     name="get",
                     description="Get one project by ID",
                     fn=reads.project_get,
                     rest=ARG,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
             ),
         ),
@@ -206,32 +221,34 @@ LINEAR = CLISpec(
                     name="list",
                     description="List a team's cycles",
                     fn=reads.cycle_list,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
                 CLISpec(
                     name="current",
                     description="Get a team's current cycle",
                     fn=reads.cycle_current,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
                 CLISpec(
                     name="get",
                     description="Get one cycle by ID",
                     fn=reads.cycle_get,
                     rest=ARG,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
             ),
         ),
         CLISpec(
             name="label",
             description="Manage labels",
-            subcommands=(CLISpec(
-                name="list",
-                description="List a team's labels",
-                fn=reads.label_list,
-                options=(TEAM_OPTION, ),
-            ), ),
+            subcommands=(
+                CLISpec(
+                    name="list",
+                    description="List a team's labels",
+                    fn=reads.label_list,
+                    options=(TEAM_OPTION,),
+                ),
+            ),
         ),
         CLISpec(
             name="comment",
@@ -249,10 +266,13 @@ LINEAR = CLISpec(
                     fn=comment_add,
                     write=True,
                     rest=ARG,
-                    options=(Option(long="--body",
-                                    type="str",
-                                    description="Comment text "
-                                    "(or pipe via stdin)"), ),
+                    options=(
+                        Option(
+                            long="--body",
+                            type="str",
+                            description="Comment text (or pipe via stdin)",
+                        ),
+                    ),
                 ),
                 CLISpec(
                     name="update",
@@ -260,14 +280,17 @@ LINEAR = CLISpec(
                     fn=comment_update,
                     write=True,
                     options=(
-                        Option(long="--comment",
-                               type="str",
-                               required=True,
-                               description="Comment ID"),
-                        Option(long="--body",
-                               type="str",
-                               description="Comment text "
-                               "(or pipe via stdin)"),
+                        Option(
+                            long="--comment",
+                            type="str",
+                            required=True,
+                            description="Comment ID",
+                        ),
+                        Option(
+                            long="--body",
+                            type="str",
+                            description="Comment text (or pipe via stdin)",
+                        ),
                     ),
                 ),
             ),
@@ -297,14 +320,14 @@ LINEAR = CLISpec(
                     name="list",
                     description="List a team's documents",
                     fn=reads.document_list,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
                 CLISpec(
                     name="get",
                     description="Get one document by ID",
                     fn=reads.document_get,
                     rest=ARG,
-                    options=(TEAM_OPTION, ),
+                    options=(TEAM_OPTION,),
                 ),
             ),
         ),
@@ -313,7 +336,7 @@ LINEAR = CLISpec(
             description="Search issues by text",
             fn=reads.search,
             rest=ARG,
-            options=(Option(long="--query", type="str"), ),
+            options=(Option(long="--query", type="str"),),
         ),
     ),
 )

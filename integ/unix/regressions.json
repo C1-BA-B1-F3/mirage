@@ -5,6 +5,7 @@
       "seq": 9901202,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm -f /data/pipe-produced; for i in {1..20}; do echo x >> /data/pipe-produced; echo \"$i\"; sleep 0.02; done | head -n 1; produced=$(wc -l < /data/pipe-produced); test \"$produced\" -ge 1 && test \"$produced\" -lt 20",
@@ -19,6 +20,7 @@
       "seq": 9901205,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; done | head -n 1; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
@@ -33,6 +35,7 @@
       "seq": 9901206,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; sleep 0.05; done | head -n 1; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
@@ -47,6 +50,7 @@
       "seq": 9901211,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm -f /data/sub-count; echo pre$(echo x >> /data/sub-count; printf value)post; wc -l < /data/sub-count",
@@ -61,6 +65,7 @@
       "seq": 9901213,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm -f /data/sub-count; echo {a,b}$(echo x >> /data/sub-count; printf value); wc -l < /data/sub-count",
@@ -75,6 +80,7 @@
       "seq": 9901221,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "history -c; history -s unique_history_1221; grep -Rn '^unique_history_1221$' / | sed 's/[0-9][0-9]*:/:/'",
@@ -89,6 +95,7 @@
       "seq": 9901222,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "history -c; history -s unique_history_no_label_1221; grep -Rnh '^unique_history_no_label_1221$' / | sed 's/[0-9][0-9]*:/:/'",
@@ -103,6 +110,7 @@
       "seq": 9901900,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "note": "The two-byte é begins at byte 16383 (zero based), across the 16 KiB boundary. Covers file and pipeline decoders.",
@@ -118,6 +126,7 @@
       "seq": 9901901,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "note": "A word spans byte 16384, with a final line lacking a newline.",
@@ -133,6 +142,7 @@
       "seq": 9901902,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "note": "31-byte lines straddle the 16 KiB boundary; count and early-exit consumers read the same stream.",
@@ -148,6 +158,7 @@
       "seq": 9901903,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "note": "Quiet search stops globally, while -m and -c remain per file.",
@@ -163,6 +174,7 @@
       "seq": 9901904,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/grep-stop/a/deep; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/first; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/later; printf 'hit\\nhit\\n' > /data/grep-stop/a/later; printf 'hit\\nhit\\n' > /data/grep-stop/z",
@@ -177,6 +189,7 @@
       "seq": 9901905,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "grep -rq hit /data/grep-stop /data/grep-missing",
@@ -196,6 +209,7 @@
       "seq": 9901906,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "grep -rq absent /data/grep-stop",
@@ -215,6 +229,7 @@
       "seq": 9901907,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "grep -rhm 1 hit /data/grep-stop",
@@ -234,6 +249,7 @@
       "seq": 9901908,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "grep -rch hit /data/grep-stop",
@@ -253,6 +269,7 @@
       "seq": 9901909,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "grep -rq hit /data/grep-missing /data/grep-stop",
@@ -272,6 +289,7 @@
       "seq": 9901910,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "rm -r /data/grep-stop",

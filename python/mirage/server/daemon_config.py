@@ -16,27 +16,30 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-ALLOWED_KEYS = frozenset({
-    "url",
-    "socket",
-    "auth_token",
-    "auth_mode",
-    "allowed_hosts",
-    "jwt_alg",
-    "jwt_issuer",
-    "jwt_audience",
-    "jwt_pubkey_file",
-    "jwt_clock_skew",
-    "jwt_authorized_parties",
-    "idle_grace_seconds",
-    "port",
-    "ssh_port",
-    "ssh_host",
-    "ssh_host_key_file",
-    "ssh_authorized_keys",
-})
+ALLOWED_KEYS = frozenset(
+    {
+        "url",
+        "socket",
+        "auth_token",
+        "auth_mode",
+        "allowed_hosts",
+        "jwt_alg",
+        "jwt_issuer",
+        "jwt_audience",
+        "jwt_pubkey_file",
+        "jwt_clock_skew",
+        "jwt_authorized_parties",
+        "idle_grace_seconds",
+        "port",
+        "ssh_port",
+        "ssh_host",
+        "ssh_host_key_file",
+        "ssh_authorized_keys",
+    }
+)
 NUMERIC_KEYS = frozenset(
-    {"idle_grace_seconds", "jwt_clock_skew", "port", "ssh_port"})
+    {"idle_grace_seconds", "jwt_clock_skew", "port", "ssh_port"}
+)
 
 
 class DaemonConfigError(Exception):
@@ -56,15 +59,19 @@ def validate_daemon_table(table: dict[str, Any]) -> None:
     if unknown:
         raise DaemonConfigError(
             "config.toml: the following [daemon] keys don't match any "
-            f"configuration option: {', '.join(unknown)}")
+            f"configuration option: {', '.join(unknown)}"
+        )
     bad_types = sorted(
-        k for k, v in table.items()
-        if (k in NUMERIC_KEYS and not isinstance(v, (int, float))) or (
-            k not in NUMERIC_KEYS and not isinstance(v, str)))
+        k
+        for k, v in table.items()
+        if (k in NUMERIC_KEYS and not isinstance(v, (int, float)))
+        or (k not in NUMERIC_KEYS and not isinstance(v, str))
+    )
     if bad_types:
         raise DaemonConfigError(
             "config.toml: the following [daemon] keys have the wrong "
-            f"type: {', '.join(bad_types)}")
+            f"type: {', '.join(bad_types)}"
+        )
 
 
 def read_daemon_table(home: Path) -> dict[str, Any]:

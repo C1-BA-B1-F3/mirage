@@ -73,6 +73,7 @@ class _Hunk:
         note (str): what its header carries after the closing ``@@``.
         body (tuple[str, ...]): its lines, each led by ' ', '-' or '+'.
     """
+
     old_start: int
     new_start: int
     note: str
@@ -81,17 +82,23 @@ class _Hunk:
     def swapped(self) -> "_Hunk":
         flip = {"-": "+", "+": "-"}
         return _Hunk(
-            self.new_start, self.old_start, self.note,
+            self.new_start,
+            self.old_start,
+            self.note,
             tuple(
-                flip.get(line[:1], line[:1]) + line[1:] for line in self.body))
+                flip.get(line[:1], line[:1]) + line[1:] for line in self.body
+            ),
+        )
 
     def pattern(self) -> list[str]:
         return [line[1:] for line in self.body if line[:1] != "+"]
 
     def sizes(self) -> tuple[int, int]:
         """Its old and new sides' line counts."""
-        return (sum(1 for line in self.body if line[:1] != "+"),
-                sum(1 for line in self.body if line[:1] != "-"))
+        return (
+            sum(1 for line in self.body if line[:1] != "+"),
+            sum(1 for line in self.body if line[:1] != "-"),
+        )
 
     def first(self) -> int:
         """The line its old side starts at, GNU's ``pch_first``.
@@ -104,8 +111,9 @@ class _Hunk:
         """The context lines before its first change and after its last."""
         kinds = [line[:1] for line in self.body]
         prefix = next((i for i, k in enumerate(kinds) if k != " "), len(kinds))
-        suffix = next((i for i, k in enumerate(reversed(kinds)) if k != " "),
-                      len(kinds))
+        suffix = next(
+            (i for i, k in enumerate(reversed(kinds)) if k != " "), len(kinds)
+        )
         return prefix, suffix
 
     def rejected(self, out_offset: int) -> list[str]:
@@ -144,6 +152,7 @@ class _Section:
         target (str): the file it patches by its headers, ``-p`` applied.
         hunks (tuple[_Hunk, ...]): its hunks in order.
     """
+
     old_label: str
     new_label: str
     target: str
@@ -166,7 +175,7 @@ def _parse_hunks(lines: list[str], index: int) -> tuple[list[_Hunk], int]:
         match = _HUNK_HEADER.match(lines[index])
         if match is None:
             break
-        note = lines[index][match.end():]
+        note = lines[index][match.end() :]
         old_left = 1 if match.group(2) is None else int(match.group(2))
         new_left = 1 if match.group(4) is None else int(match.group(4))
         body: list[str] = []
@@ -190,7 +199,8 @@ def _parse_hunks(lines: list[str], index: int) -> tuple[list[_Hunk], int]:
         while index < len(lines) and lines[index].startswith("\\"):
             index += 1
         hunks.append(
-            _Hunk(int(match.group(1)), int(match.group(3)), note, tuple(body)))
+            _Hunk(int(match.group(1)), int(match.group(3)), note, tuple(body))
+        )
     return hunks, index
 
 
@@ -222,14 +232,21 @@ def _parse_patch(patch_text: str, strip_count: int) -> list[_Section]:
         if target is None:
             target = new_name.rsplit("/", 1)[-1]
         sections.append(
-            _Section(old_label, new_label, "/" + target.lstrip("/"),
-                     tuple(hunks)))
+            _Section(
+                old_label, new_label, "/" + target.lstrip("/"), tuple(hunks)
+            )
+        )
         old_label = "/dev/null"
     return sections
 
 
-def _matches(lines: list[str], pattern: list[str], where: int,
-             prefix_fuzz: int, suffix_fuzz: int) -> bool:
+def _matches(
+    lines: list[str],
+    pattern: list[str],
+    where: int,
+    prefix_fuzz: int,
+    suffix_fuzz: int,
+) -> bool:
     for k in range(prefix_fuzz, len(pattern) - suffix_fuzz):
         line_no = where + k
         if not 1 <= line_no <= len(lines) or lines[line_no - 1] != pattern[k]:
@@ -237,8 +254,9 @@ def _matches(lines: list[str], pattern: list[str], where: int,
     return True
 
 
-def _locate(lines: list[str], hunk: _Hunk, in_offset: int, fuzz: int,
-            frozen: int) -> int | None:
+def _locate(
+    lines: list[str], hunk: _Hunk, in_offset: int, fuzz: int, frozen: int
+) -> int | None:
     """Where a hunk's old side is in ``lines``, GNU's ``locate_hunk``.
 
     The claimed line first, then alternately after and before it. With
@@ -267,8 +285,11 @@ def _locate(lines: list[str], hunk: _Hunk, in_offset: int, fuzz: int,
     if prefix_fuzz < 0:
         if hunk.first() > 1:
             prefix_fuzz = 0
-        elif frozen <= prefix and 1 - first <= max_pos and _matches(
-                lines, pattern, 1, 0, suffix_fuzz):
+        elif (
+            frozen <= prefix
+            and 1 - first <= max_pos
+            and _matches(lines, pattern, 1, 0, suffix_fuzz)
+        ):
             return 1
         else:
             return None
@@ -280,27 +301,32 @@ def _locate(lines: list[str], hunk: _Hunk, in_offset: int, fuzz: int,
         # the last occurrence then, and fuzzes or fails a hunk the end of
         # the file no longer matches.
         at_end = len(lines) - len(pattern) + 1
-        if first - at_end <= max_neg and _matches(lines, pattern, at_end,
-                                                  prefix_fuzz, 0):
+        if first - at_end <= max_neg and _matches(
+            lines, pattern, at_end, prefix_fuzz, 0
+        ):
             return at_end
         return None
     for offset in range(max(max_pos, max_neg) + 1):
-        if offset <= max_pos and _matches(lines, pattern, first + offset,
-                                          prefix_fuzz, suffix_fuzz):
+        if offset <= max_pos and _matches(
+            lines, pattern, first + offset, prefix_fuzz, suffix_fuzz
+        ):
             return first + offset
-        if 0 < offset <= max_neg and _matches(lines, pattern, first - offset,
-                                              prefix_fuzz, suffix_fuzz):
+        if 0 < offset <= max_neg and _matches(
+            lines, pattern, first - offset, prefix_fuzz, suffix_fuzz
+        ):
             return first - offset
     return None
 
 
 class _Reversed(Enum):
     """The first hunk fits only the other way round."""
+
     DETECTED = "detected"
 
 
-def _place(lines: list[str], hunk: _Hunk, in_offset: int, frozen: int,
-           probe: bool) -> tuple[int, int] | _Reversed | None:
+def _place(
+    lines: list[str], hunk: _Hunk, in_offset: int, frozen: int, probe: bool
+) -> tuple[int, int] | _Reversed | None:
     """The line and fuzz a hunk applies at, None when it does not.
 
     Each fuzz level is tried in turn, and with ``probe`` a level the
@@ -320,14 +346,18 @@ def _place(lines: list[str], hunk: _Hunk, in_offset: int, frozen: int,
         where = _locate(lines, hunk, in_offset, fuzz, frozen)
         if where is not None:
             return where, fuzz
-        if probe and _locate(lines, hunk.swapped(), in_offset, fuzz,
-                             frozen) is not None:
+        if (
+            probe
+            and _locate(lines, hunk.swapped(), in_offset, fuzz, frozen)
+            is not None
+        ):
             return _Reversed.DETECTED
     return None
 
 
-def _splice(out: list[str], lines: list[str], src: int, where: int,
-            hunk: _Hunk) -> int:
+def _splice(
+    out: list[str], lines: list[str], src: int, where: int, hunk: _Hunk
+) -> int:
     """Copy the file up to a hunk, then the hunk itself; the next line.
 
     Context lines are the file's own, as GNU's ``apply_hunk`` copies
@@ -340,7 +370,7 @@ def _splice(out: list[str], lines: list[str], src: int, where: int,
         where (int): the line the hunk's old side starts at.
         hunk (_Hunk): the hunk, in the orientation being applied.
     """
-    out.extend(lines[src:max(where - 1, src)])
+    out.extend(lines[src : max(where - 1, src)])
     at = where - 1
     for line in hunk.body:
         kind = line[:1]
@@ -367,6 +397,7 @@ class _Outcome:
             output offset it was refused at.
         exact (bool): every hunk applied where it said, with no fuzz.
     """
+
     lines: list[str] | None
     notes: list[str]
     rejected: list[tuple[_Hunk, int]]
@@ -383,21 +414,26 @@ def _reversed_notes(reverse: bool, forward: bool) -> list[str]:
         reverse (bool): ``-R`` was given.
         forward (bool): ``-N`` was given.
     """
-    seen = ("Unreversed patch detected!"
-            if reverse else "Reversed (or previously applied) patch detected!")
+    seen = (
+        "Unreversed patch detected!"
+        if reverse
+        else "Reversed (or previously applied) patch detected!"
+    )
     if forward:
         return [f"{seen}  Skipping patch."]
     ask = "Ignore" if reverse else "Assume"
     return [f"{seen}  {ask} -R? [n] ", "Apply anyway? [n] ", "Skipping patch."]
 
 
-def _as_tried(hunks: tuple[_Hunk, ...],
-              reverse: bool) -> list[tuple[_Hunk, int]]:
+def _as_tried(
+    hunks: tuple[_Hunk, ...], reverse: bool
+) -> list[tuple[_Hunk, int]]:
     return [(hunk.swapped() if reverse else hunk, 0) for hunk in hunks]
 
 
-def _apply_section(lines: list[str], hunks: tuple[_Hunk, ...], reverse: bool,
-                   forward: bool) -> _Outcome:
+def _apply_section(
+    lines: list[str], hunks: tuple[_Hunk, ...], reverse: bool, forward: bool
+) -> _Outcome:
     """Apply one section's hunks to a file's lines, GNU patch's way.
 
     A hunk is placed by its context, at an offset or with fuzz when it
@@ -424,11 +460,17 @@ def _apply_section(lines: list[str], hunks: tuple[_Hunk, ...], reverse: bool,
         active = hunk.swapped() if reverse else hunk
         placed = _place(lines, active, in_offset, src, number == 1)
         if placed is _Reversed.DETECTED:
-            return _Outcome(None, _reversed_notes(reverse, forward),
-                            _as_tried(hunks, reverse), False)
+            return _Outcome(
+                None,
+                _reversed_notes(reverse, forward),
+                _as_tried(hunks, reverse),
+                False,
+            )
         if placed is None:
-            notes.append(f"Hunk #{number} FAILED at "
-                         f"{active.first() + in_offset + out_offset}.")
+            notes.append(
+                f"Hunk #{number} FAILED at "
+                f"{active.first() + in_offset + out_offset}."
+            )
             rejected.append((active, out_offset))
             exact = False
             continue
@@ -441,8 +483,10 @@ def _apply_section(lines: list[str], hunks: tuple[_Hunk, ...], reverse: bool,
             if fuzz:
                 note += f" with fuzz {fuzz}"
             if in_offset:
-                note += (f" (offset {in_offset} "
-                         f"line{'' if in_offset == 1 else 's'})")
+                note += (
+                    f" (offset {in_offset} "
+                    f"line{'' if in_offset == 1 else 's'})"
+                )
             notes.append(note + ".")
         old, new = active.sizes()
         out_offset += new - old
@@ -450,8 +494,9 @@ def _apply_section(lines: list[str], hunks: tuple[_Hunk, ...], reverse: bool,
     return _Outcome(out, notes, rejected, exact)
 
 
-def _reject_text(section: _Section, rejected: list[tuple[_Hunk, int]],
-                 reverse: bool) -> bytes:
+def _reject_text(
+    section: _Section, rejected: list[tuple[_Hunk, int]], reverse: bool
+) -> bytes:
     """GNU's reject file: the section's names, then each hunk as tried.
 
     Args:
@@ -460,8 +505,11 @@ def _reject_text(section: _Section, rejected: list[tuple[_Hunk, int]],
             output offset it was refused at.
         reverse (bool): ``-R``, which swaps the names as it did the hunks.
     """
-    names = ((section.new_label, section.old_label) if reverse else
-             (section.old_label, section.new_label))
+    names = (
+        (section.new_label, section.old_label)
+        if reverse
+        else (section.old_label, section.new_label)
+    )
     lines = [f"--- {names[0]}", f"+++ {names[1]}"]
     for hunk, out_offset in rejected:
         lines.extend(hunk.rejected(out_offset))
@@ -469,8 +517,9 @@ def _reject_text(section: _Section, rejected: list[tuple[_Hunk, int]],
 
 
 def _companion(spec: PathSpec, suffix: str) -> PathSpec:
-    return PathSpec.from_str_path(spec.virtual + suffix,
-                                  spec.vfs_path + suffix)
+    return PathSpec.from_str_path(
+        spec.virtual + suffix, spec.vfs_path + suffix
+    )
 
 
 async def _load_patch_data(
@@ -499,8 +548,9 @@ async def _load_patch_data(
         return f"patch: **** read error : {fs_strerror(exc)}\n"
     except FS_ERRORS as exc:
         label = shell_quote(source.raw_path or source.virtual)
-        return (f"patch: **** Can't open patch file {label} : "
-                f"{fs_strerror(exc)}\n")
+        return (
+            f"patch: **** Can't open patch file {label} : {fs_strerror(exc)}\n"
+        )
 
 
 async def patch(
@@ -517,15 +567,17 @@ async def patch(
     mount_prefix: str = "",
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
-        raise extra_operand_error(CommandName.PATCH, paths[2].raw_path
-                                  or paths[2].virtual)
+        raise extra_operand_error(
+            CommandName.PATCH, paths[2].raw_path or paths[2].virtual
+        )
     strip_count = int(p) if p else 0
     # `patch [ORIGFILE [PATCHFILE]]`: the second operand is the patch
     # file, ahead of -i, and the first is the one file every hunk goes to
     # in place of the names the patch's headers carry.
     source = paths[1] if len(paths) > 1 else i
-    patch_data = await _load_patch_data(source if has_vfs else None, stdin,
-                                        read_bytes)
+    patch_data = await _load_patch_data(
+        source if has_vfs else None, stdin, read_bytes
+    )
     if isinstance(patch_data, str):
         return None, IOResult(exit_code=2, stderr=patch_data.encode())
     patch_text = patch_data.decode(errors="replace")
@@ -541,29 +593,39 @@ async def patch(
         else:
             file_spec = PathSpec.from_str_path(
                 mount_prefix.rstrip("/") + "/" + section.target.lstrip("/"),
-                section.target.lstrip("/"))
+                section.target.lstrip("/"),
+            )
             shown = section.target.lstrip("/")
-        refused = await _patch_file(section,
-                                    file_spec,
-                                    shown,
-                                    reverse=R,
-                                    forward=N,
-                                    read_bytes=read_bytes,
-                                    write_bytes=write_bytes,
-                                    report=report,
-                                    writes=writes,
-                                    written=written)
+        refused = await _patch_file(
+            section,
+            file_spec,
+            shown,
+            reverse=R,
+            forward=N,
+            read_bytes=read_bytes,
+            write_bytes=write_bytes,
+            report=report,
+            writes=writes,
+            written=written,
+        )
         failed = failed or refused
     out = "".join(f"{line}\n" for line in report).encode() if report else None
     return out, IOResult(writes=writes, exit_code=1 if failed else 0)
 
 
-async def _patch_file(section: _Section, spec: PathSpec, shown: str, *,
-                      reverse: bool, forward: bool,
-                      read_bytes: Callable[..., Awaitable[bytes]],
-                      write_bytes: Callable[..., Awaitable[None]],
-                      report: list[str], writes: dict[str, ByteSource],
-                      written: set[str]) -> bool:
+async def _patch_file(
+    section: _Section,
+    spec: PathSpec,
+    shown: str,
+    *,
+    reverse: bool,
+    forward: bool,
+    read_bytes: Callable[..., Awaitable[bytes]],
+    write_bytes: Callable[..., Awaitable[None]],
+    report: list[str],
+    writes: dict[str, ByteSource],
+    written: set[str],
+) -> bool:
     """Apply one section to its file, GNU patch's way; True when a hunk
     of it was refused.
 
@@ -588,18 +650,30 @@ async def _patch_file(section: _Section, spec: PathSpec, shown: str, *,
     try:
         original = await read_bytes(spec)
     except IsADirectoryError:
-        report.append(f"File {shown} is not a regular file -- refusing "
-                      "to patch")
-        await _save_rejects(section, _as_tried(section.hunks,
-                                               reverse), "ignored", spec,
-                            shown, reverse, write_bytes, report, writes)
+        report.append(
+            f"File {shown} is not a regular file -- refusing to patch"
+        )
+        await _save_rejects(
+            section,
+            _as_tried(section.hunks, reverse),
+            "ignored",
+            spec,
+            shown,
+            reverse,
+            write_bytes,
+            report,
+            writes,
+        )
         return True
     except FileNotFoundError:
         pass
     report.append(f"patching file {shown}")
     outcome = _apply_section(
-        split_lines((original or b"").decode(errors="replace")), section.hunks,
-        reverse, forward)
+        split_lines((original or b"").decode(errors="replace")),
+        section.hunks,
+        reverse,
+        forward,
+    )
     report.extend(outcome.notes)
     if outcome.lines is not None:
         if not outcome.exact and spec.virtual not in written:
@@ -616,17 +690,31 @@ async def _patch_file(section: _Section, spec: PathSpec, shown: str, *,
             written.add(spec.virtual)
     if not outcome.rejected:
         return False
-    await _save_rejects(section, outcome.rejected,
-                        "ignored" if outcome.lines is None else "FAILED", spec,
-                        shown, reverse, write_bytes, report, writes)
+    await _save_rejects(
+        section,
+        outcome.rejected,
+        "ignored" if outcome.lines is None else "FAILED",
+        spec,
+        shown,
+        reverse,
+        write_bytes,
+        report,
+        writes,
+    )
     return True
 
 
-async def _save_rejects(section: _Section, rejected: list[tuple[_Hunk, int]],
-                        verb: str, spec: PathSpec, shown: str, reverse: bool,
-                        write_bytes: Callable[..., Awaitable[None]],
-                        report: list[str], writes: dict[str,
-                                                        ByteSource]) -> None:
+async def _save_rejects(
+    section: _Section,
+    rejected: list[tuple[_Hunk, int]],
+    verb: str,
+    spec: PathSpec,
+    shown: str,
+    reverse: bool,
+    write_bytes: Callable[..., Awaitable[None]],
+    report: list[str],
+    writes: dict[str, ByteSource],
+) -> None:
     """Write the hunks that did not go in to ``.rej``, and say so.
 
     Args:
@@ -642,9 +730,11 @@ async def _save_rejects(section: _Section, rejected: list[tuple[_Hunk, int]],
         writes (dict[str, ByteSource]): the bytes written, by mount path.
     """
     total = len(section.hunks)
-    report.append(f"{len(rejected)} out of {total} "
-                  f"hunk{'' if total == 1 else 's'} {verb} -- "
-                  f"saving rejects to file {shown}.rej")
+    report.append(
+        f"{len(rejected)} out of {total} "
+        f"hunk{'' if total == 1 else 's'} {verb} -- "
+        f"saving rejects to file {shown}.rej"
+    )
     reject = _companion(spec, ".rej")
     data = _reject_text(section, rejected, reverse)
     await write_bytes(reject, data)
@@ -682,13 +772,15 @@ async def patch_generic(
     has_vfs: bool,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await patch(paths,
-                       read_bytes=read_bytes,
-                       write_bytes=write_bytes,
-                       has_vfs=has_vfs,
-                       stdin=opts.stdin,
-                       p=parsed.strip,
-                       R=parsed.reverse,
-                       i=parsed.input_path,
-                       N=parsed.forward,
-                       mount_prefix=opts.mount_prefix or "")
+    return await patch(
+        paths,
+        read_bytes=read_bytes,
+        write_bytes=write_bytes,
+        has_vfs=has_vfs,
+        stdin=opts.stdin,
+        p=parsed.strip,
+        R=parsed.reverse,
+        i=parsed.input_path,
+        N=parsed.forward,
+        mount_prefix=opts.mount_prefix or "",
+    )

@@ -21,35 +21,45 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
 
-@pytest.mark.parametrize("name", [
-    "bg",
-    "complete",
-    "compgen",
-    "ulimit",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bg",
+        "complete",
+        "compgen",
+        "ulimit",
+    ],
+)
 def test_unsupported_builtin_returns_clear_error(name):
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(name))
     assert io.exit_code == 2, (
-        f"expected exit 2 for {name!r}, got {io.exit_code}")
+        f"expected exit 2 for {name!r}, got {io.exit_code}"
+    )
     stderr = io.stderr or b""
     assert f"unsupported builtin: {name}".encode() in stderr, (
-        f"expected 'unsupported builtin: {name}' in stderr, got {stderr!r}")
+        f"expected 'unsupported builtin: {name}' in stderr, got {stderr!r}"
+    )
 
 
-@pytest.mark.parametrize("cmd", [
-    "echo hi >(cat)",
-    "tee >(grep foo) /tmp/out",
-    "cat >(wc)",
-])
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "echo hi >(cat)",
+        "tee >(grep foo) /tmp/out",
+        "cat >(wc)",
+    ],
+)
 def test_output_process_substitution_unsupported(cmd):
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(cmd))
     assert io.exit_code == 2, (
-        f"expected exit 2 for {cmd!r}, got {io.exit_code}")
+        f"expected exit 2 for {cmd!r}, got {io.exit_code}"
+    )
     stderr = io.stderr or b""
     assert b"process substitution" in stderr, (
-        f"expected 'process substitution' in stderr, got {stderr!r}")
+        f"expected 'process substitution' in stderr, got {stderr!r}"
+    )
     assert b"unsupported" in stderr
 
 
@@ -59,4 +69,5 @@ def test_input_process_substitution_still_works():
     ws = Workspace({"/data": (ram, MountMode.READ)})
     io = asyncio.run(ws.shell("cat <(cat /data/a)"))
     assert io.exit_code == 0, (
-        f"input process substitution should still work, got {io}")
+        f"input process substitution should still work, got {io}"
+    )

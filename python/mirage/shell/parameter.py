@@ -47,7 +47,7 @@ def scan_parameter(text: str, start: int) -> tuple[str, int] | None:
     if start < 0 or start >= len(text) or text[start] != "$":
         return None
     begin = start + 1
-    braced = text[begin:begin + 1] == "{"
+    braced = text[begin : begin + 1] == "{"
     if braced:
         begin += 1
     match = PARAMETER_NAME.match(text, begin)
@@ -58,7 +58,7 @@ def scan_parameter(text: str, start: int) -> tuple[str, int] | None:
         end = begin + 1
     name = text[begin:end]
     if braced:
-        if text[end:end + 1] != "}":
+        if text[end : end + 1] != "}":
             return None
         end += 1
     return name, end
@@ -81,42 +81,68 @@ def bad_substitution(text: str) -> bool:
     """
     s = text[2:]
     end = _name_end(
-        s, 0, "}" if s[:1] == "#" and _starts_name(s[1:2]) else _NAME_ENDS)
+        s, 0, "}" if s[:1] == "#" and _starts_name(s[1:2]) else _NAME_ENDS
+    )
     name = s[:end]
     if not name and s[:1] == "@":
         name, end = "@", 1
-    elif name[:1] == "!" and s[end:end + 2] == "@}":
+    elif name[:1] == "!" and s[end : end + 2] == "@}":
         name, end = name + "@", end + 1
-    if ((not name and s[:1] != "" and s[0] in _LENGTH_SPECIALS)
-            or (name == "!" and s[1:2] != "" and s[1] in _INDIRECT_SPECIALS)):
-        head = s[:len(name) + 1]
+    if (not name and s[:1] != "" and s[0] in _LENGTH_SPECIALS) or (
+        name == "!" and s[1:2] != "" and s[1] in _INDIRECT_SPECIALS
+    ):
+        head = s[: len(name) + 1]
         end = _name_end(s, len(head), _SPECIAL_ENDS, subscripts=False)
         name = s[:end]
-    c, i = s[end:end + 1], end + 1
+    c, i = s[end : end + 1], end + 1
     substring = False
-    if c == ":" and s[i:i + 1] != "" and s[i] in _NULL_OPERATORS:
+    if c == ":" and s[i : i + 1] != "" and s[i] in _NULL_OPERATORS:
         c, i = s[i], i + 1
-    elif c == ":" and s[i:i + 1] != "}":
+    elif c == ":" and s[i : i + 1] != "}":
         substring = True
-    elif name == "#" and s[i:i + 1] == "}" and c != "":
+    elif name == "#" and s[i : i + 1] == "}" and c != "":
         if c in _LENGTH_SPECIALS:
             name, c = name + c, "}"
         elif c in "%:=+/":
             return True
-    indirect = name[:1] == "!" and name[1:2] != "" and (
-        _starts_name(name[1]) or name[1].isascii() and name[1].isdigit()
-        or name[1] in _INDIRECT_SPECIALS)
+    indirect = (
+        name[:1] == "!"
+        and name[1:2] != ""
+        and (
+            _starts_name(name[1])
+            or name[1].isascii()
+            and name[1].isdigit()
+            or name[1] in _INDIRECT_SPECIALS
+        )
+    )
     if name[:1] == "#" and len(name) > 1:
         return c != "}" or not _length_name(name[1:])
-    if indirect and c == "}" and (name[-1] in "*@" and _starts_name(name[1])
-                                  or name[-1] == "]" and _element(name[1:])):
+    if (
+        indirect
+        and c == "}"
+        and (
+            name[-1] in "*@"
+            and _starts_name(name[1])
+            or name[-1] == "]"
+            and _element(name[1:])
+        )
+    ):
         return False
     word = name[1:] if indirect else name
-    special = (_DIGITS.fullmatch(name) is not None
-               or len(name) == 1 and name in _SPECIALS
-               or indirect and len(name) == 2 and name[1] in _SPECIALS)
-    if not (special or _DIGITS.fullmatch(word) or _element(word)
-            or _IDENTIFIER.fullmatch(word)):
+    special = (
+        _DIGITS.fullmatch(name) is not None
+        or len(name) == 1
+        and name in _SPECIALS
+        or indirect
+        and len(name) == 2
+        and name[1] in _SPECIALS
+    )
+    if not (
+        special
+        or _DIGITS.fullmatch(word)
+        or _element(word)
+        or _IDENTIFIER.fullmatch(word)
+    ):
         return True
     return not substring and (c == "" or c not in _OPERATORS)
 
@@ -125,10 +151,9 @@ def _starts_name(char: str) -> bool:
     return char != "" and (char == "_" or char.isascii() and char.isalpha())
 
 
-def _name_end(text: str,
-              start: int,
-              ends: str,
-              subscripts: bool = True) -> int:
+def _name_end(
+    text: str, start: int, ends: str, subscripts: bool = True
+) -> int:
     """Where a name read from ``start`` stops: at one of ``ends``, past a
     backslash's character and, reading a variable name, past a whole
     ``[...]``."""
@@ -184,6 +209,11 @@ def _element(name: str) -> bool:
 
 def _length_name(name: str) -> bool:
     """Whether ``${#name}`` measures something."""
-    return (name == "" or len(name) == 1 and name in _SPECIALS
-            or _DIGITS.fullmatch(name) is not None or _element(name)
-            or _IDENTIFIER.fullmatch(name) is not None)
+    return (
+        name == ""
+        or len(name) == 1
+        and name in _SPECIALS
+        or _DIGITS.fullmatch(name) is not None
+        or _element(name)
+        or _IDENTIFIER.fullmatch(name) is not None
+    )

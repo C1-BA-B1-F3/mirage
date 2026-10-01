@@ -16,8 +16,11 @@ import posixpath
 import shlex
 
 from agents.apply_diff import apply_diff
-from agents.editor import (ApplyPatchEditor, ApplyPatchOperation,
-                           ApplyPatchResult)
+from agents.editor import (
+    ApplyPatchEditor,
+    ApplyPatchOperation,
+    ApplyPatchResult,
+)
 
 from mirage.workspace.workspace import Workspace
 
@@ -34,13 +37,15 @@ class MirageEditor(ApplyPatchEditor):
 
     async def create_file(self, op: ApplyPatchOperation) -> ApplyPatchResult:
         parent = posixpath.dirname(op.path.rstrip("/")) or "/"
-        made = await self._ws.shell(f"mkdir -p -- {shlex.quote(parent)}",
-                                    record=False)
+        made = await self._ws.shell(
+            f"mkdir -p -- {shlex.quote(parent)}", record=False
+        )
         if made.exit_code != 0:
             err = await made.materialize_stderr()
-            return ApplyPatchResult(status="failed",
-                                    output=err.decode(
-                                        "utf-8", errors="replace").strip())
+            return ApplyPatchResult(
+                status="failed",
+                output=err.decode("utf-8", errors="replace").strip(),
+            )
         content = apply_diff("", op.diff or "", mode="create")
         await self._ws.vfs.write(op.path, content.encode("utf-8"))
         return ApplyPatchResult(status="completed")
@@ -50,8 +55,9 @@ class MirageEditor(ApplyPatchEditor):
         try:
             data = await ops.read(op.path)
         except (FileNotFoundError, NotADirectoryError, ValueError):
-            return ApplyPatchResult(status="failed",
-                                    output=f"File not found: {op.path}")
+            return ApplyPatchResult(
+                status="failed", output=f"File not found: {op.path}"
+            )
         current = data.decode("utf-8", errors="replace")
         new_content = apply_diff(current, op.diff or "")
         await ops.write(op.path, new_content.encode("utf-8"))
@@ -62,6 +68,7 @@ class MirageEditor(ApplyPatchEditor):
         try:
             await ops.unlink(op.path)
         except (FileNotFoundError, NotADirectoryError, ValueError):
-            return ApplyPatchResult(status="failed",
-                                    output=f"File not found: {op.path}")
+            return ApplyPatchResult(
+                status="failed", output=f"File not found: {op.path}"
+            )
         return ApplyPatchResult(status="completed")

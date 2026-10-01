@@ -50,8 +50,9 @@ async def test_env_prints_environment_in_insertion_order():
 async def test_env_ignore_environment_and_null_terminator():
     session = make_session()
     seed_var(session, "KEEP", "x")
-    out, _, _ = await handle_env(_unused_execute_fn,
-                                 ["-i", "-0", "A=1", "B=2"], session)
+    out, _, _ = await handle_env(
+        _unused_execute_fn, ["-i", "-0", "A=1", "B=2"], session
+    )
     assert await materialize(out) == b"A=1\x00B=2\x00"
 
 
@@ -71,9 +72,12 @@ async def test_env_run_form_forwards_stdin_and_restores_env():
     session = make_session()
     seed_var(session, "FOO", "original")
     execute_fn = AsyncMock(return_value=IOResult(exit_code=0))
-    await handle_env(execute_fn, ["-i", "FOO=temp", "printenv", "FOO"],
-                     session,
-                     stdin=b"piped\n")
+    await handle_env(
+        execute_fn,
+        ["-i", "FOO=temp", "printenv", "FOO"],
+        session,
+        stdin=b"piped\n",
+    )
     execute_fn.assert_awaited_once()
     args, kwargs = execute_fn.call_args
     assert args[0] == "printenv FOO"
@@ -83,7 +87,7 @@ async def test_env_run_form_forwards_stdin_and_restores_env():
         "PWD": "/",
         "PATH": "/usr/bin",
         "IFS": " \t\n",
-        "FOO": "original"
+        "FOO": "original",
     }
 
 
@@ -93,9 +97,11 @@ async def test_env_run_form_drops_a_pending_managed_entry():
     # swapped scope drops it like any replaced scalar: surviving would
     # let the inner line fetch a name `-i` just cleared.
     session = make_session()
-    session.vars["TOKEN"] = ShellVar(None,
-                                     frozenset({VarAttr.EXPORT}),
-                                     managed=ManagedRef("fake", "r", "TOKEN"))
+    session.vars["TOKEN"] = ShellVar(
+        None,
+        frozenset({VarAttr.EXPORT}),
+        managed=ManagedRef("fake", "r", "TOKEN"),
+    )
     inner: dict[str, ShellVar] = {}
 
     async def execute_fn(command, session_id, stdin=None):
@@ -118,28 +124,32 @@ async def test_env_lone_dash_implies_ignore_environment():
 
 @pytest.mark.asyncio
 async def test_env_null_with_command_rejected():
-    _, io, _ = await handle_env(_unused_execute_fn, ["-0", "echo", "hi"],
-                                make_session())
+    _, io, _ = await handle_env(
+        _unused_execute_fn, ["-0", "echo", "hi"], make_session()
+    )
     assert io.exit_code == 125
-    assert await materialize(
-        io.stderr) == (b"env: cannot specify --null (-0) with command\n"
-                       b"Try 'env --help' for more information.\n")
+    assert await materialize(io.stderr) == (
+        b"env: cannot specify --null (-0) with command\n"
+        b"Try 'env --help' for more information.\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_env_invalid_option_exits_125():
     _, io, _ = await handle_env(_unused_execute_fn, ["-Z"], make_session())
     assert io.exit_code == 125
-    assert await materialize(io.stderr
-                             ) == (b"env: invalid option -- 'Z'\n"
-                                   b"Try 'env --help' for more information.\n")
+    assert await materialize(io.stderr) == (
+        b"env: invalid option -- 'Z'\nTry 'env --help' for more information.\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_env_unrecognized_long_option_exits_125():
-    _, io, _ = await handle_env(_unused_execute_fn, ["--bogus"],
-                                make_session())
+    _, io, _ = await handle_env(
+        _unused_execute_fn, ["--bogus"], make_session()
+    )
     assert io.exit_code == 125
-    assert await materialize(io.stderr
-                             ) == (b"env: unrecognized option '--bogus'\n"
-                                   b"Try 'env --help' for more information.\n")
+    assert await materialize(io.stderr) == (
+        b"env: unrecognized option '--bogus'\n"
+        b"Try 'env --help' for more information.\n"
+    )

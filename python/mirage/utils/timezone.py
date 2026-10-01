@@ -107,8 +107,10 @@ class TransitionRule:
 # The rules glibc applies when a DST name comes with no `,rule`, or one
 # clause is missing: the US transitions, second Sunday of March and
 # first Sunday of November, at 02:00.
-_US_RULES = (TransitionRule("M", month=3, week=2, weekday=0),
-             TransitionRule("M", month=11, week=1, weekday=0))
+_US_RULES = (
+    TransitionRule("M", month=3, week=2, weekday=0),
+    TransitionRule("M", month=11, week=1, weekday=0),
+)
 # What glibc leaves in a rule it refused: the state it zeroed before
 # reading, day 0 of the year at 00:00, or, once it had read a `J`,
 # Julian day 0, the day before January 1.
@@ -141,9 +143,15 @@ class PosixZone(tzinfo):
         end (TransitionRule): when DST ends, in daylight wall time.
     """
 
-    def __init__(self, std: str, std_offset: timedelta, dst: str,
-                 dst_offset: timedelta, start: TransitionRule,
-                 end: TransitionRule) -> None:
+    def __init__(
+        self,
+        std: str,
+        std_offset: timedelta,
+        dst: str,
+        dst_offset: timedelta,
+        start: TransitionRule,
+        end: TransitionRule,
+    ) -> None:
         self._std = std
         self._std_offset = std_offset
         self._dst = dst
@@ -203,8 +211,10 @@ class PosixZone(tzinfo):
         return wall.replace(tzinfo=self, fold=fold)
 
     def __repr__(self) -> str:
-        return (f"PosixZone({self._std!r}, {self._std_offset!r}, "
-                f"{self._dst!r}, {self._dst_offset!r})")
+        return (
+            f"PosixZone({self._std!r}, {self._std_offset!r}, "
+            f"{self._dst!r}, {self._dst_offset!r})"
+        )
 
 
 def zone_from_env(env: Mapping[str, str] | None) -> tzinfo | None:
@@ -264,8 +274,9 @@ def _read_name(spec: str, pos: int) -> tuple[str, int]:
     return match.group(1) or match.group(2), match.end()
 
 
-def _read_clock(spec: str,
-                pos: int) -> tuple[tuple[int, int, int] | None, int]:
+def _read_clock(
+    spec: str, pos: int
+) -> tuple[tuple[int, int, int] | None, int]:
     """Read an unsigned ``h[:m[:s]]`` at ``pos`` as glibc's
     ``%hu:%hu:%hu`` does: the three fields and the position after them,
     or None and ``pos`` when no digit starts there.
@@ -297,7 +308,7 @@ def _read_offset(spec: str, pos: int, dst: bool) -> tuple[int | None, int]:
         pos (int): where to read.
         dst (bool): whether this is the daylight half's offset.
     """
-    head = spec[pos:pos + 1]
+    head = spec[pos : pos + 1]
     if not dst and not (head in ("+", "-") or head.isdigit()):
         return None, pos
     sign = 1
@@ -321,8 +332,9 @@ def _bounded(seconds: int) -> int:
     return max(-_MAX_OFFSET, min(_MAX_OFFSET, seconds))
 
 
-def _read_rule(spec: str, pos: int,
-               which: int) -> tuple[TransitionRule, int, bool]:
+def _read_rule(
+    spec: str, pos: int, which: int
+) -> tuple[TransitionRule, int, bool]:
     """Read one transition rule at ``pos`` as glibc's ``parse_rule`` does.
 
     An optional comma leads. ``Jn`` and ``n`` take a day, ``Mm.w.d`` a
@@ -347,9 +359,9 @@ def _read_rule(spec: str, pos: int,
         tuple[TransitionRule, int, bool]: the rule, the position after
         it, and whether glibc accepts it.
     """
-    if spec[pos:pos + 1] == ",":
+    if spec[pos : pos + 1] == ",":
         pos += 1
-    head = spec[pos:pos + 1]
+    head = spec[pos : pos + 1]
     if head == "J" or head.isdigit():
         kind = "J" if head == "J" else "D"
         refused = _REFUSED_JULIAN if kind == "J" else _ZERO_RULE
@@ -365,11 +377,9 @@ def _read_rule(spec: str, pos: int,
         match = _MONTH_RULE_RE.match(spec, pos)
         assert match is not None
         month, week, weekday = (int(field or 0) for field in match.groups())
-        rule = TransitionRule("M",
-                              month=month,
-                              week=week,
-                              weekday=weekday,
-                              seconds=0)
+        rule = TransitionRule(
+            "M", month=month, week=week, weekday=weekday, seconds=0
+        )
         if not 1 <= month <= 12:
             return _REFUSED_JULIAN, pos, False
         if None in match.groups() or not 1 <= week <= 5 or weekday > 6:
@@ -379,7 +389,7 @@ def _read_rule(spec: str, pos: int,
         rule = _US_RULES[which]
     else:
         return _ZERO_RULE, pos, False
-    tail = spec[pos:pos + 1]
+    tail = spec[pos : pos + 1]
     if tail not in ("", "/", ","):
         return rule, pos, False
     seconds = 2 * _HOUR
@@ -391,8 +401,9 @@ def _read_rule(spec: str, pos: int,
         pos += negative
         clock, pos = _read_clock(spec, pos)
         hours, minutes, secs = clock if clock is not None else (2, 0, 0)
-        seconds = (-1 if negative else 1) * (hours * _HOUR + minutes * 60 +
-                                             secs)
+        seconds = (-1 if negative else 1) * (
+            hours * _HOUR + minutes * 60 + secs
+        )
     return replace(rule, seconds=seconds), pos, True
 
 
@@ -430,12 +441,19 @@ def posix_zone(spec: str) -> tzinfo:
     dst_offset = 0
     if dst:
         dst_west, pos = _read_offset(spec, pos, dst=True)
-        dst_offset = _bounded(std_offset +
-                              _HOUR if dst_west is None else -dst_west)
+        dst_offset = _bounded(
+            std_offset + _HOUR if dst_west is None else -dst_west
+        )
     start, pos, accepted = _read_rule(spec, pos, 0)
     end = _read_rule(spec, pos, 1)[0] if accepted else _ZERO_RULE
-    return PosixZone(std, timedelta(seconds=std_offset), dst,
-                     timedelta(seconds=dst_offset), start, end)
+    return PosixZone(
+        std,
+        timedelta(seconds=std_offset),
+        dst,
+        timedelta(seconds=dst_offset),
+        start,
+        end,
+    )
 
 
 def numeric_abbreviation(offset: int) -> str:
@@ -462,12 +480,15 @@ def _reading(zone: ZoneInfo, at: datetime) -> tuple[int, str]:
     """
     local = at.astimezone(zone)
     offset = local.utcoffset()
-    return (0 if offset is None else int(offset.total_seconds()),
-            local.tzname() or "")
+    return (
+        0 if offset is None else int(offset.total_seconds()),
+        local.tzname() or "",
+    )
 
 
-def _first_shown(zone: ZoneInfo, before: datetime, after: datetime,
-                 reading: tuple[int, str]) -> datetime:
+def _first_shown(
+    zone: ZoneInfo, before: datetime, after: datetime, reading: tuple[int, str]
+) -> datetime:
     """The first second in ``(before, after]`` at which ``zone`` shows
     ``reading``, by bisection: it shows something else at ``before``
     and ``reading`` at ``after``.
@@ -487,8 +508,9 @@ def _first_shown(zone: ZoneInfo, before: datetime, after: datetime,
     return after
 
 
-def zone_abbreviations(name: str,
-                       step: timedelta = _DAY) -> list[tuple[int, str, int]]:
+def zone_abbreviations(
+    name: str, step: timedelta = _DAY
+) -> list[tuple[int, str, int]]:
     """The abbreviations a tzdata zone has carried since 1970, and when.
 
     Sampled once per ``step`` from 1970 to 2038 (every daylight period
@@ -521,14 +543,18 @@ def zone_abbreviations(name: str,
         reading = _reading(zone, at)
         offset, abbrev = reading
         if current.get(offset) != abbrev:
-            since = at if at == previous else _first_shown(
-                zone, previous, at, reading)
+            since = (
+                at
+                if at == previous
+                else _first_shown(zone, previous, at, reading)
+            )
             rows.append((offset, abbrev, int(since.timestamp())))
             current[offset] = abbrev
         previous = at
         at += step
     lettered = {
         offset
-        for offset, abbrev, _ in rows if abbrev != numeric_abbreviation(offset)
+        for offset, abbrev, _ in rows
+        if abbrev != numeric_abbreviation(offset)
     }
     return [row for row in rows if row[0] in lettered]

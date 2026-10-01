@@ -74,9 +74,11 @@ class ChannelInput:
             before it answers ``Mark.LIMIT``; None for ``MAX_LINE``.
     """
 
-    def __init__(self,
-                 process: asyncssh.SSHServerProcess[str],
-                 max_line: int | None = None) -> None:
+    def __init__(
+        self,
+        process: asyncssh.SSHServerProcess[str],
+        max_line: int | None = None,
+    ) -> None:
         self._process = process
         self._max_line = MAX_LINE if max_line is None else max_line
         self._items: deque[bytes | Mark] = deque()
@@ -97,8 +99,9 @@ class ChannelInput:
         self._task.cancel()
         await asyncio.wait([self._task])
         if not self._task.cancelled() and self._task.exception():
-            logger.warning("ssh: input pump failed: %r",
-                           self._task.exception())
+            logger.warning(
+                "ssh: input pump failed: %r", self._task.exception()
+            )
 
     def on_interrupt(self, handler: Callable[[], None] | None) -> None:
         """Route Ctrl-C (a break) or an INT signal to ``handler``.
@@ -189,8 +192,8 @@ class ChannelInput:
                     line += item
                     continue
                 self._took(cut + 1)
-                line += item[:cut + 1]
-                rest = item[cut + 1:]
+                line += item[: cut + 1]
+                rest = item[cut + 1 :]
                 if rest:
                     self._items[0] = rest
                 else:
@@ -234,14 +237,18 @@ class ChannelOutput:
         tty (bool): whether the client asked for a terminal.
     """
 
-    def __init__(self, process: asyncssh.SSHServerProcess[str],
-                 tty: bool) -> None:
+    def __init__(
+        self, process: asyncssh.SSHServerProcess[str], tty: bool
+    ) -> None:
         self._process = process
         self._tty = tty
 
     async def write(self, data: bytes, stderr: bool = False) -> None:
-        stream = (self._process.stderr
-                  if stderr and not self._tty else self._process.stdout)
+        stream = (
+            self._process.stderr
+            if stderr and not self._tty
+            else self._process.stdout
+        )
         stream.write(decode(data))
         await stream.drain()
 
@@ -258,8 +265,9 @@ class LoopStdin:
         loop (asyncio.AbstractEventLoop): the loop the channel lives on.
     """
 
-    def __init__(self, source: ChannelInput,
-                 loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self, source: ChannelInput, loop: asyncio.AbstractEventLoop
+    ) -> None:
         self._source = source
         self._loop = loop
 
@@ -268,14 +276,16 @@ class LoopStdin:
 
     async def __anext__(self) -> bytes:
         data = await asyncio.wrap_future(
-            asyncio.run_coroutine_threadsafe(self._source.read(), self._loop))
+            asyncio.run_coroutine_threadsafe(self._source.read(), self._loop)
+        )
         if not data:
             raise StopAsyncIteration
         return data
 
 
-def loop_sender(output: ChannelOutput,
-                loop: asyncio.AbstractEventLoop) -> Send:
+def loop_sender(
+    output: ChannelOutput, loop: asyncio.AbstractEventLoop
+) -> Send:
     """A writer the workspace loop can await, landing on the channel's loop.
 
     Awaiting it waits for the channel to drain, so a fast producer is
@@ -291,13 +301,15 @@ def loop_sender(output: ChannelOutput,
 
     async def send(data: bytes, stderr: bool) -> None:
         await asyncio.wrap_future(
-            asyncio.run_coroutine_threadsafe(output.write(data, stderr), loop))
+            asyncio.run_coroutine_threadsafe(output.write(data, stderr), loop)
+        )
 
     return send
 
 
-async def deliver(stdout: ByteSource | None, stderr: ByteSource | None,
-                  send: Send) -> None:
+async def deliver(
+    stdout: ByteSource | None, stderr: ByteSource | None, send: Send
+) -> None:
     """Stream a line's stdout, then its stderr, through ``send``.
 
     Args:

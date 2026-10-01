@@ -1,9 +1,12 @@
 import struct
 from collections.abc import AsyncIterator, Callable
 
-from mirage.commands.builtin.constants import (OD_OVERFLOW_UNITS,
-                                               OD_SIZE_UNITS, UINTMAX,
-                                               XSTRTOUMAX_PATTERN)
+from mirage.commands.builtin.constants import (
+    OD_OVERFLOW_UNITS,
+    OD_SIZE_UNITS,
+    UINTMAX,
+    XSTRTOUMAX_PATTERN,
+)
 from mirage.commands.builtin.utils.size_suffix import parse_base0
 from mirage.commands.builtin.utils.stream import resolve_source, stdin_stream
 from mirage.commands.errors import UsageError
@@ -22,7 +25,7 @@ def parse_count(value: str, flag: str) -> int:
     if match is None:
         raise UsageError(f"od: invalid {flag} argument '{value}'", 1)
     number, suffix = match.group(1), match.group(2)
-    multiplier = (OD_SIZE_UNITS.get(suffix) or OD_OVERFLOW_UNITS.get(suffix))
+    multiplier = OD_SIZE_UNITS.get(suffix) or OD_OVERFLOW_UNITS.get(suffix)
     if suffix and multiplier is None:
         raise UsageError(f"od: invalid suffix in {flag} argument '{value}'", 1)
     count = parse_base0(number) * (multiplier or 1)
@@ -50,7 +53,7 @@ def _char(byte: int) -> str:
         10: "\\n",
         11: "\\v",
         12: "\\f",
-        13: "\\r"
+        13: "\\r",
     }
     if byte in escapes:
         return escapes[byte]
@@ -66,7 +69,7 @@ def _format_values(data: bytes, type_spec: str) -> str:
         return " ".join(f"{_char(byte):>3}" for byte in data)
     values: list[str] = []
     for offset in range(0, len(data), size):
-        item = data[offset:offset + size]
+        item = data[offset : offset + size]
         if len(item) < size:
             item = item.ljust(size, b"\0")
         if kind == "f":
@@ -103,14 +106,15 @@ async def od(
     else:
         chunks.extend([chunk async for chunk in resolve_source(stdin)])
     raw = b"".join(chunks)
-    data = raw[skip:skip + limit if limit is not None else None]
+    data = raw[skip : skip + limit if limit is not None else None]
     type_specs = formats or ["o2"]
     lines: list[str] = []
     for offset in range(0, len(data), 16):
-        block = data[offset:offset + 16]
+        block = data[offset : offset + 16]
         for index, type_spec in enumerate(type_specs):
-            address = _address(skip +
-                               offset, address_radix) if index == 0 else ""
+            address = (
+                _address(skip + offset, address_radix) if index == 0 else ""
+            )
             if address:
                 prefix = f"{address} "
             elif address_radix == "n":

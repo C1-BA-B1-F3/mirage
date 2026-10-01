@@ -19,10 +19,10 @@
       "targets": [
         "lancedb-window"
       ],
-      "command": "cat /db/all/doc-039.md",
+      "command": "cat /db/all/doc-039.md /db/all/doc-038.md",
       "expect": {
         "exit": 0,
-        "stdout": "# row 39\n\nid: doc-039\nlabel: all\nname: row 39\n",
+        "stdout": "# row 39\n\nid: doc-039\nlabel: all\nname: row 39\nscore: 19.5\neven: false\n# row 38\n\nid: doc-038\nlabel: all\nname: row 38\nscore: 19\neven: true\n",
         "stderr": ""
       }
     },

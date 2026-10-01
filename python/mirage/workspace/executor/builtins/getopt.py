@@ -28,6 +28,7 @@ class OptionScan:
         bad (str | None): the first invalid option, spelled the way the
             refusal spells it, or None when every letter is known.
     """
+
     letters: tuple[str, ...] = ()
     operands: tuple[str, ...] = ()
     bad: str | None = None

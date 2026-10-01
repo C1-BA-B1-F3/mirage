@@ -33,7 +33,7 @@ def construct_closer(data: bytes, index: int, bare: bool) -> int | None:
         int | None: the closing byte, or None when nothing opens here.
     """
     byte = data[index]
-    following = data[index + 1:index + 2]
+    following = data[index + 1 : index + 2]
     if byte == constants.DOLLAR and following == b"{":
         return constants.CLOSE_BRACE
     if byte == constants.DOLLAR and following == b"[":
@@ -60,9 +60,9 @@ def reserved_word(data: bytes, index: int, word: bytes) -> bool:
     Returns:
         bool: True when the word is reserved here.
     """
-    if data[index:index + len(word)] != word:
+    if data[index : index + len(word)] != word:
         return False
-    after = data[index + len(word):index + len(word) + 1]
+    after = data[index + len(word) : index + len(word) + 1]
     if after and after[0] not in constants.COMMENT_PRECEDERS:
         return False
     position = index - 1
@@ -92,13 +92,16 @@ def quote_end(data: bytes, start: int) -> int | None:
     """
     quote = data[start]
     expands = quote != constants.SINGLE_QUOTE
-    escapes = expands or data[start - 1:start] == b"$"
+    escapes = expands or data[start - 1 : start] == b"$"
     nested = constants.NESTED_QUOTES.get(quote, frozenset())
     index = start + 1
     while index < len(data):
         byte = data[index]
-        closer = (construct_closer(data, index, False)
-                  if expands and byte == constants.DOLLAR else None)
+        closer = (
+            construct_closer(data, index, False)
+            if expands and byte == constants.DOLLAR
+            else None
+        )
         if byte == constants.BACKSLASH and escapes:
             index += 2
         elif byte == quote:
@@ -142,14 +145,20 @@ def construct_end(data: bytes, start: int, closer: int) -> int | None:
         int | None: the offset, or None when the construct never closes.
     """
     paren = closer == constants.CLOSE_PAREN
-    index = start + (1 if data[start] in (constants.OPEN_PAREN,
-                                          constants.OPEN_BRACKET) else 2)
+    index = start + (
+        1
+        if data[start] in (constants.OPEN_PAREN, constants.OPEN_BRACKET)
+        else 2
+    )
     cases = 0
     while index < len(data):
         byte = data[index]
-        nested = (constants.CLOSE_BRACKET if closer == constants.CLOSE_BRACKET
-                  and byte == constants.OPEN_BRACKET else construct_closer(
-                      data, index, paren))
+        nested = (
+            constants.CLOSE_BRACKET
+            if closer == constants.CLOSE_BRACKET
+            and byte == constants.OPEN_BRACKET
+            else construct_closer(data, index, paren)
+        )
         if byte == constants.BACKSLASH:
             index += 2
         elif byte in constants.QUOTE_OPENERS:
@@ -170,8 +179,11 @@ def construct_end(data: bytes, start: int, closer: int) -> int | None:
         elif cases and reserved_word(data, index, constants.ESAC):
             cases -= 1
             index += len(constants.ESAC)
-        elif (paren and byte == constants.HASH
-              and data[index - 1] in constants.COMMENT_PRECEDERS):
+        elif (
+            paren
+            and byte == constants.HASH
+            and data[index - 1] in constants.COMMENT_PRECEDERS
+        ):
             newline = data.find(b"\n", index)
             if newline < 0:
                 return None
@@ -219,8 +231,11 @@ def operator_line_end(data: bytes, start: int) -> int | None:
             if end is None:
                 return None
             index = end
-        elif (byte == constants.HASH and index > 0
-              and data[index - 1] in constants.COMMENT_PRECEDERS):
+        elif (
+            byte == constants.HASH
+            and index > 0
+            and data[index - 1] in constants.COMMENT_PRECEDERS
+        ):
             newline = data.find(b"\n", index)
             return None if newline < 0 else newline
         elif byte == constants.NEWLINE:

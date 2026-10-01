@@ -42,11 +42,13 @@ def is_missing(exc: HfHubError) -> bool:
     return exc.status == 404 and exc.error_code == MISSING_ENTRY
 
 
-async def read_bytes(accessor: HfBucketsAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: HfBucketsAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a bucket file, or a byte window of it, from the Hub.
 
     Not through opendal: its read returns bare bytes, and the ETag the
@@ -70,15 +72,20 @@ async def read_bytes(accessor: HfBucketsAccessor,
     # zero-length window asks for one byte and discards it: the request
     # still answers whether the file exists, which an empty return would
     # skip.
-    window = ByteWindow(offset=offset, size=1 if size == 0 else size) \
-        if offset or size is not None else None
+    window = (
+        ByteWindow(offset=offset, size=1 if size == 0 else size)
+        if offset or size is not None
+        else None
+    )
     timer = start_op()
     try:
         with refusals_denied(path, REFUSED_STATUSES):
-            data, etag = await hub_bytes_tagged(accessor.token,
-                                                resolve_url(accessor, rel),
-                                                window,
-                                                session=accessor.pool)
+            data, etag = await hub_bytes_tagged(
+                accessor.token,
+                resolve_url(accessor, rel),
+                window,
+                session=accessor.pool,
+            )
     except HfHubError as exc:
         if is_missing(exc):
             raise enoent(path) from exc
@@ -91,10 +98,12 @@ async def read_bytes(accessor: HfBucketsAccessor,
         data, etag = b"", ""
     if size == 0:
         data = b""
-    record("read",
-           path.virtual,
-           accessor.VFS_NAME,
-           len(data),
-           timer,
-           fingerprint=read_token(etag))
+    record(
+        "read",
+        path.virtual,
+        accessor.VFS_NAME,
+        len(data),
+        timer,
+        fingerprint=read_token(etag),
+    )
     return data

@@ -20,7 +20,6 @@ import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { findGeneric } from '../generic/find.ts'
-import { metadataProvision } from '../generic_bind/provision.ts'
 
 const resolveNotionGlob = resolveGlobOf(NOTION_IO)
 
@@ -41,5 +40,4 @@ export const NOTION_FIND = command({
   vfs: VFSName.NOTION,
   spec: specOf('find'),
   fn: findCommand,
-  provision: metadataProvision,
 })

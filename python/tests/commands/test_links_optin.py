@@ -33,11 +33,11 @@ LINK_AWARE = ("ls", "stat", "find", "du", "file")
 # (email pushes a folder-level -name down to IMAP search) that still
 # route filtering through the shared walk.
 GENERIC_CALLS = {
-    "ls": ("ls_generic(", ),
+    "ls": ("ls_generic(",),
     "stat": ("stat_generic(", "generic_stat("),
     "find": ("find_generic(", "find_walk_generic(", "resolve_start("),
-    "du": ("du_generic(", ),
-    "file": ("file_generic(", ),
+    "du": ("du_generic(",),
+    "file": ("file_generic(",),
 }
 
 
@@ -52,8 +52,9 @@ def _registered() -> tuple[list[RegisteredCommand], list[str]]:
     found: list[RegisteredCommand] = []
     failed: list[str] = []
     seen: set[int] = set()
-    for info in pkgutil.walk_packages(builtin.__path__,
-                                      builtin.__name__ + "."):
+    for info in pkgutil.walk_packages(
+        builtin.__path__, builtin.__name__ + "."
+    ):
         try:
             module = importlib.import_module(info.name)
         except ImportError as exc:
@@ -73,10 +74,12 @@ def test_link_aware_generics_read_the_links_field():
     is how link support silently dies, so the read itself is pinned."""
     for name in LINK_AWARE:
         module = importlib.import_module(
-            f"mirage.commands.builtin.generic.{name}")
+            f"mirage.commands.builtin.generic.{name}"
+        )
         assert "opts.ns.links" in inspect.getsource(module), (
             f"generic {name} no longer reads opts.ns.links; symlinks are "
-            "invisible to the whole family")
+            "invisible to the whole family"
+        )
 
 
 def test_every_link_aware_shadow_delegates_to_the_generic():
@@ -103,4 +106,5 @@ def test_every_link_aware_shadow_delegates_to_the_generic():
             offenders.append(f"{cmd.vfs}/{cmd.name} ({source_file})")
     assert not offenders, (
         "these commands shadow a link-aware family without delegating to "
-        f"its generic, so symlinks are invisible to them: {offenders}")
+        f"its generic, so symlinks are invisible to them: {offenders}"
+    )

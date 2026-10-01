@@ -31,9 +31,11 @@ async def noop(config, paths, *texts, **flags):
 
 
 def tree(config_model=None) -> CLISpec:
-    return CLISpec(name="prog",
-                   config_model=config_model,
-                   subcommands=(CLISpec(name="run", fn=noop), ))
+    return CLISpec(
+        name="prog",
+        config_model=config_model,
+        subcommands=(CLISpec(name="run", fn=noop),),
+    )
 
 
 def test_install_and_get_and_items():
@@ -129,14 +131,23 @@ def test_an_instance_of_the_model_installs_as_it_is():
     assert reg.install("prog", tree(TokenConfig), config).config is config
 
 
-@pytest.mark.parametrize("config,message", [
-    (PortConfig(host="h", port=1),
-     "CLI 'prog': config must be a mapping or a TokenConfig, got PortConfig"),
-    ("token",
-     "CLI 'prog': config must be a mapping or a TokenConfig, got str"),
-    (["token"
-      ], "CLI 'prog': config must be a mapping or a TokenConfig, got list"),
-])
+@pytest.mark.parametrize(
+    "config,message",
+    [
+        (
+            PortConfig(host="h", port=1),
+            "CLI 'prog': config must be a mapping or a TokenConfig, got PortConfig",
+        ),
+        (
+            "token",
+            "CLI 'prog': config must be a mapping or a TokenConfig, got str",
+        ),
+        (
+            ["token"],
+            "CLI 'prog': config must be a mapping or a TokenConfig, got list",
+        ),
+    ],
+)
 def test_a_config_that_is_neither_is_refused_by_type(config, message):
     reg = CLIRegistry()
     with pytest.raises(ValueError) as caught:
@@ -146,8 +157,9 @@ def test_a_config_that_is_neither_is_refused_by_type(config, message):
 
 def test_a_model_instance_for_a_spec_without_a_model_is_refused():
     reg = CLIRegistry()
-    with pytest.raises(ValueError,
-                       match="config must be a mapping, got TokenConfig"):
+    with pytest.raises(
+        ValueError, match="config must be a mapping, got TokenConfig"
+    ):
         reg.install("prog", tree(), TokenConfig(token="x"))
 
 
@@ -173,11 +185,15 @@ def test_uninstall_removes_and_unknown_raises():
 
 @pytest.mark.parametrize("name,spec", [("slack", SLACK), ("discord", DISCORD)])
 def test_account_clis_refuse_a_mount_time_scope(name, spec):
-    with pytest.raises(ValueError,
-                       match="unknown config keys: end_time, start_time"):
+    with pytest.raises(
+        ValueError, match="unknown config keys: end_time, start_time"
+    ):
         CLIRegistry().install(
-            name, spec, {
+            name,
+            spec,
+            {
                 "token": "x",
                 "start_time": "2026-06-01T00:00:00Z",
-                "end_time": "2026-06-02T00:00:00Z"
-            })
+                "end_time": "2026-06-02T00:00:00Z",
+            },
+        )

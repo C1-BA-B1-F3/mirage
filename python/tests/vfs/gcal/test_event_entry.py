@@ -15,10 +15,13 @@
 import pytest
 
 from mirage.utils.sanitize import NAME_MAX_BYTES
-from mirage.vfs.gcal.event_entry import (PRIMARY_DIR, event_title,
-                                         make_calendar_dirname,
-                                         make_event_filename,
-                                         parse_event_filename)
+from mirage.vfs.gcal.event_entry import (
+    PRIMARY_DIR,
+    event_title,
+    make_calendar_dirname,
+    make_event_filename,
+    parse_event_filename,
+)
 
 EVENT_ID = "la9i1t995acovthi3f761chla0"
 
@@ -88,9 +91,12 @@ def test_event_title_falls_back_by_access_role():
 
 
 def test_primary_calendar_keeps_its_alias():
-    assert make_calendar_dirname("integ@example.com",
-                                 "integ@example.com",
-                                 primary=True) == PRIMARY_DIR
+    assert (
+        make_calendar_dirname(
+            "integ@example.com", "integ@example.com", primary=True
+        )
+        == PRIMARY_DIR
+    )
 
 
 def test_calendar_dirname_embeds_the_id_verbatim():

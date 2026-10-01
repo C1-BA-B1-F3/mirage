@@ -2,11 +2,16 @@ import textwrap
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    materialized_read,
+    merge_split_errors,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    read_stdin_async,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -41,33 +46,45 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> FmtFlags:
 
 
 def _leading_spaces(line: str) -> str:
-    return line[:len(line) - len(line.lstrip())]
+    return line[: len(line) - len(line.lstrip())]
 
 
-def _format_paragraph(para: str, width: int, prefix: str | None,
-                      split_only: bool, tagged: bool, crown: bool) -> str:
+def _format_paragraph(
+    para: str,
+    width: int,
+    prefix: str | None,
+    split_only: bool,
+    tagged: bool,
+    crown: bool,
+) -> str:
     lines = para.splitlines()
     if prefix is not None:
         if not lines or any(not line.startswith(prefix) for line in lines):
             return para
-        lines = [line[len(prefix):] for line in lines]
+        lines = [line[len(prefix) :] for line in lines]
     first_indent = _leading_spaces(lines[0]) if lines else ""
     body_indent = first_indent
     if (tagged or crown) and len(lines) > 1:
         body_indent = _leading_spaces(lines[1])
-    wrapper = textwrap.TextWrapper(width=width,
-                                   initial_indent=first_indent,
-                                   subsequent_indent=body_indent,
-                                   break_long_words=False,
-                                   break_on_hyphens=False)
+    wrapper = textwrap.TextWrapper(
+        width=width,
+        initial_indent=first_indent,
+        subsequent_indent=body_indent,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
     if split_only:
         result = "\n".join(
-            textwrap.fill(line.strip(),
-                          width=width,
-                          initial_indent=_leading_spaces(line),
-                          subsequent_indent=_leading_spaces(line),
-                          break_long_words=False,
-                          break_on_hyphens=False) for line in lines)
+            textwrap.fill(
+                line.strip(),
+                width=width,
+                initial_indent=_leading_spaces(line),
+                subsequent_indent=_leading_spaces(line),
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            for line in lines
+        )
     else:
         result = wrapper.fill(" ".join(line.strip() for line in lines))
     if prefix is not None:
@@ -75,8 +92,15 @@ def _format_paragraph(para: str, width: int, prefix: str | None,
     return result
 
 
-def _fmt_text(text: str, width: int, goal: int | None, prefix: str | None,
-              split_only: bool, tagged: bool, crown: bool) -> str:
+def _fmt_text(
+    text: str,
+    width: int,
+    goal: int | None,
+    prefix: str | None,
+    split_only: bool,
+    tagged: bool,
+    crown: bool,
+) -> str:
     if not text:
         return ""
     target_width = min(width, goal) if goal is not None else width
@@ -85,8 +109,10 @@ def _fmt_text(text: str, width: int, goal: int | None, prefix: str | None,
     for para in paragraphs:
         if para.strip():
             formatted.append(
-                _format_paragraph(para, target_width, prefix, split_only,
-                                  tagged, crown))
+                _format_paragraph(
+                    para, target_width, prefix, split_only, tagged, crown
+                )
+            )
         else:
             formatted.append("")
     return "\n\n".join(formatted) + "\n"
@@ -113,16 +139,17 @@ async def fmt(
         for p in paths:
             data = (await read_bytes(p)).decode(errors="replace")
             parts.append(
-                _fmt_text(data, width, goal, prefix, split_only, tagged,
-                          crown))
+                _fmt_text(data, width, goal, prefix, split_only, tagged, crown)
+            )
         return "".join(parts).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
         raise ValueError("fmt: missing operand")
     text = raw.decode(errors="replace")
-    return _fmt_text(text, width, goal, prefix, split_only, tagged,
-                     crown).encode(), IOResult()
+    return _fmt_text(
+        text, width, goal, prefix, split_only, tagged, crown
+    ).encode(), IOResult()
 
 
 async def fmt_generic(
@@ -149,16 +176,20 @@ async def fmt_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await fmt(readable,
-                  read_bytes=materialized_read(stream),
-                  stdin=opts.stdin,
-                  width=parsed.width,
-                  goal=parsed.goal,
-                  prefix=parsed.prefix,
-                  split_only=parsed.split_only,
-                  tagged=parsed.tagged,
-                  crown=parsed.crown,
-                  uniform=parsed.uniform), err)
+        await fmt(
+            readable,
+            read_bytes=materialized_read(stream),
+            stdin=opts.stdin,
+            width=parsed.width,
+            goal=parsed.goal,
+            prefix=parsed.prefix,
+            split_only=parsed.split_only,
+            tagged=parsed.tagged,
+            crown=parsed.crown,
+            uniform=parsed.uniform,
+        ),
+        err,
+    )
 
 
 __all__ = ["fmt", "fmt_generic"]

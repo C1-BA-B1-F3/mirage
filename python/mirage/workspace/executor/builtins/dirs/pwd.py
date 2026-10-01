@@ -15,8 +15,10 @@
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.types import PathSpec
-from mirage.workspace.executor.builtins.dirs.constants import (PWD_OPTIONS,
-                                                               PWD_USAGE)
+from mirage.workspace.executor.builtins.dirs.constants import (
+    PWD_OPTIONS,
+    PWD_USAGE,
+)
 from mirage.workspace.executor.builtins.dirs.dirs import split_mode_options
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
@@ -37,14 +39,16 @@ async def handle_pwd(
         session (SessionState): the shell session.
     """
     shell_physical = bool(session.shell_options.get("physical"))
-    _, bad_opt, physical = split_mode_options(operands, PWD_OPTIONS,
-                                              shell_physical)
+    _, bad_opt, physical = split_mode_options(
+        operands, PWD_OPTIONS, shell_physical
+    )
     if bad_opt is not None:
         err = f"pwd: -{bad_opt}: invalid option\n{PWD_USAGE}".encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="pwd",
-                                                         exit_code=2,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="pwd", exit_code=2, stderr=err),
+        )
     cwd = session.cwd if physical else logical_cwd(session)
     out = (cwd + "\n").encode()
     return out, IOResult(), ExecutionNode(command="pwd", exit_code=0)

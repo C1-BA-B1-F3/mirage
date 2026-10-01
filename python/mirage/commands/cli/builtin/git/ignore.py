@@ -36,7 +36,7 @@ def _relative(prefix: str, path: str) -> str:
             at the root.
         path (str): repository-relative path being tested.
     """
-    return path[len(prefix) + 1:] if prefix else path
+    return path[len(prefix) + 1 :] if prefix else path
 
 
 class IgnoreStack:
@@ -87,8 +87,9 @@ class IgnoreStack:
         return False
 
 
-async def load_ignores(dispatch: DispatchFn, commondir: str,
-                       worktree: str) -> IgnoreStack:
+async def load_ignores(
+    dispatch: DispatchFn, commondir: str, worktree: str
+) -> IgnoreStack:
     """The root of the ignore stack: the repository's own two files.
 
     ``.git/info/exclude`` sits below the root ``.gitignore`` because it
@@ -108,8 +109,9 @@ async def load_ignores(dispatch: DispatchFn, commondir: str,
         worktree (str): absolute virtual path of the working tree root.
     """
     stack = IgnoreStack([])
-    private = await read_optional(dispatch,
-                                  posixpath.join(commondir, INFO_EXCLUDE))
+    private = await read_optional(
+        dispatch, posixpath.join(commondir, INFO_EXCLUDE)
+    )
     if private is not None:
         stack = stack.push("", private)
     root = await read_optional(dispatch, posixpath.join(worktree, GITIGNORE))

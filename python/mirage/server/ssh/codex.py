@@ -38,10 +38,20 @@ from mirage.io.types import ByteSource
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
 from mirage.server.ssh import constants
 from mirage.server.ssh.errors import CodexRPCError
-from mirage.server.ssh.session import (key_profile, login_env, new_session_id,
-                                       open_session)
-from mirage.server.ssh.stream import (ChannelInput, Mark, Send, decode,
-                                      deliver, encode)
+from mirage.server.ssh.session import (
+    key_profile,
+    login_env,
+    new_session_id,
+    open_session,
+)
+from mirage.server.ssh.stream import (
+    ChannelInput,
+    Mark,
+    Send,
+    decode,
+    deliver,
+    encode,
+)
 from mirage.types import JsonValue
 from mirage.utils.errors import NoMountError
 from mirage.workspace.abort import MirageAbortError
@@ -68,12 +78,14 @@ def to_path(uri: JsonValue) -> str:
         CodexRPCError: not an absolute ``file:`` URI.
     """
     if not isinstance(uri, str):
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            "a path must be a file: URI")
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, "a path must be a file: URI"
+        )
     parts = urlsplit(uri)
     if parts.scheme != "file" or not parts.path.startswith("/"):
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            f"invalid URI: {uri}")
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, f"invalid URI: {uri}"
+        )
     return posixpath.normpath("/" + unquote(parts.path).lstrip("/"))
 
 
@@ -81,10 +93,9 @@ def to_uri(path: str) -> str:
     return FILE_SCHEME + quote(path)
 
 
-def arg(params: Message,
-        name: str,
-        kind: type[T],
-        default: T | None = None) -> T:
+def arg(
+    params: Message, name: str, kind: type[T], default: T | None = None
+) -> T:
     """One request field, of the type the protocol gives it.
 
     Args:
@@ -100,12 +111,15 @@ def arg(params: Message,
     given = params.get(name)
     value = default if given is None else given
     if value is None:
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            f"missing field `{name}`")
-    if not isinstance(value, kind) or (kind is int
-                                       and isinstance(value, bool)):
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            f"invalid type for field `{name}`")
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, f"missing field `{name}`"
+        )
+    if not isinstance(value, kind) or (
+        kind is int and isinstance(value, bool)
+    ):
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, f"invalid type for field `{name}`"
+        )
     return value
 
 
@@ -119,9 +133,11 @@ def strings(value: JsonValue, name: str) -> dict[str, str]:
     if value is None:
         return {}
     if not isinstance(value, dict) or not all(
-            isinstance(v, str) for v in value.values()):
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            f"`{name}` must map names to strings")
+        isinstance(v, str) for v in value.values()
+    ):
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, f"`{name}` must map names to strings"
+        )
     return {k: v for k, v in value.items() if isinstance(v, str)}
 
 
@@ -137,8 +153,11 @@ def process_env(params: Message) -> dict[str, str]:
         params (Message): the ``process/start`` params.
     """
     policy = params.get("envPolicy")
-    base = strings(policy.get("set"), "envPolicy.set") if isinstance(
-        policy, dict) else {}
+    base = (
+        strings(policy.get("set"), "envPolicy.set")
+        if isinstance(policy, dict)
+        else {}
+    )
     return {**base, **strings(params.get("env"), "env")}
 
 
@@ -152,9 +171,12 @@ def argv_line(argv: list[str]) -> str:
     Args:
         argv (list[str]): the program and its arguments.
     """
-    if (len(argv) == 3
-            and posixpath.basename(argv[0]) in constants.CODEX_SHELLS
-            and argv[1].startswith("-") and "c" in argv[1]):
+    if (
+        len(argv) == 3
+        and posixpath.basename(argv[0]) in constants.CODEX_SHELLS
+        and argv[1].startswith("-")
+        and "c" in argv[1]
+    ):
         return argv[2]
     return shlex.join(argv)
 
@@ -170,14 +192,18 @@ def rpc_error(err: Exception) -> CodexRPCError:
     condition = classify(err)
     if condition is None and not isinstance(err, OSError):
         logger.warning("codex: unclassified error: %r", err)
-    rpc = (constants.RPC_NOT_FOUND if condition is FsCondition.ENOENT else
-           constants.RPC_INTERNAL_ERROR)
+    rpc = (
+        constants.RPC_NOT_FOUND
+        if condition is FsCondition.ENOENT
+        else constants.RPC_INTERNAL_ERROR
+    )
     return CodexRPCError(rpc, failure_text(err))
 
 
 def not_a_file(path: str) -> CodexRPCError:
-    return CodexRPCError(constants.RPC_INVALID_REQUEST,
-                         f"path `{path}` is not a file")
+    return CodexRPCError(
+        constants.RPC_INVALID_REQUEST, f"path `{path}` is not a file"
+    )
 
 
 def lookup(core: MountCore, path: str) -> dict[str, Any] | None:
@@ -243,8 +269,11 @@ def write_file(core: MountCore, path: str, data: bytes) -> None:
     parent = lookup(core, posixpath.dirname(path))
     if parent is None:
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
-    fh = core.open(path, os.O_TRUNC) if lookup(core,
-                                               path) else core.create(path)
+    fh = (
+        core.open(path, os.O_TRUNC)
+        if lookup(core, path)
+        else core.create(path)
+    )
     try:
         if data:
             core.write(path, data, 0, fh)
@@ -283,11 +312,13 @@ def directory(core: MountCore, path: str) -> list[JsonValue]:
         except MISSING as exc:
             logger.debug("codex: %s vanished while listing: %r", child, exc)
             continue
-        entries.append({
-            "fileName": name,
-            "isDirectory": stat.S_ISDIR(st["st_mode"]),
-            "isFile": stat.S_ISREG(st["st_mode"]),
-        })
+        entries.append(
+            {
+                "fileName": name,
+                "isDirectory": stat.S_ISDIR(st["st_mode"]),
+                "isFile": stat.S_ISREG(st["st_mode"]),
+            }
+        )
     return entries
 
 
@@ -328,7 +359,8 @@ def walk(core: MountCore, root: str, options: Message) -> Message:
     if max_directories <= 0 or max_entries <= 0:
         raise CodexRPCError(
             constants.RPC_INVALID_REQUEST,
-            "filesystem walk limits must be greater than zero")
+            "filesystem walk limits must be greater than zero",
+        )
     entries: list[JsonValue] = []
     errors: list[JsonValue] = []
     result: Message = {"entries": entries, "errors": errors}
@@ -344,10 +376,9 @@ def walk(core: MountCore, root: str, options: Message) -> Message:
         try:
             names = sorted(children(core, path))
         except Exception as err:
-            errors.append({
-                "path": to_uri(path),
-                "message": str(rpc_error(err))
-            })
+            errors.append(
+                {"path": to_uri(path), "message": str(rpc_error(err))}
+            )
             continue
         for name in names:
             child = posixpath.join(path, name)
@@ -370,8 +401,9 @@ def unb64(text: str, name: str) -> bytes:
     try:
         return base64.b64decode(text, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                            f"`{name}` is not base64: {exc}") from exc
+        raise CodexRPCError(
+            constants.RPC_INVALID_PARAMS, f"`{name}` is not base64: {exc}"
+        ) from exc
 
 
 class ProcessInput:
@@ -420,8 +452,9 @@ class CodexProcess:
         stdin (ProcessInput | None): its input, when Codex may write.
     """
 
-    def __init__(self, process_id: str, tty: bool,
-                 stdin: ProcessInput | None) -> None:
+    def __init__(
+        self, process_id: str, tty: bool, stdin: ProcessInput | None
+    ) -> None:
         self.process_id = process_id
         self.tty = tty
         self.stdin = stdin
@@ -455,9 +488,15 @@ class CodexProcess:
             self.retained -= dropped
 
 
-async def run_process(ws: Workspace, session_id: str, line: str, cwd: str,
-                      env: dict[str,
-                                str], stdin: ByteSource, send: Send) -> int:
+async def run_process(
+    ws: Workspace,
+    session_id: str,
+    line: str,
+    cwd: str,
+    env: dict[str, str],
+    stdin: ByteSource,
+    send: Send,
+) -> int:
     """Run one process's line as the session, streaming its output.
 
     Runs on the workspace's loop. The status is read after the streams
@@ -476,18 +515,21 @@ async def run_process(ws: Workspace, session_id: str, line: str, cwd: str,
     Returns:
         int: the line's exit status.
     """
-    io = await ws.shell(line,
-                        session_id=session_id,
-                        stdin=stdin,
-                        agent_id=constants.CODEX_AGENT_ID,
-                        cwd=cwd,
-                        env=env or None)
+    io = await ws.shell(
+        line,
+        session_id=session_id,
+        stdin=stdin,
+        agent_id=constants.CODEX_AGENT_ID,
+        cwd=cwd,
+        env=env or None,
+    )
     await deliver(io.stdout, io.stderr, send)
     return io.exit_code
 
 
-async def run_quiet(ws: Workspace, session_id: str,
-                    line: str) -> tuple[int, str]:
+async def run_quiet(
+    ws: Workspace, session_id: str, line: str
+) -> tuple[int, str]:
     """Run an unrecorded line as the session and drain it.
 
     Runs on the workspace's loop; the status is read once both streams
@@ -527,19 +569,24 @@ class CodexChannel:
         process (asyncssh.SSHServerProcess[str]): the channel's process.
     """
 
-    def __init__(self, registry: WorkspaceRegistry, entry: WorkspaceEntry,
-                 session_id: str,
-                 process: asyncssh.SSHServerProcess[str]) -> None:
+    def __init__(
+        self,
+        registry: WorkspaceRegistry,
+        entry: WorkspaceEntry,
+        session_id: str,
+        process: asyncssh.SSHServerProcess[str],
+    ) -> None:
         ws = entry.runner.ws
         self._registry = registry
         self._entry = entry
         self._session_id = session_id
         self._process = process
-        self._input = ChannelInput(process,
-                                   max_line=constants.CODEX_MAX_MESSAGE)
-        self._core = MountCore(ws.vfs,
-                               session=ws.get_session(session_id),
-                               loop=entry.runner.loop)
+        self._input = ChannelInput(
+            process, max_line=constants.CODEX_MAX_MESSAGE
+        )
+        self._core = MountCore(
+            ws.vfs, session=ws.get_session(session_id), loop=entry.runner.loop
+        )
         self._processes: dict[str, CodexProcess] = {}
         self._handles: dict[str, tuple[str, int]] = {}
         self._starts: list[tuple[CodexProcess, str, str, dict[str, str]]] = []
@@ -582,7 +629,8 @@ class CodexChannel:
                 item = await self._input.readline()
                 if item is Mark.LIMIT:
                     self._process.stderr.write(
-                        "mirage: codex-exec message too long\n")
+                        "mirage: codex-exec message too long\n"
+                    )
                     return 1
                 if item is Mark.EOF:
                     return 0
@@ -624,16 +672,19 @@ class CodexChannel:
         try:
             message = json.loads(text)
         except ValueError as exc:
-            await self._send({
-                "id": None,
-                "error": {
-                    "code": constants.RPC_PARSE_ERROR,
-                    "message": str(exc)
+            await self._send(
+                {
+                    "id": None,
+                    "error": {
+                        "code": constants.RPC_PARSE_ERROR,
+                        "message": str(exc),
+                    },
                 }
-            })
+            )
             return
         if not isinstance(message, dict) or not isinstance(
-                message.get("method"), str):
+            message.get("method"), str
+        ):
             logger.debug("codex: ignoring a message that is not a request")
             return
         if "id" not in message:
@@ -642,42 +693,48 @@ class CodexChannel:
             # A read may wait for output; stdin and signals sent behind it
             # must not wait with it.
             read = asyncio.create_task(
-                self._answer(message["id"], message["method"],
-                             message.get("params")))
+                self._answer(
+                    message["id"], message["method"], message.get("params")
+                )
+            )
             self._reads.add(read)
             read.add_done_callback(self._reads.discard)
             return
-        await self._answer(message["id"], message["method"],
-                           message.get("params"))
+        await self._answer(
+            message["id"], message["method"], message.get("params")
+        )
         starts, self._starts = self._starts, []
         for proc, line, cwd, env in starts:
             self._launch(proc, line, cwd, env)
 
-    async def _answer(self, request_id: JsonValue, method: str,
-                      params: JsonValue) -> None:
+    async def _answer(
+        self, request_id: JsonValue, method: str, params: JsonValue
+    ) -> None:
         try:
             result = await self._dispatch(method, params)
         except CodexRPCError as exc:
-            await self._send({
-                "id": request_id,
-                "error": {
-                    "code": exc.code,
-                    "message": str(exc)
+            await self._send(
+                {
+                    "id": request_id,
+                    "error": {"code": exc.code, "message": str(exc)},
                 }
-            })
+            )
             return
         await self._send({"id": request_id, "result": result})
 
     async def _dispatch(self, method: str, params: JsonValue) -> JsonValue:
         handler = self._methods.get(method)
         if handler is None:
-            raise CodexRPCError(constants.RPC_METHOD_NOT_FOUND,
-                                f"unsupported method `{method}`")
+            raise CodexRPCError(
+                constants.RPC_METHOD_NOT_FOUND,
+                f"unsupported method `{method}`",
+            )
         if params is None:
             params = {}
         if not isinstance(params, dict):
-            raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                                "params must be an object")
+            raise CodexRPCError(
+                constants.RPC_INVALID_PARAMS, "params must be an object"
+            )
         try:
             return await handler(params)
         except CodexRPCError:
@@ -702,10 +759,12 @@ class CodexChannel:
         """
         runner = self._entry.runner
         code, err = await runner.call(
-            run_quiet(runner.ws, self._session_id, line))
+            run_quiet(runner.ws, self._session_id, line)
+        )
         if code != 0:
-            raise CodexRPCError(constants.RPC_INTERNAL_ERROR,
-                                err.strip() or f"exit {code}")
+            raise CodexRPCError(
+                constants.RPC_INTERNAL_ERROR, err.strip() or f"exit {code}"
+            )
 
     async def _initialize(self, params: Message) -> JsonValue:
         return {"sessionId": self._session_id}
@@ -715,7 +774,7 @@ class CodexChannel:
         return {
             "shell": {
                 "name": constants.CODEX_SHELL_NAME,
-                "path": constants.CODEX_SHELL_PATH
+                "path": constants.CODEX_SHELL_PATH,
             },
             "cwd": to_uri(cwd),
             "capabilities": {},
@@ -725,52 +784,63 @@ class CodexChannel:
         process_id = arg(params, "processId", str)
         argv = arg(params, "argv", list)
         if not argv or not all(isinstance(a, str) for a in argv):
-            raise CodexRPCError(constants.RPC_INVALID_PARAMS,
-                                "`argv` must be a non-empty list of strings")
+            raise CodexRPCError(
+                constants.RPC_INVALID_PARAMS,
+                "`argv` must be a non-empty list of strings",
+            )
         cwd = to_path(arg(params, "cwd", str))
         env = process_env(params)
         tty = arg(params, "tty", bool, False)
         pipe = arg(params, "pipeStdin", bool, False)
         if process_id in self._processes:
-            raise CodexRPCError(constants.RPC_INVALID_REQUEST,
-                                f"process {process_id} already exists")
+            raise CodexRPCError(
+                constants.RPC_INVALID_REQUEST,
+                f"process {process_id} already exists",
+            )
         stdin = ProcessInput(self._entry.runner.loop) if tty or pipe else None
         proc = CodexProcess(process_id, tty, stdin)
         self._processes[process_id] = proc
         self._starts.append(
-            (proc, argv_line([str(a) for a in argv]), cwd, env))
+            (proc, argv_line([str(a) for a in argv]), cwd, env)
+        )
         return {"processId": process_id, "sandboxType": "none"}
 
-    def _launch(self, proc: CodexProcess, line: str, cwd: str,
-                env: dict[str, str]) -> None:
+    def _launch(
+        self, proc: CodexProcess, line: str, cwd: str, env: dict[str, str]
+    ) -> None:
         runner = self._entry.runner
         loop = asyncio.get_running_loop()
 
         async def send(data: bytes, stderr: bool) -> None:
             await asyncio.wrap_future(
                 asyncio.run_coroutine_threadsafe(
-                    self._output(proc, data, stderr), loop))
+                    self._output(proc, data, stderr), loop
+                )
+            )
 
         stdin: ByteSource = b"" if proc.stdin is None else proc.stdin
         proc.future = asyncio.run_coroutine_threadsafe(
-            run_process(runner.ws, self._session_id, line, cwd, env, stdin,
-                        send), runner.loop)
+            run_process(
+                runner.ws, self._session_id, line, cwd, env, stdin, send
+            ),
+            runner.loop,
+        )
         proc.task = asyncio.create_task(self._finish(proc))
 
-    async def _output(self, proc: CodexProcess, data: bytes,
-                      stderr: bool) -> None:
+    async def _output(
+        self, proc: CodexProcess, data: bytes, stderr: bool
+    ) -> None:
         stream = "pty" if proc.tty else "stderr" if stderr else "stdout"
         seq = proc.next_seq()
         chunk: Message = {"seq": seq, "stream": stream, "chunk": b64(data)}
         proc.keep(seq, len(data), chunk)
         proc.changed.set()
-        await self._send({
-            "method": "process/output",
-            "params": {
-                "processId": proc.process_id,
-                **chunk
+        await self._send(
+            {
+                "method": "process/output",
+                "params": {"processId": proc.process_id, **chunk},
             }
-        })
+        )
 
     async def _finish(self, proc: CodexProcess) -> None:
         if proc.future is None:
@@ -783,31 +853,36 @@ class CodexChannel:
                 raise
             code = proc.stop_code or constants.CODEX_INTERRUPTED
         except Exception as exc:
-            logger.warning("codex: process failed on %s: %r", self._entry.id,
-                           exc)
+            logger.warning(
+                "codex: process failed on %s: %r", self._entry.id, exc
+            )
             await self._output(proc, encode(f"mirage: {exc}\n"), True)
             code = 1
         proc.exit_code = code
         if proc.stdin is not None:
             proc.stdin.close()
-        await self._send({
-            "method": "process/exited",
-            "params": {
-                "processId": proc.process_id,
-                "seq": proc.next_seq(),
-                "exitCode": code,
-                "sandboxDenied": False,
+        await self._send(
+            {
+                "method": "process/exited",
+                "params": {
+                    "processId": proc.process_id,
+                    "seq": proc.next_seq(),
+                    "exitCode": code,
+                    "sandboxDenied": False,
+                },
             }
-        })
+        )
         proc.closed = True
         proc.changed.set()
-        await self._send({
-            "method": "process/closed",
-            "params": {
-                "processId": proc.process_id,
-                "seq": proc.next_seq()
+        await self._send(
+            {
+                "method": "process/closed",
+                "params": {
+                    "processId": proc.process_id,
+                    "seq": proc.next_seq(),
+                },
             }
-        })
+        )
         if proc.stop_code == constants.CODEX_TERMINATED:
             self._processes.pop(proc.process_id, None)
 
@@ -815,8 +890,10 @@ class CodexChannel:
         process_id = arg(params, "processId", str)
         proc = self._processes.get(process_id)
         if proc is None:
-            raise CodexRPCError(constants.RPC_INVALID_REQUEST,
-                                f"unknown process id {process_id}")
+            raise CodexRPCError(
+                constants.RPC_INVALID_REQUEST,
+                f"unknown process id {process_id}",
+            )
         return proc
 
     def _stop(self, proc: CodexProcess, code: int) -> bool:
@@ -839,8 +916,11 @@ class CodexChannel:
             try:
                 await asyncio.wait_for(proc.changed.wait(), wait_ms / 1000)
             except TimeoutError:
-                logger.debug("codex: %s had nothing new in %d ms",
-                             proc.process_id, wait_ms)
+                logger.debug(
+                    "codex: %s had nothing new in %d ms",
+                    proc.process_id,
+                    wait_ms,
+                )
             fresh = [c for seq, _, c in proc.chunks if seq > after]
         return {
             "chunks": fresh,
@@ -874,7 +954,8 @@ class CodexChannel:
             raise CodexRPCError(
                 constants.RPC_INVALID_PARAMS,
                 f"unknown variant `{signal}`, expected "
-                f"`{constants.CODEX_INTERRUPT_SIGNAL}`")
+                f"`{constants.CODEX_INTERRUPT_SIGNAL}`",
+            )
         self._stop(proc, constants.CODEX_INTERRUPTED)
         return {}
 
@@ -905,8 +986,9 @@ class CodexChannel:
     async def _read_file(self, params: Message) -> JsonValue:
         path = to_path(arg(params, "path", str))
         return {
-            "dataBase64": b64(await
-                              self._fs(lambda core: read_file(core, path)))
+            "dataBase64": b64(
+                await self._fs(lambda core: read_file(core, path))
+            )
         }
 
     async def _write_file(self, params: Message) -> JsonValue:
@@ -941,7 +1023,8 @@ class CodexChannel:
             if force:
                 return {}
             raise rpc_error(
-                FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT)))
+                FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT))
+            )
         if not stat.S_ISDIR(st["st_mode"]):
             await self._fs(lambda core: core.unlink(path))
         elif recursive:
@@ -959,10 +1042,12 @@ class CodexChannel:
             raise CodexRPCError(
                 constants.RPC_INVALID_REQUEST,
                 "fs/copy requires recursive: true when sourcePath is a "
-                "directory")
+                "directory",
+            )
         flag = "-R " if tree else ""
-        await self._line(f"cp {flag}-- {shlex.quote(source)} "
-                         f"{shlex.quote(destination)}")
+        await self._line(
+            f"cp {flag}-- {shlex.quote(source)} {shlex.quote(destination)}"
+        )
         return {}
 
     async def _open(self, params: Message) -> JsonValue:
@@ -971,7 +1056,8 @@ class CodexChannel:
         if handle_id in self._handles:
             raise CodexRPCError(
                 constants.RPC_INVALID_REQUEST,
-                f"file read handle `{handle_id}` already exists")
+                f"file read handle `{handle_id}` already exists",
+            )
         fh = await self._fs(lambda core: open_file(core, path))
         self._handles[handle_id] = (path, fh)
         return {"handleId": handle_id}
@@ -981,11 +1067,14 @@ class CodexChannel:
         offset = arg(params, "offset", int)
         length = arg(params, "len", int)
         if handle_id not in self._handles:
-            raise CodexRPCError(constants.RPC_NOT_FOUND,
-                                f"unknown file read handle `{handle_id}`")
+            raise CodexRPCError(
+                constants.RPC_NOT_FOUND,
+                f"unknown file read handle `{handle_id}`",
+            )
         path, fh = self._handles[handle_id]
-        chunk = await self._fs(lambda core: core.read(path, length, offset, fh)
-                               )
+        chunk = await self._fs(
+            lambda core: core.read(path, length, offset, fh)
+        )
         return {"chunk": b64(chunk), "eof": len(chunk) < length}
 
     async def _close(self, params: Message) -> JsonValue:
@@ -995,8 +1084,9 @@ class CodexChannel:
         return {}
 
 
-async def serve_codex(registry: WorkspaceRegistry,
-                      process: asyncssh.SSHServerProcess[str]) -> None:
+async def serve_codex(
+    registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
+) -> None:
     """Serve one codex-exec channel in the workspace the login names.
 
     The channel runs as a fresh session under the login key's profile,
@@ -1018,10 +1108,12 @@ async def serve_codex(registry: WorkspaceRegistry,
     try:
         profile = key_profile(process.channel.get_connection())
         await runner.call(
-            open_session(runner.ws, session_id, login_env(process), profile))
+            open_session(runner.ws, session_id, login_env(process), profile)
+        )
     except Exception as exc:
-        logger.warning("codex: cannot open a session on %s: %r", workspace_id,
-                       exc)
+        logger.warning(
+            "codex: cannot open a session on %s: %r", workspace_id, exc
+        )
         process.stderr.write(f"mirage: cannot open a session: {exc}\n")
         process.exit(1)
         return

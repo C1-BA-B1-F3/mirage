@@ -38,8 +38,9 @@ def store():
 
 @pytest.mark.asyncio
 async def test_find_all(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"))
+    results = await find(
+        store, PathSpec(vfs_path="", virtual="/", directory="/")
+    )
     assert "/readme.md" in results
     assert "/src/main.py" in results
     assert "/src/lib/helper.py" in results
@@ -49,38 +50,38 @@ async def test_find_all(store):
 
 @pytest.mark.asyncio
 async def test_find_by_name(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         name="*.py")
+    results = await find(
+        store, PathSpec(vfs_path="", virtual="/", directory="/"), name="*.py"
+    )
     assert results == ["/src/lib/helper.py", "/src/main.py", "/src/util.py"]
 
 
 @pytest.mark.asyncio
 async def test_find_name_matches_mount_root_start_path(store):
-    results = await find(store,
-                         PathSpec(vfs_path="",
-                                  virtual="/data",
-                                  directory="/data"),
-                         name="data")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/data", directory="/data"),
+        name="data",
+    )
     assert results == ["/"]
 
 
 @pytest.mark.asyncio
 async def test_find_by_type_file(store):
-    results = await find(store,
-                         PathSpec(vfs_path="src",
-                                  virtual="/src",
-                                  directory="/src"),
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="src", virtual="/src", directory="/src"),
+        type="f",
+    )
     assert "/src/main.py" in results
     assert "/src/lib" not in results
 
 
 @pytest.mark.asyncio
 async def test_find_by_type_dir(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         type="d")
+    results = await find(
+        store, PathSpec(vfs_path="", virtual="/", directory="/"), type="d"
+    )
     assert "/src" in results
     assert "/src/lib" in results
     assert "/readme.md" not in results
@@ -88,10 +89,12 @@ async def test_find_by_type_dir(store):
 
 @pytest.mark.asyncio
 async def test_find_maxdepth(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         maxdepth=1,
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        maxdepth=1,
+        type="f",
+    )
     assert "/readme.md" in results
     assert "/big.bin" in results
     assert "/src/main.py" not in results
@@ -100,10 +103,12 @@ async def test_find_maxdepth(store):
 
 @pytest.mark.asyncio
 async def test_find_mindepth(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         mindepth=2,
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        mindepth=2,
+        type="f",
+    )
     assert "/readme.md" not in results
     assert "/src/main.py" in results
     assert "/src/lib/helper.py" in results
@@ -111,19 +116,23 @@ async def test_find_mindepth(store):
 
 @pytest.mark.asyncio
 async def test_find_min_size(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         min_size=100,
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        min_size=100,
+        type="f",
+    )
     assert results == ["/big.bin"]
 
 
 @pytest.mark.asyncio
 async def test_find_max_size(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         max_size=10,
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        max_size=10,
+        type="f",
+    )
     assert "/readme.md" in results
     assert "/src/lib/data.json" in results
     assert "/big.bin" not in results
@@ -131,21 +140,23 @@ async def test_find_max_size(store):
 
 @pytest.mark.asyncio
 async def test_find_name_exclude(store):
-    results = await find(store,
-                         PathSpec(vfs_path="src",
-                                  virtual="/src",
-                                  directory="/src"),
-                         name="*.py",
-                         name_exclude="util*")
+    results = await find(
+        store,
+        PathSpec(vfs_path="src", virtual="/src", directory="/src"),
+        name="*.py",
+        name_exclude="util*",
+    )
     assert "/src/util.py" not in results
     assert "/src/main.py" in results
 
 
 @pytest.mark.asyncio
 async def test_find_or_names(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         or_names=["*.py", "*.json"])
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        or_names=["*.py", "*.json"],
+    )
     assert "/src/main.py" in results
     assert "/src/lib/data.json" in results
     assert "/readme.md" not in results
@@ -158,18 +169,20 @@ async def test_find_iname(store):
     a = RAMAccessor(s)
     s.files["/File.TXT"] = b"data"
     s.files["/other.txt"] = b"data"
-    results = await find(a,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         iname="*.txt")
+    results = await find(
+        a, PathSpec(vfs_path="", virtual="/", directory="/"), iname="*.txt"
+    )
     assert "/File.TXT" in results
     assert "/other.txt" in results
 
 
 @pytest.mark.asyncio
 async def test_find_path_pattern(store):
-    results = await find(store,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         path_pattern="/src/lib/*")
+    results = await find(
+        store,
+        PathSpec(vfs_path="", virtual="/", directory="/"),
+        path_pattern="/src/lib/*",
+    )
     assert "/src/lib/helper.py" in results
     assert "/src/lib/data.json" in results
     assert "/src/main.py" not in results
@@ -177,11 +190,11 @@ async def test_find_path_pattern(store):
 
 @pytest.mark.asyncio
 async def test_find_subdir(store):
-    results = await find(store,
-                         PathSpec(vfs_path="src/lib",
-                                  virtual="/src/lib",
-                                  directory="/src/lib"),
-                         type="f")
+    results = await find(
+        store,
+        PathSpec(vfs_path="src/lib", virtual="/src/lib", directory="/src/lib"),
+        type="f",
+    )
     assert results == ["/src/lib/data.json", "/src/lib/helper.py"]
 
 
@@ -190,7 +203,7 @@ async def test_find_empty_result():
     s = RAMStore()
 
     a = RAMAccessor(s)
-    results = await find(a,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         name="*.xyz")
+    results = await find(
+        a, PathSpec(vfs_path="", virtual="/", directory="/"), name="*.xyz"
+    )
     assert results == []

@@ -13,34 +13,40 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.policy.constants import WILDCARD
-from mirage.policy.match.pattern import (pattern_matches, pattern_names,
-                                         pattern_reaches, split_pattern)
+from mirage.policy.match.pattern import (
+    pattern_matches,
+    pattern_names,
+    pattern_reaches,
+    split_pattern,
+)
 
 
 def test_split_pattern_drops_trailing_wildcards_only():
     assert split_pattern("git push") == ("git", "push")
-    assert split_pattern("git *") == ("git", )
-    assert split_pattern("git * *") == ("git", )
+    assert split_pattern("git *") == ("git",)
+    assert split_pattern("git * *") == ("git",)
     assert split_pattern("git * --hard") == ("git", WILDCARD, "--hard")
-    assert split_pattern("  rm  ") == ("rm", )
+    assert split_pattern("  rm  ") == ("rm",)
     assert split_pattern("*") == ()
 
 
 def test_pattern_matches_is_a_token_prefix():
     assert pattern_matches("rm", ("rm", "-rf", "/x"))
-    assert pattern_matches("rm", ("rm", ))
-    assert not pattern_matches("rm", ("rmdir", ))
+    assert pattern_matches("rm", ("rm",))
+    assert not pattern_matches("rm", ("rmdir",))
     assert pattern_matches("git push", ("git", "push", "origin", "main"))
     assert not pattern_matches("git push", ("git", "pull"))
-    assert not pattern_matches("git push", ("git", ))
-    assert pattern_matches("git reset --hard",
-                           ("git", "reset", "--hard", "HEAD"))
-    assert not pattern_matches("git reset --hard",
-                               ("git", "reset", "HEAD", "--hard"))
+    assert not pattern_matches("git push", ("git",))
+    assert pattern_matches(
+        "git reset --hard", ("git", "reset", "--hard", "HEAD")
+    )
+    assert not pattern_matches(
+        "git reset --hard", ("git", "reset", "HEAD", "--hard")
+    )
     # A wildcard token is any one token; trailing it is redundant.
     assert pattern_matches("git * --hard", ("git", "reset", "--hard"))
     assert not pattern_matches("git * --hard", ("git", "reset", "--soft"))
-    assert pattern_matches("git *", ("git", ))
+    assert pattern_matches("git *", ("git",))
     assert pattern_matches("*", ("anything", "at", "all"))
 
 
@@ -54,13 +60,14 @@ def test_pattern_reaches_reads_only_the_words_the_two_share():
     # The pattern runs past the path: one line of that group is
     # allowed, so the group is reachable.
     assert pattern_reaches("linear issue list", ("linear", "issue"))
-    assert pattern_reaches("linear issue list", ("linear", ))
+    assert pattern_reaches("linear issue list", ("linear",))
     # The path runs past the pattern: already covered.
     assert pattern_reaches("linear issue", ("linear", "issue", "list"))
     # A word they share disagrees, at any depth.
     assert not pattern_reaches("linear issue list", ("linear", "team"))
-    assert not pattern_reaches("linear issue list",
-                               ("linear", "issue", "create"))
+    assert not pattern_reaches(
+        "linear issue list", ("linear", "issue", "create")
+    )
     assert not pattern_reaches("linear issue", ("gws", "issue"))
     # A wildcard is any one word, and a trailing one is dropped, so
     # `linear issue *` reaches every leaf of that group.

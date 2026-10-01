@@ -77,29 +77,34 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print("=== metadata overlay on /ssh/readme.txt ===")
-    meta_res = await ws.shell('chmod 640 "/ssh/readme.txt"'
-                              ' && chown 500:dev "/ssh/readme.txt"'
-                              ' && touch -t 202601021530 "/ssh/readme.txt"')
+    meta_res = await ws.shell(
+        'chmod 640 "/ssh/readme.txt"'
+        ' && chown 500:dev "/ssh/readme.txt"'
+        ' && touch -t 202601021530 "/ssh/readme.txt"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path("/ssh/readme.txt"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path("/ssh/readme.txt")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     # ── generic text commands (delegate to shared generics) ──
     for cmd in [
-            "sort /ssh/data.txt",
-            "sort -r /ssh/data.txt",
-            "nl /ssh/data.txt",
-            "rev /ssh/data.txt",
-            "tac /ssh/data.txt",
-            "cut -c1-4 /ssh/data.txt",
-            "uniq /ssh/data.txt",
-            "fold -w 3 /ssh/data.txt",
-            "head -n 2 /ssh/data.txt",
-            "tail -n 1 /ssh/data.txt",
-            "wc -l /ssh/data.txt",
-            "sha256sum /ssh/data.txt",
+        "sort /ssh/data.txt",
+        "sort -r /ssh/data.txt",
+        "nl /ssh/data.txt",
+        "rev /ssh/data.txt",
+        "tac /ssh/data.txt",
+        "cut -c1-4 /ssh/data.txt",
+        "uniq /ssh/data.txt",
+        "fold -w 3 /ssh/data.txt",
+        "head -n 2 /ssh/data.txt",
+        "tail -n 1 /ssh/data.txt",
+        "wc -l /ssh/data.txt",
+        "sha256sum /ssh/data.txt",
     ]:
         print(f"=== {cmd} ===")
         result = await ws.shell(cmd)

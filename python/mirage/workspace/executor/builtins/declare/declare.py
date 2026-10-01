@@ -24,19 +24,29 @@ from mirage.shell.printer import function_text
 from mirage.shell.variable import ShellValue, VarAttr, attr_letters
 from mirage.utils.hidden import var_hidden
 from mirage.workspace.executor.builtins.declare.constants import (
-    ANSI_C_ESCAPES, BARE_KEY_RE, SUBSCRIPT_RE)
-from mirage.workspace.executor.builtins.shared import (arith_refusal,
-                                                       is_valid_name,
-                                                       readonly_refusal,
-                                                       refusal)
+    ANSI_C_ESCAPES,
+    BARE_KEY_RE,
+    SUBSCRIPT_RE,
+)
+from mirage.workspace.executor.builtins.shared import (
+    arith_refusal,
+    is_valid_name,
+    readonly_refusal,
+    refusal,
+)
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (conversion_scalar, set_attr,
-                                            shadow_local, subscript_index)
+from mirage.workspace.session.state import (
+    conversion_scalar,
+    set_attr,
+    shadow_local,
+    subscript_index,
+)
 from mirage.workspace.types import ExecutionNode
 
 
-async def premark(view: SessionView, name: str,
-                  shaping: frozenset[VarAttr]) -> None:
+async def premark(
+    view: SessionView, name: str, shaping: frozenset[VarAttr]
+) -> None:
     """Put a declaration's value-shaping attributes on a name before its
     value stores.
 
@@ -142,12 +152,14 @@ async def store_staged_arrays(
         try:
             if assoc or name in session.assocs:
                 built, bad_words = build_assoc_literal(
-                    session.assocs.get(name), items, append)
+                    session.assocs.get(name), items, append
+                )
                 if errors is not None:
                     errors.extend(
                         f"bash: {name}: '{word}': must use subscript "
                         "when assigning associative array"
-                        for word in bad_words)
+                        for word in bad_words
+                    )
                 base = built
             else:
                 held = session.arrays.get(name)
@@ -155,8 +167,11 @@ async def store_staged_arrays(
                     scalar = conversion_scalar(session, name)
                     held = None if scalar is None else [scalar]
                 base = await build_indexed_literal(
-                    held, items, append,
-                    functools.partial(subscript_index, session, view=view))
+                    held,
+                    items,
+                    append,
+                    functools.partial(subscript_index, session, view=view),
+                )
             if global_scope:
                 await write_global(session, view, name, base)
             else:
@@ -275,7 +290,7 @@ def identifier_refusal(cmd: str, word: str) -> str | None:
 
 
 def identifier_failure(
-        cmd: str, errors: list[str]
+    cmd: str, errors: list[str]
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Render the refusals collected while declaring names.
 
@@ -288,9 +303,11 @@ def identifier_failure(
         errors (list[str]): the refusal lines, in operand order.
     """
     err = ("\n".join(errors) + "\n").encode()
-    return None, IOResult(exit_code=1, stderr=err), ExecutionNode(command=cmd,
-                                                                  exit_code=1,
-                                                                  stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command=cmd, exit_code=1, stderr=err),
+    )
 
 
 def assoc_key_text(key: str) -> str:
@@ -322,8 +339,10 @@ def assoc_body(amap: dict[str, str]) -> str:
     """
     if not amap:
         return "=()"
-    parts = " ".join(f"[{assoc_key_text(k)}]={bash_declare_quote(amap[k])}"
-                     for k in sorted(amap))
+    parts = " ".join(
+        f"[{assoc_key_text(k)}]={bash_declare_quote(amap[k])}"
+        for k in sorted(amap)
+    )
     return f"=({parts} )"
 
 
@@ -358,7 +377,8 @@ def declare_line(session: SessionState, name: str) -> str | None:
         return f"{head} {name}"
     if isinstance(var.value, list):
         parts = [
-            f"[{i}]={bash_declare_quote(v)}" for i, v in enumerate(var.value)
+            f"[{i}]={bash_declare_quote(v)}"
+            for i, v in enumerate(var.value)
             if v is not None
         ]
         return f"{head} {name}=({' '.join(parts)})"
@@ -396,10 +416,11 @@ async def handle_declare_print(
     if not errors:
         return out, IOResult(), ExecutionNode(command="declare", exit_code=0)
     err = ("\n".join(errors) + "\n").encode()
-    return out, IOResult(exit_code=code,
-                         stderr=err), ExecutionNode(command="declare",
-                                                    exit_code=code,
-                                                    stderr=err)
+    return (
+        out,
+        IOResult(exit_code=code, stderr=err),
+        ExecutionNode(command="declare", exit_code=code, stderr=err),
+    )
 
 
 def handle_declare_functions(
@@ -437,13 +458,16 @@ def handle_declare_functions(
             lines.append(function_text(name, session.functions[name]))
     out = (("\n".join(lines) + "\n") if lines else "").encode()
     code = 1 if missing else 0
-    return out, IOResult(exit_code=code), ExecutionNode(command=cmd,
-                                                        exit_code=code)
+    return (
+        out,
+        IOResult(exit_code=code),
+        ExecutionNode(command=cmd, exit_code=code),
+    )
 
 
 def readonly_functions(
-        session: SessionState,
-        names: list[str]) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    session: SessionState, names: list[str]
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run ``readonly -f``: freeze the named functions, or list the frozen.
 
     Args:
@@ -466,10 +490,11 @@ def readonly_functions(
         session.readonly_functions.add(name)
     if errors:
         err = ("\n".join(errors) + "\n").encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="readonly",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="readonly", exit_code=1, stderr=err),
+        )
     return None, IOResult(), ExecutionNode(command="readonly", exit_code=0)
 
 
@@ -511,14 +536,20 @@ def nameref_refusal(cmd: str, name: str, target: str) -> str | None:
         target (str): the value it was given.
     """
     if SUBSCRIPT_RE.fullmatch(target) is not None:
-        return (f"mirage: {cmd}: {target}: name reference to an array "
-                "element is not supported")
+        return (
+            f"mirage: {cmd}: {target}: name reference to an array "
+            "element is not supported"
+        )
     if not is_valid_name(target):
-        return (f"bash: {cmd}: `{target}': invalid variable name for name "
-                "reference")
+        return (
+            f"bash: {cmd}: `{target}': invalid variable name for name "
+            "reference"
+        )
     if target == name:
-        return (f"bash: {cmd}: {name}: nameref variable self references "
-                "not allowed")
+        return (
+            f"bash: {cmd}: {name}: nameref variable self references "
+            "not allowed"
+        )
     return None
 
 
@@ -546,8 +577,9 @@ async def write_global(
         key (str): the variable.
         value (ShellValue): the value.
     """
-    outer = next((frame for frame in session._local_frames if key in frame),
-                 None)
+    outer = next(
+        (frame for frame in session._local_frames if key in frame), None
+    )
     if outer is None:
         await view.set(key, value)
         return

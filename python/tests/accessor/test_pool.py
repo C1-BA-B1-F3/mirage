@@ -44,14 +44,16 @@ class Stub:
             concurrent releases of one client race in.
     """
 
-    def __init__(self,
-                 opened,
-                 released,
-                 counter,
-                 fail_release=False,
-                 slow_open=False,
-                 slow_exit=False,
-                 always_fail=False) -> None:
+    def __init__(
+        self,
+        opened,
+        released,
+        counter,
+        fail_release=False,
+        slow_open=False,
+        slow_exit=False,
+        always_fail=False,
+    ) -> None:
         self.opened = opened
         self.released = released
         self.counter = counter
@@ -120,10 +122,12 @@ def test_concurrent_miss_opens_exactly_one():
     cache = LoopClientCache("test")
 
     async def go():
-        got = await asyncio.gather(*[
-            cache.get(_stub(opened, released, counter, slow_open=True))
-            for _ in range(5)
-        ])
+        got = await asyncio.gather(
+            *[
+                cache.get(_stub(opened, released, counter, slow_open=True))
+                for _ in range(5)
+            ]
+        )
         assert len(set(got)) == 1
         await cache.close()
 
@@ -170,7 +174,8 @@ def test_a_dead_loop_is_released_once_under_concurrent_gets():
 
     async def second():
         await asyncio.gather(
-            *[cache.get(_stub(opened, released, counter)) for _ in range(4)])
+            *[cache.get(_stub(opened, released, counter)) for _ in range(4)]
+        )
         await cache.close()
 
     asyncio.run(second())
@@ -243,7 +248,8 @@ def test_a_failed_release_does_not_strand_the_other_loops():
 
     async def step():
         await cache.get(
-            _stub(opened, released, counter, fail_release=fail_first[0]))
+            _stub(opened, released, counter, fail_release=fail_first[0])
+        )
         fail_first[0] = False
 
     for _ in range(3):

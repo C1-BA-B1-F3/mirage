@@ -29,10 +29,12 @@ async def main() -> None:
     print("=== tee (create files) ===")
     await ws.shell('echo "hello world" | tee /data/hello.txt')
     await ws.shell(
-        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json')
+        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json'
+    )
     await ws.shell("mkdir /data/reports")
-    await ws.shell('echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
-                   )
+    await ws.shell(
+        'echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
+    )
 
     print("=== ls /data/ ===")
     result = await ws.shell("ls /data/")
@@ -170,12 +172,16 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
-                "stat /data/missing.txt"):
+    for cmd in (
+        "cat /data/missing.txt",
+        "head /data/missing.txt",
+        "stat /data/missing.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== history (last 5) ===")
     result = await ws.shell("history 5")
@@ -202,17 +208,6 @@ async def main() -> None:
     result = await ws.shell("head -c 8 /dev/zero | xxd")
     print(await result.stdout_str())
 
-    # ── provision: dry-run cost estimates (nothing executes) ────────
-    # Read families estimate bytes from stat; pipes/&&/; sum, || takes
-    # a min-max envelope, and writes report UNKNOWN.
-    print("\n=== PROVISION (dry-run cost estimates) ===\n")
-    for cmd in ("cat /data/hello.txt", "sort /data/hello.txt | head -n 1",
-                "head /data/hello.txt || cat /data/hello.txt",
-                "tee /data/out.txt"):
-        plan = await ws.shell(cmd, provision=True)
-        print(f"  {cmd}: net={plan.network_read} ops={plan.read_ops} "
-              f"precision={plan.precision.value}")
-
     # ── persistence: save / load / copy / deepcopy ──────────────────
     # RAM has no redacted config: full content is in the snapshot, so
     # no mounts= needed at load time.
@@ -232,11 +227,15 @@ async def main() -> None:
         r_orig = await ws.shell("cat /data/hello.txt")
         r_cp = await cp.shell("cat /data/hello.txt")
         print(f"  original:  {(await r_orig.stdout_str()).strip()!r}")
-        print(f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
-              "(local backend → independent)")
+        print(
+            f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
+            "(local backend → independent)"
+        )
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")

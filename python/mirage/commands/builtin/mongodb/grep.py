@@ -30,7 +30,10 @@ _search = partial(run_search, IO, "grep")
 
 
 @command("grep", vfs="mongodb", spec=SPECS["grep"])
-async def grep(accessor: MongoDBAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def grep(
+    accessor: MongoDBAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     return await _search(accessor, paths, texts, opts)

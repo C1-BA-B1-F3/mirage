@@ -29,7 +29,8 @@ INTERNAL = ("routing_decision", "handed", "sink")
 
 def _params(fn) -> list[inspect.Parameter]:
     return [
-        p for name, p in inspect.signature(fn).parameters.items()
+        p
+        for name, p in inspect.signature(fn).parameters.items()
         if name != "self"
     ]
 

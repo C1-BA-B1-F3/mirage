@@ -28,13 +28,17 @@ async def ensure_dir_sizes(
     for child in listing.entries:
         lookup = await index.get(child)
         entry = lookup.entry
-        if (entry is not None and entry.resource_type == "file"
-                and entry.size is None):
+        if (
+            entry is not None
+            and entry.resource_type == "file"
+            and entry.size is None
+        ):
             pending[child] = entry
     if not pending:
         return
     grouped = await pages_chunks(
-        accessor, [entry.extra["slug"] for entry in pending.values()])
+        accessor, [entry.extra["slug"] for entry in pending.values()]
+    )
     for child, entry in pending.items():
         chunks = grouped.get(entry.extra["slug"])
         if not chunks:

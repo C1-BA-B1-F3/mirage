@@ -18,6 +18,7 @@ import os
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
+from mirage.core.onedrive.versions import list_versions
 from mirage.types import PathSpec
 from mirage.vfs.onedrive import OneDriveConfig, OneDriveVFS
 
@@ -30,18 +31,22 @@ config = OneDriveConfig(
 backend = OneDriveVFS(config)
 ws = Workspace({"/onedrive/": backend}, mode=MountMode.WRITE)
 
-TEST_FILE = "/onedrive/mirage_onedrive_example.txt"
+TEST_KEY = "mirage_onedrive_example.txt"
+TEST_FILE = f"/onedrive/{TEST_KEY}"
 
 
 async def main() -> None:
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /onedrive/__nf_missing__.txt",
-                "head /onedrive/__nf_missing__.txt",
-                "stat /onedrive/__nf_missing__.txt"):
+    for cmd in (
+        "cat /onedrive/__nf_missing__.txt",
+        "head /onedrive/__nf_missing__.txt",
+        "stat /onedrive/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /onedrive/ (top level) ===")
     print((await (await ws.shell("ls /onedrive/")).stdout_str()) or "(empty)")
@@ -53,9 +58,11 @@ async def main() -> None:
     print(await (await ws.shell(f"cat {TEST_FILE}")).stdout_str())
 
     print("=== sed read-transform: cat | sed 's/hello/HELLO/' ===")
-    print(await
-          (await
-           ws.shell(f"cat {TEST_FILE} | sed 's/hello/HELLO/'")).stdout_str())
+    print(
+        await (
+            await ws.shell(f"cat {TEST_FILE} | sed 's/hello/HELLO/'")
+        ).stdout_str()
+    )
 
     print("=== stat (fingerprint = cTag) ===")
     print(await (await ws.shell(f"stat {TEST_FILE}")).stdout_str())
@@ -64,26 +71,33 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {TEST_FILE} ===")
-    meta_res = await ws.shell(f'chmod 640 "{TEST_FILE}"'
-                              f' && chown 500:dev "{TEST_FILE}"'
-                              f' && touch -t 202601021530 "{TEST_FILE}"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{TEST_FILE}"'
+        f' && chown 500:dev "{TEST_FILE}"'
+        f' && touch -t 202601021530 "{TEST_FILE}"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path(f"{TEST_FILE}"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path(f"{TEST_FILE}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("=== overwrite (creates a new version) ===")
     await ws.shell(f"echo 'second version' > {TEST_FILE}")
     print(await (await ws.shell(f"cat {TEST_FILE}")).stdout_str())
 
     print("=== version history ===")
-    from mirage.core.onedrive.versions import list_versions
-    versions = await list_versions(backend.accessor,
-                                   PathSpec.from_str_path(TEST_FILE))
+    versions = await list_versions(
+        backend.accessor, PathSpec.from_str_path(TEST_FILE, TEST_KEY)
+    )
     for v in versions:
-        print(f"  version {v.get('id')}  size={v.get('size')}  "
-              f"modified={v.get('lastModifiedDateTime')}")
+        print(
+            f"  version {v.get('id')}  size={v.get('size')}  "
+            f"modified={v.get('lastModifiedDateTime')}"
+        )
 
     print("\n=== cleanup ===")
     await ws.shell(f"rm {TEST_FILE}")

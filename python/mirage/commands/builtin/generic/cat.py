@@ -3,11 +3,17 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.constants import CHAR_DEVICE_MAX_BYTES
 from mirage.commands.builtin.utils.limit import truncate_stream
-from mirage.commands.builtin.utils.operands import (normalized_read,
-                                                    operands_io,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stat, stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    normalized_read,
+    operands_io,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    resolve_source,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -15,8 +21,14 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.cachable_iterator import CachableAsyncIterator
 from mirage.io.stream import async_chain, chain_cachables
 from mirage.io.types import ByteSource, IOResult, materialize
-from mirage.types import (FileStat, FileType, Limit, PathSpec,
-                          PolymorphicReadFn, StatFn)
+from mirage.types import (
+    FileStat,
+    FileType,
+    Limit,
+    PathSpec,
+    PolymorphicReadFn,
+    StatFn,
+)
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 from mirage.utils.stream import ensure_stream
 
@@ -40,25 +52,38 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> CatFlags:
         show_ends=(fl.as_bool("show_ends") or fl.as_bool("e") or show_all),
         squeeze_blank=fl.as_bool("squeeze_blank"),
         show_tabs=(fl.as_bool("show_tabs") or fl.as_bool("t") or show_all),
-        show_nonprinting=(fl.as_bool("show_nonprinting") or fl.as_bool("e")
-                          or fl.as_bool("t") or show_all),
+        show_nonprinting=(
+            fl.as_bool("show_nonprinting")
+            or fl.as_bool("e")
+            or fl.as_bool("t")
+            or show_all
+        ),
     )
 
 
 def _wants_display(parsed: CatFlags) -> bool:
     return any(
-        (parsed.number_lines, parsed.number_nonblank, parsed.show_ends,
-         parsed.squeeze_blank, parsed.show_tabs, parsed.show_nonprinting))
+        (
+            parsed.number_lines,
+            parsed.number_nonblank,
+            parsed.show_ends,
+            parsed.squeeze_blank,
+            parsed.show_tabs,
+            parsed.show_nonprinting,
+        )
+    )
 
 
 def _display(source: ByteSource, parsed: CatFlags) -> AsyncIterator[bytes]:
-    return cat(source,
-               number_lines=parsed.number_lines,
-               number_nonblank=parsed.number_nonblank,
-               show_ends=parsed.show_ends,
-               squeeze_blank=parsed.squeeze_blank,
-               show_tabs=parsed.show_tabs,
-               show_nonprinting=parsed.show_nonprinting)
+    return cat(
+        source,
+        number_lines=parsed.number_lines,
+        number_nonblank=parsed.number_nonblank,
+        show_ends=parsed.show_ends,
+        squeeze_blank=parsed.squeeze_blank,
+        show_tabs=parsed.show_tabs,
+        show_nonprinting=parsed.show_nonprinting,
+    )
 
 
 async def cat_generic(
@@ -111,7 +136,8 @@ async def cat_generic(
             source = read(p)
             if stats[p.virtual].type is FileType.CHAR_DEVICE:
                 source = truncate_stream(
-                    source, io, Limit(max_bytes=CHAR_DEVICE_MAX_BYTES))
+                    source, io, Limit(max_bytes=CHAR_DEVICE_MAX_BYTES)
+                )
             return source
 
         if len(readable) == 1:
@@ -125,10 +151,13 @@ async def cat_generic(
             cachables = [
                 CachableAsyncIterator(await source_for(p)) for p in readable
             ]
-            io.reads.update({
-                p.mount_path: c
-                for p, c in zip(readable, cachables) if not is_stdin(p)
-            })
+            io.reads.update(
+                {
+                    p.mount_path: c
+                    for p, c in zip(readable, cachables)
+                    if not is_stdin(p)
+                }
+            )
             io.cache.extend(p.mount_path for p in readable if not is_stdin(p))
             source = chain_cachables(*cachables)
         else:
@@ -210,9 +239,14 @@ async def cat(
 ) -> AsyncIterator[bytes]:
     if number_nonblank:
         number_lines = False
-    needs_line_processing = (number_lines or show_ends or squeeze_blank
-                             or show_tabs or show_nonprinting
-                             or number_nonblank)
+    needs_line_processing = (
+        number_lines
+        or show_ends
+        or squeeze_blank
+        or show_tabs
+        or show_nonprinting
+        or number_nonblank
+    )
 
     if not needs_line_processing:
         async for chunk in ensure_stream(src):

@@ -14,17 +14,23 @@
 
 import pytest
 
-from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
-                                                  stdin_stat, stdin_stream)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    operand_label,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.types import FileStat, FileType, PathSpec
 
 
 def _operand(raw: str, virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.strip("/"),
-                    virtual=virtual,
-                    directory="/",
-                    resolved=True,
-                    raw_path=raw)
+    return PathSpec(
+        vfs_path=virtual.strip("/"),
+        virtual=virtual,
+        directory="/",
+        resolved=True,
+        raw_path=raw,
+    )
 
 
 def test_operand_label_names_only_a_dash_stdin():
@@ -43,8 +49,10 @@ def test_dash_false_keeps_a_dash_a_file_and_dev_stdin_stdin():
     # /dev/stdin reads stdin for them.
     dash = _operand("-", "/-")
     dev = _operand("/dev/stdin", "/dev/stdin")
-    assert (is_stdin(dash, dash=False), is_stdin(dev,
-                                                 dash=False)) == (False, True)
+    assert (is_stdin(dash, dash=False), is_stdin(dev, dash=False)) == (
+        False,
+        True,
+    )
 
 
 @pytest.mark.asyncio

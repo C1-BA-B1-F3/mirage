@@ -30,9 +30,11 @@ sed_command = _sed_command()
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_sed(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell(
-        "sed s/alpha/ALPHA/g /dbx/words.txt")
+        "sed s/alpha/ALPHA/g /dbx/words.txt"
+    )
 
     assert io.exit_code == 0
     assert io.stdout == b"beta\nALPHA\nALPHA\n"
@@ -40,7 +42,8 @@ async def test_workspace_execute_databricks_volume_sed(
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_sed_resolves_glob(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("sed s/delta/DELTA/ /dbx/*.txt")
 
     assert io.exit_code == 0
@@ -49,11 +52,13 @@ async def test_workspace_execute_databricks_volume_sed_resolves_glob(
 
 @pytest.mark.asyncio
 async def test_databricks_volume_sed_in_place_writes_back(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     # The volume has a write op, so -i edits in place through the shared
     # builder (the old bespoke wrapper refused it unconditionally, #382).
     io = await databricks_text_workspace.shell(
-        "sed -i s/alpha/ALPHA/g /dbx/words.txt")
+        "sed -i s/alpha/ALPHA/g /dbx/words.txt"
+    )
 
     assert io.exit_code == 0
     assert io.writes.get("/dbx/words.txt") == b"beta\nALPHA\nALPHA\n"

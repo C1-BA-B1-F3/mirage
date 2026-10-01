@@ -23,8 +23,10 @@ SEARCH_HEADERS = {
     "Accept": "application/xml",
     "Content-Type": "text/xml; charset=utf-8",
 }
-UNAVAILABLE_STATUS_CODES = frozenset({
-    HTTPStatus.NOT_FOUND,
-    HTTPStatus.METHOD_NOT_ALLOWED,
-    HTTPStatus.NOT_IMPLEMENTED,
-})
+UNAVAILABLE_STATUS_CODES = frozenset(
+    {
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.METHOD_NOT_ALLOWED,
+        HTTPStatus.NOT_IMPLEMENTED,
+    }
+)

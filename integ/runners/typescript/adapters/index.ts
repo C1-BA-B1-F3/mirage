@@ -401,9 +401,11 @@ async function openRedis(target: Target): Promise<Open> {
 
 async function openOpfs(target: Target): Promise<Open> {
   const restoreNav = installFakeNavigator(() => makeMockRoot())
-  const mounts: Record<string, OPFSVFS> = {}
+  const mounts: Record<string, OPFSVFS | [OPFSVFS, MountMode]> = {}
   target.mounts.forEach((m, i) => {
-    mounts[m.path] = i === 0 ? new OPFSVFS() : new OPFSVFS({ root: `xm${String(i)}` })
+    const vfs = i === 0 ? new OPFSVFS() : new OPFSVFS({ root: `xm${String(i)}` })
+    mounts[m.path] =
+      m.mode === 'read' ? [vfs, MountMode.READ] : m.mode === 'exec' ? [vfs, MountMode.EXEC] : vfs
   })
   const ws = new BrowserWorkspace(mounts, { mode: MountMode.WRITE })
   const cleanup = async (): Promise<void> => {
@@ -1179,7 +1181,13 @@ const LANCEDB_WIDE_CAP = 5
 function lancedbWideRows(): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = []
   for (let i = 0; i < 40; i += 1) {
-    rows.push({ id: `doc-${String(i).padStart(3, '0')}`, label: 'all', name: `row ${String(i)}` })
+    rows.push({
+      id: `doc-${String(i).padStart(3, '0')}`,
+      label: 'all',
+      name: `row ${String(i)}`,
+      score: i / 2,
+      even: i % 2 === 0,
+    })
   }
   return rows
 }
@@ -1199,7 +1207,6 @@ async function openLancedb(target: Target): Promise<Open> {
           groupBy: ['label'],
           idColumn: 'id',
           titleColumn: 'name',
-          textColumn: 'name',
           maxRows: LANCEDB_WIDE_CAP,
         })
       : new LanceDBVFS({
@@ -1207,7 +1214,6 @@ async function openLancedb(target: Target): Promise<Open> {
           groupBy: ['label', 'kind'],
           idColumn: 'id',
           titleColumn: 'name',
-          textColumn: 'name',
         })
     mounts[mount.path] = mount.mode === 'read' ? [vfs, MountMode.READ] : vfs
   }

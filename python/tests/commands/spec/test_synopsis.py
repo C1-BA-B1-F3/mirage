@@ -1,6 +1,6 @@
 import pytest
 
-from mirage.commands.config import CommandOpts, _with_help_support
+from mirage.commands.config import CommandOpts, _answer_standard_options
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.synopsis import SYNOPSES
@@ -13,7 +13,7 @@ async def _noop(accessor, paths, texts, opts):
 
 
 async def _help_of(name, spec) -> str:
-    _, wrapped = _with_help_support(name, spec, _noop)
+    _, wrapped = _answer_standard_options(name, spec, _noop)
     result = await wrapped(None, [], [], CommandOpts(flags={"help": True}))
     assert result is not None
     return (await materialize(result[0])).decode()
@@ -28,14 +28,16 @@ def test_every_synopsis_names_a_builtin_and_starts_with_it():
 
 def test_a_synopsis_replaces_the_synthesized_line():
     assert "Usage: grep [OPTION]... PATTERNS [FILE]...\n" in render_help(
-        "grep", SPECS["grep"], synopsis=SYNOPSES["grep"])
+        "grep", SPECS["grep"], synopsis=SYNOPSES["grep"]
+    )
     assert "Usage: grep [flags]" in render_help("grep", SPECS["grep"])
 
 
 @pytest.mark.asyncio
 async def test_help_support_hands_the_builtin_its_synopsis():
     assert "Usage: grep [OPTION]... PATTERNS [FILE]...\n" in await _help_of(
-        "grep", SPECS["grep"])
+        "grep", SPECS["grep"]
+    )
 
 
 @pytest.mark.asyncio

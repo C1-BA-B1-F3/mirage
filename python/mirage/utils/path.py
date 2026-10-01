@@ -43,7 +43,8 @@ def glob_prefix_match(path: str, pattern: str) -> bool:
         return False
     return all(
         fnmatch(seg, pat)
-        for seg, pat in zip(path_segs[:len(pat_segs)], pat_segs))
+        for seg, pat in zip(path_segs[: len(pat_segs)], pat_segs)
+    )
 
 
 def norm(path: str) -> str:
@@ -177,13 +178,15 @@ def dotted_spelling(word: str, base: str = "/") -> str | None:
     rest = parts[lead:]
     if not any(part in _DOTS for part in rest):
         return None
-    start = resolve_path("/".join(parts[:lead]) or ".",
-                         "/" if word.startswith("/") else base)
+    start = resolve_path(
+        "/".join(parts[:lead]) or ".", "/" if word.startswith("/") else base
+    )
     return start.rstrip("/") + "/" + "/".join(rest)
 
 
-def dot_prefixes(dotted: str,
-                 follow: Callable[[str], str] | None = None) -> list[str]:
+def dot_prefixes(
+    dotted: str, follow: Callable[[str], str] | None = None
+) -> list[str]:
     """The directories a walk of ``dotted`` has to find, in walk order.
 
     Whatever stands in front of a ``.`` or ``..`` is where it resolves,
@@ -211,9 +214,8 @@ def dot_prefixes(dotted: str,
 
 
 def walk_nodes(
-        dotted: str,
-        raw: str,
-        follow: Callable[[str], str] | None = None) -> list[tuple[str, str]]:
+    dotted: str, raw: str, follow: Callable[[str], str] | None = None
+) -> list[tuple[str, str]]:
     """The intermediate names a walk enters, each with its spelling.
 
     What ``mkdir -p`` creates on the way and names when it cannot: GNU
@@ -234,7 +236,7 @@ def walk_nodes(
     while lead < len(typed) and typed[lead] in _DOTS:
         lead += 1
     parts = [part for part in dotted.split("/") if part]
-    start = parts[:len(parts) - (len(typed) - lead)]
+    start = parts[: len(parts) - (len(typed) - lead)]
     current = "/" + "/".join(start)
     head = "/" if raw.startswith("/") else ""
     entered: list[tuple[str, str]] = []
@@ -249,7 +251,7 @@ def walk_nodes(
             current = parent(current) if part == ".." else current
             continue
         current = current.rstrip("/") + "/" + part
-        entered.append((current, head + "/".join(typed[:index + 1])))
+        entered.append((current, head + "/".join(typed[: index + 1])))
     return entered
 
 
@@ -410,8 +412,8 @@ def respell_one(path: str, original: str, raw: str) -> str:
         return raw or "."
     if path.startswith(base + "/"):
         if raw == "":
-            return path[len(base) + 1:]
-        return raw.rstrip("/") + path[len(base):]
+            return path[len(base) + 1 :]
+        return raw.rstrip("/") + path[len(base) :]
     return path
 
 
@@ -450,9 +452,9 @@ def gnu_basename(path: str, suffix: str | None = None) -> str:
     if i == 0:
         return "/" if path else ""
     j = path.rfind("/", 0, i)
-    base = path[j + 1:i]
+    base = path[j + 1 : i]
     if suffix and base != suffix and base.endswith(suffix):
-        base = base[:len(base) - len(suffix)]
+        base = base[: len(base) - len(suffix)]
     return base
 
 

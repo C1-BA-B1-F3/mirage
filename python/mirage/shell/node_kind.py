@@ -20,15 +20,13 @@ from mirage.shell.types import NodeType as NT
 
 
 class NodeKind(StrEnum):
-    """Statement kinds both tree walkers dispatch on.
+    """Statement kinds the executor dispatches on.
 
-    The executor and the provision planner walk the same tree-sitter
-    AST. This enum is the single classification both use, so a
-    construct cannot be supported by one walker and silently
-    unclassified by the other: `node_kind` owns every tree-sitter
-    node-type check, including the lookahead that distinguishes
-    `select` from `for` and `until` from `while`.
+    `node_kind` owns every tree-sitter node-type check, including the
+    lookahead that distinguishes `select` from `for` and `until` from
+    `while`.
     """
+
     COMMENT = "comment"
     PROGRAM = "program"
     TIMED = "timed"
@@ -89,19 +87,21 @@ _SIMPLE_KINDS = {
 # list handler and its right side by the list's own boundary, so
 # `false | true && true` reports the `true`; a list that short-circuits
 # carries its left pipeline to that boundary (`carry_status`).
-_PIPELINE_TRANSPARENT_KINDS = frozenset({
-    NodeKind.COMPOUND,
-    NodeKind.IF,
-    NodeKind.FOR,
-    NodeKind.CFOR,
-    NodeKind.SELECT,
-    NodeKind.WHILE,
-    NodeKind.UNTIL,
-    NodeKind.CASE,
-    NodeKind.NEGATED,
-    NodeKind.TIMED,
-    NodeKind.FUNCTION_DEF,
-})
+_PIPELINE_TRANSPARENT_KINDS = frozenset(
+    {
+        NodeKind.COMPOUND,
+        NodeKind.IF,
+        NodeKind.FOR,
+        NodeKind.CFOR,
+        NodeKind.SELECT,
+        NodeKind.WHILE,
+        NodeKind.UNTIL,
+        NodeKind.CASE,
+        NodeKind.NEGATED,
+        NodeKind.TIMED,
+        NodeKind.FUNCTION_DEF,
+    }
+)
 
 
 def pipeline_transparent(node: Any) -> bool:
@@ -122,8 +122,14 @@ def pipeline_transparent(node: Any) -> bool:
         # `echo hi >f` and `cat </missing` are a simple command's own
         # one-segment status whether or not the redirect opened. A bare
         # redirect (`>f`) runs the empty command, one segment too.
-        inner = next((child for child in node.named_children
-                      if child.type not in REDIRECT_NODE_TYPES), None)
+        inner = next(
+            (
+                child
+                for child in node.named_children
+                if child.type not in REDIRECT_NODE_TYPES
+            ),
+            None,
+        )
         return inner is not None and pipeline_transparent(inner)
     return kind in _PIPELINE_TRANSPARENT_KINDS
 

@@ -59,8 +59,11 @@ def test_anything_else_is_a_commit():
 @pytest.mark.asyncio
 async def test_switch_moves_to_a_branch(git_rw, repo_path: Path):
     await run(git_rw, "branch topic")
-    assert await run(git_rw, "switch topic") == (0, b"", b"Switched to branch "
-                                                 b"'topic'\n")
+    assert await run(git_rw, "switch topic") == (
+        0,
+        b"",
+        b"Switched to branch 'topic'\n",
+    )
     assert head_ref(repo_path) == b"ref: refs/heads/topic"
 
 
@@ -71,9 +74,11 @@ async def test_already_on_the_branch(git_rw):
 
 @pytest.mark.asyncio
 async def test_c_creates_and_switches(git_rw, repo_path: Path):
-    assert await run(git_rw,
-                     "switch -c fresh") == (0, b"", b"Switched to a new "
-                                            b"branch 'fresh'\n")
+    assert await run(git_rw, "switch -c fresh") == (
+        0,
+        b"",
+        b"Switched to a new branch 'fresh'\n",
+    )
     assert head_ref(repo_path) == b"ref: refs/heads/fresh"
 
 
@@ -105,9 +110,14 @@ async def test_a_commit_needs_detach(git_rw, repo_path: Path):
         sha = repo.refs[b"refs/heads/main"].decode()
     code, _out, err = await run(git_rw, f"switch {sha[:7]}")
     assert code == 128
-    assert err == (f"fatal: a branch is expected, got commit '{sha[:7]}'\n"
-                   f"hint: If you want to detach HEAD at the commit, try "
-                   f"again with the --detach option.\n").encode()
+    assert (
+        err
+        == (
+            f"fatal: a branch is expected, got commit '{sha[:7]}'\n"
+            f"hint: If you want to detach HEAD at the commit, try "
+            f"again with the --detach option.\n"
+        ).encode()
+    )
     assert head_ref(repo_path) == b"ref: refs/heads/main"
 
 
@@ -138,7 +148,8 @@ async def test_switch_refuses_to_lose_an_edit(git_rw, repo_path: Path):
     assert code == 1
     assert err.startswith(
         b"error: Your local changes to the following "
-        b"files would be overwritten by checkout:\n\ta.txt\n")
+        b"files would be overwritten by checkout:\n\ta.txt\n"
+    )
     assert (repo_path / "a.txt").read_text() == "precious\n"
 
 
@@ -165,14 +176,17 @@ async def test_create_and_detach_do_not_mix(git_rw):
 
 @pytest.mark.asyncio
 async def test_switch_c_refuses_a_name_that_escapes_the_ref_tree(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     before = (repo_path / ".git" / "config").read_bytes()
     code, _out, err = await run(git_rw, "switch -c ../../config")
     assert code == 128
-    assert err == (b"fatal: '../../config' is not a valid branch name\n"
-                   b"hint: See `man git check-ref-format`\n"
-                   b'hint: Disable this message with "git config set '
-                   b'advice.refSyntax false"\n')
+    assert err == (
+        b"fatal: '../../config' is not a valid branch name\n"
+        b"hint: See `man git check-ref-format`\n"
+        b'hint: Disable this message with "git config set '
+        b'advice.refSyntax false"\n'
+    )
     assert (repo_path / ".git" / "config").read_bytes() == before
 
 
@@ -208,7 +222,8 @@ async def test_a_plain_switch_still_needs_a_branch(git_rw):
 
 @pytest.mark.asyncio
 async def test_an_untracked_file_blocks_a_directory_the_target_holds(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await run(git_rw, "switch -c other")
     (repo_path / "slot").mkdir()
     (repo_path / "slot" / "file").write_text("x\n", encoding="utf-8")
@@ -218,15 +233,18 @@ async def test_an_untracked_file_blocks_a_directory_the_target_holds(
     (repo_path / "slot").write_text("mine\n", encoding="utf-8")
     code, _out, err = await run(git_rw, "switch other")
     assert code == 1
-    assert err == (b"error: The following untracked working tree files would "
-                   b"be overwritten by checkout:\n\tslot\nPlease move or "
-                   b"remove them before you switch branches.\nAborting\n")
+    assert err == (
+        b"error: The following untracked working tree files would "
+        b"be overwritten by checkout:\n\tslot\nPlease move or "
+        b"remove them before you switch branches.\nAborting\n"
+    )
     assert (repo_path / "slot").read_text() == "mine\n"
 
 
 @pytest.mark.asyncio
 async def test_an_untracked_file_inside_a_directory_the_target_replaces(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     await run(git_rw, "switch -c other")
     (repo_path / "slot").write_text("theirs\n", encoding="utf-8")
     await run(git_rw, "add slot")
@@ -236,8 +254,10 @@ async def test_an_untracked_file_inside_a_directory_the_target_replaces(
     (repo_path / "slot" / "file").write_text("mine\n", encoding="utf-8")
     code, _out, err = await run(git_rw, "switch other")
     assert code == 1
-    assert err == (b"error: Updating the following directories would lose "
-                   b"untracked files in them:\n\tslot\n\nAborting\n")
+    assert err == (
+        b"error: Updating the following directories would lose "
+        b"untracked files in them:\n\tslot\n\nAborting\n"
+    )
     assert (repo_path / "slot" / "file").read_text() == "mine\n"
 
 
@@ -265,13 +285,17 @@ async def test_an_unmerged_index_stops_a_detach(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_creating_a_branch_here_survives_an_unmerged_index(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # Nothing moves, so git writes the ref and leaves the index alone.
     # Naming the same commit as a start point is refused a word later,
     # which is the shape of the line deciding it rather than the trees.
     conflict_index(repo_path, "a.txt")
-    assert await run(git_rw, "switch -c topic") == (0, b"", b"Switched to a "
-                                                    b"new branch 'topic'\n")
+    assert await run(git_rw, "switch -c topic") == (
+        0,
+        b"",
+        b"Switched to a new branch 'topic'\n",
+    )
     assert head_ref(repo_path) == b"ref: refs/heads/topic"
     with Repo(str(repo_path)) as repo:
         assert repo.open_index().has_conflicts()
@@ -279,7 +303,8 @@ async def test_creating_a_branch_here_survives_an_unmerged_index(
 
 @pytest.mark.asyncio
 async def test_creating_a_branch_elsewhere_stops_at_an_unmerged_index(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     conflict_index(repo_path, "a.txt")
     code, out, _err = await run(git_rw, "switch -c topic HEAD")
     assert code == 1
@@ -289,7 +314,8 @@ async def test_creating_a_branch_elsewhere_stops_at_an_unmerged_index(
 
 @pytest.mark.asyncio
 async def test_a_file_becomes_a_directory_across_a_switch(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # The file has to go before the directory can be made, and the
     # target tree names both places.
     (repo_path / "slot").write_text("flat\n", encoding="utf-8")
@@ -303,14 +329,18 @@ async def test_a_file_becomes_a_directory_across_a_switch(
     await run(git_rw, "commit -m deep")
     await run(git_rw, "switch main")
     assert (repo_path / "slot").read_text() == "flat\n"
-    assert await run(git_rw, "switch other") == (0, b"", b"Switched to branch "
-                                                 b"'other'\n")
+    assert await run(git_rw, "switch other") == (
+        0,
+        b"",
+        b"Switched to branch 'other'\n",
+    )
     assert (repo_path / "slot" / "child").read_text() == "deep\n"
 
 
 @pytest.mark.asyncio
 async def test_a_directory_becomes_a_file_across_a_switch(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "slot").mkdir()
     (repo_path / "slot" / "child").write_text("deep\n", encoding="utf-8")
     await run(git_rw, "add slot")
@@ -320,20 +350,29 @@ async def test_a_directory_becomes_a_file_across_a_switch(
     (repo_path / "slot").write_text("flat\n", encoding="utf-8")
     await run(git_rw, "add slot")
     await run(git_rw, "commit -m flat")
-    assert await run(git_rw, "switch main") == (0, b"", b"Switched to branch "
-                                                b"'main'\n")
+    assert await run(git_rw, "switch main") == (
+        0,
+        b"",
+        b"Switched to branch 'main'\n",
+    )
     assert (repo_path / "slot" / "child").read_text() == "deep\n"
-    assert await run(git_rw, "switch other") == (0, b"", b"Switched to branch "
-                                                 b"'other'\n")
+    assert await run(git_rw, "switch other") == (
+        0,
+        b"",
+        b"Switched to branch 'other'\n",
+    )
     assert (repo_path / "slot").read_text() == "flat\n"
 
 
 @pytest.mark.asyncio
-async def test_a_branch_is_created_on_an_unborn_head(unborn_rw,
-                                                     unborn_path: Path):
-    assert await run(
-        unborn_rw,
-        "switch -c topic") == (0, b"", b"Switched to a new branch 'topic'\n")
+async def test_a_branch_is_created_on_an_unborn_head(
+    unborn_rw, unborn_path: Path
+):
+    assert await run(unborn_rw, "switch -c topic") == (
+        0,
+        b"",
+        b"Switched to a new branch 'topic'\n",
+    )
     assert head_ref(unborn_path) == b"ref: refs/heads/topic"
     # No ref and no reflog: a branch with no commit is a name and
     # nothing else, which is why git can make one here at all.
@@ -343,17 +382,20 @@ async def test_a_branch_is_created_on_an_unborn_head(unborn_rw,
 
 @pytest.mark.asyncio
 async def test_a_start_point_on_an_unborn_head_is_refused(
-        unborn_rw, unborn_path: Path):
-    assert await run(
-        unborn_rw,
-        "switch -c topic main") == (128, b"",
-                                    b"fatal: invalid reference: main\n")
+    unborn_rw, unborn_path: Path
+):
+    assert await run(unborn_rw, "switch -c topic main") == (
+        128,
+        b"",
+        b"fatal: invalid reference: main\n",
+    )
     assert head_ref(unborn_path) == b"ref: refs/heads/main"
 
 
 @pytest.mark.asyncio
 async def test_an_invalid_name_on_an_unborn_head_is_refused(
-        unborn_rw, unborn_path: Path):
+    unborn_rw, unborn_path: Path
+):
     code, _out, err = await run(unborn_rw, "switch -c ../../evil")
     assert code == 128
     assert err.startswith(b"fatal: '../../evil' is not a valid branch name\n")
@@ -365,9 +407,11 @@ async def test_a_staged_addition_survives_the_switch(git_rw):
     await run(git_rw, "branch other")
     await git_rw.shell("echo new > /repo/added.txt")
     await run(git_rw, "add added.txt")
-    assert await run(git_rw,
-                     "switch other") == (0, b"A\tadded.txt\n",
-                                         b"Switched to branch 'other'\n")
+    assert await run(git_rw, "switch other") == (
+        0,
+        b"A\tadded.txt\n",
+        b"Switched to branch 'other'\n",
+    )
     assert await run(git_rw, "status --short") == (0, b"A  added.txt\n", b"")
 
 
@@ -375,20 +419,27 @@ async def test_a_staged_addition_survives_the_switch(git_rw):
 async def test_a_staged_deletion_survives_the_switch(git_rw):
     await run(git_rw, "branch other")
     await run(git_rw, "rm --cached b.txt")
-    assert await run(git_rw,
-                     "switch other") == (0, b"D\tb.txt\n",
-                                         b"Switched to branch 'other'\n")
-    assert await run(git_rw,
-                     "status --short") == (0, b"D  b.txt\n?? b.txt\n", b"")
+    assert await run(git_rw, "switch other") == (
+        0,
+        b"D\tb.txt\n",
+        b"Switched to branch 'other'\n",
+    )
+    assert await run(git_rw, "status --short") == (
+        0,
+        b"D  b.txt\n?? b.txt\n",
+        b"",
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_carried_edit_is_lettered_by_where_it_stands(git_rw):
     await run(git_rw, "branch other")
     await git_rw.shell("echo edited > /repo/a.txt")
-    assert await run(git_rw,
-                     "switch other") == (0, b"M\ta.txt\n",
-                                         b"Switched to branch 'other'\n")
+    assert await run(git_rw, "switch other") == (
+        0,
+        b"M\ta.txt\n",
+        b"Switched to branch 'other'\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -413,21 +464,26 @@ async def test_creating_from_an_unborn_head_still_works(unborn_rw):
 
 @pytest.mark.asyncio
 async def test_creating_a_branch_below_one_that_exists_is_refused(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     assert (await run(git_rw, "branch bb"))[0] == 0
     code, _out, err = await run(git_rw, "switch -c bb/cc")
     assert code == 128
-    assert err == (b"fatal: cannot lock ref 'refs/heads/bb/cc': "
-                   b"'refs/heads/bb' exists; cannot create "
-                   b"'refs/heads/bb/cc'\n")
+    assert err == (
+        b"fatal: cannot lock ref 'refs/heads/bb/cc': "
+        b"'refs/heads/bb' exists; cannot create "
+        b"'refs/heads/bb/cc'\n"
+    )
     # Refused before the working tree moves, so HEAD is where it was.
-    assert b"ref: refs/heads/main" in (repo_path / ".git" /
-                                       "HEAD").read_bytes()
+    assert (
+        b"ref: refs/heads/main" in (repo_path / ".git" / "HEAD").read_bytes()
+    )
 
 
 @pytest.mark.asyncio
 async def test_an_unmerged_index_stops_a_switch_to_the_current_branch(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # The shortcut moves nothing, which is not the same as having
     # nothing to check: git reads the index before it answers, so
     # "Already on" cannot be read as proof the repository is in a state

@@ -16,22 +16,14 @@
 // you don't know ahead of time what you'll read.
 //
 // Demonstrates:
-//   1. Provision mode — estimate how many bytes a shell command will pull
-//      before running it.
-//   2. Filetype-specific ops — cat / head / grep on parquet/feather/hdf5
+//   1. Filetype-specific ops — cat / head / grep on parquet/feather/hdf5
 //      return a structured preview instead of raw binary.
-//   3. Ranged reads — targeted commands (head, stat) avoid downloading
+//   2. Ranged reads — targeted commands (head, stat) avoid downloading
 //      the full file where possible.
 //
 // Requires local MinIO (see s3_write.ts) and seed data. This script
 // uploads small sample files first so it's self-contained.
-import {
-  MountMode,
-  ProvisionResult,
-  S3VFS,
-  Workspace,
-  type S3Config,
-} from '@struktoai/mirage-node'
+import { MountMode, S3VFS, Workspace, type S3Config } from '@struktoai/mirage-node'
 import { CreateBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 
 const config: S3Config = {
@@ -70,15 +62,6 @@ async function seed(): Promise<void> {
         }),
       )
     }
-    // A "large" file to show provision estimates.
-    const big = 'x'.repeat(500_000)
-    await sdk.send(
-      new PutObjectCommand({
-        Bucket: config.bucket,
-        Key: 'data/large.txt',
-        Body: big,
-      }),
-    )
   } finally {
     sdk.destroy()
   }
@@ -88,22 +71,7 @@ async function main(): Promise<void> {
   await seed()
   const ws = new Workspace({ '/s3/': new S3VFS(config) }, { mode: MountMode.READ })
   try {
-    console.log('=== PROVISION: estimate bytes before running ===\n')
-    for (const cmd of [
-      'cat /s3/data/large.txt',
-      'head -n 3 /s3/data/large.txt',
-      'wc -l /s3/data/shards/2023.csv',
-      'stat /s3/data/shards/2023.csv',
-    ]) {
-      const p = await ws.shell(cmd, { provision: true })
-      if (!(p instanceof ProvisionResult)) throw new Error('expected ProvisionResult')
-      const low = p.networkReadLow
-      const high = p.networkReadHigh
-      const range = low === high ? String(low) : `${String(low)}..${String(high)}`
-      console.log(`  ${cmd.padEnd(42)} bytes=${range.padStart(9)} ops=${String(p.readOps)} ${p.precision}`)
-    }
-
-    console.log('\n=== LISTING: ls + find pipelines ===\n')
+    console.log('=== LISTING: ls + find pipelines ===\n')
     const ls = await ws.shell('ls /s3/data/shards/')
     process.stdout.write(ls.stdoutText)
 

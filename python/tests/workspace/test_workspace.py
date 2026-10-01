@@ -39,16 +39,19 @@ def _ws():
     s3._store.files["/report.csv"] = b"name,age\nalice,30\nbob,25\n"
     s3._store.files["/data.txt"] = b"hello from s3\n"
     s3._store.files["/users.json"] = (
-        b'[{"name":"alice","age":30},{"name":"bob","age":25}]\n')
+        b'[{"name":"alice","age":30},{"name":"bob","age":25}]\n'
+    )
     s3._store.files["/config.env"] = b"DB_HOST=localhost\nDB_PORT=5432\n"
-    s3._store.files["/access.log"] = (b"2024-01-01 GET /api 200\n"
-                                      b"2024-01-01 POST /api 500\n"
-                                      b"2024-01-02 GET /api 200\n"
-                                      b"2024-01-02 GET /health 200\n"
-                                      b"2024-01-03 POST /api 500\n")
-    s3._store.files["/script.py"] = (b"import json\n"
-                                     b"data = json.loads('[1,2,3]')\n"
-                                     b"print(sum(data))\n")
+    s3._store.files["/access.log"] = (
+        b"2024-01-01 GET /api 200\n"
+        b"2024-01-01 POST /api 500\n"
+        b"2024-01-02 GET /api 200\n"
+        b"2024-01-02 GET /health 200\n"
+        b"2024-01-03 POST /api 500\n"
+    )
+    s3._store.files["/script.py"] = (
+        b"import json\ndata = json.loads('[1,2,3]')\nprint(sum(data))\n"
+    )
 
     disk._store.files["/readme.txt"] = b"disk readme\n"
     disk._store.dirs.add("/sub")
@@ -58,11 +61,13 @@ def _ws():
     ram._store.files["/nums.txt"] = b"5\n3\n1\n4\n2\n"
     ram._store.files["/words.txt"] = b"banana\napple\ncherry\napple\n"
 
-    ws = Workspace(mounts={
-        "/s3/": (s3, MountMode.EXEC),
-        "/disk/": (disk, MountMode.EXEC),
-        "/ram/": (ram, MountMode.EXEC),
-    }, )
+    ws = Workspace(
+        mounts={
+            "/s3/": (s3, MountMode.EXEC),
+            "/disk/": (disk, MountMode.EXEC),
+            "/ram/": (ram, MountMode.EXEC),
+        },
+    )
     ws.get_session(ws.default_session_id).cwd = "/s3"
     return ws
 
@@ -228,15 +233,17 @@ def test_case_match():
 
 def test_case_fallthrough_semi_amp():
     ws = _ws()
-    io = _exec(ws,
-               "case a in a) echo one;& b) echo two;; c) echo three;; esac")
+    io = _exec(
+        ws, "case a in a) echo one;& b) echo two;; c) echo three;; esac"
+    )
     assert _stdout(io) == b"one\ntwo\n"
 
 
 def test_case_continue_match_semi_semi_amp():
     ws = _ws()
-    io = _exec(ws,
-               "case a in a) echo one;;& a) echo two;;& b) echo three;; esac")
+    io = _exec(
+        ws, "case a in a) echo one;;& a) echo two;;& b) echo three;; esac"
+    )
     assert _stdout(io) == b"one\ntwo\n"
 
 
@@ -279,8 +286,7 @@ def test_readonly_array_form_registers():
     ws = _ws()
     io = _exec(ws, "readonly -a RA=(x y); unset 'RA[1]'; echo rc=$?")
     assert _stdout(io) == b"rc=1\n"
-    assert io.stderr == (b"bash: unset: RA: cannot unset: "
-                         b"readonly variable\n")
+    assert io.stderr == (b"bash: unset: RA: cannot unset: readonly variable\n")
 
 
 # ── operators ──────────────────────────────────
@@ -392,15 +398,15 @@ def test_status_updates_in_all_construct_bodies():
     """$? tracks the previous statement inside every construct body."""
     ws = _ws()
     for cmd in [
-            "if true; then false; echo s=$?; fi",
-            "for i in 1; do false; echo s=$?; done",
-            "while true; do false; echo s=$?; break; done",
-            "case x in x) false; echo s=$?;; esac",
-            "f() { false; echo s=$?; }; f",
-            "if true; then grep missing /ram/notes.txt; echo s=$?; fi",
-            "for i in 1; do grep missing /ram/notes.txt; echo s=$?; done",
-            "case x in x) grep missing /ram/notes.txt; echo s=$?;; esac",
-            "g() { grep missing /ram/notes.txt; echo s=$?; }; g",
+        "if true; then false; echo s=$?; fi",
+        "for i in 1; do false; echo s=$?; done",
+        "while true; do false; echo s=$?; break; done",
+        "case x in x) false; echo s=$?;; esac",
+        "f() { false; echo s=$?; }; f",
+        "if true; then grep missing /ram/notes.txt; echo s=$?; fi",
+        "for i in 1; do grep missing /ram/notes.txt; echo s=$?; done",
+        "case x in x) grep missing /ram/notes.txt; echo s=$?;; esac",
+        "g() { grep missing /ram/notes.txt; echo s=$?; }; g",
     ]:
         io = _exec(ws, cmd)
         assert io.exit_code == 0, cmd
@@ -435,19 +441,27 @@ def test_c_style_for():
         ("for ((i=0;i<3;i++)); do false; done; echo code=$?", b"code=1\n"),
         ("for ((i=5;i<3;i++)); do echo x; done; echo code=$?", b"code=0\n"),
         ("x=0; for ((i=0;i<4;i++)); do x=$((x+i)); done; echo $x", b"6\n"),
-        ("for ((i=0;i<5;i++)); do if ((i==2)); then continue; fi; "
-         "echo $i; done", b"0\n1\n3\n4\n"),
-        ("for ((i=0;i<5;i++)); do if ((i==2)); then break; fi; "
-         "echo $i; done", b"0\n1\n"),
+        (
+            "for ((i=0;i<5;i++)); do if ((i==2)); then continue; fi; "
+            "echo $i; done",
+            b"0\n1\n3\n4\n",
+        ),
+        (
+            "for ((i=0;i<5;i++)); do if ((i==2)); then break; fi; "
+            "echo $i; done",
+            b"0\n1\n",
+        ),
         ("for ((;;)); do break; done; echo code=$?", b"code=0\n"),
         ("n=2; for ((i=n;i<4;i++)); do echo $i; done", b"2\n3\n"),
         ("for ((i=0;i<2;i++)); do echo a; done; echo i=$i", b"a\na\ni=2\n"),
         ("for ((i=0;i<1;i++)); do false; echo s=$?; done", b"s=1\n"),
-            # Each slot is one comma expression: bash 5.2 keeps every part
-            # (only the last child of a slot used to survive).
+        # Each slot is one comma expression: bash 5.2 keeps every part
+        # (only the last child of a slot used to survive).
         ("for ((a=5, i=1; i>0; i=0)); do echo $a$i; done", b"51\n"),
-        ("for ((i=0; i<1, i<2; i++, i++)); do echo $i; done; echo $i",
-         b"0\n2\n"),
+        (
+            "for ((i=0; i<1, i<2; i++, i++)); do echo $i; done; echo $i",
+            b"0\n2\n",
+        ),
     ]:
         io = _exec(ws, cmd)
         assert _stdout(io) == want, cmd
@@ -464,15 +478,17 @@ def test_c_style_for_readonly_aborts_with_1():
     keeping the output of iterations that already ran (bash 5.2)."""
     ws = _ws()
     io = _exec(
-        ws, "readonly i=5; for ((i=0;i<2;i++)); do echo x; done; "
-        "echo c=$?")
+        ws, "readonly i=5; for ((i=0;i<2;i++)); do echo x; done; echo c=$?"
+    )
     assert _stdout(io) == b"c=1\n"
     assert b"bash: i: readonly variable\n" in (io.stderr or b"")
 
     ws = _ws()
     io = _exec(
-        ws, "readonly i=5; for ((;i<10;i++)); do echo hi; done; "
-        "echo c=$?; echo i=$i")
+        ws,
+        "readonly i=5; for ((;i<10;i++)); do echo hi; done; "
+        "echo c=$?; echo i=$i",
+    )
     assert _stdout(io) == b"hi\nc=1\ni=5\n"
 
 
@@ -532,9 +548,9 @@ def test_assignment_expansion():
 
 def test_while_read():
     ws = _ws()
-    _exec(ws,
-          "while read LINE; do export LAST=$LINE; done",
-          stdin=b"a\nb\nc\n")
+    _exec(
+        ws, "while read LINE; do export LAST=$LINE; done", stdin=b"a\nb\nc\n"
+    )
     assert ws.get_session(ws.default_session_id).env["LAST"] == "c"
 
 
@@ -565,8 +581,7 @@ def test_pipeline_redirect_expansion():
 
 def test_for_with_redirect():
     ws = _ws()
-    _exec(ws, "for name in hello world; do "
-          "echo $name > /disk/$name.txt; done")
+    _exec(ws, "for name in hello world; do echo $name > /disk/$name.txt; done")
     io1 = _exec(ws, "cat /disk/hello.txt")
     io2 = _exec(ws, "cat /disk/world.txt")
     assert b"hello" in _stdout(io1)
@@ -632,9 +647,11 @@ def test_multi_step_processing():
     """
     ws = _ws()
     _exec(
-        ws, "export SRC=/s3; export DST=/disk; "
+        ws,
+        "export SRC=/s3; export DST=/disk; "
         "for f in report.csv data.txt; do "
-        "cat $SRC/$f > $DST/$f; done")
+        "cat $SRC/$f > $DST/$f; done",
+    )
     io1 = _exec(ws, "cat /disk/report.csv")
     io2 = _exec(ws, "cat /disk/data.txt")
     assert b"alice" in _stdout(io1)
@@ -652,9 +669,11 @@ def test_conditional_processing():
     """
     ws = _ws()
     _exec(
-        ws, "if cat /s3/report.csv | grep alice; then "
+        ws,
+        "if cat /s3/report.csv | grep alice; then "
         "echo found > /disk/status.txt; "
-        "else echo missing > /disk/status.txt; fi")
+        "else echo missing > /disk/status.txt; fi",
+    )
     io = _exec(ws, "cat /disk/status.txt")
     assert b"found" in _stdout(io)
 
@@ -669,8 +688,10 @@ def test_function_with_pipeline_redirect():
     """
     ws = _ws()
     _exec(
-        ws, "process() { cat $1 | sort > $2; }; "
-        "process /ram/notes.txt /disk/sorted.txt")
+        ws,
+        "process() { cat $1 | sort > $2; }; "
+        "process /ram/notes.txt /disk/sorted.txt",
+    )
     io = _exec(ws, "cat /disk/sorted.txt")
     out = _stdout(io)
     assert b"line1" in out
@@ -688,11 +709,14 @@ def test_while_read_with_conditional_write():
     done
     """
     ws = _ws()
-    _exec(ws, "while read LINE; do "
-          "case $LINE in "
-          "alice*) echo $LINE >> /disk/matches.txt;; "
-          "esac; done",
-          stdin=b"alice,30\nbob,25\nalice,40\n")
+    _exec(
+        ws,
+        "while read LINE; do "
+        "case $LINE in "
+        "alice*) echo $LINE >> /disk/matches.txt;; "
+        "esac; done",
+        stdin=b"alice,30\nbob,25\nalice,40\n",
+    )
     io = _exec(ws, "cat /disk/matches.txt")
     out = _stdout(io)
     assert out.count(b"alice") == 2
@@ -711,10 +735,12 @@ def test_nested_for_cross_mount():
     ws = _ws()
     s = ws.get_session(ws.default_session_id)
     _exec(
-        ws, "for src in /s3 /ram; do "
+        ws,
+        "for src in /s3 /ram; do "
         "for f in report.csv notes.txt; do "
         "cat $src/$f && export FOUND=$src/$f; "
-        "done; done")
+        "done; done",
+    )
     assert "FOUND" in s.env
 
 
@@ -728,8 +754,10 @@ def test_background_with_foreground_work():
     """
     ws = _ws()
     _exec(
-        ws, "sleep 0.01 & export A=1; export B=2; "
-        "cat /s3/report.csv > /disk/copy.txt")
+        ws,
+        "sleep 0.01 & export A=1; export B=2; "
+        "cat /s3/report.csv > /disk/copy.txt",
+    )
     s = ws.get_session(ws.default_session_id)
     assert s.env["A"] == "1"
     assert s.env["B"] == "2"
@@ -743,8 +771,7 @@ def test_subshell_pipeline_redirect():
     (export TMP=inner; cat /s3/report.csv) | sort > /disk/out.txt
     """
     ws = _ws()
-    _exec(ws, "(export TMP=inner; cat /s3/report.csv) | "
-          "sort > /disk/out.txt")
+    _exec(ws, "(export TMP=inner; cat /s3/report.csv) | sort > /disk/out.txt")
     s = ws.get_session(ws.default_session_id)
     assert "TMP" not in s.env
     io = _exec(ws, "cat /disk/out.txt")
@@ -759,8 +786,8 @@ def test_brace_group_pipeline():
     """
     ws = _ws()
     _exec(
-        ws, "{ echo header; cat /s3/report.csv; } | "
-        "sort > /disk/combined.txt")
+        ws, "{ echo header; cat /s3/report.csv; } | sort > /disk/combined.txt"
+    )
     io = _exec(ws, "cat /disk/combined.txt")
     out = _stdout(io)
     assert b"header" in out
@@ -775,8 +802,7 @@ def test_echo_seq_for_redirect():
     done
     """
     ws = _ws()
-    _exec(ws, 'for n in 1 2 3; do '
-          'echo "file $n" > /disk/f$n.txt; done')
+    _exec(ws, 'for n in 1 2 3; do echo "file $n" > /disk/f$n.txt; done')
     io1 = _exec(ws, "cat /disk/f1.txt")
     io3 = _exec(ws, "cat /disk/f3.txt")
     assert b"file 1" in _stdout(io1)
@@ -819,11 +845,13 @@ def test_full_script_simulation():
     fi
     """
     ws = _ws()
-    script = ("export SRC=/s3; export DST=/disk; "
-              "if cat $SRC/report.csv | grep alice; then "
-              "cat $SRC/report.csv | sort > $DST/sorted.txt; "
-              "echo done > $DST/status.txt; "
-              "else echo no_data > $DST/status.txt; fi")
+    script = (
+        "export SRC=/s3; export DST=/disk; "
+        "if cat $SRC/report.csv | grep alice; then "
+        "cat $SRC/report.csv | sort > $DST/sorted.txt; "
+        "echo done > $DST/status.txt; "
+        "else echo no_data > $DST/status.txt; fi"
+    )
     _exec(ws, script)
     io_status = _exec(ws, "cat /disk/status.txt")
     assert b"done" in _stdout(io_status)
@@ -1120,9 +1148,11 @@ def test_csv_extract_sort_uniq():
 def test_config_loader():
     """while read LINE; do export $LINE; done."""
     ws = _ws()
-    _exec(ws,
-          "while read LINE; do export $LINE; done",
-          stdin=b"DB_HOST=localhost\nDB_PORT=5432\n")
+    _exec(
+        ws,
+        "while read LINE; do export $LINE; done",
+        stdin=b"DB_HOST=localhost\nDB_PORT=5432\n",
+    )
     s = ws.get_session(ws.default_session_id)
     assert s.env["DB_HOST"] == "localhost"
     assert s.env["DB_PORT"] == "5432"
@@ -1132,8 +1162,10 @@ def test_multi_mount_awk_sort():
     """cat | awk | sort > file."""
     ws = _ws()
     _exec(
-        ws, "cat /s3/report.csv | awk -F, 'NR>1{print $1}' | "
-        "sort > /disk/names.txt")
+        ws,
+        "cat /s3/report.csv | awk -F, 'NR>1{print $1}' | "
+        "sort > /disk/names.txt",
+    )
     io = _exec(ws, "cat /disk/names.txt")
     out = _stdout(io)
     assert b"alice" in out
@@ -1146,9 +1178,11 @@ def test_conditional_grep_sed():
     """if grep errors; then sed replace > file."""
     ws = _ws()
     _exec(
-        ws, "if grep 500 /s3/access.log; then "
+        ws,
+        "if grep 500 /s3/access.log; then "
         "grep 500 /s3/access.log | sed 's/500/ERROR/' "
-        "> /disk/errors.txt; fi")
+        "> /disk/errors.txt; fi",
+    )
     io = _exec(ws, "cat /disk/errors.txt")
     out = _stdout(io)
     assert b"ERROR" in out
@@ -1159,8 +1193,10 @@ def test_function_grep_wc():
     """filter() { grep $1 $2 | wc -l; }."""
     ws = _ws()
     _exec(
-        ws, "filter() { grep $1 $2 | wc -l > /disk/c.txt; }; "
-        "filter GET /s3/access.log")
+        ws,
+        "filter() { grep $1 $2 | wc -l > /disk/c.txt; }; "
+        "filter GET /s3/access.log",
+    )
     io = _exec(ws, "cat /disk/c.txt")
     assert b"3" in _stdout(io)
 
@@ -1179,9 +1215,11 @@ def test_background_with_pipeline():
     """Background sleep, foreground pipeline."""
     ws = _ws()
     _exec(
-        ws, "sleep 0.01 & "
+        ws,
+        "sleep 0.01 & "
         "cat /s3/report.csv | grep alice | "
-        "sed 's/alice/ALICE/' > /disk/bg.txt")
+        "sed 's/alice/ALICE/' > /disk/bg.txt",
+    )
     io = _exec(ws, "cat /disk/bg.txt")
     assert b"ALICE" in _stdout(io)
 
@@ -1190,9 +1228,11 @@ def test_nested_function_tr():
     """upper() { tr a-z A-Z; }; process() { cat $1 | upper > $2; }."""
     ws = _ws()
     _exec(
-        ws, "upper() { tr 'a-z' 'A-Z'; }; "
+        ws,
+        "upper() { tr 'a-z' 'A-Z'; }; "
         "process() { cat $1 | upper > $2; }; "
-        "process /s3/data.txt /disk/upper.txt")
+        "process /s3/data.txt /disk/upper.txt",
+    )
     io = _exec(ws, "cat /disk/upper.txt")
     assert b"HELLO FROM S3" in _stdout(io)
 
@@ -1436,8 +1476,7 @@ def test_cache_fallback_multi_pipe():
     """Four-stage pipeline with cache fallback."""
     ws = _ws()
     ws.get_session(ws.default_session_id).cwd = "/mirage"
-    io = _exec(ws, "cat /s3/report.csv | grep -v name "
-               "| cut -d, -f1 | sort")
+    io = _exec(ws, "cat /s3/report.csv | grep -v name | cut -d, -f1 | sort")
     assert io.exit_code == 0
     out = _stdout(io)
     assert b"alice" in out
@@ -1595,11 +1634,13 @@ def test_python3_c_with_stdin():
     ws = _ws()
     ws._registry.runtime_bindings = {
         "python3": LocalRuntime(),
-        "python": LocalRuntime()
+        "python": LocalRuntime(),
     }
     io = _exec(
-        ws, 'echo hello | python3 -c "import sys; '
-        'print(sys.stdin.read().strip().upper())"')
+        ws,
+        'echo hello | python3 -c "import sys; '
+        'print(sys.stdin.read().strip().upper())"',
+    )
     assert _stdout(io) == b"HELLO\n"
 
 
@@ -1630,8 +1671,8 @@ def test_python3_session_env():
     ws = _ws()
     _exec(ws, "export MY_VAR=hello_mirage")
     io = _exec(
-        ws, 'python3 -c "import os; '
-        "print(os.environ.get('MY_VAR', 'none'))\"")
+        ws, "python3 -c \"import os; print(os.environ.get('MY_VAR', 'none'))\""
+    )
     assert _stdout(io) == b"hello_mirage\n"
 
 
@@ -1648,7 +1689,7 @@ def test_python3_c_with_argv():
     # sys.argv is a host feature; monty exposes `argv` instead.
     ws._registry.runtime_bindings = {
         "python3": LocalRuntime(),
-        "python": LocalRuntime()
+        "python": LocalRuntime(),
     }
     io = _exec(ws, 'python3 -c "import sys; print(sys.argv[1:])" alpha beta')
     assert io.exit_code == 0
@@ -1661,10 +1702,11 @@ def test_python3_c_with_abs_path_argv():
     # sys.argv is a host feature; monty exposes `argv` instead.
     ws._registry.runtime_bindings = {
         "python3": LocalRuntime(),
-        "python": LocalRuntime()
+        "python": LocalRuntime(),
     }
-    io = _exec(ws,
-               'python3 -c "import sys; print(sys.argv[1:])" /disk/some_file')
+    io = _exec(
+        ws, 'python3 -c "import sys; print(sys.argv[1:])" /disk/some_file'
+    )
     assert io.exit_code == 0
     assert _stdout(io) == b"['/disk/some_file']\n"
 
@@ -1675,7 +1717,7 @@ def test_python3_script_with_argv():
     # sys.argv is a host feature; monty exposes `argv` instead.
     ws._registry.runtime_bindings = {
         "python3": LocalRuntime(),
-        "python": LocalRuntime()
+        "python": LocalRuntime(),
     }
     _exec(ws, "echo 'import sys; print(sys.argv[1:])' > /disk/argv.py")
     io = _exec(ws, "python3 /disk/argv.py alpha beta")
@@ -1698,7 +1740,7 @@ def test_python3_bare_name_script_with_argv():
     # sys.argv is a host feature; monty exposes `argv` instead.
     ws._registry.runtime_bindings = {
         "python3": LocalRuntime(),
-        "python": LocalRuntime()
+        "python": LocalRuntime(),
     }
     _exec(ws, "echo 'import sys; print(sys.argv[1:])' > /disk/with_argv.py")
     io = _exec(ws, "cd /disk && python3 with_argv.py one two")
@@ -1936,7 +1978,7 @@ def test_cache_hit_serves_from_ram():
     records_after_first = list(ws.vfs.records)
     io2 = _exec(ws, "cat /s3/data.txt")
     assert _stdout(io2) == b"hello from s3\n"
-    new_records = ws.vfs.records[len(records_after_first):]
+    new_records = ws.vfs.records[len(records_after_first) :]
     sources = [r.source for r in new_records if r.op == "read"]
     assert all(s == "ram" for s in sources)
 
@@ -2017,8 +2059,8 @@ def test_for_break_with_condition():
     """for with [ $x = c ] break stops at correct iteration."""
     ws = _ws()
     io = _exec(
-        ws,
-        "for x in a b c d; do if [ $x = c ]; then break; fi; echo $x; done")
+        ws, "for x in a b c d; do if [ $x = c ]; then break; fi; echo $x; done"
+    )
     assert _stdout(io) == b"a\nb\n"
 
 
@@ -2027,15 +2069,17 @@ def test_for_continue_with_condition():
     ws = _ws()
     io = _exec(
         ws,
-        "for x in a b c d; do if [ $x = b ]; then continue; fi; echo $x; done")
+        "for x in a b c d; do if [ $x = b ]; then continue; fi; echo $x; done",
+    )
     assert _stdout(io) == b"a\nc\nd\n"
 
 
 def test_for_continue_skips_iteration():
     """continue skips to next iteration, other iterations produce output."""
     ws = _ws()
-    io = _exec(ws,
-               "for x in a b c; do if true; then echo $x; continue; fi; done")
+    io = _exec(
+        ws, "for x in a b c; do if true; then echo $x; continue; fi; done"
+    )
     assert _stdout(io) == b"a\nb\nc\n"
 
 
@@ -2049,8 +2093,9 @@ def test_test_literal_comparison():
 def test_test_variable_comparison():
     """[ $var = value ] expands variable and compares."""
     ws = _ws()
-    io = _exec(ws,
-               "for x in a c; do [ $x = c ] && echo match || echo miss; done")
+    io = _exec(
+        ws, "for x in a c; do [ $x = c ] && echo match || echo miss; done"
+    )
     assert _stdout(io) == b"miss\nmatch\n"
 
 
@@ -2115,16 +2160,22 @@ def test_bash_dash_c_for_loop_over_dirs():
     """`bash -lc` with a for-loop iterating mount paths."""
     s3 = RAMVFS()
     s3.caches_reads = True
-    s3._store.dirs.update({
-        "/INBOX",
-        "/INBOX/2026-04-28",
-        "/INBOX/2026-04-29",
-    })
+    s3._store.dirs.update(
+        {
+            "/INBOX",
+            "/INBOX/2026-04-28",
+            "/INBOX/2026-04-29",
+        }
+    )
     s3._store.files["/INBOX/2026-04-28/m1.txt"] = b""
     s3._store.files["/INBOX/2026-04-29/m2.txt"] = b""
-    ws = Workspace(mounts={"/gmail/": (s3, MountMode.EXEC)}, )
-    cmd = ('bash -lc \'for d in /gmail/INBOX/2026-04-28 '
-           '/gmail/INBOX/2026-04-29; do echo "== $d =="; ls "$d"; done\'')
+    ws = Workspace(
+        mounts={"/gmail/": (s3, MountMode.EXEC)},
+    )
+    cmd = (
+        "bash -lc 'for d in /gmail/INBOX/2026-04-28 "
+        '/gmail/INBOX/2026-04-29; do echo "== $d =="; ls "$d"; done\''
+    )
     io = _exec(ws, cmd)
     assert io.exit_code == 0
     out = _stdout(io)
@@ -2193,16 +2244,20 @@ def test_python_pipe_stdin():
 def test_function_return_exit_code():
     """return N propagates exit code for || and &&."""
     ws = _ws()
-    assert _stdout(_exec(
-        ws, "check() { return 1; }; check || echo failed")) == b"failed\n"
-    assert _stdout(_exec(
-        ws, "ok() { return 0; }; ok && echo success")) == b"success\n"
+    assert (
+        _stdout(_exec(ws, "check() { return 1; }; check || echo failed"))
+        == b"failed\n"
+    )
+    assert (
+        _stdout(_exec(ws, "ok() { return 0; }; ok && echo success"))
+        == b"success\n"
+    )
 
 
 def test_function_local_scope():
     """local variables restored after function returns."""
     ws = _ws()
-    io = _exec(ws, 'x=outside; f() { local x=inside; echo $x; }; f; echo $x')
+    io = _exec(ws, "x=outside; f() { local x=inside; echo $x; }; f; echo $x")
     assert _stdout(io) == b"inside\noutside\n"
 
 
@@ -2217,7 +2272,8 @@ def test_function_nested_output():
     """nested function calls preserve all output."""
     ws = _ws()
     io = _exec(
-        ws, "inner() { echo inner; }; outer() { inner; echo outer; }; outer")
+        ws, "inner() { echo inner; }; outer() { inner; echo outer; }; outer"
+    )
     assert _stdout(io) == b"inner\nouter\n"
 
 
@@ -2314,32 +2370,22 @@ def test_python_heredoc_dash_strips_indentation():
     """python3 <<-PYEOF strips leading tabs so indented code parses."""
     ws = _ws()
     io = _exec(
-        ws, "python3 <<-PYEOF\n"
-        "\tfor i in range(3):\n"
-        "\t    print(i)\n"
-        "\tPYEOF")
+        ws, "python3 <<-PYEOF\n\tfor i in range(3):\n\t    print(i)\n\tPYEOF"
+    )
     assert _stdout(io) == b"0\n1\n2\n"
 
 
 def test_python_heredoc_quoted_keeps_dollar_literal():
     """python3 << 'PYEOF' — body keeps $-strings literal (no shell expand)."""
     ws = _ws()
-    io = _exec(
-        ws, "X=shellval\n"
-        "python3 << 'PYEOF'\n"
-        "x = '$X'\n"
-        "print(x)\n"
-        "PYEOF")
+    io = _exec(ws, "X=shellval\npython3 << 'PYEOF'\nx = '$X'\nprint(x)\nPYEOF")
     assert _stdout(io) == b"$X\n"
 
 
 def test_python_heredoc_unquoted_expands():
     """python3 << PYEOF (unquoted) — shell vars expand into the body."""
     ws = _ws()
-    io = _exec(ws, "X=fromshell\n"
-               "python3 << PYEOF\n"
-               "print('$X')\n"
-               "PYEOF")
+    io = _exec(ws, "X=fromshell\npython3 << PYEOF\nprint('$X')\nPYEOF")
     assert _stdout(io) == b"fromshell\n"
 
 
@@ -2460,8 +2506,10 @@ def test_xargs_max_procs_runs_each_command_in_its_own_fork():
     """Commands side by side cannot see or leak each other's variables."""
     ws = _ws()
     io = _exec(
-        ws, "x=outer; printf 'a\\nb\\nc\\n' | "
-        "xargs -P3 -I{} sh -c 'x={}; sleep 0.05; echo $x'; echo $x")
+        ws,
+        "x=outer; printf 'a\\nb\\nc\\n' | "
+        "xargs -P3 -I{} sh -c 'x={}; sleep 0.05; echo $x'; echo $x",
+    )
     assert _stdout(io) == b"a\nb\nc\nouter\n"
 
 
@@ -2546,7 +2594,7 @@ def test_escaped_quote_in_double():
 
 
 def test_special_var_at_split():
-    '''"$@" in for loop splits into separate args.'''
+    """ "$@" in for loop splits into separate args."""
     ws = _ws()
     io = _exec(ws, 'f() { for x in "$@"; do echo $x; done; }; f a b c')
     assert _stdout(io) == b"a\nb\nc\n"
@@ -2562,10 +2610,12 @@ def test_background_then_foreground():
 def test_heredoc_pipe():
     """python3 << EOF | head -n 1 — pipe after heredoc."""
     ws = _ws()
-    cmd = ("python3 << 'PYEOF' | head -n 1\n"
-           "for i in range(5):\n"
-           "    print(i)\n"
-           "PYEOF")
+    cmd = (
+        "python3 << 'PYEOF' | head -n 1\n"
+        "for i in range(5):\n"
+        "    print(i)\n"
+        "PYEOF"
+    )
     io = _exec(ws, cmd)
     assert _stdout(io) == b"0\n"
 
@@ -2767,11 +2817,13 @@ def test_add_mount_runs_the_same_read_verdict_as_the_constructor():
     ws = Workspace({"/a": RAMVFS()}, mode=MountMode.WRITE)
     before = ws.mounts()
     with pytest.raises(ValueError, match="needs a resource that caches reads"):
-        ws.add_mount("/b", RAMVFS(), MountMode.WRITE,
-                     ReadSpec(policy=ReadPolicy.FRESH))
+        ws.add_mount(
+            "/b", RAMVFS(), MountMode.WRITE, ReadSpec(policy=ReadPolicy.FRESH)
+        )
     with pytest.raises(ValueError, match="pinned"):
-        ws.add_mount("/b", RAMVFS(), MountMode.WRITE,
-                     ReadSpec(policy=ReadPolicy.PINNED))
+        ws.add_mount(
+            "/b", RAMVFS(), MountMode.WRITE, ReadSpec(policy=ReadPolicy.PINNED)
+        )
     assert ws.mounts() == before
     asyncio.run(ws.close())
 
@@ -2781,11 +2833,17 @@ def test_add_mount_carries_the_read_spec_onto_the_entry():
     # tell "took the workspace default" from "took the dataclass
     # default" -- with a plain ReadSpec() workspace the two coincide and
     # the assertion holds however the code is written.
-    ws = Workspace({"/a": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90))
-    entry = ws.add_mount("/b", RAMVFS(), MountMode.WRITE,
-                         ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45))
+    ws = Workspace(
+        {"/a": RAMVFS()},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90),
+    )
+    entry = ws.add_mount(
+        "/b",
+        RAMVFS(),
+        MountMode.WRITE,
+        ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45),
+    )
     assert entry.read == ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45)
     assert ws.add_mount("/c", RAMVFS()).read.ttl == 90
     asyncio.run(ws.close())
@@ -2795,7 +2853,6 @@ def test_add_mount_keeps_a_shared_vfs_open_until_its_last_unmount():
     closed = []
 
     class TrackingRAM(RAMVFS):
-
         async def close(self):
             closed.append("closed")
 
@@ -2877,7 +2934,6 @@ def test_unmount_closes_vfs_when_owned():
     closed = []
 
     class TrackingRAM(RAMVFS):
-
         async def close(self):
             closed.append("yes")
 
@@ -2915,7 +2971,9 @@ def test_unmount_after_close_raises():
 
 
 def test_cd_nonexistent_under_mount_keeps_cwd():
-    ws = Workspace(mounts={"/": (RAMVFS(), MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/": (RAMVFS(), MountMode.WRITE)},
+    )
     before = ws.get_session(ws.default_session_id).cwd
     io = _exec(ws, "cd /missing")
     assert io.exit_code != 0
@@ -2924,10 +2982,12 @@ def test_cd_nonexistent_under_mount_keeps_cwd():
 
 
 def test_cd_into_mount_root_succeeds():
-    ws = Workspace(mounts={
-        "/": (RAMVFS(), MountMode.WRITE),
-        "/data/": (RAMVFS(), MountMode.WRITE),
-    }, )
+    ws = Workspace(
+        mounts={
+            "/": (RAMVFS(), MountMode.WRITE),
+            "/data/": (RAMVFS(), MountMode.WRITE),
+        },
+    )
     io = _exec(ws, "cd /data")
     assert io.exit_code == 0
     assert ws.get_session(ws.default_session_id).cwd == "/data"
@@ -2937,10 +2997,9 @@ def test_cd_into_mount_root_succeeds():
 
 
 def _ws_for_ls(mounts: dict[str, RAMVFS]) -> Workspace:
-    return Workspace(mounts={
-        p: (r, MountMode.WRITE)
-        for p, r in mounts.items()
-    }, )
+    return Workspace(
+        mounts={p: (r, MountMode.WRITE) for p, r in mounts.items()},
+    )
 
 
 def test_ls_root_shows_child_mount_data():
@@ -2976,11 +3035,13 @@ def test_ls_does_not_duplicate_existing_entry():
 
 
 def test_ls_nested_child_mount():
-    ws = _ws_for_ls({
-        "/": RAMVFS(),
-        "/data/": RAMVFS(),
-        "/data/inner/": RAMVFS(),
-    })
+    ws = _ws_for_ls(
+        {
+            "/": RAMVFS(),
+            "/data/": RAMVFS(),
+            "/data/inner/": RAMVFS(),
+        }
+    )
     io = _exec(ws, "ls /data")
     assert "inner" in _stdout(io).decode().split("\n")
 
@@ -3030,8 +3091,9 @@ async def test_set_mount_mode_refreshes_facade_without_remounting():
             assert ws.vfs is fs
             assert ws.mount("/data") is mount
             assert mount.mode == mode
-            assert (("/data/", "ram")
-                    in fs.writable_mounts()) == (mode != MountMode.READ)
+            assert (("/data/", "ram") in fs.writable_mounts()) == (
+                mode != MountMode.READ
+            )
             assert await fs.read("/data/file") == b"kept"
         with pytest.raises(ValueError):
             ws.set_mount_mode("/data", "invalid")
@@ -3049,14 +3111,13 @@ async def test_live_default_profile_updates_unbound_policy():
         await ws.vfs.write("/data/file", b"kept")
         profile = {
             "commands": {
-                "deny": [{
-                    "paths": ["/data/file"],
-                    "reason": "sealed"
-                }]
+                "deny": [{"paths": ["/data/file"], "reason": "sealed"}]
             }
         }
-        assert await ws.set_session_profile(ws.default_session_id,
-                                            profile) is session
+        assert (
+            await ws.set_session_profile(ws.default_session_id, profile)
+            is session
+        )
         with pytest.raises(PermissionError):
             await ws.vfs.read("/data/file")
         await ws.set_session_profile(ws.default_session_id, {})
@@ -3091,14 +3152,19 @@ async def test_xargs_overlapping_shell_sessions(procs, named, child_first):
     ws.register_cli("holdother", CLISpec(name="holdother", fn=hold_other))
     try:
         await ws.shell(
-            'X=outer; child() { holdchild; eval "X=child"; echo "$X"; }')
+            'X=outer; child() { holdchild; eval "X=child"; echo "$X"; }'
+        )
         await ws.shell(f"printf a | xargs -P{procs} -I{{}} child &")
-        child = asyncio.create_task(ws.job_table.wait(1,
-                                                      ws.default_session_id))
+        child = asyncio.create_task(
+            ws.job_table.wait(1, ws.default_session_id)
+        )
         await asyncio.wait_for(child_entered.wait(), 5)
         other = asyncio.create_task(
-            ws.shell('holdother; eval "Y=kept"; echo "$X:$Y"',
-                     session_id=ws.default_session_id if named else None))
+            ws.shell(
+                'holdother; eval "Y=kept"; echo "$X:$Y"',
+                session_id=ws.default_session_id if named else None,
+            )
+        )
         await asyncio.wait_for(other_entered.wait(), 5)
         if child_first:
             child_held.set()
@@ -3136,7 +3202,8 @@ async def test_xargs_keeps_foreground_call_queued_until_cancelled():
         await asyncio.wait_for(entered.wait(), 5)
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(
-                ws.shell("Y=leaked", session_id=ws.default_session_id), 0.1)
+                ws.shell("Y=leaked", session_id=ws.default_session_id), 0.1
+            )
     finally:
         held.set()
         await child

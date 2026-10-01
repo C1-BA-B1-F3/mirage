@@ -21,10 +21,19 @@ DISPATCH_READ_OPS = frozenset({"read", "read_bytes"})
 # file-cache eviction, parent index invalidation, and overlay time
 # clearing (plus the observed-mtime stamp for the content writes in
 # ``STAMP_WRITE_OPS``).
-DISPATCH_WRITE_OPS = frozenset({
-    "write", "write_bytes", "append", "unlink", "create", "truncate", "mkdir",
-    "rmdir", "rename"
-})
+DISPATCH_WRITE_OPS = frozenset(
+    {
+        "write",
+        "write_bytes",
+        "append",
+        "unlink",
+        "create",
+        "truncate",
+        "mkdir",
+        "rmdir",
+        "rename",
+    }
+)
 
 # What the admission gates classify as a write (``OpsContext.write``).
 # A superset of DISPATCH_WRITE_OPS: setattr mutates the mount but keeps
@@ -32,7 +41,8 @@ DISPATCH_WRITE_OPS = frozenset({
 # only the node table, so both need write admission without joining the
 # post-write invalidation path.
 POLICY_WRITE_OPS = DISPATCH_WRITE_OPS | frozenset(
-    {"setattr", "symlink", "setxattr", "removexattr"})
+    {"setattr", "symlink", "setxattr", "removexattr"}
+)
 
 # The extended-attribute ops, which the node table answers: what a caller
 # sets is stored on the path's node beside the overlay's mode and times.
@@ -57,9 +67,17 @@ LINK_ENTRY_OPS = frozenset({"unlink", "rename", "stat"})
 # the session cannot write), ENOENT when that directory is hidden too,
 # the same answer every read gives for it. Every other op on a hidden
 # path answers ENOENT, the no-name-leak rule.
-HIDDEN_CREATE_OPS = frozenset({
-    "write", "write_bytes", "append", "create", "truncate", "mkdir", "symlink"
-})
+HIDDEN_CREATE_OPS = frozenset(
+    {
+        "write",
+        "write_bytes",
+        "append",
+        "create",
+        "truncate",
+        "mkdir",
+        "symlink",
+    }
+)
 
 # The attribute fields a setattr op can carry, in one place so the
 # requested/residual split and the overlay write read the same names.

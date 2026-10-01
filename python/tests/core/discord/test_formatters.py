@@ -17,21 +17,22 @@ from mirage.core.discord.formatters import format_grep_results
 
 
 def test_format_grep_results_uses_vfs_channel_dirname():
-    msgs = [{
-        "timestamp": "2024-04-10T12:34:56.000000+00:00",
-        "channel_id": "C1",
-        "author": {
-            "username": "alice"
-        },
-        "content": "hello",
-    }]
+    msgs = [
+        {
+            "timestamp": "2024-04-10T12:34:56.000000+00:00",
+            "channel_id": "C1",
+            "author": {"username": "alice"},
+            "content": "hello",
+        }
+    ]
     guild = {"id": "G1", "name": "MyGuild"}
     chan = {"id": "C1", "name": "general"}
     lines = format_grep_results(
         msgs,
         prefix="/discord",
         guild_dirname=guild_dirname(guild),
-        channel_names={chan["id"]: channel_dirname(chan)})
+        channel_names={chan["id"]: channel_dirname(chan)},
+    )
     assert lines == [
         "/discord/MyGuild__G1/channels/general__C1/"
         "2024-04-10/chat.jsonl:[alice] hello"
@@ -39,14 +40,14 @@ def test_format_grep_results_uses_vfs_channel_dirname():
 
 
 def test_format_grep_results_falls_back_to_channel_id():
-    msgs = [{
-        "timestamp": "2024-04-10T00:00:00+00:00",
-        "channel_id": "C2",
-        "author": {
-            "username": "bob"
-        },
-        "content": "x",
-    }]
+    msgs = [
+        {
+            "timestamp": "2024-04-10T00:00:00+00:00",
+            "channel_id": "C2",
+            "author": {"username": "bob"},
+            "content": "x",
+        }
+    ]
     lines = format_grep_results(msgs, "/discord", "G__G1", channel_names={})
     assert lines == [
         "/discord/G__G1/channels/C2/2024-04-10/chat.jsonl:[bob] x"
@@ -54,32 +55,38 @@ def test_format_grep_results_falls_back_to_channel_id():
 
 
 def test_format_grep_results_path_matches_vfs_layout():
-    msgs = [{
-        "timestamp": "2024-04-10T00:00:00+00:00",
-        "channel_id": "C1",
-        "author": {
-            "username": "alice"
-        },
-        "content": "hi",
-    }]
+    msgs = [
+        {
+            "timestamp": "2024-04-10T00:00:00+00:00",
+            "channel_id": "C1",
+            "author": {"username": "alice"},
+            "content": "hi",
+        }
+    ]
     guild = {"id": "G1", "name": "S"}
     chan = {"id": "C1", "name": "general"}
-    line = format_grep_results(msgs, "/discord", guild_dirname(guild),
-                               {chan["id"]: channel_dirname(chan)})[0]
-    expected_path = (f"/discord/{guild_dirname(guild)}/channels/"
-                     f"{channel_dirname(chan)}/2024-04-10/chat.jsonl")
+    line = format_grep_results(
+        msgs,
+        "/discord",
+        guild_dirname(guild),
+        {chan["id"]: channel_dirname(chan)},
+    )[0]
+    expected_path = (
+        f"/discord/{guild_dirname(guild)}/channels/"
+        f"{channel_dirname(chan)}/2024-04-10/chat.jsonl"
+    )
     assert line.startswith(expected_path + ":")
 
 
 def test_format_grep_results_replaces_newlines():
-    msgs = [{
-        "timestamp": "2024-01-02",
-        "channel_id": "C",
-        "author": {
-            "username": "u"
-        },
-        "content": "line1\nline2",
-    }]
+    msgs = [
+        {
+            "timestamp": "2024-01-02",
+            "channel_id": "C",
+            "author": {"username": "u"},
+            "content": "line1\nline2",
+        }
+    ]
     lines = format_grep_results(msgs, "/discord", "G__G1", channel_names={})
     assert lines == [
         "/discord/G__G1/channels/C/2024-01-02/chat.jsonl:[u] line1 line2"
@@ -90,14 +97,14 @@ def test_format_grep_results_derives_date_from_snowflake():
     # A hit without a timestamp still has a snowflake id, which encodes the
     # creation day readdir buckets it under. 1510934682009600000 is
     # 2026-06-01 09:15 UTC.
-    msgs = [{
-        "id": "1510934682009600000",
-        "channel_id": "C1",
-        "author": {
-            "username": "alice"
-        },
-        "content": "hello",
-    }]
+    msgs = [
+        {
+            "id": "1510934682009600000",
+            "channel_id": "C1",
+            "author": {"username": "alice"},
+            "content": "hello",
+        }
+    ]
     lines = format_grep_results(msgs, "/discord", "G__G1", channel_names={})
     assert lines == [
         "/discord/G__G1/channels/C1/2026-06-01/chat.jsonl:[alice] hello"
@@ -107,12 +114,12 @@ def test_format_grep_results_derives_date_from_snowflake():
 def test_format_grep_results_dateless_hit_points_at_channel_dir():
     # No timestamp and no parseable snowflake: point at the channel dir
     # instead of minting a `//chat.jsonl` path that cannot exist.
-    msgs = [{
-        "channel_id": "C1",
-        "author": {
-            "username": "alice"
-        },
-        "content": "hello",
-    }]
+    msgs = [
+        {
+            "channel_id": "C1",
+            "author": {"username": "alice"},
+            "content": "hello",
+        }
+    ]
     lines = format_grep_results(msgs, "/discord", "G__G1", channel_names={})
     assert lines == ["/discord/G__G1/channels/C1:[alice] hello"]

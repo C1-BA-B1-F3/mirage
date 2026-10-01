@@ -13,19 +13,41 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (args_text, jq_check, jq_eval, jq_raised,
-                                 jq_run, jq_run_texts, references_args,
-                                 stream_reads)
-from mirage.core.jq.format import (dump_text, error_report, format_jq_output,
-                                   format_one, halt_report, load_failure,
-                                   printable)
+from mirage.core.jq.eval import (
+    args_text,
+    jq_check,
+    jq_eval,
+    jq_raised,
+    jq_run,
+    jq_run_texts,
+    references_args,
+    stream_reads,
+)
+from mirage.core.jq.format import (
+    dump_text,
+    error_report,
+    format_jq_output,
+    format_one,
+    halt_report,
+    load_failure,
+    printable,
+)
 from mirage.core.jq.parse import JqParser, decode_utf8, string_text
-from mirage.core.jq.stream import (InputReader, is_jsonl_path, read_texts,
-                                   value_text)
-from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
-                                  UNKNOWN_POSITION, InputSource, JqError,
-                                  JqHalt, JqOptions, JqParseError, JqRun,
-                                  NoValue, StreamReads)
+from mirage.core.jq.stream import InputReader, read_texts, value_text
+from mirage.core.jq.types import (
+    DEFAULT_INDENT,
+    NO_VALUE,
+    STDIN_NAME,
+    UNKNOWN_POSITION,
+    InputSource,
+    JqError,
+    JqHalt,
+    JqOptions,
+    JqParseError,
+    JqRun,
+    NoValue,
+    StreamReads,
+)
 
 __all__ = [
     "DEFAULT_INDENT",
@@ -50,7 +72,6 @@ __all__ = [
     "format_jq_output",
     "format_one",
     "halt_report",
-    "is_jsonl_path",
     "jq_check",
     "jq_eval",
     "jq_raised",

@@ -21,19 +21,17 @@ from mirage.server.paths import resolve_within_root, validate_path_segment
 
 
 class VersionBackend(Protocol):
-
-    def open_repo(self, workspace_id: str) -> Repo:
-        ...
+    def open_repo(self, workspace_id: str) -> Repo: ...
 
 
 class LocalBackend:
-
     def __init__(self, root: str | Path) -> None:
         self._root = Path(root)
 
     def open_repo(self, workspace_id: str) -> Repo:
-        path = resolve_within_root(self._root,
-                                   validate_path_segment(workspace_id))
+        path = resolve_within_root(
+            self._root, validate_path_segment(workspace_id)
+        )
         if (path / "objects").is_dir():
             return Repo(str(path))
         path.mkdir(parents=True, exist_ok=True)

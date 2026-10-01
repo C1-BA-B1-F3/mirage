@@ -55,7 +55,8 @@ async def readdir(
             parent_virtual = virtual_key.rstrip("/").rsplit("/", 1)[0] or "/"
             if parent_virtual != virtual_key:
                 parent_path = PathSpec.from_str_path(
-                    parent_virtual, mount_key(parent_virtual, prefix))
+                    parent_virtual, mount_key(parent_virtual, prefix)
+                )
                 await readdir(accessor, parent_path, index)
                 result = await index.get(virtual_key)
             if result.entry is None:
@@ -67,7 +68,8 @@ async def readdir(
         folder_id = result.entry.id
 
     items = await absent_on_404(
-        virtual, lambda: list_folder_items(accessor.token_manager, folder_id))
+        virtual, lambda: list_folder_items(accessor.token_manager, folder_id)
+    )
     entries: list[tuple[str, IndexEntry, bool]] = []
     for it in items:
         if it.get("type") == "web_link":

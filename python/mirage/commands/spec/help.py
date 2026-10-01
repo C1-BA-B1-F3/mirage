@@ -102,11 +102,13 @@ def _slot(operand: Operand) -> str:
     return "<path>" if operand.type == "path" else "<text>"
 
 
-def usage_line(name: str,
-               spec: CommandSpec,
-               subcommands: SubcommandRows,
-               style: UsageStyle,
-               synopsis: str | None = None) -> str:
+def usage_line(
+    name: str,
+    spec: CommandSpec,
+    subcommands: SubcommandRows,
+    style: UsageStyle,
+    synopsis: str | None = None,
+) -> str:
     """The ``Usage:`` line, in the dialect the CLI declares.
 
     A ``synopsis`` (the imitated program's own ``--help`` first line,
@@ -143,11 +145,13 @@ def usage_line(name: str,
     return "Usage: " + " ".join(bits)
 
 
-def render_help(name: str,
-                spec: CommandSpec,
-                subcommands: SubcommandRows = (),
-                style: UsageStyle = UsageStyle.ARGPARSE,
-                synopsis: str | None = None) -> str:
+def render_help(
+    name: str,
+    spec: CommandSpec,
+    subcommands: SubcommandRows = (),
+    style: UsageStyle = UsageStyle.ARGPARSE,
+    synopsis: str | None = None,
+) -> str:
     """Render one command's help; a CLI group is the same shape plus a
     Commands section.
 
@@ -223,8 +227,9 @@ def clap_unexpected_argument(token: str) -> str:
     return f"error: unexpected argument '{token}' found"
 
 
-def clap_group_refusal(name: str, spec: CommandSpec,
-                       subcommands: SubcommandRows, message: str) -> bytes:
+def clap_group_refusal(
+    name: str, spec: CommandSpec, subcommands: SubcommandRows, message: str
+) -> bytes:
     """A group-level refusal in clap's shape: message, usage, footer.
 
     clap answers with the one usage line, not the whole help page git
@@ -241,5 +246,6 @@ def clap_group_refusal(name: str, spec: CommandSpec,
         message (str): the first line, already worded.
     """
     usage = usage_line(name, spec, subcommands, UsageStyle.CLAP)
-    return (f"{message}\n\n{usage}\n\n"
-            "For more information, try '--help'.\n").encode()
+    return (
+        f"{message}\n\n{usage}\n\nFor more information, try '--help'.\n"
+    ).encode()

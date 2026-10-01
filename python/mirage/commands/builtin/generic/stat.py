@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 from itertools import groupby
 
 from mirage.commands.builtin.utils.formatting import ls_mode_string
-from mirage.commands.builtin.utils.identity import (Identity, group_name,
-                                                    identity_of, owner_name)
+from mirage.commands.builtin.utils.identity import (
+    Identity,
+    group_name,
+    identity_of,
+    owner_name,
+)
 from mirage.commands.builtin.utils.operands import operand_stat
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts
@@ -16,12 +20,22 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
-from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
-                          FileType, PathSpec, StatFn)
+from mirage.types import (
+    DEVICE_NUMBERS_KEY,
+    LINK_TARGET_KEY,
+    FileStat,
+    FileType,
+    PathSpec,
+    StatFn,
+)
 from mirage.utils.dates import iso_timestamp, iso_to_epoch
 from mirage.utils.errors import FS_ERRORS, fs_error_line
-from mirage.utils.stat_view import (content_size, device_rdev, is_dir,
-                                    posix_mode)
+from mirage.utils.stat_view import (
+    content_size,
+    device_rdev,
+    is_dir,
+    posix_mode,
+)
 
 _STR_DIRECTIVES = frozenset("nNF")
 
@@ -40,7 +54,7 @@ _TYPE_LABELS = {
     FileType.FILE: "regular file",
 }
 
-_SHELL_SPECIAL = frozenset("!\"#$&()*;<=>?[\\^`{|}~")
+_SHELL_SPECIAL = frozenset('!"#$&()*;<=>?[\\^`{|}~')
 
 _START_SAFE = frozenset("#~")
 
@@ -75,8 +89,9 @@ class _FormatDirective:
 
 
 def _type_label(s: FileStat) -> str:
-    return _TYPE_LABELS.get(s.type,
-                            "regular file") if s.type else "regular file"
+    return (
+        _TYPE_LABELS.get(s.type, "regular file") if s.type else "regular file"
+    )
 
 
 def _effective_mode(s: FileStat) -> int:
@@ -175,8 +190,9 @@ def _quote_name(name: str) -> str:
     return _single_quoted(name)
 
 
-def _apply_flags(value: str, flags: str, width: str, precision: str | None,
-                 spec: str) -> str:
+def _apply_flags(
+    value: str, flags: str, width: str, precision: str | None, spec: str
+) -> str:
     """Apply GNU printf flags/width/precision to a rendered directive.
 
     Args:
@@ -189,7 +205,7 @@ def _apply_flags(value: str, flags: str, width: str, precision: str | None,
     if "#" in flags and spec == "a" and not value.startswith("0"):
         value = "0" + value
     if precision is not None and spec in _STR_DIRECTIVES:
-        value = value[:int(precision)] if precision else ""
+        value = value[: int(precision)] if precision else ""
     if width and len(value) < int(width):
         w = int(width)
         if "-" in flags:
@@ -201,15 +217,17 @@ def _apply_flags(value: str, flags: str, width: str, precision: str | None,
     return value
 
 
-def _directive_value(spec: str, s: FileStat, name: str,
-                     identity: Identity | None) -> str:
+def _directive_value(
+    spec: str, s: FileStat, name: str, identity: Identity | None
+) -> str:
     if spec == "%":
         return "%"
     if spec == "n":
         return name
     if spec == "s":
-        return "-" if not is_dir(s) and s.size is None else str(
-            content_size(s))
+        return (
+            "-" if not is_dir(s) and s.size is None else str(content_size(s))
+        )
     if spec == "F":
         return _type_label(s)
     if spec == "a":
@@ -275,8 +293,9 @@ def _name_parts(s: FileStat, name: str, quoted: bool) -> list[str]:
     return [_quote_name(p) for p in parts] if quoted else parts
 
 
-def _render_directive(d: _FormatDirective, s: FileStat, name: str,
-                      identity: Identity | None) -> str:
+def _render_directive(
+    d: _FormatDirective, s: FileStat, name: str, identity: Identity | None
+) -> str:
     """Render one directive with its flags, width and precision applied.
 
     Args:
@@ -292,9 +311,15 @@ def _render_directive(d: _FormatDirective, s: FileStat, name: str,
         bare = not d.flags and not d.width and d.precision is None
         return " -> ".join(
             _apply_flags(part, d.flags, d.width, d.precision, d.spec)
-            for part in _name_parts(s, name, bare))
-    return _apply_flags(_directive_value(d.spec, s, name, identity), d.flags,
-                        d.width, d.precision, d.spec)
+            for part in _name_parts(s, name, bare)
+        )
+    return _apply_flags(
+        _directive_value(d.spec, s, name, identity),
+        d.flags,
+        d.width,
+        d.precision,
+        d.spec,
+    )
 
 
 def _is_conversion(char: str) -> bool:
@@ -339,15 +364,14 @@ def _parse_format_directive(fmt: str, start: int) -> _FormatDirective | None:
     if spec in ("H", "L") and cursor < end and _is_conversion(fmt[cursor]):
         spec += fmt[cursor]
         cursor += 1
-    return _FormatDirective(end=cursor,
-                            flags=flags,
-                            width=width,
-                            precision=precision,
-                            spec=spec)
+    return _FormatDirective(
+        end=cursor, flags=flags, width=width, precision=precision, spec=spec
+    )
 
 
-def _format_stat(fmt: str, s: FileStat, name: str,
-                 identity: Identity | None) -> str:
+def _format_stat(
+    fmt: str, s: FileStat, name: str, identity: Identity | None
+) -> str:
     parts: list[str] = []
     cursor = 0
     while cursor < len(fmt):
@@ -406,16 +430,18 @@ def _render_stat(s: FileStat, name: str, identity: Identity | None) -> str:
         minor = _directive_value("Lr", s, name, identity)
         links = f"Links: {'?':<5} Device type: {major},{minor}"
     shown = " -> ".join(_name_parts(s, name, False))
-    return (f"  File: {shown}\n"
-            f"  Size: {size:<10}\tBlocks: {'?':<10} "
-            f"IO Block: {'?':<6} {_type_label(s)}\n"
-            f"Device: ?\tInode: {'?':<10}  {links}\n"
-            f"Access: ({_effective_mode(s):04o}/{ls_mode_string(s)})  "
-            f"Uid: ({uid:>5}/{owner:>8})   Gid: ({gid:>5}/{group:>8})\n"
-            f"Access: {_stat_time(s.atime or s.modified)}\n"
-            f"Modify: {_stat_time(s.modified)}\n"
-            f"Change: {_stat_time(s.ctime)}\n"
-            f" Birth: {_stat_time(s.birthtime)}")
+    return (
+        f"  File: {shown}\n"
+        f"  Size: {size:<10}\tBlocks: {'?':<10} "
+        f"IO Block: {'?':<6} {_type_label(s)}\n"
+        f"Device: ?\tInode: {'?':<10}  {links}\n"
+        f"Access: ({_effective_mode(s):04o}/{ls_mode_string(s)})  "
+        f"Uid: ({uid:>5}/{owner:>8})   Gid: ({gid:>5}/{group:>8})\n"
+        f"Access: {_stat_time(s.atime or s.modified)}\n"
+        f"Modify: {_stat_time(s.modified)}\n"
+        f"Change: {_stat_time(s.ctime)}\n"
+        f" Birth: {_stat_time(s.birthtime)}"
+    )
 
 
 async def stat(
@@ -467,11 +493,13 @@ async def stat(
                 lines.append(_render_stat(linked, p.raw_path, identity))
             continue
         try:
-            s = await operand_stat(p,
-                                   stat_fn=stat_fn,
-                                   stat_path=stat_path,
-                                   mounts=mounts,
-                                   links=links)
+            s = await operand_stat(
+                p,
+                stat_fn=stat_fn,
+                stat_path=stat_path,
+                mounts=mounts,
+                links=links,
+            )
         except FS_ERRORS as exc:
             # GNU stat keeps reporting the remaining operands, exit 1.
             err += fs_error_line("stat", p, exc).encode()
@@ -512,12 +540,14 @@ async def stat_generic(
     stat_fn: StatFn,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await stat(paths,
-                      stat_fn=stat_fn,
-                      c=parsed.format,
-                      f=parsed.file_system,
-                      L=parsed.deref,
-                      links=opts.ns.links if opts.ns is not None else None,
-                      stat_path=opts.stat_path,
-                      mounts=opts.ns.mounts if opts.ns is not None else None,
-                      identity=identity_of(opts))
+    return await stat(
+        paths,
+        stat_fn=stat_fn,
+        c=parsed.format,
+        f=parsed.file_system,
+        L=parsed.deref,
+        links=opts.ns.links if opts.ns is not None else None,
+        stat_path=opts.stat_path,
+        mounts=opts.ns.mounts if opts.ns is not None else None,
+        identity=identity_of(opts),
+    )

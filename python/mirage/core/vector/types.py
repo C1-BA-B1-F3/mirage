@@ -57,6 +57,7 @@ class VectorTree(Generic[A]):
         hit (Callable[[A, Row], tuple[list[str], bytes]]): a ranked row's
             path segments below its table, and its body.
     """
+
     vfs: str
     detect: Callable[[A], DetectFn]
     pinned: Callable[[A], str | None]

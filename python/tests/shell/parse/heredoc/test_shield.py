@@ -14,9 +14,13 @@
 
 import tree_sitter
 
-from mirage.shell.parse.heredoc import (HeredocOperator, first_content_line,
-                                        heredoc_operators, protected_source,
-                                        terminator_lookalikes)
+from mirage.shell.parse.heredoc import (
+    HeredocOperator,
+    first_content_line,
+    heredoc_operators,
+    protected_source,
+    terminator_lookalikes,
+)
 from mirage.shell.parse.parse import TS_PARSER
 
 
@@ -26,16 +30,18 @@ def _root(command: str) -> tree_sitter.Node:
 
 def _diff(before: str, after: bytes) -> list[tuple[int, str]]:
     """The (offset, replacement) pairs by which ``after`` differs."""
-    return [(i, chr(b)) for i, (a, b) in enumerate(zip(before.encode(), after))
-            if a != b]
+    return [
+        (i, chr(b))
+        for i, (a, b) in enumerate(zip(before.encode(), after))
+        if a != b
+    ]
 
 
 def test_heredoc_operators_reads_the_delimiter_as_bash_does():
     assert heredoc_operators(_root("cat <<-'EOF'\n\tbody\n\tEOF\n")) == [
-        HeredocOperator(word_start=7,
-                        word_end=12,
-                        delimiter="EOF",
-                        allows_indent=True)
+        HeredocOperator(
+            word_start=7, word_end=12, delimiter="EOF", allows_indent=True
+        )
     ]
 
 
@@ -113,8 +119,10 @@ def test_protected_source_handles_every_heredoc_on_the_line_list():
     cmd = "cat <<A\n\\one\nA\ncat <<B\n\\two\nB\n"
     out = protected_source(cmd.encode(), _root(cmd))
     assert out is not None
-    assert _diff(cmd, out) == [(cmd.index("\\one"), "x"),
-                               (cmd.index("\\two"), "x")]
+    assert _diff(cmd, out) == [
+        (cmd.index("\\one"), "x"),
+        (cmd.index("\\two"), "x"),
+    ]
 
 
 def test_protected_source_shields_both_bodies_of_one_operator_line():
@@ -123,8 +131,10 @@ def test_protected_source_shields_both_bodies_of_one_operator_line():
     cmd = "cat <<A && cat <<B\n\\two\nB\n\\one\nA\n"
     out = protected_source(cmd.encode(), _root(cmd))
     assert out is not None
-    assert _diff(cmd, out) == [(cmd.index("\\two"), "x"),
-                               (cmd.index("\\one"), "x")]
+    assert _diff(cmd, out) == [
+        (cmd.index("\\two"), "x"),
+        (cmd.index("\\one"), "x"),
+    ]
 
 
 def test_protected_source_shields_an_escaped_double_quoted_delimiter():
@@ -184,9 +194,11 @@ def test_protected_source_masks_a_line_that_only_opens_with_the_delimiter():
     cmd = "cat <<EOF\nhi\nEOFX\nEOF;\n EOF\nEOF\n"
     out = protected_source(cmd.encode(), _root(cmd))
     assert out is not None
-    assert _diff(cmd, out) == [(cmd.index("EOFX"), "x"),
-                               (cmd.index("EOF;"), "x"),
-                               (cmd.index(" EOF") + 1, "x")]
+    assert _diff(cmd, out) == [
+        (cmd.index("EOFX"), "x"),
+        (cmd.index("EOF;"), "x"),
+        (cmd.index(" EOF") + 1, "x"),
+    ]
 
 
 def test_protected_source_masks_a_lookalike_under_dash():
@@ -194,9 +206,11 @@ def test_protected_source_masks_a_lookalike_under_dash():
     cmd = "cat <<-EOF\n\thi\n\tEOFX\n  EOF\n\tEOF\n"
     out = protected_source(cmd.encode(), _root(cmd))
     assert out is not None
-    assert _diff(cmd, out) == [(cmd.index("\thi"), "x"),
-                               (cmd.index("\tEOFX") + 1, "x"),
-                               (cmd.index("  EOF") + 2, "x")]
+    assert _diff(cmd, out) == [
+        (cmd.index("\thi"), "x"),
+        (cmd.index("\tEOFX") + 1, "x"),
+        (cmd.index("  EOF") + 2, "x"),
+    ]
 
 
 def test_protected_source_keeps_an_expansion_opening_a_lookalike():

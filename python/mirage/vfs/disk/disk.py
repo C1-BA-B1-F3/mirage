@@ -31,7 +31,6 @@ from mirage.watch.base import DeltaHook
 
 
 class DiskVFS(BaseVFS):
-
     name: str = VFSName.DISK
     # byte store: stat() sizes every file from metadata
     sizes_always_known: bool = True

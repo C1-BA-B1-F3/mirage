@@ -33,7 +33,6 @@ const LanceDBConfigSchema = z.object({
   titleColumn: z.string().optional(),
   blobColumn: z.string().optional(),
   blobExt: z.string().optional(),
-  textColumn: z.string().optional(),
   vectorColumn: z.string().optional(),
   searchLimit: z.number().optional(),
   maxRows: z.number().optional(),
@@ -57,7 +56,6 @@ export interface LanceDBConfigResolved {
   titleColumn: string | null
   blobColumn: string | null
   blobExt: string
-  textColumn: string | null
   vectorColumn: string | null
   searchLimit: number
   maxRows: number
@@ -76,7 +74,6 @@ export function resolveLanceDBConfig(config: LanceDBConfig): LanceDBConfigResolv
     titleColumn: config.titleColumn ?? null,
     blobColumn: config.blobColumn ?? null,
     blobExt: config.blobExt ?? 'bin',
-    textColumn: config.textColumn ?? null,
     vectorColumn: config.vectorColumn ?? null,
     searchLimit: config.searchLimit ?? 10,
     maxRows: config.maxRows ?? 1000,

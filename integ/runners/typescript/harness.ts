@@ -172,7 +172,6 @@ export interface Case {
   command: string
   flags?: string[]
   check?: StatCheck
-  provision?: boolean
   clear_cache?: boolean
   // A scenario selector, not a config value: a case names the read policy
   // its two workspaces run under. `ttl` rides beside it because `bounded`
@@ -199,19 +198,6 @@ export interface Case {
 export type ScenarioStep =
   | { mutate: { path: string; content: string } | { command: string } }
   | { command: string }
-
-export interface ProvisionInfo {
-  networkRead: number | string
-  networkWrite: number | string
-  cacheRead: number | string
-  readOps: number
-  cacheHits: number
-  precision: string
-}
-
-interface ProvisionExec {
-  shell(cmd: string, opts: { provision: true }): Promise<ProvisionInfo>
-}
 
 export interface ExplainRow {
   exitCode: number
@@ -639,14 +625,6 @@ export async function statCheck(ws: ExecWorkspace, check: StatCheck): Promise<st
   return (check.fields ?? []).map((name) => checkField(st, name)).join(' ') + '\n'
 }
 
-function provisionLine(r: ProvisionInfo): string {
-  return (
-    `net=${r.networkRead} write=${r.networkWrite} ` +
-    `cache=${r.cacheRead} ops=${String(r.readOps)} ` +
-    `hits=${String(r.cacheHits)} precision=${r.precision}`
-  )
-}
-
 /**
  * Substitute {mount} in a case with a target's primary mount path.
  *
@@ -844,17 +822,6 @@ export async function runCase(
     for (const m of ws.mounts()) await m.indexStore.clear()
   }
   const start = performance.now()
-  if (c.provision === true) {
-    const plan = await (ws as unknown as ProvisionExec).shell(c.command, { provision: true })
-    return {
-      exitCode: 0,
-      out: provisionLine(plan) + '\n',
-      err: '',
-      elapsed: (performance.now() - start) / 1000,
-      checkOut: null,
-      notes: [],
-    }
-  }
   if (c.answer !== undefined) await answerDecisions(ws, c.answer)
   const checks = reasons.length > 0 && c.explain_blind === undefined
   let predicted: [number, string] | null = null

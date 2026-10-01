@@ -363,6 +363,13 @@ export function treeHasEmpty(node: PredNode): boolean {
   return false
 }
 
+export function treeHasMtime(node: PredNode): boolean {
+  if (node.op === 'mtime') return true
+  if (node.op === 'not') return treeHasMtime(node.kid)
+  if (node.op === 'and' || node.op === 'or') return node.kids.some(treeHasMtime)
+  return false
+}
+
 // Whether `find` reports the entry. With no action in the tree the rows are
 // the entries the whole expression holds for, GNU's implicit `-print`. With
 // one, they are the entries an action reached: `-path ./skip -prune -o -type

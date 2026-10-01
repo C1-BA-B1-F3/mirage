@@ -30,66 +30,74 @@ from mirage.commands.cli.builtin.git.diff_output import commit_summary
 from mirage.version import __version__
 from tests.commands.cli.builtin.git.conftest import mounted
 
-FIXTURE = Path(__file__).resolve().parents[6] / 'integ/fixtures/git'
-FORMS = json.loads((FIXTURE / 'read-only.json').read_text())
+FIXTURE = Path(__file__).resolve().parents[6] / "integ/fixtures/git"
+FORMS = json.loads((FIXTURE / "read-only.json").read_text())
 ENV = {
-    **os.environ, 'LC_ALL': 'C',
-    'LANG': 'C',
-    'GIT_CONFIG_GLOBAL': '/dev/null',
-    'GIT_CONFIG_NOSYSTEM': '1'
+    **os.environ,
+    "LC_ALL": "C",
+    "LANG": "C",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
 }
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def readonly_repo(tmp_path_factory):
-    path = tmp_path_factory.mktemp('readonly')
-    subprocess.run(['bash', str(FIXTURE / 'read-only.sh'),
-                    str(path)],
-                   check=True,
-                   env=ENV)
+    path = tmp_path_factory.mktemp("readonly")
+    subprocess.run(
+        ["bash", str(FIXTURE / "read-only.sh"), str(path)], check=True, env=ENV
+    )
     return path
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('form', FORMS)
+@pytest.mark.parametrize("form", FORMS)
 async def test_native_git(readonly_repo, form):
     native = subprocess.run(
-        ['git', '-C', str(readonly_repo), *shlex.split(form)],
+        ["git", "-C", str(readonly_repo), *shlex.split(form)],
         capture_output=True,
-        env=ENV)
+        env=ENV,
+    )
     with mounted(readonly_repo) as ws:
-        ws.register_cli('git', GIT)
-        got = await ws.shell('git -C /repo ' + form)
-    assert (got.exit_code, got.stdout or b'', got.stderr
-            or b'') == (native.returncode, native.stdout, native.stderr)
+        ws.register_cli("git", GIT)
+        got = await ws.shell("git -C /repo " + form)
+    assert (got.exit_code, got.stdout or b"", got.stderr or b"") == (
+        native.returncode,
+        native.stdout,
+        native.stderr,
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('form', ['--version', 'version', '-v'])
+@pytest.mark.parametrize("form", ["--version", "version", "-v"])
 async def test_version_without_repository(git_ws, form):
-    result = await git_ws.shell('git ' + form)
+    result = await git_ws.shell("git " + form)
     assert result.exit_code == 0
     assert result.stdout == f"git version {__version__} (Mirage)\n".encode()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('flag', ['', '--find-renames', '--no-renames'])
+@pytest.mark.parametrize("flag", ["", "--find-renames", "--no-renames"])
 async def test_rename_config(readonly_repo, tmp_path, flag):
-    path = tmp_path / 'repo'
+    path = tmp_path / "repo"
     shutil.copytree(readonly_repo, path)
-    subprocess.run(['git', '-C',
-                    str(path), 'config', 'diff.renames', 'false'],
-                   check=True)
-    form = f'show --format= --name-status {flag} HEAD~2'
+    subprocess.run(
+        ["git", "-C", str(path), "config", "diff.renames", "false"], check=True
+    )
+    form = f"show --format= --name-status {flag} HEAD~2"
     native = subprocess.run(
-        ['git', '-C', str(path), *shlex.split(form)],
+        ["git", "-C", str(path), *shlex.split(form)],
         capture_output=True,
-        env=ENV)
+        env=ENV,
+    )
     with mounted(path) as ws:
-        ws.register_cli('git', GIT)
-        got = await ws.shell('git -C /repo ' + form)
-    assert (got.exit_code, got.stdout or b'', got.stderr
-            or b'') == (native.returncode, native.stdout, native.stderr)
+        ws.register_cli("git", GIT)
+        got = await ws.shell("git -C /repo " + form)
+    assert (got.exit_code, got.stdout or b"", got.stderr or b"") == (
+        native.returncode,
+        native.stdout,
+        native.stderr,
+    )
 
 
 MODE = 0o100644
@@ -115,20 +123,21 @@ def repo_with(*contents: bytes) -> tuple[BaseRepo, list[bytes]]:
 # file but zero lines, and in a mixed commit the untouched deletions
 # clause drops off the line.
 def test_commit_summary_counts_a_binary_file_but_no_lines():
-    repo, (bin_id, ) = repo_with(b"A\x00B\x00C")
-    assert commit_summary(
-        repo, {}, {b"blob.bin": (MODE, bin_id)
-                   }) == (b" 1 file changed, 0 insertions(+), 0 deletions(-)\n"
-                          b" create mode 100644 blob.bin\n")
+    repo, (bin_id,) = repo_with(b"A\x00B\x00C")
+    assert commit_summary(repo, {}, {b"blob.bin": (MODE, bin_id)}) == (
+        b" 1 file changed, 0 insertions(+), 0 deletions(-)\n"
+        b" create mode 100644 blob.bin\n"
+    )
 
 
 def test_commit_summary_mixes_binary_files_and_text_lines_like_git():
     repo, (txt, bin_id) = repo_with(b"x\ny\nz\n", b"DIFFERENT\x00BYTES")
     after = {b"text.txt": (MODE, txt), b"blob.bin": (MODE, bin_id)}
-    assert commit_summary(repo, {},
-                          after) == (b" 2 files changed, 3 insertions(+)\n"
-                                     b" create mode 100644 blob.bin\n"
-                                     b" create mode 100644 text.txt\n")
+    assert commit_summary(repo, {}, after) == (
+        b" 2 files changed, 3 insertions(+)\n"
+        b" create mode 100644 blob.bin\n"
+        b" create mode 100644 text.txt\n"
+    )
 
 
 def test_commit_summary_orders_every_line_by_path():
@@ -137,9 +146,10 @@ def test_commit_summary_orders_every_line_by_path():
     after = {
         b"a": (EXECUTABLE, two),
         b"c": (MODE, one),
-        b"z": (EXECUTABLE, two)
+        b"z": (EXECUTABLE, two),
     }
     assert commit_summary(repo, before, after).splitlines()[1:] == [
-        b" create mode 100755 a", b" rename b => c (100%)",
-        b" mode change 100644 => 100755 z"
+        b" create mode 100755 a",
+        b" rename b => c (100%)",
+        b" mode change 100644 => 100755 z",
     ]

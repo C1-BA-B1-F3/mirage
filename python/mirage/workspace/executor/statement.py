@@ -20,8 +20,13 @@ from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.console import Channel, JobConsole
-from mirage.shell.descriptors import (Inherited, Recorder, StreamOwner,
-                                      deliver, unreadable_stdin)
+from mirage.shell.descriptors import (
+    Inherited,
+    Recorder,
+    StreamOwner,
+    deliver,
+    unreadable_stdin,
+)
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import TSNodeLike
 from mirage.utils.errors import format_fs_error
@@ -30,10 +35,9 @@ from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
 
-def record_status(session: SessionState,
-                  code: int,
-                  *,
-                  transparent: bool = False) -> None:
+def record_status(
+    session: SessionState, code: int, *, transparent: bool = False
+) -> None:
     """Record a finished statement's exit status: ``$?`` and
     ``${PIPESTATUS[@]}`` together.
 
@@ -63,7 +67,7 @@ def record_status(session: SessionState,
     if pending is not None:
         session.pipe_status = pending
     elif not transparent:
-        session.pipe_status = (code, )
+        session.pipe_status = (code,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +92,7 @@ class StatusSnapshot:
         pipe_status_pending (tuple[int, ...] | None): statuses a
             pipeline parked for the enclosing boundary.
     """
+
     last_exit_code: int
     pipe_status: tuple[int, ...]
     pipe_status_pending: tuple[int, ...] | None
@@ -99,12 +104,18 @@ def snapshot_status(session: SessionState) -> StatusSnapshot:
     Args:
         session (SessionState): shell session whose status is captured.
     """
-    return StatusSnapshot(session.last_exit_code, session.pipe_status,
-                          session._pipe_status_pending)
+    return StatusSnapshot(
+        session.last_exit_code,
+        session.pipe_status,
+        session._pipe_status_pending,
+    )
 
 
-def restore_status(session: SessionState, snapshot: StatusSnapshot,
-                   writer: StatusWriter | None) -> None:
+def restore_status(
+    session: SessionState,
+    snapshot: StatusSnapshot,
+    writer: StatusWriter | None,
+) -> None:
     """Put back the status a line found, for a line the caller aborted.
 
     Statements inside the line may already have stamped their own
@@ -187,14 +198,17 @@ async def finish_statement(
     except OSError as exc:
         await failed_read(io, exc, exec_node)
         result = None
-    record_status(session,
-                  io.exit_code,
-                  transparent=node is not None and pipeline_transparent(node))
+    record_status(
+        session,
+        io.exit_code,
+        transparent=node is not None and pipeline_transparent(node),
+    )
     return result
 
 
-async def failed_read(io: IOResult, exc: OSError,
-                      exec_node: ExecutionNode | None) -> None:
+async def failed_read(
+    io: IOResult, exc: OSError, exec_node: ExecutionNode | None
+) -> None:
     """A read the statement's output stream failed, as its own failure:
     ``cat: -: Bad file descriptor`` on its stderr and status.
 
@@ -278,9 +292,13 @@ def assignment_status(session: SessionState, seq_before: int) -> int:
 Written = tuple[Channel, bytes, bool]
 
 
-async def statement_output(recorder: Recorder, stdout: ByteSource | None,
-                           io: IOResult, own: StreamOwner | None,
-                           sink: JobConsole | None) -> list[Written]:
+async def statement_output(
+    recorder: Recorder,
+    stdout: ByteSource | None,
+    io: IOResult,
+    own: StreamOwner | None,
+    sink: JobConsole | None,
+) -> list[Written]:
     """What a statement wrote that stays with the shell running it.
 
     Bytes written to the shell's terminal through a copy (``exec 3>&1``,
@@ -312,9 +330,12 @@ async def statement_output(recorder: Recorder, stdout: ByteSource | None,
     return written
 
 
-async def land(written: list[Written], sink: JobConsole | None,
-               all_stdout: list[ByteSource | None],
-               merged_io: IOResult) -> IOResult:
+async def land(
+    written: list[Written],
+    sink: JobConsole | None,
+    all_stdout: list[ByteSource | None],
+    merged_io: IOResult,
+) -> IOResult:
     """Put a statement's output where its shell's goes: the sink, in
     order, or the stdout and stderr the shell returns.
 
@@ -332,5 +353,6 @@ async def land(written: list[Written], sink: JobConsole | None,
     if stdout:
         all_stdout.append(stdout)
     stderr = b"".join(d for c, d, _ in written if c == Channel.STDERR)
-    return await merged_io.merge(IOResult(
-        stderr=stderr)) if stderr else merged_io
+    return (
+        await merged_io.merge(IOResult(stderr=stderr)) if stderr else merged_io
+    )

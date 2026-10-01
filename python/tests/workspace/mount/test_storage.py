@@ -22,9 +22,11 @@ from mirage.workspace.mount.storage import make_storage_key
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] or "/",
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path=virtual.strip("/"),
+    )
 
 
 def _key(mounts: dict):
@@ -85,10 +87,12 @@ def test_nested_disk_roots_resolve_to_one_key(tmp_path):
     root = tmp_path / "data"
     sub = root / "sub"
     sub.mkdir(parents=True)
-    key = _key({
-        "/a/": DiskVFS(root=str(root)),
-        "/b/": DiskVFS(root=str(sub)),
-    })
+    key = _key(
+        {
+            "/a/": DiskVFS(root=str(root)),
+            "/b/": DiskVFS(root=str(sub)),
+        }
+    )
     assert key(_spec("/a/sub/x.txt")) == key(_spec("/b/x.txt"))
 
 
@@ -98,10 +102,12 @@ def test_nested_roots_do_not_collide_on_a_sibling(tmp_path):
     sibling = tmp_path / "dataX"
     root.mkdir()
     sibling.mkdir()
-    key = _key({
-        "/a/": DiskVFS(root=str(root)),
-        "/b/": DiskVFS(root=str(sibling)),
-    })
+    key = _key(
+        {
+            "/a/": DiskVFS(root=str(root)),
+            "/b/": DiskVFS(root=str(sibling)),
+        }
+    )
     assert key(_spec("/a/y.txt")) != key(_spec("/b/y.txt"))
 
 
@@ -113,7 +119,6 @@ def test_path_outside_every_mount_falls_back_to_itself():
     """
 
     class _NoMounts:
-
         def try_mount_for(self, path: str):
             return None
 
@@ -124,10 +129,9 @@ def test_path_outside_every_mount_falls_back_to_itself():
 def test_aliased_mounts_refuse_the_move_that_used_to_lose_the_file():
     """End to end: the #154 repro must keep the bytes."""
     shared = RAMVFS()
-    ws = Workspace({
-        "/m1/": (shared, MountMode.WRITE),
-        "/m2/": (shared, MountMode.WRITE)
-    })
+    ws = Workspace(
+        {"/m1/": (shared, MountMode.WRITE), "/m2/": (shared, MountMode.WRITE)}
+    )
 
     async def _run():
         await ws.shell("sh -c 'echo precious > /m1/x.txt'")

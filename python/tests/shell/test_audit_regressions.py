@@ -30,7 +30,8 @@ def test_subshell_isolates_shell_options(shell):
 
 def test_function_prefix_is_restored_after_the_call(shell):
     out = shell.mirage(
-        'f() { echo "FOO=$FOO"; }; FOO=bar f; echo "after=$FOO"')
+        'f() { echo "FOO=$FOO"; }; FOO=bar f; echo "after=$FOO"'
+    )
     assert out == "FOO=bar\nafter=\n"
 
 

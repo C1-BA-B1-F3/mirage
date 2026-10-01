@@ -16,8 +16,12 @@ import asyncio
 import stat
 import time
 
-from dulwich.diff_tree import (CHANGE_ADD, CHANGE_DELETE, CHANGE_MODIFY,
-                               tree_changes)
+from dulwich.diff_tree import (
+    CHANGE_ADD,
+    CHANGE_DELETE,
+    CHANGE_MODIFY,
+    tree_changes,
+)
 from dulwich.objects import Blob, Commit, ObjectID, Tree
 from dulwich.refs import Ref
 from dulwich.repo import Repo
@@ -69,8 +73,13 @@ def _read_tree(repo: Repo, oid: bytes, prefix: str = "") -> dict[str, bytes]:
     return out
 
 
-def _commit(repo: Repo, tree_oid: bytes, parents: list[bytes], branch: str,
-            message: str) -> bytes:
+def _commit(
+    repo: Repo,
+    tree_oid: bytes,
+    parents: list[bytes],
+    branch: str,
+    message: str,
+) -> bytes:
     commit = Commit()
     commit.tree = tree_oid
     commit.parents = [ObjectID(p) for p in parents]
@@ -86,8 +95,9 @@ def _commit(repo: Repo, tree_oid: bytes, parents: list[bytes], branch: str,
     if expected_old is None:
         ok = repo.refs.add_if_new(ref, ObjectID(commit.id))
     else:
-        ok = repo.refs.set_if_equals(ref, ObjectID(expected_old),
-                                     ObjectID(commit.id))
+        ok = repo.refs.set_if_equals(
+            ref, ObjectID(expected_old), ObjectID(commit.id)
+        )
     if not ok:
         raise HeadMovedError(branch)
     repo.refs.set_symbolic_ref(Ref(b"HEAD"), ref)
@@ -111,7 +121,8 @@ def _read_commit(repo: Repo, oid: bytes) -> Commit:
 def _branches(repo: Repo) -> list[str]:
     prefix = b"refs/heads/"
     names = [
-        name[len(prefix):].decode() for name in repo.get_refs()
+        name[len(prefix) :].decode()
+        for name in repo.get_refs()
         if name.startswith(prefix)
     ]
     return sorted(names)
@@ -126,8 +137,9 @@ def _diff(repo: Repo, tree_a: bytes, tree_b: bytes) -> dict[str, list[str]]:
     added: list[str] = []
     modified: list[str] = []
     deleted: list[str] = []
-    for change in tree_changes(repo.object_store, ObjectID(tree_a),
-                               ObjectID(tree_b)):
+    for change in tree_changes(
+        repo.object_store, ObjectID(tree_a), ObjectID(tree_b)
+    ):
         if change.type == CHANGE_ADD and change.new is not None:
             added.append(change.new.path.decode())
         elif change.type == CHANGE_DELETE and change.old is not None:
@@ -142,13 +154,13 @@ def _diff(repo: Repo, tree_a: bytes, tree_b: bytes) -> dict[str, list[str]]:
 
 
 class VersionStore:
-
     def __init__(self, repo: Repo) -> None:
         self._repo = repo
 
     @classmethod
-    async def open(cls, backend: VersionBackend,
-                   workspace_id: str) -> "VersionStore":
+    async def open(
+        cls, backend: VersionBackend, workspace_id: str
+    ) -> "VersionStore":
         repo = await asyncio.to_thread(backend.open_repo, workspace_id)
         return cls(repo)
 
@@ -164,10 +176,12 @@ class VersionStore:
     async def read_tree(self, oid: bytes) -> dict[str, bytes]:
         return await asyncio.to_thread(_read_tree, self._repo, oid)
 
-    async def commit(self, tree_oid: bytes, parents: list[bytes], branch: str,
-                     message: str) -> bytes:
-        return await asyncio.to_thread(_commit, self._repo, tree_oid, parents,
-                                       branch, message)
+    async def commit(
+        self, tree_oid: bytes, parents: list[bytes], branch: str, message: str
+    ) -> bytes:
+        return await asyncio.to_thread(
+            _commit, self._repo, tree_oid, parents, branch, message
+        )
 
     async def head(self, branch: str) -> bytes:
         return await asyncio.to_thread(_head, self._repo, branch)

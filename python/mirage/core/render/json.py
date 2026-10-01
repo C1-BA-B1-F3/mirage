@@ -96,12 +96,15 @@ def number_text(value: float) -> str:
 
 def _compact_value_text(value: Any) -> str:
     if isinstance(value, dict):
-        items = (f"{compact_json_text(str(key))}:{_compact_value_text(item)}"
-                 for key, item in value.items())
+        items = (
+            f"{compact_json_text(str(key))}:{_compact_value_text(item)}"
+            for key, item in value.items()
+        )
         return "{" + ",".join(items) + "}"
     if isinstance(value, list):
-        return "[" + ",".join(_compact_value_text(item)
-                              for item in value) + "]"
+        return (
+            "[" + ",".join(_compact_value_text(item) for item in value) + "]"
+        )
     if isinstance(value, float):
         return number_text(value)
     return compact_json_text(value)

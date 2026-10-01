@@ -1,8 +1,13 @@
 import pytest
 
-from mirage.commands.builtin.utils.identity import (NO_IDENTITY, Identity,
-                                                    group_name, identity_from,
-                                                    identity_of, owner_name)
+from mirage.commands.builtin.utils.identity import (
+    NO_IDENTITY,
+    Identity,
+    group_name,
+    identity_from,
+    identity_of,
+    owner_name,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import materialize
 from mirage.ops.types import NamespaceView
@@ -33,7 +38,8 @@ def test_identity_reads_the_name_plane_and_the_session_plane():
     assert identity_from(ns, view) == Identity(user="alice", profile="admin")
     assert identity_from(None, None) == NO_IDENTITY
     assert identity_of(CommandOpts(ns=ns, session_view=view)) == Identity(
-        user="alice", profile="admin")
+        user="alice", profile="admin"
+    )
     assert identity_of(CommandOpts()) == NO_IDENTITY
 
 
@@ -46,16 +52,16 @@ async def _run(ws: Workspace, line: str) -> tuple[int, str]:
 def _ws(**kwargs) -> Workspace:
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello"
-    return Workspace({"/data/": (vfs, MountMode.WRITE)},
-                     mode=MountMode.WRITE,
-                     **kwargs)
+    return Workspace(
+        {"/data/": (vfs, MountMode.WRITE)}, mode=MountMode.WRITE, **kwargs
+    )
 
 
 @pytest.mark.asyncio
 async def test_ls_stat_and_find_render_user_and_profile():
-    ws = _ws(agent_id="alice",
-             profiles={"admin": SessionProfile()},
-             profile="admin")
+    ws = _ws(
+        agent_id="alice", profiles={"admin": SessionProfile()}, profile="admin"
+    )
     _, ls_out = await _run(ws, "ls -l /data/f.txt")
     assert ls_out == "-rw-r--r-- 1 alice admin 5 - /data/f.txt\n"
     _, stat_out = await _run(ws, 'stat -c "%U %G" /data/f.txt')
@@ -77,11 +83,10 @@ async def test_missing_user_or_profile_renders_as_dash():
 
 @pytest.mark.asyncio
 async def test_a_named_session_reports_its_own_profile():
-    ws = _ws(agent_id="alice",
-             profiles={
-                 "default": SessionProfile(),
-                 "reviewer": SessionProfile()
-             })
+    ws = _ws(
+        agent_id="alice",
+        profiles={"default": SessionProfile(), "reviewer": SessionProfile()},
+    )
     _, own = await _run(ws, 'stat -c "%G" /data/f.txt')
     assert own == "default\n"
     ws.create_session("r1", profile="reviewer")

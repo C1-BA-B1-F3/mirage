@@ -121,8 +121,11 @@ def test_plus_flag_is_an_option_word_not_an_operand(shell):
 
 def test_plus_o_is_an_option_word_not_an_operand(shell):
     shell.create_file("run.sh", b"echo hi\n")
-    assert shell.mirage_result("bash +o xtrace /data/run.sh") == (0, "hi\n",
-                                                                  "")
+    assert shell.mirage_result("bash +o xtrace /data/run.sh") == (
+        0,
+        "hi\n",
+        "",
+    )
 
 
 def test_single_dash_ends_option_parsing(shell):
@@ -164,15 +167,18 @@ def test_nested_shell_does_not_leak_an_export(shell):
 def test_nested_shell_options_do_not_leak_into_the_caller(shell):
     shell.create_file("opt.sh", b"set -f\n")
     shell.create_file("a.txt", b"x\n")
-    assert shell.mirage(
-        "bash /data/opt.sh; echo /data/*.txt") == "/data/a.txt\n"
+    assert (
+        shell.mirage("bash /data/opt.sh; echo /data/*.txt") == "/data/a.txt\n"
+    )
 
 
 def test_sourced_shell_options_stay_set_in_the_caller(shell):
     shell.create_file("opt.sh", b"set -f\n")
     shell.create_file("a.txt", b"x\n")
-    assert shell.mirage(
-        "source /data/opt.sh; echo /data/*.txt") == "/data/*.txt\n"
+    assert (
+        shell.mirage("source /data/opt.sh; echo /data/*.txt")
+        == "/data/*.txt\n"
+    )
 
 
 def test_source_reports_a_missing_file_as_typed(shell):
@@ -190,8 +196,10 @@ def test_source_reports_a_directory_operand(shell):
 
 def test_source_with_no_operand_is_a_usage_error(shell):
     code, out, err = shell.mirage_result("source; echo after=$?")
-    assert err == ("source: filename argument required\n"
-                   "source: usage: source filename [arguments]\n")
+    assert err == (
+        "source: filename argument required\n"
+        "source: usage: source filename [arguments]\n"
+    )
     assert out == "after=2\n"
     assert code == 0
 
@@ -200,7 +208,8 @@ def test_source_with_no_operand_is_a_usage_error(shell):
 def test_script_operand_follows_a_symlink(shell, head):
     shell.create_file("run.sh", b"echo hi\n")
     out = shell.mirage(
-        f"ln -s /data/run.sh /data/link.sh; {head} /data/link.sh")
+        f"ln -s /data/run.sh /data/link.sh; {head} /data/link.sh"
+    )
     assert out == "hi\n"
 
 
@@ -211,7 +220,8 @@ def test_script_operand_follows_a_relative_symlink(shell):
 
 def test_broken_symlink_operand_reports_the_link(shell):
     code, _, err = shell.mirage_result(
-        "ln -s /data/gone.sh /data/dead.sh; sh /data/dead.sh")
+        "ln -s /data/gone.sh /data/dead.sh; sh /data/dead.sh"
+    )
     assert err == "sh: /data/dead.sh: No such file or directory\n"
     assert code == 127
 
@@ -221,8 +231,9 @@ def test_return_in_a_child_shell_is_invalid_even_when_sourced(shell):
     shell.create_file("lib.sh", b"bash /data/child.sh\necho after=$?\n")
     code, out, err = shell.mirage_result("source /data/lib.sh; echo done")
     assert out == "child-after\nafter=0\ndone\n"
-    assert err == ("return: can only `return' from a function or "
-                   "sourced script\n")
+    assert err == (
+        "return: can only `return' from a function or sourced script\n"
+    )
     assert code == 0
 
 

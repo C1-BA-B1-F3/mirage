@@ -16,7 +16,8 @@ APPLE_CONTAINER_CLI_HINT = (
     "the apple_container runtime needs Apple's container CLI on PATH "
     "(`brew install container`, or the installer from "
     "https://github.com/apple/container/releases); it runs on Apple "
-    "silicon with macOS 26 or later")
+    "silicon with macOS 26 or later"
+)
 
 # `container inspect` reports RuntimeStatus's raw value: unknown,
 # stopped, running or stopping. Only "running" can take a line; a
@@ -24,10 +25,11 @@ APPLE_CONTAINER_CLI_HINT = (
 RUNNING_STATE = "running"
 
 STATE_HINTS: dict[str, str] = {
-    "stopped":
-    "it is stopped; start it with `container start {container}`",
-    "stopping": ("it is shutting down; once it stops, start it again with "
-                 "`container start {container}`"),
+    "stopped": "it is stopped; start it with `container start {container}`",
+    "stopping": (
+        "it is shutting down; once it stops, start it again with "
+        "`container start {container}`"
+    ),
 }
 
 # Every argv runs under this POSIX sh prelude, with the cwd as $1 and
@@ -48,8 +50,10 @@ def no_container_hint(session_id: str | None) -> str:
         session_id (str | None): the line's session, None outside one.
     """
     session = session_id if session_id is not None else "(none)"
-    return (f"apple_container has no container for session {session}: "
-            "list it under containers or set container")
+    return (
+        f"apple_container has no container for session {session}: "
+        "list it under containers or set container"
+    )
 
 
 def not_running_hint(container: str, state: str) -> str:

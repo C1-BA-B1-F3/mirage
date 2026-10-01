@@ -21,6 +21,7 @@ from mirage import MountMode, Workspace
 from mirage.config import load_config
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
+from mirage.workspace.mount import MountEntry
 
 _fail = 0
 
@@ -39,20 +40,26 @@ async def _out(ws: Workspace, cmd: str, stdin: bytes | None = None) -> str:
     return await res.stdout_str()
 
 
+def _root(ws: Workspace) -> MountEntry | None:
+    return next((m for m in ws.mounts() if m.prefix == "/"), None)
+
+
 async def default_root_is_ram() -> None:
     ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
-    root = ws._registry.root_mount
-    check("default: root mounted at /", root is not None
-          and root.prefix == "/")
-    check("default: root backed by ram", type(root.vfs).__name__ == "RAMVFS")
-    check("default: root is a normal mount entry", root
-          in ws._registry.mounts())
+    root = _root(ws)
+    check("default: root is a normal mount entry at /", root is not None)
+    check(
+        "default: root backed by ram",
+        root is not None and isinstance(root.vfs, RAMVFS),
+    )
     ls = await _out(ws, "ls /")
     check("default: ls / lists child mounts", "data" in ls and "dev" in ls)
     check("default: ls / hides dotfile mounts", ".bash_history" not in ls)
     await ws.shell("echo scratch > /note.txt")
-    check("default: write to unmounted / lands on root scratch",
-          (await _out(ws, "cat /note.txt")).strip() == "scratch")
+    check(
+        "default: write to unmounted / lands on root scratch",
+        (await _out(ws, "cat /note.txt")).strip() == "scratch",
+    )
     wc = await _out(ws, "wc -c", stdin=b"abcd")
     check("default: arg-less command resolves at root", wc.strip() == "4")
     await ws.close()
@@ -60,74 +67,85 @@ async def default_root_is_ram() -> None:
 
 async def ram_root_override() -> None:
     ws = Workspace({"/": RAMVFS(), "/sub/": RAMVFS()}, mode=MountMode.WRITE)
-    root = ws._registry.root_mount
     check(
-        "ram-root: / is the user mount (not duplicated)", root is not None
-        and root.prefix == "/"
-        and len([m for m in ws._registry.mounts() if m.prefix == "/"]) == 1)
+        "ram-root: / is the user mount (not duplicated)",
+        len([m for m in ws.mounts() if m.prefix == "/"]) == 1,
+    )
     await ws.shell("echo hi > /top.txt")
     await ws.shell("echo deep > /sub/inner.txt")
-    check("ram-root: read file written at root",
-          (await _out(ws, "cat /top.txt")).strip() == "hi")
+    check(
+        "ram-root: read file written at root",
+        (await _out(ws, "cat /top.txt")).strip() == "hi",
+    )
     ls = await _out(ws, "ls /")
-    check("ram-root: ls / shows root file and child mount", "top.txt" in ls
-          and "sub" in ls)
-    check("ram-root: read through child mount",
-          (await _out(ws, "cat /sub/inner.txt")).strip() == "deep")
+    check(
+        "ram-root: ls / shows root file and child mount",
+        "top.txt" in ls and "sub" in ls,
+    )
+    check(
+        "ram-root: read through child mount",
+        (await _out(ws, "cat /sub/inner.txt")).strip() == "deep",
+    )
     await ws.close()
 
 
 async def disk_root_override() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ws = Workspace({"/": DiskVFS(root=tmp)}, mode=MountMode.WRITE)
-        root = ws._registry.root_mount
-        check("disk-root: root backed by disk",
-              type(root.vfs).__name__ == "DiskVFS")
+        root = _root(ws)
+        check(
+            "disk-root: root backed by disk",
+            root is not None and isinstance(root.vfs, DiskVFS),
+        )
         await ws.shell("echo persisted > /file.txt")
-        check("disk-root: read file back through root",
-              (await _out(ws, "cat /file.txt")).strip() == "persisted")
+        check(
+            "disk-root: read file back through root",
+            (await _out(ws, "cat /file.txt")).strip() == "persisted",
+        )
         on_disk = os.path.join(tmp, "file.txt")
-        check("disk-root: write at / persisted to the real disk path",
-              os.path.exists(on_disk))
+        check(
+            "disk-root: write at / persisted to the real disk path",
+            os.path.exists(on_disk),
+        )
         if os.path.exists(on_disk):
             with open(on_disk) as f:
-                check("disk-root: on-disk content matches",
-                      f.read().strip() == "persisted")
+                check(
+                    "disk-root: on-disk content matches",
+                    f.read().strip() == "persisted",
+                )
         await ws.close()
 
 
 async def yaml_controls_root() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         cfg = load_config(
-            {"mounts": {
-                "/": {
-                    "vfs": "disk",
-                    "config": {
-                        "root": tmp
-                    }
-                }
-            }})
+            {"mounts": {"/": {"vfs": "disk", "config": {"root": tmp}}}}
+        )
         kwargs = cfg.to_workspace_kwargs()
         check("yaml: '/' mount present in mounts", "/" in kwargs["mounts"])
         ws = Workspace(**kwargs)
-        root = ws._registry.root_mount
-        check("yaml: root overridden to disk via config",
-              type(root.vfs).__name__ == "DiskVFS")
+        root = _root(ws)
+        check(
+            "yaml: root overridden to disk via config",
+            root is not None and isinstance(root.vfs, DiskVFS),
+        )
         await ws.shell("echo fromyaml > /y.txt")
-        check("yaml: write at / persisted to disk",
-              os.path.exists(os.path.join(tmp, "y.txt")))
+        check(
+            "yaml: write at / persisted to disk",
+            os.path.exists(os.path.join(tmp, "y.txt")),
+        )
         await ws.close()
 
-    ws = Workspace(**load_config({
-        "mounts": {
-            "/data": {
-                "vfs": "ram"
-            }
-        }
-    }).to_workspace_kwargs())
-    root = ws._registry.root_mount
-    check("yaml: no '/' mount falls back to ram root",
-          type(root.vfs).__name__ == "RAMVFS")
+    ws = Workspace(
+        **load_config(
+            {"mounts": {"/data": {"vfs": "ram"}}}
+        ).to_workspace_kwargs()
+    )
+    root = _root(ws)
+    check(
+        "yaml: no '/' mount falls back to ram root",
+        root is not None and isinstance(root.vfs, RAMVFS),
+    )
     await ws.close()
 
 

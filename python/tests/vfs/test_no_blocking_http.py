@@ -34,13 +34,11 @@ def _imported_blocking_names(tree: ast.Module) -> set[str]:
         if isinstance(node, ast.ImportFrom):
             banned = BLOCKING.get(node.module or "", set())
             found |= {
-                a.asname or a.name
-                for a in node.names if a.name in banned
+                a.asname or a.name for a in node.names if a.name in banned
             }
         elif isinstance(node, ast.Import):
             found |= {
-                a.asname or a.name
-                for a in node.names if a.name in BLOCKING
+                a.asname or a.name for a in node.names if a.name in BLOCKING
             }
     return found
 
@@ -59,5 +57,6 @@ def test_no_blocking_http_client_in_the_package() -> None:
             offenders.append(f"{rel}: {', '.join(sorted(names))}")
     assert offenders == [], (
         "blocking HTTP client imported under mirage/; use aiohttp and do "
-        "the call in an async factory (BaseVFS.build) instead:\n  " +
-        "\n  ".join(offenders))
+        "the call in an async factory (BaseVFS.build) instead:\n  "
+        + "\n  ".join(offenders)
+    )

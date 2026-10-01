@@ -27,12 +27,20 @@ export interface DmmfField {
   type: string
   relationName?: string | null
   relationFromFields?: readonly string[] | null
+  isId?: boolean
+  default?:
+    | { readonly name: string }
+    | string
+    | number
+    | boolean
+    | readonly (string | number | boolean)[]
 }
 
 export interface DmmfModel {
   name: string
   dbName?: string | null
   fields: readonly DmmfField[]
+  primaryKey?: { fields: readonly string[] } | null
 }
 
 export interface Dmmf {

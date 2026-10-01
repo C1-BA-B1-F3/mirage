@@ -39,60 +39,79 @@ def validate_cli(node: "CLISpec") -> None:
     """
     if not node.name or any(ch.isspace() for ch in node.name):
         raise ValueError(
-            f"cli name {node.name!r} must be a single non-empty word")
+            f"cli name {node.name!r} must be a single non-empty word"
+        )
     for alias in node.aliases:
         if not alias or any(ch.isspace() for ch in alias):
-            raise ValueError(f"cli {node.name!r}: alias {alias!r} must be "
-                             f"a single non-empty word")
+            raise ValueError(
+                f"cli {node.name!r}: alias {alias!r} must be "
+                f"a single non-empty word"
+            )
     if node.script is not None and node.fn is not None:
         raise ValueError(
-            f"cli {node.name!r}: a node takes fn or script, not both")
+            f"cli {node.name!r}: a node takes fn or script, not both"
+        )
     if node.script is not None and node.subcommands:
         raise ValueError(
             f"cli {node.name!r}: a script serves the whole program; "
-            f"subcommands belong to fn trees")
+            f"subcommands belong to fn trees"
+        )
     if node.script is not None and node.config_model is not None:
-        raise ValueError(f"cli {node.name!r}: script config is opaque; it "
-                         f"cannot declare config_model")
+        raise ValueError(
+            f"cli {node.name!r}: script config is opaque; it "
+            f"cannot declare config_model"
+        )
     if node.runtime is not None and node.script is None:
-        raise ValueError(f"cli {node.name!r}: runtime names the entry that "
-                         f"runs script; it takes script")
+        raise ValueError(
+            f"cli {node.name!r}: runtime names the entry that "
+            f"runs script; it takes script"
+        )
     if node.fn is not None and node.subcommands:
         raise ValueError(
-            f"cli {node.name!r}: a node takes fn or subcommands, not both")
+            f"cli {node.name!r}: a node takes fn or subcommands, not both"
+        )
     if node.fn is None and not node.subcommands and node.script is None:
         raise ValueError(
-            f"cli {node.name!r}: a node needs fn, subcommands, or script")
+            f"cli {node.name!r}: a node needs fn, subcommands, or script"
+        )
     if node.subcommands and (node.positional or node.rest is not None):
         raise ValueError(
             f"cli {node.name!r}: a group's operand is its subcommand "
-            f"word; positional/rest belong on leaves")
+            f"word; positional/rest belong on leaves"
+        )
     compiled = compile_spec(node)
     # Names and aliases share one sibling namespace (argparse refuses a
     # conflicting subparser alias the same way).
     seen: set[str] = set()
     for child in node.subcommands:
-        for word in (child.name, ) + child.aliases:
+        for word in (child.name,) + child.aliases:
             if word in seen:
-                raise ValueError(f"cli {node.name!r}: duplicate subcommand "
-                                 f"{word!r}")
+                raise ValueError(
+                    f"cli {node.name!r}: duplicate subcommand {word!r}"
+                )
             seen.add(word)
         if child.config_model is not None:
             raise ValueError(
                 f"cli {node.name!r}: subcommand {child.name!r} declares "
-                f"config_model; only the root of a tree may")
+                f"config_model; only the root of a tree may"
+            )
         if child.script is not None:
             raise ValueError(
                 f"cli {node.name!r}: subcommand {child.name!r} declares "
-                f"script; only the root of a tree may")
+                f"script; only the root of a tree may"
+            )
     if node.options and node.subcommands:
         own = set(compiled.dest.values())
         for child in node.subcommands:
-            _check_collisions(node.name, own, child, (child.name, ))
+            _check_collisions(node.name, own, child, (child.name,))
 
 
-def _check_collisions(root_name: str, ancestor_dests: set[str],
-                      node: "CLISpec", path: tuple[str, ...]) -> None:
+def _check_collisions(
+    root_name: str,
+    ancestor_dests: set[str],
+    node: "CLISpec",
+    path: tuple[str, ...],
+) -> None:
     """Refuse an option spelled the same on a node and any descendant.
 
     The walk consumes group options level by level into one flag bag, so
@@ -111,7 +130,9 @@ def _check_collisions(root_name: str, ancestor_dests: set[str],
             if dest in ancestor_dests:
                 raise ValueError(
                     f"cli {root_name!r}: option '{dest}' collides with "
-                    f"subcommand {' '.join(path)!r}")
+                    f"subcommand {' '.join(path)!r}"
+                )
     for child in node.subcommands:
-        _check_collisions(root_name, ancestor_dests, child,
-                          path + (child.name, ))
+        _check_collisions(
+            root_name, ancestor_dests, child, path + (child.name,)
+        )

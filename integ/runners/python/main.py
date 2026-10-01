@@ -21,40 +21,47 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import adapters  # noqa: E402
-import harness  # noqa: E402
+import adapters
+import harness
 
-from mirage.concurrency import ConcurrencyLimiter  # noqa: E402
-from mirage.types import ReadSpec  # noqa: E402
-from mirage.workspace.mount.read_policy import resolve_read_spec  # noqa: E402
+from mirage.concurrency import ConcurrencyLimiter
+from mirage.types import ReadSpec
+from mirage.workspace.mount.read_policy import resolve_read_spec
 
 HOST = "python"
 
 
-def _emit_or_record(emit: list[dict] | None,
-                    report: harness.Report | None,
-                    target_id: str,
-                    case: dict,
-                    exit_code: int,
-                    out: str,
-                    err: str,
-                    elapsed: float,
-                    check_out: str | None = None,
-                    notes: list[str] | None = None) -> None:
+def _emit_or_record(
+    emit: list[dict] | None,
+    report: harness.Report | None,
+    target_id: str,
+    case: dict,
+    exit_code: int,
+    out: str,
+    err: str,
+    elapsed: float,
+    check_out: str | None = None,
+    notes: list[str] | None = None,
+) -> None:
     if emit is not None:
-        emit.append({
-            "target": target_id,
-            "id": case["id"],
-            "exit": exit_code,
-            "stdout": out,
-            "stderr": err,
-            "check": check_out,
-        })
-    elif report is not None:
+        emit.append(
+            {
+                "target": target_id,
+                "id": case["id"],
+                "exit": exit_code,
+                "stdout": out,
+                "stderr": err,
+                "check": check_out,
+            }
+        )
+    if report is not None:
         report.record(
-            target_id, case["id"],
-            harness.compare(case, exit_code, out, err, elapsed, check_out,
-                            notes))
+            target_id,
+            case["id"],
+            harness.compare(
+                case, exit_code, out, err, elapsed, check_out, notes
+            ),
+        )
 
 
 def read_spec_of(case: dict) -> ReadSpec:
@@ -86,30 +93,41 @@ def mount_read_of(case: dict) -> dict[str, ReadSpec]:
     }
 
 
-async def run_consistency_case(target: dict, case: dict,
-                               report: harness.Report | None,
-                               emit: list[dict] | None) -> None:
+async def run_consistency_case(
+    target: dict,
+    case: dict,
+    report: harness.Report | None,
+    emit: list[dict] | None,
+) -> None:
     spec = read_spec_of(case)
     read_ws, mutate, mutate_line, cleanup = await adapters.open_consistency(
-        target, spec, mount_read_of(case))
+        target, spec, mount_read_of(case)
+    )
     try:
         exit_code, out, err = await harness.run_scenario(
-            read_ws, mutate, mutate_line, case["scenario"])
-        _emit_or_record(emit, report, target["id"], case, exit_code, out, err,
-                        0.0)
+            read_ws, mutate, mutate_line, case["scenario"]
+        )
+        _emit_or_record(
+            emit, report, target["id"], case, exit_code, out, err, 0.0
+        )
     finally:
         await cleanup()
 
 
-async def run_target(target: dict, cases: list[dict], root: Path,
-                     report: harness.Report | None,
-                     emit: list[dict] | None) -> None:
+async def run_target(
+    target: dict,
+    cases: list[dict],
+    root: Path,
+    report: harness.Report | None,
+    emit: list[dict] | None,
+) -> None:
     selected = [c for c in cases if target["id"] in c["targets"]]
     ws, cleanup = await adapters.open_target(target)
     try:
         for mount in target["mounts"]:
-            await harness.seed_fixture(ws, mount.get("fixture"), mount["path"],
-                                       root)
+            await harness.seed_fixture(
+                ws, mount.get("fixture"), mount["path"], root
+            )
             if mount.get("seed_root"):
                 await harness.seed_mount_root(ws, mount["path"])
         # Sessions a case can name via its "session" field, through the
@@ -135,18 +153,30 @@ async def run_target(target: dict, cases: list[dict], root: Path,
         # per case worth its time. The reasons double as the tell that a
         # refusal came from the policy layer rather than from the
         # command itself.
-        reasons = harness.rule_reasons({
-            "profiles": target.get("profiles"),
-            "sessions": target.get("sessions"),
-        })
+        reasons = harness.rule_reasons(
+            {
+                "profiles": target.get("profiles"),
+                "sessions": target.get("sessions"),
+            }
+        )
         for case in selected:
             if "read" in case:
                 continue
             bound = harness.bind_mount(case, primary)
             ran = await harness.run_case(ws, bound, reasons)
             exit_code, out, err, elapsed, check_out, notes = ran
-            _emit_or_record(emit, report, target["id"], bound, exit_code, out,
-                            err, elapsed, check_out, notes)
+            _emit_or_record(
+                emit,
+                report,
+                target["id"],
+                bound,
+                exit_code,
+                out,
+                err,
+                elapsed,
+                check_out,
+                notes,
+            )
     finally:
         await cleanup()
     for case in selected:
@@ -154,11 +184,17 @@ async def run_target(target: dict, cases: list[dict], root: Path,
             await run_consistency_case(target, case, report, emit)
 
 
-async def run_slot(target: dict, cases: list[dict], root: Path,
-                   report: harness.Report | None, emit: list[dict] | None,
-                   limiter: ConcurrencyLimiter, lane: asyncio.Lock,
-                   errors: list[tuple[str, BaseException]],
-                   runner: harness.TargetRunner) -> None:
+async def run_slot(
+    target: dict,
+    cases: list[dict],
+    root: Path,
+    report: harness.Report | None,
+    emit: list[dict] | None,
+    limiter: ConcurrencyLimiter,
+    lane: asyncio.Lock,
+    errors: list[tuple[str, BaseException]],
+    runner: harness.TargetRunner,
+) -> None:
     """Run one target under its lane and the overall width.
 
     The lane is taken before the worker so a target waiting on a busy
@@ -196,7 +232,7 @@ async def run_pool(
     emit: list[dict] | None,
     services: dict,
     width: int,
-    runner: harness.TargetRunner | None = None
+    runner: harness.TargetRunner | None = None,
 ) -> list[tuple[str, BaseException]]:
     """Run every eligible target with at most ``width`` in flight.
 
@@ -230,11 +266,16 @@ async def run_pool(
     # as this line going missing rather than as the battery merely being
     # slower. Mutation testing found that exact regression invisible.
     print(
-        f"pool: {len(pool)} target(s) at width {width}, "
-        f"{len(alone)} alone",
-        file=sys.stderr)
-    slots = [(None if report is None else harness.Report(stream=False),
-              None if emit is None else []) for _ in eligible]
+        f"pool: {len(pool)} target(s) at width {width}, {len(alone)} alone",
+        file=sys.stderr,
+    )
+    slots = [
+        (
+            None if report is None else harness.Report(stream=False),
+            None if emit is None else [],
+        )
+        for _ in eligible
+    ]
     errors: list[tuple[str, BaseException]] = []
     for i in alone:
         try:
@@ -247,8 +288,18 @@ async def run_pool(
     for i, lane in pool:
         lanes.setdefault(lane, asyncio.Lock())
         running[i] = asyncio.create_task(
-            run_slot(eligible[i], cases, root, slots[i][0], slots[i][1],
-                     limiter, lanes[lane], errors, run_one))
+            run_slot(
+                eligible[i],
+                cases,
+                root,
+                slots[i][0],
+                slots[i][1],
+                limiter,
+                lanes[lane],
+                errors,
+                run_one,
+            )
+        )
     # Awaited in selection order, and each slot flushed the moment every
     # slot before it has. Waiting for the whole pool before printing
     # anything would give CI one silent step and then a wall of text,
@@ -283,8 +334,13 @@ async def run_pool(
     return errors
 
 
-def run_verdict(facet: str | None, ran: int, strict: bool,
-                env_skipped: list[str], unadapted: list[str]) -> str | None:
+def run_verdict(
+    facet: str | None,
+    ran: int,
+    strict: bool,
+    env_skipped: list[str],
+    unadapted: list[str],
+) -> str | None:
     """The reason a finished run must exit 2, or None.
 
     A skip is one line on stderr and exit 0, so a facet whose service
@@ -310,11 +366,15 @@ def run_verdict(facet: str | None, ran: int, strict: bool,
     if facet and ran == 0:
         return f"facet {facet!r} ran no targets"
     if strict and env_skipped:
-        return (f"strict: {len(env_skipped)} target(s) skipped for missing "
-                f"env: {'; '.join(env_skipped)}")
+        return (
+            f"strict: {len(env_skipped)} target(s) skipped for missing "
+            f"env: {'; '.join(env_skipped)}"
+        )
     if strict and unadapted:
-        return (f"strict: {len(unadapted)} target(s) list {HOST} but have "
-                f"no {HOST} adapter: {', '.join(unadapted)}")
+        return (
+            f"strict: {len(unadapted)} target(s) list {HOST} but have "
+            f"no {HOST} adapter: {', '.join(unadapted)}"
+        )
     return None
 
 
@@ -332,10 +392,9 @@ async def main() -> None:
     # How many targets may be in flight. One is the plain loop below, which
     # stays the default so a local run is sequential and debuggable and so
     # landing the scheduler changes nothing until a workflow line asks for it.
-    parser.add_argument("--target-jobs",
-                        dest="target_jobs",
-                        type=int,
-                        default=1)
+    parser.add_argument(
+        "--target-jobs", dest="target_jobs", type=int, default=1
+    )
     args = parser.parse_args()
     if args.target_jobs < 1:
         print("--target-jobs takes an integer >= 1", file=sys.stderr)
@@ -350,7 +409,8 @@ async def main() -> None:
     # a target with no facet belongs to "core", which the shared battery runs.
     if args.facet:
         selected = [
-            tid for tid, t in manifest.items()
+            tid
+            for tid, t in manifest.items()
             if (t.get("facet") or "core") == args.facet
         ]
         if not selected:
@@ -358,7 +418,7 @@ async def main() -> None:
             sys.exit(2)
     else:
         selected = args.targets or list(manifest)
-    report = None if args.emit else harness.Report()
+    report = harness.Report()
     emit: list[dict] | None = [] if args.emit else None
     ran = 0
     allow_skip = harness.parse_allow_skip(services, args.allow_skip)
@@ -376,8 +436,10 @@ async def main() -> None:
             continue
         missing = harness.missing_env(services, target, HOST)
         if missing:
-            print(f"skip [{target_id}]: {', '.join(missing)} not set",
-                  file=sys.stderr)
+            print(
+                f"skip [{target_id}]: {', '.join(missing)} not set",
+                file=sys.stderr,
+            )
             if target.get("service") not in allow_skip:
                 env_skipped.append(f"{target_id} ({', '.join(missing)})")
             continue
@@ -392,24 +454,22 @@ async def main() -> None:
             await run_target(target, cases, root, report, emit)
         raised = []
     else:
-        raised = await run_pool(eligible, cases, root, report, emit, services,
-                                args.target_jobs)
+        raised = await run_pool(
+            eligible, cases, root, report, emit, services, args.target_jobs
+        )
 
     verdict = run_verdict(args.facet, ran, args.strict, env_skipped, unadapted)
     if verdict is not None:
         print(verdict, file=sys.stderr)
         sys.exit(2)
 
-    if args.emit:
-        # No file, deliberately, where the report path prints partial counts:
-        # parity.py diffs two emits by (target, id), so a short one reads as
-        # a pile of ONLY-PY/ONLY-TS rows rather than as the run that broke.
-        if raised:
-            print(f"{len(raised)} target(s) failed to run", file=sys.stderr)
-            sys.exit(1)
+    # No file, deliberately, when a target raised: parity.py diffs two emits
+    # by (target, id), so a short one reads as a pile of ONLY-PY/ONLY-TS rows
+    # rather than as the run that broke. The emit rides beside the report
+    # rather than replacing it, so a battery job hands parity its outputs
+    # without a second run.
+    if args.emit and not raised:
         Path(args.emit).write_text(json.dumps(emit))
-        return
-    assert report is not None
     print(f"\n{report.summary()}")
     # Printed before the exit, because a pooled run that lost a target
     # still ran every other one and its counts are the answer to "what

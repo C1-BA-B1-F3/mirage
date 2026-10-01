@@ -28,17 +28,12 @@ TOP_ID = "aaaa1111-2222-3333-4444-555566667777"
 
 _TOP_PAGE = {
     "id": TOP_ID,
-    "parent": {
-        "type": "workspace"
-    },
+    "parent": {"type": "workspace"},
     "last_edited_time": "2026-01-02T00:00:00.000Z",
     "properties": {
         "title": {
             "type": "title",
-            "title": [{
-                "type": "text",
-                "plain_text": "Top1"
-            }],
+            "title": [{"type": "text", "plain_text": "Top1"}],
         }
     },
 }
@@ -54,16 +49,19 @@ def _patch(monkeypatch):
 
 
 def _spec(original: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(original, prefix),
-                    virtual=original,
-                    directory=original)
+    return PathSpec(
+        vfs_path=mount_key(original, prefix),
+        virtual=original,
+        directory=original,
+    )
 
 
 @pytest.mark.asyncio
 async def test_stat_page_returns_modified_from_index():
     index = RAMIndexCacheStore()
-    await readdir_mod.readdir(_ACCESSOR, _spec("/notion/pages", "/notion"),
-                              index)
+    await readdir_mod.readdir(
+        _ACCESSOR, _spec("/notion/pages", "/notion"), index
+    )
     spec = _spec(f"/notion/pages/Top1__{TOP_ID}", "/notion")
     s = await stat(_ACCESSOR, spec, index)
     assert s.modified == "2026-01-02T00:00:00.000Z"

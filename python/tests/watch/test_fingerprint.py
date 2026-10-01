@@ -6,8 +6,10 @@ def test_stat_fingerprint_joins_the_etag_and_the_size():
 
 
 def test_stat_fingerprint_substitutes_the_stamp_without_an_etag():
-    assert stat_fingerprint(None, "2026-01-01T00:00:00",
-                            5) == "2026-01-01T00:00:00|5"
+    assert (
+        stat_fingerprint(None, "2026-01-01T00:00:00", 5)
+        == "2026-01-01T00:00:00|5"
+    )
 
 
 def test_stat_fingerprint_handles_missing_fields():

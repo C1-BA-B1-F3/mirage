@@ -15,10 +15,17 @@
 from mirage.workspace.executor.builtins.condition.condition import handle_test
 from mirage.workspace.executor.builtins.condition.flat import eval_flat
 from mirage.workspace.executor.builtins.condition.tree import eval_cond
-
-from mirage.workspace.executor.builtins.condition.types import (  # isort: skip
-    CondAnd, CondBinary, CondContext, CondError, CondNode, CondNot, CondOr,
-    CondUnary, CondWord)
+from mirage.workspace.executor.builtins.condition.types import (
+    CondAnd,
+    CondBinary,
+    CondContext,
+    CondError,
+    CondNode,
+    CondNot,
+    CondOr,
+    CondUnary,
+    CondWord,
+)
 
 __all__ = [
     "CondAnd",

@@ -64,13 +64,15 @@ async def narrow_paths(
     for p in paths:
         scope_api = dropbox_path_of(accessor, p)
         try:
-            results, truncated = await search_files(accessor.token_manager,
-                                                    query,
-                                                    path=scope_api)
+            results, truncated = await search_files(
+                accessor.token_manager, query, path=scope_api
+            )
         except DropboxApiError as exc:
             logger.warning(
                 "dropbox search push-down failed (%s); "
-                "falling back to per-file scan", exc)
+                "falling back to per-file scan",
+                exc,
+            )
             return None
         if truncated:
             return None
@@ -80,16 +82,19 @@ async def narrow_paths(
         for lower, display in results:
             if lower != scope_lower and not lower.startswith(scope_prefix):
                 continue
-            key = display[len(root):].strip("/")
+            key = display[len(root) :].strip("/")
             scoped.append(
-                f"{mount_prefix}/{key}" if key else mount_prefix or "/")
+                f"{mount_prefix}/{key}" if key else mount_prefix or "/"
+            )
         scoped.sort(key=_path_components)
         for virtual in scoped:
             narrowed.append(
-                PathSpec(virtual=virtual,
-                         directory="",
-                         vfs_path=mount_key(virtual, mount_prefix),
-                         resolved=True,
-                         raw_path=respell_raw([virtual], p.virtual,
-                                              p.raw_path)[0]))
+                PathSpec(
+                    virtual=virtual,
+                    directory="",
+                    vfs_path=mount_key(virtual, mount_prefix),
+                    resolved=True,
+                    raw_path=respell_raw([virtual], p.virtual, p.raw_path)[0],
+                )
+            )
     return narrowed

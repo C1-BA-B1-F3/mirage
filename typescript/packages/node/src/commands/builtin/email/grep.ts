@@ -43,7 +43,6 @@ import { stat as emailStat } from '../../../core/email/stat.ts'
 import { detectScope, NATIVE_KINDS } from '../../../core/email/scope.ts'
 import { searchAndFormat } from '../../../core/email/search.ts'
 import { EMAIL_IO } from './io.ts'
-import { fileReadProvision } from './_provision.ts'
 
 const resolveGlob = resolveGlobOf(EMAIL_IO)
 
@@ -171,5 +170,4 @@ export const EMAIL_GREP = command({
   spec: specOf('grep'),
   fn: grepCommand,
   aggregate: prefixAggregate,
-  provision: fileReadProvision,
 })

@@ -29,7 +29,8 @@ _SWALLOW = (FileNotFoundError, ValueError)
 def child_path(parent: PathSpec, name: str) -> PathSpec:
     child = parent.virtual.rstrip("/") + "/" + name
     return PathSpec.from_str_path(
-        child, rekey(parent.virtual, parent.vfs_path, child))
+        child, rekey(parent.virtual, parent.vfs_path, child)
+    )
 
 
 def backend_key_default(path: PathSpec) -> str:
@@ -37,11 +38,12 @@ def backend_key_default(path: PathSpec) -> str:
 
 
 def copy_targets(
-        sources: list[PathSpec],
-        dst: PathSpec,
-        dst_is_dir: bool,
-        dst_exists: bool = True,
-        dst_err: str | None = None) -> list[tuple[PathSpec, PathSpec]]:
+    sources: list[PathSpec],
+    dst: PathSpec,
+    dst_is_dir: bool,
+    dst_exists: bool = True,
+    dst_err: str | None = None,
+) -> list[tuple[PathSpec, PathSpec]]:
     """Map copy or move sources to their destination paths.
 
     Follows POSIX operand semantics: when the destination is an existing
@@ -68,8 +70,9 @@ def copy_targets(
     """
     if len(sources) > 1 and not dst_is_dir:
         if dst_err == ELOOP_STRERROR:
-            raise DotWalkLoop(errno.ELOOP, ELOOP_STRERROR,
-                              f"target '{dst.raw_path}'")
+            raise DotWalkLoop(
+                errno.ELOOP, ELOOP_STRERROR, f"target '{dst.raw_path}'"
+            )
         if not dst_exists and dst_err != "Not a directory":
             raise FileNotFoundError(f"target '{dst.raw_path}'")
         raise NotADirectoryError(f"target '{dst.raw_path}'")

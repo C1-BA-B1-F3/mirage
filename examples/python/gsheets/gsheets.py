@@ -39,13 +39,16 @@ async def main() -> None:
     ws.register_cli("gws", GWS, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /gsheets/__nf_missing__.txt",
-                "head /gsheets/__nf_missing__.txt",
-                "stat /gsheets/__nf_missing__.txt"):
+    for cmd in (
+        "cat /gsheets/__nf_missing__.txt",
+        "head /gsheets/__nf_missing__.txt",
+        "stat /gsheets/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /gsheets/ ===")
     r = await ws.shell("ls /gsheets/")
@@ -81,14 +84,19 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on /gsheets/owned/{first} ===")
-    r = await ws.shell(f'chmod 640 "/gsheets/owned/{first}"'
-                       f' && chown 500:dev "/gsheets/owned/{first}"'
-                       f' && touch -t 202601021530 "/gsheets/owned/{first}"')
+    r = await ws.shell(
+        f'chmod 640 "/gsheets/owned/{first}"'
+        f' && chown 500:dev "/gsheets/owned/{first}"'
+        f' && touch -t 202601021530 "/gsheets/owned/{first}"'
+    )
     print(f"  chmod/chown/touch exit={r.exit_code}")
     st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path(f"/gsheets/owned/{first}"))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+        "stat", PathSpec.from_str_path(f"/gsheets/owned/{first}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     print("=== jq .properties.title ===")
     r = await ws.shell(f'jq ".properties.title" /gsheets/owned/{first}')
@@ -107,8 +115,9 @@ async def main() -> None:
     print((await r.stdout_str())[:500])
 
     print("\n=== find /gsheets/owned/ ===")
-    r = await ws.shell("find /gsheets/owned/ -name '*.gsheet.json' | head -n 5"
-                       )
+    r = await ws.shell(
+        "find /gsheets/owned/ -name '*.gsheet.json' | head -n 5"
+    )
     print(await r.stdout_str())
 
     print("=== grep title ===")
@@ -133,56 +142,65 @@ async def main() -> None:
 
     print("=== gws sheets spreadsheets create ===")
     body = json.dumps({"properties": {"title": "MIRAGE Sheets Test"}})
-    r = await ws.shell("gws sheets spreadsheets create"
-                       f" --json '{body}'")
+    r = await ws.shell(f"gws sheets spreadsheets create --json '{body}'")
     sheet = json.loads(await r.stdout_str())
     sheet_id = sheet["spreadsheetId"]
     print(f"Created: {sheet_id}")
 
     print("\n=== gws sheets write ===")
-    values = json.dumps([
-        ["Name", "Age", "City"],
-        ["Alice", "30", "NYC"],
-        ["Bob", "25", "SF"],
-    ])
-    r = await ws.shell(f"gws sheets write"
-                       f" --spreadsheet {sheet_id}"
-                       f' --range "Sheet1!A1:C3"'
-                       f" --json-values '{values}'")
+    values = json.dumps(
+        [
+            ["Name", "Age", "City"],
+            ["Alice", "30", "NYC"],
+            ["Bob", "25", "SF"],
+        ]
+    )
+    r = await ws.shell(
+        f"gws sheets write"
+        f" --spreadsheet {sheet_id}"
+        f' --range "Sheet1!A1:C3"'
+        f" --json-values '{values}'"
+    )
     print(f"Written: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws sheets read ===")
-    r = await ws.shell(f'gws sheets read'
-                       f' --spreadsheet {sheet_id}'
-                       f' --range "Sheet1!A1:C3"')
+    r = await ws.shell(
+        f'gws sheets read --spreadsheet {sheet_id} --range "Sheet1!A1:C3"'
+    )
     print(f"Values: {await r.stdout_str()}")
 
     print("=== gws sheets append ===")
-    r = await ws.shell(f"gws sheets append"
-                       f" --spreadsheet {sheet_id}"
-                       f" --values Diana,28,Chicago")
+    r = await ws.shell(
+        f"gws sheets append --spreadsheet {sheet_id} --values Diana,28,Chicago"
+    )
     print(f"Appended: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws sheets read (all) ===")
-    r = await ws.shell(f'gws sheets read'
-                       f' --spreadsheet {sheet_id}'
-                       f' --range Sheet1')
+    r = await ws.shell(
+        f"gws sheets read --spreadsheet {sheet_id} --range Sheet1"
+    )
     print(f"All: {await r.stdout_str()}")
 
     print("\n=== gws sheets spreadsheets batchUpdate ===")
-    batch_body = json.dumps({
-        "requests": [{
-            "updateSpreadsheetProperties": {
-                "properties": {
-                    "title": "MIRAGE Sheets Test (Updated)"
-                },
-                "fields": "title",
-            }
-        }]
-    })
+    batch_body = json.dumps(
+        {
+            "requests": [
+                {
+                    "updateSpreadsheetProperties": {
+                        "properties": {
+                            "title": "MIRAGE Sheets Test (Updated)"
+                        },
+                        "fields": "title",
+                    }
+                }
+            ]
+        }
+    )
     batch_params = json.dumps({"spreadsheetId": sheet_id})
-    r = await ws.shell("gws sheets spreadsheets batchUpdate"
-                       f" --params '{batch_params}' --json '{batch_body}'")
+    r = await ws.shell(
+        "gws sheets spreadsheets batchUpdate"
+        f" --params '{batch_params}' --json '{batch_body}'"
+    )
     print(f"BatchUpdate: {(await r.stdout_str())[:80]}")
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"

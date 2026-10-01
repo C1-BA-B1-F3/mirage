@@ -16,19 +16,40 @@ import pytest
 import tree_sitter
 import tree_sitter_bash
 
+from mirage.shell.helpers import (
+    brace_expands,
+    byte_offset,
+    get_case_items,
+    get_case_word,
+    get_cfor_parts,
+    get_command_name,
+    get_declaration_keyword,
+    get_for_parts,
+    get_function_body,
+    get_function_name,
+    get_heredoc_meta,
+    get_heredoc_parts,
+    get_if_branches,
+    get_list_parts,
+    get_negated_command,
+    get_parts,
+    get_pipeline_commands,
+    get_pipeline_stages,
+    get_process_sub_body,
+    get_redirects,
+    get_text,
+    get_while_parts,
+    is_backgrounded,
+    literal_word,
+    normalize_heredoc_body,
+    quoted_parts,
+    source_parts,
+    split_env_prefix,
+    take_continuation,
+)
 from mirage.shell.parse import parse
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import RedirectKind
-
-from mirage.shell.helpers import (  # isort: skip
-    brace_expands, byte_offset, get_case_items, get_case_word, get_cfor_parts,
-    get_command_name, get_declaration_keyword, get_for_parts,
-    get_function_body, get_function_name, get_heredoc_meta, get_heredoc_parts,
-    get_if_branches, get_list_parts, get_negated_command, get_parts,
-    get_pipeline_commands, get_pipeline_stages, get_process_sub_body,
-    get_redirects, get_subshell_body, get_text, get_while_parts,
-    is_backgrounded, literal_word, normalize_heredoc_body, quoted_parts,
-    source_parts, split_env_prefix, take_continuation)
 
 _LANG = tree_sitter.Language(tree_sitter_bash.language())
 _PARSER = tree_sitter.Parser(_LANG)
@@ -101,9 +122,13 @@ def _stages_shape(cmd: str, redirected: bool = False):
     if stages.lead is not None:
         left, op, right = stages.lead
         lead = (get_text(left), str(op), get_text(right))
-    return ([get_text(c) for c in stages.commands], list(stages.stderr_flags),
-            [[str(r.target) for r in rs]
-             for rs in stages.redirects], stages.negated, lead)
+    return (
+        [get_text(c) for c in stages.commands],
+        list(stages.stderr_flags),
+        [[str(r.target) for r in rs] for rs in stages.redirects],
+        stages.negated,
+        lead,
+    )
 
 
 @pytest.mark.parametrize(
@@ -112,30 +137,65 @@ def _stages_shape(cmd: str, redirected: bool = False):
         ("a | b", False, (["a", "b"], [False], [[], []], False, None)),
         ("! a | b", False, (["a", "b"], [False], [[], []], True, None)),
         # tree-sitter reads these as pipeline(redirected(<chain>, r), ...).
-        ("a | b < f | c", False,
-         (["a", "b", "c"], [False, False], [[], ["f"], []], False, None)),
-        ("a | b < f |& c", False,
-         (["a", "b", "c"], [False, True], [[], ["f"], []], False, None)),
+        (
+            "a | b < f | c",
+            False,
+            (["a", "b", "c"], [False, False], [[], ["f"], []], False, None),
+        ),
+        (
+            "a | b < f |& c",
+            False,
+            (["a", "b", "c"], [False, True], [[], ["f"], []], False, None),
+        ),
         ("! a < f | b", False, (["a", "b"], [False], [["f"], []], True, None)),
-        ("a && b < f | c", False, (["b", "c"], [False], [["f"], []], False,
-                                   ("a", "&&", "b"))),
-        ("a && b | c < f | d", False,
-         (["b", "c", "d"], [False, False], [[], ["f"], []], False,
-          ("a", "&&", "b | c"))),
-        ("a || ! b < f | c", False, (["b", "c"], [False], [["f"], []], True,
-                                     ("a", "||", "! b"))),
-        ("a && b | c < f | d > g | e", False,
-         (["b", "c", "d", "e"], [False, False, False], [[], ["f"], ["g"], []],
-          False, ("a", "&&", "b | c"))),
+        (
+            "a && b < f | c",
+            False,
+            (["b", "c"], [False], [["f"], []], False, ("a", "&&", "b")),
+        ),
+        (
+            "a && b | c < f | d",
+            False,
+            (
+                ["b", "c", "d"],
+                [False, False],
+                [[], ["f"], []],
+                False,
+                ("a", "&&", "b | c"),
+            ),
+        ),
+        (
+            "a || ! b < f | c",
+            False,
+            (["b", "c"], [False], [["f"], []], True, ("a", "||", "! b")),
+        ),
+        (
+            "a && b | c < f | d > g | e",
+            False,
+            (
+                ["b", "c", "d", "e"],
+                [False, False, False],
+                [[], ["f"], ["g"], []],
+                False,
+                ("a", "&&", "b | c"),
+            ),
+        ),
         # A stage holding its own redirect runs as the node it is.
         ("a < f | b", False, (["a < f", "b"], [False], [[], []], False, None)),
-        ("{ a; } < f | b", False,
-         (["{ a; } < f", "b"], [False], [[], []], False, None)),
+        (
+            "{ a; } < f | b",
+            False,
+            (["{ a; } < f", "b"], [False], [[], []], False, None),
+        ),
         # Redirects hoisted over the whole pipeline bind to its last stage.
         ("a | b > g", True, (["a", "b"], [False], [[], ["g"]], False, None)),
-        ("! a | b < f > g", True,
-         (["a", "b"], [False], [[], ["f", "g"]], True, None)),
-    ])
+        (
+            "! a | b < f > g",
+            True,
+            (["a", "b"], [False], [[], ["f", "g"]], True, None),
+        ),
+    ],
+)
 def test_get_pipeline_stages(cmd, redirected, shape):
     assert _stages_shape(cmd, redirected) == shape
 
@@ -166,11 +226,6 @@ def test_get_for_select():
     assert [get_text(v) for v in values] == ["x", "y"]
 
 
-def test_get_subshell_body():
-    body = get_subshell_body(_first("(echo a; echo b)"))
-    assert len(body) == 2
-
-
 def test_get_list_parts_and():
     left, op, right = get_list_parts(_first("echo a && echo b"))
     assert op == "&&"
@@ -183,9 +238,10 @@ def test_get_list_parts_or():
 
 def test_get_if_branches():
     branches, else_body = get_if_branches(
-        _first("if true; then echo y; "
-               "elif false; then echo n; "
-               "else echo x; fi"))
+        _first(
+            "if true; then echo y; elif false; then echo n; else echo x; fi"
+        )
+    )
     assert len(branches) == 2
     assert else_body is not None
 
@@ -211,9 +267,13 @@ def test_get_case_items():
 
 def test_get_case_items_keeps_quoted_patterns_as_nodes():
     items = get_case_items(
-        _first("case x in 'a'|\"b\"|$'c') echo q;; $p) echo v;; esac"))
-    assert [p.type for p in items[0][0]
-            ] == [NT.RAW_STRING, NT.STRING, NT.ANSI_C_STRING]
+        _first("case x in 'a'|\"b\"|$'c') echo q;; $p) echo v;; esac")
+    )
+    assert [p.type for p in items[0][0]] == [
+        NT.RAW_STRING,
+        NT.STRING,
+        NT.ANSI_C_STRING,
+    ]
     assert [p.type for p in items[1][0]] == [NT.SIMPLE_EXPANSION]
     assert [len(item[1]) for item in items] == [1, 1]
 
@@ -255,8 +315,11 @@ def test_get_parts_drops_a_bare_zero_descriptor():
     _, redirects = get_redirects(stmt)
     assert [(r.fd, r.target) for r in redirects] == [(0, -1)]
     spaced = _shielded("cat a 0 >&-")
-    assert [get_text(p)
-            for p in get_parts(spaced.named_children[0])] == ["cat", "a", "0"]
+    assert [get_text(p) for p in get_parts(spaced.named_children[0])] == [
+        "cat",
+        "a",
+        "0",
+    ]
     assert [r.fd for r in get_redirects(spaced)[1]] == [1]
     _, chained = get_redirects(_shielded("cat 0<a >b"))
     assert [(r.fd, r.target) for r in chained] == [(0, "a"), (1, "b")]
@@ -272,8 +335,8 @@ def test_semicolon_is_program_level():
 
 def test_get_if_multiple_elif():
     branches, else_body = get_if_branches(
-        _first("if a; then b; elif c; then d; "
-               "elif e; then f; else g; fi"))
+        _first("if a; then b; elif c; then d; elif e; then f; else g; fi")
+    )
     assert len(branches) == 3
     assert else_body is not None
 
@@ -299,7 +362,8 @@ def test_get_for_single_value():
 
 def test_get_for_with_expansion():
     var, values, body = get_for_parts(
-        _first("for f in $DIR/*.txt; do echo; done"))
+        _first("for f in $DIR/*.txt; do echo; done")
+    )
     assert var == "f"
     assert len(values) == 1
     assert values[0].type == NT.CONCATENATION
@@ -336,11 +400,6 @@ def test_get_pipeline_single():
     cmds, stderr = get_pipeline_commands(_first("echo a | grep b"))
     assert get_command_name(cmds[0]) == "echo"
     assert get_command_name(cmds[1]) == "grep"
-
-
-def test_get_subshell_single():
-    body = get_subshell_body(_first("(echo a)"))
-    assert len(body) == 1
 
 
 def test_export_keyword():
@@ -523,7 +582,8 @@ def test_backslash_in_word():
 
 def test_for_multi_statement_body():
     _, values, body = get_for_parts(
-        _first("for x in a; do echo 1; echo 2; echo 3; done"))
+        _first("for x in a; do echo 1; echo 2; echo 3; done")
+    )
     assert len(body) == 3
 
 
@@ -534,7 +594,8 @@ def test_while_multi_statement_body():
 
 def test_if_multi_statement_then():
     branches, _ = get_if_branches(
-        _first("if true; then echo a; echo b; echo c; fi"))
+        _first("if true; then echo a; echo b; echo c; fi")
+    )
     assert len(branches) == 1
     cond, body = branches[0]
     assert len(body) == 3
@@ -542,16 +603,20 @@ def test_if_multi_statement_then():
 
 def test_if_multi_statement_else():
     branches, else_body = get_if_branches(
-        _first("if true; then echo a; else echo b; echo c; fi"))
+        _first("if true; then echo a; else echo b; echo c; fi")
+    )
     assert len(branches) == 1
     assert len(else_body) == 2
 
 
 def test_if_multi_statement_elif():
     branches, else_body = get_if_branches(
-        _first("if true; then echo a; "
-               "elif false; then echo b; echo c; "
-               "else echo d; fi"))
+        _first(
+            "if true; then echo a; "
+            "elif false; then echo b; echo c; "
+            "else echo d; fi"
+        )
+    )
     assert len(branches) == 2
     assert len(branches[1][1]) == 2
     assert len(else_body) == 1
@@ -648,7 +713,8 @@ def test_redirect_target_unquoted_word():
 
 
 @pytest.mark.parametrize(
-    "cmd", ["echo x > '/out.txt'", 'echo x > "/out.txt"', "echo x > /out.txt"])
+    "cmd", ["echo x > '/out.txt'", 'echo x > "/out.txt"', "echo x > /out.txt"]
+)
 def test_redirect_target_carried_for_every_quoting_form(cmd: str):
     # Quoting a redirect target is purely syntactic in bash: all three
     # forms must reach the expansion layer with a target node.
@@ -656,12 +722,15 @@ def test_redirect_target_carried_for_every_quoting_form(cmd: str):
     assert redirects[0].target_node is not None
 
 
-@pytest.mark.parametrize("cmd", [
-    "echo x >> '/out.txt'",
-    "cmd 2> '/err.txt'",
-    "cmd < '/in.txt'",
-    "cmd &> '/both.txt'",
-])
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "echo x >> '/out.txt'",
+        "cmd 2> '/err.txt'",
+        "cmd < '/in.txt'",
+        "cmd &> '/both.txt'",
+    ],
+)
 def test_redirect_raw_string_target_all_operators(cmd: str):
     # Every operator shares _parse_file_redirect, so a single-quoted
     # target has to survive on all of them, not just plain `>`.
@@ -682,13 +751,17 @@ def test_herestring_raw_string_target():
     assert target_node.type == NT.RAW_STRING
 
 
-@pytest.mark.parametrize("cmd,expected_type", [
-    ("echo x > $'/out 1.txt'", NT.ANSI_C_STRING),
-    ('echo x > $"/out.txt"', NT.TRANSLATED_STRING),
-    ("cmd 2>> $'/e.log'", NT.ANSI_C_STRING),
-])
-def test_redirect_dollar_quoted_targets_ride_along(cmd: str,
-                                                   expected_type: NT):
+@pytest.mark.parametrize(
+    "cmd,expected_type",
+    [
+        ("echo x > $'/out 1.txt'", NT.ANSI_C_STRING),
+        ('echo x > $"/out.txt"', NT.TRANSLATED_STRING),
+        ("cmd 2>> $'/e.log'", NT.ANSI_C_STRING),
+    ],
+)
+def test_redirect_dollar_quoted_targets_ride_along(
+    cmd: str, expected_type: NT
+):
     # $'...' and $"..." are quoting forms like '...' and "...": a
     # redirect target in either must reach the expansion layer.
     _, redirects = get_redirects(_first(cmd))
@@ -801,15 +874,19 @@ def test_get_redirects_hoists_file_redirect_inside_heredoc():
 def test_get_redirects_hoists_herestring_before_file_redirect():
     node = _shielded("cat <<< here < input.txt")
     _, redirects = get_redirects(node)
-    assert [r.kind for r in redirects
-            ] == [RedirectKind.HERESTRING, RedirectKind.STDIN]
+    assert [r.kind for r in redirects] == [
+        RedirectKind.HERESTRING,
+        RedirectKind.STDIN,
+    ]
 
 
 def test_get_redirects_recovers_herestring_after_file_redirect():
     node = _shielded("cat < input.txt <<< here")
     _, redirects = get_redirects(node)
-    assert [r.kind for r in redirects
-            ] == [RedirectKind.STDIN, RedirectKind.HERESTRING]
+    assert [r.kind for r in redirects] == [
+        RedirectKind.STDIN,
+        RedirectKind.HERESTRING,
+    ]
     assert redirects[1].target == "here"
 
 
@@ -872,28 +949,35 @@ def _literals(line: str, home: str | None = None) -> list[str | None]:
         # Plain, quoted and escaped words read as the text they name.
         ("rm x", ["rm", "x"]),
         ("'rm' \"/a b\" c", ["rm", "/a b", "c"]),
-        ("\\rm a\"b\"c \"a\\\"b\"", ["rm", "abc", 'a"b']),
+        ('\\rm a"b"c "a\\"b"', ["rm", "abc", 'a"b']),
         ("$'x\\ty' $\"hi\" 3", ["x\ty", "hi", "3"]),
         ("echo $ /a*", ["echo", "$", "/a*"]),
         # A word only the runtime can expand reads as None, wherever it
         # sits and however it is quoted or joined.
         ("$cmd /x", [None, "/x"]),
-        ("\"$cmd\" x", [None, "x"]),
+        ('"$cmd" x', [None, "x"]),
         ("${cmd} a$b", [None, None]),
-        ("eval \"$P\"", ["eval", None]),
-        ("cat \"$d\"/x --f=\"$v\"", ["cat", None, None]),
+        ('eval "$P"', ["eval", None]),
+        ('cat "$d"/x --f="$v"', ["cat", None, None]),
         ("rm $((1+2)) $(date) <(ls)", ["rm", None, None, None]),
         # Brace expansion multiplies words, so it is not literal either;
         # a lone {} and a quoted brace are.
         ("rm /r/{a,b} x{1..3} {} '{a,b}'", ["rm", None, None, "{}", "{a,b}"]),
-    ])
+    ],
+)
 def test_literal_word_reads_what_a_word_names_before_expansion(line, expected):
     assert _literals(line) == expected
 
 
 def test_literal_word_expands_a_leading_unquoted_tilde_only():
-    assert _literals("ls ~ ~/x \"~/y\" ~u a~ ~/x\"y\"", "/home/me") == [
-        "ls", "/home/me", "/home/me/x", "~/y", "~u", "a~", "/home/me/xy"
+    assert _literals('ls ~ ~/x "~/y" ~u a~ ~/x"y"', "/home/me") == [
+        "ls",
+        "/home/me",
+        "/home/me/x",
+        "~/y",
+        "~u",
+        "a~",
+        "/home/me/xy",
     ]
     # No $HOME: the tilde stays, as in bash.
     assert _literals("ls ~/x") == ["ls", "~/x"]
@@ -916,8 +1000,10 @@ def test_is_backgrounded_reads_the_statements_own_terminator():
     "cmd,extract",
     [
         ("if true; then a & fi", lambda n: get_if_branches(n)[0][0][1]),
-        ("if false; then :; elif true; then a & fi",
-         lambda n: get_if_branches(n)[0][1][1]),
+        (
+            "if false; then :; elif true; then a & fi",
+            lambda n: get_if_branches(n)[0][1][1],
+        ),
         ("if false; then :; else a & fi", lambda n: get_if_branches(n)[1]),
         ("while false; do a & done", lambda n: get_while_parts(n)[1]),
         ("until true; do a & done", lambda n: get_while_parts(n)[1]),
@@ -948,8 +1034,9 @@ def test_byte_offset_counts_a_surrogate_escape_as_one_byte():
 
 
 def _heredoc_redirect(cmd: str):
-    return next(c for c in _first(cmd).named_children
-                if c.type == NT.HEREDOC_REDIRECT)
+    return next(
+        c for c in _first(cmd).named_children if c.type == NT.HEREDOC_REDIRECT
+    )
 
 
 def test_get_heredoc_parts_keeps_leading_empty_lines():
@@ -959,7 +1046,8 @@ def test_get_heredoc_parts_keeps_leading_empty_lines():
 
 def test_get_heredoc_meta_keeps_leading_empty_lines_under_dash():
     body, dash, _ = get_heredoc_meta(
-        _heredoc_redirect("cat <<-EOF\n\n\tfoo\nEOF"))
+        _heredoc_redirect("cat <<-EOF\n\n\tfoo\nEOF")
+    )
     assert dash is True
     assert body == "\nfoo\n"
 
@@ -981,59 +1069,71 @@ def test_heredoc_tail_list_step_is_a_continuation_not_a_pipe():
     # tree-sitter parses `|| echo recovered` inside the heredoc_redirect;
     # a bare command there used to be taken for a pipeline stage.
     _, redirects = get_redirects(
-        _heredoc_stmt("false <<'EOF' || echo recovered\nignored\nEOF"))
+        _heredoc_stmt("false <<'EOF' || echo recovered\nignored\nEOF")
+    )
     assert len(redirects) == 1
     assert redirects[0].pipeline is None
-    assert [(op, get_text(right)) for op, right in redirects[0].continuation
-            ] == [("||", "echo recovered")]
+    assert [
+        (op, get_text(right)) for op, right in redirects[0].continuation
+    ] == [("||", "echo recovered")]
 
 
 def test_heredoc_tail_unwinds_a_list_along_its_left_spine():
     # `false <<EOF || echo a && echo b` is `(false || echo a) && echo b`.
     _, redirects = get_redirects(
-        _heredoc_stmt("false <<EOF || echo a && echo b\nx\nEOF"))
-    assert [(op, get_text(right))
-            for op, right in redirects[0].continuation] == [("||", "echo a"),
-                                                            ("&&", "echo b")]
+        _heredoc_stmt("false <<EOF || echo a && echo b\nx\nEOF")
+    )
+    assert [
+        (op, get_text(right)) for op, right in redirects[0].continuation
+    ] == [("||", "echo a"), ("&&", "echo b")]
 
 
 def test_heredoc_tail_pipe_then_list():
     # `cat <<EOF | tr a-z A-Z && echo done`: the pipe feeds `tr`, and
     # `&& echo done` applies to the pipeline.
     _, redirects = get_redirects(
-        _heredoc_stmt("cat <<EOF | tr a-z A-Z && echo done\nabc\nEOF"))
+        _heredoc_stmt("cat <<EOF | tr a-z A-Z && echo done\nabc\nEOF")
+    )
     assert get_text(redirects[0].pipeline) == "tr a-z A-Z"
-    assert [(op, get_text(right)) for op, right in redirects[0].continuation
-            ] == [("&&", "echo done")]
+    assert [
+        (op, get_text(right)) for op, right in redirects[0].continuation
+    ] == [("&&", "echo done")]
 
 
 def test_heredoc_tail_plain_pipe_keeps_the_pipeline_node():
     _, redirects = get_redirects(
-        _heredoc_stmt("cat <<EOF | tr a-z A-Z\nabc\nEOF"))
+        _heredoc_stmt("cat <<EOF | tr a-z A-Z\nabc\nEOF")
+    )
     assert redirects[0].pipeline.type == NT.PIPELINE
     assert redirects[0].continuation == ()
 
 
 def test_heredoc_tail_after_a_hoisted_file_redirect():
     _, redirects = get_redirects(
-        _heredoc_stmt("cat <<EOF > /o && cat /o\ninner\nEOF"))
-    assert [r.kind
-            for r in redirects] == [RedirectKind.HEREDOC, RedirectKind.STDOUT]
-    assert [(op, get_text(right))
-            for op, right in redirects[0].continuation] == [("&&", "cat /o")]
+        _heredoc_stmt("cat <<EOF > /o && cat /o\ninner\nEOF")
+    )
+    assert [r.kind for r in redirects] == [
+        RedirectKind.HEREDOC,
+        RedirectKind.STDOUT,
+    ]
+    assert [
+        (op, get_text(right)) for op, right in redirects[0].continuation
+    ] == [("&&", "cat /o")]
 
 
 def test_heredoc_tail_right_operand_may_be_compound():
     _, redirects = get_redirects(
-        _heredoc_stmt("false <<EOF || { echo a; echo b; }\nx\nEOF"))
-    (op, right), = redirects[0].continuation
+        _heredoc_stmt("false <<EOF || { echo a; echo b; }\nx\nEOF")
+    )
+    ((op, right),) = redirects[0].continuation
     assert op == "||"
     assert right.type == NT.COMPOUND_STATEMENT
 
 
 def test_take_continuation_detaches_the_steps():
     _, redirects = get_redirects(
-        _heredoc_stmt("false <<EOF || echo a && echo b\nx\nEOF"))
+        _heredoc_stmt("false <<EOF || echo a && echo b\nx\nEOF")
+    )
     steps = take_continuation(redirects)
     assert [op for op, _ in steps] == ["||", "&&"]
     assert redirects[0].continuation == ()
@@ -1047,26 +1147,59 @@ def _spelled(parts):
     ]
 
 
-@pytest.mark.parametrize("cmd,parts", [
-    ('echo "😀界\n $x \t\n "', [
-        "", ("string_content", "😀界"), "\n",
-        ("simple_expansion", " $x"), " \t\n", " "
-    ]),
-    ('echo "a\\\n $x"',
-     ["", ("string_content", "a\\\n "), ("simple_expansion", "$x"), ""]),
-])
+@pytest.mark.parametrize(
+    "cmd,parts",
+    [
+        (
+            'echo "😀界\n $x \t\n "',
+            [
+                "",
+                ("string_content", "😀界"),
+                "\n",
+                ("simple_expansion", " $x"),
+                " \t\n",
+                " ",
+            ],
+        ),
+        (
+            'echo "a\\\n $x"',
+            ["", ("string_content", "a\\\n "), ("simple_expansion", "$x"), ""],
+        ),
+    ],
+)
 def test_quoted_parts_keeps_the_text_between_children(cmd, parts):
     assert _spelled(quoted_parts(_first(cmd).children[1])) == parts
 
 
-@pytest.mark.parametrize("cmd,parts", [
-    ('echo "${u:-\t$f}"', [("${", "${"), ("variable_name", "u"),
-                           (":-", ":-"), "\t", ("simple_expansion", "$f"),
-                           ("}", "}")]),
-    ('echo "${f/x/\\ $f}"', [("${", "${"), ("variable_name", "f"), ("/", "/"),
-                             ("regex", "x"), ("/", "/"), "\\ ",
-                             ("simple_expansion", "$f"), ("}", "}")]),
-])
+@pytest.mark.parametrize(
+    "cmd,parts",
+    [
+        (
+            'echo "${u:-\t$f}"',
+            [
+                ("${", "${"),
+                ("variable_name", "u"),
+                (":-", ":-"),
+                "\t",
+                ("simple_expansion", "$f"),
+                ("}", "}"),
+            ],
+        ),
+        (
+            'echo "${f/x/\\ $f}"',
+            [
+                ("${", "${"),
+                ("variable_name", "f"),
+                ("/", "/"),
+                ("regex", "x"),
+                ("/", "/"),
+                "\\ ",
+                ("simple_expansion", "$f"),
+                ("}", "}"),
+            ],
+        ),
+    ],
+)
 def test_source_parts_yields_the_text_no_child_owns(cmd, parts):
     expansion = _first(cmd).children[1].children[1]
     assert _spelled(source_parts(expansion)) == parts

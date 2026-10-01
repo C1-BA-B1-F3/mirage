@@ -9,7 +9,8 @@ def run_metadata(run: Run, variables: RunVariables) -> dict[str, Any]:
     if isinstance(system_metrics, str):
         system_metrics = json.loads(system_metrics)
     run_path = "/".join(
-        (variables["entity"], variables["project"], variables["run"]))
+        (variables["entity"], variables["project"], variables["run"])
+    )
     return {
         **variables,
         "path": run_path,

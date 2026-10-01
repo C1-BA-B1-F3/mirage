@@ -29,5 +29,6 @@ __all__ = [
 def __getattr__(name: str):
     if name == "RedisNamespaceStore":
         from mirage.workspace.mount.namespace.redis import RedisNamespaceStore
+
         return RedisNamespaceStore
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

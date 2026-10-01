@@ -16,11 +16,23 @@ from dataclasses import replace
 
 from mirage.policy.constants import VERB_ORDER
 from mirage.policy.match.allow import line_allowed
-from mirage.policy.match.rule import (Subject, better_match, matched_operand,
-                                      rule_applies, rule_reach, rule_scope,
-                                      subjects)
-from mirage.policy.types import (AdmissionRules, CommandContext, CommandRule,
-                                 LiveRules, Outcome, Ruling)
+from mirage.policy.match.rule import (
+    Subject,
+    better_match,
+    matched_operand,
+    rule_applies,
+    rule_reach,
+    rule_scope,
+    subjects,
+)
+from mirage.policy.types import (
+    AdmissionRules,
+    CommandContext,
+    CommandRule,
+    LiveRules,
+    Outcome,
+    Ruling,
+)
 
 
 def outranks(current: tuple[int, int], verb: int, depth: int) -> bool:
@@ -44,8 +56,9 @@ def outranks(current: tuple[int, int], verb: int, depth: int) -> bool:
     return depth > best_depth
 
 
-def rule_at(live: LiveRules,
-            subject: Subject) -> tuple[Outcome, CommandRule, int] | None:
+def rule_at(
+    live: LiveRules, subject: Subject
+) -> tuple[Outcome, CommandRule, int] | None:
     """The rule that speaks about one subject of a line, None when none
     does: the deepest anchor, deny before ask at equal depth, the
     earlier rule on a full tie.
@@ -117,10 +130,15 @@ def decide(ctx: CommandContext, rules: AdmissionRules | None) -> Ruling:
         return Ruling(Outcome.ALLOW)
     if not line_allowed(ctx, rules):
         return Ruling(Outcome.DENY, source="commands.allow")
-    live: LiveRules = [(outcome, rule)
-                       for outcome, written in ((Outcome.DENY, rules.deny),
-                                                (Outcome.ASK, rules.ask))
-                       for rule in written if rule_applies(rule, ctx)]
+    live: LiveRules = [
+        (outcome, rule)
+        for outcome, written in (
+            (Outcome.DENY, rules.deny),
+            (Outcome.ASK, rules.ask),
+        )
+        for rule in written
+        if rule_applies(rule, ctx)
+    ]
     best: tuple[int, int] | None = None
     chosen = Ruling(Outcome.ALLOW)
     asked: list[CommandRule] = []
@@ -135,10 +153,12 @@ def decide(ctx: CommandContext, rules: AdmissionRules | None) -> Ruling:
         if best is not None and not outranks(best, verb, depth):
             continue
         best = (verb, depth)
-        chosen = Ruling(outcome=outcome,
-                        rule=rule,
-                        matched_path=matched_operand(rule, subject),
-                        source=source_of(rule))
+        chosen = Ruling(
+            outcome=outcome,
+            rule=rule,
+            matched_path=matched_operand(rule, subject),
+            source=source_of(rule),
+        )
     if chosen.outcome is not Outcome.ASK:
         return chosen
     return replace(chosen, asks=tuple(asked))

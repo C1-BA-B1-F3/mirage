@@ -47,7 +47,8 @@ async def test_set_attrs_mode_hits_inode_no_residual(accessor, tmp_path):
 
 @pytest.mark.asyncio
 async def test_set_attrs_mode_000_clamps_and_returns_residual(
-        accessor, tmp_path):
+    accessor, tmp_path
+):
     residual = await set_attrs(accessor, _spec("/f.txt"), mode=0)
     assert residual == {"mode": 0}
     real = os.stat(tmp_path / "f.txt")
@@ -91,18 +92,18 @@ async def test_stat_reports_external_chmod(accessor, tmp_path):
 
 @pytest.mark.asyncio
 async def test_set_attrs_mtime_hits_inode(accessor, tmp_path):
-    await set_attrs(accessor,
-                    _spec("/f.txt"),
-                    mtime="2026-03-04T12:00:00+00:00")
+    await set_attrs(
+        accessor, _spec("/f.txt"), mtime="2026-03-04T12:00:00+00:00"
+    )
     result = await stat(accessor, _spec("/f.txt"))
     assert result.modified == "2026-03-04T12:00:00.000Z"
 
 
 @pytest.mark.asyncio
 async def test_set_attrs_atime_hits_inode(accessor):
-    residual = await set_attrs(accessor,
-                               _spec("/f.txt"),
-                               atime="2026-03-04T12:00:00+00:00")
+    residual = await set_attrs(
+        accessor, _spec("/f.txt"), atime="2026-03-04T12:00:00+00:00"
+    )
     assert residual == {}
     result = await stat(accessor, _spec("/f.txt"))
     assert result.atime == "2026-03-04T12:00:00.000Z"
@@ -136,9 +137,9 @@ async def test_rename_carries_inode_mode(accessor):
 @pytest.mark.asyncio
 async def test_set_attrs_under_a_plain_file_is_not_a_directory(tmp_path):
     (tmp_path / "a.txt").write_text("a")
-    spec = PathSpec(vfs_path="a.txt/x",
-                    virtual="/a.txt/x",
-                    directory="/a.txt/")
+    spec = PathSpec(
+        vfs_path="a.txt/x", virtual="/a.txt/x", directory="/a.txt/"
+    )
     with pytest.raises(NotADirectoryError) as exc:
         await set_attrs(DiskAccessor(tmp_path), spec, mode=0o644)
     assert exc.value.filename == "/a.txt/x"

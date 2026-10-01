@@ -27,9 +27,11 @@ TABLE = f"{BASE}/Features__tblFeatures000001"
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0],
-                    vfs_path=mount_key(virtual, ROOT))
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0],
+        vfs_path=mount_key(virtual, ROOT),
+    )
 
 
 @pytest.mark.asyncio
@@ -51,7 +53,9 @@ async def test_record_files_are_size_unknown(airtable_api):
     records = await stat(accessor, _spec(f"{TABLE}/records.jsonl"), index)
     view = await stat(
         accessor,
-        _spec(f"{TABLE}/views/Done_shipped__viwDone0000000001.jsonl"), index)
+        _spec(f"{TABLE}/views/Done_shipped__viwDone0000000001.jsonl"),
+        index,
+    )
     assert records.size is None and view.size is None
     assert view.extra == {"view_id": "viwDone0000000001"}
 
@@ -61,13 +65,16 @@ async def test_directories_stat_as_directories(airtable_api):
     accessor = make_accessor()
     index = RAMIndexCacheStore()
     for path in (f"{ROOT}/bases", BASE, TABLE, f"{TABLE}/views"):
-        assert (await stat(accessor, _spec(path),
-                           index)).type == FileType.DIRECTORY
+        assert (
+            await stat(accessor, _spec(path), index)
+        ).type == FileType.DIRECTORY
 
 
 @pytest.mark.asyncio
 async def test_an_unlisted_view_is_enoent(airtable_api):
     with pytest.raises(FileNotFoundError):
-        await stat(make_accessor(),
-                   _spec(f"{TABLE}/views/Gone__viwGone0000000001.jsonl"),
-                   RAMIndexCacheStore())
+        await stat(
+            make_accessor(),
+            _spec(f"{TABLE}/views/Gone__viwGone0000000001.jsonl"),
+            RAMIndexCacheStore(),
+        )

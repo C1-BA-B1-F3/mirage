@@ -26,7 +26,6 @@ from mirage.vfs.mongodb.prompt import PROMPT
 
 
 class MongoDBVFS(BaseVFS):
-
     accessor: MongoDBAccessor
     name: str = VFSName.MONGODB
     caches_reads: bool = False

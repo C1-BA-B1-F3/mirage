@@ -1,11 +1,16 @@
 from collections.abc import Awaitable, Callable
 
 from mirage.commands.builtin.utils.lines import map_lines
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    materialized_read,
+    merge_split_errors,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    read_stdin_async,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec, PolymorphicReadFn, StatFn
@@ -21,16 +26,19 @@ async def rev(
         # Each file is reversed on its own and keeps its own line ends, so
         # a last line with no newline stays without one (util-linux rev).
         parts = [
-            map_lines((await read_bytes(p)).decode(errors="replace"),
-                      _reversed) for p in paths
+            map_lines(
+                (await read_bytes(p)).decode(errors="replace"), _reversed
+            )
+            for p in paths
         ]
         return "".join(parts).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
         raise ValueError("rev: missing operand")
-    return map_lines(raw.decode(errors="replace"),
-                     _reversed).encode(), IOResult()
+    return map_lines(
+        raw.decode(errors="replace"), _reversed
+    ).encode(), IOResult()
 
 
 def _reversed(line: str) -> str:
@@ -61,9 +69,11 @@ async def rev_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await rev(readable,
-                  read_bytes=materialized_read(stream),
-                  stdin=opts.stdin), err)
+        await rev(
+            readable, read_bytes=materialized_read(stream), stdin=opts.stdin
+        ),
+        err,
+    )
 
 
 __all__ = ["rev", "rev_generic"]

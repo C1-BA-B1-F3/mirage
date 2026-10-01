@@ -15,8 +15,9 @@ async def iter_pages(config, document_id):
 
 
 @pytest.mark.asyncio
-async def test_read_bytes_uses_document_segments(monkeypatch, dify_accessor,
-                                                 dify_index, guide_path):
+async def test_read_bytes_uses_document_segments(
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
     monkeypatch.setattr(read, "get_document_segments", get_segments)
 
@@ -27,13 +28,16 @@ async def test_read_bytes_uses_document_segments(monkeypatch, dify_accessor,
 
 @pytest.mark.asyncio
 async def test_read_stream_separates_pages_with_single_newline(
-        monkeypatch, dify_accessor, dify_index, guide_path):
+    monkeypatch, dify_accessor, dify_index, guide_path
+):
     monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
     monkeypatch.setattr(read, "iter_segment_pages", iter_pages)
 
     chunks = [
-        chunk async for chunk in read.read_stream(dify_accessor, guide_path,
-                                                  dify_index)
+        chunk
+        async for chunk in read.read_stream(
+            dify_accessor, guide_path, dify_index
+        )
     ]
 
     assert chunks == [b"first", b"\n", b"second"]

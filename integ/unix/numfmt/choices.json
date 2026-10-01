@@ -5,6 +5,7 @@
       "seq": 991052,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=auto 1000",
@@ -22,6 +23,7 @@
       "seq": 991053,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=bogus 1",
@@ -39,6 +41,7 @@
       "seq": 991054,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=si 1k",
@@ -57,6 +60,7 @@
       "seq": 991055,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=iec-i 1ki",
@@ -74,6 +78,7 @@
       "seq": 991056,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=si 1m",
@@ -91,6 +96,7 @@
       "seq": 991057,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=iec-i 1Kx",
@@ -108,6 +114,7 @@
       "seq": 991077,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=bogus --to=si 1000",
@@ -125,6 +132,7 @@
       "seq": 991078,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=si --to=si 1000",
@@ -142,6 +150,7 @@
       "seq": 991090,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=bad1 --to=bad2 1",
@@ -160,6 +169,7 @@
       "seq": 991091,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=s 1000",
@@ -177,6 +187,7 @@
       "seq": 991092,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=n 1000",
@@ -194,6 +205,7 @@
       "seq": 991093,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --to=ie 1000",
@@ -211,6 +223,7 @@
       "seq": 991094,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=a 1K",

@@ -17,24 +17,48 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Callable
 
+from mirage.commands.builtin.generic.cp import (
+    TransferLinks,
+    TransferPolicy,
+    backup_displaces,
+    backup_raw,
+    copy_entries,
+    dest_kind,
+    link_stat,
+    make_backup,
+    overwrite_gate,
+    overwrite_type_error,
+    rename_link,
+    slash_refuses_file,
+    source_kind,
+    split_operands,
+    suffix_flag,
+    target_dir_error,
+    target_flags,
+    update_mode,
+    walk,
+    wrap_target_dir,
+)
 from mirage.commands.builtin.utils.backup import backup_control, sibling_path
 from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
-from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
-                                                backend_key_default,
-                                                copy_targets, path_exists)
+from mirage.commands.builtin.utils.copy import (
+    STAT_REFUSALS,
+    backend_key_default,
+    copy_targets,
+    path_exists,
+)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import (MoveStrategy, NativeMove, PathSpec, PrimitiveMove,
-                          ReaddirFn, StatFn)
+from mirage.types import (
+    MoveStrategy,
+    NativeMove,
+    PathSpec,
+    PrimitiveMove,
+    ReaddirFn,
+    StatFn,
+)
 from mirage.utils.errors import FS_ERRORS, fs_strerror
-
-from mirage.commands.builtin.generic.cp import (  # isort: skip
-    TransferLinks, link_stat, rename_link, TransferPolicy, backup_displaces,
-    backup_raw, copy_entries, dest_kind, source_kind, make_backup,
-    overwrite_gate, overwrite_type_error, slash_refuses_file, split_operands,
-    suffix_flag, target_dir_error, target_flags, update_mode, walk,
-    wrap_target_dir)
 
 _logger = logging.getLogger(__name__)
 
@@ -73,11 +97,16 @@ def parse_flags(fl: FlagView) -> MvFlags:
     control = backup_control("mv", backup_raw(fl), suffix)
     no_clobber = fl.as_bool("no_clobber")
     exchange = fl.as_bool("exchange")
-    if control is not None and control != "none" and (exchange or no_clobber or
-                                                      update == "none-fail"):
+    if (
+        control is not None
+        and control != "none"
+        and (exchange or no_clobber or update == "none-fail")
+    ):
         raise UsageError(
             "mv: cannot combine --backup with --exchange, -n, or "
-            "--update=none-fail\nTry 'mv --help' for more information.", 1)
+            "--update=none-fail\nTry 'mv --help' for more information.",
+            1,
+        )
     target_dir, no_target = target_flags("mv", fl)
     return MvFlags(
         no_clobber=no_clobber,
@@ -92,8 +121,9 @@ def parse_flags(fl: FlagView) -> MvFlags:
     )
 
 
-async def _entry_gone(strategy: PrimitiveMove, stat: StatFn, entry: PathSpec,
-                      is_dir: bool) -> bool:
+async def _entry_gone(
+    strategy: PrimitiveMove, stat: StatFn, entry: PathSpec, is_dir: bool
+) -> bool:
     """Confirm a failed removal actually left something behind.
 
     On dirless object stores a directory vanishes with its last child, so
@@ -162,8 +192,9 @@ async def _remove_entries(
             if await _entry_gone(strategy, stat, entry, is_dir):
                 removed_any = True
                 continue
-            errors.append(f"mv: cannot remove '{entry.virtual}': "
-                          f"{fs_strerror(exc)}")
+            errors.append(
+                f"mv: cannot remove '{entry.virtual}': {fs_strerror(exc)}"
+            )
             failed.append(base)
             continue
         removed_any = True
@@ -189,9 +220,14 @@ async def _holding_path(stat: StatFn, target: PathSpec) -> PathSpec | None:
     return None
 
 
-async def _undo_exchange(strategy: NativeMove, src: PathSpec, target: PathSpec,
-                         holding: PathSpec, staged: bool,
-                         swapped: bool) -> bool:
+async def _undo_exchange(
+    strategy: NativeMove,
+    src: PathSpec,
+    target: PathSpec,
+    holding: PathSpec,
+    staged: bool,
+    swapped: bool,
+) -> bool:
     """Put a partially completed swap back the way it was.
 
     Args:
@@ -212,8 +248,9 @@ async def _undo_exchange(strategy: NativeMove, src: PathSpec, target: PathSpec,
             await strategy.rename(src, target)
         await strategy.rename(holding, src)
     except FS_ERRORS as exc:
-        _logger.debug("mv --exchange rollback failed for %s: %s", src.virtual,
-                      exc)
+        _logger.debug(
+            "mv --exchange rollback failed for %s: %s", src.virtual, exc
+        )
         return False
     return True
 
@@ -249,18 +286,23 @@ async def _exchange_pair(
         lines (list[str] | None): Verbose sink; None keeps the swap silent.
     """
     if isinstance(strategy, PrimitiveMove):
-        errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.raw_path}': Invalid cross-device link")
+        errors.append(
+            f"mv: cannot exchange '{src.virtual}' and "
+            f"'{target.raw_path}': Invalid cross-device link"
+        )
         return
-    if not await path_exists(stat, src) \
-            or not await path_exists(stat, target):
-        errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.virtual}': No such file or directory")
+    if not await path_exists(stat, src) or not await path_exists(stat, target):
+        errors.append(
+            f"mv: cannot exchange '{src.virtual}' and "
+            f"'{target.virtual}': No such file or directory"
+        )
         return
     holding = await _holding_path(stat, target)
     if holding is None:
-        errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.virtual}': File exists")
+        errors.append(
+            f"mv: cannot exchange '{src.virtual}' and "
+            f"'{target.virtual}': File exists"
+        )
         return
     staged = False
     swapped = False
@@ -271,14 +313,19 @@ async def _exchange_pair(
         swapped = True
         await strategy.rename(holding, target)
     except FS_ERRORS as exc:
-        restored = await _undo_exchange(strategy, src, target, holding, staged,
-                                        swapped)
-        errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.raw_path}': {fs_strerror(exc)}")
+        restored = await _undo_exchange(
+            strategy, src, target, holding, staged, swapped
+        )
+        errors.append(
+            f"mv: cannot exchange '{src.virtual}' and "
+            f"'{target.raw_path}': {fs_strerror(exc)}"
+        )
         if not restored:
             writes[holding.mount_path] = b""
-            errors.append(f"mv: '{src.virtual}' left at "
-                          f"'{holding.virtual}' after a failed exchange")
+            errors.append(
+                f"mv: '{src.virtual}' left at "
+                f"'{holding.virtual}' after a failed exchange"
+            )
         return
     writes[src.mount_path] = b""
     writes[target.mount_path] = b""
@@ -338,11 +385,15 @@ async def mv(
     if copies is not None:
         stat = partial(link_stat, copies)
     key_of = backend_key if backend_key is not None else backend_key_default
-    sources, dst = split_operands("mv", paths, flags.target_dir,
-                                  flags.no_target_dir)
+    sources, dst = split_operands(
+        "mv", paths, flags.target_dir, flags.no_target_dir
+    )
     if dst is None:
-        dst = (flags.target_dir if isinstance(flags.target_dir, PathSpec) else
-               wrap_target_dir(sources[0], str(flags.target_dir)))
+        dst = (
+            flags.target_dir
+            if isinstance(flags.target_dir, PathSpec)
+            else wrap_target_dir(sources[0], str(flags.target_dir))
+        )
         err = await target_dir_error("mv", stat, dst)
         if err is not None:
             return None, IOResult(stderr=f"{err}\n".encode(), exit_code=1)
@@ -357,17 +408,20 @@ async def mv(
         dst_exists, dst_is_dir, dst_err = await dest_kind(stat, dst)
     if readdir is None and isinstance(strategy, PrimitiveMove):
         readdir = strategy.readdir
-    policy = TransferPolicy(cmd_name="mv",
-                            no_clobber=flags.no_clobber,
-                            update=flags.update,
-                            backup=flags.backup,
-                            suffix=flags.suffix)
+    policy = TransferPolicy(
+        cmd_name="mv",
+        no_clobber=flags.no_clobber,
+        update=flags.update,
+        backup=flags.backup,
+        suffix=flags.suffix,
+    )
     renames: list[tuple[str, str]] = []
     writes: dict[str, ByteSource] = {}
     lines: list[str] = []
     errors: list[str] = []
-    for src, target in copy_targets(sources, dst, dst_is_dir, dst_exists,
-                                    dst_err):
+    for src, target in copy_targets(
+        sources, dst, dst_is_dir, dst_exists, dst_err
+    ):
         src_exists, src_is_dir, src_err = await source_kind(stat, src)
         if not src_exists:
             errors.append(f"mv: cannot stat '{src.raw_path}': {src_err}")
@@ -378,50 +432,70 @@ async def mv(
             # it, and a directory renamed onto it is busy (coreutils 9.7).
             errors.append(
                 f"mv: cannot move '{src.raw_path}' to '': "
-                "Device or resource busy" if src_is_dir else
-                "mv: cannot overwrite directory '' with non-directory "
-                f"'{src.raw_path}'")
+                "Device or resource busy"
+                if src_is_dir
+                else "mv: cannot overwrite directory '' with non-directory "
+                f"'{src.raw_path}'"
+            )
             continue
         if key_of(src) == key_of(target):
-            errors.append(f"mv: '{src.virtual}' and '{target.virtual}' "
-                          "are the same file")
+            errors.append(
+                f"mv: '{src.virtual}' and '{target.virtual}' are the same file"
+            )
             continue
         if flags.exchange:
-            await _exchange_pair(strategy, stat, src, target, errors, writes,
-                                 lines if flags.verbose else None)
+            await _exchange_pair(
+                strategy,
+                stat,
+                src,
+                target,
+                errors,
+                writes,
+                lines if flags.verbose else None,
+            )
             continue
         if key_of(target).startswith(key_of(src) + "/"):
-            errors.append(f"mv: cannot move '{src.raw_path}' to a "
-                          f"subdirectory of itself, '{target.virtual}'")
+            errors.append(
+                f"mv: cannot move '{src.raw_path}' to a "
+                f"subdirectory of itself, '{target.virtual}'"
+            )
             continue
         if not flags.no_target_dir and target.virtual == dst.virtual:
-            target_exists, target_is_dir, target_err = (dst_exists, dst_is_dir,
-                                                        dst_err)
+            target_exists, target_is_dir, target_err = (
+                dst_exists,
+                dst_is_dir,
+                dst_err,
+            )
         else:
             target_exists, target_is_dir, target_err = await dest_kind(
-                stat, target)
+                stat, target
+            )
         # mv's own order: the destination's stat refuses before the
         # rename does. A chain that is merely absent is left to the
         # backend rename below, which answers ENOENT in the same words
         # (and on a dirless store may well succeed), unless a slash
         # asked for a directory a file source can never be.
         if target_err in STAT_REFUSALS:
-            errors.append(f"mv: cannot stat '{target.raw_path}': "
-                          f"{target_err}")
+            errors.append(f"mv: cannot stat '{target.raw_path}': {target_err}")
             continue
         if slash_refuses_file(target, target_exists, src_is_dir):
-            errors.append(f"mv: cannot move '{src.raw_path}' to "
-                          f"'{target.raw_path}': "
-                          f"{target_err or 'Not a directory'}")
+            errors.append(
+                f"mv: cannot move '{src.raw_path}' to "
+                f"'{target.raw_path}': "
+                f"{target_err or 'Not a directory'}"
+            )
             continue
-        mismatch = overwrite_type_error("mv", src, src_is_dir, target,
-                                        target_exists, target_is_dir)
+        mismatch = overwrite_type_error(
+            "mv", src, src_is_dir, target, target_exists, target_is_dir
+        )
         if mismatch is not None:
             errors.append(mismatch)
             continue
         if flags.no_copy and isinstance(strategy, PrimitiveMove):
-            errors.append(f"mv: cannot move '{src.raw_path}' to "
-                          f"'{target.raw_path}': Invalid cross-device link")
+            errors.append(
+                f"mv: cannot move '{src.raw_path}' to "
+                f"'{target.raw_path}': Invalid cross-device link"
+            )
             continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
@@ -431,19 +505,27 @@ async def mv(
         # after the clobber gate because -n and --update=none skip such a
         # target silently at exit 0, and a backup renames the target aside
         # first, so -b installs over it instead (all GNU 9.7).
-        if src_is_dir and target_is_dir and readdir is not None \
-                and not backup_displaces(flags.backup):
+        if (
+            src_is_dir
+            and target_is_dir
+            and readdir is not None
+            and not backup_displaces(flags.backup)
+        ):
             try:
                 children = await readdir(target)
             except FS_ERRORS as exc:
                 # Reading it as "empty" would clobber a directory whose
                 # contents could not be verified.
-                errors.append(f"mv: cannot overwrite '{target.virtual}': "
-                              f"{fs_strerror(exc)}")
+                errors.append(
+                    f"mv: cannot overwrite '{target.virtual}': "
+                    f"{fs_strerror(exc)}"
+                )
                 continue
             if children:
-                errors.append(f"mv: cannot overwrite '{target.virtual}': "
-                              "Directory not empty")
+                errors.append(
+                    f"mv: cannot overwrite '{target.virtual}': "
+                    "Directory not empty"
+                )
                 continue
         # The reveal guard answers before the backup so a refused move
         # cannot leave the destination renamed aside; only a directory
@@ -452,39 +534,61 @@ async def mv(
             try:
                 guard(src, target)
             except FS_ERRORS as exc:
-                errors.append(f"mv: cannot move '{src.raw_path}' to "
-                              f"'{target.raw_path}': {fs_strerror(exc)}")
+                errors.append(
+                    f"mv: cannot move '{src.raw_path}' to "
+                    f"'{target.raw_path}': {fs_strerror(exc)}"
+                )
                 continue
-        source_link = copies is not None and copies.links.stat_at(
-            src.virtual) is not None
-        backup_strategy = (NativeMove(rename=partial(rename_link, copies))
-                           if copies is not None else strategy)
-        backup, ok = await make_backup(policy, backup_strategy, stat, readdir,
-                                       target, writes, errors, copies)
+        source_link = (
+            copies is not None
+            and copies.links.stat_at(src.virtual) is not None
+        )
+        backup_strategy = (
+            NativeMove(rename=partial(rename_link, copies))
+            if copies is not None
+            else strategy
+        )
+        backup, ok = await make_backup(
+            policy,
+            backup_strategy,
+            stat,
+            readdir,
+            target,
+            writes,
+            errors,
+            copies,
+        )
         if not ok:
             continue
-        if backup is not None and copies is None and isinstance(
-                strategy, NativeMove):
+        if (
+            backup is not None
+            and copies is None
+            and isinstance(strategy, NativeMove)
+        ):
             renames.append((target.virtual, backup.virtual))
         if copies is not None and source_link:
             try:
                 await rename_link(copies, src, target)
             except FS_ERRORS as exc:
-                errors.append(f"mv: cannot move '{src.raw_path}' to "
-                              f"'{target.raw_path}': {fs_strerror(exc)}")
+                errors.append(
+                    f"mv: cannot move '{src.raw_path}' to "
+                    f"'{target.raw_path}': {fs_strerror(exc)}"
+                )
                 continue
             writes[src.mount_path] = b""
             writes[target.mount_path] = b""
         elif isinstance(strategy, PrimitiveMove):
             entries = await walk(strategy.readdir, stat, src)
-            copied_all, wrote_any = await copy_entries("mv",
-                                                       strategy,
-                                                       stat,
-                                                       src,
-                                                       target,
-                                                       entries,
-                                                       errors,
-                                                       copies=copies)
+            copied_all, wrote_any = await copy_entries(
+                "mv",
+                strategy,
+                stat,
+                src,
+                target,
+                entries,
+                errors,
+                copies=copies,
+            )
             if wrote_any:
                 writes[target.mount_path] = b""
             if not copied_all:
@@ -492,7 +596,8 @@ async def mv(
                 # the destination keeps the entries that landed.
                 continue
             removed_any, removed_all = await _remove_entries(
-                strategy, stat, entries, errors)
+                strategy, stat, entries, errors
+            )
             if removed_any:
                 writes[src.mount_path] = b""
             if not removed_all:
@@ -507,8 +612,10 @@ async def mv(
                 # parent chain is not all directories) is one failed
                 # operand, not an aborted command: GNU reports it and
                 # keeps going with the remaining sources.
-                errors.append(f"mv: cannot move '{src.raw_path}' to "
-                              f"'{target.raw_path}': {fs_strerror(exc)}")
+                errors.append(
+                    f"mv: cannot move '{src.raw_path}' to "
+                    f"'{target.raw_path}': {fs_strerror(exc)}"
+                )
                 continue
             writes[src.mount_path] = b""
             writes[target.mount_path] = b""

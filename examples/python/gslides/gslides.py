@@ -39,13 +39,16 @@ async def main() -> None:
     ws.register_cli("gws", GWS, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /gslides/__nf_missing__.txt",
-                "head /gslides/__nf_missing__.txt",
-                "stat /gslides/__nf_missing__.txt"):
+    for cmd in (
+        "cat /gslides/__nf_missing__.txt",
+        "head /gslides/__nf_missing__.txt",
+        "stat /gslides/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /gslides/ ===")
     r = await ws.shell("ls /gslides/")
@@ -81,14 +84,19 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on /gslides/owned/{first} ===")
-    r = await ws.shell(f'chmod 640 "/gslides/owned/{first}"'
-                       f' && chown 500:dev "/gslides/owned/{first}"'
-                       f' && touch -t 202601021530 "/gslides/owned/{first}"')
+    r = await ws.shell(
+        f'chmod 640 "/gslides/owned/{first}"'
+        f' && chown 500:dev "/gslides/owned/{first}"'
+        f' && touch -t 202601021530 "/gslides/owned/{first}"'
+    )
     print(f"  chmod/chown/touch exit={r.exit_code}")
     st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path(f"/gslides/owned/{first}"))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+        "stat", PathSpec.from_str_path(f"/gslides/owned/{first}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     print("=== jq .title ===")
     r = await ws.shell(f'jq ".title" /gslides/owned/{first}')
@@ -107,8 +115,9 @@ async def main() -> None:
     print((await r.stdout_str())[:500])
 
     print("\n=== find /gslides/owned/ ===")
-    r = await ws.shell("find /gslides/owned/ -name '*.gslide.json' | head -n 5"
-                       )
+    r = await ws.shell(
+        "find /gslides/owned/ -name '*.gslide.json' | head -n 5"
+    )
     print(await r.stdout_str())
 
     print("=== grep textRun ===")
@@ -132,32 +141,37 @@ async def main() -> None:
     print(await r.stdout_str())
 
     print("=== gws slides presentations create ===")
-    r = await ws.shell('gws slides presentations create'
-                       ' --json \'{"title": "MIRAGE Slides Test"}\'')
+    r = await ws.shell(
+        "gws slides presentations create"
+        ' --json \'{"title": "MIRAGE Slides Test"}\''
+    )
     pres = json.loads(await r.stdout_str())
     pres_id = pres["presentationId"]
     print(f"Created: {pres_id}")
 
     print("\n=== gws slides presentations batchUpdate ===")
-    body = json.dumps({
-        "requests": [{
-            "createSlide": {
-                "insertionIndex": 1,
-                "slideLayoutReference": {
-                    "predefinedLayout": "BLANK"
-                },
-            }
-        }]
-    })
+    body = json.dumps(
+        {
+            "requests": [
+                {
+                    "createSlide": {
+                        "insertionIndex": 1,
+                        "slideLayoutReference": {"predefinedLayout": "BLANK"},
+                    }
+                }
+            ]
+        }
+    )
     params = json.dumps({"presentationId": pres_id})
-    r = await ws.shell("gws slides presentations batchUpdate"
-                       f" --params '{params}' --json '{body}'")
+    r = await ws.shell(
+        "gws slides presentations batchUpdate"
+        f" --params '{params}' --json '{body}'"
+    )
     update = json.loads(await r.stdout_str())
     slide_id = update["replies"][0]["createSlide"]["objectId"]
     print(f"Added slide: {slide_id}")
 
-    url = (f"https://docs.google.com/presentation/"
-           f"d/{pres_id}/edit")
+    url = f"https://docs.google.com/presentation/d/{pres_id}/edit"
     print(f"\nOpen: {url}")
 
 

@@ -43,14 +43,6 @@ async def main():
 
     first = (await r.stdout_str()).strip().split("\n")[0]
 
-    print("=== plan: cat ===")
-    dr = await ws.shell(f"cat /gsheets/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
-    print("=== plan: grep ===")
-    dr = await ws.shell(f"grep title /gsheets/owned/{first}", provision=True)
-    print(f"  network_read={dr.network_read}, precision={dr.precision}")
-
     print("=== jq .properties.title ===")
     r = await ws.shell(f'jq ".properties.title" /gsheets/owned/{first}')
     print(await r.stdout_str())
@@ -73,8 +65,7 @@ async def main():
 
     print("=== gws sheets spreadsheets create ===")
     body = json.dumps({"properties": {"title": "MIRAGE Sheets Test"}})
-    r = await ws.shell("gws sheets spreadsheets create"
-                       f" --json '{body}'")
+    r = await ws.shell(f"gws sheets spreadsheets create --json '{body}'")
     out = await r.stdout_str()
     if r.exit_code != 0 or not out.strip():
         err = (await r.stderr_str()).strip() or "empty response"
@@ -85,33 +76,37 @@ async def main():
     print(f"Created: {sheet_id}")
 
     print("\n=== gws sheets write ===")
-    values = json.dumps([
-        ["Name", "Age", "City"],
-        ["Alice", "30", "NYC"],
-        ["Bob", "25", "SF"],
-    ])
-    r = await ws.shell(f"gws sheets write"
-                       f" --spreadsheet {sheet_id}"
-                       f' --range "Sheet1!A1:C3"'
-                       f" --json-values '{values}'")
+    values = json.dumps(
+        [
+            ["Name", "Age", "City"],
+            ["Alice", "30", "NYC"],
+            ["Bob", "25", "SF"],
+        ]
+    )
+    r = await ws.shell(
+        f"gws sheets write"
+        f" --spreadsheet {sheet_id}"
+        f' --range "Sheet1!A1:C3"'
+        f" --json-values '{values}'"
+    )
     print(f"Written: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws sheets read ===")
-    r = await ws.shell(f'gws sheets read'
-                       f' --spreadsheet {sheet_id}'
-                       f' --range "Sheet1!A1:C3"')
+    r = await ws.shell(
+        f'gws sheets read --spreadsheet {sheet_id} --range "Sheet1!A1:C3"'
+    )
     print(f"Values: {await r.stdout_str()}")
 
     print("=== gws sheets append ===")
-    r = await ws.shell(f"gws sheets append"
-                       f" --spreadsheet {sheet_id}"
-                       f" --values Diana,28,Chicago")
+    r = await ws.shell(
+        f"gws sheets append --spreadsheet {sheet_id} --values Diana,28,Chicago"
+    )
     print(f"Appended: {(await r.stdout_str())[:80]}")
 
     print("\n=== gws sheets read (all) ===")
-    r = await ws.shell(f'gws sheets read'
-                       f' --spreadsheet {sheet_id}'
-                       f' --range Sheet1')
+    r = await ws.shell(
+        f"gws sheets read --spreadsheet {sheet_id} --range Sheet1"
+    )
     print(f"All: {await r.stdout_str()}")
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"

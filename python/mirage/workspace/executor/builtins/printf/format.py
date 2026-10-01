@@ -59,7 +59,8 @@ _ANSIC_ESCAPES = {
 }
 
 _Q_SAFE = set(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%+-./:=@_")
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%+-./:=@_"
+)
 
 
 def _wrap_signed(n: int) -> int:
@@ -128,8 +129,9 @@ def _parse_float(value: str) -> tuple[float, bool]:
         return 0.0, False
 
 
-def _apply_pad(prefix: str, body: str, flags: str, width: int | None,
-               allow_zero: bool) -> str:
+def _apply_pad(
+    prefix: str, body: str, flags: str, width: int | None, allow_zero: bool
+) -> str:
     """Pad ``prefix + body`` to ``width`` per the justify/zero flags.
 
     Args:
@@ -150,8 +152,9 @@ def _apply_pad(prefix: str, body: str, flags: str, width: int | None,
     return " " * pad + s
 
 
-def _format_int(value: int, conv: str, flags: str, width: int | None,
-                precision: int | None) -> str:
+def _format_int(
+    value: int, conv: str, flags: str, width: int | None, precision: int | None
+) -> str:
     """Render ``%d %i %o %u %x %X`` with 64-bit wrap and GNU flag rules.
 
     Args:
@@ -199,8 +202,13 @@ def _format_int(value: int, conv: str, flags: str, width: int | None,
     return _apply_pad(prefix, digits, flags, width, allow_zero)
 
 
-def _format_float(value: float, conv: str, flags: str, width: int | None,
-                  precision: int | None) -> str:
+def _format_float(
+    value: float,
+    conv: str,
+    flags: str,
+    width: int | None,
+    precision: int | None,
+) -> str:
     """Render ``%f %F %e %E %g %G`` via the platform C formatter.
 
     Args:
@@ -219,8 +227,13 @@ def _format_float(value: float, conv: str, flags: str, width: int | None,
     return spec % value
 
 
-def _format_hex_float(value: float, flags: str, width: int | None,
-                      precision: int | None, upper: bool) -> str:
+def _format_hex_float(
+    value: float,
+    flags: str,
+    width: int | None,
+    precision: int | None,
+    upper: bool,
+) -> str:
     """Render ``%a``/``%A`` at IEEE double precision (py/ts identical;
     differs from bash, which formats in ``long double``).
 
@@ -233,17 +246,25 @@ def _format_hex_float(value: float, flags: str, width: int | None,
     """
     if value != value:
         body = "nan"
-        return _apply_pad("",
-                          body.upper() if upper else body, flags, width, False)
+        return _apply_pad(
+            "", body.upper() if upper else body, flags, width, False
+        )
     if value in (float("inf"), float("-inf")):
-        sign = "-" if value < 0 else ("+" if "+" in flags else
-                                      (" " if " " in flags else ""))
+        sign = (
+            "-"
+            if value < 0
+            else ("+" if "+" in flags else (" " if " " in flags else ""))
+        )
         body = "inf"
-        return _apply_pad(sign,
-                          body.upper() if upper else body, flags, width, False)
+        return _apply_pad(
+            sign, body.upper() if upper else body, flags, width, False
+        )
     neg = math.copysign(1.0, value) < 0
-    sign = "-" if neg else ("+" if "+" in flags else
-                            (" " if " " in flags else ""))
+    sign = (
+        "-"
+        if neg
+        else ("+" if "+" in flags else (" " if " " in flags else ""))
+    )
     mant, exp = math.frexp(abs(value))
     if abs(value) == 0.0:
         lead, frac_hex, exp2 = 0, "", 0
@@ -281,17 +302,22 @@ def _round_hex(frac_hex: str, precision: int) -> str:
     nxt = frac_hex[precision]
     val = int(kept, 16) if kept else 0
     nd = int(nxt, 16)
-    round_up = nd > 8 or (nd == 8 and
-                          (int(frac_hex[precision + 1:] or "0", 16) > 0 or
-                           (kept and int(kept[-1], 16) % 2 == 1)))
+    round_up = nd > 8 or (
+        nd == 8
+        and (
+            int(frac_hex[precision + 1 :] or "0", 16) > 0
+            or (kept and int(kept[-1], 16) % 2 == 1)
+        )
+    )
     if round_up:
         val += 1
     result = format(val, "x").rjust(precision, "0") if precision else ""
     return result[-precision:] if precision else ""
 
 
-def _format_printf_str(s: str, flags: str, width: int | None,
-                       precision: int | None) -> str:
+def _format_printf_str(
+    s: str, flags: str, width: int | None, precision: int | None
+) -> str:
     """Render a string for ``%s`` with GNU printf width/precision rules.
 
     Args:
@@ -352,8 +378,9 @@ def _quote_shell(s: str) -> str:
     return "".join(out)
 
 
-def _read_escape(fmt: str, i: int, warnings: list[str],
-                 b_arg: bool) -> tuple[str, int, bool]:
+def _read_escape(
+    fmt: str, i: int, warnings: list[str], b_arg: bool
+) -> tuple[str, int, bool]:
     """Interpret a backslash escape at ``fmt[i]``. Returns the emitted
     text, the next index, and whether output should stop (``\\c``).
 
@@ -454,8 +481,9 @@ def _read_conversion(
     return None
 
 
-def run_printf(fmt: str,
-               args: list[str]) -> tuple[str, list[str], bool, str | None]:
+def run_printf(
+    fmt: str, args: list[str]
+) -> tuple[str, list[str], bool, str | None]:
     """Apply GNU printf's format-reuse semantics: scan ``fmt`` once per
     cycle, consuming arguments; repeat while arguments remain and a cycle
     consumed at least one (so a conversion-less format prints once and
@@ -538,9 +566,14 @@ def run_printf(fmt: str,
     return "".join(out), messages, failed, excess
 
 
-def _convert(conv: str, raw: str | None, flags: str, width: int | None,
-             precision: int | None,
-             warnings: list[str]) -> tuple[str, str | None, bool]:
+def _convert(
+    conv: str,
+    raw: str | None,
+    flags: str,
+    width: int | None,
+    precision: int | None,
+    warnings: list[str],
+) -> tuple[str, str | None, bool]:
     """Render one conversion. Returns (text, error message or None, stop),
     where ``stop`` requests that all further output be suppressed (a
     ``\\c`` inside a ``%b`` argument).
@@ -555,8 +588,11 @@ def _convert(conv: str, raw: str | None, flags: str, width: int | None,
             argument.
     """
     if conv == "s":
-        return _format_printf_str(raw or "", flags, width, precision), None, \
-            False
+        return (
+            _format_printf_str(raw or "", flags, width, precision),
+            None,
+            False,
+        )
     if conv == "c":
         return _format_char(raw or "", flags, width), None, False
     if conv == "b":
@@ -565,8 +601,11 @@ def _convert(conv: str, raw: str | None, flags: str, width: int | None,
             text = text[:precision]
         return _apply_pad("", text, flags, width, False), None, stop
     if conv == "q":
-        return _apply_pad("", _quote_shell(raw or ""), flags, width,
-                          False), None, False
+        return (
+            _apply_pad("", _quote_shell(raw or ""), flags, width, False),
+            None,
+            False,
+        )
     if conv in ("d", "i", "o", "u", "x", "X"):
         if raw is None:
             value, err = 0, None
@@ -577,6 +616,9 @@ def _convert(conv: str, raw: str | None, flags: str, width: int | None,
     value_f, valid = (0.0, True) if raw is None else _parse_float(raw)
     err = None if valid else f"printf: {raw}: invalid number\n"
     if conv in ("a", "A"):
-        return _format_hex_float(value_f, flags, width, precision,
-                                 conv == "A"), err, False
+        return (
+            _format_hex_float(value_f, flags, width, precision, conv == "A"),
+            err,
+            False,
+        )
     return _format_float(value_f, conv, flags, width, precision), err, False

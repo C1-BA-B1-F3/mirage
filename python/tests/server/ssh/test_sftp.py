@@ -15,13 +15,25 @@
 import asyncio
 import inspect
 import stat
+import threading
+import time
 
 import asyncssh
 import pytest
 
-from mirage.server.ssh.sftp import MirageSFTPServer, filetype, to_attrs
-from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
-                                       vault_workspace)
+from mirage.server.ssh.constants import LISTING_CONCURRENCY
+from mirage.server.ssh.sftp import (
+    MirageSFTPServer,
+    filetype,
+    listing,
+    to_attrs,
+)
+from tests.server.ssh.conftest import (
+    bind_key,
+    start_harness,
+    stop_harness,
+    vault_workspace,
+)
 
 # The base-class members that never touch the host filesystem: accessors
 # and formatting helpers. Every other method of asyncssh.SFTPServer serves
@@ -55,7 +67,8 @@ def test_every_host_reaching_method_is_overridden():
     exposed = sorted(base - HOST_SAFE - set(vars(MirageSFTPServer)))
     assert not exposed, (
         "asyncssh.SFTPServer serves the host filesystem from these; "
-        f"override them on MirageSFTPServer: {exposed}")
+        f"override them on MirageSFTPServer: {exposed}"
+    )
 
 
 def test_attrs_carry_type_mode_size_and_split_times():
@@ -205,8 +218,10 @@ async def test_statvfs_answers(ssh):
 
 @pytest.mark.asyncio
 async def test_a_read_only_mount_refuses_writes(ssh_readonly):
-    async with ssh_readonly.connect() as conn, conn.start_sftp_client(
-    ) as sftp:
+    async with (
+        ssh_readonly.connect() as conn,
+        conn.start_sftp_client() as sftp,
+    ):
         with pytest.raises(asyncssh.SFTPPermissionDenied):
             async with sftp.open("/nope", "w") as f:
                 await f.write("x")
@@ -214,8 +229,10 @@ async def test_a_read_only_mount_refuses_writes(ssh_readonly):
 
 @pytest.mark.asyncio
 async def test_unknown_workspace_serves_nothing(ssh):
-    async with ssh.connect(
-            username="nope") as conn, conn.start_sftp_client() as sftp:
+    async with (
+        ssh.connect(username="nope") as conn,
+        conn.start_sftp_client() as sftp,
+    ):
         with pytest.raises(asyncssh.SFTPNoSuchFile, match="nope"):
             await sftp.stat("/")
 
@@ -308,3 +325,66 @@ async def test_sftp_runs_under_the_key_profile(tmp_path):
     finally:
         await stop_harness(harness)
     assert content == b"token\n"
+
+
+class ListingCore:
+    """MountCore double: a wide directory whose stats each take a while."""
+
+    def __init__(self, names, refuse=None):
+        self.names = names
+        self.refuse = refuse
+        self.lock = threading.Lock()
+        self.now = 0
+        self.peak = 0
+        self.calls = 0
+
+    def readdir(self, path):
+        return [".", ".."] + self.names
+
+    def getattr(self, path):
+        with self.lock:
+            self.calls += 1
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+        time.sleep(0.005)
+        with self.lock:
+            self.now -= 1
+        if path.endswith("gone"):
+            raise FileNotFoundError(path)
+        if self.refuse is not None and path.endswith(self.refuse):
+            raise PermissionError(path)
+        return {"st_size": len(path)}
+
+
+def test_listing_stats_entries_together_under_the_cap():
+    # Each stat is a hop to the workspace loop and, on an unindexed
+    # mount, a backend request: a wide directory must not pay them one
+    # after another, nor put them all on the wire at once.
+    names = [f"f{i}" for i in range(40)] + ["gone"]
+    core = ListingCore(names)
+    rows = listing(core, "/d")
+    assert [name for name, _ in rows] == [".", ".."] + names[:-1]
+    assert rows[2] == ("f0", {"st_size": len("/d/f0")})
+    assert core.peak == LISTING_CONCURRENCY
+
+
+def test_listings_at_once_share_one_cap():
+    # Two channels listing together share the pool: their stats stay
+    # under one cap rather than each bringing threads of its own.
+    core = ListingCore([f"f{i}" for i in range(40)])
+    threads = [
+        threading.Thread(target=listing, args=(core, "/d")) for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert core.peak == LISTING_CONCURRENCY
+
+
+def test_a_refused_stat_ends_the_listing_without_statting_the_rest():
+    core = ListingCore([f"f{i}" for i in range(100)], refuse="/d/f2")
+    with pytest.raises(PermissionError):
+        listing(core, "/d")
+    assert core.now == 0
+    assert core.calls <= LISTING_CONCURRENCY + 5

@@ -40,21 +40,23 @@ def _move_subtree(store: RAMStore, s: str, d: str) -> None:
     for key in list(store.dirs):
         if key.startswith(prefix):
             store.dirs.discard(key)
-            store.dirs.add(new_prefix + key[len(prefix):])
+            store.dirs.add(new_prefix + key[len(prefix) :])
     for key in list(store.files):
         if key.startswith(prefix):
-            store.files[new_prefix + key[len(prefix):]] = store.files.pop(key)
+            store.files[new_prefix + key[len(prefix) :]] = store.files.pop(key)
     for key in list(store.modified):
         if key.startswith(prefix):
-            store.modified[new_prefix +
-                           key[len(prefix):]] = store.modified.pop(key)
+            store.modified[new_prefix + key[len(prefix) :]] = (
+                store.modified.pop(key)
+            )
     for key in list(store.attrs):
         if key.startswith(prefix):
-            store.attrs[new_prefix + key[len(prefix):]] = store.attrs.pop(key)
+            store.attrs[new_prefix + key[len(prefix) :]] = store.attrs.pop(key)
 
 
-async def rename(accessor: RAMAccessor, src_spec: PathSpec,
-                 dst_spec: PathSpec) -> None:
+async def rename(
+    accessor: RAMAccessor, src_spec: PathSpec, dst_spec: PathSpec
+) -> None:
     src = src_spec.mount_path
     dst = dst_spec.mount_path
     store = accessor.store

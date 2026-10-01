@@ -45,8 +45,11 @@ def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
             continue
         if not 0 <= r.fd < 2**31 and r.fd != FD_BOTH:
             return r.fd
-        if (isinstance(r.target, int) and not 0 <= r.target < 2**31
-                and r.target != FD_CLOSE):
+        if (
+            isinstance(r.target, int)
+            and not 0 <= r.target < 2**31
+            and r.target != FD_CLOSE
+        ):
             return r.target
     return None
 
@@ -75,7 +78,6 @@ async def unreadable_stdin() -> AsyncIterator[bytes]:
 
 
 class FileInput(SharedInput):
-
     def __init__(self, description: "FileDescription", data: bytes) -> None:
         super().__init__(data)
         self.description = description
@@ -107,6 +109,7 @@ class Inherited:
     after the level rebinds its own (``3>&1 >f``), as bash's copy keeps
     the open file description.
     """
+
     owner: StreamOwner
     channel: Channel
 
@@ -133,12 +136,14 @@ class Recorder(JobConsole, StreamOwner):
 # The recorder of the innermost level running a command, for a level
 # whose output is a value (a substitution's) to send another level's
 # stream bytes toward it.
-ENCLOSING: ContextVar[Recorder | None] = ContextVar("enclosing_recorder",
-                                                    default=None)
+ENCLOSING: ContextVar[Recorder | None] = ContextVar(
+    "enclosing_recorder", default=None
+)
 
 
-async def deliver(sink: JobConsole | None, stream: Inherited,
-                  data: bytes) -> bool:
+async def deliver(
+    sink: JobConsole | None, stream: Inherited, data: bytes
+) -> bool:
     """Send bytes written to a stream another level owns toward it.
 
     They go up through the sink, or the enclosing level's recorder when

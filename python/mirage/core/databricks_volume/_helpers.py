@@ -28,8 +28,9 @@ def parent_path(path: PathSpec) -> PathSpec:
             original += parent_relative
     else:
         original = parent_relative
-    return PathSpec.from_str_path(original or "/",
-                                  mount_key(original or "/", prefix))
+    return PathSpec.from_str_path(
+        original or "/", mount_key(original or "/", prefix)
+    )
 
 
 def is_directory_metadata(metadata: JsonValue) -> bool:

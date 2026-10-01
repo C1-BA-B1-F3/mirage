@@ -36,6 +36,7 @@ class RealpathFlags:
         relative_to (str | None): ``--relative-to``.
         relative_base (str | None): ``--relative-base``.
     """
+
     mode: str = ""
     links: str = "P"
     quiet: bool = False
@@ -48,12 +49,14 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> RealpathFlags:
     fl = FlagView(flags, spec=SPECS["realpath"])
     modes = fl.typed_order(*_MODES)
     links = fl.typed_order(*_LINKS)
-    return RealpathFlags(mode=_MODES[modes[-1]] if modes else "",
-                         links=_LINKS[links[-1]] if links else "P",
-                         quiet=fl.as_bool("quiet"),
-                         zero=fl.as_bool("zero"),
-                         relative_to=fl.as_str("relative_to"),
-                         relative_base=fl.as_str("relative_base"))
+    return RealpathFlags(
+        mode=_MODES[modes[-1]] if modes else "",
+        links=_LINKS[links[-1]] if links else "P",
+        quiet=fl.as_bool("quiet"),
+        zero=fl.as_bool("zero"),
+        relative_to=fl.as_str("relative_to"),
+        relative_base=fl.as_str("relative_base"),
+    )
 
 
 async def _directory(stat: PathStat, path: str, word: str) -> None:
@@ -61,9 +64,14 @@ async def _directory(stat: PathStat, path: str, word: str) -> None:
         raise enotdir(word)
 
 
-async def canonicalize(word: str, cwd: str, mode: str, nolinks: bool,
-                       follow: Callable[[str], str] | None,
-                       stat: PathStat) -> str:
+async def canonicalize(
+    word: str,
+    cwd: str,
+    mode: str,
+    nolinks: bool,
+    follow: Callable[[str], str] | None,
+    stat: PathStat,
+) -> str:
     """gnulib's canonicalize_filename_mode, over the workspace, which
     ``realpath`` and ``readlink -f`` share.
 
@@ -101,7 +109,7 @@ async def canonicalize(word: str, cwd: str, mode: str, nolinks: bool,
         except CycleError as exc:
             if mode != "m":
                 raise eloop(word) from exc
-        if mode != "m" and names[i + 1:i + 2] in ([".."], ["."]):
+        if mode != "m" and names[i + 1 : i + 2] in ([".."], ["."]):
             await _directory(stat, path, word)
     if mode == "m" or names[-1:] in ([], [".."], ["."]):
         return path
@@ -124,8 +132,8 @@ def _under(base: str, path: str) -> bool:
 
 def _relative(path: str, base: str) -> str:
     common = posixpath.commonpath([path, base])
-    climb = base[len(common):].strip("/")
-    rest = path[len(common):].strip("/")
+    climb = base[len(common) :].strip("/")
+    rest = path[len(common) :].strip("/")
     parts = [".."] * (climb.count("/") + 1 if climb else 0)
     return "/".join(parts + ([rest] if rest else [])) or "."
 
@@ -156,8 +164,9 @@ async def realpath(
         raise missing_operand_error("realpath", None)
 
     async def canon(word: str) -> str:
-        path = await canonicalize(word, cwd, flags.mode, flags.links != "P",
-                                  follow, stat)
+        path = await canonicalize(
+            word, cwd, flags.mode, flags.links != "P", follow, stat
+        )
         if flags.links != "L":
             return path
         return await canonicalize(path, cwd, flags.mode, False, follow, stat)
@@ -168,17 +177,22 @@ async def realpath(
             await _directory(stat, path, word)
         return path
 
-    relative_to = (flags.relative_to if flags.relative_to is not None
-                   else flags.relative_base)
+    relative_to = (
+        flags.relative_to
+        if flags.relative_to is not None
+        else flags.relative_base
+    )
     to = base = None
-    for word in dict.fromkeys(w for w in (relative_to, flags.relative_base)
-                              if w is not None):
+    for word in dict.fromkeys(
+        w for w in (relative_to, flags.relative_base) if w is not None
+    ):
         try:
             path = await directory(word)
         except OSError as exc:
-            return None, IOResult(exit_code=1,
-                                  stderr=fs_error_line("realpath", word,
-                                                       exc).encode())
+            return None, IOResult(
+                exit_code=1,
+                stderr=fs_error_line("realpath", word, exc).encode(),
+            )
         if word != relative_to:
             to, base = (to, path) if _under(path, to or "/") else (None, to)
         else:
@@ -200,8 +214,9 @@ async def realpath(
             lines.append(_relative(path, to))
     end = "\0" if flags.zero else "\n"
     out = "".join(line + end for line in lines).encode() or None
-    return out, IOResult(stderr="".join(errors).encode() or None,
-                         exit_code=1 if failed else 0)
+    return out, IOResult(
+        stderr="".join(errors).encode() or None, exit_code=1 if failed else 0
+    )
 
 
 def door_stat(dispatch: DispatchFn) -> PathStat:
@@ -219,8 +234,9 @@ async def realpath_generic(
     opts: CommandOpts,
     stat_fn: StatFn,
 ) -> tuple[ByteSource | None, IOResult]:
-    prefix = (mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
-              if paths else "")
+    prefix = (
+        mount_prefix_of(paths[0].virtual, paths[0].vfs_path) if paths else ""
+    )
 
     async def stat(path: str) -> FileStat:
         return await stat_fn(to_pathspec(path, prefix))
@@ -230,4 +246,5 @@ async def realpath_generic(
         stat=door_stat(opts.dispatch) if opts.dispatch is not None else stat,
         cwd=opts.cwd.virtual,
         follow=link_follow(opts.ns.links if opts.ns is not None else None),
-        flags=parse_flags(opts.flags))
+        flags=parse_flags(opts.flags),
+    )

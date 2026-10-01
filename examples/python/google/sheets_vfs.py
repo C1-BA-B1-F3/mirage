@@ -63,7 +63,8 @@ async def main():
             print("\n--- os.path.exists() ---")
             print(f"  {first}: {os.path.exists(path)}")
             print(
-                f"  nonexistent: {os.path.exists('/gsheets/owned/nope.json')}")
+                f"  nonexistent: {os.path.exists('/gsheets/owned/nope.json')}"
+            )
 
         print("\n--- bash history ---")
         with open("/.bash_history") as f:

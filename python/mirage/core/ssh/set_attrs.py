@@ -74,9 +74,15 @@ async def set_attrs(
     if gid is not None:
         residual["gid"] = gid
     if atime is not None or mtime is not None:
-        new_atime = (datetime.fromisoformat(atime).timestamp()
-                     if atime is not None else attrs.atime or 0.0)
-        new_mtime = (datetime.fromisoformat(mtime).timestamp()
-                     if mtime is not None else attrs.mtime or 0.0)
+        new_atime = (
+            datetime.fromisoformat(atime).timestamp()
+            if atime is not None
+            else attrs.atime or 0.0
+        )
+        new_mtime = (
+            datetime.fromisoformat(mtime).timestamp()
+            if mtime is not None
+            else attrs.mtime or 0.0
+        )
         await sftp.utime(remote, times=(new_atime, new_mtime))
     return residual

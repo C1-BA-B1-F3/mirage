@@ -24,9 +24,9 @@ import { start } from '../kit/typescript/serve.ts'
 import { DEFAULT_RUN, DEFAULT_TENANT } from '../kit/typescript/tenant.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
 import { gwsFake, gwsRoutes } from './fake.ts'
-import { cachedState, dropState, withState } from './store/cache.ts'
+import { cachedState, dropState, flushedRows, withState } from './store/cache.ts'
 import { loadState } from './store/load.ts'
-import { saveState } from './store/save.ts'
+import { TABLES, buildRows, saveState } from './store/save.ts'
 
 import { parseDriveQuery, matchQuery } from './drive/query.ts'
 import { createDriveItem } from './drive/item.ts'
@@ -1473,6 +1473,123 @@ async function main(): Promise<void> {
       )
     } finally {
       await home.close()
+    }
+
+    // ---- a write flushes a diff, and the diff stores the world
+    //
+    // Every write after the first diffs against the rows the previous flush
+    // wrote (store/save.ts). After each kind of write, the world SQLite gives
+    // back must render the rows of the world the cache answers from. An early
+    // file's new revision renumbers every later revision, and a delete every
+    // later file, which is the case where only `seq` moves.
+    const diffed = await start(gwsFake, 0)
+    try {
+      const base = diffed.endpoint
+      check('the diff flush fake seeds', (await reset(base, seed)) === 200)
+      const db = diffed.runtime.pool.client(DEFAULT_RUN)
+      const T = DEFAULT_TENANT
+      // Each table as a sorted set of rows with sorted keys: an ordered
+      // table's order is its `seq` column, which is compared, and storage
+      // order is not what a rewrite promises either. A surrogate `pk` is
+      // the one column no world names.
+      const render = (row: Record<string, unknown>): string =>
+        JSON.stringify(
+          Object.fromEntries(Object.entries(row).sort(([a], [b]) => (a < b ? -1 : 1))),
+          (_key, v: unknown) =>
+            typeof v === 'bigint'
+              ? v.toString()
+              : v instanceof Uint8Array
+                ? Buffer.from(v).toString('base64')
+                : v,
+        )
+      const reader = db as unknown as Record<
+        string,
+        { findMany(args: { where: { tenant: string } }): Promise<Record<string, unknown>[]> }
+      >
+      const agree = async (label: string): Promise<void> => {
+        const world = cachedState(db, T)
+        const built = world === undefined ? undefined : buildRows(T, world)
+        const want: [string, string[]][] = []
+        const have: [string, string[]][] = []
+        for (const [name, model] of TABLES) {
+          want.push([name, (built?.[name] ?? []).map((row) => render(row)).sort()])
+          const delegate = model.charAt(0).toLowerCase() + model.slice(1)
+          const rows = await reader[delegate]!.findMany({ where: { tenant: T } })
+          have.push([name, rows.map(({ pk: _pk, ...row }) => render(row)).sort()])
+        }
+        const cached = JSON.stringify(want)
+        const stored = JSON.stringify(have)
+        let at = 0
+        while (at < cached.length && cached[at] === stored[at]) at += 1
+        check(
+          `after ${label}, SQLite holds the rows a rewrite would write`,
+          world !== undefined && cached === stored,
+          cached === stored
+            ? ''
+            : `rewrite …${cached.slice(at, at + 120)} stored …${stored.slice(at, at + 120)}`,
+        )
+      }
+      const upload = async (body: string): Promise<string> => {
+        const made = await api(`${base}/upload/drive/v3/files?uploadType=media`, T, {
+          method: 'POST',
+          body,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+        return String(obj(made.body).id)
+      }
+      const early = await upload('first one')
+      check('a diff needs a flush to diff against', flushedRows(db, T) !== undefined)
+      const middle = await upload('second one')
+      const late = await upload('third one')
+      await agree('uploads')
+      await api(`${base}/upload/drive/v3/files/${early}?uploadType=media`, T, {
+        method: 'PATCH',
+        body: 'first one, rewritten',
+        headers: { 'Content-Type': 'text/plain' },
+      })
+      await agree("an early file's new revision")
+      await api(`${base}/drive/v3/files/${middle}`, T, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      await agree('a rename')
+      const folder = String(
+        obj(
+          (
+            await post(`${base}/drive/v3/files`, T, {
+              name: 'Folder',
+              mimeType: 'application/vnd.google-apps.folder',
+            })
+          ).body,
+        ).id,
+      )
+      await api(`${base}/drive/v3/files/${late}?addParents=${folder}`, T, {
+        method: 'PATCH',
+        body: '{}',
+      })
+      await agree('a move')
+      await post(`${base}/drive/v3/files/${early}/permissions`, T, {
+        role: 'reader',
+        type: 'user',
+        emailAddress: 'reader@example.com',
+      })
+      await agree('a permission')
+      await post(`${base}/drive/v3/files/${early}/copy`, T, { name: 'copied' })
+      await agree('a copy')
+      await api(`${base}/drive/v3/files/${middle}`, T, { method: 'DELETE' })
+      await agree('a delete')
+      await post(`${base}/v1/documents`, T, { title: 'diffed doc' })
+      const sheet = String(
+        obj((await post(`${base}/v4/spreadsheets`, T, { properties: { title: 'diffed' } })).body)
+          .spreadsheetId,
+      )
+      await api(`${base}/v4/spreadsheets/${sheet}/values/Sheet1!A1`, T, {
+        method: 'PUT',
+        body: JSON.stringify({ values: [['a', 'b']] }),
+      })
+      await agree('a doc, a sheet and its cells')
+    } finally {
+      await diffed.close()
     }
 
     const bulk = await start(gwsFake, 0)

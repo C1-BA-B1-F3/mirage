@@ -37,6 +37,7 @@ class Strategy(Enum):
     together) -- so per-path primitives relay through the dispatcher and
     the shared generic does the work.
     """
+
     STREAM = "stream"
     FANOUT = "fanout"
     RELAY = "relay"
@@ -49,6 +50,7 @@ class Cmd(StrEnum):
     ``cmd_name == Cmd.CP`` and ``cmd_name in RELAY_COMMANDS`` accept the
     raw ``str`` the executor passes.
     """
+
     CAT = "cat"
     NL = "nl"
     SORT = "sort"

@@ -61,36 +61,15 @@ repos:
         name: Upgrade Python syntax
         args: [--py38-plus]
 
-  - repo: https://github.com/google/yapf
-    rev: v0.43.0
-    hooks:
-      - id: yapf
-        name: Format code
-        additional_dependencies: [toml]
-        # Generated tables are laid out by their generator, which packs
-        # ranges several to a line so 349 of them stay reviewable.
-        # Reformatting them here would fight scripts/gen_width_table.py on
-        # every run, the same way typescript/.prettierignore already exempts
-        # `**/generated/**`.
-        exclude: |
-          (?x)^(
-              python/mirage/utils/generated/.*
-          )$
-
-  - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
-    hooks:
-      - id: isort
-        name: Sort imports
-        exclude: |
-          (?x)^(
-              python/mirage/utils/generated/.*
-          )$
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.16.9
     hooks:
-      - id: ruff
+      - id: ruff-format
+        name: Format code
+        # Python only: this hook also takes Markdown, where it would reformat
+        # the code blocks in 15 READMEs and docs pages.
+        types_or: [python, pyi]
+      - id: ruff-check
         name: Lint and fix Python
         args: [--fix, --exit-non-zero-on-fix]
 
@@ -118,39 +97,47 @@ repos:
 
   - repo: local
     hooks:
-      - id: ts-prettier
-        name: Prettier (typescript)
-        entry: typescript/scripts/precommit-run.sh prettier --write
+      - id: ts-format
+        name: Format (typescript)
+        entry: typescript/scripts/precommit-run.sh oxfmt --write
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs|json|md|yaml|yml)$
         pass_filenames: true
+        # oxfmt already spreads one call over every core.
+        require_serial: true
       - id: ts-eslint
         name: ESLint (typescript)
         entry: typescript/scripts/precommit-run.sh eslint --fix --no-warn-ignored
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs)$
         pass_filenames: true
+        # One batch at a time: precommit-run.sh splits a large one in two.
+        require_serial: true
       - id: ts-knip
         name: Knip (typescript dead code)
-        entry: bash -c 'cd typescript && pnpm exec knip'
+        entry: bash -c 'cd typescript && node_modules/.bin/knip'
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs|json)$
         pass_filenames: false
-      - id: integ-prettier
-        name: Prettier (integ)
-        entry: integ/scripts/precommit-run.sh prettier --write
+      - id: integ-format
+        name: Format (integ)
+        entry: integ/scripts/precommit-run.sh oxfmt --write
         language: system
         files: ^integ/.*\.(ts|mts|js|mjs|cjs)$
         pass_filenames: true
+        require_serial: true
       - id: integ-eslint
         name: ESLint (integ)
         entry: integ/scripts/precommit-run.sh eslint --fix --no-warn-ignored
         language: system
         files: ^integ/.*\.(ts|mts|js|mjs|cjs)$
         pass_filenames: true
+        # One process: 2.4 s and 0.9 GB over every file, against 3.5 s and
+        # 6.4 GB split one batch per CPU.
+        require_serial: true
       - id: integ-typecheck
         name: Type check (integ mock servers)
-        entry: bash -c 'cd integ && pnpm exec tsc -p tsconfig.check.json'
+        entry: bash -c 'cd integ && node_modules/.bin/tsc -p tsconfig.check.json'
         language: system
         # Every server directory, not a hand-kept list: the list had already
         # fallen five fakes behind tsconfig.check.json, so editing one of those

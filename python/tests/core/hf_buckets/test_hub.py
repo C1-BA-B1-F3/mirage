@@ -17,14 +17,24 @@ import pytest
 
 import mirage.core.hf_buckets.hub as hub_mod
 from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
-from mirage.core.hf_buckets.hub import (fetch_row, paths_info_url, read_token,
-                                        resolve_url)
+from mirage.core.hf_buckets.hub import (
+    fetch_row,
+    paths_info_url,
+    read_token,
+    resolve_url,
+)
 from mirage.core.hf_buckets.read import read_bytes
 from mirage.core.hf_hub.client import HfHubError
 from mirage.types import PathSpec
 from tests.fixtures.hf_buckets_opendal import make_accessor
-from tests.fixtures.hf_hub_api import (INVALID_PATHS, NO_ETAG, FakeHub,
-                                       lfs_oid, serve, xet_hash)
+from tests.fixtures.hf_hub_api import (
+    INVALID_PATHS,
+    NO_ETAG,
+    FakeHub,
+    lfs_oid,
+    serve,
+    xet_hash,
+)
 
 
 def test_the_bucket_routes_carry_no_revision():
@@ -40,7 +50,8 @@ def test_resolve_encodes_each_segment():
     base = acc.config.endpoint
     # An unencoded "#" truncates the URL at the fragment.
     assert resolve_url(acc, "dir/Inkling_o (1)#.png") == (
-        f"{base}/buckets/o/b/resolve/dir/Inkling_o%20%281%29%23.png")
+        f"{base}/buckets/o/b/resolve/dir/Inkling_o%20%281%29%23.png"
+    )
 
 
 @pytest.mark.parametrize("key_prefix", ["pfx/", "/pfx/", "pfx"])
@@ -51,11 +62,14 @@ def test_resolve_applies_the_key_prefix_once(key_prefix):
 
 def test_a_trailing_slash_endpoint_is_not_doubled():
     acc = HfBucketsAccessor(
-        HfBucketsConfig(bucket="o/b", endpoint="http://127.0.0.1:9/"))
-    assert paths_info_url(
-        acc) == "http://127.0.0.1:9/api/buckets/o/b/paths-info"
-    assert resolve_url(
-        acc, "a.txt") == ("http://127.0.0.1:9/buckets/o/b/resolve/a.txt")
+        HfBucketsConfig(bucket="o/b", endpoint="http://127.0.0.1:9/")
+    )
+    assert (
+        paths_info_url(acc) == "http://127.0.0.1:9/api/buckets/o/b/paths-info"
+    )
+    assert resolve_url(acc, "a.txt") == (
+        "http://127.0.0.1:9/buckets/o/b/resolve/a.txt"
+    )
 
 
 def _rows(answer):
@@ -73,14 +87,18 @@ DIR = {"type": "directory", "path": "pfx/a.txt"}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("answer,expected", [
-    ([], None),
-    ([FILE], FILE),
-    ([DIR], None),
-    ([DIR, FILE], FILE),
-])
-async def test_fetch_row_answers_the_asked_files_row(monkeypatch, answer,
-                                                     expected):
+@pytest.mark.parametrize(
+    "answer,expected",
+    [
+        ([], None),
+        ([FILE], FILE),
+        ([DIR], None),
+        ([DIR, FILE], FILE),
+    ],
+)
+async def test_fetch_row_answers_the_asked_files_row(
+    monkeypatch, answer, expected
+):
     post = _rows(answer)
     monkeypatch.setitem(vars(hub_mod), "hub_post", post)
     acc = make_accessor({}, key_prefix="pfx/")
@@ -90,13 +108,12 @@ async def test_fetch_row_answers_the_asked_files_row(monkeypatch, answer,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("answer", [[{
-    **FILE, "path": "pfx/other.txt"
-}], {
-    "x": 1
-}])
+@pytest.mark.parametrize(
+    "answer", [[{**FILE, "path": "pfx/other.txt"}], {"x": 1}]
+)
 async def test_fetch_row_refuses_an_answer_about_something_else(
-        monkeypatch, answer):
+    monkeypatch, answer
+):
     # An empty list is the only answer that means "absent"; anything else
     # read as absence would let reconcile delete a file that exists.
     monkeypatch.setitem(vars(hub_mod), "hub_post", _rows(answer))
@@ -114,13 +131,16 @@ async def test_fetch_row_never_asks_about_the_mount_root(monkeypatch):
     assert post.bodies == []
 
 
-@pytest.mark.parametrize("raw,token", [
-    ('"X"', "X"),
-    ("X", "X"),
-    ('W/"X"', None),
-    ('""', None),
-    ("", None),
-])
+@pytest.mark.parametrize(
+    "raw,token",
+    [
+        ('"X"', "X"),
+        ("X", "X"),
+        ('W/"X"', None),
+        ('""', None),
+        ("", None),
+    ],
+)
 def test_read_token_is_a_strong_etag_or_none(raw, token):
     assert read_token(raw) == token
 
@@ -131,15 +151,17 @@ async def test_the_fake_bucket_wire_matches_the_live_hub():
     # 2026-09-25; a fake that drifted from any of them would let the suite
     # pass against a Hub that does not exist.
     data = b"abc"
-    hub = FakeHub(xet=False,
-                  repos={
-                      ("buckets", "o/b"): {
-                          "a.txt": data,
-                          "d/x.txt": b"x",
-                          "w.txt": b"w",
-                          "n.txt": b"n",
-                      }
-                  })
+    hub = FakeHub(
+        xet=False,
+        repos={
+            ("buckets", "o/b"): {
+                "a.txt": data,
+                "d/x.txt": b"x",
+                "w.txt": b"w",
+                "n.txt": b"n",
+            }
+        },
+    )
     hub.etags["w.txt"] = 'W/"weak"'
     hub.etags["n.txt"] = NO_ETAG
     with serve(hub):
@@ -150,30 +172,40 @@ async def test_the_fake_bucket_wire_matches_the_live_hub():
                 assert r.status == 400
                 assert (await r.json())["error"] == INVALID_PATHS
             async with http.post(
-                    api, json={"paths": ["a.txt", "/a.txt", "d", "d/"]}) as r:
+                api, json={"paths": ["a.txt", "/a.txt", "d", "d/"]}
+            ) as r:
                 rows = await r.json()
-            assert rows == [{
-                "type": "file",
-                "path": "a.txt",
-                "size": 3,
-                "xetHash": xet_hash(data),
-                "uploadedAt": rows[0]["uploadedAt"],
-            }]
+            assert rows == [
+                {
+                    "type": "file",
+                    "path": "a.txt",
+                    "size": 3,
+                    "xetHash": xet_hash(data),
+                    "uploadedAt": rows[0]["uploadedAt"],
+                }
+            ]
             assert rows[0]["xetHash"] != lfs_oid(data)
-            async with http.get(f"{res}/a.txt",
-                                headers={"Authorization": "Bearer tok"}) as r:
+            async with http.get(
+                f"{res}/a.txt", headers={"Authorization": "Bearer tok"}
+            ) as r:
                 assert r.headers["ETag"] == f'"{xet_hash(data)}"'
                 assert await r.read() == data
-            async with http.get(f"{res}/a.txt", headers={"Range":
-                                                         "bytes=1-1"}) as r:
-                assert (r.status, r.headers["ETag"]) == (206,
-                                                         f'"{xet_hash(data)}"')
-            async with http.get(f"{res}/a.txt", headers={"Range":
-                                                         "bytes=3-9"}) as r:
+            async with http.get(
+                f"{res}/a.txt", headers={"Range": "bytes=1-1"}
+            ) as r:
+                assert (r.status, r.headers["ETag"]) == (
+                    206,
+                    f'"{xet_hash(data)}"',
+                )
+            async with http.get(
+                f"{res}/a.txt", headers={"Range": "bytes=3-9"}
+            ) as r:
                 assert (r.status, "ETag" in r.headers) == (416, False)
             async with http.get(f"{res}/nope.txt") as r:
-                assert (r.status,
-                        r.headers["X-Error-Code"]) == (404, "EntryNotFound")
+                assert (r.status, r.headers["X-Error-Code"]) == (
+                    404,
+                    "EntryNotFound",
+                )
             async with http.get(f"{res}/w.txt") as r:
                 assert r.headers["ETag"] == 'W/"weak"'
             async with http.get(f"{res}/n.txt") as r:

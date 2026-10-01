@@ -28,32 +28,46 @@ async def get_metadata(tm: DropboxTokenManager, path: str) -> dict[str, Any]:
 
 
 async def create_folder(tm: DropboxTokenManager, path: str) -> None:
-    await dropbox_rpc(tm, "/files/create_folder_v2", {
-        "path": path,
-        "autorename": False,
-    })
+    await dropbox_rpc(
+        tm,
+        "/files/create_folder_v2",
+        {
+            "path": path,
+            "autorename": False,
+        },
+    )
 
 
 async def delete_path(tm: DropboxTokenManager, path: str) -> None:
     await dropbox_rpc(tm, "/files/delete_v2", {"path": path})
 
 
-async def move_path(tm: DropboxTokenManager, from_path: str,
-                    to_path: str) -> None:
-    await dropbox_rpc(tm, "/files/move_v2", {
-        "from_path": from_path,
-        "to_path": to_path,
-        "autorename": False,
-    })
+async def move_path(
+    tm: DropboxTokenManager, from_path: str, to_path: str
+) -> None:
+    await dropbox_rpc(
+        tm,
+        "/files/move_v2",
+        {
+            "from_path": from_path,
+            "to_path": to_path,
+            "autorename": False,
+        },
+    )
 
 
-async def copy_path(tm: DropboxTokenManager, from_path: str,
-                    to_path: str) -> None:
-    await dropbox_rpc(tm, "/files/copy_v2", {
-        "from_path": from_path,
-        "to_path": to_path,
-        "autorename": False,
-    })
+async def copy_path(
+    tm: DropboxTokenManager, from_path: str, to_path: str
+) -> None:
+    await dropbox_rpc(
+        tm,
+        "/files/copy_v2",
+        {
+            "from_path": from_path,
+            "to_path": to_path,
+            "autorename": False,
+        },
+    )
 
 
 async def search_files(
@@ -86,10 +100,14 @@ async def search_files(
     }
     if path:
         options["path"] = path
-    resp = await dropbox_rpc(tm, "/files/search_v2", {
-        "query": query,
-        "options": options,
-    })
+    resp = await dropbox_rpc(
+        tm,
+        "/files/search_v2",
+        {
+            "query": query,
+            "options": options,
+        },
+    )
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
     while True:
@@ -107,8 +125,9 @@ async def search_files(
             return out, True
         if not resp.get("has_more"):
             return out, False
-        resp = await dropbox_rpc(tm, "/files/search/continue_v2",
-                                 {"cursor": resp["cursor"]})
+        resp = await dropbox_rpc(
+            tm, "/files/search/continue_v2", {"cursor": resp["cursor"]}
+        )
 
 
 async def list_folder(
@@ -137,17 +156,21 @@ async def list_folder(
     api_path = "" if path in ("/", "") else path
     out: list[dict[str, Any]] = []
     resp = await dropbox_rpc(
-        tm, "/files/list_folder", {
+        tm,
+        "/files/list_folder",
+        {
             "path": api_path,
             "recursive": recursive,
             "limit": page_size if limit is None else min(page_size, limit),
-        })
+        },
+    )
     out.extend(resp["entries"])
     while resp.get("has_more"):
         if limit is not None and len(out) >= limit:
             break
-        resp = await dropbox_rpc(tm, "/files/list_folder/continue",
-                                 {"cursor": resp["cursor"]})
+        resp = await dropbox_rpc(
+            tm, "/files/list_folder/continue", {"cursor": resp["cursor"]}
+        )
         out.extend(resp["entries"])
     return out
 
@@ -171,15 +194,20 @@ async def list_folder_state(
     """
     api_path = "" if path in ("/", "") else path
     out: list[dict[str, Any]] = []
-    resp = await dropbox_rpc(tm, "/files/list_folder", {
-        "path": api_path,
-        "recursive": recursive,
-        "limit": page_size,
-    })
+    resp = await dropbox_rpc(
+        tm,
+        "/files/list_folder",
+        {
+            "path": api_path,
+            "recursive": recursive,
+            "limit": page_size,
+        },
+    )
     out.extend(resp["entries"])
     while resp.get("has_more"):
-        resp = await dropbox_rpc(tm, "/files/list_folder/continue",
-                                 {"cursor": resp["cursor"]})
+        resp = await dropbox_rpc(
+            tm, "/files/list_folder/continue", {"cursor": resp["cursor"]}
+        )
         out.extend(resp["entries"])
     return out, resp["cursor"]
 
@@ -199,11 +227,13 @@ async def continue_folder(
             the next cursor.
     """
     out: list[dict[str, Any]] = []
-    resp = await dropbox_rpc(tm, "/files/list_folder/continue",
-                             {"cursor": cursor})
+    resp = await dropbox_rpc(
+        tm, "/files/list_folder/continue", {"cursor": cursor}
+    )
     out.extend(resp["entries"])
     while resp.get("has_more"):
-        resp = await dropbox_rpc(tm, "/files/list_folder/continue",
-                                 {"cursor": resp["cursor"]})
+        resp = await dropbox_rpc(
+            tm, "/files/list_folder/continue", {"cursor": resp["cursor"]}
+        )
         out.extend(resp["entries"])
     return out, resp["cursor"]

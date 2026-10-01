@@ -28,18 +28,26 @@ TRACE_FILE = Codec(suffix=".json", validate=is_trace_id)
 # The tree is service-scoped because Jaeger's search API requires a
 # service: there is no endpoint that lists every trace.
 SCOPES = (
-    Scope(kind="services", segments=("services", ), probed=False),
+    Scope(kind="services", segments=("services",), probed=False),
     Scope(kind="service", segments=("services", Slot("service"))),
-    Scope(kind="operations",
-          segments=("services", Slot("service"), OPERATIONS_FILE),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="operations",
+        segments=("services", Slot("service"), OPERATIONS_FILE),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="traces", segments=("services", Slot("service"), "traces")),
-    Scope(kind="trace",
-          segments=("services", Slot("service"), "traces",
-                    Slot("trace_id", TRACE_FILE)),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="trace",
+        segments=(
+            "services",
+            Slot("service"),
+            "traces",
+            Slot("trace_id", TRACE_FILE),
+        ),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

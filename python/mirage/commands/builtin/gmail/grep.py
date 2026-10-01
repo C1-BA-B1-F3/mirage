@@ -12,16 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
-
 from mirage.accessor.gmail import GmailAccessor
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.builtin.gmail._provision import file_read_provision
 from mirage.commands.builtin.gmail.io import resolve_glob
 from mirage.commands.builtin.grep_pattern import pattern_arg
-from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
-                                                   text_search_results)
+from mirage.commands.builtin.grep_pushdown import (
+    pushdown_operand,
+    text_search_results,
+)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -32,7 +31,6 @@ from mirage.core.gmail.scope import NATIVE_KINDS, detect_scope
 from mirage.core.gmail.search import format_grep_results, search_messages
 from mirage.core.gmail.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -41,24 +39,19 @@ from mirage.utils.key_prefix import mount_prefix_of
 # concrete operand and no flag reshapes the output. -w is the exception the
 # provider itself supplies: Gmail matches whole words, so a bare literal would
 # under-report and only -w makes the two agree.
-SEARCH_HONORED = ("w", )
+SEARCH_HONORED = ("w",)
 # rg spells the same flag by its long name.
-RG_SEARCH_HONORED = ("word_regexp", )
+RG_SEARCH_HONORED = ("word_regexp",)
 SEARCH_MAX_RESULTS = 50
 
 
-async def grep_provision(accessor: GmailAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep", vfs="gmail", spec=SPECS["grep"], provision=grep_provision)
-async def grep(accessor: GmailAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("grep", vfs="gmail", spec=SPECS["grep"])
+async def grep(
+    accessor: GmailAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern = pattern_arg(texts, fl)
     # Output-shaping flags, a glob operand and a multi-operand line all need
@@ -67,8 +60,9 @@ async def grep(accessor: GmailAccessor, paths: list[PathSpec],
     if pattern is not None and operand is not None and fl.as_bool("w"):
         match = detect_scope(operand)
         if match.kind in NATIVE_KINDS:
-            file_prefix = mount_prefix_of(operand.virtual,
-                                          operand.vfs_path) or ""
+            file_prefix = (
+                mount_prefix_of(operand.virtual, operand.vfs_path) or ""
+            )
             rows = await search_messages(
                 accessor.token_manager,
                 pattern,
@@ -76,8 +70,9 @@ async def grep(accessor: GmailAccessor, paths: list[PathSpec],
                 date_str=match.slots.get("day"),
                 max_results=SEARCH_MAX_RESULTS,
             )
-            lines = format_grep_results(rows, match.slots.get("label"),
-                                        file_prefix, pattern)
+            lines = format_grep_results(
+                rows, match.slots.get("label"), file_prefix, pattern
+            )
             if not lines:
                 return b"", IOResult(exit_code=1)
             if text_search_results(lines):

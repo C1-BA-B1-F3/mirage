@@ -61,9 +61,11 @@ async def main():
     assert msg_file, f"date dir should contain a *.gmail.json msg: {entries}"
 
     await show(
-        ws, f'cat "/gmail/INBOX/{first_date}/{msg_file}" '
+        ws,
+        f'cat "/gmail/INBOX/{first_date}/{msg_file}" '
         "| jq '{subject, from: .from.email, "
-        "attachments: [.attachments[].filename]}'")
+        "attachments: [.attachments[].filename]}'",
+    )
 
     # Find a message with attachments: a date-dir entry without the
     # .gmail.json suffix is the attachment folder for the matching message,
@@ -72,14 +74,17 @@ async def main():
     for d in dates:
         r = await ws.shell(f"ls /gmail/INBOX/{d}")
         items = [e for e in (await r.stdout_str()).strip().split("\n") if e]
-        att_dir = next((e for e in items if not e.endswith(".gmail.json")),
-                       None)
+        att_dir = next(
+            (e for e in items if not e.endswith(".gmail.json")), None
+        )
         if att_dir:
             print(f"FOUND: /gmail/INBOX/{d}/{att_dir}")
             await show(ws, f'ls "/gmail/INBOX/{d}/{att_dir}"')
             await show(
-                ws, f'cat "/gmail/INBOX/{d}/{att_dir}.gmail.json" '
-                "| jq '.attachments'")
+                ws,
+                f'cat "/gmail/INBOX/{d}/{att_dir}.gmail.json" '
+                "| jq '.attachments'",
+            )
             return
     print("(no attachments found in scanned dates)")
 

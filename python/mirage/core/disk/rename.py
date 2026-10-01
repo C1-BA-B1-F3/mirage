@@ -20,13 +20,16 @@ from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
 
 
-async def rename(accessor: DiskAccessor, src_spec: PathSpec,
-                 dst_spec: PathSpec) -> None:
+async def rename(
+    accessor: DiskAccessor, src_spec: PathSpec, dst_spec: PathSpec
+) -> None:
     root = accessor.root
     await invalidate_subtree(src_spec)
     # Both sides are subtree evictions: a rename destroys the destination's
     # previous identity and relocates everything under the source, so a
     # listing or body cached below either name is now stale.
     await invalidate_subtree(dst_spec)
-    await aiofiles.os.rename(await resolve_inside(root, src_spec), await
-                             resolve_inside(root, dst_spec))
+    await aiofiles.os.rename(
+        await resolve_inside(root, src_spec),
+        await resolve_inside(root, dst_spec),
+    )

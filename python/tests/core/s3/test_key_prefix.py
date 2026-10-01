@@ -46,13 +46,16 @@ def test_normalize_empty_returns_none():
 
 
 def test_normalize_strips_leading_slash():
-    assert S3Config(bucket="b",
-                    key_prefix="/users/abc/").key_prefix == "users/abc/"
+    assert (
+        S3Config(bucket="b", key_prefix="/users/abc/").key_prefix
+        == "users/abc/"
+    )
 
 
 def test_normalize_adds_trailing_slash():
-    assert S3Config(bucket="b",
-                    key_prefix="users/abc").key_prefix == "users/abc/"
+    assert (
+        S3Config(bucket="b", key_prefix="users/abc").key_prefix == "users/abc/"
+    )
 
 
 def test_write_with_prefix():
@@ -97,9 +100,11 @@ def test_resolve_glob_with_prefix():
         results = asyncio.run(resolve_glob(accessor, [glob_path], index))
     for r in results:
         assert "users" not in r.virtual, (
-            f"key_prefix leaked into glob result: {r.virtual}")
+            f"key_prefix leaked into glob result: {r.virtual}"
+        )
         assert "abc" not in r.virtual, (
-            f"key_prefix leaked into glob result: {r.virtual}")
+            f"key_prefix leaked into glob result: {r.virtual}"
+        )
 
 
 def test_stat_with_prefix():

@@ -21,17 +21,17 @@ from mirage.vfs.airtable import AirtableVFS
 from mirage.vfs.registry import build_vfs
 from tests.fixtures.airtable_api import TOKEN
 
-TABLE = ("/at/bases/Product_Roadmap__appRoadmapBase001/"
-         "Features__tblFeatures000001")
+TABLE = (
+    "/at/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001"
+)
 
 
 def _vfs(**overrides) -> AirtableVFS:
     return AirtableVFS(
-        AirtableConfig(**{
-            "token": TOKEN,
-            "requests_per_second": 10_000.0,
-            **overrides
-        }))
+        AirtableConfig(
+            **{"token": TOKEN, "requests_per_second": 10_000.0, **overrides}
+        )
+    )
 
 
 def test_the_registry_builds_it_and_refuses_a_typo():
@@ -66,19 +66,25 @@ async def test_a_workspace_browses_bases_tables_and_records(airtable_api):
     ws = Workspace({"/at/": _vfs(max_read_records=5)})
     try:
         tree = await ws.shell(
-            "tree /at/bases/Product_Roadmap__appRoadmapBase001")
+            "tree /at/bases/Product_Roadmap__appRoadmapBase001"
+        )
         assert "records.jsonl" in await tree.stdout_str()
-        names = await ws.shell(f"head -n 3 {TABLE}/records.jsonl"
-                               " | jq -r .fields.Name")
+        names = await ws.shell(
+            f"head -n 3 {TABLE}/records.jsonl | jq -r .fields.Name"
+        )
         assert (await names.stdout_str()).split("\n")[:3] == [
-            "Feature 1", "Feature 2", "Feature 3"
+            "Feature 1",
+            "Feature 2",
+            "Feature 3",
         ]
         done = await ws.shell(
-            f"wc -l < {TABLE}/views/Done_shipped__viwDone0000000001.jsonl")
+            f"wc -l < {TABLE}/views/Done_shipped__viwDone0000000001.jsonl"
+        )
         assert (await done.stdout_str()).strip() == "4"
         refused = await ws.shell(f"cat {TABLE}/records.jsonl")
         assert refused.exit_code == 1
         assert await refused.stderr_str() == (
-            f"cat: {TABLE}/records.jsonl: File too large\n")
+            f"cat: {TABLE}/records.jsonl: File too large\n"
+        )
     finally:
         await ws.close()

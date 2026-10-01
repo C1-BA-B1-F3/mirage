@@ -25,10 +25,8 @@ def _make_ws():
     ram1._store.files["/file.txt"] = b"line1\nline2\nline3\nline4\nline5\n"
     ram2._store.files["/file.txt"] = b"aaa\nbbb\nccc\n"
     return Workspace(
-        {
-            "/a/": (ram1, MountMode.WRITE),
-            "/b/": (ram2, MountMode.WRITE)
-        }, )
+        {"/a/": (ram1, MountMode.WRITE), "/b/": (ram2, MountMode.WRITE)},
+    )
 
 
 def _run(ws, cmd):
@@ -137,10 +135,8 @@ def _make_readonly_src_ws():
     rw = RAMVFS()
     ro._store.files["/report.csv"] = b"name,age\nalice,30\n"
     return Workspace(
-        {
-            "/mail/": (ro, MountMode.READ),
-            "/scratch/": (rw, MountMode.EXEC)
-        }, )
+        {"/mail/": (ro, MountMode.READ), "/scratch/": (rw, MountMode.EXEC)},
+    )
 
 
 def test_cross_mount_mv_unremovable_source_keeps_both():
@@ -149,8 +145,9 @@ def test_cross_mount_mv_unremovable_source_keeps_both():
     ws = _make_readonly_src_ws()
     out, err, code = _run(ws, "mv /mail/report.csv /scratch/x.csv")
     assert code == 1
-    assert err == ("mv: cannot remove '/mail/report.csv': "
-                   "Read-only file system\n")
+    assert err == (
+        "mv: cannot remove '/mail/report.csv': Read-only file system\n"
+    )
     out, err, code = _run(ws, "cat /scratch/x.csv")
     assert (out, code) == ("name,age\nalice,30\n", 0)
     out, err, code = _run(ws, "cat /mail/report.csv")
@@ -175,5 +172,6 @@ def test_cross_mount_relay_mv_unmatched_glob_stays_literal():
     ws = _make_ws()
     out, err, code = _run(ws, "mv /a/nomatch*.zzz /b/")
     assert code == 1
-    assert err == ("mv: cannot stat '/a/nomatch*.zzz': "
-                   "No such file or directory\n")
+    assert err == (
+        "mv: cannot stat '/a/nomatch*.zzz': No such file or directory\n"
+    )

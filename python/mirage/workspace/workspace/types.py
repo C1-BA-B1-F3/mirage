@@ -20,9 +20,12 @@ from mirage.types import Limit, MountBackend, MountMode, ReadSpec
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.spec import Mount
 
-VFSMount: TypeAlias = (BaseVFS | Mount
-                       | tuple[BaseVFS, MountMode]
-                       | tuple[BaseVFS, MountMode, dict[str, Limit]])
+VFSMount: TypeAlias = (
+    BaseVFS
+    | Mount
+    | tuple[BaseVFS, MountMode]
+    | tuple[BaseVFS, MountMode, dict[str, Limit]]
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,10 +17,12 @@ def spec(virtual: str) -> PathSpec:
 
 
 def file_entry(path: str, size: int) -> IndexEntry:
-    return IndexEntry(id=path.strip("/"),
-                      name=gnu_basename(path),
-                      resource_type="file",
-                      size=size)
+    return IndexEntry(
+        id=path.strip("/"),
+        name=gnu_basename(path),
+        resource_type="file",
+        size=size,
+    )
 
 
 async def load_rows(accessor, prefix):

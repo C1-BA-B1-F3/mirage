@@ -555,7 +555,7 @@ function sortCommits(list: readonly CommitFacts[], order: 'topo' | 'date'): Comm
     const top = ready[0]
     const last = ready.pop()
     if (last !== undefined) ready[0] = last
-    for (let at = 0; ; ) {
+    for (let at = 0; ;) {
       let next = at
       for (const child of [2 * at + 1, 2 * at + 2]) {
         if (child < ready.length && before(child, next)) next = child

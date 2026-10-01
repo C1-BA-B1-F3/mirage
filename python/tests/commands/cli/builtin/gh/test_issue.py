@@ -16,8 +16,11 @@ import json
 
 import pytest
 
-from mirage.commands.cli.builtin.gh.issue import (ISSUE_FIELDS, list_cmd,
-                                                  view_cmd)
+from mirage.commands.cli.builtin.gh.issue import (
+    ISSUE_FIELDS,
+    list_cmd,
+    view_cmd,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.core.github.config import GhConfig
 from mirage.core.github.issue import IssueListFilter, IssueSelections
@@ -28,24 +31,39 @@ CONFIG = GhConfig(token="t")
 # Every field `gh issue view --json` and `gh issue list --json` accept in
 # gh 2.85.
 GH_FIELDS = [
-    "assignees", "author", "body", "closed", "closedAt",
-    "closedByPullRequestsReferences", "comments", "createdAt", "id",
-    "isPinned", "labels", "milestone", "number", "projectCards",
-    "projectItems", "reactionGroups", "state", "stateReason", "title",
-    "updatedAt", "url"
+    "assignees",
+    "author",
+    "body",
+    "closed",
+    "closedAt",
+    "closedByPullRequestsReferences",
+    "comments",
+    "createdAt",
+    "id",
+    "isPinned",
+    "labels",
+    "milestone",
+    "number",
+    "projectCards",
+    "projectItems",
+    "reactionGroups",
+    "state",
+    "stateReason",
+    "title",
+    "updatedAt",
+    "url",
 ]
 
 
 def _inv(flags) -> CLIInvocation:
-    return CLIInvocation(CONFIG,
-                         argv=(),
-                         texts=("4", ),
-                         flags={
-                             "repo": "o/r",
-                             **flags
-                         },
-                         stdin=None,
-                         doors=None)
+    return CLIInvocation(
+        CONFIG,
+        argv=(),
+        texts=("4",),
+        flags={"repo": "o/r", **flags},
+        stdin=None,
+        doors=None,
+    )
 
 
 class Answers:
@@ -71,57 +89,58 @@ def test_every_field_gh_offers_is_offered():
 
 @pytest.mark.asyncio
 async def test_the_number_is_asked_for_as_an_issue_or_a_pull(monkeypatch):
-    answers = Answers({
-        "__typename": "Issue",
-        "title": "bug",
-        "isPinned": True,
-        "id": "I_1"
-    })
+    answers = Answers(
+        {"__typename": "Issue", "title": "bug", "isPinned": True, "id": "I_1"}
+    )
     monkeypatch.setitem(view_cmd.__globals__, "issue_fields", answers)
 
     assert await _json(await view_cmd(_inv({"json": "title,isPinned"}))) == {
         "isPinned": True,
-        "title": "bug"
+        "title": "bug",
     }
-    assert answers.calls == [(4,
-                              IssueSelections("title,isPinned,id",
-                                              "title,id"), None)]
+    assert answers.calls == [
+        (4, IssueSelections("title,isPinned,id", "title,id"), None)
+    ]
 
 
 @pytest.mark.asyncio
 async def test_a_pull_prints_the_fields_only_an_issue_has_at_their_zero(
-        monkeypatch):
+    monkeypatch,
+):
     answers = Answers({"__typename": "PullRequest", "title": "docs"})
     monkeypatch.setitem(view_cmd.__globals__, "issue_fields", answers)
 
-    out = await _json(await view_cmd(
-        _inv({
-            "json":
-            "title,isPinned,stateReason,closedByPullRequestsReferences"
-        })))
+    out = await _json(
+        await view_cmd(
+            _inv(
+                {
+                    "json": "title,isPinned,stateReason,closedByPullRequestsReferences"
+                }
+            )
+        )
+    )
 
     assert out == {
         "closedByPullRequestsReferences": [],
         "isPinned": False,
         "stateReason": "",
-        "title": "docs"
+        "title": "docs",
     }
 
 
 @pytest.mark.asyncio
 async def test_comments_page_through_the_half_the_number_turned_out_to_be(
-        monkeypatch):
+    monkeypatch,
+):
 
     def page(body, following):
         return {
             "__typename": "PullRequest",
             "comments": {
-                "nodes": [{
-                    "body": body
-                }],
+                "nodes": [{"body": body}],
                 "pageInfo": {
                     "hasNextPage": following is not None,
-                    "endCursor": following
+                    "endCursor": following,
                 },
             },
         }
@@ -131,8 +150,10 @@ async def test_comments_page_through_the_half_the_number_turned_out_to_be(
 
     out = await _json(await view_cmd(_inv({"json": "comments"})))
 
-    assert [comment["body"]
-            for comment in out["comments"]] == ["first", "second"]
+    assert [comment["body"] for comment in out["comments"]] == [
+        "first",
+        "second",
+    ]
     _, selections, cursor = answers.calls[1]
     assert selections.issue == ""
     assert "comments(first: 100, after: $endCursor)" in selections.pull
@@ -141,20 +162,16 @@ async def test_comments_page_through_the_half_the_number_turned_out_to_be(
 
 @pytest.mark.asyncio
 async def test_project_items_add_the_number_and_are_read_apart(monkeypatch):
-    answers = Answers({
-        "__typename": "Issue",
-        "id": "I_1",
-        "number": 4
-    }, {
-        "__typename": "Issue",
-        "projectItems": {
-            "nodes": [],
-            "pageInfo": {
-                "hasNextPage": False,
-                "endCursor": None
-            }
-        }
-    })
+    answers = Answers(
+        {"__typename": "Issue", "id": "I_1", "number": 4},
+        {
+            "__typename": "Issue",
+            "projectItems": {
+                "nodes": [],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            },
+        },
+    )
     monkeypatch.setitem(view_cmd.__globals__, "issue_fields", answers)
 
     assert await _json(await view_cmd(_inv({"json": "projectItems"}))) == {
@@ -174,14 +191,24 @@ async def test_list_asks_graphql_with_the_narrowing_gh_sends(monkeypatch):
 
     monkeypatch.setitem(list_cmd.__globals__, "list_issue_fields", listed)
 
-    out = await _json(await list_cmd(
-        _inv({
-            "json": "number,stateReason",
-            "state": "all",
-            "author": "me",
-            "label": ["bug"]
-        })))
+    out = await _json(
+        await list_cmd(
+            _inv(
+                {
+                    "json": "number,stateReason",
+                    "state": "all",
+                    "author": "me",
+                    "label": ["bug"],
+                }
+            )
+        )
+    )
 
     assert out == [{"number": 3, "stateReason": "COMPLETED"}]
-    assert calls == [(IssueListFilter(("OPEN", "CLOSED"), None, "me",
-                                      ("bug", )), 30, "number,stateReason")]
+    assert calls == [
+        (
+            IssueListFilter(("OPEN", "CLOSED"), None, "me", ("bug",)),
+            30,
+            "number,stateReason",
+        )
+    ]

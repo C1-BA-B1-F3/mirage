@@ -47,7 +47,8 @@ import { IOResult, materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { isFsError } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
-import { helpPage, versionLine, type CommandFnResult, type CommandOpts } from '../../config.ts'
+import { type CommandFnResult, type CommandOpts } from '../../config.ts'
+import { helpPage, versionLine } from '../../spec/standard.ts'
 import { UsageError } from '../../errors.ts'
 import { isStdin, stdinStream } from '../utils/stream.ts'
 import { programFileRefusal, readProgramFile } from './program.ts'
@@ -488,6 +489,7 @@ export class MainLoop {
       this.io.exitCode =
         this.reader.failures() > 0 ? ERROR_SYSTEM : exitCode(this.statuses, this.opts)
       if (this.reports.length > 0) this.io.stderr = ENC.encode(this.reports.join(''))
+      await this.reader.close()
     }
   }
 

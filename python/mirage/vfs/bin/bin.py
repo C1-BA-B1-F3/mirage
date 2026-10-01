@@ -41,8 +41,11 @@ class BinViewVFS(BaseVFS):
     # A stub's size is its rendering: cheap, no network, never None.
     sizes_always_known: bool = True
 
-    def __init__(self, programs: Callable[[], list[str]],
-                 note: Callable[[str], str | None]) -> None:
+    def __init__(
+        self,
+        programs: Callable[[], list[str]],
+        note: Callable[[str], str | None],
+    ) -> None:
         super().__init__()
         self.accessor = BinAccessor(programs, note)
 

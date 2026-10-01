@@ -17,7 +17,8 @@ try:
 except ImportError as exc:
     raise ImportError(
         "`claude-agent-sdk` not installed. "
-        "Install with: pip install 'mirage-ai[claude-agent-sdk]'") from exc
+        "Install with: pip install 'mirage-ai[claude-agent-sdk]'"
+    ) from exc
 
 from mirage.agents.claude_agent_sdk.server import MirageServer
 from mirage.agents.prompt import build_system_prompt

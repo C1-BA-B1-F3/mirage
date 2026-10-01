@@ -18,10 +18,9 @@ KEY = "/owned/notes.json"
 
 
 def entry_for(entry_id: str) -> IndexEntry:
-    return IndexEntry(id=entry_id,
-                      name="notes",
-                      resource_type="gdocs",
-                      vfs_name="notes.json")
+    return IndexEntry(
+        id=entry_id, name="notes", resource_type="gdocs", vfs_name="notes.json"
+    )
 
 
 @pytest.mark.asyncio
@@ -30,8 +29,9 @@ async def test_custom_store_default_partial_write_drops_complete_membership():
     await index.set_dir("/owned", [("old.json", entry_for("old"))])
     # A custom store can inherit the base implementation until it supports
     # freshness for partial directories itself.
-    await IndexCacheStore.set_partial_dir(index, "/owned",
-                                          [("notes.json", entry_for("new"))])
+    await IndexCacheStore.set_partial_dir(
+        index, "/owned", [("notes.json", entry_for("new"))]
+    )
     assert (await index.list_dir("/owned")).entries is None
     assert (await index.get("/owned/old.json")).entry is None
     assert (await index.get(KEY)).entry.id == "new"
@@ -115,12 +115,16 @@ async def test_propagates_a_non_enoent_fs_error_too():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
-@pytest.mark.parametrize("outcome",
-                         ["updated", "deleted", "partial", "absent", "error"])
+@pytest.mark.parametrize(
+    "outcome", ["updated", "deleted", "partial", "absent", "error"]
+)
 async def test_retained_entries_require_a_fresh_parent(backend, outcome):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     calls = []
 
     async def warm():
@@ -132,8 +136,11 @@ async def test_retained_entries_require_a_fresh_parent(backend, outcome):
         if outcome == "partial":
             await index.put("/owned/other.json", entry_for("other"))
         else:
-            rows = [("notes.json",
-                     entry_for("new"))] if outcome == "updated" else []
+            rows = (
+                [("notes.json", entry_for("new"))]
+                if outcome == "updated"
+                else []
+            )
             await index.set_dir("/owned", rows)
 
     try:
@@ -145,8 +152,9 @@ async def test_retained_entries_require_a_fresh_parent(backend, outcome):
                 await entry_or_warm(index, KEY, warm)
         else:
             got = await entry_or_warm(index, KEY, warm)
-            assert (got.id if got else None) == ("new" if outcome == "updated"
-                                                 else None)
+            assert (got.id if got else None) == (
+                "new" if outcome == "updated" else None
+            )
         assert calls == [1]
         # A live listing also excludes metadata retained by an earlier refill.
         await index.put(KEY, entry_for("obsolete"))
@@ -167,11 +175,14 @@ async def orphan_index(request):
         url = os.environ.get("REDIS_URL")
         if request.param == "redis" and not url:
             pytest.skip("REDIS_URL not set")
-        client = FakeRedis(decode_responses=True
-                           ) if request.param == "fake" else Redis.from_url(
-                               url, decode_responses=True)
-        index = RedisIndexCacheStore(client=client,
-                                     key_prefix=f"orphan:{uuid4()}:")
+        client = (
+            FakeRedis(decode_responses=True)
+            if request.param == "fake"
+            else Redis.from_url(url, decode_responses=True)
+        )
+        index = RedisIndexCacheStore(
+            client=client, key_prefix=f"orphan:{uuid4()}:"
+        )
     try:
         yield index
     finally:
@@ -182,21 +193,25 @@ async def orphan_index(request):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stale",
-                         ["expired", "directory", "prefix", "all", "clear"])
+@pytest.mark.parametrize(
+    "stale", ["expired", "directory", "prefix", "all", "clear"]
+)
 async def test_partial_membership_is_positive_only_and_expires(
-        orphan_index, stale):
+    orphan_index, stale
+):
     index = orphan_index
     calls = []
 
     async def warm():
         calls.append(1)
-        await index.set_partial_dir("/owned",
-                                    [("notes.json", entry_for("new"))])
+        await index.set_partial_dir(
+            "/owned", [("notes.json", entry_for("new"))]
+        )
 
     await index.set_dir("/owned", [("other.json", entry_for("old"))])
-    await index.set_partial_dir("/owned",
-                                [("notes.json", entry_for("current"))])
+    await index.set_partial_dir(
+        "/owned", [("notes.json", entry_for("current"))]
+    )
     listing = await index.list_dir("/owned")
     assert listing.entries is None
     assert listing.partial_entries == [KEY]
@@ -208,8 +223,10 @@ async def test_partial_membership_is_positive_only_and_expires(
     assert calls == [1]
     if stale == "expired":
         await index.set_partial_dir(
-            "/owned", [("notes.json", entry_for("old"))],
-            expired_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+            "/owned",
+            [("notes.json", entry_for("old"))],
+            expired_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
     elif stale == "directory":
         await index.invalidate_dir("/owned")
     elif stale == "prefix":
@@ -230,12 +247,21 @@ async def test_partial_membership_is_positive_only_and_expires(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("parent_state", ["missing", "invalidated", "expired"])
-@pytest.mark.parametrize("outcome", [
-    "updated", "renamed", "deleted", "partial", "partial_updated", "absent",
-    "error"
-])
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "updated",
+        "renamed",
+        "deleted",
+        "partial",
+        "partial_updated",
+        "absent",
+        "error",
+    ],
+)
 async def test_orphaned_metadata_requires_a_current_refresh(
-        orphan_index, parent_state, outcome):
+    orphan_index, parent_state, outcome
+):
     index = orphan_index
     calls = []
 
@@ -252,8 +278,11 @@ async def test_orphaned_metadata_requires_a_current_refresh(
         elif outcome == "renamed":
             await index.set_dir("/owned", [("renamed.json", entry_for("new"))])
         else:
-            rows = [("notes.json",
-                     entry_for("new"))] if outcome == "updated" else []
+            rows = (
+                [("notes.json", entry_for("new"))]
+                if outcome == "updated"
+                else []
+            )
             await index.set_dir("/owned", rows)
 
     if parent_state == "expired":
@@ -264,10 +293,11 @@ async def test_orphaned_metadata_requires_a_current_refresh(
     if parent_state != "missing":
         await index.invalidate()
     assert (await index.get(KEY)).entry.id == "old"
-    assert (await
-            index.list_dir("/owned")).status == (LookupStatus.EXPIRED
-                                                 if parent_state == "expired"
-                                                 else LookupStatus.NOT_FOUND)
+    assert (await index.list_dir("/owned")).status == (
+        LookupStatus.EXPIRED
+        if parent_state == "expired"
+        else LookupStatus.NOT_FOUND
+    )
 
     for _ in range(2):
         if outcome == "error":
@@ -275,16 +305,19 @@ async def test_orphaned_metadata_requires_a_current_refresh(
                 await entry_or_warm(index, KEY, warm)
         else:
             got = await entry_or_warm(index, KEY, warm)
-            assert (got.id if got else None) == ("new" if outcome in (
-                "updated", "partial_updated") else None)
-    assert len(calls) == (1 if outcome in ("updated", "renamed",
-                                           "deleted") else 2)
+            assert (got.id if got else None) == (
+                "new" if outcome in ("updated", "partial_updated") else None
+            )
+    assert len(calls) == (
+        1 if outcome in ("updated", "renamed", "deleted") else 2
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("parent_state", ["expired", "missing"])
 async def test_parallel_parent_refreshes_are_one_transaction(
-        orphan_index, parent_state):
+    orphan_index, parent_state
+):
     import asyncio
 
     index = orphan_index
@@ -303,13 +336,15 @@ async def test_parallel_parent_refreshes_are_one_transaction(
         # Let sibling lookups reach the same stale parent while the refresh
         # is in flight, then yield again between publication and the retry.
         await asyncio.sleep(0)
-        await index.set_dir("/owned",
-                            [(name, entry_for(name)) for name, _ in rows])
+        await index.set_dir(
+            "/owned", [(name, entry_for(name)) for name, _ in rows]
+        )
         await asyncio.sleep(0)
 
     keys = ["notes.json", "other.json"] * 4
-    found = await asyncio.gather(*(entry_or_warm(index, f"/owned/{key}", warm)
-                                   for key in keys))
+    found = await asyncio.gather(
+        *(entry_or_warm(index, f"/owned/{key}", warm) for key in keys)
+    )
     assert [row.id if row else None for row in found] == keys
     assert calls == 1
 

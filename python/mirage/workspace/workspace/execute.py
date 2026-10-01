@@ -19,62 +19,65 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.errors import CommandTimeoutError
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.observe.context import RecordingScope
-from mirage.policy import HandOff, resolve_limit
-from mirage.provision import ProvisionResult
+from mirage.policy import HandOff
 from mirage.runtime.routing import RouteDecision, RouteDeny, RouteError
 from mirage.shell.console import JobConsole
 from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
 from mirage.shell.helpers import input_substitution_redirect
 from mirage.shell.literal import literal_tree
-from mirage.shell.parse import (find_syntax_error, find_unterminated_backtick,
-                                parse, syntax_error_result)
+from mirage.shell.parse import (
+    find_syntax_error,
+    find_unterminated_backtick,
+    parse,
+    syntax_error_result,
+)
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, Refusal
-from mirage.workspace.abort import (MirageAbortError, StatusWriter,
-                                    set_line_writer)
-from mirage.workspace.executor.statement import (StatusSnapshot, record_status,
-                                                 snapshot_status)
-from mirage.workspace.node.admission import (admit_line, is_pending,
-                                             is_pending_refusal)
+from mirage.workspace.abort import (
+    MirageAbortError,
+    StatusWriter,
+    set_line_writer,
+)
+from mirage.workspace.executor.statement import (
+    StatusSnapshot,
+    record_status,
+    snapshot_status,
+)
+from mirage.workspace.node.admission import (
+    admit_line,
+    is_pending,
+    is_pending_refusal,
+)
 from mirage.workspace.node.explain import prejudge_line, unrefused_nodes
 from mirage.workspace.node.occurrence import evaluated_from
-from mirage.workspace.node.provision_node import provision_node
 from mirage.workspace.node.run_tree import run_command_tree
-from mirage.workspace.session import (SessionState, get_current_session_for,
-                                      reset_current_session,
-                                      set_current_session)
+from mirage.workspace.session import (
+    SessionState,
+    get_current_session_for,
+    reset_current_session,
+    set_current_session,
+)
 from mirage.workspace.snapshot import ContentDriftError
 from mirage.workspace.workspace.failure import failure_result
-from mirage.workspace.workspace.fill import (cli_env_names, fill_env,
-                                             fill_names, guest_bound,
-                                             line_nodes)
+from mirage.workspace.workspace.fill import (
+    cli_env_names,
+    fill_env,
+    fill_names,
+    guest_bound,
+    line_nodes,
+)
 from mirage.workspace.workspace.line import run_whole_line
-from mirage.workspace.workspace.utils import command_name, fork_for_call
+from mirage.workspace.workspace.utils import fork_for_call
 
 if TYPE_CHECKING:
     from mirage.workspace.workspace import Workspace
 
 logger = logging.getLogger(__name__)
-
-
-async def plan_eval_stub(cmd: str, **opts: Any) -> IOResult:
-    """Inert evaluator for provision walks.
-
-    A dry run must never execute: a command substitution with side
-    effects ($(tee ...)) would otherwise run while "estimating".
-    Substitutions expand to empty, so affected words degrade the
-    plan to honest UNKNOWN instead of resolving via execution.
-
-    Args:
-        cmd (str): the substitution's command line, ignored.
-    """
-    return IOResult()
 
 
 @dataclass(slots=True)
@@ -167,31 +170,36 @@ async def recurse(
     session = get_current_session_for(ws._session_mgr)
     if session is None:
         session = ws._session_mgr.get(
-            opts.get("session_id") or ws._session_mgr.default_id)
+            opts.get("session_id") or ws._session_mgr.default_id
+        )
     tree = None
     if substitution and node.type == NT.COMMAND_SUBSTITUTION:
         tree = parse(cmd)
     if tree is not None and input_substitution_redirect(tree) is not None:
-        evaluate = partial(recurse,
-                           ws,
-                           cancel=cancel,
-                           routing_decision=routing_decision,
-                           agent_id=agent_id,
-                           nested=nested,
-                           handed=inner)
-        io, _ = await run_command_tree(ws.dispatch,
-                                       ws._registry,
-                                       ws._namespace,
-                                       ws.job_table,
-                                       evaluate,
-                                       agent_id or "",
-                                       tree,
-                                       session,
-                                       None,
-                                       cancel,
-                                       routing_decision=routing_decision,
-                                       handed=inner,
-                                       command_substitution=True)
+        evaluate = partial(
+            recurse,
+            ws,
+            cancel=cancel,
+            routing_decision=routing_decision,
+            agent_id=agent_id,
+            nested=nested,
+            handed=inner,
+        )
+        io, _ = await run_command_tree(
+            ws.dispatch,
+            ws._registry,
+            ws._namespace,
+            ws.job_table,
+            evaluate,
+            agent_id or "",
+            tree,
+            session,
+            None,
+            cancel,
+            routing_decision=routing_decision,
+            handed=inner,
+            command_substitution=True,
+        )
         record_status(session, io.exit_code, transparent=True)
     else:
         saved = session.snapshot() if substitution else None
@@ -199,18 +207,20 @@ async def recurse(
         if saved is not None:
             session.terminal_output = False
         try:
-            io = await ws.shell(cmd,
-                                cancel=cancel,
-                                record=False,
-                                routing_decision=routing_decision,
-                                agent_id=agent_id,
-                                handed=inner,
-                                **opts)
+            io = await ws.shell(
+                cmd,
+                cancel=cancel,
+                record=False,
+                routing_decision=routing_decision,
+                agent_id=agent_id,
+                handed=inner,
+                **opts,
+            )
         finally:
             if saved is not None:
                 session.terminal_output = terminal_output
                 session.restore(saved)
-    if isinstance(io, IOResult) and io.refusal is not None:
+    if io.refusal is not None:
         nested.latest = io.refusal
     return io
 
@@ -246,6 +256,7 @@ class LineFrame:
         writer (StatusWriter): the line's identity, so a restore undoes
             only the stamps this line made.
     """
+
     session: SessionState | None = None
     status_before: StatusSnapshot | None = None
     writer: StatusWriter = field(default_factory=StatusWriter)
@@ -256,7 +267,6 @@ async def execute_line(
     command: str,
     session_id: str | None,
     stdin: ByteSource | None,
-    provision: bool,
     agent_id: str | None,
     cwd: str | None,
     env: dict[str, str] | None,
@@ -268,13 +278,13 @@ async def execute_line(
     frame: LineFrame | None = None,
     argv: tuple[str, ...] | None = None,
     sink: JobConsole | None = None,
-) -> IOResult | ProvisionResult:
+) -> IOResult:
     """The body of ``Workspace.shell``; see its docstring for the
     argument contract.
 
     Order of gates: hydrate stores, drain any queued drift check,
-    resolve the session, parse, syntax gate, policy, then one of three
-    strategies (provision walk, whole-line runtime, command tree).
+    resolve the session, parse, syntax gate, policy, then one of two
+    strategies (whole-line runtime, command tree).
     Failures fold into the line's ``IOResult`` via ``failure_result``,
     except the kinds that are the caller's problem (abort, drift,
     policy misconfiguration), which propagate.
@@ -314,29 +324,42 @@ async def execute_line(
         if session_id is None:
             session_id = ws._session_mgr.default_id
         session = ws._session_mgr.get(session_id)
-    if not provision and session.process_id is None:
-        results: list[IOResult | ProvisionResult] = []
+    if session.process_id is None:
+        results: list[IOResult] = []
 
         async def run() -> int:
             token = set_current_session(session, owner=ws._session_mgr)
             try:
-                result = await execute_line(ws, command, session_id, stdin,
-                                            provision, agent_id, cwd, env,
-                                            cancel, record, runtime,
-                                            routing_decision, handed, frame,
-                                            argv, sink)
+                result = await execute_line(
+                    ws,
+                    command,
+                    session_id,
+                    stdin,
+                    agent_id,
+                    cwd,
+                    env,
+                    cancel,
+                    record,
+                    runtime,
+                    routing_decision,
+                    handed,
+                    frame,
+                    argv,
+                    sink,
+                )
                 results.append(result)
-                return result.exit_code if isinstance(result, IOResult) else 0
+                return result.exit_code
             finally:
                 reset_current_session(token)
 
         try:
-            process = ws.processes.start(session_id=session.session_id,
-                                         command=command,
-                                         cwd=PathSpec.from_str_path(
-                                             cwd or session.cwd),
-                                         run=run,
-                                         limit=session.processes.max)
+            process = ws.processes.start(
+                session_id=session.session_id,
+                command=command,
+                cwd=PathSpec.from_str_path(cwd or session.cwd),
+                run=run,
+                limit=session.processes.max,
+            )
         except BlockingIOError:
             record_status(session, FORK_FAILED_STATUS)
             return IOResult(exit_code=FORK_FAILED_STATUS, stderr=FORK_FAILED)
@@ -356,12 +379,13 @@ async def execute_line(
     io = IOResult()
     # The line-reader decision (GNU: history is appended where the
     # typed line is read, never inside the evaluator). Internal
-    # evaluations and provision runs get an inert scope.
-    is_line = record and not provision
+    # evaluations get an inert scope.
+    is_line = record
     scope = RecordingScope(active=is_line)
 
-    session_token = set_current_session(effective_session,
-                                        owner=ws._session_mgr)
+    session_token = set_current_session(
+        effective_session, owner=ws._session_mgr
+    )
     # Taken before any statement stamps, so a cancelled line can put
     # `$?` back to what it found. Restored at the seam in
     # ``Workspace.shell``, after the last await of the line, so an
@@ -385,10 +409,16 @@ async def execute_line(
         if offending is not None:
             io = syntax_error_result(offending, ast)
             return io
-        decision = await ws._router.decide(ast, command, runtime, provision,
-                                           effective_session, session_id, agent
-                                           or "", ws._route_policy,
-                                           routing_decision)
+        decision = await ws._router.decide(
+            ast,
+            command,
+            runtime,
+            effective_session,
+            session_id,
+            agent or "",
+            ws._route_policy,
+            routing_decision,
+        )
         nested = NestedRefusal()
         # The line's hand-off: the grants its passes and gates claim
         # for its commands, which the gates run on and the line's end
@@ -401,27 +431,14 @@ async def execute_line(
         # Bound by keyword so the walker can rebind it per node: a
         # background job's nested lines run without the caller's event,
         # as the job itself does.
-        exec_recursion = partial(recurse,
-                                 ws,
-                                 cancel=cancel,
-                                 routing_decision=decision,
-                                 agent_id=agent,
-                                 nested=nested)
-        if provision:
-            name = command_name(command)
-            guard = resolve_limit(name,
-                                  workspace_limits=ws._registry.command_limits,
-                                  profile_limits=effective_session.
-                                  command_limits) if name else None
-            timeout = guard.timeout_seconds if guard is not None else None
-            return await run_with_timeout(
-                provision_node(ws._registry,
-                               ws.dispatch,
-                               plan_eval_stub,
-                               ws._namespace,
-                               ast,
-                               effective_session,
-                               agent_id=agent or ""), timeout, name)
+        exec_recursion = partial(
+            recurse,
+            ws,
+            cancel=cancel,
+            routing_decision=decision,
+            agent_id=agent,
+            nested=nested,
+        )
         held = False
         try:
             line_runtime = ws._runtimes.whole_line(decision)
@@ -432,27 +449,37 @@ async def execute_line(
                 # follows, so the pass claims on the hand-off and the
                 # sweep below spends what it claimed, or keeps it for
                 # the retry of a line held on a question.
-                refused = await admit_line(ast, effective_session,
-                                           ws._registry, ws._namespace, agent
-                                           or "", cancel, handed)
+                refused = await admit_line(
+                    ast,
+                    effective_session,
+                    ws._registry,
+                    ws._namespace,
+                    agent or "",
+                    cancel,
+                    handed,
+                )
                 if refused is not None:
                     held = is_pending(refused)
-                    io = IOResult(exit_code=refused.exit_code,
-                                  stderr=refused.stderr,
-                                  refusal=refused.refusal)
+                    io = IOResult(
+                        exit_code=refused.exit_code,
+                        stderr=refused.stderr,
+                        refusal=refused.refusal,
+                    )
                     record_status(session, io.exit_code)
                     return io
                 if ws._has_managed_env:
                     # Filled only after the line is admitted (a refused
                     # line must never reach a secret store) and before the
                     # runtime snapshots the env; a whole-line program may
-                    # read any name, so the walk is not consulted. A dry
-                    # run (provision) returned above and never fetches. A
+                    # read any name, so the walk is not consulted. A
                     # SecretsError raises through to the generic fold
                     # below: the line exits 1 and never runs.
-                    whole_names = fill_names(effective_session, [ast],
-                                             whole=True,
-                                             cli_env_names=frozenset())
+                    whole_names = fill_names(
+                        effective_session,
+                        [ast],
+                        whole=True,
+                        cli_env_names=frozenset(),
+                    )
                     # Names first, and the declarations only if there are
                     # any: both arguments would otherwise be evaluated, so
                     # a session with nothing pending (a profile hiding
@@ -460,13 +487,21 @@ async def execute_line(
                     # The TypeScript twin shares one helper with the
                     # per-command path and skipped this by construction.
                     if whole_names:
-                        await fill_env(effective_session, whole_names, await
-                                       ws._secret_sources())
+                        await fill_env(
+                            effective_session,
+                            whole_names,
+                            await ws._secret_sources(),
+                        )
                 io = await run_whole_line(
-                    line_runtime, command, stdin, effective_session,
-                    ws._registry.mounts(), ws._registry.policies,
+                    line_runtime,
+                    command,
+                    stdin,
+                    effective_session,
+                    ws._registry.mounts(),
+                    ws._registry.policies,
                     ws._dispatcher.invalidate_all_after_remote,
-                    ws._registry.command_limits)
+                    ws._registry.command_limits,
+                )
                 record_status(session, io.exit_code)
                 return io
             # The line is the unit a rule judges, so every command in it is
@@ -479,18 +514,26 @@ async def execute_line(
             # on, since a fetch that fails or a kill between it and the
             # run leaves a claimed grant just as unspent as a skipped gate
             # does.
-            refused = await prejudge_line(ast, effective_session, ws._registry,
-                                          ws._namespace, handed, agent or "",
-                                          cancel)
+            refused = await prejudge_line(
+                ast,
+                effective_session,
+                ws._registry,
+                ws._namespace,
+                handed,
+                agent or "",
+                cancel,
+            )
             if refused is not None:
                 # A question left waiting holds the line for its retry,
                 # which has to find the grants standing, so they are
                 # released rather than spent; any other refusal ends
                 # the line.
                 held = is_pending(refused)
-                io = IOResult(exit_code=refused.exit_code,
-                              stderr=refused.stderr,
-                              refusal=refused.refusal)
+                io = IOResult(
+                    exit_code=refused.exit_code,
+                    stderr=refused.stderr,
+                    refusal=refused.refusal,
+                )
                 record_status(session, io.exit_code)
                 return io
             if ws._has_managed_env:
@@ -508,26 +551,37 @@ async def execute_line(
                 # expansion is what consumes the values.
                 nodes = line_nodes(ast, effective_session)
                 policies = ws._registry.policies
-                writes_gated = (policies is not None
-                                and await policies.wants_for(
-                                    "pre_session",
-                                    effective_session.session_id))
+                writes_gated = (
+                    policies is not None
+                    and await policies.wants_for(
+                        "pre_session", effective_session.session_id
+                    )
+                )
 
                 def plan_names(subset: Sequence[TSNodeLike]) -> frozenset[str]:
                     return fill_names(
                         effective_session,
                         subset,
-                        whole=guest_bound(subset, decision,
-                                          ws._registry.runtime_bindings),
-                        cli_env_names=cli_env_names(subset, effective_session,
-                                                    ws._registry),
-                        writes_gated=writes_gated)
+                        whole=guest_bound(
+                            subset, decision, ws._registry.runtime_bindings
+                        ),
+                        cli_env_names=cli_env_names(
+                            subset, effective_session, ws._registry
+                        ),
+                        writes_gated=writes_gated,
+                    )
 
                 names = plan_names(nodes)
                 if names:
-                    served = await unrefused_nodes(nodes, effective_session,
-                                                   ws._registry, ws._namespace,
-                                                   handed, agent or "", cancel)
+                    served = await unrefused_nodes(
+                        nodes,
+                        effective_session,
+                        ws._registry,
+                        ws._namespace,
+                        handed,
+                        agent or "",
+                        cancel,
+                    )
                     if len(served) != len(nodes):
                         nodes = served
                         names = plan_names(served) if served else frozenset()
@@ -582,17 +636,20 @@ async def execute_line(
             held = is_pending_refusal(io.refusal)
         finally:
             if held:
-                ws._registry.decisions.release(effective_session.session_id,
-                                               handed)
+                ws._registry.decisions.release(
+                    effective_session.session_id, handed
+                )
             elif handed.parent is not None:
                 # A nested evaluation's claims are the outer line's to
                 # keep for the next evaluation from the same node and
                 # to spend at its own end.
-                ws._registry.decisions.hand_up(effective_session.session_id,
-                                               handed)
+                ws._registry.decisions.hand_up(
+                    effective_session.session_id, handed
+                )
             else:
                 await ws._registry.decisions.revoke(
-                    effective_session.session_id, handed)
+                    effective_session.session_id, handed
+                )
         # The program loop stamped each statement; the line as a whole
         # is a wrapper around them, like a group.
         warnings = getattr(ast, "warnings", b"")
@@ -605,8 +662,9 @@ async def execute_line(
         # The caller's event is read, never written: a timeout is this
         # line's answer (exit 124), not an abort of the invocation, and
         # nothing below is still running once the tree has raised.
-        logger.debug("command %r timed out after %ss", exc.command,
-                     exc.seconds)
+        logger.debug(
+            "command %r timed out after %ss", exc.command, exc.seconds
+        )
         io = failure_result(exc, command)
         record_status(session, io.exit_code)
         return io
@@ -643,6 +701,11 @@ async def execute_line(
         # (`shell_input_line[0]`): a blank line is skipped, while a
         # whitespace-only or comment-only line is kept.
         if is_line and command.strip("\n"):
-            await ws.observer.log_execution(command, io, scope.records, agent
-                                            or "", session_id,
-                                            session_cwd(ws, session_id))
+            await ws.observer.log_execution(
+                command,
+                io,
+                scope.records,
+                agent or "",
+                session_id,
+                session_cwd(ws, session_id),
+            )

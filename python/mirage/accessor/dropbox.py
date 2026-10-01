@@ -37,9 +37,9 @@ def normalize_dropbox_root_path(value: str | None) -> str:
 
 
 class DropboxAccessor(Accessor):
-
-    def __init__(self, config: "DropboxConfig",
-                 token_manager: "DropboxTokenManager") -> None:
+    def __init__(
+        self, config: "DropboxConfig", token_manager: "DropboxTokenManager"
+    ) -> None:
         self.config = config
         self.token_manager = token_manager
         self.root_path = normalize_dropbox_root_path(config.root_path)

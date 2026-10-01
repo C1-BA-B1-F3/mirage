@@ -22,9 +22,9 @@ from mirage.types import FileStat, FileType, PathSpec
 PROGRAM_MODE = 0o755
 
 
-async def stat(accessor: BinAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: BinAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> FileStat:
     """Stat the view root or one program's file.
 
     Args:
@@ -39,7 +39,6 @@ async def stat(accessor: BinAccessor,
     if key == "":
         return FileStat(name="bin", type=FileType.DIRECTORY, mode=PROGRAM_MODE)
     data = await read(accessor, path, index)
-    return FileStat(name=key,
-                    size=len(data),
-                    type=FileType.FILE,
-                    mode=PROGRAM_MODE)
+    return FileStat(
+        name=key, size=len(data), type=FileType.FILE, mode=PROGRAM_MODE
+    )

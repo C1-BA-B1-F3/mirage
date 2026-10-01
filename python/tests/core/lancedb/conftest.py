@@ -30,13 +30,14 @@ _STUB_NAME = "stub-lancedb-test"
 
 def _vec(text: str) -> list[float]:
     digest = hashlib.sha256(text.encode()).digest()
-    arr = np.frombuffer(digest[:_DIMS * 4], dtype=np.uint32).astype(np.float32)
+    arr = np.frombuffer(digest[: _DIMS * 4], dtype=np.uint32).astype(
+        np.float32
+    )
     norm = float(np.linalg.norm(arr)) or 1.0
     return (arr / norm).tolist()
 
 
 class StubEmbedding(EmbeddingFunction):
-
     def ndims(self) -> int:
         return _DIMS
 
@@ -46,8 +47,9 @@ class StubEmbedding(EmbeddingFunction):
         return [_vec(str(item)) for item in query]
 
     def compute_source_embeddings(self, texts, *args, **kwargs):
-        items = texts.to_pylist() if isinstance(texts,
-                                                pa.Array) else list(texts)
+        items = (
+            texts.to_pylist() if isinstance(texts, pa.Array) else list(texts)
+        )
         return [_vec(str(item)) for item in items]
 
 
@@ -60,30 +62,10 @@ def _ensure_registered() -> None:
 
 
 _ROWS = [
-    {
-        "id": 1,
-        "label": "cat",
-        "kind": "big",
-        "name": "a big orange cat"
-    },
-    {
-        "id": 2,
-        "label": "cat",
-        "kind": "small",
-        "name": "a small grey cat"
-    },
-    {
-        "id": 3,
-        "label": "dog",
-        "kind": "big",
-        "name": "a big brown dog"
-    },
-    {
-        "id": 4,
-        "label": "dog",
-        "kind": "small",
-        "name": "a small white dog"
-    },
+    {"id": 1, "label": "cat", "kind": "big", "name": "a big orange cat"},
+    {"id": 2, "label": "cat", "kind": "small", "name": "a small grey cat"},
+    {"id": 3, "label": "dog", "kind": "big", "name": "a big brown dog"},
+    {"id": 4, "label": "dog", "kind": "small", "name": "a small white dog"},
 ]
 
 
@@ -103,9 +85,9 @@ def lance_config(tmp_path) -> LanceDBConfig:
     uri = str(tmp_path / "db")
     db = lancedb.connect(uri)
     table = db.create_table("animals", schema=Animal)
-    table.add([{
-        **row, "image_bytes": f"PNG-{row['id']}".encode()
-    } for row in _ROWS])
+    table.add(
+        [{**row, "image_bytes": f"PNG-{row['id']}".encode()} for row in _ROWS]
+    )
     return LanceDBConfig(
         uri=uri,
         group_by=["label", "kind"],
@@ -113,7 +95,6 @@ def lance_config(tmp_path) -> LanceDBConfig:
         title_column="name",
         blob_column="image_bytes",
         blob_ext="png",
-        text_column="name",
         vector_column="vector",
     )
 
@@ -124,21 +105,9 @@ def accessor(lance_config) -> LanceDBAccessor:
 
 
 _EDGED_ROWS = [
-    {
-        "id": 1,
-        "label": "a/b",
-        "name": "one"
-    },
-    {
-        "id": 2,
-        "label": "",
-        "name": "two"
-    },
-    {
-        "id": 3,
-        "label": ".env",
-        "name": "three"
-    },
+    {"id": 1, "label": "a/b", "name": "one"},
+    {"id": 2, "label": "", "name": "two"},
+    {"id": 3, "label": ".env", "name": "three"},
 ]
 
 
@@ -164,9 +133,11 @@ def edged(tmp_path) -> LanceDBAccessor:
     table = db.create_table("docs", schema=Doc)
     table.add(_EDGED_ROWS)
     return LanceDBAccessor(
-        LanceDBConfig(uri=uri,
-                      group_by=["label"],
-                      id_column="id",
-                      title_column="name",
-                      text_column="name",
-                      vector_column="vector"))
+        LanceDBConfig(
+            uri=uri,
+            group_by=["label"],
+            id_column="id",
+            title_column="name",
+            vector_column="vector",
+        )
+    )

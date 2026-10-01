@@ -30,7 +30,6 @@ it('spells a group value in the canonical path the way the listing does', async 
     groupBy: ['label'],
     idColumn: 'id',
     titleColumn: 'name',
-    textColumn: 'name',
   })
   const driver = {
     search: () =>

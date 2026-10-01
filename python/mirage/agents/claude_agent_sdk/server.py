@@ -19,25 +19,29 @@ try:
 except ImportError as exc:
     raise ImportError(
         "`claude-agent-sdk` not installed. "
-        "Install with: pip install 'mirage-ai[claude-agent-sdk]'") from exc
+        "Install with: pip install 'mirage-ai[claude-agent-sdk]'"
+    ) from exc
 
 from mirage import __version__
-from mirage.agents.tool_descriptions import (EDIT_DESCRIPTION,
-                                             EXECUTE_DESCRIPTION,
-                                             GREP_DESCRIPTION, LS_DESCRIPTION,
-                                             READ_DESCRIPTION,
-                                             WRITE_DESCRIPTION)
-from mirage.agents.tool_operations import (DEFAULT_READ_LIMIT,
-                                           MirageToolOperations, ToolResult)
+from mirage.agents.tool_descriptions import (
+    EDIT_DESCRIPTION,
+    EXECUTE_DESCRIPTION,
+    GREP_DESCRIPTION,
+    LS_DESCRIPTION,
+    READ_DESCRIPTION,
+    WRITE_DESCRIPTION,
+)
+from mirage.agents.tool_operations import (
+    DEFAULT_READ_LIMIT,
+    MirageToolOperations,
+    ToolResult,
+)
 from mirage.workspace.workspace import Workspace
 
 
 def _to_sdk(result: ToolResult) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "content": [{
-            "type": "text",
-            "text": result.text
-        }]
+        "content": [{"type": "text", "text": result.text}]
     }
     if result.is_error:
         payload["is_error"] = True
@@ -53,9 +57,9 @@ class _MirageTools:
             file that changed since it read it.
     """
 
-    def __init__(self,
-                 workspace: Workspace,
-                 stale_write_protection: bool = True) -> None:
+    def __init__(
+        self, workspace: Workspace, stale_write_protection: bool = True
+    ) -> None:
         self._ops = MirageToolOperations(workspace, stale_write_protection)
 
     async def execute_command(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -71,8 +75,14 @@ class _MirageTools:
 
     async def edit(self, args: dict[str, Any]) -> dict[str, Any]:
         replace_all = bool(args.get("replace_all", False))
-        return _to_sdk(await self._ops.edit(args["path"], args["old_string"],
-                                            args["new_string"], replace_all))
+        return _to_sdk(
+            await self._ops.edit(
+                args["path"],
+                args["old_string"],
+                args["new_string"],
+                replace_all,
+            )
+        )
 
     async def ls(self, args: dict[str, Any]) -> dict[str, Any]:
         return _to_sdk(await self._ops.ls(args["path"]))
@@ -81,8 +91,9 @@ class _MirageTools:
         return _to_sdk(await self._ops.grep(args["pattern"], args["path"]))
 
 
-def MirageServer(workspace: Workspace,
-                 stale_write_protection: bool = True) -> Any:
+def MirageServer(
+    workspace: Workspace, stale_write_protection: bool = True
+) -> Any:
     """Create an in-process Mirage server for the Claude Agent SDK.
 
     Args:
@@ -99,31 +110,34 @@ def MirageServer(workspace: Workspace,
         name="mirage",
         version=__version__,
         tools=[
-            tool("execute_command", EXECUTE_DESCRIPTION,
-                 {"command": str})(tools_impl.execute_command),
-            tool("read",
-                 READ_DESCRIPTION, {"path": str},
-                 annotations=ToolAnnotations(readOnlyHint=True))(
-                     tools_impl.read),
-            tool("write", WRITE_DESCRIPTION, {
-                "path": str,
-                "content": str
-            })(tools_impl.write),
-            tool("edit", EDIT_DESCRIPTION, {
-                "path": str,
-                "old_string": str,
-                "new_string": str
-            })(tools_impl.edit),
-            tool("ls",
-                 LS_DESCRIPTION, {"path": str},
-                 annotations=ToolAnnotations(readOnlyHint=True))(
-                     tools_impl.ls),
-            tool("grep",
-                 GREP_DESCRIPTION, {
-                     "pattern": str,
-                     "path": str
-                 },
-                 annotations=ToolAnnotations(readOnlyHint=True))(
-                     tools_impl.grep),
+            tool("execute_command", EXECUTE_DESCRIPTION, {"command": str})(
+                tools_impl.execute_command
+            ),
+            tool(
+                "read",
+                READ_DESCRIPTION,
+                {"path": str},
+                annotations=ToolAnnotations(readOnlyHint=True),
+            )(tools_impl.read),
+            tool("write", WRITE_DESCRIPTION, {"path": str, "content": str})(
+                tools_impl.write
+            ),
+            tool(
+                "edit",
+                EDIT_DESCRIPTION,
+                {"path": str, "old_string": str, "new_string": str},
+            )(tools_impl.edit),
+            tool(
+                "ls",
+                LS_DESCRIPTION,
+                {"path": str},
+                annotations=ToolAnnotations(readOnlyHint=True),
+            )(tools_impl.ls),
+            tool(
+                "grep",
+                GREP_DESCRIPTION,
+                {"pattern": str, "path": str},
+                annotations=ToolAnnotations(readOnlyHint=True),
+            )(tools_impl.grep),
         ],
     )

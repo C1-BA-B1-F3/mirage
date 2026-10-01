@@ -41,8 +41,9 @@ def _kind(consumer: Consumer, name: str) -> NameKind:
     return NameKind.FILE
 
 
-def classify(name: str, session: SessionState,
-             registry: MountRegistry) -> NameKind | None:
+def classify(
+    name: str, session: SessionState, registry: MountRegistry
+) -> NameKind | None:
     """Classify the name as the layer that would run it, None if none does.
 
     A layer that would run a program reports one only where the name
@@ -68,8 +69,9 @@ def classify(name: str, session: SessionState,
     return kind
 
 
-def classify_all(name: str, session: SessionState,
-                 registry: MountRegistry) -> list[NameKind]:
+def classify_all(
+    name: str, session: SessionState, registry: MountRegistry
+) -> list[NameKind]:
     """Classify every layer holding the name, most-preferred first.
 
     A reserved word goes first and does not end the walk: bash prints
@@ -111,11 +113,13 @@ def classify_all(name: str, session: SessionState,
     return kinds
 
 
-def locations(name: str,
-              session: SessionState,
-              registry: MountRegistry,
-              all_mode: bool,
-              drop: NameKind | None = None) -> list[NameKind]:
+def locations(
+    name: str,
+    session: SessionState,
+    registry: MountRegistry,
+    all_mode: bool,
+    drop: NameKind | None = None,
+) -> list[NameKind]:
     """The kinds to report for one name: hide a layer, then take the top.
 
     Hiding is a filter over the layer list, never an edit to the
@@ -146,9 +150,9 @@ def program_file(name: str) -> str:
     return f"{BIN_PREFIX}/{name}"
 
 
-def describe(name: str,
-             kind: NameKind,
-             session: SessionState | None = None) -> str:
+def describe(
+    name: str, kind: NameKind, session: SessionState | None = None
+) -> str:
     """Render the verbose line ``command -V`` and ``type`` print.
 
     A function's line is followed by its body as ``declare -f`` prints it.
@@ -162,10 +166,15 @@ def describe(name: str,
     """
     if kind is NameKind.ALIAS and session is not None:
         return f"{name} is aliased to `{session.aliases[name]}'"
-    if (kind is NameKind.FUNCTION and session is not None
-            and name in session.functions):
-        return (f"{name} is a function\n"
-                f"{function_text(name, session.functions[name])}")
+    if (
+        kind is NameKind.FUNCTION
+        and session is not None
+        and name in session.functions
+    ):
+        return (
+            f"{name} is a function\n"
+            f"{function_text(name, session.functions[name])}"
+        )
     if kind is NameKind.FILE:
         return f"{name} is {program_file(name)}"
     return f"{name} is {DESCRIPTIONS[kind]}"

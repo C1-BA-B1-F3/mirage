@@ -23,8 +23,10 @@ try:
     import redis as sync_redis
     from redis.asyncio import Redis
 except ImportError as _err:
-    raise ImportError("RedisStore requires the 'redis' extra. "
-                      "Install with: pip install mirage-ai[redis]") from _err
+    raise ImportError(
+        "RedisStore requires the 'redis' extra. "
+        "Install with: pip install mirage-ai[redis]"
+    ) from _err
 
 _GLOB_META = frozenset("*?[]\\")
 
@@ -47,7 +49,6 @@ def _purge_client(clients_dict: dict[int, Redis], loop_id: int) -> None:
 
 
 class RedisStore:
-
     def __init__(
         self,
         url: str = "redis://localhost:6379/0",
@@ -103,11 +104,13 @@ class RedisStore:
         return f"{self._prefix}attrs:{path}"
 
     async def get_file(self, path: str) -> bytes | None:
-        return await cast("Awaitable[bytes | None]",
-                          self._client.get(self._fk(path)))
+        return await cast(
+            "Awaitable[bytes | None]", self._client.get(self._fk(path))
+        )
 
-    async def get_file_range(self, path: str, offset: int,
-                             size: int | None) -> bytes | None:
+    async def get_file_range(
+        self, path: str, offset: int, size: int | None
+    ) -> bytes | None:
         """A byte window of a stored file, or None when the key is absent.
 
         ``GETRANGE`` slices server-side, so a window costs the window
@@ -141,16 +144,21 @@ class RedisStore:
     async def set_file(self, path: str, data: bytes) -> None:
         await self._client.set(self._fk(path), data)
 
-    async def truncate_file(self,
-                            path: str,
-                            length: int,
-                            modified: str,
-                            no_create: bool = False) -> bool:
+    async def truncate_file(
+        self, path: str, length: int, modified: str, no_create: bool = False
+    ) -> bool:
         result = await cast(
             "Awaitable[int]",
-            self._client.eval(TRUNCATE_SCRIPT, 2, self._fk(path),
-                              self._mk(path), length, modified,
-                              "1" if no_create else "0"))
+            self._client.eval(
+                TRUNCATE_SCRIPT,
+                2,
+                self._fk(path),
+                self._mk(path),
+                length,
+                modified,
+                "1" if no_create else "0",
+            ),
+        )
         return bool(result)
 
     async def del_file(self, path: str) -> None:
@@ -170,12 +178,16 @@ class RedisStore:
         return sorted(result)
 
     async def file_len(self, path: str) -> int:
-        return await cast("Awaitable[int]",
-                          self._client.strlen(self._fk(path)))
+        return await cast(
+            "Awaitable[int]", self._client.strlen(self._fk(path))
+        )
 
     async def has_dir(self, path: str) -> bool:
-        return bool(await cast("Awaitable[int]",
-                               self._client.sismember(self._dk(), path)))
+        return bool(
+            await cast(
+                "Awaitable[int]", self._client.sismember(self._dk(), path)
+            )
+        )
 
     async def add_dir(self, path: str) -> None:
         await cast("Awaitable[int]", self._client.sadd(self._dk(), path))
@@ -184,8 +196,9 @@ class RedisStore:
         await cast("Awaitable[int]", self._client.srem(self._dk(), path))
 
     async def list_dirs(self) -> set[str]:
-        members = await cast("Awaitable[set[bytes]]",
-                             self._client.smembers(self._dk()))
+        members = await cast(
+            "Awaitable[set[bytes]]", self._client.smembers(self._dk())
+        )
         return {m.decode() if isinstance(m, bytes) else m for m in members}
 
     async def get_modified(self, path: str) -> str | None:
@@ -201,17 +214,21 @@ class RedisStore:
         await self._client.delete(self._mk(path))
 
     async def get_attrs(self, path: str) -> dict[str, str]:
-        raw = await cast("Awaitable[dict[bytes, bytes]]",
-                         self._client.hgetall(self._ak(path)))
+        raw = await cast(
+            "Awaitable[dict[bytes, bytes]]",
+            self._client.hgetall(self._ak(path)),
+        )
         return {
-            (k.decode() if isinstance(k, bytes) else k):
-            (v.decode() if isinstance(v, bytes) else v)
+            (k.decode() if isinstance(k, bytes) else k): (
+                v.decode() if isinstance(v, bytes) else v
+            )
             for k, v in raw.items()
         }
 
     async def set_attrs(self, path: str, fields: dict[str, str]) -> None:
-        await cast("Awaitable[int]",
-                   self._client.hset(self._ak(path), mapping=fields))
+        await cast(
+            "Awaitable[int]", self._client.hset(self._ak(path), mapping=fields)
+        )
 
     async def del_attrs(self, path: str) -> None:
         await self._client.delete(self._ak(path))

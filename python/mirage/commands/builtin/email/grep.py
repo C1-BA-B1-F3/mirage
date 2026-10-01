@@ -12,19 +12,21 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import replace
-
 from mirage.accessor.email import EmailAccessor
 from mirage.commands.builtin.aggregators import prefix_aggregate
-from mirage.commands.builtin.email._provision import file_read_provision
 from mirage.commands.builtin.email.io import resolve_glob
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.builtin.grep_pattern import (compile_pattern,
-                                                  matcher_syntax, pattern_arg)
-from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
-                                                   search_query,
-                                                   text_search_results)
+from mirage.commands.builtin.grep_pattern import (
+    compile_pattern,
+    matcher_syntax,
+    pattern_arg,
+)
+from mirage.commands.builtin.grep_pushdown import (
+    pushdown_operand,
+    search_query,
+    text_search_results,
+)
 from mirage.commands.builtin.grep_scan import grep_lines
 from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.output import format_records
@@ -37,7 +39,6 @@ from mirage.core.email.scope import NATIVE_KINDS, detect_scope
 from mirage.core.email.search import search_and_format
 from mirage.core.email.stat import stat as _stat
 from mirage.io.types import ByteSource, IOResult
-from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -55,26 +56,23 @@ from mirage.utils.key_prefix import mount_prefix_of
 SEARCH_HONORED = ("n", "args_l", "w", "o", "m")
 # rg spells the same flags by their long names; its -x narrows within a
 # message too, which the scan's compiled pattern honors.
-RG_SEARCH_HONORED = ("line_number", "files_with_matches", "word_regexp",
-                     "only_matching", "max_count", "line_regexp")
+RG_SEARCH_HONORED = (
+    "line_number",
+    "files_with_matches",
+    "word_regexp",
+    "only_matching",
+    "max_count",
+    "line_regexp",
+)
 
 
-async def grep_provision(accessor: EmailAccessor, paths: list[PathSpec],
-                         texts: list[str],
-                         opts: CommandOpts) -> ProvisionResult:
-    line = "grep " + " ".join(list(texts) + [str(p) for p in paths])
-    return await file_read_provision(accessor, paths, texts,
-                                     replace(opts, command=line))
-
-
-@command("grep",
-         vfs="email",
-         spec=SPECS["grep"],
-         provision=grep_provision,
-         aggregate=prefix_aggregate)
-async def grep(accessor: EmailAccessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+@command("grep", vfs="email", spec=SPECS["grep"], aggregate=prefix_aggregate)
+async def grep(
+    accessor: EmailAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern = pattern_arg(texts, fl)
 
@@ -91,25 +89,30 @@ async def grep(accessor: EmailAccessor, paths: list[PathSpec],
     # grep reads a basic expression unless -E or -P says otherwise, and
     # the literal has to be read off the same dialect the matcher will use.
     syntax = matcher_syntax(fl)
-    query = (search_query(pattern, fl.as_bool("F"), syntax)
-             if pattern else None)
-    if (pattern is not None and query is not None and operand is not None
-            and (fl.as_bool("r") or fl.as_bool("R"))):
+    query = search_query(pattern, fl.as_bool("F"), syntax) if pattern else None
+    if (
+        pattern is not None
+        and query is not None
+        and operand is not None
+        and (fl.as_bool("r") or fl.as_bool("R"))
+    ):
         match = detect_scope(operand)
         if match.kind in NATIVE_KINDS:
-            result = await _grep_server_side(accessor,
-                                             match.slots["folder"],
-                                             pattern,
-                                             query,
-                                             operand,
-                                             i=fl.as_bool("i"),
-                                             n=fl.as_bool("n"),
-                                             args_l=fl.as_bool("args_l"),
-                                             w=fl.as_bool("w"),
-                                             F=fl.as_bool("F"),
-                                             o=fl.as_bool("o"),
-                                             max_count=fl.as_int("m"),
-                                             syntax=syntax)
+            result = await _grep_server_side(
+                accessor,
+                match.slots["folder"],
+                pattern,
+                query,
+                operand,
+                i=fl.as_bool("i"),
+                n=fl.as_bool("n"),
+                args_l=fl.as_bool("args_l"),
+                w=fl.as_bool("w"),
+                F=fl.as_bool("F"),
+                o=fl.as_bool("o"),
+                max_count=fl.as_int("m"),
+                syntax=syntax,
+            )
 
             if result is not None:
                 return result
@@ -162,15 +165,17 @@ async def _grep_server_side(
     any_match = False
     for vfs_path, msg_text in pairs:
         lines = msg_text.splitlines()
-        matched = grep_lines(vfs_path,
-                             lines,
-                             pat,
-                             invert=False,
-                             line_numbers=n,
-                             count_only=False,
-                             files_only=args_l,
-                             only_matching=o,
-                             max_count=max_count)
+        matched = grep_lines(
+            vfs_path,
+            lines,
+            pat,
+            invert=False,
+            line_numbers=n,
+            count_only=False,
+            files_only=args_l,
+            only_matching=o,
+            max_count=max_count,
+        )
         if not matched:
             continue
         any_match = True

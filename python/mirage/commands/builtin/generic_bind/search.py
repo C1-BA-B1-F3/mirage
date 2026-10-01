@@ -18,13 +18,23 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.grep import grep as generic_grep
-from mirage.commands.builtin.generic.rg import folds_case
+from mirage.commands.builtin.generic.rg import folds_case, rg_syntax
 from mirage.commands.builtin.generic.rg import parse_flags as parse_rg_flags
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import rg_syntax
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, bound_op
-from mirage.commands.builtin.grep_pattern import (PATTERN_KEYS, matcher_syntax,
-                                                  pattern_arg)
+from mirage.commands.builtin.grep_pattern import (
+    PATTERN_KEYS,
+    matcher_syntax,
+    pattern_arg,
+)
+from mirage.commands.builtin.grep_pushdown import (
+    grep_search_meta,
+    literal_pushdown_operand,
+    pushdown_operand,
+    text_candidates,
+    text_search_results,
+    whole_word_literal,
+)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -35,17 +45,14 @@ from mirage.types import FileType, JsonValue, PathSpec
 from mirage.utils.errors import FileTooLargeError
 from mirage.vfs.types import SearchQuery
 
-from mirage.commands.builtin.grep_pushdown import (  # isort: skip
-    grep_search_meta, literal_pushdown_operand, pushdown_operand,
-    text_candidates, text_search_results, whole_word_literal)
-
 logger = logging.getLogger(__name__)
 
 _GENERICS = {"grep": generic_grep, "rg": generic_rg}
 
 
-def search_options(name: str, fl: FlagView,
-                   pattern: str) -> dict[str, JsonValue]:
+def search_options(
+    name: str, fl: FlagView, pattern: str
+) -> dict[str, JsonValue]:
     """How a native search matches the pushed-down pattern.
 
     Args:
@@ -127,24 +134,34 @@ async def run_search(
     generic = _GENERICS[name]
     fl = FlagView(opts.flags, spec=SPECS[name])
     pattern = pattern_arg(texts, fl, PATTERN_KEYS[name])
-    gate = (literal_pushdown_operand if meta is not None
-            and meta.mode == "literal" else pushdown_operand)
+    gate = (
+        literal_pushdown_operand
+        if meta is not None and meta.mode == "literal"
+        else pushdown_operand
+    )
     operand = gate(paths, opts.flags, pattern)
-    if (capability is not None and meta is not None and pattern is not None
-            and operand is not None
-            and not hidden_paths_intersect(operand.virtual)
-            and not path_rules_active()):
+    if (
+        capability is not None
+        and meta is not None
+        and pattern is not None
+        and operand is not None
+        and not hidden_paths_intersect(operand.virtual)
+        and not path_rules_active()
+    ):
         query = SearchQuery(
-            query=pattern, options={"grep": search_options(name, fl, pattern)})
+            query=pattern, options={"grep": search_options(name, fl, pattern)}
+        )
         try:
-            lines = await capability.search(accessor, operand, query,
-                                            opts.index)
+            lines = await capability.search(
+                accessor, operand, query, opts.index
+            )
         except FileTooLargeError as exc:
             # A push-down whose answer is past the mount's read cap cannot
             # print it; the scan reads each operand, and reports the same
             # refusal against the operand as typed.
-            logger.debug("%s push-down refused %s: %s", name, operand.virtual,
-                         exc)
+            logger.debug(
+                "%s push-down refused %s: %s", name, operand.virtual, exc
+            )
             lines = None
         if lines is not None:
             if not lines:
@@ -152,8 +169,11 @@ async def run_search(
             if name != "grep" or text_search_results(lines):
                 return format_records(lines), IOResult()
 
-    resolved = await io.resolve_glob(accessor, paths,
-                                     index=opts.index) if paths else []
+    resolved = (
+        await io.resolve_glob(accessor, paths, index=opts.index)
+        if paths
+        else []
+    )
     stream = meta is None or meta.stream
     return await generic(
         resolved,
@@ -164,14 +184,20 @@ async def run_search(
         read_bytes=bound_op(io.read_bytes, accessor, opts.index),
         read_stream=native_or_bytes(
             bound_op(io.read_stream, accessor, opts.index),
-            bound_op(io.read_bytes, accessor, opts.index)) if stream else None,
+            bound_op(io.read_bytes, accessor, opts.index),
+        )
+        if stream
+        else None,
         stdin=opts.stdin,
     )
 
 
-async def _all_directories(io: CommandIO, accessor: Accessor,
-                           index: IndexCacheStore,
-                           paths: list[PathSpec]) -> bool:
+async def _all_directories(
+    io: CommandIO,
+    accessor: Accessor,
+    index: IndexCacheStore,
+    paths: list[PathSpec],
+) -> bool:
     """Whether every scope operand stats as a directory.
 
     File operands keep the exact single-file output shape (no walk-style
@@ -229,9 +255,14 @@ async def narrow_scope(
     """
     search = io.content_search
     query = whole_word_literal(pattern, fixed_string, whole_word)
-    if (search is not None and query is not None and recursive
-            and not exact_file_set and search.enabled(accessor)
-            and await _all_directories(io, accessor, index, paths)):
+    if (
+        search is not None
+        and query is not None
+        and recursive
+        and not exact_file_set
+        and search.enabled(accessor)
+        and await _all_directories(io, accessor, index, paths)
+    ):
         narrowed = await search.narrow_paths(accessor, query, paths)
         if narrowed:
             return text_candidates(narrowed), True

@@ -24,9 +24,9 @@ from mirage.vfs.box.config import BoxConfig
 
 
 def make_accessor(root_folder_id: str | None = None) -> BoxAccessor:
-    config = BoxConfig(access_token="tok",
-                       root_folder_id=root_folder_id,
-                       content_search=True)
+    config = BoxConfig(
+        access_token="tok", root_folder_id=root_folder_id, content_search=True
+    )
     return BoxAccessor(config, BoxTokenManager(config))
 
 
@@ -40,13 +40,11 @@ def _file(item_id: str, name: str, chain: list[tuple[str, str]]) -> dict:
         "name": name,
         "type": "file",
         "path_collection": {
-            "total_count":
-            len(chain),
-            "entries": [{
-                "type": "folder",
-                "id": cid,
-                "name": cname
-            } for cid, cname in chain],
+            "total_count": len(chain),
+            "entries": [
+                {"type": "folder", "id": cid, "name": cname}
+                for cid, cname in chain
+            ],
         },
     }
 
@@ -60,9 +58,11 @@ async def test_narrow_maps_path_collection_to_mount_paths():
         _file("2", "x.txt", ROOT),
         _file("3", "y.txt", ROOT + [("100", "Sub")]),
     ]
-    with patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               return_value=(results, False)) as spy:
+    with patch(
+        "mirage.core.box.search.search_content",
+        new_callable=AsyncMock,
+        return_value=(results, False),
+    ) as spy:
         out = await narrow_paths(make_accessor(), "needle", [mount_root()])
     assert spy.await_args.args[2] == "0"
     assert out is not None
@@ -79,9 +79,11 @@ async def test_narrow_sorts_results_in_walk_order():
         _file("2", "foo.txt", ROOT),
         _file("3", "inner.txt", ROOT + [("100", "foo")]),
     ]
-    with patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               return_value=(results, False)):
+    with patch(
+        "mirage.core.box.search.search_content",
+        new_callable=AsyncMock,
+        return_value=(results, False),
+    ):
         out = await narrow_paths(make_accessor(), "needle", [mount_root()])
     assert out is not None
     assert [p.virtual for p in out] == ["/data/foo/inner.txt", "/data/foo.txt"]
@@ -89,13 +91,14 @@ async def test_narrow_sorts_results_in_walk_order():
 
 @pytest.mark.asyncio
 async def test_narrow_rebases_raw_onto_the_scope_spelling():
-    scope = PathSpec(vfs_path="",
-                     virtual="/data",
-                     directory="/data",
-                     raw_path=".")
-    with patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               return_value=([_file("2", "x.txt", ROOT)], False)):
+    scope = PathSpec(
+        vfs_path="", virtual="/data", directory="/data", raw_path="."
+    )
+    with patch(
+        "mirage.core.box.search.search_content",
+        new_callable=AsyncMock,
+        return_value=([_file("2", "x.txt", ROOT)], False),
+    ):
         out = await narrow_paths(make_accessor(), "needle", [scope])
     assert out is not None
     assert out[0].raw_path == "./x.txt"
@@ -103,16 +106,22 @@ async def test_narrow_rebases_raw_onto_the_scope_spelling():
 
 @pytest.mark.asyncio
 async def test_narrow_subfolder_scope_resolves_id_and_trims_key():
-    scope = PathSpec(vfs_path="docs",
-                     virtual="/data/docs",
-                     directory="/data/docs")
+    scope = PathSpec(
+        vfs_path="docs", virtual="/data/docs", directory="/data/docs"
+    )
     results = [_file("5", "in.txt", ROOT + [("100", "docs")])]
-    with patch("mirage.core.box.search.resolve_item",
-               new_callable=AsyncMock,
-               return_value={"id": "100", "type": "folder"}), \
-         patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               return_value=(results, False)) as spy:
+    with (
+        patch(
+            "mirage.core.box.search.resolve_item",
+            new_callable=AsyncMock,
+            return_value={"id": "100", "type": "folder"},
+        ),
+        patch(
+            "mirage.core.box.search.search_content",
+            new_callable=AsyncMock,
+            return_value=(results, False),
+        ) as spy,
+    ):
         out = await narrow_paths(make_accessor(), "needle", [scope])
     assert spy.await_args.args[2] == "100"
     assert out is not None
@@ -121,32 +130,35 @@ async def test_narrow_subfolder_scope_resolves_id_and_trims_key():
 
 @pytest.mark.asyncio
 async def test_narrow_non_folder_scope_returns_none():
-    scope = PathSpec(vfs_path="a.txt",
-                     virtual="/data/a.txt",
-                     directory="/data/a.txt")
-    with patch("mirage.core.box.search.resolve_item",
-               new_callable=AsyncMock,
-               return_value={
-                   "id": "9",
-                   "type": "file"
-               }):
+    scope = PathSpec(
+        vfs_path="a.txt", virtual="/data/a.txt", directory="/data/a.txt"
+    )
+    with patch(
+        "mirage.core.box.search.resolve_item",
+        new_callable=AsyncMock,
+        return_value={"id": "9", "type": "file"},
+    ):
         out = await narrow_paths(make_accessor(), "needle", [scope])
     assert out is None
 
 
 @pytest.mark.asyncio
 async def test_narrow_api_error_returns_none():
-    with patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               side_effect=BoxApiError("boom", 500)):
+    with patch(
+        "mirage.core.box.search.search_content",
+        new_callable=AsyncMock,
+        side_effect=BoxApiError("boom", 500),
+    ):
         out = await narrow_paths(make_accessor(), "needle", [mount_root()])
     assert out is None
 
 
 @pytest.mark.asyncio
 async def test_narrow_truncated_results_return_none():
-    with patch("mirage.core.box.search.search_content",
-               new_callable=AsyncMock,
-               return_value=([_file("2", "x.txt", ROOT)], True)):
+    with patch(
+        "mirage.core.box.search.search_content",
+        new_callable=AsyncMock,
+        return_value=([_file("2", "x.txt", ROOT)], True),
+    ):
         out = await narrow_paths(make_accessor(), "needle", [mount_root()])
     assert out is None

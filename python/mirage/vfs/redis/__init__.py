@@ -24,8 +24,10 @@ __all__ = ["RedisVFS", "RedisStore"]
 def __getattr__(name: str) -> "type[RedisVFS] | type[RedisStore]":
     if name == "RedisVFS":
         from mirage.vfs.redis.redis import RedisVFS
+
         return RedisVFS
     if name == "RedisStore":
         from mirage.vfs.redis.store import RedisStore
+
         return RedisStore
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

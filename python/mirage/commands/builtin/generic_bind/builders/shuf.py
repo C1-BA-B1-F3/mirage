@@ -17,16 +17,24 @@ from functools import partial
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.shuf import NO_WRITE_OP, parse_flags
 from mirage.commands.builtin.generic.shuf import shuf as generic_shuf
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+    bound_op,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def shuf(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-               texts: list[str],
-               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def shuf(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     """Run shuf over resolved operands; mirrors shufGeneric.
 
     The refusals are caught here rather than left to the executor's
@@ -60,9 +68,13 @@ async def shuf(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         return None, IOResult(exit_code=1, stderr=f"{exc}\n".encode())
 
 
-async def _shuf(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                texts: list[str],
-                opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def _shuf(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     if paths:
         paths = await ops.resolve_glob(accessor, paths, opts.index)
@@ -71,19 +83,21 @@ async def _shuf(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # Only ``-o`` writes, so a read-only backend still serves plain shuf.
     # Requiring the write op here would break every read-only backend.
     write_op = ops.operation(Operation.WRITE)
-    return await generic_shuf(paths,
-                              texts,
-                              read_bytes=bound_op(ops.read_bytes, accessor,
-                                                  opts.index),
-                              stdin=opts.stdin,
-                              count=parsed.count,
-                              echo=parsed.echo,
-                              zero_terminated=parsed.zero_terminated,
-                              with_replacement=parsed.with_replacement,
-                              input_range=parsed.input_range,
-                              output=parsed.output,
-                              write_bytes=partial(write_op, accessor)
-                              if write_op is not None else None)
+    return await generic_shuf(
+        paths,
+        texts,
+        read_bytes=bound_op(ops.read_bytes, accessor, opts.index),
+        stdin=opts.stdin,
+        count=parsed.count,
+        echo=parsed.echo,
+        zero_terminated=parsed.zero_terminated,
+        with_replacement=parsed.with_replacement,
+        input_range=parsed.input_range,
+        output=parsed.output,
+        write_bytes=partial(write_op, accessor)
+        if write_op is not None
+        else None,
+    )
 
 
-BUILDER = Builder('shuf', shuf, None, False, None, read=True)
+BUILDER = Builder("shuf", shuf, read=True)

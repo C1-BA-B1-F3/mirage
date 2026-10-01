@@ -32,10 +32,9 @@ def _write_config(tmp_path: Path) -> Path:
     return p
 
 
-def _run_cli(env: dict,
-             *args: str,
-             stdin: bytes | None = None,
-             expect_exit: int = 0) -> dict | list:
+def _run_cli(
+    env: dict, *args: str, stdin: bytes | None = None, expect_exit: int = 0
+) -> dict | list:
     cmd = [sys.executable, "-m", "mirage.cli.main", *args]
     proc = subprocess.run(
         cmd,
@@ -47,7 +46,8 @@ def _run_cli(env: dict,
     if proc.returncode != expect_exit:
         raise AssertionError(
             f"exit={proc.returncode} (expected {expect_exit})\n"
-            f"stdout: {proc.stdout.decode()}\nstderr: {proc.stderr.decode()}")
+            f"stdout: {proc.stdout.decode()}\nstderr: {proc.stderr.decode()}"
+        )
     if expect_exit != 0:
         return {}
     if not proc.stdout.strip():
@@ -73,16 +73,18 @@ def test_workspace_lifecycle(daemon, tmp_path):
 
 def test_workspace_create_with_explicit_id(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    created = _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-                       "custom-ws")
+    created = _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "custom-ws"
+    )
     assert created["id"] == "custom-ws"
     _run_cli(daemon["env"], "workspace", "delete", "custom-ws")
 
 
 def test_session_lifecycle(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    created = _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-                       "sess-test-ws")
+    created = _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "sess-test-ws"
+    )
     wid = created["id"]
     sess = _run_cli(daemon["env"], "session", "create", wid, "--id", "agent_a")
     assert sess["session_id"] == "agent_a"
@@ -96,10 +98,17 @@ def test_session_lifecycle(daemon, tmp_path):
 
 def test_execute_returns_json_io_result(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    created = _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-                       "exec-test")
-    result = _run_cli(daemon["env"], "execute", "--workspace_id",
-                      created["id"], "--command", "echo hello")
+    created = _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "exec-test"
+    )
+    result = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        created["id"],
+        "--command",
+        "echo hello",
+    )
     assert result["kind"] == "io"
     assert result["exit_code"] == 0
     assert result["stdout"].startswith("hello")
@@ -109,8 +118,15 @@ def test_execute_returns_json_io_result(daemon, tmp_path):
 def test_execute_background_returns_job_id(daemon, tmp_path):
     cfg = _write_config(tmp_path)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "bg-test")
-    submitted = _run_cli(daemon["env"], "execute", "--workspace_id", "bg-test",
-                         "--command", "echo bg", "--background")
+    submitted = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "bg-test",
+        "--command",
+        "echo bg",
+        "--background",
+    )
     job_id = submitted["job_id"]
     assert job_id.startswith("job_")
 
@@ -122,15 +138,18 @@ def test_execute_background_returns_job_id(daemon, tmp_path):
 
 def test_execute_with_stdin_pipe(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "stdin-test")
-    result = _run_cli(daemon["env"],
-                      "execute",
-                      "--workspace_id",
-                      "stdin-test",
-                      "--command",
-                      "wc -l",
-                      stdin=b"a\nb\nc\n")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "stdin-test"
+    )
+    result = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "stdin-test",
+        "--command",
+        "wc -l",
+        stdin=b"a\nb\nc\n",
+    )
     assert result["exit_code"] == 0
     assert result["stdout"].strip().startswith("3")
     _run_cli(daemon["env"], "workspace", "delete", "stdin-test")
@@ -138,24 +157,45 @@ def test_execute_with_stdin_pipe(daemon, tmp_path):
 
 def test_save_then_load_round_trip(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "save-test")
-    _run_cli(daemon["env"], "execute", "--workspace_id", "save-test",
-             "--command", "echo persisted > /report.txt")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "save-test"
+    )
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "save-test",
+        "--command",
+        "echo persisted > /report.txt",
+    )
 
     tar_path = tmp_path / "snapshots" / "snap.tar"
     tar_path.parent.mkdir(exist_ok=True)
-    saved = _run_cli(daemon["env"], "workspace", "snapshot", "save-test",
-                     str(tar_path))
+    saved = _run_cli(
+        daemon["env"], "workspace", "snapshot", "save-test", str(tar_path)
+    )
     assert saved["size"] > 0
     assert tar_path.exists()
 
-    loaded = _run_cli(daemon["env"], "workspace", "load", str(tar_path),
-                      str(cfg), "--id", "loaded-ws")
+    loaded = _run_cli(
+        daemon["env"],
+        "workspace",
+        "load",
+        str(tar_path),
+        str(cfg),
+        "--id",
+        "loaded-ws",
+    )
     assert loaded["id"] == "loaded-ws"
 
-    result = _run_cli(daemon["env"], "execute", "--workspace_id", "loaded-ws",
-                      "--command", "cat /report.txt")
+    result = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "loaded-ws",
+        "--command",
+        "cat /report.txt",
+    )
     assert "persisted" in result["stdout"]
     _run_cli(daemon["env"], "workspace", "delete", "save-test")
     _run_cli(daemon["env"], "workspace", "delete", "loaded-ws")
@@ -163,23 +203,49 @@ def test_save_then_load_round_trip(daemon, tmp_path):
 
 def test_workspace_clone_round_trip(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "clone-src")
-    _run_cli(daemon["env"], "execute", "--workspace_id", "clone-src",
-             "--command", "echo source > /report.txt")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "clone-src"
+    )
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "clone-src",
+        "--command",
+        "echo source > /report.txt",
+    )
 
-    cloned = _run_cli(daemon["env"], "workspace", "clone", "clone-src", "--id",
-                      "clone-dst")
+    cloned = _run_cli(
+        daemon["env"], "workspace", "clone", "clone-src", "--id", "clone-dst"
+    )
     assert cloned["id"] == "clone-dst"
 
-    result = _run_cli(daemon["env"], "execute", "--workspace_id", "clone-dst",
-                      "--command", "cat /report.txt")
+    result = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "clone-dst",
+        "--command",
+        "cat /report.txt",
+    )
     assert "source" in result["stdout"]
 
-    _run_cli(daemon["env"], "execute", "--workspace_id", "clone-dst",
-             "--command", "echo clone > /report.txt")
-    original = _run_cli(daemon["env"], "execute", "--workspace_id",
-                        "clone-src", "--command", "cat /report.txt")
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "clone-dst",
+        "--command",
+        "echo clone > /report.txt",
+    )
+    original = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "clone-src",
+        "--command",
+        "cat /report.txt",
+    )
     assert "source" in original["stdout"]
 
     _run_cli(daemon["env"], "workspace", "delete", "clone-src")
@@ -188,24 +254,24 @@ def test_workspace_clone_round_trip(daemon, tmp_path):
 
 def test_workspace_get_verbose_includes_internals(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "verbose-test")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "verbose-test"
+    )
     plain = _run_cli(daemon["env"], "workspace", "get", "verbose-test")
     assert plain["internals"] is None
 
-    verbose = _run_cli(daemon["env"], "workspace", "get", "verbose-test",
-                       "--verbose")
+    verbose = _run_cli(
+        daemon["env"], "workspace", "get", "verbose-test", "--verbose"
+    )
     assert verbose["internals"] is not None
     assert "cache_bytes" in verbose["internals"]
     _run_cli(daemon["env"], "workspace", "delete", "verbose-test")
 
 
 def test_unknown_workspace_returns_nonzero(daemon, tmp_path):
-    _run_cli(daemon["env"],
-             "workspace",
-             "get",
-             "ws_doesnotexist",
-             expect_exit=2)
+    _run_cli(
+        daemon["env"], "workspace", "get", "ws_doesnotexist", expect_exit=2
+    )
 
 
 def test_env_interpolation_uses_cli_environment(daemon, tmp_path):
@@ -215,10 +281,7 @@ def test_env_interpolation_uses_cli_environment(daemon, tmp_path):
     process won't have those vars."""
     cfg = tmp_path / "interp.yaml"
     cfg.write_text(
-        "mounts:\n"
-        "  /:\n"
-        "    vfs: ram\n"
-        "    mode: ${MOUNT_MODE_FROM_ENV}\n",
+        "mounts:\n  /:\n    vfs: ram\n    mode: ${MOUNT_MODE_FROM_ENV}\n",
         encoding="utf-8",
     )
     env = {**daemon["env"], "MOUNT_MODE_FROM_ENV": "WRITE"}
@@ -239,47 +302,40 @@ def test_daemon_stop_then_status_not_running(daemon, tmp_path):
     out = _run_cli(daemon["env"], "daemon", "stop")
     assert out["stopped"] is True
     import time
+
     time.sleep(0.5)
     out = _run_cli(daemon["env"], "daemon", "status", expect_exit=1)
     assert out == {} or out.get("running") is False
 
 
-def test_provision_returns_dry_run_result(daemon, tmp_path):
-    """`mirage provision` hits /execute with provision=True and returns
-    a {"kind": "provision", ...} payload instead of actually running."""
-    cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "provision-test")
-    result = _run_cli(
-        daemon["env"],
-        "provision",
-        "--workspace_id",
-        "provision-test",
-        "--command",
-        "echo would-not-run",
-    )
-    assert result["kind"] == "provision"
-    _run_cli(daemon["env"], "workspace", "delete", "provision-test")
-
-
 def test_execute_propagates_inner_exit_code(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "exit-test")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "exit-test"
+    )
 
     ok = _run_cli(daemon["env"], "execute", "-w", "exit-test", "-c", "echo ok")
     assert ok["exit_code"] == 0
 
-    _run_cli(daemon["env"],
-             "execute",
-             "-w",
-             "exit-test",
-             "-c",
-             "false",
-             expect_exit=1)
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "exit-test",
+        "-c",
+        "false",
+        expect_exit=1,
+    )
 
-    bg = _run_cli(daemon["env"], "execute", "-w", "exit-test", "-c", "false",
-                  "--background")
+    bg = _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "exit-test",
+        "-c",
+        "false",
+        "--background",
+    )
     job_id = bg["job_id"]
     _run_cli(daemon["env"], "job", "wait", job_id, expect_exit=1)
 
@@ -288,11 +344,13 @@ def test_execute_propagates_inner_exit_code(daemon, tmp_path):
 
 def test_execute_subshell_cwd_does_not_leak(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "subshell")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "subshell"
+    )
     _run_cli(daemon["env"], "execute", "-w", "subshell", "-c", "mkdir /sub")
-    inside = _run_cli(daemon["env"], "execute", "-w", "subshell", "-c",
-                      "(cd /sub && pwd)")
+    inside = _run_cli(
+        daemon["env"], "execute", "-w", "subshell", "-c", "(cd /sub && pwd)"
+    )
     assert inside["stdout"].strip() == "/sub"
     after = _run_cli(daemon["env"], "execute", "-w", "subshell", "-c", "pwd")
     assert after["stdout"].strip() == "/"
@@ -302,21 +360,41 @@ def test_execute_subshell_cwd_does_not_leak(daemon, tmp_path):
 def test_execute_env_prefix_does_not_leak(daemon, tmp_path):
     cfg = _write_config(tmp_path)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "envpref")
-    inside = _run_cli(daemon["env"], "execute", "-w", "envpref", "-c",
-                      "(export FOO=bar; printenv FOO)")
+    inside = _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "envpref",
+        "-c",
+        "(export FOO=bar; printenv FOO)",
+    )
     assert inside["stdout"].strip() == "bar"
-    after = _run_cli(daemon["env"], "execute", "-w", "envpref", "-c",
-                     "printenv FOO || echo absent")
+    after = _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "envpref",
+        "-c",
+        "printenv FOO || echo absent",
+    )
     assert after["stdout"].strip() == "absent"
     _run_cli(daemon["env"], "workspace", "delete", "envpref")
 
 
 def test_execute_background_then_cancel(daemon, tmp_path):
     cfg = _write_config(tmp_path)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "cancel-test")
-    submitted = _run_cli(daemon["env"], "execute", "-w", "cancel-test", "-c",
-                         "sleep 30", "--background")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "cancel-test"
+    )
+    submitted = _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "cancel-test",
+        "-c",
+        "sleep 30",
+        "--background",
+    )
     job_id = submitted["job_id"]
     _run_cli(daemon["env"], "job", "cancel", job_id)
     waited = _run_cli(daemon["env"], "job", "wait", job_id, expect_exit=2)
@@ -374,12 +452,25 @@ def _write_named(tmp_path: Path, name: str, text: str) -> Path:
 
 def test_execute_limit_truncates_output(daemon, tmp_path):
     cfg = _write_named(tmp_path, "sg_trunc.yaml", LIMIT_TRUNCATE_YAML)
-    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
-             "sg-trunc")
-    _run_cli(daemon["env"], "execute", "--workspace_id", "sg-trunc",
-             "--command", _SEED_5_LINES)
-    result = _run_cli(daemon["env"], "execute", "--workspace_id", "sg-trunc",
-                      "--command", "cat /f.txt")
+    _run_cli(
+        daemon["env"], "workspace", "create", str(cfg), "--id", "sg-trunc"
+    )
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "sg-trunc",
+        "--command",
+        _SEED_5_LINES,
+    )
+    result = _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "sg-trunc",
+        "--command",
+        "cat /f.txt",
+    )
     assert result["exit_code"] == 0
     assert result["stdout"] == "1\n2\n"
     _run_cli(daemon["env"], "workspace", "delete", "sg-trunc")
@@ -388,15 +479,23 @@ def test_execute_limit_truncates_output(daemon, tmp_path):
 def test_execute_limit_error_exits_1(daemon, tmp_path):
     cfg = _write_named(tmp_path, "sg_err.yaml", LIMIT_ERROR_YAML)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "sg-err")
-    _run_cli(daemon["env"], "execute", "--workspace_id", "sg-err", "--command",
-             _SEED_5_LINES)
-    _run_cli(daemon["env"],
-             "execute",
-             "--workspace_id",
-             "sg-err",
-             "--command",
-             "cat /f.txt",
-             expect_exit=1)
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "sg-err",
+        "--command",
+        _SEED_5_LINES,
+    )
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "--workspace_id",
+        "sg-err",
+        "--command",
+        "cat /f.txt",
+        expect_exit=1,
+    )
     _run_cli(daemon["env"], "workspace", "delete", "sg-err")
 
 
@@ -417,55 +516,99 @@ profiles:
 def test_ask_allow_deny_round_trip(daemon, tmp_path):
     cfg = _write_named(tmp_path, "asks.yaml", ASK_PROFILE_YAML)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "asks-ws")
-    _run_cli(daemon["env"], "session", "create", "asks-ws", "--id", "agent_a",
-             "--profile", "guarded")
-    _run_cli(daemon["env"], "execute", "-w", "asks-ws", "-s", "agent_a", "-c",
-             "touch /f.txt /g.txt")
+    _run_cli(
+        daemon["env"],
+        "session",
+        "create",
+        "asks-ws",
+        "--id",
+        "agent_a",
+        "--profile",
+        "guarded",
+    )
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "asks-ws",
+        "-s",
+        "agent_a",
+        "-c",
+        "touch /f.txt /g.txt",
+    )
 
-    _run_cli(daemon["env"],
-             "execute",
-             "-w",
-             "asks-ws",
-             "-s",
-             "agent_a",
-             "-c",
-             "rm /f.txt",
-             expect_exit=126)
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "asks-ws",
+        "-s",
+        "agent_a",
+        "-c",
+        "rm /f.txt",
+        expect_exit=126,
+    )
     asks = _run_cli(daemon["env"], "workspace", "list-asks", "asks-ws")
     assert len(asks) == 1
     assert asks[0]["outcome"] is None
     assert asks[0]["command"] == "rm"
 
-    allowed = _run_cli(daemon["env"], "workspace", "allow", "asks-ws",
-                       asks[0]["id"])
+    allowed = _run_cli(
+        daemon["env"], "workspace", "allow", "asks-ws", asks[0]["id"]
+    )
     assert allowed["outcome"] == "allow"
     assert allowed["scope"] == "once"
-    _run_cli(daemon["env"], "execute", "-w", "asks-ws", "-s", "agent_a", "-c",
-             "rm /f.txt")
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "asks-ws",
+        "-s",
+        "agent_a",
+        "-c",
+        "rm /f.txt",
+    )
 
-    _run_cli(daemon["env"],
-             "execute",
-             "-w",
-             "asks-ws",
-             "-s",
-             "agent_a",
-             "-c",
-             "rm /g.txt",
-             expect_exit=126)
-    asks = _run_cli(daemon["env"], "workspace", "list-asks", "asks-ws",
-                    "--session", "agent_a")
-    denied = _run_cli(daemon["env"], "workspace", "deny", "asks-ws",
-                      asks[0]["id"], "--note", "not now")
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "asks-ws",
+        "-s",
+        "agent_a",
+        "-c",
+        "rm /g.txt",
+        expect_exit=126,
+    )
+    asks = _run_cli(
+        daemon["env"],
+        "workspace",
+        "list-asks",
+        "asks-ws",
+        "--session",
+        "agent_a",
+    )
+    denied = _run_cli(
+        daemon["env"],
+        "workspace",
+        "deny",
+        "asks-ws",
+        asks[0]["id"],
+        "--note",
+        "not now",
+    )
     assert denied["outcome"] == "deny"
     assert denied["note"] == "not now"
-    _run_cli(daemon["env"],
-             "execute",
-             "-w",
-             "asks-ws",
-             "-s",
-             "agent_a",
-             "-c",
-             "rm /g.txt",
-             expect_exit=126)
+    _run_cli(
+        daemon["env"],
+        "execute",
+        "-w",
+        "asks-ws",
+        "-s",
+        "agent_a",
+        "-c",
+        "rm /g.txt",
+        expect_exit=126,
+    )
     assert _run_cli(daemon["env"], "workspace", "list-asks", "asks-ws") == []
     _run_cli(daemon["env"], "workspace", "delete", "asks-ws")

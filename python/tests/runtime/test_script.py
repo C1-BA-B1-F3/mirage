@@ -11,20 +11,24 @@ from mirage.runtime.types import EvalResult, EvalValue, ScriptSource
 class Recorder(EvaluatorMixin):
     """Records the globals a script would have been shown."""
 
-    def __init__(self,
-                 value: EvalValue = None,
-                 delay: float = 0.0,
-                 error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        value: EvalValue = None,
+        delay: float = 0.0,
+        error: Exception | None = None,
+    ) -> None:
         self.value = value
         self.delay = delay
         self.error = error
         self.inputs: dict[str, EvalValue] = {}
 
-    async def eval(self,
-                   code: str,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+    ) -> EvalResult:
         self.inputs = dict(inputs or {})
         if self.delay:
             await asyncio.sleep(self.delay)

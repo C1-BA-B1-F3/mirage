@@ -20,7 +20,6 @@ from .conftest import eval_one
 
 
 class TestJqType:
-
     def test_type_object(self):
         assert eval_one({"a": 1}, "type") == "object"
 
@@ -44,7 +43,6 @@ class TestJqType:
 
 
 class TestJqFlatten:
-
     def test_flatten_nested(self):
         assert eval_one([[1, 2], [3, 4]], "flatten") == [1, 2, 3, 4]
 
@@ -63,7 +61,6 @@ class TestJqFlatten:
 
 
 class TestJqUnique:
-
     def test_unique_with_duplicates(self):
         assert eval_one([1, 2, 2, 3, 1], "unique") == [1, 2, 3]
 
@@ -82,7 +79,6 @@ class TestJqUnique:
 
 
 class TestJqSort:
-
     def test_sort_numbers(self):
         assert eval_one([3, 1, 2], "sort") == [1, 2, 3]
 
@@ -101,7 +97,6 @@ class TestJqSort:
 
 
 class TestJqReverse:
-
     def test_reverse_list(self):
         assert eval_one([1, 2, 3], "reverse") == [3, 2, 1]
 
@@ -117,7 +112,6 @@ class TestJqReverse:
 
 
 class TestJqNot:
-
     def test_not_true(self):
         assert eval_one(True, "not") is False
 
@@ -138,7 +132,6 @@ class TestJqNot:
 
 
 class TestJqLiterals:
-
     def test_null(self):
         assert eval_one({"a": 1}, "null") is None
 
@@ -153,7 +146,6 @@ class TestJqLiterals:
 
 
 class TestJqAddMinMax:
-
     def test_add_sum_array(self):
         assert eval_one([1, 2, 3], "add") == 6
 
@@ -186,7 +178,6 @@ class TestJqAddMinMax:
 
 
 class TestJqFirstLastAnyAll:
-
     def test_first(self):
         assert eval_one([10, 20, 30], "first") == 10
 
@@ -213,7 +204,6 @@ class TestJqFirstLastAnyAll:
 
 
 class TestJqConversions:
-
     def test_to_number(self):
         assert eval_one("42", "tonumber") == 42
 
@@ -228,7 +218,6 @@ class TestJqConversions:
 
 
 class TestJqCsvTsv:
-
     def test_csv(self):
         result = eval_one(["a", "b", "c"], "@csv")
         assert result == '"a","b","c"'
@@ -255,6 +244,5 @@ class TestJqCsvTsv:
 
 
 class TestJqFlattenRecursive:
-
     def test_flatten_recursive(self):
         assert eval_one([[[1, [2]], [3]], [4]], "flatten") == [1, 2, 3, 4]

@@ -31,10 +31,9 @@ async def handle_eval(
     sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     script = " ".join(args)
-    io = await execute_fn(script,
-                          session_id=session.session_id,
-                          stdin=stdin,
-                          sink=sink)
+    io = await execute_fn(
+        script, session_id=session.session_id, stdin=stdin, sink=sink
+    )
     return io.stdout, io, ExecutionNode(command="eval", exit_code=io.exit_code)
 
 
@@ -44,5 +43,10 @@ async def eval_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_eval(call.execute_fn, list(call.argv.args),
-                             call.session, call.stdin, call.sink)
+    return await handle_eval(
+        call.execute_fn,
+        list(call.argv.args),
+        call.session,
+        call.stdin,
+        call.sink,
+    )

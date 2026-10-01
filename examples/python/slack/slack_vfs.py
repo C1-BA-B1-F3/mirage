@@ -58,7 +58,8 @@ async def main():
                     with open(path) as f:
                         content = f.read()
                     lines = [
-                        line_text for line_text in content.strip().split("\n")
+                        line_text
+                        for line_text in content.strip().split("\n")
                         if line_text.strip()
                     ]
                     if lines:
@@ -76,7 +77,8 @@ async def main():
                 print("\n--- os.path.exists() ---")
                 print(f"  exists: {os.path.exists(path)}")
                 print(
-                    f"  nonexistent: {os.path.exists('/slack/channels/nope')}")
+                    f"  nonexistent: {os.path.exists('/slack/channels/nope')}"
+                )
 
         print("\n--- bash history ---")
         with open("/.bash_history") as f:

@@ -24,11 +24,14 @@ async def _ws() -> Workspace:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "echo x >&3",
-    "echo x 2>&3",
-    "cat <&3",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "echo x >&3",
+        "echo x 2>&3",
+        "cat <&3",
+    ],
+)
 async def test_unopened_descriptor_is_refused_and_touches_nothing(line):
     ws = await _ws()
     io = await ws.shell(f"{line}; echo code=$?")
@@ -82,7 +85,8 @@ async def test_a_numeric_target_is_routed_by_the_claimed_descriptor():
     assert await io.stderr_str() == "echo: write error: Bad file descriptor\n"
     io = await ws.shell("cat /data/missing 2<&1; echo code=$?")
     assert await io.stdout_str() == (
-        "cat: /data/missing: No such file or directory\ncode=1\n")
+        "cat: /data/missing: No such file or directory\ncode=1\n"
+    )
     assert await io.stderr_str() == ""
 
 
@@ -119,69 +123,138 @@ async def test_self_dups_change_nothing():
 @pytest.mark.parametrize(
     "line,out,err,code",
     [
-        ('echo x 1>&0', '', 'echo: write error: Bad file descriptor\n', 1),
+        ("echo x 1>&0", "", "echo: write error: Bad file descriptor\n", 1),
         # A self-dup never reopens a closed descriptor, transient or
         # persistent; a file redirect on it does.
-        ('touch /data/marker 1>&- 1>&1 2>&1; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '',
-         '1: Bad file descriptor\nrc=1\ne=1\n', 0),
-        ('exec 1>&-; touch /data/marker 1>&1 2>&1; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '',
-         '1: Bad file descriptor\nrc=1\ne=1\n', 0),
-        ('touch /data/marker 1>&- 1>&1 >/data/f 2>&1; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '', 'rc=0\ne=0\n', 0),
-        ('echo x 2>&0 1>&2', '', '', 1),
-        ('echo x 0>&1 1>&0', 'x\n', '', 0),
-        ('echo x 1>&0 0>&1', '', 'echo: write error: Bad file descriptor\n',
-         1),
-        ('echo x 1>&0 2>&1', '', '', 1),
+        (
+            "touch /data/marker 1>&- 1>&1 2>&1; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "1: Bad file descriptor\nrc=1\ne=1\n",
+            0,
+        ),
+        (
+            "exec 1>&-; touch /data/marker 1>&1 2>&1; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "1: Bad file descriptor\nrc=1\ne=1\n",
+            0,
+        ),
+        (
+            "touch /data/marker 1>&- 1>&1 >/data/f 2>&1; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "rc=0\ne=0\n",
+            0,
+        ),
+        ("echo x 2>&0 1>&2", "", "", 1),
+        ("echo x 0>&1 1>&0", "x\n", "", 0),
+        (
+            "echo x 1>&0 0>&1",
+            "",
+            "echo: write error: Bad file descriptor\n",
+            1,
+        ),
+        ("echo x 1>&0 2>&1", "", "", 1),
         # A dup from a descriptor closed earlier on the line refuses the
         # line, and the command never runs; a self-dup stays a no-op.
-        ('touch /data/marker 0<&- 1<&0; test -e /data/marker', '',
-         '0: Bad file descriptor\n', 1),
-        ('echo hi 1>&- 2>&1', '', '1: Bad file descriptor\n', 1),
-        ('cat 0<&- 0<&0 </data/a.txt', 'a', '', 0),
+        (
+            "touch /data/marker 0<&- 1<&0; test -e /data/marker",
+            "",
+            "0: Bad file descriptor\n",
+            1,
+        ),
+        ("echo hi 1>&- 2>&1", "", "1: Bad file descriptor\n", 1),
+        ("cat 0<&- 0<&0 </data/a.txt", "a", "", 0),
         # `>&word` on a descriptor other than 1 is bash's ambiguous
         # redirect, refused before the command runs; bare and on 1 it is
         # the both-streams file.
-        ('touch /data/marker 3>&/data/foo; '
-         'test -e /data/marker || test -e /data/foo', '',
-         '/data/foo: ambiguous redirect\n', 1),
-        ('echo x 2>&/data/foo; test -e /data/foo', '',
-         '/data/foo: ambiguous redirect\n', 1),
-        ('( echo out; echo err >&2 ) 1>&/data/both; cat /data/both',
-         'out\nerr\n', '', 0),
+        (
+            "touch /data/marker 3>&/data/foo; "
+            "test -e /data/marker || test -e /data/foo",
+            "",
+            "/data/foo: ambiguous redirect\n",
+            1,
+        ),
+        (
+            "echo x 2>&/data/foo; test -e /data/foo",
+            "",
+            "/data/foo: ambiguous redirect\n",
+            1,
+        ),
+        (
+            "( echo out; echo err >&2 ) 1>&/data/both; cat /data/both",
+            "out\nerr\n",
+            "",
+            0,
+        ),
         # An output redirect leaves its descriptor write-only.
-        ('cat 1>/data/out 0<&1; wc -c < /data/out', '0\n',
-         'cat: -: Bad file descriptor\n', 0),
-        ('echo x 1>&0 2>/data/err; cat /data/err',
-         'echo: write error: Bad file descriptor\n', '', 0),
-        ('echo x 0>/data/out 1>&0; cat /data/out', 'x\n', '', 0),
-        ('cat </data/a.txt 1<&0 0<&1 1>/data/out; cat /data/out', 'a', '', 0),
+        (
+            "cat 1>/data/out 0<&1; wc -c < /data/out",
+            "0\n",
+            "cat: -: Bad file descriptor\n",
+            0,
+        ),
+        (
+            "echo x 1>&0 2>/data/err; cat /data/err",
+            "echo: write error: Bad file descriptor\n",
+            "",
+            0,
+        ),
+        ("echo x 0>/data/out 1>&0; cat /data/out", "x\n", "", 0),
+        ("cat </data/a.txt 1<&0 0<&1 1>/data/out; cat /data/out", "a", "", 0),
         # bash 5.2: stdout is open for writing only, so the read fails.
-        ('cat </data/a.txt 0<&1', '', 'cat: -: Bad file descriptor\n', 1),
+        ("cat </data/a.txt 0<&1", "", "cat: -: Bad file descriptor\n", 1),
         # A descriptor `exec` closed for the shell refuses a dup from it
         # too; a redirect that opens it or a rebinding takes it back.
-        ('exec 1>&-; touch /data/marker 2>&1; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '',
-         '1: Bad file descriptor\nrc=1\ne=1\n', 0),
-        ('exec 0<&-; touch /data/marker 1<&0; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '',
-         '0: Bad file descriptor\nrc=1\ne=1\n', 0),
-        ('exec 1>&-; true 1>&1; echo rc=$? >&2', '', 'rc=0\n', 0),
-        ('exec 1>&-; touch /data/marker >/data/f 2>&1; echo rc=$? >&2; '
-         'test -e /data/marker; echo e=$? >&2', '', 'rc=0\ne=0\n', 0),
-        ('exec 1>&-; exec 1>&2; touch /data/marker 2>&1; echo rc=$?; '
-         'test -e /data/marker; echo e=$?', '', 'rc=0\ne=0\n', 0),
-        ('exec 2>&-; touch /data/marker 1>&2; test -e /data/marker; '
-         'echo e=$?', 'e=1\n', '', 0),
-    ])
+        (
+            "exec 1>&-; touch /data/marker 2>&1; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "1: Bad file descriptor\nrc=1\ne=1\n",
+            0,
+        ),
+        (
+            "exec 0<&-; touch /data/marker 1<&0; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "0: Bad file descriptor\nrc=1\ne=1\n",
+            0,
+        ),
+        ("exec 1>&-; true 1>&1; echo rc=$? >&2", "", "rc=0\n", 0),
+        (
+            "exec 1>&-; touch /data/marker >/data/f 2>&1; echo rc=$? >&2; "
+            "test -e /data/marker; echo e=$? >&2",
+            "",
+            "rc=0\ne=0\n",
+            0,
+        ),
+        (
+            "exec 1>&-; exec 1>&2; touch /data/marker 2>&1; echo rc=$?; "
+            "test -e /data/marker; echo e=$?",
+            "",
+            "rc=0\ne=0\n",
+            0,
+        ),
+        (
+            "exec 2>&-; touch /data/marker 1>&2; test -e /data/marker; "
+            "echo e=$?",
+            "e=1\n",
+            "",
+            0,
+        ),
+    ],
+)
 async def test_descriptor_zero_duplication_tracks_direction_and_order(
-        line, out, err, code):
+    line, out, err, code
+):
     ws = await _ws()
     try:
         io = await ws.shell(line)
-        assert (await io.stdout_str(), await
-                io.stderr_str(), io.exit_code) == (out, err, code)
+        assert (
+            await io.stdout_str(),
+            await io.stderr_str(),
+            io.exit_code,
+        ) == (out, err, code)
     finally:
         await ws.close()

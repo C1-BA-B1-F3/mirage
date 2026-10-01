@@ -30,8 +30,10 @@ async def run(ws: Workspace, cmd: str) -> str:
     result = await ws.shell(cmd)
     print(f"$ {cmd}")
     if result.exit_code != 0:
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()[:200]}")
+        print(
+            f"  exit={result.exit_code}  "
+            f"{(await result.stderr_str()).strip()[:200]}"
+        )
     out = (await result.stdout_str()).rstrip()
     for line in out.splitlines()[:10]:
         print(f"  {line[:200]}")
@@ -48,21 +50,24 @@ async def main() -> None:
         base = f"/airtable/bases/{bases[0]}"
         await run(ws, f"cat {base}/base.json")
         tables = [
-            name for name in (await run(ws, f"ls {base}")).splitlines()
+            name
+            for name in (await run(ws, f"ls {base}")).splitlines()
             if name != "base.json"
         ]
         if not tables:
             return
         table = f"{base}/{tables[0]}"
         await run(
-            ws, f"jq -r '.fields[] | .field_name + \": \" + .type' "
-            f"{table}/table.json")
+            ws,
+            f"jq -r '.fields[] | .field_name + \": \" + .type' "
+            f"{table}/table.json",
+        )
         # head pushes its count into maxRecords: one request, not the table
         await run(ws, f"head -n 3 {table}/records.jsonl | jq -c .fields")
         await run(ws, f"ls {table}/views")
         await run(
-            ws, "cat /airtable/bases/Missing__appMissing00000001/"
-            "base.json")
+            ws, "cat /airtable/bases/Missing__appMissing00000001/base.json"
+        )
     finally:
         await ws.close()
 

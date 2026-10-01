@@ -61,13 +61,12 @@ async def test_stat_reports_the_lfs_object_size(accessor):
     every reader needs, and reporting the pointer risks a short copy."""
     seed(
         accessor,
-        file_row("w.bin",
-                 4798702184,
-                 lfs={
-                     "oid": "sha",
-                     "size": 4798702184,
-                     "pointerSize": 135
-                 }))
+        file_row(
+            "w.bin",
+            4798702184,
+            lfs={"oid": "sha", "size": 4798702184, "pointerSize": 135},
+        ),
+    )
     result = await stat(accessor, ps("w.bin"))
     assert result.size == 4798702184
     assert result.extra["lfs_oid"] == "sha"
@@ -77,15 +76,19 @@ def test_stat_of_leaves_mtime_unset_when_the_row_has_none():
     """A Hub file's only mtime is its last commit, and a bare listing
     carries none. None is the honest answer; a repo-wide timestamp
     stamped on every file would be a confident lie."""
-    assert stat_of(IndexEntry(id="o", name="f",
-                              resource_type="file")).modified is None
+    assert (
+        stat_of(IndexEntry(id="o", name="f", resource_type="file")).modified
+        is None
+    )
 
 
 def test_stat_of_reports_an_expanded_mtime():
-    entry = IndexEntry(id="o",
-                       name="f",
-                       resource_type="file",
-                       remote_time="2025-01-01T00:00:00.000Z")
+    entry = IndexEntry(
+        id="o",
+        name="f",
+        resource_type="file",
+        remote_time="2025-01-01T00:00:00.000Z",
+    )
     assert stat_of(entry).modified == "2025-01-01T00:00:00.000Z"
 
 
@@ -96,21 +99,22 @@ LFS_ROW = {
     "oid": "O",
     "size": 7,
     "path": "a.txt",
-    "lfs": {
-        "oid": "L"
-    },
+    "lfs": {"oid": "L"},
     "xetHash": "X",
 }
 
 
 def _point(rows):
-    return patch("mirage.core.hf_hub.tree.hub_post",
-                 AsyncMock(return_value=rows))
+    return patch(
+        "mirage.core.hf_hub.tree.hub_post", AsyncMock(return_value=rows)
+    )
 
 
 def _walk(*rows):
-    return patch("mirage.core.hf_hub.tree.hub_get_response",
-                 AsyncMock(return_value=page(list(rows))))
+    return patch(
+        "mirage.core.hf_hub.tree.hub_get_response",
+        AsyncMock(return_value=page(list(rows))),
+    )
 
 
 @pytest.mark.asyncio
@@ -221,9 +225,10 @@ async def test_a_point_stat_refuses_rows_for_another_path(loaded):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status,code", [(401, ""), (403, ""),
-                                         (404, "RepoNotFound"),
-                                         (404, "RevisionNotFound")])
+@pytest.mark.parametrize(
+    "status,code",
+    [(401, ""), (403, ""), (404, "RepoNotFound"), (404, "RevisionNotFound")],
+)
 async def test_a_refused_point_stat_is_permission_denied(loaded, status, code):
     # Not absence (which reconcile turns into a delete) and not a raw Hub
     # error (which a recursive walk cannot step past).

@@ -23,8 +23,11 @@ from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.slack.channels import list_channels, list_dms
 from mirage.core.slack.client import slack_get
 from mirage.core.slack.files import file_blob_name
-from mirage.core.slack.formatters import (channel_dirname, dm_dirname,
-                                          user_filename)
+from mirage.core.slack.formatters import (
+    channel_dirname,
+    dm_dirname,
+    user_filename,
+)
 from mirage.core.slack.history import fetch_messages_for_day, messages_to_jsonl
 from mirage.core.slack.paginate import cursor_pages
 from mirage.core.slack.scope import detect_scope
@@ -45,10 +48,12 @@ _SOFT_HISTORY_ERRORS = (
 )
 
 
-def _date_range(latest_ts: float,
-                created: int,
-                max_days: int = 90,
-                span: tuple[date, date] | None = None) -> list[str]:
+def _date_range(
+    latest_ts: float,
+    created: int,
+    max_days: int = 90,
+    span: tuple[date, date] | None = None,
+) -> list[str]:
     """The channel's day directories, newest first.
 
     A day dir is real for any date the channel has existed for, so the
@@ -77,22 +82,26 @@ def _date_range(latest_ts: float,
     return dates
 
 
-async def _latest_message_ts(config,
-                             channel_id: str,
-                             session: SessionArg = None) -> float | None:
+async def _latest_message_ts(
+    config, channel_id: str, session: SessionArg = None
+) -> float | None:
     try:
-        data = await slack_get(config,
-                               "conversations.history",
-                               params={
-                                   "channel": channel_id,
-                                   "limit": 1,
-                               },
-                               session=session)
+        data = await slack_get(
+            config,
+            "conversations.history",
+            params={
+                "channel": channel_id,
+                "limit": 1,
+            },
+            session=session,
+        )
     except RuntimeError as e:
         if any(code in str(e) for code in _SOFT_HISTORY_ERRORS):
             logger.debug(
                 "slack: history denied for %s (%s); treating as empty",
-                channel_id, e)
+                channel_id,
+                e,
+            )
             return None
         raise
     messages = data.get("messages", [])
@@ -101,8 +110,9 @@ async def _latest_message_ts(config,
     return None
 
 
-async def _earliest_message_ts(accessor: SlackAccessor, channel_id: str,
-                               latest: float) -> float:
+async def _earliest_message_ts(
+    accessor: SlackAccessor, channel_id: str, latest: float
+) -> float:
     """Discover the history start when conversation metadata omits creation.
 
     Only history before the scope's end is paged: a message after it is
@@ -118,30 +128,37 @@ async def _earliest_message_ts(accessor: SlackAccessor, channel_id: str,
     if accessor.time_range.end is not None:
         params["latest"] = f"{accessor.time_range.end:.6f}"
     first = latest
-    async for page in cursor_pages(accessor.config,
-                                   "conversations.history",
-                                   params,
-                                   "messages",
-                                   session=accessor.pool):
+    async for page in cursor_pages(
+        accessor.config,
+        "conversations.history",
+        params,
+        "messages",
+        session=accessor.pool,
+    ):
         for message in page:
             first = min(first, float(message["ts"]))
     return first
 
 
-async def _list_channels_root(accessor: SlackAccessor,
-                              match: ScopeMatch) -> Listed:
+async def _list_channels_root(
+    accessor: SlackAccessor, match: ScopeMatch
+) -> Listed:
     channels = await list_channels(accessor.config, session=accessor.pool)
     entries: list[tuple[str, IndexEntry]] = []
     for ch in channels:
         dirname = channel_dirname(ch)
-        entries.append((dirname,
-                        IndexEntry(
-                            id=ch["id"],
-                            name=ch.get("name", ""),
-                            resource_type="slack/channel",
-                            vfs_name=dirname,
-                            remote_time=str(ch.get("created", 0)),
-                        )))
+        entries.append(
+            (
+                dirname,
+                IndexEntry(
+                    id=ch["id"],
+                    name=ch.get("name", ""),
+                    resource_type="slack/channel",
+                    vfs_name=dirname,
+                    remote_time=str(ch.get("created", 0)),
+                ),
+            )
+        )
     return entries
 
 
@@ -153,41 +170,51 @@ async def _list_dms_root(accessor: SlackAccessor, match: ScopeMatch) -> Listed:
     for dm in dms:
         dirname = dm_dirname(dm, user_map)
         uid = dm.get("user", "")
-        entries.append((dirname,
-                        IndexEntry(
-                            id=dm["id"],
-                            name=user_map.get(uid, uid),
-                            resource_type="slack/dm",
-                            vfs_name=dirname,
-                            remote_time=str(dm.get("created", 0)),
-                        )))
+        entries.append(
+            (
+                dirname,
+                IndexEntry(
+                    id=dm["id"],
+                    name=user_map.get(uid, uid),
+                    resource_type="slack/dm",
+                    vfs_name=dirname,
+                    remote_time=str(dm.get("created", 0)),
+                ),
+            )
+        )
     return entries
 
 
-async def _list_users_root(accessor: SlackAccessor,
-                           match: ScopeMatch) -> Listed:
+async def _list_users_root(
+    accessor: SlackAccessor, match: ScopeMatch
+) -> Listed:
     users = await list_users(accessor.config, session=accessor.pool)
     entries: list[tuple[str, IndexEntry]] = []
     for u in users:
         filename = user_filename(u)
-        entries.append((filename,
-                        IndexEntry(
-                            id=u["id"],
-                            name=u.get("name", ""),
-                            resource_type="slack/user",
-                            vfs_name=filename,
-                            size=len(user_json_bytes(u)),
-                        )))
+        entries.append(
+            (
+                filename,
+                IndexEntry(
+                    id=u["id"],
+                    name=u.get("name", ""),
+                    resource_type="slack/user",
+                    vfs_name=filename,
+                    size=len(user_json_bytes(u)),
+                ),
+            )
+        )
     return entries
 
 
-async def _list_channel_days(accessor: SlackAccessor, match: ScopeMatch,
-                             own: IndexEntry) -> Listed:
+async def _list_channel_days(
+    accessor: SlackAccessor, match: ScopeMatch, own: IndexEntry
+) -> Listed:
     created = int(own.remote_time or 0)
     span = glob_span(match.pattern)
-    latest_ts = await _latest_message_ts(accessor.config,
-                                         own.id,
-                                         session=accessor.pool)
+    latest_ts = await _latest_message_ts(
+        accessor.config, own.id, session=accessor.pool
+    )
     if latest_ts and accessor.time_range.bounded:
         start = created or accessor.time_range.start
         if start is not None:
@@ -197,32 +224,42 @@ async def _list_channel_days(accessor: SlackAccessor, match: ScopeMatch,
         else:
             first = datetime.fromtimestamp(
                 await _earliest_message_ts(accessor, own.id, latest_ts),
-                timezone.utc).date()
+                timezone.utc,
+            ).date()
         dates = list(
             reversed(
                 accessor.time_range.listing_days(
                     first,
                     datetime.fromtimestamp(latest_ts, timezone.utc).date(),
-                    span)))
+                    span,
+                )
+            )
+        )
     elif latest_ts and created:
         dates = _date_range(latest_ts, created, span=span)
     elif latest_ts:
         dates = _date_range(latest_ts, int(latest_ts), span=span)
     else:
         dates = []
-    entries = [(d,
-                IndexEntry(
-                    id=f"{own.id}:{d}",
-                    name=d,
-                    resource_type="slack/date_dir",
-                    vfs_name=d,
-                    extra={"channel_id": own.id},
-                )) for d in dates]
+    entries = [
+        (
+            d,
+            IndexEntry(
+                id=f"{own.id}:{d}",
+                name=d,
+                resource_type="slack/date_dir",
+                vfs_name=d,
+                extra={"channel_id": own.id},
+            ),
+        )
+        for d in dates
+    ]
     return DirListing(entries=entries, partial=span is not None, window=True)
 
 
-async def _day_listing(accessor: SlackAccessor, channel_id: str,
-                       date_str: str) -> DirListing:
+async def _day_listing(
+    accessor: SlackAccessor, channel_id: str, date_str: str
+) -> DirListing:
     """One history fetch, answering the day dir and its files subdir.
 
     A soft history error (not_in_channel, missing_scope, ...) seals an
@@ -235,15 +272,21 @@ async def _day_listing(accessor: SlackAccessor, channel_id: str,
         date_str (str): the day, ``YYYY-MM-DD``.
     """
     try:
-        messages = await fetch_messages_for_day(accessor.config,
-                                                channel_id,
-                                                date_str,
-                                                accessor.time_range,
-                                                session=accessor.pool)
+        messages = await fetch_messages_for_day(
+            accessor.config,
+            channel_id,
+            date_str,
+            accessor.time_range,
+            session=accessor.pool,
+        )
     except RuntimeError as e:
         if any(code in str(e) for code in _SOFT_HISTORY_ERRORS):
-            logger.debug("slack: history denied for %s/%s (%s); empty day",
-                         channel_id, date_str, e)
+            logger.debug(
+                "slack: history denied for %s/%s (%s); empty day",
+                channel_id,
+                date_str,
+                e,
+            )
             # A soft error is not the channel saying the day's messages
             # are gone, so the empty day must not evict what it held.
             return DirListing(entries=[], window=True)
@@ -260,10 +303,7 @@ async def _day_listing(accessor: SlackAccessor, channel_id: str,
         name="files",
         resource_type="slack/files_dir",
         vfs_name="files",
-        extra={
-            "channel_id": channel_id,
-            "date": date_str
-        },
+        extra={"channel_id": channel_id, "date": date_str},
     )
     file_entries: list[tuple[str, IndexEntry]] = []
     for msg in messages:
@@ -272,57 +312,62 @@ async def _day_listing(accessor: SlackAccessor, channel_id: str,
             # an id but no download URL and no byte size; read() ENOENTs on
             # them, so listing them would both surface phantom files and
             # break the sizes_always_known contract.
-            if (not fmeta.get("id") or not fmeta.get("url_private_download")
-                    or fmeta.get("size") is None):
+            if (
+                not fmeta.get("id")
+                or not fmeta.get("url_private_download")
+                or fmeta.get("size") is None
+            ):
                 continue
             blob_name = file_blob_name(fmeta)
             file_entries.append(
-                (blob_name,
-                 IndexEntry(
-                     id=fmeta["id"],
-                     name=fmeta.get("title") or fmeta.get("name") or "",
-                     resource_type="slack/file",
-                     vfs_name=blob_name,
-                     size=fmeta["size"],
-                     remote_time=str(fmeta.get("timestamp", "")),
-                     extra={
-                         "mimetype":
-                         fmeta.get("mimetype", ""),
-                         "url_private_download":
-                         fmeta.get("url_private_download", ""),
-                         "filetype":
-                         fmeta.get("filetype", ""),
-                         "ts":
-                         msg.get("ts", ""),
-                         "channel_id":
-                         channel_id,
-                         "date":
-                         date_str,
-                     },
-                 )))
+                (
+                    blob_name,
+                    IndexEntry(
+                        id=fmeta["id"],
+                        name=fmeta.get("title") or fmeta.get("name") or "",
+                        resource_type="slack/file",
+                        vfs_name=blob_name,
+                        size=fmeta["size"],
+                        remote_time=str(fmeta.get("timestamp", "")),
+                        extra={
+                            "mimetype": fmeta.get("mimetype", ""),
+                            "url_private_download": fmeta.get(
+                                "url_private_download", ""
+                            ),
+                            "filetype": fmeta.get("filetype", ""),
+                            "ts": msg.get("ts", ""),
+                            "channel_id": channel_id,
+                            "date": date_str,
+                        },
+                    ),
+                )
+            )
     return DirListing(
         entries=[("chat.jsonl", chat_entry), ("files", files_entry)],
         seeds={"files": file_entries},
     )
 
 
-async def _list_day(accessor: SlackAccessor, match: ScopeMatch,
-                    channel: IndexEntry) -> Listed:
+async def _list_day(
+    accessor: SlackAccessor, match: ScopeMatch, channel: IndexEntry
+) -> Listed:
     # The proof is the channel entry, not the day's own: any well-formed
     # date under a real channel fetches, including dates outside the
     # bounded window the channel listing mints.
     return await _day_listing(accessor, channel.id, match.slots["day"])
 
 
-async def _list_files(accessor: SlackAccessor, match: ScopeMatch,
-                      own: IndexEntry) -> Listed:
+async def _list_files(
+    accessor: SlackAccessor, match: ScopeMatch, own: IndexEntry
+) -> Listed:
     # Normally served from the day lister's seed; reached only when the
     # index evicted the files listing while the day's entries survived.
     channel_id = own.extra.get("channel_id") or own.id.split(":", 1)[0]
     listing = await _day_listing(accessor, channel_id, match.slots["day"])
     # A soft-error day proves nothing about its attachments either.
-    return DirListing(entries=list(listing.seeds.get("files", [])),
-                      window=listing.window)
+    return DirListing(
+        entries=list(listing.seeds.get("files", [])), window=listing.window
+    )
 
 
 readdir = make_readdir(
@@ -338,10 +383,7 @@ readdir = make_readdir(
     },
     parent_entry_listers={"day": _list_day},
     static_root=VIRTUAL_ROOTS,
-    guards={
-        "day": guard_day,
-        "files": guard_day
-    },
+    guards={"day": guard_day, "files": guard_day},
     pattern_kinds={"channel": has_glob_span},
 )
 

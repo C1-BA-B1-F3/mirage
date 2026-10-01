@@ -27,11 +27,12 @@ from mirage.vfs.types import ReadOps, SearchOps
 # endpoints client-side (trace summaries, session ids, prompt and dataset
 # names); there is no server-side search. Langfuse is read-only, so the
 # generic byte-mutation commands are intentionally absent (no write op wired).
-IO = VFSAdapter(search=SearchOps(search=make_search_op(detect_scope,
-                                                       SEARCHERS),
-                                 meta={"grep": {
-                                     "mode": "regex"
-                                 }}),
-                read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    search=SearchOps(
+        search=make_search_op(detect_scope, SEARCHERS),
+        meta={"grep": {"mode": "regex"}},
+    ),
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

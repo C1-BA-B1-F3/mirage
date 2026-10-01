@@ -13,8 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.usage import extra_operand_error
@@ -23,13 +26,19 @@ from mirage.types import FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 
 
-async def unlink(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def unlink(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not ops.is_mounted(accessor) or not paths:
         raise UsageError(
             "unlink: missing operand\n"
-            "Try 'unlink --help' for more information.", 1)
+            "Try 'unlink --help' for more information.",
+            1,
+        )
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     if len(paths) > 1:
         raise extra_operand_error("unlink", paths[1].raw_path)
@@ -40,28 +49,43 @@ async def unlink(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # `unlink flink/` alike with ENOTDIR, where a real directory under a
     # slash is EISDIR. A bare link operand never reaches here at all --
     # the dispatcher removes the link entry, which no backend can see.
-    if (links is not None and p.raw_path.endswith("/")
-            and links.stat_at(p.virtual) is not None):
-        return None, IOResult(exit_code=1,
-                              stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      "Not a directory\n").encode())
+    if (
+        links is not None
+        and p.raw_path.endswith("/")
+        and links.stat_at(p.virtual) is not None
+    ):
+        return None, IOResult(
+            exit_code=1,
+            stderr=(
+                f"unlink: cannot unlink '{p.raw_path}': Not a directory\n"
+            ).encode(),
+        )
     try:
         s = await ops.stat(accessor, p, index=opts.index)
     except FS_ERRORS as exc:
-        return None, IOResult(exit_code=1,
-                              stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      f"{fs_strerror(exc)}\n").encode())
+        return None, IOResult(
+            exit_code=1,
+            stderr=(
+                f"unlink: cannot unlink '{p.raw_path}': {fs_strerror(exc)}\n"
+            ).encode(),
+        )
     if s.type == FileType.DIRECTORY:
-        return None, IOResult(exit_code=1,
-                              stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      "Is a directory\n").encode())
+        return None, IOResult(
+            exit_code=1,
+            stderr=(
+                f"unlink: cannot unlink '{p.raw_path}': Is a directory\n"
+            ).encode(),
+        )
     try:
         await ops.require(Operation.UNLINK)(accessor, p)
     except FS_ERRORS as exc:
-        return None, IOResult(exit_code=1,
-                              stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      f"{fs_strerror(exc)}\n").encode())
+        return None, IOResult(
+            exit_code=1,
+            stderr=(
+                f"unlink: cannot unlink '{p.raw_path}': {fs_strerror(exc)}\n"
+            ).encode(),
+        )
     return None, IOResult(writes={p.mount_path: b""})
 
 
-BUILDER = Builder('unlink', unlink, write=True)
+BUILDER = Builder("unlink", unlink, write=True)

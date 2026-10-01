@@ -19,8 +19,11 @@ import pytest
 from agents.items import ModelResponse, TResponseInputItem
 from agents.models.interface import Model
 from agents.usage import Usage
-from openai.types.responses import (ResponseFunctionToolCall,
-                                    ResponseOutputMessage, ResponseOutputText)
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
 
 
 class ScriptedModel(Model):
@@ -38,9 +41,13 @@ class ScriptedModel(Model):
         self.calls = list(calls)
         self.instructions: list[str | None] = []
 
-    async def get_response(self, system_instructions: str | None,
-                           input: str | list[TResponseInputItem], *args: Any,
-                           **kwargs: Any) -> ModelResponse:
+    async def get_response(
+        self,
+        system_instructions: str | None,
+        input: str | list[TResponseInputItem],
+        *args: Any,
+        **kwargs: Any,
+    ) -> ModelResponse:
         self.instructions.append(system_instructions)
         turn = len(self.instructions)
         if self.calls:
@@ -51,18 +58,22 @@ class ScriptedModel(Model):
                 id=f"fc-{turn}",
                 name=name,
                 arguments=json.dumps(arguments),
-                status="completed")
+                status="completed",
+            )
         else:
-            item = ResponseOutputMessage(id=f"msg-{turn}",
-                                         type="message",
-                                         role="assistant",
-                                         status="completed",
-                                         content=[
-                                             ResponseOutputText(
-                                                 type="output_text",
-                                                 text=last_output(input),
-                                                 annotations=[])
-                                         ])
+            item = ResponseOutputMessage(
+                id=f"msg-{turn}",
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[
+                    ResponseOutputText(
+                        type="output_text",
+                        text=last_output(input),
+                        annotations=[],
+                    )
+                ],
+            )
         return ModelResponse(output=[item], usage=Usage(), response_id=None)
 
     def stream_response(self, *args: Any, **kwargs: Any) -> Any:
@@ -73,8 +84,10 @@ def last_output(items: str | list[TResponseInputItem]) -> str:
     if isinstance(items, str):
         return ""
     for item in reversed(items):
-        if isinstance(item,
-                      dict) and item.get("type") == "function_call_output":
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "function_call_output"
+        ):
             return str(item.get("output"))
     return ""
 

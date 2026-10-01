@@ -48,9 +48,9 @@ def index():
 
 @pytest.mark.asyncio
 async def test_readdir_root(accessor, store, index):
-    entries = await readdir(accessor,
-                            PathSpec(vfs_path="", virtual="/", directory="/"),
-                            index)
+    entries = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert "/a.txt" in entries
     assert "/b.txt" in entries
     assert "/sub" in entries
@@ -59,8 +59,9 @@ async def test_readdir_root(accessor, store, index):
 
 @pytest.mark.asyncio
 async def test_parent_listing_preserves_a_cached_subdirectory(accessor, index):
-    children = await readdir(accessor, PathSpec.from_str_path("/sub", "sub"),
-                             index)
+    children = await readdir(
+        accessor, PathSpec.from_str_path("/sub", "sub"), index
+    )
     await readdir(accessor, PathSpec.from_str_path("/", ""), index)
     assert (await index.list_dir("/sub")).entries == children
     assert (await index.get("/sub")).entry.resource_type == "folder"
@@ -70,8 +71,10 @@ async def test_parent_listing_preserves_a_cached_subdirectory(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_subdir(accessor, index):
     entries = await readdir(
-        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"),
-        index)
+        accessor,
+        PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"),
+        index,
+    )
     assert "/sub/c.txt" in entries
     assert "/sub/d.txt" in entries
     assert "/sub/deep" in entries
@@ -86,8 +89,10 @@ async def test_readdir_empty_dir(index):
     s.dirs.add("/empty")
     a = RAMAccessor(s)
     entries = await readdir(
-        a, PathSpec(vfs_path="empty", virtual="/empty", directory="/empty"),
-        index)
+        a,
+        PathSpec(vfs_path="empty", virtual="/empty", directory="/empty"),
+        index,
+    )
     assert entries == []
 
 
@@ -99,31 +104,37 @@ async def test_readdir_not_found(index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             a,
-            PathSpec(vfs_path="nonexistent",
-                     virtual="/nonexistent",
-                     directory="/nonexistent"), index)
+            PathSpec(
+                vfs_path="nonexistent",
+                virtual="/nonexistent",
+                directory="/nonexistent",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
 async def test_readdir_deep(accessor, index):
     entries = await readdir(
         accessor,
-        PathSpec(vfs_path="sub/deep",
-                 virtual="/sub/deep",
-                 directory="/sub/deep"), index)
+        PathSpec(
+            vfs_path="sub/deep", virtual="/sub/deep", directory="/sub/deep"
+        ),
+        index,
+    )
     assert "/sub/deep/e.txt" in entries
     assert len(entries) == 1
 
 
 @pytest.mark.asyncio
 async def test_readdir_cached(accessor, store, index):
-    entries1 = await readdir(accessor,
-                             PathSpec(vfs_path="", virtual="/", directory="/"),
-                             index)
+    entries1 = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     store.store.files["/new.txt"] = b"new"
-    entries2 = await readdir(accessor,
-                             PathSpec(vfs_path="", virtual="/", directory="/"),
-                             index)
+    entries2 = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert entries1 == entries2
 
 
@@ -136,9 +147,13 @@ async def test_readdir_missing_stays_not_found_at_any_depth(index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             a,
-            PathSpec(vfs_path="nope/deeper",
-                     virtual="/nope/deeper",
-                     directory="/nope/deeper"), index)
+            PathSpec(
+                vfs_path="nope/deeper",
+                virtual="/nope/deeper",
+                directory="/nope/deeper",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -153,9 +168,13 @@ async def test_readdir_file_component_is_not_a_directory(index):
         with pytest.raises(NotADirectoryError):
             await readdir(
                 a,
-                PathSpec(vfs_path=virtual.lstrip("/"),
-                         virtual=virtual,
-                         directory=virtual), index)
+                PathSpec(
+                    vfs_path=virtual.lstrip("/"),
+                    virtual=virtual,
+                    directory=virtual,
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
@@ -173,6 +192,10 @@ async def test_readdir_orphan_below_a_missing_dir_is_not_found(index):
         with pytest.raises(FileNotFoundError):
             await readdir(
                 a,
-                PathSpec(vfs_path=virtual.lstrip("/"),
-                         virtual=virtual,
-                         directory=virtual), index)
+                PathSpec(
+                    vfs_path=virtual.lstrip("/"),
+                    virtual=virtual,
+                    directory=virtual,
+                ),
+                index,
+            )

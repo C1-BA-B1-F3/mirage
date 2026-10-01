@@ -13,8 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.hf_buckets import HfBucketsAccessor
-from mirage.core.hf_hub.client import (HfHubError, etag_value, hub_post,
-                                       quote_path)
+from mirage.core.hf_hub.client import (
+    HfHubError,
+    etag_value,
+    hub_post,
+    quote_path,
+)
 from mirage.types import JsonValue
 
 
@@ -50,12 +54,15 @@ def resolve_url(accessor: HfBucketsAccessor, rel: str) -> str:
     Returns:
         str: the absolute URL, which answers a redirect to the CDN.
     """
-    return (f"{_base(accessor)}/buckets/{accessor.config.bucket}/resolve/"
-            f"{quote_path(accessor.bucket_path(rel))}")
+    return (
+        f"{_base(accessor)}/buckets/{accessor.config.bucket}/resolve/"
+        f"{quote_path(accessor.bucket_path(rel))}"
+    )
 
 
-async def fetch_row(accessor: HfBucketsAccessor,
-                    key: str) -> dict[str, JsonValue] | None:
+async def fetch_row(
+    accessor: HfBucketsAccessor, key: str
+) -> dict[str, JsonValue] | None:
     """The paths-info row of one bucket file, in one request.
 
     paths-info answers a missing path, a directory and a leading-slash
@@ -79,19 +86,25 @@ async def fetch_row(accessor: HfBucketsAccessor,
     if not key.strip("/"):
         return None
     asked = accessor.bucket_path(key)
-    rows = await hub_post(accessor.token,
-                          paths_info_url(accessor), {"paths": [asked]},
-                          session=accessor.pool)
+    rows = await hub_post(
+        accessor.token,
+        paths_info_url(accessor),
+        {"paths": [asked]},
+        session=accessor.pool,
+    )
     if not isinstance(rows, list):
-        raise HfHubError(f"paths-info answered no list for {asked}", 0,
-                         "InvalidResponse")
+        raise HfHubError(
+            f"paths-info answered no list for {asked}", 0, "InvalidResponse"
+        )
     matching = [
-        row for row in rows
+        row
+        for row in rows
         if isinstance(row, dict) and row.get("path") == asked
     ]
     if rows and not matching:
-        raise HfHubError(f"paths-info answered no row for {asked}", 0,
-                         "PathMismatch")
+        raise HfHubError(
+            f"paths-info answered no row for {asked}", 0, "PathMismatch"
+        )
     for row in matching:
         if row.get("type") == "file":
             return row

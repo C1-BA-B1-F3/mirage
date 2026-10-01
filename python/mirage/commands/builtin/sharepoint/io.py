@@ -12,10 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.core.generic.du import make_walked_du
 from mirage.core.sharepoint.copy import copy as _copy
 from mirage.core.sharepoint.create import create as _create
-from mirage.core.sharepoint.du import entries as _du_entries
-from mirage.core.sharepoint.du import size as _du_size
 from mirage.core.sharepoint.exists import exists as _exists
 from mirage.core.sharepoint.find import find as _find
 from mirage.core.sharepoint.mkdir import mkdir as _mkdir
@@ -30,27 +29,29 @@ from mirage.core.sharepoint.truncate import truncate as _truncate
 from mirage.core.sharepoint.unlink import unlink as _unlink
 from mirage.core.sharepoint.write import write_bytes as _write
 from mirage.vfs.adapter import VFSAdapter
-from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
+from mirage.vfs.types import NativeReadOps, ReadOps, WriteOps
 
-# SharePoint files are read and written through the generic factory (with
-# rather than the generic (list, total) tuple, matching OneDrive. Folder copy
-# is server-side via the dir_copy field.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read,
-                                     read_stream=_read_stream,
-                                     exists=_exists,
-                                     find=_find,
-                                     du=DuOps(size=_du_size,
-                                              entries=_du_entries)),
-                writes=WriteOps(write=_write,
-                                mkdir=_mkdir,
-                                unlink=_unlink,
-                                rmdir=_rmdir,
-                                rm_r=_rm_r,
-                                rename=_rename,
-                                copy=_copy,
-                                dir_copy=_copy,
-                                create=_create,
-                                truncate=_truncate),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(
+        read_range=_read,
+        read_stream=_read_stream,
+        exists=_exists,
+        find=_find,
+        du=make_walked_du(_stat, _readdir),
+    ),
+    writes=WriteOps(
+        write=_write,
+        mkdir=_mkdir,
+        unlink=_unlink,
+        rmdir=_rmdir,
+        rm_r=_rm_r,
+        rename=_rename,
+        copy=_copy,
+        dir_copy=_copy,
+        create=_create,
+        truncate=_truncate,
+    ),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

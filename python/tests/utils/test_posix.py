@@ -2,8 +2,11 @@ import re
 
 import pytest
 
-from mirage.utils.posix import (class_characters, compile_posix_regex,
-                                translate_bracket)
+from mirage.utils.posix import (
+    class_characters,
+    compile_posix_regex,
+    translate_bracket,
+)
 
 
 def _bracket(pattern: str) -> str:
@@ -13,22 +16,25 @@ def _bracket(pattern: str) -> str:
     return "".join(out)
 
 
-@pytest.mark.parametrize('name,yes,no', [
-    ('alnum', 'aZ09', '_! '),
-    ('alpha', 'aZ', '09_'),
-    ('blank', ' \t', '\nA'),
-    ('cntrl', '\x00\x1f\x7f', ' A'),
-    ('digit', '09', 'aF_'),
-    ('graph', '!AZ09~', ' \t'),
-    ('lower', 'az', 'AZ0'),
-    ('print', ' AZ09~', '\t\n'),
-    ('punct', '![]-_', 'aZ0 '),
-    ('space', ' \t\n\r\f\v', 'a0'),
-    ('upper', 'AZ', 'az0'),
-    ('xdigit', '09aAfF', 'gG_'),
-])
+@pytest.mark.parametrize(
+    "name,yes,no",
+    [
+        ("alnum", "aZ09", "_! "),
+        ("alpha", "aZ", "09_"),
+        ("blank", " \t", "\nA"),
+        ("cntrl", "\x00\x1f\x7f", " A"),
+        ("digit", "09", "aF_"),
+        ("graph", "!AZ09~", " \t"),
+        ("lower", "az", "AZ0"),
+        ("print", " AZ09~", "\t\n"),
+        ("punct", "![]-_", "aZ0 "),
+        ("space", " \t\n\r\f\v", "a0"),
+        ("upper", "AZ", "az0"),
+        ("xdigit", "09aAfF", "gG_"),
+    ],
+)
 def test_class_membership(name, yes, no):
-    compiled = re.compile(_bracket(f'[[:{name}:]]'))
+    compiled = re.compile(_bracket(f"[[:{name}:]]"))
     expanded = class_characters(name)
     for char in yes:
         assert compiled.fullmatch(char)
@@ -39,37 +45,52 @@ def test_class_membership(name, yes, no):
 
 
 def test_class_order_for_translation():
-    assert class_characters('space') == '\t\n\v\f\r '
-    assert class_characters('lower') == 'abcdefghijklmnopqrstuvwxyz'
+    assert class_characters("space") == "\t\n\v\f\r "
+    assert class_characters("lower") == "abcdefghijklmnopqrstuvwxyz"
 
 
-@pytest.mark.parametrize('pattern',
-                         ['[[:bogus:]]', '[[:constructor:]]', '[[:digit:]'])
+@pytest.mark.parametrize(
+    "pattern", ["[[:bogus:]]", "[[:constructor:]]", "[[:digit:]"]
+)
 def test_invalid_classes_refused(pattern):
     with pytest.raises(re.error):
         _bracket(pattern)
 
 
 def test_mixed_brackets():
-    compiled = re.compile(_bracket('[][:digit:]_]') + '+')
-    assert compiled.fullmatch(']_123')
-    assert not compiled.fullmatch('abc')
+    compiled = re.compile(_bracket("[][:digit:]_]") + "+")
+    assert compiled.fullmatch("]_123")
+    assert not compiled.fullmatch("abc")
 
 
-@pytest.mark.parametrize("source,text,expected",
-                         [('élan', 'ÉLAN', False), ('Élan', 'ÉLAN', True),
-                          ('σ', 'Σ', False), ('k', 'K', False),
-                          ('i', 'İ', False), ('s', 'ſ', False),
-                          ('[A-Z]+', 'MiXeD', True), ('[^A-Z]', 'a', False),
-                          ('[^a]', 'A', False), ('[Z-a]+', 'ZA[', True),
-                          ('[Z-a]', 'B', False), ('[É]', 'é', False),
-                          ('[^É]', 'é', True), ('\\D[A-Z]', '!a', True),
-                          ('\\x41\\u0042', 'ab', True),
-                          ('([A-Z]+)-\\1', 'Ab-aB', True),
-                          ('(É)-\\1', 'É-é', False), ('(É)-\\1', 'É-É', True)])
+@pytest.mark.parametrize(
+    "source,text,expected",
+    [
+        ("élan", "ÉLAN", False),
+        ("Élan", "ÉLAN", True),
+        ("σ", "Σ", False),
+        ("k", "K", False),
+        ("i", "İ", False),
+        ("s", "ſ", False),
+        ("[A-Z]+", "MiXeD", True),
+        ("[^A-Z]", "a", False),
+        ("[^a]", "A", False),
+        ("[Z-a]+", "ZA[", True),
+        ("[Z-a]", "B", False),
+        ("[É]", "é", False),
+        ("[^É]", "é", True),
+        ("\\D[A-Z]", "!a", True),
+        ("\\x41\\u0042", "ab", True),
+        ("([A-Z]+)-\\1", "Ab-aB", True),
+        ("(É)-\\1", "É-é", False),
+        ("(É)-\\1", "É-É", True),
+    ],
+)
 def test_ascii_case_folding(source, text, expected):
-    assert bool(compile_posix_regex(source,
-                                    re.IGNORECASE).fullmatch(text)) == expected
+    assert (
+        bool(compile_posix_regex(source, re.IGNORECASE).fullmatch(text))
+        == expected
+    )
 
 
 def test_ascii_captures_preserve_spelling():

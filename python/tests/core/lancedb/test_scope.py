@@ -20,13 +20,15 @@ from mirage.vfs.lancedb.config import LanceDBConfig
 
 
 def _cfg(**kw) -> LanceDBConfig:
-    base = dict(uri="/tmp/db",
-                group_by=["label", "kind"],
-                id_column="id",
-                title_column="name",
-                blob_column="image_bytes",
-                blob_ext="png",
-                vector_column="vector")
+    base = dict(
+        uri="/tmp/db",
+        group_by=["label", "kind"],
+        id_column="id",
+        title_column="name",
+        blob_column="image_bytes",
+        blob_ext="png",
+        vector_column="vector",
+    )
     base.update(kw)
     return LanceDBConfig(**base)
 
@@ -46,7 +48,7 @@ def test_row_card():
     assert match.slots["row_id"] == "3"
     assert filters_of(config.group_by, match) == {
         "label": "cat",
-        "kind": "big"
+        "kind": "big",
     }
 
 

@@ -29,15 +29,21 @@ from mirage.commands.builtin.generic.crossmount.relay.tar import run_tar
 from mirage.commands.builtin.generic.crossmount.relay.unzip import run_unzip
 from mirage.commands.builtin.generic.crossmount.relay.wc import run_wc
 from mirage.commands.builtin.generic.crossmount.relay.zip_cmd import run_zip
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
-                                                              RunSingle)
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    CrossResult,
+    RunSingle,
+)
 from mirage.commands.builtin.generic_bind.adapter import Builder
-from mirage.commands.builtin.generic_bind.builders.grep import \
-    BUILDER as GREP_BUILDER
-from mirage.commands.builtin.generic_bind.builders.realpath import \
-    BUILDER as REALPATH_BUILDER
-from mirage.commands.builtin.generic_bind.builders.rg import \
-    BUILDER as RG_BUILDER
+from mirage.commands.builtin.generic_bind.builders.grep import (
+    BUILDER as GREP_BUILDER,
+)
+from mirage.commands.builtin.generic_bind.builders.realpath import (
+    BUILDER as REALPATH_BUILDER,
+)
+from mirage.commands.builtin.generic_bind.builders.rg import (
+    BUILDER as RG_BUILDER,
+)
 from mirage.commands.builtin.generic_bind.dispatch import run_dispatch
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource
@@ -48,22 +54,24 @@ from mirage.types import PathSpec
 DISPATCH_BUILDERS: dict[str, Builder] = {
     Cmd.GREP: GREP_BUILDER,
     Cmd.RG: RG_BUILDER,
-    Cmd.REALPATH: REALPATH_BUILDER
+    Cmd.REALPATH: REALPATH_BUILDER,
 }
 
 
-async def run_relay(cmd_name: str,
-                    scopes: list[PathSpec],
-                    text_args: list[str],
-                    flag_kwargs: dict[str, FlagValue],
-                    dispatch: DispatchFn,
-                    run_single: RunSingle,
-                    storage_key: Callable[[PathSpec], str] | None = None,
-                    ns: NamespaceView | None = None,
-                    session_view: SessionView | None = None,
-                    stdin: ByteSource | None = None,
-                    cwd: str = "/",
-                    argv: tuple[str, ...] = ()) -> CrossResult:
+async def run_relay(
+    cmd_name: str,
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    run_single: RunSingle,
+    storage_key: Callable[[PathSpec], str] | None = None,
+    ns: NamespaceView | None = None,
+    session_view: SessionView | None = None,
+    stdin: ByteSource | None = None,
+    cwd: str = "/",
+    argv: tuple[str, ...] = (),
+) -> CrossResult:
     """Run a command whose work must see every operand at once.
 
     Pure wiring: every operand is read or written through ``dispatch``
@@ -102,8 +110,9 @@ async def run_relay(cmd_name: str,
     if cmd_name == Cmd.AWK:
         return await run_awk(scopes, text_args, flag_kwargs, run_single, stdin)
     if cmd_name == Cmd.SED:
-        return await run_sed(scopes, text_args, flag_kwargs, dispatch, stdin,
-                             cwd, argv)
+        return await run_sed(
+            scopes, text_args, flag_kwargs, dispatch, stdin, cwd, argv
+        )
     if cmd_name == Cmd.WC:
         return await run_wc(scopes, flag_kwargs, dispatch, run_single)
     if cmd_name == Cmd.SORT:
@@ -111,8 +120,9 @@ async def run_relay(cmd_name: str,
     if cmd_name == Cmd.LS:
         return await run_ls(scopes, flag_kwargs, dispatch, ns, session_view)
     if cmd_name == Cmd.CP:
-        return await run_cp(scopes, flag_kwargs, dispatch, storage_key, ns,
-                            cwd)
+        return await run_cp(
+            scopes, flag_kwargs, dispatch, storage_key, ns, cwd
+        )
     if cmd_name == Cmd.MV:
         return await run_mv(scopes, flag_kwargs, dispatch, storage_key, ns)
     if cmd_name == Cmd.DIFF:
@@ -124,14 +134,22 @@ async def run_relay(cmd_name: str,
     if cmd_name == Cmd.JOIN:
         return await run_join(scopes, flag_kwargs, dispatch, stdin)
     if cmd_name == Cmd.TAR:
-        return await run_tar(scopes, text_args, flag_kwargs, dispatch, ns,
-                             stdin)
+        return await run_tar(
+            scopes, text_args, flag_kwargs, dispatch, ns, stdin
+        )
     if cmd_name == Cmd.UNZIP:
         return await run_unzip(scopes, text_args, flag_kwargs, dispatch)
     if cmd_name == Cmd.ZIP:
         return await run_zip(scopes, flag_kwargs, dispatch, ns)
     if cmd_name in DISPATCH_BUILDERS:
-        return await run_dispatch(DISPATCH_BUILDERS[cmd_name], scopes,
-                                  text_args, flag_kwargs, dispatch, cwd, ns,
-                                  stdin)
+        return await run_dispatch(
+            DISPATCH_BUILDERS[cmd_name],
+            scopes,
+            text_args,
+            flag_kwargs,
+            dispatch,
+            cwd,
+            ns,
+            stdin,
+        )
     return await run_cmp(scopes, text_args, flag_kwargs, dispatch, stdin)

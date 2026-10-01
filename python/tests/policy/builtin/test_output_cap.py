@@ -15,9 +15,12 @@
 import pytest
 from pydantic import ValidationError
 
-from mirage.policy.builtin.output_cap import (DEFAULT_COMMAND_LIMITS,
-                                              OutputCapPolicy, resolve_limit,
-                                              resolve_producer)
+from mirage.policy.builtin.output_cap import (
+    DEFAULT_COMMAND_LIMITS,
+    OutputCapPolicy,
+    resolve_limit,
+    resolve_producer,
+)
 from mirage.policy.types import OpsResultContext
 from mirage.types import Limit, OnExceed, PathSpec, Producer
 
@@ -49,9 +52,10 @@ def test_rejects_negative_limits():
 def test_resolve_prefers_mount_override():
     override = Limit(max_lines=5)
     default = Limit(max_lines=50)
-    assert resolve_limit("cat",
-                         command_default=default,
-                         mount_override=override) is override
+    assert (
+        resolve_limit("cat", command_default=default, mount_override=override)
+        is override
+    )
 
 
 def test_resolve_falls_back_to_command_default():
@@ -68,16 +72,24 @@ def test_resolve_walks_profile_mount_workspace_declared_then_table():
     mount = Limit(max_lines=2)
     workspace = {"cat": Limit(max_lines=3)}
     declared = Limit(max_lines=4)
-    assert resolve_limit("cat", [], declared, mount, workspace,
-                         profile) is profile["cat"]
+    assert (
+        resolve_limit("cat", [], declared, mount, workspace, profile)
+        is profile["cat"]
+    )
     assert resolve_limit("cat", [], declared, mount, workspace, {}) is mount
-    assert resolve_limit("cat", [], declared, None, workspace,
-                         {}) is workspace["cat"]
+    assert (
+        resolve_limit("cat", [], declared, None, workspace, {})
+        is workspace["cat"]
+    )
     assert resolve_limit("cat", [], declared, None, {}, {}) is declared
-    assert resolve_limit("cat", [], None, None, {},
-                         {}) is DEFAULT_COMMAND_LIMITS["cat"]
-    assert resolve_limit("cat", [], None, None, workspace,
-                         {"head": Limit()}) is workspace["cat"]
+    assert (
+        resolve_limit("cat", [], None, None, {}, {})
+        is DEFAULT_COMMAND_LIMITS["cat"]
+    )
+    assert (
+        resolve_limit("cat", [], None, None, workspace, {"head": Limit()})
+        is workspace["cat"]
+    )
 
 
 def test_rejects_negative_or_infinite_timeouts():
@@ -88,6 +100,7 @@ def test_rejects_negative_or_infinite_timeouts():
 
 def test_resolve_unknown_command_returns_fallback_limit():
     from mirage.policy.builtin.output_cap import FALLBACK_LIMIT
+
     assert resolve_limit("nl") is FALLBACK_LIMIT
     assert FALLBACK_LIMIT.timeout_seconds is not None
 
@@ -97,19 +110,20 @@ def _override_table(table):
 
 
 def test_resolve_producer_prefers_the_mount_override():
-    producer = Producer(command="cat",
-                        prefixes=("/a/", ),
-                        declared=Limit(max_lines=50))
+    producer = Producer(
+        command="cat", prefixes=("/a/",), declared=Limit(max_lines=50)
+    )
     resolved = resolve_producer(
-        producer, _override_table({("/a/", "cat"): Limit(max_lines=4)}))
+        producer, _override_table({("/a/", "cat"): Limit(max_lines=4)})
+    )
     assert resolved is not None
     assert resolved.max_lines == 4
 
 
 def test_resolve_producer_falls_back_to_declared_then_table():
-    declared = Producer(command="cat",
-                        prefixes=(),
-                        declared=Limit(max_lines=50))
+    declared = Producer(
+        command="cat", prefixes=(), declared=Limit(max_lines=50)
+    )
     resolved = resolve_producer(declared, _override_table({}))
     assert resolved is not None
     assert resolved.max_lines == 50
@@ -122,10 +136,13 @@ def test_resolve_producer_aggregates_tightest_across_prefixes():
     producer = Producer(command="cat", prefixes=("/a/", "/b/"))
     resolved = resolve_producer(
         producer,
-        _override_table({
-            ("/a/", "cat"): Limit(max_lines=9),
-            ("/b/", "cat"): Limit(max_lines=3),
-        }))
+        _override_table(
+            {
+                ("/a/", "cat"): Limit(max_lines=9),
+                ("/b/", "cat"): Limit(max_lines=3),
+            }
+        ),
+    )
     assert resolved is not None
     assert resolved.max_lines == 3
 
@@ -137,19 +154,26 @@ def test_resolve_producer_empty_command_has_no_bound():
 @pytest.mark.asyncio
 async def test_output_cap_policy_answers_post_ops_from_the_op_table():
     policy = OutputCapPolicy(
-        _override_table({("/a/", "read"): Limit(max_bytes=4)}))
+        _override_table({("/a/", "read"): Limit(max_bytes=4)})
+    )
     capped = await policy.post_ops(
-        OpsResultContext(op="read",
-                         path=PathSpec.from_str_path("/a/x"),
-                         write=False,
-                         prefix="/a/",
-                         result=b"payload"))
+        OpsResultContext(
+            op="read",
+            path=PathSpec.from_str_path("/a/x"),
+            write=False,
+            prefix="/a/",
+            result=b"payload",
+        )
+    )
     assert isinstance(capped, Limit)
     assert capped.max_bytes == 4
     silent = await policy.post_ops(
-        OpsResultContext(op="write",
-                         path=PathSpec.from_str_path("/a/x"),
-                         write=True,
-                         prefix="/a/",
-                         result=None))
+        OpsResultContext(
+            op="write",
+            path=PathSpec.from_str_path("/a/x"),
+            write=True,
+            prefix="/a/",
+            result=None,
+        )
+    )
     assert silent is None

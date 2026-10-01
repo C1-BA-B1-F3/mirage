@@ -14,15 +14,38 @@
 
 import errno as host_errno
 from pathlib import Path
+from stat import S_ISCHR
 from typing import Any
 
-from mirage.runtime.types import VFSStat
+from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import FT_DIR, FT_REG, FT_SYMLINK, FT_UNKNOWN
+from mirage.runtime.wasm.abi import (
+    FT_CHR,
+    FT_DIR,
+    FT_REG,
+    FT_SYMLINK,
+    FT_UNKNOWN,
+)
 from mirage.runtime.wasm.build import BuildDir
 from mirage.runtime.wasm.config import WasmFsConfig
 from mirage.runtime.wasm.constants import READONLY_HINT
 from mirage.utils.path import owner_prefix
+
+
+def filetype_of(row: VFSStat | VFSEntry) -> int:
+    """The preview1 filetype for one stat or listing row.
+
+    Args:
+        row (VFSStat | VFSEntry): the row to classify; a listing row
+            with no mode is one the door could not classify.
+    """
+    if row.is_link:
+        return FT_SYMLINK
+    if row.is_dir:
+        return FT_DIR
+    if row.mode is None:
+        return FT_UNKNOWN
+    return FT_CHR if S_ISCHR(row.mode) else FT_REG
 
 
 class WasmVFS:
@@ -257,8 +280,14 @@ class WasmVFS:
             raise OSError(host_errno.EINVAL, "not a symbolic link", path)
         return str(self._core_call("readlink", path))
 
-    def setattr(self, path: str, *, atime: str | None, mtime: str | None,
-                nofollow: bool) -> None:
+    def setattr(
+        self,
+        path: str,
+        *,
+        atime: str | None,
+        mtime: str | None,
+        nofollow: bool,
+    ) -> None:
         """Write timestamps, in the namespace overlay where needed.
 
         Times are the only attributes preview1 can express: it has no
@@ -273,13 +302,13 @@ class WasmVFS:
             nofollow (bool): stamp the link itself, not its target.
         """
         self._deny_build(path)
-        self._require_core().setattr(path,
-                                     atime=atime,
-                                     mtime=mtime,
-                                     nofollow=nofollow)
+        self._require_core().setattr(
+            path, atime=atime, mtime=mtime, nofollow=nofollow
+        )
 
-    def flush(self, path: str, base_len: int, low_write: int,
-              buf: bytes | bytearray) -> None:
+    def flush(
+        self, path: str, base_len: int, low_write: int, buf: bytes | bytearray
+    ) -> None:
         """Send a closing handle's buffer, as a delta when it can be one.
 
         Args:
@@ -319,16 +348,8 @@ class WasmVFS:
         entries: dict[str, int] = {}
         for entry in self._require_core().readdir(path):
             base = entry.path.rstrip("/").rsplit("/", 1)[-1]
-            if not base:
-                continue
-            if entry.is_link:
-                entries[base] = FT_SYMLINK
-            elif entry.is_dir:
-                entries[base] = FT_DIR
-            elif entry.mode is None:
-                entries[base] = FT_UNKNOWN
-            else:
-                entries[base] = FT_REG
+            if base:
+                entries[base] = filetype_of(entry)
         return sorted(entries.items())
 
     def _readdir_root(self) -> list[tuple[str, int]]:

@@ -19,8 +19,12 @@ from urllib.parse import urlencode
 import aiohttp
 from pydantic import SecretStr
 
-from mirage.core.api.client import (ApiResponse, SessionArg, api_request,
-                                    status_error)
+from mirage.core.api.client import (
+    ApiResponse,
+    SessionArg,
+    api_request,
+    status_error,
+)
 from mirage.core.github.constants import API_BASE, API_VERSION, GRAPHQL_PATH
 from mirage.types import JsonValue
 from mirage.vfs.secrets import reveal_secret
@@ -77,13 +81,15 @@ class GitHubApiError(Exception):
             for any other.
     """
 
-    def __init__(self,
-                 message: str,
-                 status: int,
-                 *,
-                 body: str = "",
-                 url: str = "",
-                 headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int,
+        *,
+        body: str = "",
+        url: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.body = body
@@ -112,32 +118,38 @@ class GitHubConnectionError(Exception):
     """
 
 
-async def github_get(token: SecretStr,
-                     path: str,
-                     params: dict[str, Any] | None = None,
-                     *,
-                     base_url: str | None = None,
-                     session: SessionArg = None,
-                     **kwargs: str) -> dict[str, Any]:
+async def github_get(
+    token: SecretStr,
+    path: str,
+    params: dict[str, Any] | None = None,
+    *,
+    base_url: str | None = None,
+    session: SessionArg = None,
+    **kwargs: str,
+) -> dict[str, Any]:
     url = github_url(path, base_url, **kwargs)
-    data: dict[str, Any] = await api_request("GET",
-                                             url,
-                                             error_of=status_error,
-                                             headers=github_headers(token),
-                                             params=params,
-                                             session=session)
+    data: dict[str, Any] = await api_request(
+        "GET",
+        url,
+        error_of=status_error,
+        headers=github_headers(token),
+        params=params,
+        session=session,
+    )
     return data
 
 
-async def github_request(token: SecretStr,
-                         method: str,
-                         path: str,
-                         body: "JsonValue | _NoBody" = _NO_BODY,
-                         params: dict[str, str] | None = None,
-                         *,
-                         base_url: str | None = None,
-                         headers: dict[str, str] | None = None,
-                         session: SessionArg = None) -> "JsonValue":
+async def github_request(
+    token: SecretStr,
+    method: str,
+    path: str,
+    body: "JsonValue | _NoBody" = _NO_BODY,
+    params: dict[str, str] | None = None,
+    *,
+    base_url: str | None = None,
+    headers: dict[str, str] | None = None,
+    session: SessionArg = None,
+) -> "JsonValue":
     """One arbitrary API call, the shape `gh api` needs.
 
     A GET carries its fields in the query string and every other method in
@@ -162,33 +174,41 @@ async def github_request(token: SecretStr,
     Raises:
         GitHubApiError: the call answered with a non-2xx status.
     """
-    response = await github_request_response(token,
-                                             method,
-                                             path,
-                                             body,
-                                             params,
-                                             base_url=base_url,
-                                             headers=headers,
-                                             session=session)
+    response = await github_request_response(
+        token,
+        method,
+        path,
+        body,
+        params,
+        base_url=base_url,
+        headers=headers,
+        session=session,
+    )
     return cast(JsonValue, response.data)
 
 
-async def github_request_response(token: SecretStr,
-                                  method: str,
-                                  path: str,
-                                  body: "JsonValue | _NoBody" = _NO_BODY,
-                                  params: dict[str, str] | None = None,
-                                  *,
-                                  base_url: str | None = None,
-                                  headers: dict[str, str] | None = None,
-                                  session: SessionArg = None) -> ApiResponse:
+async def github_request_response(
+    token: SecretStr,
+    method: str,
+    path: str,
+    body: "JsonValue | _NoBody" = _NO_BODY,
+    params: dict[str, str] | None = None,
+    *,
+    base_url: str | None = None,
+    headers: dict[str, str] | None = None,
+    session: SessionArg = None,
+) -> ApiResponse:
     """One GitHub call retaining status and headers for CLI pagination."""
-    url = (graphql_url(base_url) if path == GRAPHQL_PATH else
-           (base_url or API_BASE) + path)
+    url = (
+        graphql_url(base_url)
+        if path == GRAPHQL_PATH
+        else (base_url or API_BASE) + path
+    )
     merged = github_headers(token)
     for key, value in (headers or {}).items():
-        prior = next((name for name in merged if name.lower() == key.lower()),
-                     None)
+        prior = next(
+            (name for name in merged if name.lower() == key.lower()), None
+        )
         if prior is not None:
             merged.pop(prior)
         merged[key] = value
@@ -203,7 +223,8 @@ async def github_request_response(token: SecretStr,
             json_body=None if not present else cast(JsonValue, body),
             json_body_present=present,
             read="bytes_response",
-            session=session)
+            session=session,
+        )
     except aiohttp.ClientConnectorDNSError as exc:
         raise GitHubConnectionError(
             f"error connecting to {exc.host}\n"
@@ -212,16 +233,23 @@ async def github_request_response(token: SecretStr,
     except aiohttp.ClientConnectorError as exc:
         if not isinstance(exc.os_error, ConnectionRefusedError):
             raise GitHubConnectionError(str(exc)) from exc
-        target = (f"{url}{'&' if '?' in url else '?'}{urlencode(params)}"
-                  if params else url)
+        target = (
+            f"{url}{'&' if '?' in url else '?'}{urlencode(params)}"
+            if params
+            else url
+        )
         host = f"[{exc.host}]" if ":" in exc.host else exc.host
         raise GitHubConnectionError(
             f'{method.capitalize()} "{target}": dial tcp {host}:{exc.port}: '
-            "connect: connection refused") from exc
+            "connect: connection refused"
+        ) from exc
     except aiohttp.ClientConnectionError as exc:
         raise GitHubConnectionError(str(exc)) from exc
-    return ApiResponse(_decoded(raw.data, raw.headers.get("content-type", "")),
-                       raw.status, raw.headers)
+    return ApiResponse(
+        _decoded(raw.data, raw.headers.get("content-type", "")),
+        raw.status,
+        raw.headers,
+    )
 
 
 def _decoded(body: bytes, content_type: str) -> "JsonValue | bytes":
@@ -239,9 +267,14 @@ def _decoded(body: bytes, content_type: str) -> "JsonValue | bytes":
         return None
     mime, _, rest = content_type.partition(";")
     mime = mime.strip().lower()
-    charset = next((part.split("=", 1)[1].strip().strip('"').lower()
-                    for part in rest.split(";")
-                    if part.strip().lower().startswith("charset=")), "")
+    charset = next(
+        (
+            part.split("=", 1)[1].strip().strip('"').lower()
+            for part in rest.split(";")
+            if part.strip().lower().startswith("charset=")
+        ),
+        "",
+    )
     if not mime:
         return body.decode("utf-8", errors="replace")
     if mime in ("application/json", "application/scim+json"):
@@ -256,14 +289,16 @@ def _decoded(body: bytes, content_type: str) -> "JsonValue | bytes":
 
 
 def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
-    return GitHubApiError(_api_message(text, resp.reason),
-                          resp.status,
-                          body=text,
-                          url=str(resp.url),
-                          headers={
-                              key.lower(): ", ".join(resp.headers.getall(key))
-                              for key in resp.headers.keys()
-                          })
+    return GitHubApiError(
+        _api_message(text, resp.reason),
+        resp.status,
+        body=text,
+        url=str(resp.url),
+        headers={
+            key.lower(): ", ".join(resp.headers.getall(key))
+            for key in resp.headers.keys()
+        },
+    )
 
 
 def _api_message(text: str, reason: str | None) -> str:

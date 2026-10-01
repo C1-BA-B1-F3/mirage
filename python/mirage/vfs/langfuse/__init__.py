@@ -25,5 +25,6 @@ __all__ = ["LangfuseConfig", "LangfuseVFS"]
 def __getattr__(name: str) -> "type[LangfuseVFS]":
     if name == "LangfuseVFS":
         from mirage.vfs.langfuse.langfuse import LangfuseVFS
+
         return LangfuseVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

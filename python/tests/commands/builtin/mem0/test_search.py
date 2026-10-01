@@ -10,14 +10,9 @@ from tests.fixtures.driver_ops import ops
 
 
 class FakeClient:
-
     async def search(self, query, options=None):
         return {
-            "results": [{
-                "id": "aaa",
-                "memory": "eats banana",
-                "score": 0.9
-            }]
+            "results": [{"id": "aaa", "memory": "eats banana", "score": 0.9}]
         }
 
 
@@ -31,8 +26,9 @@ def _res():
 async def test_search_command():
     res = _res()
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
-    out, _io = await search.__wrapped__(res.accessor, [p], ["morning"],
-                                        CommandOpts(index=ops(res).index))
+    out, _io = await search.__wrapped__(
+        res.accessor, [p], ["morning"], CommandOpts(index=ops(res).index)
+    )
     assert b"aaa.json" in out
     assert b"eats banana" in out
 
@@ -42,8 +38,9 @@ async def test_search_requires_query():
     res = _res()
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
     with pytest.raises(ValueError):
-        await search.__wrapped__(res.accessor, [p], [],
-                                 CommandOpts(index=ops(res).index))
+        await search.__wrapped__(
+            res.accessor, [p], [], CommandOpts(index=ops(res).index)
+        )
 
 
 @pytest.mark.asyncio
@@ -52,5 +49,8 @@ async def test_search_rejects_non_semantic_method():
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
     with pytest.raises(ValueError, match="only the 'semantic' method"):
         await search.__wrapped__(
-            res.accessor, [p], ["morning"],
-            CommandOpts(index=ops(res).index, flags={"method": "keyword"}))
+            res.accessor,
+            [p],
+            ["morning"],
+            CommandOpts(index=ops(res).index, flags={"method": "keyword"}),
+        )

@@ -36,7 +36,8 @@ class HfBucketsConfig(BaseModel):
         parts = v.split("/")
         if len(parts) != 2 or not parts[0] or not parts[1]:
             raise ValueError(
-                f"bucket must be in 'namespace/name' form; got {v!r}")
+                f"bucket must be in 'namespace/name' form; got {v!r}"
+            )
         return v
 
     @field_validator("key_prefix")
@@ -67,7 +68,7 @@ class HfBucketsAccessor(SessionAccessor):
 
     def __init__(self, config: HfBucketsConfig) -> None:
         """Args:
-            config (HfBucketsConfig): bucket id, credential and key prefix.
+        config (HfBucketsConfig): bucket id, credential and key prefix.
         """
         super().__init__(timeout=stall_timeout(config.timeout))
         self.config = config

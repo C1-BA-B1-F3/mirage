@@ -17,10 +17,7 @@ from mirage.commands.builtin.dev.io import STREAMING_IO as _STREAMING_IO
 from mirage.commands.builtin.generic_bind import make_generic_commands
 
 COMMANDS = [
-    *make_generic_commands("ram",
-                           _IO,
-                           ops_overrides={
-                               "cat": _STREAMING_IO,
-                               "head": _STREAMING_IO
-                           }),
+    *make_generic_commands(
+        "ram", _IO, ops_overrides={"cat": _STREAMING_IO, "head": _STREAMING_IO}
+    ),
 ]

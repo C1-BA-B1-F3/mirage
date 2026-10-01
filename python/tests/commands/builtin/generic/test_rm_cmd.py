@@ -20,8 +20,12 @@ from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.generic.rm_cmd import make_rm
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
-from mirage.context import (reset_current_session, reset_mount_gate,
-                            set_current_session, set_mount_gate)
+from mirage.context import (
+    reset_current_session,
+    reset_mount_gate,
+    set_current_session,
+    set_mount_gate,
+)
 from mirage.types import MountMode, PathSpec, ShowEntry, ShownPaths
 from mirage.workspace.session import SessionState
 
@@ -60,8 +64,9 @@ async def test_rm_missing_operand():
     rm = _make_rm(set(), [])
     with pytest.raises(UsageError) as info:
         await rm(FakeAccessor(), [], [], CommandOpts())
-    assert str(info.value) == ("rm: missing operand\n"
-                               "Try 'rm --help' for more information.")
+    assert str(info.value) == (
+        "rm: missing operand\nTry 'rm --help' for more information."
+    )
     assert info.value.exit_code == 1
 
 
@@ -69,8 +74,9 @@ async def test_rm_missing_operand():
 async def test_rm_force_without_operands_does_nothing():
     calls: list[tuple] = []
     rm = _make_rm(set(), calls)
-    out, result = await rm(FakeAccessor(), [], [],
-                           CommandOpts(flags={"f": True}))
+    out, result = await rm(
+        FakeAccessor(), [], [], CommandOpts(flags={"f": True})
+    )
     assert (out, result.exit_code, result.stderr) == (None, 0, None)
     assert calls == []
 
@@ -86,8 +92,9 @@ async def test_rm_enoent_reports_and_continues_without_force():
     ]
     _, result = await rm(FakeAccessor(), paths, [], CommandOpts())
     assert result.exit_code == 1
-    assert result.stderr == (b"rm: cannot remove '/owned/x.json': "
-                             b"No such file or directory\n")
+    assert result.stderr == (
+        b"rm: cannot remove '/owned/x.json': No such file or directory\n"
+    )
     assert len(calls) == 2
 
 
@@ -103,20 +110,28 @@ async def test_rm_holds_each_path_to_its_regions_mode():
         session_id="agent",
         mount_modes={"/gdocs": MountMode.READ},
         shown_paths=ShownPaths(
-            entries=(ShowEntry("/gdocs/build", MountMode.WRITE), )))
+            entries=(ShowEntry("/gdocs/build", MountMode.WRITE),)
+        ),
+    )
     session_token = set_current_session(sess)
     gate_token = set_mount_gate("/gdocs", MountMode.WRITE)
     try:
-        _, result = await rm(FakeAccessor(), [
-            PathSpec.from_str_path("/gdocs/plain.json"),
-            PathSpec.from_str_path("/gdocs/build/a.json"),
-        ], [], CommandOpts())
+        _, result = await rm(
+            FakeAccessor(),
+            [
+                PathSpec.from_str_path("/gdocs/plain.json"),
+                PathSpec.from_str_path("/gdocs/build/a.json"),
+            ],
+            [],
+            CommandOpts(),
+        )
     finally:
         reset_mount_gate(gate_token)
         reset_current_session(session_token)
     assert result.exit_code == 1
-    assert result.stderr == (b"rm: cannot remove '/gdocs/plain.json': "
-                             b"Read-only file system\n")
+    assert result.stderr == (
+        b"rm: cannot remove '/gdocs/plain.json': Read-only file system\n"
+    )
     # The refused path never reached the backend; the granted one did.
     assert [c[1].virtual for c in calls] == ["/gdocs/build/a.json"]
     assert files == {"/gdocs/plain.json"}
@@ -126,9 +141,12 @@ async def test_rm_holds_each_path_to_its_regions_mode():
 async def test_rm_force_swallows_enoent():
     calls: list[tuple] = []
     rm = _make_rm(set(), calls)
-    _, result = await rm(FakeAccessor(),
-                         [PathSpec.from_str_path("/owned/x.json")], [],
-                         CommandOpts(flags={"f": True}))
+    _, result = await rm(
+        FakeAccessor(),
+        [PathSpec.from_str_path("/owned/x.json")],
+        [],
+        CommandOpts(flags={"f": True}),
+    )
     assert result.exit_code == 0
     assert len(calls) == 1
 
@@ -141,8 +159,9 @@ async def test_rm_verbose_reports_each_removal():
         PathSpec.from_str_path("/owned/a.gdoc.json"),
         PathSpec.from_str_path("/owned/b.gdoc.json"),
     ]
-    output, result = await rm(FakeAccessor(), paths, [],
-                              CommandOpts(flags={"v": True}))
+    output, result = await rm(
+        FakeAccessor(), paths, [], CommandOpts(flags={"v": True})
+    )
     assert isinstance(output, bytes)
     text = output.decode()
     assert "removed '/owned/a.gdoc.json'" in text
@@ -155,10 +174,11 @@ async def test_rm_verbose_reports_each_removal():
 async def test_rm_empty_operand_keeps_its_spelling():
     calls: list[tuple] = []
     rm = _make_rm(set(), calls)
-    path = replace(PathSpec.from_str_path('/owned'),
-                   raw_path='',
-                   walk_error='ENOENT')
+    path = replace(
+        PathSpec.from_str_path("/owned"), raw_path="", walk_error="ENOENT"
+    )
     _, result = await rm(FakeAccessor(), [path], [], CommandOpts())
-    assert result.stderr == (b"rm: cannot remove '': "
-                             b"No such file or directory\n")
+    assert result.stderr == (
+        b"rm: cannot remove '': No such file or directory\n"
+    )
     assert calls == []

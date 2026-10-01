@@ -19,18 +19,24 @@ from mirage.core.airtable.config import AirtableConfig
 from mirage.vfs.airtable import AirtableVFS
 from tests.fixtures.airtable_api import TOKEN
 
-RECORDS = ("/at/bases/Product_Roadmap__appRoadmapBase001/"
-           "Features__tblFeatures000001/records.jsonl")
+RECORDS = (
+    "/at/bases/Product_Roadmap__appRoadmapBase001/"
+    "Features__tblFeatures000001/records.jsonl"
+)
 
 
 def _ws() -> Workspace:
-    return Workspace({
-        "/at/":
-        AirtableVFS(
-            AirtableConfig(token=TOKEN,
-                           requests_per_second=10_000.0,
-                           max_read_records=5))
-    })
+    return Workspace(
+        {
+            "/at/": AirtableVFS(
+                AirtableConfig(
+                    token=TOKEN,
+                    requests_per_second=10_000.0,
+                    max_read_records=5,
+                )
+            )
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -56,8 +62,10 @@ async def test_head_default_is_ten_and_respects_the_cap(airtable_api):
     # 10 lines asked of a 7-record table under a cap of 5: the full answer
     # would exceed the cap, so it is refused rather than truncated
     assert result.exit_code == 1
-    assert await result.stderr_str(
-    ) == f"head: error reading '{RECORDS}': File too large\n"
+    assert (
+        await result.stderr_str()
+        == f"head: error reading '{RECORDS}': File too large\n"
+    )
 
 
 @pytest.mark.asyncio

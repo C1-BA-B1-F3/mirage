@@ -16,8 +16,12 @@ import asyncio
 from pathlib import Path
 
 from mirage.accessor.disk import DiskAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                ResourceType)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    ResourceType,
+)
 from mirage.core.disk.errors import disk_error
 from mirage.core.disk.utils import read_entries, resolve_inside
 from mirage.types import PathSpec
@@ -34,20 +38,22 @@ def _entry_types(p: Path) -> dict[str, ResourceType]:
         p (Path): the host directory.
     """
     return {
-        entry.name:
-        ResourceType.FOLDER if entry.is_dir(
-            follow_symlinks=False) else ResourceType.FILE
+        entry.name: ResourceType.FOLDER
+        if entry.is_dir(follow_symlinks=False)
+        else ResourceType.FILE
         for entry in read_entries(p)
     }
 
 
-async def readdir(accessor: DiskAccessor,
-                  path_spec: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     path = path_spec.directory if path_spec.pattern else path_spec.virtual
     if prefix and path.startswith(prefix):
-        rest = path[len(prefix):]
+        rest = path[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
     root = accessor.root
@@ -74,10 +80,16 @@ async def readdir(accessor: DiskAccessor,
         raise disk_error(exc, path_spec.virtual) from exc
     entries = sorted(base.rstrip("/") + "/" + name for name in raw)
     virtual_entries = sorted((prefix + e if prefix else e) for e in entries)
-    index_entries = [(e.rsplit("/", 1)[-1],
-                      IndexEntry(id=e,
-                                 name=e.rsplit("/", 1)[-1],
-                                 resource_type=raw[e.rsplit("/", 1)[-1]]))
-                     for e in entries]
+    index_entries = [
+        (
+            e.rsplit("/", 1)[-1],
+            IndexEntry(
+                id=e,
+                name=e.rsplit("/", 1)[-1],
+                resource_type=raw[e.rsplit("/", 1)[-1]],
+            ),
+        )
+        for e in entries
+    ]
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

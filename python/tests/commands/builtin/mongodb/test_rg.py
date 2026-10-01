@@ -31,22 +31,28 @@ SEARCH_COLLECTION = "mirage.core.mongodb.search.search_entity"
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 @pytest.fixture
 def _stat_reads(monkeypatch):
     # The stat guard is captured by the search factory at import, so fake
     # what it reads at call time: the existence probes and the counters.
-    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
-                        AsyncMock(return_value=True))
-    monkeypatch.setattr("mirage.core.mongodb.client.count_documents",
-                        AsyncMock(return_value=5))
-    monkeypatch.setattr("mirage.core.mongodb.client.is_view",
-                        AsyncMock(return_value=False))
-    monkeypatch.setattr("mirage.core.mongodb.client.get_indexes",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.mongodb.readdir.entity_exists",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.count_documents", AsyncMock(return_value=5)
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.is_view", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.get_indexes", AsyncMock(return_value=[])
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -54,23 +60,32 @@ def _path(s: str) -> PathSpec:
 
 
 def _glob_path() -> PathSpec:
-    return PathSpec(virtual="/db1/collections/*",
-                    directory="/db1/collections",
-                    vfs_path="db1/collections/*",
-                    pattern="*",
-                    resolved=False)
+    return PathSpec(
+        virtual="/db1/collections/*",
+        directory="/db1/collections",
+        vfs_path="db1/collections/*",
+        pattern="*",
+        resolved=False,
+    )
 
 
 @pytest.mark.asyncio
 async def test_rg_lone_collection_uses_pushdown(accessor, _stat_reads):
     search = AsyncMock(return_value=[])
     generic = AsyncMock(side_effect=AssertionError("generic path ran"))
-    with patch(
+    with (
+        patch(
             SEARCH_COLLECTION,
             new=search,
-    ), patch.dict(GENERICS, {"rg": generic}):
-        _, io = await rg(accessor, [_path("/db1/collections/coll1")],
-                         ['target'], CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": generic}),
+    ):
+        _, io = await rg(
+            accessor,
+            [_path("/db1/collections/coll1")],
+            ["target"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     search.assert_awaited_once()
     assert io.exit_code == 1
@@ -87,17 +102,22 @@ async def test_rg_second_operand_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_COLLECTION,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on 2 ops")),
-    ), patch(
+        ),
+        patch(
             "mirage.core.mongodb.readdir.entity_exists",
             new=AsyncMock(side_effect=AssertionError("stat ran on 2 ops")),
-    ), patch.dict(GENERICS, {"rg": fake_generic}):
-        await rg(accessor, ops, ['target'], CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": fake_generic}),
+    ):
+        await rg(accessor, ops, ["target"], CommandOpts(index=NULL_INDEX))
 
     assert seen["generic"] == [
-        "/db1/collections/coll1", "/db1/collections/coll2"
+        "/db1/collections/coll1",
+        "/db1/collections/coll2",
     ]
 
 
@@ -113,17 +133,23 @@ async def test_rg_unresolved_glob_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_COLLECTION,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on glob")),
-    ), patch(
+        ),
+        patch(
             "mirage.core.mongodb.readdir.entity_exists",
             new=AsyncMock(side_effect=AssertionError("stat ran on glob")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=lambda *_args, **_kwargs: fake_resolve,
-    ), patch.dict(GENERICS, {"rg": fake_generic}):
-        await rg(accessor, [_glob_path()], ['target'],
-                 CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": fake_generic}),
+    ):
+        await rg(
+            accessor, [_glob_path()], ["target"], CommandOpts(index=NULL_INDEX)
+        )
 
     assert seen["generic"] == ["/db1/collections/coll1"]

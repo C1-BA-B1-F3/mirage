@@ -27,18 +27,21 @@ async def test_set_bare_lists_the_variables_sorted():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value,listed", [
-    ("a,b", "a,b"),
-    ("", ""),
-    ("a b", "'a b'"),
-    ("it's", "'it'\\''s'"),
-    ("~x", "'~x'"),
-    ("x=~y", "'x=~y'"),
-    ("x~", "x~"),
-    ("#c", "'#c'"),
-    ("x#", "x#"),
-    (" \t\n", "$' \\t\\n'"),
-])
+@pytest.mark.parametrize(
+    "value,listed",
+    [
+        ("a,b", "a,b"),
+        ("", ""),
+        ("a b", "'a b'"),
+        ("it's", "'it'\\''s'"),
+        ("~x", "'~x'"),
+        ("x=~y", "'x=~y'"),
+        ("x~", "x~"),
+        ("#c", "'#c'"),
+        ("x#", "x#"),
+        (" \t\n", "$' \\t\\n'"),
+    ],
+)
 async def test_set_bare_quotes_a_value_as_bash_does(value, listed):
     session = SessionState(session_id="s1")
     seed_var(session, "V", value)

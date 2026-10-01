@@ -20,7 +20,8 @@ def test_synth_dirs_emits_every_ancestor_excluding_the_root():
 
 def test_synth_dirs_reports_a_shared_prefix_once():
     dirs = list(
-        synth_dirs("/m/data", ["/m/data/a/x.txt", "/m/data/a/y.txt"], []))
+        synth_dirs("/m/data", ["/m/data/a/x.txt", "/m/data/a/y.txt"], [])
+    )
     assert [e.virtual for e in dirs] == ["/m/data/a"]
 
 
@@ -50,11 +51,13 @@ def test_entry_of_reports_a_directory_without_a_fingerprint():
 
 
 def test_entry_of_folds_the_backend_fingerprint_into_the_composite():
-    stat = FileStat(type=FileType.FILE,
-                    name="f.txt",
-                    size=3,
-                    modified="T",
-                    fingerprint="etag-1")
+    stat = FileStat(
+        type=FileType.FILE,
+        name="f.txt",
+        size=3,
+        modified="T",
+        fingerprint="etag-1",
+    )
     assert entry_of("/m/f.txt", stat).fingerprint == "etag-1|3"
 
 
@@ -85,32 +88,36 @@ async def _collect(walk: ReaddirWalk, spec: PathSpec) -> list:
 
 
 def test_readdir_walk_descends_and_reports_leaves():
-    walk = _backend({
-        "/m/data": {
-            "children": ["/m/data/a.txt", "/m/data/sub"],
-            "stat": FileStat(name="data", type=FileType.DIRECTORY),
-        },
-        "/m/data/a.txt": {
-            "stat":
-            FileStat(type=FileType.FILE,
-                     name="a.txt",
-                     size=5,
-                     modified="T1",
-                     fingerprint="fp-a")
-        },
-        "/m/data/sub": {
-            "children": ["/m/data/sub/deep.txt"],
-            "stat": FileStat(name="sub", type=FileType.DIRECTORY),
-        },
-        "/m/data/sub/deep.txt": {
-            "stat":
-            FileStat(type=FileType.FILE,
-                     name="deep.txt",
-                     size=4,
-                     modified="T2",
-                     fingerprint="fp-d")
-        },
-    })
+    walk = _backend(
+        {
+            "/m/data": {
+                "children": ["/m/data/a.txt", "/m/data/sub"],
+                "stat": FileStat(name="data", type=FileType.DIRECTORY),
+            },
+            "/m/data/a.txt": {
+                "stat": FileStat(
+                    type=FileType.FILE,
+                    name="a.txt",
+                    size=5,
+                    modified="T1",
+                    fingerprint="fp-a",
+                )
+            },
+            "/m/data/sub": {
+                "children": ["/m/data/sub/deep.txt"],
+                "stat": FileStat(name="sub", type=FileType.DIRECTORY),
+            },
+            "/m/data/sub/deep.txt": {
+                "stat": FileStat(
+                    type=FileType.FILE,
+                    name="deep.txt",
+                    size=4,
+                    modified="T2",
+                    fingerprint="fp-d",
+                )
+            },
+        }
+    )
     entries = asyncio.run(_collect(walk, _root("/m/data", "data")))
     assert [e.virtual for e in entries] == [
         "/m/data/a.txt",
@@ -123,35 +130,40 @@ def test_readdir_walk_descends_and_reports_leaves():
 def test_readdir_walk_trusts_a_trailing_slash_without_a_stat():
     # No stat entry for the child at all: the slash is the proof, so a
     # stat would raise and the walk would lose the subtree.
-    walk = _backend({
-        "/m/data": {
-            "children": ["/m/data/sub/"],
-            "stat": FileStat(name="data", type=FileType.DIRECTORY),
-        },
-        "/m/data/sub": {
-            "children": [],
-            "stat": FileStat(name="sub", type=FileType.DIRECTORY),
-        },
-    })
+    walk = _backend(
+        {
+            "/m/data": {
+                "children": ["/m/data/sub/"],
+                "stat": FileStat(name="data", type=FileType.DIRECTORY),
+            },
+            "/m/data/sub": {
+                "children": [],
+                "stat": FileStat(name="sub", type=FileType.DIRECTORY),
+            },
+        }
+    )
     entries = asyncio.run(_collect(walk, _root("/m/data", "data")))
     assert [(e.virtual, e.is_dir) for e in entries] == [("/m/data/sub", True)]
 
 
 def test_readdir_walk_skips_an_entry_that_vanished_mid_walk():
-    walk = _backend({
-        "/m/data": {
-            "children": ["/m/data/gone.txt", "/m/data/here.txt"],
-            "stat": FileStat(name="data", type=FileType.DIRECTORY),
-        },
-        "/m/data/here.txt": {
-            "stat":
-            FileStat(type=FileType.FILE,
-                     name="here.txt",
-                     size=1,
-                     modified="T",
-                     fingerprint="fp")
-        },
-    })
+    walk = _backend(
+        {
+            "/m/data": {
+                "children": ["/m/data/gone.txt", "/m/data/here.txt"],
+                "stat": FileStat(name="data", type=FileType.DIRECTORY),
+            },
+            "/m/data/here.txt": {
+                "stat": FileStat(
+                    type=FileType.FILE,
+                    name="here.txt",
+                    size=1,
+                    modified="T",
+                    fingerprint="fp",
+                )
+            },
+        }
+    )
     entries = asyncio.run(_collect(walk, _root("/m/data", "data")))
     assert [e.virtual for e in entries] == ["/m/data/here.txt"]
 
@@ -171,7 +183,8 @@ def test_readdir_walk_propagates_a_non_absence_error():
 
     with pytest.raises(PermissionError):
         asyncio.run(
-            _collect(ReaddirWalk(readdir, stat), _root("/m/data", "data")))
+            _collect(ReaddirWalk(readdir, stat), _root("/m/data", "data"))
+        )
 
 
 def test_readdir_walk_starts_from_an_empty_index_on_every_call():
@@ -182,11 +195,13 @@ def test_readdir_walk_starts_from_an_empty_index_on_every_call():
         return ["/m/data/a.txt"] if spec.virtual == "/m/data" else []
 
     async def stat(spec: PathSpec, index: IndexCacheStore) -> FileStat:
-        return FileStat(type=FileType.FILE,
-                        name="a.txt",
-                        size=1,
-                        modified="T",
-                        fingerprint="fp")
+        return FileStat(
+            type=FileType.FILE,
+            name="a.txt",
+            size=1,
+            modified="T",
+            fingerprint="fp",
+        )
 
     walk = ReaddirWalk(readdir, stat)
     root = _root("/m/data", "data")

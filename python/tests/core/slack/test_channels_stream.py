@@ -25,23 +25,10 @@ async def test_list_channels_stream_yields_pages():
     cfg = SlackConfig(token="xoxb-t")
     pages = [
         {
-            "channels": [{
-                "id": "C1"
-            }, {
-                "id": "C2"
-            }],
-            "response_metadata": {
-                "next_cursor": "cur1"
-            }
+            "channels": [{"id": "C1"}, {"id": "C2"}],
+            "response_metadata": {"next_cursor": "cur1"},
         },
-        {
-            "channels": [{
-                "id": "C3"
-            }],
-            "response_metadata": {
-                "next_cursor": ""
-            }
-        },
+        {"channels": [{"id": "C3"}], "response_metadata": {"next_cursor": ""}},
     ]
     calls = []
 

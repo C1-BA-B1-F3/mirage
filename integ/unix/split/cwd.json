@@ -5,6 +5,7 @@
       "seq": 1271050,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(mkdir -p /data/spl_cwd/sub && printf 'a\\nb\\n' > /data/spl_cwd/in.txt && cd /data/spl_cwd/sub && split -l 1 ../in.txt && ls; cd / && rm -r /data/spl_cwd)",
@@ -22,6 +23,7 @@
       "seq": 1271051,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(mkdir -p /data/csp_cwd/sub && printf 'a\\nb\\n' > /data/csp_cwd/in.txt && cd /data/csp_cwd/sub && csplit ../in.txt 2 && ls; cd / && rm -r /data/csp_cwd)",
@@ -36,6 +38,7 @@
       "seq": 1271052,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' > /data/spl_x.txt && mkdir -p /data2/spl_x && cd /data2/spl_x && split -l 1 /data/spl_x.txt && ls; cd / && rm -r /data2/spl_x /data/spl_x.txt)",
@@ -53,6 +56,7 @@
       "seq": 1271053,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "(printf 'a\\nb\\n' > /data/csp_x.txt && mkdir -p /data2/csp_x && cd /data2/csp_x && csplit /data/csp_x.txt 2 && ls; cd / && rm -r /data2/csp_x /data/csp_x.txt)",

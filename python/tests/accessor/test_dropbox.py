@@ -14,8 +14,10 @@
 
 import pytest
 
-from mirage.accessor.dropbox import (DropboxAccessor,
-                                     normalize_dropbox_root_path)
+from mirage.accessor.dropbox import (
+    DropboxAccessor,
+    normalize_dropbox_root_path,
+)
 from mirage.core.dropbox.client import DropboxTokenManager
 from mirage.vfs.dropbox.config import DropboxConfig
 
@@ -49,9 +51,11 @@ def test_accessor_defaults_to_account_root():
 
 
 def test_accessor_stores_normalized_root_path():
-    config = DropboxConfig(client_id="c",
-                           client_secret="s",
-                           refresh_token="r",
-                           root_path="Team/data/")
+    config = DropboxConfig(
+        client_id="c",
+        client_secret="s",
+        refresh_token="r",
+        root_path="Team/data/",
+    )
     accessor = DropboxAccessor(config, DropboxTokenManager(config))
     assert accessor.root_path == "/Team/data"

@@ -25,5 +25,6 @@ __all__ = ["NotionConfig", "NotionVFS"]
 def __getattr__(name: str) -> "type[NotionVFS]":
     if name == "NotionVFS":
         from mirage.vfs.notion.notion import NotionVFS
+
         return NotionVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

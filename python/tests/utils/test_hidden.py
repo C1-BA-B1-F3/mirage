@@ -13,10 +13,20 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.types import HiddenPaths, HiddenVars, MountMode, ShowEntry
-from mirage.utils.hidden import (classify_paths, classify_shows, hide_depth,
-                                 hides_intersect, move_reveals, path_covers,
-                                 path_hidden, path_visible, show_depth,
-                                 show_head, shown_mode, var_hidden)
+from mirage.utils.hidden import (
+    classify_paths,
+    classify_shows,
+    hide_depth,
+    hides_intersect,
+    move_reveals,
+    path_covers,
+    path_hidden,
+    path_visible,
+    show_depth,
+    show_head,
+    shown_mode,
+    var_hidden,
+)
 
 
 def test_none_hides_nothing():
@@ -32,7 +42,7 @@ def test_empty_spec_hides_nothing():
 def test_exact_path_hides_itself_and_its_subtree():
     # A name you cannot see cannot be a parent you traverse, so hiding
     # a path always hides everything under it.
-    h = HiddenPaths(paths=("/s3/secrets", ))
+    h = HiddenPaths(paths=("/s3/secrets",))
     assert path_hidden(h, "/s3/secrets")
     assert path_hidden(h, "/s3/secrets/a.txt")
     assert path_hidden(h, "/s3/secrets/deep/b")
@@ -42,14 +52,14 @@ def test_exact_path_hides_itself_and_its_subtree():
 
 
 def test_exact_path_spelling_is_normalized():
-    assert path_hidden(HiddenPaths(paths=("/s3/secrets/", )), "/s3/secrets")
-    assert path_hidden(HiddenPaths(paths=("s3/secrets", )), "/s3/secrets/a")
+    assert path_hidden(HiddenPaths(paths=("/s3/secrets/",)), "/s3/secrets")
+    assert path_hidden(HiddenPaths(paths=("s3/secrets",)), "/s3/secrets/a")
 
 
 def test_exact_path_at_a_mount_root_covers_the_mount():
     # Subtractive mount hiding is a one-line prefix entry; the grant
     # table (mount_modes) stays the additive spelling.
-    h = HiddenPaths(paths=("/s3", ))
+    h = HiddenPaths(paths=("/s3",))
     assert path_hidden(h, "/s3")
     assert path_hidden(h, "/s3/any/depth")
     assert not path_hidden(h, "/other")
@@ -58,7 +68,7 @@ def test_exact_path_at_a_mount_root_covers_the_mount():
 def test_component_pattern_applies_inside_every_mount():
     # A pattern with no "/" matches any single name component, so
     # "hide *.key everywhere" is one entry, not one per mount.
-    h = HiddenPaths(patterns=("*.key", ))
+    h = HiddenPaths(patterns=("*.key",))
     assert path_hidden(h, "/a/b.key")
     assert path_hidden(h, "/other/deep/c.key")
     assert path_hidden(h, "/a/b.key/inside.txt")
@@ -67,7 +77,7 @@ def test_component_pattern_applies_inside_every_mount():
 
 
 def test_anchored_pattern_matches_the_full_virtual_path():
-    h = HiddenPaths(patterns=("/config/*.pem", ))
+    h = HiddenPaths(patterns=("/config/*.pem",))
     assert path_hidden(h, "/config/x.pem")
     assert path_hidden(h, "/config/x.pem/sub")
     assert not path_hidden(h, "/other/x.pem")
@@ -76,20 +86,20 @@ def test_anchored_pattern_matches_the_full_virtual_path():
 def test_anchored_star_crosses_slashes_like_find_path():
     # Deliberate: fnmatch's "*" is not slash-aware, the same semantics
     # GNU find -path applies to its patterns.
-    h = HiddenPaths(patterns=("/config/*.pem", ))
+    h = HiddenPaths(patterns=("/config/*.pem",))
     assert path_hidden(h, "/config/nested/x.pem")
 
 
 def test_patterns_share_the_repo_fnmatch_dialect():
     # [^...] negates like [!...] (bash/glibc), because the matcher is
     # utils/fnmatch, not stdlib fnmatch.
-    h = HiddenPaths(patterns=("[^a]*.key", ))
+    h = HiddenPaths(patterns=("[^a]*.key",))
     assert path_hidden(h, "/x/b.key")
     assert not path_hidden(h, "/x/a.key")
 
 
 def test_var_names_are_exact():
-    h = HiddenVars(names=("SLACK_TOKEN", ))
+    h = HiddenVars(names=("SLACK_TOKEN",))
     assert var_hidden(h, "SLACK_TOKEN")
     assert not var_hidden(h, "SLACK_TOKEN2")
     assert not var_hidden(h, "PATH")
@@ -104,30 +114,35 @@ def test_var_patterns_are_globs_over_names():
 
 def test_classify_paths_splits_globs_from_exact_subtrees():
     from mirage.utils.hidden import classify_paths
-    assert classify_paths(["/repo/.env", "*.pem", "/repo/docs/*", "secrets"
-                           ]) == HiddenPaths(paths=("/repo/.env", "secrets"),
-                                             patterns=("*.pem",
-                                                       "/repo/docs/*"))
-    assert classify_paths(["/a/b[1]"]) == HiddenPaths(patterns=("/a/b[1]", ))
-    assert classify_paths(["/a/?"]) == HiddenPaths(patterns=("/a/?", ))
+
+    assert classify_paths(
+        ["/repo/.env", "*.pem", "/repo/docs/*", "secrets"]
+    ) == HiddenPaths(
+        paths=("/repo/.env", "secrets"), patterns=("*.pem", "/repo/docs/*")
+    )
+    assert classify_paths(["/a/b[1]"]) == HiddenPaths(patterns=("/a/b[1]",))
+    assert classify_paths(["/a/?"]) == HiddenPaths(patterns=("/a/?",))
 
 
 def test_classify_paths_empty_is_unrestricted():
     from mirage.utils.hidden import classify_paths
+
     assert classify_paths([]) is None
     assert classify_paths(()) is None
 
 
 def test_classify_vars_splits_globs_from_names():
     from mirage.utils.hidden import classify_vars
-    assert classify_vars(["SLACK_TOKEN",
-                          "AWS_*"]) == HiddenVars(names=("SLACK_TOKEN", ),
-                                                  patterns=("AWS_*", ))
+
+    assert classify_vars(["SLACK_TOKEN", "AWS_*"]) == HiddenVars(
+        names=("SLACK_TOKEN",), patterns=("AWS_*",)
+    )
     assert classify_vars([]) is None
 
 
 def test_classified_entries_match_like_the_hand_built_spec():
     from mirage.utils.hidden import classify_paths
+
     spec = classify_paths(["/s3/secrets", "*.key", "/repo/docs/*"])
     assert path_hidden(spec, "/s3/secrets/deep/b")
     assert path_hidden(spec, "/a/b.key/c")
@@ -136,8 +151,9 @@ def test_classified_entries_match_like_the_hand_built_spec():
 
 
 def test_path_covers_is_the_directory_holding_the_scope_or_an_ancestor():
-    spec = HiddenPaths(paths=("/s3/secrets", ),
-                       patterns=("/repo/docs/*", "*.pem"))
+    spec = HiddenPaths(
+        paths=("/s3/secrets",), patterns=("/repo/docs/*", "*.pem")
+    )
     # An exact entry is covered by itself and by every ancestor; an
     # anchored pattern by its fixed head and that head's ancestors.
     for virtual in ("/s3/secrets", "/s3", "/", "/repo/docs", "/repo"):
@@ -148,7 +164,7 @@ def test_path_covers_is_the_directory_holding_the_scope_or_an_ancestor():
     assert path_covers(spec, "/repo/docs", ancestors=False)
     assert not path_covers(spec, "/repo", ancestors=False)
     # A component pattern names no place, so nothing is covered by it.
-    assert not path_covers(HiddenPaths(paths=(), patterns=("*.pem", )), "/x")
+    assert not path_covers(HiddenPaths(paths=(), patterns=("*.pem",)), "/x")
     assert not path_covers(None, "/")
 
 
@@ -166,10 +182,12 @@ def test_hide_depth_scores_the_entry_never_the_match_site():
 
 
 def test_show_depth_covers_the_entry_subtree():
-    shown = classify_shows([
-        ShowEntry("/repo/public"),
-        ShowEntry("/repo/docs/*", MountMode.READ),
-    ])
+    shown = classify_shows(
+        [
+            ShowEntry("/repo/public"),
+            ShowEntry("/repo/docs/*", MountMode.READ),
+        ]
+    )
     assert show_depth(shown, "/repo/public/index.html") == 2
     assert show_depth(shown, "/repo/public") == 2
     assert show_depth(shown, "/repo/docs/a/b") == 2
@@ -242,11 +260,13 @@ def test_a_hidden_show_anchor_opens_no_road():
 
 
 def test_shown_mode_is_the_deepest_mode_entry():
-    shown = classify_shows([
-        ShowEntry("/repo", MountMode.READ),
-        ShowEntry("/repo/build", MountMode.WRITE),
-        ShowEntry("/repo/public"),
-    ])
+    shown = classify_shows(
+        [
+            ShowEntry("/repo", MountMode.READ),
+            ShowEntry("/repo/build", MountMode.WRITE),
+            ShowEntry("/repo/public"),
+        ]
+    )
     assert shown_mode(shown, "/repo/src/a.py") == (1, MountMode.READ)
     assert shown_mode(shown, "/repo/build/out") == (2, MountMode.WRITE)
     # A list-form entry states visibility only.
@@ -256,17 +276,21 @@ def test_shown_mode_is_the_deepest_mode_entry():
 
 
 def test_shown_mode_equal_depth_takes_the_weaker():
-    shown = classify_shows([
-        ShowEntry("/repo/docs", MountMode.EXEC),
-        ShowEntry("/repo/*", MountMode.READ),
-    ])
+    shown = classify_shows(
+        [
+            ShowEntry("/repo/docs", MountMode.EXEC),
+            ShowEntry("/repo/*", MountMode.READ),
+        ]
+    )
     assert shown_mode(shown, "/repo/docs/a") == (2, MountMode.EXEC)
     # Both anchor at depth 1 for a path only the pattern reaches; a
     # second depth-1 statement can only weaken the first.
-    both = classify_shows([
-        ShowEntry("/repo", MountMode.EXEC),
-        ShowEntry("/repo/*", MountMode.READ),
-    ])
+    both = classify_shows(
+        [
+            ShowEntry("/repo", MountMode.EXEC),
+            ShowEntry("/repo/*", MountMode.READ),
+        ]
+    )
     assert shown_mode(both, "/repo/x") == (1, MountMode.READ)
 
 

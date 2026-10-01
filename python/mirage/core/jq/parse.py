@@ -17,8 +17,13 @@ import logging
 import re
 from enum import Enum, auto
 
-from mirage.core.jq.types import (NO_VALUE, JqParseError, NoValue, NumberText,
-                                  ParsedValue)
+from mirage.core.jq.types import (
+    NO_VALUE,
+    JqParseError,
+    NoValue,
+    NumberText,
+    ParsedValue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,15 +89,24 @@ ESCAPES = {
 # byte starts (0 for a byte no sequence starts with, CONTINUATION for a
 # continuation byte), and the first code point each length may encode.
 CONTINUATION = 0xFF
-CODING_LENGTH = bytes([1] * 0x80 + [CONTINUATION] * 0x40 + [0] * 2 + [2] * 30 +
-                      [3] * 16 + [4] * 5 + [0] * 11)
+CODING_LENGTH = bytes(
+    [1] * 0x80
+    + [CONTINUATION] * 0x40
+    + [0] * 2
+    + [2] * 30
+    + [3] * 16
+    + [4] * 5
+    + [0] * 11
+)
 FIRST_CODE_POINT = (0, 0, 0x80, 0x800, 0x10000)
 REPLACEMENT = "\N{REPLACEMENT CHARACTER}"
 
 EXPECTED_SEPARATOR = "Expected separator between values"
 SURROGATE_PAIR = "Invalid \\uXXXX\\uXXXX surrogate pair escape"
-CONTROL_CHARACTER = ("Invalid string: control characters from U+0000 "
-                     "through U+001F must be escaped")
+CONTROL_CHARACTER = (
+    "Invalid string: control characters from U+0000 "
+    "through U+001F must be escaped"
+)
 
 
 class ParseState(Enum):
@@ -163,8 +177,11 @@ def decode_utf8(data: bytes) -> str:
                 taken = k
                 break
             point = (point << 6) | (byte & 0x3F)
-        if (point < FIRST_CODE_POINT[length] or 0xD800 <= point <= 0xDFFF
-                or point > 0x10FFFF):
+        if (
+            point < FIRST_CODE_POINT[length]
+            or 0xD800 <= point <= 0xDFFF
+            or point > 0x10FFFF
+        ):
             out.append(REPLACEMENT)
         else:
             out.append(chr(point))
@@ -242,14 +259,17 @@ def event_text(event: ParsedValue) -> str:
     if len(event) < 2:
         return f"[{path}]"
     leaf = event[1]
-    text = (leaf.text if isinstance(leaf, NumberText) else json.dumps(
-        leaf, ensure_ascii=False))
+    text = (
+        leaf.text
+        if isinstance(leaf, NumberText)
+        else json.dumps(leaf, ensure_ascii=False)
+    )
     return f"[{path},{text}]"
 
 
 def _unhex4(data: bytes | bytearray, at: int) -> int:
     try:
-        text = bytes(data[at:at + 4]).decode("ascii")
+        text = bytes(data[at : at + 4]).decode("ascii")
     except UnicodeDecodeError:
         return -1
     if len(text) != 4 or not all(c in "0123456789abcdefABCDEF" for c in text):
@@ -258,8 +278,9 @@ def _unhex4(data: bytes | bytearray, at: int) -> int:
 
 
 def _is_number(value: "ParsedValue | NoValue") -> bool:
-    return isinstance(
-        value, (int, float, NumberText)) and not isinstance(value, bool)
+    return isinstance(value, (int, float, NumberText)) and not isinstance(
+        value, bool
+    )
 
 
 class JqParser:
@@ -302,7 +323,7 @@ class JqParser:
         self._token = bytearray()
         self._line = 1
         self._column = 0
-        self._state = (ParseState.WAITING_FOR_RS if seq else ParseState.NORMAL)
+        self._state = ParseState.WAITING_FOR_RS if seq else ParseState.NORMAL
         self._last_ch_was_ws = False
         self._eof = False
         self._bom = 0
@@ -359,10 +380,17 @@ class JqParser:
         pending, which is where a value can be taken from the input in one
         step and handed over as if the parser had read it. A BOM read only
         in part is pending too: the check goes on into the next input."""
-        return (not self._seq and not self._streaming and not self._eof
-                and self._state is ParseState.NORMAL and not self._stack
-                and not self._token and self._next is NO_VALUE
-                and self.remaining() == 0 and self._bom in (0, BOM_DONE))
+        return (
+            not self._seq
+            and not self._streaming
+            and not self._eof
+            and self._state is ParseState.NORMAL
+            and not self._stack
+            and not self._token
+            and self._next is NO_VALUE
+            and self.remaining() == 0
+            and self._bom in (0, BOM_DONE)
+        )
 
     def bom_skip(self, data: bytes) -> int | None:
         """How many leading bytes the BOM check would strip from the
@@ -430,8 +458,11 @@ class JqParser:
                 continue
             ch = buf[pos]
             if state is ParseState.NORMAL:
-                if ch not in WHITESPACE and ch not in STRUCTURE and (
-                        ch != QUOTE and not (self._seq and ch == RS)):
+                if (
+                    ch not in WHITESPACE
+                    and ch not in STRUCTURE
+                    and (ch != QUOTE and not (self._seq and ch == RS))
+                ):
                     match = self._literal_run.match(buf, pos)
                     stop = match.end() if match else pos + 1
                     self._token += buf[pos:stop]
@@ -446,8 +477,12 @@ class JqParser:
                     self._last_ch_was_ws = True
                     pos = stop
                     continue
-            elif (state is ParseState.STRING and ch != QUOTE
-                  and ch != BACKSLASH and not (self._seq and ch == RS)):
+            elif (
+                state is ParseState.STRING
+                and ch != QUOTE
+                and ch != BACKSLASH
+                and not (self._seq and ch == RS)
+            ):
                 match = self._string_run.match(buf, pos)
                 stop = match.end() if match else pos + 1
                 self._token += buf[pos:stop]
@@ -497,18 +532,18 @@ class JqParser:
             return
         carry = self._carry
         if carry:
-            carry += buf[self._mark:stop]
+            carry += buf[self._mark : stop]
             self._text = bytes(carry).lstrip(SEPARATORS)
             carry.clear()
         else:
-            self._text = buf[self._mark:stop].lstrip(SEPARATORS)
+            self._text = buf[self._mark : stop].lstrip(SEPARATORS)
         self._mark = stop
 
     def _hold(self, buf: bytes, stop: int) -> None:
         # Keep the bytes of a value the buffer ended inside of.
         if self._streaming:
             return
-        held = buf[self._mark:stop]
+        held = buf[self._mark : stop]
         self._carry += held if self._carry else held.lstrip(SEPARATORS)
         self._mark = stop
 
@@ -530,7 +565,8 @@ class JqParser:
         self._next = NO_VALUE
         if self._seq and not self._last_ch_was_ws and _is_number(value):
             return JqParseError(
-                f"Potentially truncated top-level numeric value {where}")
+                f"Potentially truncated top-level numeric value {where}"
+            )
         return value
 
     def _fail_at_eof(self, message: str) -> JqParseError:
@@ -593,11 +629,12 @@ class JqParser:
     def _check_truncation(self) -> bool:
         if self._streaming:
             nxt = self._next
-            return bool(
-                self._path) or (nxt is not NO_VALUE
-                                and not isinstance(nxt, (str, list, dict)))
-        return not self._last_ch_was_ws and (bool(self._stack) or bool(
-            self._token) or _is_number(self._next))
+            return bool(self._path) or (
+                nxt is not NO_VALUE and not isinstance(nxt, (str, list, dict))
+            )
+        return not self._last_ch_was_ws and (
+            bool(self._stack) or bool(self._token) or _is_number(self._next)
+        )
 
     def _is_top_num(self) -> bool:
         above = self._path if self._streaming else self._stack
@@ -628,8 +665,9 @@ class JqParser:
         answer: Scanned | None = None
         self._last_ch_was_ws = False
         if self._state is ParseState.NORMAL:
-            literal = (ch not in WHITESPACE and ch not in STRUCTURE
-                       and ch != QUOTE)
+            literal = (
+                ch not in WHITESPACE and ch not in STRUCTURE and ch != QUOTE
+            )
             if ch in WHITESPACE:
                 self._last_ch_was_ws = True
             if not literal:
@@ -646,8 +684,11 @@ class JqParser:
             elif ch == QUOTE:
                 self._state = ParseState.STRING
             elif ch in STRUCTURE:
-                msg = (self._stream_token(ch)
-                       if self._streaming else self._parse_token(ch))
+                msg = (
+                    self._stream_token(ch)
+                    if self._streaming
+                    else self._parse_token(ch)
+                )
                 if msg is not None:
                     return msg
             done = self._check_done()
@@ -667,9 +708,11 @@ class JqParser:
                 answer = Scanned.OUTPUT
         else:
             self._token.append(ch)
-            self._state = (ParseState.STRING_ESCAPE if ch == BACKSLASH
-                           and self._state is ParseState.STRING else
-                           ParseState.STRING)
+            self._state = (
+                ParseState.STRING_ESCAPE
+                if ch == BACKSLASH and self._state is ParseState.STRING
+                else ParseState.STRING
+            )
         return answer
 
     def _check_literal(self) -> str | None:
@@ -695,8 +738,11 @@ class JqParser:
             number = number_value(literal)
             if number is NO_VALUE:
                 return "Invalid numeric literal"
-            value = (NumberText(literal.decode("ascii"))
-                     if self._streaming else number)
+            value = (
+                NumberText(literal.decode("ascii"))
+                if self._streaming
+                else number
+            )
         msg = self._value(value)
         if msg is not None:
             return msg
@@ -734,8 +780,11 @@ class JqParser:
                 return "Invalid characters in \\uXXXX escape"
             at += 4
             if 0xD800 <= point <= 0xDBFF:
-                if (at + 6 > end or token[at] != BACKSLASH
-                        or token[at + 1] != LOWER_U):
+                if (
+                    at + 6 > end
+                    or token[at] != BACKSLASH
+                    or token[at + 1] != LOWER_U
+                ):
                     return SURROGATE_PAIR
                 low = _unhex4(token, at + 2)
                 if not 0xDC00 <= low <= 0xDFFF:

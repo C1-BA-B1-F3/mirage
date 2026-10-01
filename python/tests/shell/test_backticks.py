@@ -25,18 +25,23 @@ def test_a_single_pair_is_one_command():
 def test_touching_pairs_are_split_with_the_text_between_them():
     raw = "`cat /data/secret` `echo ok`"
     segments = split_backtick_region(raw)
-    assert [(s.text, s.command)
-            for s in segments] == [("cat /data/secret", True), (" ", False),
-                                   ("echo ok", True)]
-    assert [raw[s.start:s.end]
-            for s in segments] == ["cat /data/secret", " ", "echo ok"]
+    assert [(s.text, s.command) for s in segments] == [
+        ("cat /data/secret", True),
+        (" ", False),
+        ("echo ok", True),
+    ]
+    assert [raw[s.start : s.end] for s in segments] == [
+        "cat /data/secret",
+        " ",
+        "echo ok",
+    ]
 
 
 def test_escapes_in_a_command_are_resolved_and_the_span_stays_raw():
     raw = "`echo \\$x \\`y\\``"
-    segment, = split_backtick_region(raw)
+    (segment,) = split_backtick_region(raw)
     assert segment.text == "echo $x `y`"
-    assert raw[segment.start:segment.end] == "echo \\$x \\`y\\`"
+    assert raw[segment.start : segment.end] == "echo \\$x \\`y\\`"
 
 
 def test_an_escaped_backslash_does_not_escape_the_closing_backtick():

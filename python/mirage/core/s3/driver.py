@@ -18,10 +18,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.accessor.s3 import S3Accessor, S3Config
-from mirage.core.object_store.driver import (ChildEntry, ObjectMeta,
-                                             ObjectStoreDriver, TreeEntry)
-from mirage.core.s3.client import (_client_kwargs, async_session, closing_body,
-                                   is_not_found)
+from mirage.core.object_store.driver import (
+    ChildEntry,
+    ObjectMeta,
+    ObjectStoreDriver,
+    TreeEntry,
+)
+from mirage.core.s3.client import (
+    _client_kwargs,
+    async_session,
+    closing_body,
+    is_not_found,
+)
 from mirage.core.s3.constants import SCOPE_ERROR
 from mirage.utils.dates import to_iso_z
 
@@ -36,6 +44,7 @@ class S3Conn:
         client (Any): open aioboto3 S3 client.
         config (S3Config): the accessor's config.
     """
+
     client: Any
     config: S3Config
 
@@ -50,16 +59,19 @@ async def _connect(accessor: S3Accessor) -> AsyncIterator[S3Conn]:
     # the driver contract means by "a store holding a live client on its
     # accessor". Opening one per operation cost ~49ms against ~2ms for a
     # reused one, so a battery of small ops paid the client, not the request.
-    client = await accessor.cached_client(lambda: async_session(
-        accessor.config).client(**_client_kwargs(accessor.config)))
+    client = await accessor.cached_client(
+        lambda: async_session(accessor.config).client(
+            **_client_kwargs(accessor.config)
+        )
+    )
     yield S3Conn(client=client, config=accessor.config)
 
 
 async def _list_children(conn: S3Conn, pfx: str) -> AsyncIterator[ChildEntry]:
     paginator = conn.client.get_paginator("list_objects_v2")
-    async for page in paginator.paginate(Bucket=conn.config.bucket,
-                                         Prefix=pfx,
-                                         Delimiter="/"):
+    async for page in paginator.paginate(
+        Bucket=conn.config.bucket, Prefix=pfx, Delimiter="/"
+    ):
         for cp in page.get("CommonPrefixes") or []:
             child = cp["Prefix"].rstrip("/")
             if child:
@@ -67,27 +79,32 @@ async def _list_children(conn: S3Conn, pfx: str) -> AsyncIterator[ChildEntry]:
             else:
                 yield ChildEntry(key=cp["Prefix"], kind="marker")
         for obj in page.get("Contents") or []:
-            relative = obj["Key"][len(pfx):]
+            relative = obj["Key"][len(pfx) :]
             if relative and "/" not in relative:
                 last_mod = obj.get("LastModified")
                 yield ChildEntry(
                     key=obj["Key"],
                     kind="f",
                     size=obj.get("Size"),
-                    modified=to_iso_z(last_mod) if last_mod else "")
+                    modified=to_iso_z(last_mod) if last_mod else "",
+                )
             else:
                 yield ChildEntry(key=obj["Key"], kind="marker")
 
 
 async def _list_tree(conn: S3Conn, pfx: str) -> AsyncIterator[TreeEntry]:
     paginator = conn.client.get_paginator("list_objects_v2")
-    async for page in paginator.paginate(Bucket=conn.config.bucket,
-                                         Prefix=pfx):
+    async for page in paginator.paginate(
+        Bucket=conn.config.bucket, Prefix=pfx
+    ):
         for obj in page.get("Contents") or []:
-            yield TreeEntry(key=obj["Key"],
-                            size=obj.get("Size", 0),
-                            modified=to_iso_z(obj["LastModified"])
-                            if obj.get("LastModified") else "")
+            yield TreeEntry(
+                key=obj["Key"],
+                size=obj.get("Size", 0),
+                modified=to_iso_z(obj["LastModified"])
+                if obj.get("LastModified")
+                else "",
+            )
 
 
 async def _list_subtree(conn: S3Conn, stem: str) -> AsyncIterator[TreeEntry]:
@@ -96,16 +113,20 @@ async def _list_subtree(conn: S3Conn, stem: str) -> AsyncIterator[TreeEntry]:
     # against the exact stem or the slashed subtree.
     base = (stem + "/") if stem else ""
     paginator = conn.client.get_paginator("list_objects_v2")
-    async for page in paginator.paginate(Bucket=conn.config.bucket,
-                                         Prefix=stem):
+    async for page in paginator.paginate(
+        Bucket=conn.config.bucket, Prefix=stem
+    ):
         for obj in page.get("Contents") or []:
             okey = obj["Key"]
             if not (okey == stem or okey.startswith(base)):
                 continue
-            yield TreeEntry(key=okey,
-                            size=obj.get("Size", 0),
-                            modified=to_iso_z(obj["LastModified"])
-                            if obj.get("LastModified") else "")
+            yield TreeEntry(
+                key=okey,
+                size=obj.get("Size", 0),
+                modified=to_iso_z(obj["LastModified"])
+                if obj.get("LastModified")
+                else "",
+            )
 
 
 def _etag_of(resp: dict[str, Any]) -> str:
@@ -134,18 +155,21 @@ def _version_of(resp: dict[str, Any]) -> str | None:
 
 async def _head(conn: S3Conn, key: str) -> ObjectMeta | None:
     try:
-        resp = await conn.client.head_object(Bucket=conn.config.bucket,
-                                             Key=key)
+        resp = await conn.client.head_object(
+            Bucket=conn.config.bucket, Key=key
+        )
     except Exception as exc:
         if is_not_found(exc):
             return None
         raise
     etag_raw = _etag_of(resp)
-    return ObjectMeta(size=resp["ContentLength"],
-                      modified=to_iso_z(resp["LastModified"]),
-                      fingerprint=etag_raw or None,
-                      revision=_version_of(resp),
-                      extra={"etag": etag_raw})
+    return ObjectMeta(
+        size=resp["ContentLength"],
+        modified=to_iso_z(resp["LastModified"]),
+        fingerprint=etag_raw or None,
+        revision=_version_of(resp),
+        extra={"etag": etag_raw},
+    )
 
 
 async def _get(conn: S3Conn, key: str) -> bytes | None:
@@ -163,12 +187,14 @@ async def _get(conn: S3Conn, key: str) -> bytes | None:
 async def _put(conn: S3Conn, key: str, data: bytes) -> ObjectMeta | None:
     # The ETag is read through the same helper _head uses, so the token a
     # write stamps and the token a later stat reports are one spelling.
-    resp = await conn.client.put_object(Bucket=conn.config.bucket,
-                                        Key=key,
-                                        Body=data)
-    return ObjectMeta(size=len(data),
-                      fingerprint=_etag_of(resp) or None,
-                      revision=_version_of(resp))
+    resp = await conn.client.put_object(
+        Bucket=conn.config.bucket, Key=key, Body=data
+    )
+    return ObjectMeta(
+        size=len(data),
+        fingerprint=_etag_of(resp) or None,
+        revision=_version_of(resp),
+    )
 
 
 async def _delete_file(conn: S3Conn, key: str) -> None:
@@ -177,21 +203,22 @@ async def _delete_file(conn: S3Conn, key: str) -> None:
 
 async def _delete_prefix(conn: S3Conn, pfx: str) -> None:
     paginator = conn.client.get_paginator("list_objects_v2")
-    async for page in paginator.paginate(Bucket=conn.config.bucket,
-                                         Prefix=pfx):
+    async for page in paginator.paginate(
+        Bucket=conn.config.bucket, Prefix=pfx
+    ):
         keys = [{"Key": obj["Key"]} for obj in page.get("Contents") or []]
         if keys:
-            await conn.client.delete_objects(Bucket=conn.config.bucket,
-                                             Delete={"Objects": keys})
+            await conn.client.delete_objects(
+                Bucket=conn.config.bucket, Delete={"Objects": keys}
+            )
 
 
 async def _copy_file(conn: S3Conn, src_key: str, dst_key: str) -> bool:
-    await conn.client.copy_object(Bucket=conn.config.bucket,
-                                  CopySource={
-                                      "Bucket": conn.config.bucket,
-                                      "Key": src_key
-                                  },
-                                  Key=dst_key)
+    await conn.client.copy_object(
+        Bucket=conn.config.bucket,
+        CopySource={"Bucket": conn.config.bucket, "Key": src_key},
+        Key=dst_key,
+    )
     return True
 
 
@@ -232,17 +259,15 @@ async def _move_prefix(conn: S3Conn, src_pfx: str, dst_pfx: str) -> bool:
     """
     paginator = conn.client.get_paginator("list_objects_v2")
     moved: list[dict[str, str]] = []
-    async for page in paginator.paginate(Bucket=conn.config.bucket,
-                                         Prefix=src_pfx):
+    async for page in paginator.paginate(
+        Bucket=conn.config.bucket, Prefix=src_pfx
+    ):
         for obj in page.get("Contents") or []:
             key = obj["Key"]
             await conn.client.copy_object(
                 Bucket=conn.config.bucket,
-                CopySource={
-                    "Bucket": conn.config.bucket,
-                    "Key": key
-                },
-                Key=f"{dst_pfx}{key[len(src_pfx):]}",
+                CopySource={"Bucket": conn.config.bucket, "Key": key},
+                Key=f"{dst_pfx}{key[len(src_pfx) :]}",
             )
             moved.append({"Key": key})
     if not moved:
@@ -253,7 +278,7 @@ async def _move_prefix(conn: S3Conn, src_pfx: str, dst_pfx: str) -> bool:
     for start in range(0, len(moved), DELETE_BATCH):
         resp = await conn.client.delete_objects(
             Bucket=conn.config.bucket,
-            Delete={"Objects": moved[start:start + DELETE_BATCH]},
+            Delete={"Objects": moved[start : start + DELETE_BATCH]},
         )
         # DeleteObjects reports a refused key in the body of a 200, so a
         # response that raises nothing can still have deleted nothing.
@@ -269,15 +294,15 @@ async def _move_prefix(conn: S3Conn, src_pfx: str, dst_pfx: str) -> bool:
         # going instead of aborting the whole command line.
         raise PermissionError(
             f"S3 refused to delete {len(failed)} source object(s) after "
-            f"copying, starting at {failed[0]!r}")
+            f"copying, starting at {failed[0]!r}"
+        )
     return True
 
 
 async def _probe_prefix(conn: S3Conn, pfx: str) -> bool:
-    resp = await conn.client.list_objects_v2(Bucket=conn.config.bucket,
-                                             Prefix=pfx,
-                                             Delimiter="/",
-                                             MaxKeys=1)
+    resp = await conn.client.list_objects_v2(
+        Bucket=conn.config.bucket, Prefix=pfx, Delimiter="/", MaxKeys=1
+    )
     return bool(resp.get("CommonPrefixes") or resp.get("Contents"))
 
 

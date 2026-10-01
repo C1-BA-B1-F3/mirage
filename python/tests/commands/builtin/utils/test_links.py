@@ -16,8 +16,12 @@ from typing import Any
 
 import pytest
 
-from mirage.commands.builtin.utils.links import (LinkDoor, link_door,
-                                                 name_location, typed_link)
+from mirage.commands.builtin.utils.links import (
+    LinkDoor,
+    link_door,
+    name_location,
+    typed_link,
+)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import IOResult
 from mirage.ops.types import LinkView, NamespaceView
@@ -26,14 +30,16 @@ from mirage.utils.errors import DotWalkLoop
 from mirage.utils.path import CycleError
 
 
-def _spec(virtual: str,
-          raw_path: str,
-          walk_error: str | None = None) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] or "/",
-                    vfs_path=virtual.lstrip("/"),
-                    raw_path=raw_path,
-                    walk_error=walk_error)
+def _spec(
+    virtual: str, raw_path: str, walk_error: str | None = None
+) -> PathSpec:
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path=virtual.lstrip("/"),
+        raw_path=raw_path,
+        walk_error=walk_error,
+    )
 
 
 def _links(table: dict[str, str]) -> LinkView:
@@ -49,7 +55,7 @@ def _links(table: dict[str, str]) -> LinkView:
             raise CycleError(path)
         for link, target in table.items():
             if path == link or path.startswith(link + "/"):
-                return target + path[len(link):]
+                return target + path[len(link) :]
         return path
 
     async def target_stat(path: str) -> FileStat | None:
@@ -59,9 +65,11 @@ def _links(table: dict[str, str]) -> LinkView:
         return False
 
     return LinkView(
-        stat_at=lambda path:
-        (FileStat(name=path.rsplit("/", 1)[-1], type=FileType.SYMLINK)
-         if path in table else None),
+        stat_at=lambda path: (
+            FileStat(name=path.rsplit("/", 1)[-1], type=FileType.SYMLINK)
+            if path in table
+            else None
+        ),
         children=lambda directory: [
             FileStat(name=link.rsplit("/", 1)[-1], type=FileType.SYMLINK)
             for link in table
@@ -104,8 +112,9 @@ class _Door:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
-    async def __call__(self, op: str, path: PathSpec,
-                       **kwargs: Any) -> tuple[Any, IOResult]:
+    async def __call__(
+        self, op: str, path: PathSpec, **kwargs: Any
+    ) -> tuple[Any, IOResult]:
         self.calls.append((op, path.virtual, kwargs))
         if op == "read":
             return b"through the door", IOResult()
@@ -118,20 +127,17 @@ class _Door:
 async def test_the_door_reads_writes_and_unlinks_by_the_name_it_is_handed():
     calls = _Door()
     door = LinkDoor(links=LINKS, dispatch=calls, cwd="/data")
-    assert [c async for c in door.read("/data/dir/tl.gz")
-            ] == [b"through the door"]
+    assert [c async for c in door.read("/data/dir/tl.gz")] == [
+        b"through the door"
+    ]
     await door.write("/data/dir/tl", b"x")
     await door.unlink("/data/dir/tl.gz")
     await door.lstat(PathSpec.from_str_path("/data/dir/tl.gz"))
     assert calls.calls == [
         ("read", "/data/dir/tl.gz", {}),
-        ("write", "/data/dir/tl", {
-            "data": b"x"
-        }),
+        ("write", "/data/dir/tl", {"data": b"x"}),
         ("unlink", "/data/dir/tl.gz", {}),
-        ("stat", "/data/dir/tl.gz", {
-            "nofollow": True
-        }),
+        ("stat", "/data/dir/tl.gz", {"nofollow": True}),
     ]
 
 
@@ -147,7 +153,8 @@ def test_an_invocation_without_links_or_a_door_has_no_link_door():
     assert link_door(CommandOpts()) is None
     assert link_door(CommandOpts(ns=NamespaceView(links=LINKS))) is None
     door = link_door(
-        CommandOpts(ns=NamespaceView(links=LINKS), dispatch=_Door()))
+        CommandOpts(ns=NamespaceView(links=LINKS), dispatch=_Door())
+    )
     assert door is not None and door.cwd == "/"
 
 
@@ -157,8 +164,10 @@ async def test_the_door_lists_and_stats_by_the_name_it_is_handed():
     door = LinkDoor(links=LINKS, dispatch=calls, cwd="/data")
     assert await door.readdir("/data/dir") == ["/data/dir/a", "/data/dir/b"]
     assert (await door.stat("/data/t.gz")).name == "n"
-    assert calls.calls == [("readdir", "/data/dir", {}),
-                           ("stat", "/data/t.gz", {})]
+    assert calls.calls == [
+        ("readdir", "/data/dir", {}),
+        ("stat", "/data/t.gz", {}),
+    ]
 
 
 def test_a_walker_merges_the_links_standing_in_a_directory():
@@ -173,8 +182,8 @@ def test_a_link_leads_where_the_table_resolves_it():
 
 
 def test_a_looping_link_is_the_eloop_a_walker_reports():
-    door = LinkDoor(links=_links({"/data/l": "/data/l"}),
-                    dispatch=_Door(),
-                    cwd="/data")
+    door = LinkDoor(
+        links=_links({"/data/l": "/data/l"}), dispatch=_Door(), cwd="/data"
+    )
     with pytest.raises(DotWalkLoop):
         door.target("/data/l")

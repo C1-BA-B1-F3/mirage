@@ -49,11 +49,12 @@ mounts:
 
 
 async def provision(sandbox: Any) -> None:
-    config = WORKSPACE_YAML.format(bucket=os.environ["AWS_S3_BUCKET"],
-                                   region=os.environ.get(
-                                       "AWS_DEFAULT_REGION", "us-east-1"),
-                                   key_id=os.environ["AWS_ACCESS_KEY_ID"],
-                                   secret=os.environ["AWS_SECRET_ACCESS_KEY"])
+    config = WORKSPACE_YAML.format(
+        bucket=os.environ["AWS_S3_BUCKET"],
+        region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        secret=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
     await sandbox.fs.upload_file(config.encode(), "/tmp/sandbox.yaml")
     commands = (
         "sudo mkdir -p /data && sudo chown daytona /data",
@@ -63,9 +64,11 @@ async def provision(sandbox: Any) -> None:
         response = await sandbox.process.exec(command)
         if int(response.exit_code) != 0:
             raise RuntimeError(
-                f"provisioning failed ({command}): {response.result}")
-    print("provisioned: S3 FUSE-mounted at /data in the sandbox",
-          file=sys.stderr)
+                f"provisioning failed ({command}): {response.result}"
+            )
+    print(
+        "provisioned: S3 FUSE-mounted at /data in the sandbox", file=sys.stderr
+    )
 
 
 async def main() -> None:
@@ -76,7 +79,8 @@ async def main() -> None:
                 snapshot=SNAPSHOT_NAME,
                 auto_stop_interval=10,
                 auto_delete_interval=30,
-            ))
+            )
+        )
         await provision(sandbox)
         print(sandbox.id)
     finally:

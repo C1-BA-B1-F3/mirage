@@ -18,10 +18,9 @@ from mirage.core.time_range import TimeRange
 
 
 class SlackAccessor(SessionAccessor):
-
     def __init__(
-        self, config: SlackConfig,
-        time_range: TimeRange = TimeRange()) -> None:
+        self, config: SlackConfig, time_range: TimeRange = TimeRange()
+    ) -> None:
         super().__init__()
         self.config = config
         self.time_range = time_range

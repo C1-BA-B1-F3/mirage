@@ -18,7 +18,6 @@ import { IOResult } from '../../../io/types.ts'
 import { parseDateExpr, parsePosixTime } from '../../../utils/dates.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { pureProvision } from '../generic_bind/provision.ts'
 import { strftime } from '../utils/strftime.ts'
 import { quoteText } from '../../quote.ts'
 import { extraOperandError, usageExitCode, usageHint } from '../../spec/usage.ts'
@@ -159,5 +158,4 @@ export const GENERAL_DATE = command({
   vfs: null,
   spec: specOf('date'),
   fn: dateCommand,
-  provision: pureProvision,
 })

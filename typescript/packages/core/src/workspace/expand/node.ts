@@ -14,6 +14,7 @@
 
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
 import { quotedParts } from '../../shell/helpers.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
@@ -57,6 +58,7 @@ export type ExecuteFn = (
     span?: readonly [number, number]
     handed?: HandOff
     substitution?: boolean
+    sink?: JobConsole
   },
 ) => Promise<IOResult>
 

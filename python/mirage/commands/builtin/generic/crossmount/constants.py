@@ -28,6 +28,7 @@ FANOUT_COMMANDS = frozenset({
 })
 RELAY_COMMANDS = frozenset({
     Cmd.CP, Cmd.MV, Cmd.DIFF, Cmd.CMP, Cmd.PASTE, Cmd.COMM, Cmd.JOIN, Cmd.TAR,
-    Cmd.UNZIP, Cmd.ZIP, Cmd.LS, Cmd.SORT, Cmd.WC, Cmd.AWK, Cmd.SED
+    Cmd.UNZIP, Cmd.ZIP, Cmd.LS, Cmd.SORT, Cmd.WC, Cmd.AWK, Cmd.SED,
+    Cmd.REALPATH
 })
 CROSS_MOUNT_COMMANDS = STREAM_COMMANDS | FANOUT_COMMANDS | RELAY_COMMANDS

@@ -62,8 +62,8 @@ def classify_word(word: str, registry: MountRegistry,
         # `raw_path` keeps the spelling as typed, the way `relative_spec`
         # does: `virtual` has already lost any `..`, and `cd -P` has to
         # resolve the link a `..` follows before applying it. `dotted`
-        # keeps it for the walk that proves each `..` a directory; a
-        # pattern leaves it textual, as its matches are respelled.
+        # keeps it for the walk that proves each `..` a directory, and a
+        # pattern's for the head its listing walks.
         if word_has_glob:
             last_slash = path.rfind("/")
             return PathSpec(
@@ -73,6 +73,7 @@ def classify_word(word: str, registry: MountRegistry,
                 pattern=path[last_slash + 1:],
                 raw_path=word,
                 resolved=False,
+                dotted=dotted_spelling(word),
             )
         if is_dir:
             return PathSpec(virtual=path,

@@ -47,7 +47,7 @@ import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
 import { combinedExit } from '../../commands/builtin/generic/crossmount/fanout/exit.ts'
-import { runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
+import { joinRuns, runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { filenameMode } from '../../commands/builtin/generic/grep.ts'
@@ -475,7 +475,9 @@ export async function fanOutTraversal(
           cwd,
           stdin,
           ...(signal !== undefined ? { signal } : {}),
-          ...(ns === undefined ? {} : { ns }),
+          // The dispatcher's walk crosses every mount itself, so it is
+          // offered no boundary to stop at.
+          ...(ns?.links === undefined ? {} : { ns: { links: ns.links } }),
           dispatch,
         },
         statOp(dispatch),
@@ -734,7 +736,15 @@ export async function fanOutTraversal(
         else first.push(...rows)
       }
       stdout = null
-    } else if (mount === primaryMount && descendantPrefixes.length > 0 && stdout !== null) {
+    } else if (
+      mount === primaryMount &&
+      descendantPrefixes.length > 0 &&
+      stdout !== null &&
+      cmdName !== 'grep' &&
+      cmdName !== 'rg'
+    ) {
+      // grep and rg never walk into a mount below their own
+      // (mountParentReaddir), so there is nothing of theirs to drop.
       stdout = await filterUnderPrefixes(stdout, descendantPrefixes, cmdName)
     }
     if (stdout !== null) {
@@ -801,16 +811,12 @@ export async function fanOutTraversal(
     }
     combined = new TextEncoder().encode(rows.map((p) => p.rawPath || p.virtual).join('\n') + '\n')
   } else if (allStdout.length > 0) {
-    const parts = allStdout.map((d) => {
-      const s = new TextDecoder().decode(d).replace(/\n+$/, '')
-      return s
-    })
     // `ls -R` separates directory groups with a blank line, and a
     // per-mount block is one more group; grep and rg put `--` between one
     // file's context and the next file's; every other format is a plain
     // line stream.
-    const sep = cmdName === 'ls' ? '\n\n' : '\n' + runSeparator(cmdName, flagKwargs)
-    combined = new TextEncoder().encode(parts.filter((s) => s !== '').join(sep) + '\n')
+    const sep = cmdName === 'ls' ? '\n' : runSeparator(cmdName, flagKwargs)
+    combined = joinRuns(allStdout, sep)
   }
   const quiet =
     (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||

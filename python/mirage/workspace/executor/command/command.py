@@ -38,6 +38,7 @@ from mirage.policy.types import HandOff
 from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.job_table import JobTable
 from mirage.types import PathSpec, Producer
 from mirage.workspace.executor.builtins.links import path_stat
@@ -172,13 +173,14 @@ async def handle_command(
     agent_id: str | None = None,
     execute_fn: ExecuteLine | None = None,
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Execute a simple command.
 
     Parts are already classified: strings for text,
     PathSpec for paths. Dispatches to mount.execute_cmd. ``execute_fn``
     runs a line in the session, which is how find's ``-exec`` runs its
-    command.
+    command. ``sink`` is where a function body writes its statements.
     """
     if not parts:
         return None, IOResult(), ExecutionNode(command="", exit_code=0)
@@ -200,7 +202,7 @@ async def handle_command(
     if cmd_name in session.functions:
         return await run_shell_function(execute_node, cmd_name, parts, session,
                                         stdin, call_stack, job_table, agent_id,
-                                        handed, registry.decisions)
+                                        handed, registry.decisions, sink)
 
     # Installed CLIs: dispatch by name, never by operand path. Sits
     # below functions (a user can wrap an installed CLI, bash-style)

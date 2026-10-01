@@ -421,8 +421,7 @@ FRESH_BUDGET = [
     ("for f in /gh/*/*.txt; do echo $f; done", (0, 1, 0)),
     ("x=(/gh/*/*.txt); echo ${x[@]}", (0, 1, 0)),
     ("f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f", (0, 1, 0)),
-    ("select f in /gh/*/*.txt; do break; done </dev/null 2>/dev/null", (0, 1,
-                                                                        0)),
+    ("select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null", (0, 1, 0)),
     ("cp /gh/*/a.txt /r/", (0, 1, 3)),
 ]
 

@@ -299,11 +299,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo x 0>&-; echo code=$?; echo 0 >&-; echo code=$?",
+      "command": "echo x 0>&-; echo code=$?; echo 0 >&-; echo code=$?; { cat; } 0<&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "x\ncode=0\ncode=1\n",
-        "stderr": "echo: write error: Bad file descriptor\n"
+        "stdout": "x\ncode=0\ncode=1\ncode=1\n",
+        "stderr": "echo: write error: Bad file descriptor\ncat: -: Bad file descriptor\n"
       }
     },
     {

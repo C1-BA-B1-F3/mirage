@@ -405,6 +405,9 @@ async function runLine(
     // stdin so `... | command cat` filters the upstream output; the same
     // path carries `echo hi | bash -c 'cat'` into the inner line.
     if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
+    // A line run in place under a sink (eval, source, a nested shell)
+    // writes its statements there as they finish.
+    if (opts.sink !== undefined) innerOpts.sink = opts.sink
     const session = opts.session ?? effectiveSession
     const substitutionTree =
       opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION

@@ -362,15 +362,22 @@ export function getWhileParts(node: TSNodeLike): [TSNodeLike, TSNodeLike[]] {
   return [condition, body]
 }
 
+/**
+ * Get (variable, values, bodyCommands) from for/select. The parser spells a
+ * name the grammar cannot read as `for 0 in NAME`, so that header names NAME.
+ */
 export function getForParts(node: TSNodeLike): [string, TSNodeLike[], TSNodeLike[]] {
   const nc = node.namedChildren
   const first = nc[0]
   const last = nc[nc.length - 1]
   if (first === undefined || last === undefined) throw new Error('for: missing parts')
-  const variable = getText(first)
   const values = nc.slice(1).filter((c) => c.type !== NT.DO_GROUP && c.type !== NT.ERROR)
   const body = [...last.namedChildren]
-  return [variable, values, body]
+  const spelled = values[0]
+  if (getText(first) === '0' && spelled !== undefined && !/^\w+$/.test(getText(spelled))) {
+    return [getText(spelled), values.slice(1), body]
+  }
+  return [getText(first), values, body]
 }
 
 /**
@@ -567,7 +574,7 @@ function parseHerestringRedirect(child: TSNodeLike): Redirect {
   let content = ''
   let targetNode: TSNodeLike | null = null
   for (const candidate of child.namedChildren) {
-    if (TARGET_TYPES.has(candidate.type)) {
+    if (TARGET_TYPES.has(candidate.type) || candidate.type === NT.NUMBER) {
       content = getText(candidate)
       targetNode = candidate
       break
@@ -601,13 +608,21 @@ export function getRedirects(node: TSNodeLike): [TSNodeLike | null, Redirect[]] 
   }
 
   let recoverHerestring = false
-  const commandEnd = command === null ? -1 : command.endIndex
+  let commandEnd = command === null ? -1 : (command.endIndex ?? -1)
   for (let i = command === null ? 0 : 1; i < nc.length; i++) {
     const child = nc[i]
     if (child === undefined) continue
 
     if (child.type === NT.ERROR && getText(child) === '<<') {
       recoverHerestring = true
+      continue
+    }
+    if (child.type === NT.ERROR && /^\d+$/.test(getText(child).trim())) {
+      // After a compound command the grammar reads `0<f` as an error `0`
+      // and an undecorated redirect; the digits touching the operator are
+      // its descriptor (claimedDescriptor).
+      claimed = Number(getText(child))
+      commandEnd = child.endIndex ?? -1
       continue
     }
 
@@ -1026,9 +1041,45 @@ export function getFunctionName(node: TSNodeLike): string {
   return first !== undefined ? getText(first) : ''
 }
 
+/**
+ * Get function body commands: the compound_statement's children, or any
+ * other compound command (`f() ( ... )`) as the one statement. The redirects
+ * a definition carries, its own and those of a statement it is the body of
+ * (`f() { ...; } >o 2>&1`), apply at every call, as bash's do, so then the
+ * body is one statement: the group under them. Mirrors Python's
+ * get_function_body.
+ */
 export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
-  for (const c of node.namedChildren) {
-    if (c.type === NT.COMPOUND_STATEMENT) return [...c.namedChildren]
+  const body =
+    node.childForFieldName?.('body') ??
+    node.namedChildren.find((c) => c.type === NT.COMPOUND_STATEMENT)
+  if (body === undefined) return null
+  const redirects = node.namedChildren.filter((c) => REDIRECT_NODE_TYPES.has(c.type))
+  const outer = node.parent
+  if (
+    outer?.type === NT.REDIRECTED_STATEMENT &&
+    outer.namedChildren[0]?.id !== undefined &&
+    outer.namedChildren[0].id === node.id
+  ) {
+    redirects.push(...outer.namedChildren.slice(1).filter((c) => REDIRECT_NODE_TYPES.has(c.type)))
   }
-  return null
+  if (redirects.length === 0) {
+    return body.type === NT.COMPOUND_STATEMENT ? [...body.namedChildren] : [body]
+  }
+  const parts = [body, ...redirects]
+  return [
+    {
+      type: NT.REDIRECTED_STATEMENT,
+      text: node.text,
+      children: parts,
+      namedChildren: parts,
+      parent: null,
+      nextSibling: null,
+      ...(node.id === undefined ? {} : { id: node.id }),
+      ...(node.startIndex === undefined ? {} : { startIndex: node.startIndex }),
+      ...(node.endIndex === undefined ? {} : { endIndex: node.endIndex }),
+      ...(node.startPosition === undefined ? {} : { startPosition: node.startPosition }),
+      ...(node.endPosition === undefined ? {} : { endPosition: node.endPosition }),
+    },
+  ]
 }

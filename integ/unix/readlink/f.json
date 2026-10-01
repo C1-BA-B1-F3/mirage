@@ -92,10 +92,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/prl3 && printf x>/data/prl3/t.txt && ln -s t.txt /data/prl3/rel && readlink -f /data/prl3/rel",
+      "command": "mkdir -p /data/prl3 && printf x>/data/prl3/t.txt && ln -s t.txt /data/prl3/rel && readlink -f /data/prl3/rel; readlink -f /data/prl3/t.txt/x /data/prl3/rel/; echo rc=$?; readlink -em /data/prl3/no/x",
       "expect": {
         "exit": 0,
-        "stdout": "/data/prl3/t.txt\n",
+        "stdout": "/data/prl3/t.txt\nrc=1\n/data/prl3/no/x\n",
         "stderr": ""
       },
       "flags": [

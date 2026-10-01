@@ -15,15 +15,13 @@
 import logging
 from enum import Enum, auto
 
-from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import reset_redirect_paths, set_redirect_paths
 from mirage.io import IOResult
-from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, DeviceInput
 from mirage.runtime.types import DispatchFn
-from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.bytes import encode_text
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
                                     FD_STDOUT)
 from mirage.shell.descriptors import (bad_descriptor_line, unreadable_stdin,
@@ -31,11 +29,13 @@ from mirage.shell.descriptors import (bad_descriptor_line, unreadable_stdin,
 from mirage.shell.helpers import get_text
 from mirage.shell.types import Redirect, RedirectKind, TSNodeLike
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
+from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins import _to_scope
 from mirage.workspace.executor.builtins.exec.constants import (
     CLOSED, OPEN_FOR_READING, TO_STDERR, TO_STDIN, TO_STDOUT)
+from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.create import create_file
+from mirage.workspace.executor.jobs import drained, pump
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
@@ -135,6 +135,7 @@ async def handle_redirect(
     stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
     capture_input: bool = False,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Handle all redirect patterns: >, >>, <, 2>, 2>&1, &>, >&2, <<<.
 
@@ -171,9 +172,12 @@ async def handle_redirect(
     file their open already created (``echo y > /data/out2 > /nodir/g``
     leaves ``/data/out2`` present and empty).
 
-    Deliberate divergence from bash: when both streams route to the
-    same destination they are concatenated stdout-then-stderr, not
-    temporally interleaved (streams are materialized buffers).
+    The command writes its statements as they finish, so two streams
+    routed to one destination interleave as they were produced, a
+    statement at a time; within one simple command stdout comes first.
+    ``sink`` receives what is routed to the caller's streams in that
+    order; without one it is returned. A ``break``, ``return`` or
+    ``exit`` leaving the command still has its output routed first.
 
     Deliberate divergence from bash: because output files are created
     in a second pass (after the command runs), an output redirect that
@@ -288,12 +292,14 @@ async def handle_redirect(
         return refusal
 
     refused = False
+    unwound: Exception | None = None
+    # The command writes here as it runs, so its stdout and stderr keep
+    # their order through the routing below (`{ a; b >&2; } 2>&1`).
+    recorder = JobConsole()
     if command is None:
         source = inputs[FD_STDIN]
-        stdout_data = await materialize(
-            source
-        ) if capture_input and not isinstance(source, _Unreadable) else b""
-        stderr_data = b""
+        if capture_input and not isinstance(source, _Unreadable):
+            await pump(recorder, Channel.STDOUT, source)
         io = IOResult(exit_code=0)
     else:
         # The expanded targets ride to the command's admission gate: the
@@ -310,30 +316,25 @@ async def handle_redirect(
         session.terminal_output = _terminal_stdout(redirects, session)
         try:
             command_stdin = inputs[FD_STDIN]
-            stdout, io, exec_node = await execute_node(
-                command, session,
-                unreadable_stdin() if isinstance(command_stdin, _Unreadable)
-                else command_stdin, call_stack)
+            _, io, exec_node = await drained(
+                recorder, *await execute_node(
+                    command,
+                    session,
+                    unreadable_stdin() if isinstance(
+                        command_stdin, _Unreadable) else command_stdin,
+                    call_stack,
+                    sink=recorder))
+            refused = exec_node.refused
+        except UNWINDING as sig:
+            # A `break`, `return` or `exit` leaving the command leaves
+            # what it wrote under these redirects: routed, then on.
+            unwound = sig
+            io = IOResult()
         finally:
             session.terminal_output = terminal_output
             reset_redirect_paths(token)
-        refused = exec_node.refused
-        try:
-            barriered = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
-            if isinstance(barriered, memoryview):
-                barriered = bytes(barriered)
-            stdout_data = await materialize(barriered) or b""
-        except FS_ERRORS as exc:
-            # stdin bound to a closed or write-only descriptor fails
-            # only once the command reads it, which is this drain; that
-            # is the command's failure in its own voice (`cat: -: Bad
-            # file descriptor`), and the line goes on.
-            name = exec_node.command.split()[0] if exec_node.command else ""
-            stdout_data = b""
-            io.stderr = ((await materialize(io.stderr) or b"") +
-                         format_fs_error(name, exc, exec_node.paths))
-            io.exit_code = read_fail_exit(name, exc)
-        stderr_data = await materialize(io.stderr) or b""
+    recorded, _, _ = await recorder.read_from(0)
+    chunks = [(chunk.channel, chunk.data) for chunk in recorded]
 
     fds: list[_Fd | str] = [_stdin_dest(session), _TO_STDOUT, _TO_STDERR]
     file_bufs: dict[str, bytearray] = {}
@@ -385,17 +386,17 @@ async def handle_redirect(
         else:
             fds[r.fd] = path
 
-    if fds[FD_STDOUT] is _CLOSED and stdout_data and command is not None:
-        stderr_data += _closed_write_line(command)
+    if (fds[FD_STDOUT] is _CLOSED and command is not None
+            and any(channel == Channel.STDOUT for channel, _ in chunks)):
+        chunks.append((Channel.STDERR, _closed_write_line(command)))
         io.exit_code = 1
-    out_stdout = bytearray()
-    out_stderr = bytearray()
-    for data, dest in ((stdout_data, fds[FD_STDOUT]), (stderr_data,
-                                                       fds[FD_STDERR])):
+    routed: list[tuple[Channel, bytes]] = []
+    for channel, data in chunks:
+        dest = fds[FD_STDOUT if channel == Channel.STDOUT else FD_STDERR]
         if dest is _TO_STDOUT:
-            out_stdout += data
+            routed.append((Channel.STDOUT, data))
         elif dest is _TO_STDERR:
-            out_stderr += data
+            routed.append((Channel.STDERR, data))
         elif isinstance(dest, str):
             file_bufs[dest] += data
 
@@ -419,7 +420,8 @@ async def handle_redirect(
                                   data,
                                   append=path in appends)
             except FS_ERRORS as exc:
-                out_stderr += _redirect_error_line(scope, exc)
+                routed.append(
+                    (Channel.STDERR, _redirect_error_line(scope, exc)))
                 io.exit_code = 1
                 break
             io.writes[path] = data
@@ -427,12 +429,21 @@ async def handle_redirect(
         if write_token is not None:
             reset_redirect_paths(write_token)
 
-    result_stdout = bytes(out_stdout)
-    io.stderr = bytes(out_stderr) if out_stderr else None
+    stdout: bytes | None = None
+    io.stderr = None
+    if sink is not None:
+        for channel, data in routed:
+            await sink.emit(channel, data)
+    else:
+        stdout = b"".join(d for c, d in routed if c == Channel.STDOUT) or None
+        io.stderr = b"".join(d
+                             for c, d in routed if c == Channel.STDERR) or None
+    if unwound is not None:
+        raise await carried(unwound, stdout, IOResult(stderr=io.stderr))
     exec_node = ExecutionNode(command="redirect",
                               exit_code=io.exit_code,
                               refused=refused)
-    return result_stdout if result_stdout else None, io, exec_node
+    return stdout, io, exec_node
 
 
 def _redirect_error_line(scope: PathSpec, exc: OSError) -> bytes:

@@ -37,6 +37,7 @@ from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.exec import (divert_statement,
                                                      stdout_to_stderr)
+from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.jobs import handle_background, pump
 from mirage.workspace.executor.statement import (carry_status, fd0_binding,
                                                  finish_statement,
@@ -187,19 +188,6 @@ async def handle_pipe(
     return last_stdout, last_io, exec_node
 
 
-async def _merge_left_into_exit(
-    sig: ExitSignal,
-    left_bytes: ByteSource | None,
-    left_io: IOResult,
-) -> ExitSignal:
-    """Fold the left side's completed output into a propagating exit."""
-    left_stderr = await materialize(left_io.stderr) or b""
-    left = await materialize(left_bytes) or b""
-    sig.stdout = left + (sig.stdout or b"")
-    sig.stderr = left_stderr + sig.stderr
-    return sig
-
-
 async def handle_connection(
     execute_node,
     left: TSNodeLike,
@@ -230,8 +218,8 @@ async def handle_connection(
             right_stdout, right_io, right_exec = (await execute_node(
                 right, session, statement_stdin(session, stdin, bound),
                 call_stack))
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
+        except UNWINDING as sig:
+            raise await carried(sig, left_bytes, left_io)
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
@@ -251,8 +239,8 @@ async def handle_connection(
             right_stdout, right_io, right_exec = (await execute_node(
                 right, session, statement_stdin(session, stdin, bound),
                 call_stack))
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
+        except UNWINDING as sig:
+            raise await carried(sig, left_bytes, left_io)
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
@@ -266,8 +254,8 @@ async def handle_connection(
     try:
         right_stdout, right_io, right_exec = await execute_node(
             right, session, statement_stdin(session, stdin, bound), call_stack)
-    except ExitSignal as sig:
-        raise await _merge_left_into_exit(sig, left_bytes, left_io)
+    except UNWINDING as sig:
+        raise await carried(sig, left_bytes, left_io)
     children.append(right_exec)
     # Materialize right side to match && and || behavior, ensuring
     # lazy exit codes (e.g. from exit_on_empty) are finalized before

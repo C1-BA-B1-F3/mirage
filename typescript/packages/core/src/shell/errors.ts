@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { ByteSource } from '../io/types.ts'
 import type { ArithWrite } from './types.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
@@ -83,14 +84,24 @@ export class UnboundVariable extends ExitSignal {
   }
 }
 
+/**
+ * `return` unwinding to the function or sourced file it ends; `stdout` is the
+ * output the constructs it left had produced before it.
+ */
 export class ReturnSignal extends Error {
   readonly exitCode: number
   readonly stderr: Uint8Array
-  constructor(exitCode: number, stderr: Uint8Array = new Uint8Array()) {
+  readonly stdout: ByteSource | null
+  constructor(
+    exitCode: number,
+    stderr: Uint8Array = new Uint8Array(),
+    stdout: ByteSource | null = null,
+  ) {
     super('return')
     this.name = 'ReturnSignal'
     this.exitCode = exitCode
     this.stderr = stderr
+    this.stdout = stdout
   }
 }
 

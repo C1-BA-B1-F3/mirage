@@ -118,6 +118,58 @@ def _stray_case_terminator(node: TSNodeLike) -> str | None:
     return None
 
 
+_BODY_OPENERS = ("do", "{", "then", "else")
+_BODY_CLOSERS = ("done", "}", "fi", "elif", "else")
+
+
+def _empty_compound(node: TSNodeLike) -> str | None:
+    """The token closing a compound list that holds no command.
+
+    bash requires a command in every ``do``, ``then``, ``else`` and brace
+    body (5.2: ``for x in a; do done`` is a syntax error near ``done``);
+    the grammar accepts an empty one, comments aside.
+
+    Args:
+        node (TSNodeLike): root node from parse().
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        stack.extend(current.children)
+        if current.type not in ("do_group", "compound_statement",
+                                "if_statement"):
+            continue
+        opened = False
+        for kid in (token for child in current.children
+                    for token in (child.children if child.type in (
+                        "elif_clause", "else_clause") else [child])):
+            if opened and kid.type in _BODY_CLOSERS:
+                return (kid.text or b"").decode(errors="replace")
+            if kid.type in _BODY_OPENERS:
+                opened = True
+            elif kid.is_named and kid.type != "comment":
+                opened = False
+    return None
+
+
+def _descriptor_digits(node: TSNodeLike, error: TSNodeLike) -> bool:
+    """Whether an error is the descriptor of the redirect it touches.
+
+    After a compound command the grammar reads ``0<f`` as an error ``0``
+    and an undecorated redirect, where bash reads the digits touching
+    the operator as the descriptor (``get_redirects`` claims them).
+
+    Args:
+        node (TSNodeLike): the error's parent.
+        error (TSNodeLike): the ERROR child.
+    """
+    after = error.next_sibling
+    return (node.type == "redirected_statement"
+            and (error.text or b"").strip().isdigit() and after is not None
+            and after.type == "file_redirect"
+            and after.start_byte == error.end_byte)
+
+
 def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
     yield node
     for child in node.named_children:
@@ -184,6 +236,9 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     stray = _stray_case_terminator(node)
     if stray is not None:
         return stray
+    empty = _empty_compound(node)
+    if empty is not None:
+        return empty
     if not node.has_error:
         return find_unterminated_quote(node)
     previous = None
@@ -200,7 +255,8 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
             return text.decode(errors="replace") if text else ""
         if (child.type == "ERROR" and _is_structural_error(child)
                 and not (node.type == "for_statement" and
-                         (child.text or b"").strip() == b"in")):
+                         (child.text or b"").strip() == b"in")
+                and not _descriptor_digits(node, child)):
             if _is_recovered_quoted_heredoc_end(previous, child):
                 previous = child
                 continue

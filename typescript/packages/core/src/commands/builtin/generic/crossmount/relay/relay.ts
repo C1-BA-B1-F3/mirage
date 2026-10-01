@@ -29,6 +29,9 @@ import { runTar } from './tar.ts'
 import { runUnzip } from './unzip.ts'
 import { runWc } from './wc.ts'
 import { runZip } from './zip_cmd.ts'
+import { doorStat, parseFlags, realpath } from '../../realpath.ts'
+import { linkFollow } from '../../../utils/paths.ts'
+import { flatten } from '../utils.ts'
 import { Cmd, type CrossResult, type DispatchFn, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import type { NamespaceView, SessionView } from '../../../../../ops/types.ts'
@@ -79,5 +82,14 @@ export async function runRelay(
   if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns, stdin)
   if (cmdName === Cmd.UNZIP) return runUnzip(scopes, textArgs, flagKwargs, dispatch)
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
+  if (cmdName === Cmd.REALPATH) {
+    return realpath(
+      flatten(scopes),
+      doorStat(dispatch),
+      cwd,
+      linkFollow(ns?.links),
+      parseFlags(flagKwargs),
+    )
+  }
   return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)
 }

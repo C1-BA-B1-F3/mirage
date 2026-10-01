@@ -252,6 +252,18 @@ async def _read_raw(
     return text, complete
 
 
+async def read_reply(buffer: AsyncLineIterator) -> str | None:
+    """One line as a bare `read` stores it in REPLY: backslashes
+    processed, a continuation joined, nothing split off; None at end of
+    input. `select` takes its choice this way (bash calls this builtin).
+
+    Args:
+        buffer (AsyncLineIterator): the input's line reader.
+    """
+    line, complete = await _read_raw(buffer, False, b"\n", None, None)
+    return _unescape_read(line) if complete else None
+
+
 async def handle_read(
     args: list[str],
     session: SessionState,
@@ -363,7 +375,8 @@ async def handle_read(
         code = 0 if complete else 1
         return None, IOResult(exit_code=code), ExecutionNode(command="read",
                                                              exit_code=code)
-    if exact is not None:
+    # With no name the line goes to REPLY whole, its blanks kept.
+    if exact is not None or not parse.operands:
         parts = [line]
     else:
         parts = _split_read_line(line, ifs, len(variables))

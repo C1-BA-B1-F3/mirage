@@ -188,6 +188,8 @@ async def _run_program(
                 # signal belongs to an enclosing function call.
                 if session.source_depth <= 0:
                     raise
+                if sig.stdout is not None:
+                    all_stdout.append(sig.stdout)
                 if sig.stderr:
                     merged_io = await merged_io.merge(
                         IOResult(stderr=sig.stderr))

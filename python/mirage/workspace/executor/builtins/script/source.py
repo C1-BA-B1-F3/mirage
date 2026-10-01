@@ -19,6 +19,7 @@ from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.types import PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.scope import _scope_path
@@ -40,6 +41,7 @@ async def handle_source(
     args: list[str] | None = None,
     stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Read a script file and execute it in the calling shell.
 
@@ -63,6 +65,8 @@ async def handle_source(
         call_stack (CallStack | None): function-call scope, if any; a
             file sourced inside a function sees the function's
             parameters.
+        sink (JobConsole | None): where the script's statements write as
+            they finish, None to return them.
     """
     raw = _scope_path(path)
     if word_text(path) == "":
@@ -87,7 +91,8 @@ async def handle_source(
     try:
         io = await execute_fn(script,
                               session_id=session.session_id,
-                              stdin=stdin)
+                              stdin=stdin,
+                              sink=sink)
     finally:
         session.source_depth -= 1
         scoped = session.positional_args
@@ -113,4 +118,4 @@ async def source_builtin(call: BuiltinCall) -> Result:
     return await handle_source(call.dispatch, call.execute_fn, operands[0],
                                call.session,
                                [word_text(o) for o in operands[1:]],
-                               call.stdin, call.call_stack)
+                               call.stdin, call.call_stack, call.sink)

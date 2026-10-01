@@ -61,6 +61,7 @@ export const RELAY_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.WC,
   Cmd.AWK,
   Cmd.SED,
+  Cmd.REALPATH,
 ])
 export const CROSS_MOUNT_COMMANDS: ReadonlySet<string> = new Set([
   ...STREAM_COMMANDS,

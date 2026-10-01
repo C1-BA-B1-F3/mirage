@@ -21,6 +21,7 @@ from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.workspace.expand.argv import Argv
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
@@ -56,6 +57,9 @@ class BuiltinCall:
         namespace (Namespace): the name plane (links, node table).
         execute_fn (Callable[..., Any]): runs a text line in this
             session (``eval``, ``source``, ``xargs``, ...).
+        sink (JobConsole | None): where a line the builtin runs in
+            place (``eval``, ``source``, a nested shell) writes its
+            statements as they finish, None to return them.
     """
     argv: Argv
     session: SessionState
@@ -67,6 +71,7 @@ class BuiltinCall:
     registry: MountRegistry
     namespace: Namespace
     execute_fn: Callable[..., Any]
+    sink: JobConsole | None = None
 
 
 BuiltinFn = Callable[[BuiltinCall], Awaitable[Result]]

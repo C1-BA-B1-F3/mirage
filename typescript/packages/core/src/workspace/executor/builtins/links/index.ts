@@ -21,7 +21,7 @@ export {
   settleMoves,
   stripLinkOperands,
 } from './links.ts'
-export { handleLn } from './ln.ts'
+export { handleLn, operandAbs } from './ln.ts'
 export {
   linkTargetStat,
   resolveLink,

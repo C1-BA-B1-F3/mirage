@@ -214,7 +214,9 @@ async def expand_argv(
     # touching backends.
     glob_opts = glob_options(session)
     if (not refused and (policy is WordPolicy.SHELL or glob_opts.needs_shell
-                         or scopes_paths(session.commands, name))):
+                         or scopes_paths(session.commands, name) or any(
+                             isinstance(w, PathSpec) and w.pattern and w.dotted
+                             for w in classified))):
         # A backend's resolve_glob speaks bash's defaults only, so a
         # session that turned on nullglob, failglob or globstar has its
         # mount-command globs expanded here too, and the command receives
@@ -222,7 +224,8 @@ async def expand_argv(
         # command a path-scoped rule names: the admission gate reads the
         # words before the backend would resolve them, and a pattern
         # that only later matches under the rule's path would pass a
-        # gate its matches fail.
+        # gate its matches fail. And so does a pattern that walks a `.`
+        # or `..`, which no backend key holds.
         words = await resolve_globs(classified,
                                     registry,
                                     links=namespace,

@@ -19,7 +19,7 @@ import { ARITH_OPEN_TOKEN, QUOTES, VERBATIM_TYPES } from './constants.ts'
 import { expansionSource } from './expansion.ts'
 import { heredocOperators, protectedSource, sameShape } from './heredoc/index.ts'
 import { lowerTiming, wrapTiming, type TimingMark } from './timing.ts'
-import { discoverHeredocs } from './heredoc/reader.ts'
+import { delimiterEnd, discoverHeredocs } from './heredoc/reader.ts'
 import { dropChars, dropSourceChars, lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
 import { HeredocNode } from './heredoc/node.ts'
 import type { ShellNode } from '../types.ts'
@@ -285,6 +285,63 @@ function repairRedirectDashes(parser: Parser, root: Node, text: string): [Node, 
   return retried.hasError ? [root, text] : [retried, repaired]
 }
 
+const NAME = /^\w+$/
+const FOLLOWER = /^\s*(in|do)(?![^\s;&|()<>])/
+
+function headerInserts(root: Node, text: string): [number, string][] {
+  const heads: number[] = []
+  const stack = [root]
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    stack.push(...node.children)
+    if (node.type !== 'for_statement' && node.type !== 'ERROR') continue
+    for (const kid of node.children) {
+      if (kid.type === 'for' || kid.type === 'select') heads.push(kid.endIndex)
+    }
+  }
+  const inserts: [number, string][] = []
+  for (const head of heads) {
+    const start = text.length - text.slice(head).replace(/^[ \t]+/, '').length
+    const end = delimiterEnd(text, start) ?? start
+    const word = FOLLOWER.exec(text.slice(end))?.[1]
+    const named = NAME.test(text.slice(start, end))
+    if (end === start || (named && word === 'in')) continue
+    const tail = word === 'do' ? ';' : ''
+    if (named) inserts.push([end, ` in "$@"${tail}`])
+    else inserts.push([start, '0 in '], [end, tail])
+  }
+  return inserts
+}
+
+function repairForHeaders(parser: Parser, root: Node, text: string): [Node, string] {
+  // bash reads any word as a for or select name and checks it when the loop
+  // runs (`x-y': not a valid identifier), and gives a header with no `in` the
+  // list `"$@"` (make_for_command; `declare -f` prints it), POSIX allowing
+  // `for f do`. The grammar takes neither, so a name it cannot read is spelled
+  // `for 0 in NAME` (getForParts reads it back) and a missing list is
+  // inserted. Error recovery hides a nested header until the outer one
+  // parses, so this repeats. A line may already hold an unrelated error
+  // (`done <<< 1`), so a repair only has to add none.
+  let [repaired, retried] = [text, root]
+  for (let inserts = headerInserts(root, text); inserts.length > 0; ) {
+    for (const [offset, insert] of inserts.sort((a, b) => b[0] - a[0])) {
+      repaired = repaired.slice(0, offset) + insert + repaired.slice(offset)
+    }
+    retried = parseProtected(parser, repaired)
+    inserts = headerInserts(retried, repaired)
+  }
+  return retried === root || errors(retried) > errors(root) ? [root, text] : [retried, repaired]
+}
+
+function errors(root: Node): number {
+  let count = 0
+  const stack = [root]
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    stack.push(...node.children)
+    if (node.isError || node.isMissing) count += 1
+  }
+  return count
+}
+
 // `Parser.init` boots one wasm module for the whole process, so two callers
 // that start at the same time used to race it: the second read the language
 // out of a half-built module and threw "Incompatible language version 0".
@@ -403,6 +460,9 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
         }
       }
       ;[root, text] = repairRedirectDashes(parser, root, text)
+      if (text.includes('for') || text.includes('select')) {
+        ;[root, text] = repairForHeaders(parser, root, text)
+      }
       if (text.includes('$')) {
         root = repairOrphanedDollars(parser, root, text)
       }

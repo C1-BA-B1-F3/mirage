@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "f() { return x; }; f 2>&1; echo code=$?",
+      "command": "f() { return x; }; f 2>&1; echo code=$?; (g() { if true; then echo early; return 3; fi; echo no; }; g; echo code=$?; h() { for i in 1; do echo loop; return 4; done; }; x=$(h); echo \"[$x] $?\")",
       "expect": {
         "exit": 0,
-        "stdout": "return: x: numeric argument required\ncode=2\n",
+        "stdout": "return: x: numeric argument required\ncode=2\nearly\ncode=3\n[loop] 4\n",
         "stderr": ""
       }
     }

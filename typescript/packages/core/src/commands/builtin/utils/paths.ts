@@ -146,17 +146,26 @@ function spells(
   const spelled = resolvePath(dotted, '/')
   if (spelled === virtual) return true
   if (follow === null) return false
-  const cut = spelled.lastIndexOf('/')
-  const head = spelled.slice(0, cut)
-  const name = spelled.slice(cut + 1)
+  const trimmed = rstripSlash(dotted)
+  const cut = trimmed.lastIndexOf('/')
+  const head = trimmed.slice(0, cut)
+  const name = trimmed.slice(cut + 1)
   try {
-    const whole = follow(spelled)
+    const whole = follow(dotted)
     const above = follow(head === '' ? '/' : head)
-    return virtual === whole || virtual === `${rstripSlash(above)}/${name}`
+    return virtual === whole || virtual === resolvePath(`${rstripSlash(above)}/${name}`, '/')
   } catch (err) {
     if (err instanceof CycleError) return false
     throw err
   }
+}
+
+/** The typed spelling, links before `..`, while it names the path. Mirrors
+ * Python's walk_spelling. */
+export function walkSpelling(path: PathSpec, follow: ((path: string) => string) | null): string {
+  const dotted = path.dotted
+  if (dotted !== null && spells(dotted, path.virtual, follow)) return dotted
+  return path.virtual
 }
 
 /**
@@ -168,10 +177,8 @@ function spells(
  * in `virtual` reached `f` regardless. Each name in front of a dot is proved
  * a directory, in walk order, and one that is not is judged by its chain the
  * way a create is, so a miss under a plain file is ENOTDIR on every store.
- * `..` itself stays textual: `link/..` is the link's parent, the logical
- * reading bash's `cd` gives it, where GNU's file commands would reach the
- * target's (a documented divergence: resolved physically, an operand would
- * part from every path a walker derives from it).
+ * A link in front of a dot is followed first, as the kernel walks (only
+ * bash's `cd` reads `link/..` logically).
  *
  * Only the path the spelling names is walked: a path derived from it (a
  * child a walker builds, a respelled match) carries the field along but no
@@ -188,7 +195,14 @@ export async function dotRefusal(
   const dotted = path.dotted
   if (dotted === null || !spells(dotted, path.virtual, follow)) return null
   const proved: string[] = []
-  for (const prefix of dotPrefixes(dotted)) {
+  let prefixes: string[]
+  try {
+    prefixes = dotPrefixes(dotted, follow)
+  } catch (err) {
+    if (err instanceof CycleError) return dotWalkError(path, 'ELOOP')
+    throw err
+  }
+  for (const prefix of prefixes) {
     if (proved.some((done) => done.startsWith(`${prefix}/`))) continue
     const spec = PathSpec.fromStrPath(prefix)
     const { exists, isDir } = await entryKind(stat, spec)

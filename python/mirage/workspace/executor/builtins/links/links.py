@@ -17,7 +17,7 @@ import posixpath
 from functools import partial
 
 from mirage.commands.builtin.generic.cp import dest_kind
-from mirage.commands.builtin.utils.paths import dispatch_stat
+from mirage.commands.builtin.utils.paths import dispatch_stat, walk_spelling
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
@@ -98,9 +98,10 @@ def follow_paths(
             out.append(item)
             continue
         last = follow_last or (slash_follows and item.raw_path.endswith("/"))
+        spelled = walk_spelling(item, namespace.follow)
         try:
-            followed = (namespace.follow(item.virtual)
-                        if last else follow_parent(namespace, item.virtual))
+            followed = (namespace.follow(spelled) if last else follow_parent(
+                namespace, spelled))
         except CycleError:
             out.append(dataclasses.replace(item, walk_error="ELOOP"))
             continue

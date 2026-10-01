@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+
 import tree_sitter
 import tree_sitter_bash
 
@@ -25,7 +27,7 @@ from mirage.shell.parse.heredoc.constants import BACKSLASH
 from mirage.shell.parse.heredoc.lower import (drop_bytes, drop_source_bytes,
                                               lower_heredocs, rebase_source)
 from mirage.shell.parse.heredoc.node import HeredocNode
-from mirage.shell.parse.heredoc.reader import discover_heredocs
+from mirage.shell.parse.heredoc.reader import delimiter_end, discover_heredocs
 from mirage.shell.parse.heredoc.types import HeredocSource
 from mirage.shell.parse.timing import lower_timing, wrap_timing
 from mirage.shell.types import TSNodeLike
@@ -315,6 +317,64 @@ def _repair_redirect_dashes(root: tree_sitter.Node,
     return (root, data) if retried.has_error else (retried, repaired)
 
 
+_NAME = re.compile(rb"\w+")
+_FOLLOWER = re.compile(rb"\s*(in|do)(?![^\s;&|()<>])")
+
+
+def _header_inserts(root: tree_sitter.Node,
+                    data: bytes) -> list[tuple[int, bytes]]:
+    heads: list[int] = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type in ("for_statement", "ERROR"):
+            heads.extend(kid.end_byte for kid in node.children
+                         if kid.type in ("for", "select"))
+    inserts: list[tuple[int, bytes]] = []
+    for head in heads:
+        start = len(data) - len(data[head:].lstrip(b" \t"))
+        end = delimiter_end(data, start) or start
+        follower = _FOLLOWER.match(data, end)
+        word = follower.group(1) if follower else None
+        named = _NAME.fullmatch(data, start, end) is not None
+        if end == start or named and word == b"in":
+            continue
+        tail = b";" if word == b"do" else b""
+        inserts += ([(end, b' in "$@"' + tail)] if named else [(start,
+                                                                b"0 in "),
+                                                               (end, tail)])
+    return inserts
+
+
+def _repair_for_headers(root: tree_sitter.Node,
+                        data: bytes) -> tuple[tree_sitter.Node, bytes]:
+    # bash reads any word as a for or select name and checks it when the
+    # loop runs (`x-y': not a valid identifier), and gives a header with
+    # no `in` the list `"$@"` (make_for_command; `declare -f` prints it),
+    # POSIX allowing `for f do`. The grammar takes neither, so a name it
+    # cannot read is spelled `for 0 in NAME` (get_for_parts reads it back)
+    # and a missing list is inserted. Error recovery hides a nested header
+    # until the outer one parses, so this repeats. A line may already hold
+    # an unrelated error (`done <<< 1`), so a repair only has to add none.
+    repaired, retried = data, root
+    while inserts := _header_inserts(retried, repaired):
+        for offset, text in sorted(inserts, reverse=True):
+            repaired = repaired[:offset] + text + repaired[offset:]
+        retried = _parse_bytes(repaired)
+    clean = retried is not root and _errors(retried) <= _errors(root)
+    return (retried, repaired) if clean else (root, data)
+
+
+def _errors(root: tree_sitter.Node) -> int:
+    stack, count = [root], 0
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        count += node.is_error or node.is_missing
+    return count
+
+
 def _statement_boundaries(data: bytes) -> bytes:
     """Make newlines swallowed between command words explicit separators.
 
@@ -418,6 +478,8 @@ def parse(command: str) -> TSNodeLike:
                 root = retried
                 data = retried_data
     root, data = _repair_redirect_dashes(root, data)
+    if b"for" in data or b"select" in data:
+        root, data = _repair_for_headers(root, data)
     if b"$" in data:
         root = _repair_orphaned_dollars(root, data)
     if source is None:

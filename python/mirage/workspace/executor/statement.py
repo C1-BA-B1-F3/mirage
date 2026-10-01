@@ -183,17 +183,32 @@ async def finish_statement(
     try:
         result = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
     except OSError as exc:
-        command = exec_node.command if exec_node is not None else ""
-        cmd_name = command.split()[0] if command else ""
-        paths = exec_node.paths if exec_node is not None else []
-        existing = await materialize(io.stderr) or b""
-        io.stderr = existing + format_fs_error(cmd_name, exc, paths)
-        io.exit_code = read_fail_exit(cmd_name, exc)
+        await failed_read(io, exc, exec_node)
         result = None
     record_status(session,
                   io.exit_code,
                   transparent=node is not None and pipeline_transparent(node))
     return result
+
+
+async def failed_read(io: IOResult, exc: OSError,
+                      exec_node: ExecutionNode | None) -> None:
+    """A read the statement's output stream failed, as its own failure:
+    ``cat: -: Bad file descriptor`` on its stderr and status.
+
+    Args:
+        io (IOResult): the statement's result, amended in place.
+        exc (OSError): what the read raised.
+        exec_node (ExecutionNode | None): the statement's record, whose
+            command names the failure and whose operands respell its
+            path as typed.
+    """
+    command = exec_node.command if exec_node is not None else ""
+    cmd_name = command.split()[0] if command else ""
+    paths = exec_node.paths if exec_node is not None else []
+    existing = await materialize(io.stderr) or b""
+    io.stderr = existing + format_fs_error(cmd_name, exc, paths)
+    io.exit_code = read_fail_exit(cmd_name, exc)
 
 
 def fd0_binding(session: SessionState) -> tuple[SharedInput | None, bool]:

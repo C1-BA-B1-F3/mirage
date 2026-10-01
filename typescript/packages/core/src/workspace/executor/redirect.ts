@@ -13,14 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { runWithRedirectPaths } from '../../context/session_context.ts'
-import { formatFsError, fsStrerror, isFsError } from '../../utils/errors.ts'
-import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { concatBytes } from '../../core/jq/format.ts'
+import { fsStrerror, isFsError } from '../../utils/errors.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
-import { DeviceInput, IOResult, materialize } from '../../io/types.ts'
-import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
+import { DeviceInput, IOResult } from '../../io/types.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN, FD_STDOUT } from '../../shell/constants.ts'
@@ -44,7 +41,9 @@ import {
   TO_STDIN as EXEC_TO_STDIN,
   TO_STDOUT as EXEC_TO_STDOUT,
 } from './builtins/exec/constants.ts'
-import type { ExecuteNodeFn } from './jobs.ts'
+import { drained, type ExecuteNodeFn, pump } from './jobs.ts'
+import { carried, isUnwinding, type Unwinding } from './control.ts'
+import { Channel, JobConsole } from '../../shell/console/index.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -87,9 +86,12 @@ type FdDest = typeof TO_STDOUT | typeof TO_STDERR | typeof CLOSED | string
  * open already created (`echo y > /data/out2 > /nodir/g` leaves `/data/out2`
  * present and empty).
  *
- * Deliberate divergence from bash: when both streams route to the same
- * destination they are concatenated stdout-then-stderr, not temporally
- * interleaved (streams are materialized buffers).
+ * The command writes its statements as they finish, so two streams routed to
+ * one destination interleave as they were produced, a statement at a time;
+ * within one simple command stdout comes first. `sink` receives what is
+ * routed to the caller's streams in that order; without one it is returned.
+ * A `break`, `return` or `exit` leaving the command still has its output
+ * routed first.
  *
  * Deliberate divergence from bash: because output files are created in a
  * second pass (after the command runs), an output redirect that precedes a
@@ -122,6 +124,7 @@ export async function handleRedirect(
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
   captureInput = false,
+  sink?: JobConsole,
 ): Promise<Result> {
   const badFd = unsupportedDescriptor(redirects)
   for (const r of redirects) {
@@ -230,15 +233,15 @@ export async function handleRedirect(
   const barred = await openRefusal(dispatch, session, redirects)
   if (barred !== null) return barred
 
-  let stdoutData: Uint8Array
-  let stderrData: Uint8Array
   let io: IOResult
   let refused = false
+  let unwound: Unwinding | null = null
+  // The command writes here as it runs, so its stdout and stderr keep their
+  // order through the routing below (`{ a; b >&2; } 2>&1`).
+  const recorder = new JobConsole()
   if (command === null) {
     const source = inputs[0]
-    stdoutData =
-      captureInput && source !== UNREADABLE ? await materialize(source) : new Uint8Array()
-    stderrData = new Uint8Array()
+    if (captureInput && source !== UNREADABLE) await pump(recorder, Channel.STDOUT, source ?? null)
     io = new IOResult({ exitCode: 0 })
   } else {
     // The expanded targets ride to the command's admission gate: the
@@ -258,37 +261,27 @@ export async function handleRedirect(
     const commandStdin = given === UNREADABLE ? unreadableStdin() : given
     const terminalOutput = session.terminalOutput
     session.terminalOutput = terminalStdout(redirects, session)
-    let result: Result
     try {
-      result = await runWithRedirectPaths(command, targets, () =>
-        executeNode(command, session, commandStdin, callStack),
+      const [, execIo, execNode] = await drained(
+        recorder,
+        ...(await runWithRedirectPaths(command, targets, () =>
+          executeNode(command, session, commandStdin, callStack, { sink: recorder }),
+        )),
       )
+      io = execIo
+      refused = execNode.refused
+    } catch (err) {
+      // A `break`, `return` or `exit` leaving the command leaves what it
+      // wrote under these redirects: routed, then on.
+      if (!isUnwinding(err)) throw err
+      unwound = err
+      io = new IOResult()
     } finally {
       session.terminalOutput = terminalOutput
     }
-    const [stdout, execIo, execNode] = result
-    io = execIo
-    refused = execNode.refused
-    try {
-      stdoutData =
-        ((await applyBarrier(stdout, io, BarrierPolicy.VALUE)) as Uint8Array | null) ??
-        new Uint8Array()
-    } catch (err) {
-      if (!isFsError(err)) throw err
-      // stdin bound to a closed or write-only descriptor fails only once
-      // the command reads it, which is this drain; that is the command's
-      // failure in its own voice (`cat: -: Bad file descriptor`), and the
-      // line goes on.
-      const name = (execNode.command ?? '').split(' ')[0] ?? ''
-      stdoutData = new Uint8Array()
-      io.stderr = concatBytes([
-        await materialize(io.stderr),
-        formatFsError(name, err, execNode.paths),
-      ])
-      io.exitCode = readFailExitCode(name, err)
-    }
-    stderrData = await materialize(io.stderr)
   }
+  const [recorded] = await recorder.readFrom(0)
+  const chunks: [Channel, Uint8Array][] = recorded.map((c) => [c.channel, c.data])
 
   const fds: FdDest[] = [stdinDest(session), TO_STDOUT, TO_STDERR]
   const fileBufs = new Map<string, Uint8Array>()
@@ -350,21 +343,20 @@ export async function handleRedirect(
     }
   }
 
-  if (fds[FD_STDOUT] === CLOSED && stdoutData.byteLength > 0 && command !== null) {
-    stderrData = concat([stderrData, closedWriteLine(command)])
+  if (
+    fds[FD_STDOUT] === CLOSED &&
+    command !== null &&
+    chunks.some(([channel]) => channel === Channel.STDOUT)
+  ) {
+    chunks.push([Channel.STDERR, closedWriteLine(command)])
     io.exitCode = 1
   }
-  let outStdout: Uint8Array = new Uint8Array()
-  let outStderr: Uint8Array = new Uint8Array()
-  for (const [data, dest] of [
-    [stdoutData, fds[FD_STDOUT]],
-    [stderrData, fds[FD_STDERR]],
-  ] as [Uint8Array, FdDest][]) {
-    if (dest === TO_STDOUT) {
-      outStdout = concat([outStdout, data])
-    } else if (dest === TO_STDERR) {
-      outStderr = concat([outStderr, data])
-    } else if (dest !== CLOSED) {
+  const routed: [Channel, Uint8Array][] = []
+  for (const [channel, data] of chunks) {
+    const dest = fds[channel === Channel.STDOUT ? FD_STDOUT : FD_STDERR]
+    if (dest === TO_STDOUT) routed.push([Channel.STDOUT, data])
+    else if (dest === TO_STDERR) routed.push([Channel.STDERR, data])
+    else if (typeof dest === 'string') {
       fileBufs.set(dest, concat([fileBufs.get(dest) ?? new Uint8Array(), data]))
     }
   }
@@ -378,7 +370,7 @@ export async function handleRedirect(
         io.writes[path] = data
       } catch (err) {
         if (!isFsError(err)) throw err
-        outStderr = concat([outStderr, redirectErrorLine(scope, err)])
+        routed.push([Channel.STDERR, redirectErrorLine(scope, err)])
         io.exitCode = 1
         break
       }
@@ -394,10 +386,21 @@ export async function handleRedirect(
   if (command === null) await writeFiles()
   else await runWithRedirectPaths(command, [...fileScopes.values()], writeFiles)
 
-  io.stderr = outStderr.byteLength > 0 ? outStderr : null
+  let stdout: Uint8Array | null = null
+  io.stderr = null
+  if (sink !== undefined) {
+    for (const [channel, data] of routed) await sink.emit(channel, data)
+  } else {
+    const joined = (channel: Channel): Uint8Array | null => {
+      const out = concat(routed.filter(([c]) => c === channel).map(([, d]) => d))
+      return out.byteLength > 0 ? out : null
+    }
+    stdout = joined(Channel.STDOUT)
+    io.stderr = joined(Channel.STDERR)
+  }
+  if (unwound !== null) throw await carried(unwound, stdout, new IOResult({ stderr: io.stderr }))
   const execNode = new ExecutionNode({ command: 'redirect', exitCode: io.exitCode, refused })
-  const outSource: ByteSource | null = outStdout.byteLength > 0 ? outStdout : null
-  return [outSource, io, execNode]
+  return [stdout, io, execNode]
 }
 
 /**

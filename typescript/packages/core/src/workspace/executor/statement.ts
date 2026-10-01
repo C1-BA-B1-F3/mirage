@@ -152,19 +152,32 @@ export async function finishStatement(
   try {
     result = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
   } catch (err) {
-    if (!(err instanceof Error) || (err as { code?: string }).code === undefined) throw err
-    const cmdName = execNode?.command?.split(' ')[0] ?? ''
-    const existing = await materialize(io.stderr)
-    const added = formatFsError(cmdName, err, execNode?.paths ?? [])
-    const merged = new Uint8Array(existing.byteLength + added.byteLength)
-    merged.set(existing, 0)
-    merged.set(added, existing.byteLength)
-    io.stderr = merged
-    io.exitCode = readFailExitCode(cmdName, err)
+    await failedRead(io, err, execNode)
     result = null
   }
   recordStatus(session, io.exitCode, node !== null && pipelineTransparent(node))
   return result
+}
+
+/**
+ * A read the statement's output stream failed, as its own failure: `cat: -:
+ * Bad file descriptor` on its stderr and status. Anything but a filesystem
+ * error is rethrown. Mirrors Python's failed_read.
+ */
+export async function failedRead(
+  io: IOResult,
+  err: unknown,
+  execNode: ExecutionNode | null,
+): Promise<void> {
+  if (!(err instanceof Error) || (err as { code?: string }).code === undefined) throw err
+  const cmdName = execNode?.command?.split(' ')[0] ?? ''
+  const existing = await materialize(io.stderr)
+  const added = formatFsError(cmdName, err, execNode?.paths ?? [])
+  const merged = new Uint8Array(existing.byteLength + added.byteLength)
+  merged.set(existing, 0)
+  merged.set(added, existing.byteLength)
+  io.stderr = merged
+  io.exitCode = readFailExitCode(cmdName, err)
 }
 
 /**

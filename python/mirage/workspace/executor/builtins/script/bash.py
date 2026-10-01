@@ -20,6 +20,7 @@ from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.console import JobConsole
 from mirage.shell.constants import IFS_DEFAULT
 from mirage.shell.options import parse_option_word
 from mirage.workspace.executor.builtins.script.constants import (
@@ -94,6 +95,7 @@ async def handle_bash(
     session: SessionState,
     stdin: ByteSource | None = None,
     name: str = "bash",
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run a nested shell: inline text from ``-c``, or a script file.
 
@@ -114,6 +116,8 @@ async def handle_bash(
         name (str): the head word (``bash`` or ``sh``). bash reports
             itself by ``argv[0]``, so the diagnostics follow the spelling
             the caller used.
+        sink (JobConsole | None): where the program's statements write
+            as they finish, None to return them.
     """
     parsed = parse_bash_args(args)
     if parsed.invalid is not None:
@@ -161,7 +165,8 @@ async def handle_bash(
     try:
         io = await execute_fn(script,
                               session_id=session.session_id,
-                              stdin=stdin)
+                              stdin=stdin,
+                              sink=sink)
     finally:
         reset_program_invocation(token)
         session.restore(saved)
@@ -178,4 +183,4 @@ async def bash_builtin(call: BuiltinCall) -> Result:
     """
     return await handle_bash(call.dispatch, call.execute_fn,
                              list(call.argv.args), call.session, call.stdin,
-                             str(call.argv.name))
+                             str(call.argv.name), call.sink)

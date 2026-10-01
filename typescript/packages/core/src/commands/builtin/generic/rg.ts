@@ -638,7 +638,8 @@ export async function rgGeneric(
   }
   const [first = STDIN_OPERAND] = paths
   const mounts = opts.ns?.mounts
-  const rd = mountParentReaddir((p: string) => readdir(makeSpec(p, first)), mounts)
+  const home = mountPrefixOf(first.virtual, first.vfsPath)
+  const rd = mountParentReaddir((p: string) => readdir(makeSpec(p, first)), mounts, home)
   const st = mountParentStat((p: string) => stat(makeSpec(p, first)), mounts)
   if (pat !== null && paths.length === 1) {
     const single = await searchSingle(first, pat, f, st, rd, stream, opts.signal)

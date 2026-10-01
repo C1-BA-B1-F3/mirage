@@ -88,12 +88,12 @@ const deniedDir = (p: string) => Promise.reject(eacces(spec(p)))
 
 describe('mountParentReaddir', () => {
   it('lists a mount parent as empty', async () => {
-    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep']))
+    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep']), '')
     expect(await rd('/ghost')).toEqual([])
   })
 
   it('rethrows where no mount sits below', async () => {
-    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep']))
+    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep']), '')
     await expect(rd('/nope')).rejects.toThrow()
   })
 
@@ -103,18 +103,18 @@ describe('mountParentReaddir', () => {
     // absent: keyed on every descendant instead of the visible ones,
     // this returned an empty listing and a recursive search reported an
     // ordinary no-match where every other verb reports ENOENT.
-    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep'], ['/ghost/deep']))
+    const rd = mountParentReaddir(absentDir, mountsOf(['/ghost/deep'], ['/ghost/deep']), '')
     await expect(rd('/ghost')).rejects.toThrow()
   })
 
   it('answers when one of two mounts below is visible', async () => {
     const mounts = mountsOf(['/ghost/deep', '/ghost/seen'], ['/ghost/deep'])
-    const rd = mountParentReaddir(absentDir, mounts)
+    const rd = mountParentReaddir(absentDir, mounts, '')
     expect(await rd('/ghost')).toEqual([])
   })
 
   it('passes a readable listing through', async () => {
-    const rd = mountParentReaddir(() => Promise.resolve(['a.txt']), mountsOf([]))
+    const rd = mountParentReaddir(() => Promise.resolve(['a.txt']), mountsOf([]), '')
     expect(await rd('/x')).toEqual(['a.txt'])
   })
 })

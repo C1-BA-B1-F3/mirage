@@ -15,6 +15,7 @@
 import type { ByteSource, IOResult } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { CallStack } from '../../../shell/call_stack.ts'
+import type { JobConsole } from '../../../shell/console/index.ts'
 import type { ExecuteFn } from '../../expand/node.ts'
 import type { Argv } from '../../expand/argv.ts'
 import type { MountRegistry } from '../../mount/registry.ts'
@@ -35,6 +36,7 @@ export type ExecuteStringFn = (
     session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal
+    sink?: JobConsole
   },
 ) => Promise<IOResult>
 
@@ -47,7 +49,9 @@ export type ExecuteStringFn = (
  * needs and ignores the rest. `row` is the command's line within its
  * parse; only `alias` reads it, so a definition is invisible to a use on
  * the same line, as bash's line reader has it. `signal` fires when the run
- * is being cancelled; `sleep` watches it.
+ * is being cancelled; `sleep` watches it. `sink` is where a line the builtin
+ * runs in place (`eval`, `source`, a nested shell) writes its statements as
+ * they finish.
  */
 export interface BuiltinCall {
   argv: Argv
@@ -60,6 +64,7 @@ export interface BuiltinCall {
   registry: MountRegistry
   namespace: Namespace
   executeFn: ExecuteFn
+  sink?: JobConsole
 }
 
 export type BuiltinFn = (call: BuiltinCall) => Promise<Result>

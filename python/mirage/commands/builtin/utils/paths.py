@@ -19,8 +19,8 @@ from collections.abc import Callable
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, StatFn
-from mirage.utils.errors import (DotWalkError, DotWalkMissing, DotWalkNotDir,
-                                 enoent)
+from mirage.utils.errors import (DotWalkError, DotWalkLoop, DotWalkMissing,
+                                 DotWalkNotDir, enoent)
 from mirage.utils.key_prefix import rekey
 from mirage.utils.path import (CycleError, dot_prefixes, dotted_spelling, norm,
                                parent, resolve_path)
@@ -243,13 +243,28 @@ def _spells(dotted: str, virtual: str,
         return True
     if follow is None:
         return False
-    head, _, name = spelled.rpartition("/")
+    head, _, name = dotted.rstrip("/").rpartition("/")
     try:
-        whole = follow(spelled)
+        whole = follow(dotted)
         above = follow(head or "/")
     except CycleError:
         return False
-    return virtual in (whole, above.rstrip("/") + "/" + name)
+    return virtual in (whole,
+                       resolve_path(above.rstrip("/") + "/" + name, "/"))
+
+
+def walk_spelling(path: PathSpec, follow: Callable[[str], str] | None) -> str:
+    """The typed spelling, links before ``..``, while it names the path.
+
+    Args:
+        path (PathSpec): the path as the caller named it.
+        follow (Callable[[str], str] | None): the namespace's link
+            resolution, None while it holds no link.
+    """
+    dotted = path.dotted
+    if dotted is not None and _spells(dotted, path.virtual, follow):
+        return dotted
+    return path.virtual
 
 
 async def dot_refusal(
@@ -264,11 +279,9 @@ async def dot_refusal(
     textual simplification in ``virtual`` reached ``f`` regardless. Each
     name in front of a dot is proved a directory, in walk order, and one
     that is not is judged by its chain the way a create is, so a miss
-    under a plain file is ENOTDIR on every store. ``..`` itself stays
-    textual: ``link/..`` is the link's parent, the logical reading
-    bash's ``cd`` gives it, where GNU's file commands would reach the
-    target's (a documented divergence: resolved physically, an operand
-    would part from every path a walker derives from it).
+    under a plain file is ENOTDIR on every store. A link in front of a
+    dot is followed first, as the kernel walks (only bash's ``cd`` reads
+    ``link/..`` logically).
 
     Only the path the spelling names is walked: a path derived from it
     (a child a walker builds, a respelled match) carries the field along
@@ -289,7 +302,11 @@ async def dot_refusal(
         return None
     name = path.raw_path or path.virtual
     proved: list[str] = []
-    for prefix in dot_prefixes(dotted):
+    try:
+        prefixes = dot_prefixes(dotted, follow)
+    except CycleError:
+        return DotWalkLoop(errno.ELOOP, os.strerror(errno.ELOOP), name)
+    for prefix in prefixes:
         if any(done.startswith(prefix + "/") for done in proved):
             continue
         spec = PathSpec.from_str_path(prefix)

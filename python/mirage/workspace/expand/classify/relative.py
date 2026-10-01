@@ -29,9 +29,9 @@ def relative_spec(word: str, registry: MountRegistry,
     path: ``virtual`` resolves the pair to an absolute path, ``raw_path``
     keeps the typed spelling for display, and ``dotted`` the spelling a
     walk proves when the word steps through a name with ``.`` or ``..``.
-    Glob chars in the word make a pattern spec (unresolved), whose dots
-    stay textual as its matches are respelled from the walk; words whose
-    resolved path has no mount stay plain text.
+    Glob chars in the word make a pattern spec (unresolved), its matches
+    respelled from the walk; words whose resolved path has no mount stay
+    plain text.
 
     Args:
         word (str): the word as typed (already unescaped).
@@ -52,6 +52,7 @@ def relative_spec(word: str, registry: MountRegistry,
             pattern=path[last_slash + 1:],
             resolved=False,
             raw_path=word,
+            dotted=dotted_spelling(word, cwd),
         )
     # The empty name joins onto the directory as the directory itself,
     # a path the kernel walk never reaches (POSIX: a null pathname does

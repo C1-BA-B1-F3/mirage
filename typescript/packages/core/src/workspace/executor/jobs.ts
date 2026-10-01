@@ -34,7 +34,7 @@ import type { ProcessInfo, ProcessView } from '../../process/types.ts'
 import type { SessionState } from '../session/session.ts'
 import { occurrenceOf } from '../node/occurrence.ts'
 import { scanOptions } from './builtins/getopt.ts'
-import { statementStdin } from './statement.ts'
+import { failedRead, statementStdin } from './statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { ExecutionNode } from '../types.ts'
 
@@ -81,6 +81,32 @@ export async function pump(
     await console_.drain()
     if (console_.closedReader) return
   }
+}
+
+/**
+ * Write a finished statement's returned output to a sink, its stdout before
+ * its stderr, since one command keeps no order between them; what it already
+ * wrote there as it ran (a function body, a redirected group) came first. A
+ * read its stream fails is the statement's own failure (`failedRead`). The
+ * result carries no output, so nothing lands twice. Mirrors Python's drained.
+ */
+export async function drained(
+  sink: JobConsole,
+  stdout: ByteSource | null,
+  io: IOResult,
+  execNode: ExecutionNode,
+): Promise<[null, IOResult, ExecutionNode]> {
+  try {
+    await pump(sink, Channel.STDOUT, stdout)
+  } catch (err) {
+    await failedRead(io, err, execNode)
+  }
+  const stderr = await io.materializeStderr()
+  if (stderr.byteLength > 0) {
+    await sink.emit(Channel.STDERR, stderr)
+    io.stderr = null
+  }
+  return [null, io, execNode]
 }
 
 export async function handleBackground(
@@ -147,7 +173,7 @@ export async function handleBackground(
             exitCode: err.containedCode,
           })
         } else if (err instanceof ReturnSignal) {
-          stdout = null
+          stdout = err.stdout
           io = new IOResult({ exitCode: err.exitCode, stderr: err.stderr })
           execNode = new ExecutionNode({
             command: cmdStrInner,

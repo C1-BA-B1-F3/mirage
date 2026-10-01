@@ -541,7 +541,8 @@ async def _fan_out_traversal(
     duplicates when the parent's VFS has shadowed keys).
 
     rg with depth or sorting options uses one dispatcher-backed walk,
-    so mount boundaries do not reset depth or split the sorted output.
+    so mount boundaries do not reset depth or split the sorted output;
+    it crosses them itself, so it is offered no boundary to stop at.
 
     For `find`, mount-prefix paths themselves are injected as synthetic
     directory entries (subject to depth and -type filters) because
@@ -567,7 +568,8 @@ async def _fan_out_traversal(
                             cwd=PathSpec(virtual=cwd,
                                          directory=cwd,
                                          vfs_path=cwd.strip("/")),
-                            ns=ns,
+                            ns=NamespaceView(
+                                links=ns.links) if ns is not None else None,
                             dispatch=dispatch),
                 readdir=functools.partial(relay, dispatch, "readdir"),
                 stat=functools.partial(relay, dispatch, "stat"),
@@ -768,7 +770,10 @@ async def _fan_out_traversal(
                 else:
                     find_matches.append(rows)
             stdout = None
-        elif mount is primary_mount and descendant_prefixes and stdout:
+        elif (mount is primary_mount and descendant_prefixes and stdout
+              and cmd_name not in ("grep", "rg")):
+            # grep and rg never walk into a mount below their own
+            # (mount_parent_readdir), so there is nothing of theirs to drop.
             stdout = await _filter_under_prefixes(stdout, descendant_prefixes,
                                                   cmd_name)
 
@@ -833,9 +838,9 @@ async def _fan_out_traversal(
         # per-mount block is one more group; grep and rg put `--` between
         # one file's context and the next file's; every other format is a
         # plain line stream.
-        sep = b"\n\n" if cmd_name == "ls" else b"\n" + run_separator(
+        sep = b"\n" if cmd_name == "ls" else run_separator(
             cmd_name, flag_kwargs)
-        combined = sep.join(b.rstrip(b"\n") for b in all_stdout) + b"\n"
+        combined = sep.join(all_stdout)
     else:
         combined = None
     quiet = (cmd_name == "grep"

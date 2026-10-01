@@ -23,10 +23,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "echo a && exit 3",
+      "command": "( { echo g; exit 4; }; echo no ); echo rc=$?; x=$(for i in 1; do echo l; exit 5; done); echo \"[$x]\"; echo a && exit 3",
       "expect": {
         "exit": 3,
-        "stdout": "a\n",
+        "stdout": "g\nrc=4\n[l]\na\n",
         "stderr": ""
       }
     }

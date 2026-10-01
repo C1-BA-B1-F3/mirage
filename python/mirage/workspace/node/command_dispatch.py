@@ -28,6 +28,7 @@ from mirage.policy import PolicyDenied, resolve_limit, resolve_producer
 from mirage.policy.types import Claimant, HandOff, SessionContext
 from mirage.runtime.routing import RouteDecision
 from mirage.shell.bytes import encode_text
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
 from mirage.shell.types import NodeType as NT
 from mirage.shell.variable import TempEnv, VarAttr
@@ -83,8 +84,13 @@ async def execute_command(
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
-    """Dispatch a command node by name."""
+    """Dispatch a command node by name.
+
+    ``sink`` is where a command that runs statements of its own (a
+    function body, a nested shell) writes them as they finish.
+    """
     name = get_command_name(node)
     assignment_nodes, parts = split_env_prefix(get_parts(node))
 
@@ -231,7 +237,8 @@ async def execute_command(
                                             namespace, execute_fn, node, parts,
                                             name, session, stdin, call_stack,
                                             job_table, seed_prefix, cancel,
-                                            routing_decision, agent_id, handed)
+                                            routing_decision, agent_id, handed,
+                                            sink)
     finally:
         frames = session._local_frames
         if frames and frames[-1] is saved_env_overrides:
@@ -261,6 +268,7 @@ async def _dispatch_command_body(
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     # The command's place on the line, as the pass computed it, and
     # the door its nested evaluations re-enter through: a word that
@@ -353,10 +361,16 @@ async def _dispatch_command_body(
                          row=node.start_point[0],
                          agent_id=agent_id,
                          redirects=redirect_paths_for(node.id),
-                         claimant=claimant)
+                         claimant=claimant,
+                         sink=sink)
         # Capture xtrace before the body runs so `set -x` itself is not
         # traced (bash enables tracing only for the following commands).
-        xtrace = bool(session.shell_options.get("xtrace"))
+        # A body that writes as it runs is traced before it starts.
+        xtrace = bool(session.shell_options.get("xtrace")) and bool(argv.name)
+        if xtrace and sink is not None:
+            await sink.emit(Channel.STDERR,
+                            trace_command([argv.name, *argv.args]))
+            xtrace = False
         stdout, io, exec_node = await run_with_timeout(body, timeout, argv.name
                                                        or "?")
         if io.producer is None and argv.name:
@@ -377,7 +391,7 @@ async def _dispatch_command_body(
             io.stderr = b"".join(proc_sub_stderr) + await materialize(io.stderr
                                                                       )
             exec_node.stderr = io.stderr
-        if xtrace and argv.name:
+        if xtrace:
             existing = await materialize(io.stderr) or b""
             io.stderr = trace_command([argv.name, *argv.args]) + existing
         if proc_sub_inputs and stdout is not None:
@@ -406,6 +420,7 @@ async def _run_argv(
     agent_id: str = "",
     redirects: tuple[PathSpec, ...] = (),
     claimant: Claimant | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Route one expanded command to its builtin or mount handler.
 
@@ -491,14 +506,14 @@ async def _run_argv(
                 recurse, dispatch, registry, namespace, execute_fn, argv,
                 session, stdin, call_stack, job_table, cancel,
                 routing_decision, row, agent_id,
-                claimant.line if claimant is not None else None)
+                claimant.line if claimant is not None else None, sink)
         token = set_admission(admitted)
         try:
             return await _route_argv(
                 recurse, dispatch, registry, namespace, execute_fn, argv,
                 session, stdin, call_stack, job_table, cancel,
                 routing_decision, row, agent_id,
-                claimant.line if claimant is not None else None)
+                claimant.line if claimant is not None else None, sink)
         finally:
             reset_admission(token)
     finally:
@@ -544,6 +559,7 @@ async def _route_argv(
     row: int,
     agent_id: str = "",
     handed: HandOff | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Route one admitted command to its builtin or mount handler.
 
@@ -561,7 +577,7 @@ async def _route_argv(
     if name and "/" in name:
         return await handle_exec_path(dispatch, execute_fn, name,
                                       [word_text(a) for a in args], session,
-                                      registry, namespace, stdin)
+                                      registry, namespace, stdin, sink)
 
     # ── unsupported bash builtins ──────────────
     # Constructs the parser accepts but the executor cannot honor.
@@ -596,7 +612,8 @@ async def _route_argv(
                         dispatch=dispatch,
                         registry=registry,
                         namespace=namespace,
-                        execute_fn=execute_fn))
+                        execute_fn=execute_fn,
+                        sink=sink))
 
     # ── pathname resolution (POSIX): every component of an operand but
     #    the last resolves for every command, so `stat dlink/f2` reports
@@ -686,8 +703,7 @@ async def _route_argv(
                 if early is not None:
                     return early
         except CycleError as exc:
-            err = (f"{name}: {exc}: "
-                   f"Too many levels of symbolic links\n").encode()
+            err = f"{name}: {exc.filename}: {exc.strerror}\n".encode()
             return None, IOResult(exit_code=1,
                                   stderr=err), ExecutionNode(command=name,
                                                              exit_code=1,
@@ -708,7 +724,8 @@ async def _route_argv(
         routing_decision=routing_decision,
         agent_id=agent_id,
         execute_fn=execute_fn,
-        handed=handed)
+        handed=handed,
+        sink=sink)
 
     if io.exit_code == 0 and namespace.nodes:
         if name == "rm":

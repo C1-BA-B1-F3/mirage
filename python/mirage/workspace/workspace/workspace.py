@@ -60,7 +60,7 @@ from mirage.secrets.registry import source_for
 from mirage.secrets.sources import resolve_sources
 from mirage.secrets.types import ResolvedSource
 from mirage.shell import parse
-from mirage.shell.console import Channel
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import ConsoleFactory, JobTable
 from mirage.shell.literal import literal_tree
@@ -1535,7 +1535,8 @@ class Workspace:
                     record: bool = ...,
                     runtime: str | None = ...,
                     routing_decision: "RouteDecision | None" = ...,
-                    handed: "HandOff | None" = ...) -> IOResult:
+                    handed: "HandOff | None" = ...,
+                    sink: JobConsole | None = ...) -> IOResult:
         ...
 
     @overload
@@ -1552,7 +1553,8 @@ class Workspace:
                     record: bool = ...,
                     runtime: str | None = ...,
                     routing_decision: "RouteDecision | None" = ...,
-                    handed: "HandOff | None" = ...) -> ProvisionResult:
+                    handed: "HandOff | None" = ...,
+                    sink: JobConsole | None = ...) -> ProvisionResult:
         ...
 
     async def shell(
@@ -1569,6 +1571,7 @@ class Workspace:
         runtime: str | None = None,
         routing_decision: RouteDecision | None = None,
         handed: HandOff | None = None,
+        sink: JobConsole | None = None,
     ) -> IOResult | ProvisionResult:
         """Execute a shell command in the workspace.
 
@@ -1612,6 +1615,12 @@ class Workspace:
                 executor's nested evals under the outer line's so an
                 inner line spends the grants the outer line's pass
                 claimed for it.
+            sink: Internal. The console the executor's nested lines
+                (``eval``, ``source``, a nested shell) write to as each
+                statement finishes, stdout and stderr in the order they
+                were produced. Every path answers there, a refusal or a
+                syntax error included, so the result carries the exit
+                status and no output.
         """
         # The one cancellation seam: the whole line is one task, so a
         # cancel set while a store is still loading, a secret is still
@@ -1621,12 +1630,25 @@ class Workspace:
         # sets it.
         frame = LineFrame()
         try:
-            return await run_cancellable(
+            result = await run_cancellable(
                 self._serialize_line(
                     session_id,
-                    partial(execute_line, self, command, session_id, stdin,
-                            provision, agent_id, cwd, env, cancel, record,
-                            runtime, routing_decision, handed, frame)), cancel)
+                    partial(execute_line,
+                            self,
+                            command,
+                            session_id,
+                            stdin,
+                            provision,
+                            agent_id,
+                            cwd,
+                            env,
+                            cancel,
+                            record,
+                            runtime,
+                            routing_decision,
+                            handed,
+                            frame,
+                            sink=sink)), cancel)
         except (MirageAbortError, asyncio.CancelledError):
             # An abandoned invocation is the caller's outcome, not the
             # shell's, whether it arrived on the event or as a cancel
@@ -1637,3 +1659,12 @@ class Workspace:
                 restore_status(frame.session, frame.status_before,
                                frame.writer)
             raise
+        if sink is not None and isinstance(result, IOResult):
+            for channel, data in ((Channel.STDOUT, await
+                                   result.materialize_stdout()),
+                                  (Channel.STDERR, await
+                                   result.materialize_stderr())):
+                if data:
+                    await sink.emit(channel, data)
+            result.stdout = result.stderr = None
+        return result

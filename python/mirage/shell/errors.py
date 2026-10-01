@@ -14,6 +14,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from mirage.io.types import ByteSource
     from mirage.shell.types import ArithWrite
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
@@ -96,10 +97,22 @@ class UnboundVariable(ExitSignal):
 
 
 class ReturnSignal(Exception):
+    """``return`` unwinding to the function or sourced file it ends.
 
-    def __init__(self, exit_code: int = 0, stderr: bytes = b"") -> None:
+    Args:
+        exit_code (int): the status it returns.
+        stderr (bytes): diagnostic already formatted for the user.
+        stdout (ByteSource | None): output the constructs it left had
+            produced before it.
+    """
+
+    def __init__(self,
+                 exit_code: int = 0,
+                 stderr: bytes = b"",
+                 stdout: "ByteSource | None" = None) -> None:
         self.exit_code = exit_code
         self.stderr = stderr
+        self.stdout = stdout
 
 
 class PipeClosed(Exception):

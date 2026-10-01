@@ -180,6 +180,19 @@ async function readRaw(
 }
 
 /**
+ * One line as a bare `read` stores it in REPLY: backslashes processed, a
+ * continuation joined, nothing split off; null at end of input. `select`
+ * takes its choice this way (bash calls this builtin).
+ */
+export async function readReply(
+  buffer: AsyncLineIterator,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const [line, complete] = await readRaw(buffer, false, 10, null, null, signal)
+  return complete ? unescapeRead(line) : null
+}
+
+/**
  * Read one line (or delimited record, or character count) into
  * variables, with bash's option surface. `-r` turns off backslash
  * processing; `-d C` reads to `C`; `-n N`/`-N N` bound the read; `-a
@@ -285,7 +298,11 @@ export async function handleRead(
       new ExecutionNode({ command: 'read', exitCode: code }),
     ]
   }
-  const parts = exact !== null ? [line] : splitReadLine(line, ifs, variables.length)
+  // With no name the line goes to REPLY whole, its blanks kept.
+  const parts =
+    exact !== null || parse.operands.length === 0
+      ? [line]
+      : splitReadLine(line, ifs, variables.length)
   for (let i = 0; i < variables.length; i++) {
     const name = variables[i]
     if (name === undefined) continue

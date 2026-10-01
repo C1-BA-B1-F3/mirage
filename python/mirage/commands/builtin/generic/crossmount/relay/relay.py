@@ -31,6 +31,10 @@ from mirage.commands.builtin.generic.crossmount.relay.wc import run_wc
 from mirage.commands.builtin.generic.crossmount.relay.zip_cmd import run_zip
 from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
                                                               RunSingle)
+from mirage.commands.builtin.generic.crossmount.utils import flat_scopes
+from mirage.commands.builtin.generic.realpath import (door_stat, parse_flags,
+                                                      realpath)
+from mirage.commands.builtin.utils.paths import link_follow
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView, SessionView
@@ -62,7 +66,7 @@ async def run_relay(cmd_name: str,
 
     Args:
         cmd_name (str): One of cp, mv, diff, cmp, paste, comm, join, tar,
-            unzip, zip, ls, sort, wc, awk, sed.
+            unzip, zip, ls, sort, wc, awk, sed, realpath.
         scopes (list[PathSpec]): Path operands in command-line order.
         text_args (list[str]): Positional text operands (tar's member
             selectors, cmp's skips; empty for the transfer and merge
@@ -116,4 +120,10 @@ async def run_relay(cmd_name: str,
         return await run_unzip(scopes, text_args, flag_kwargs, dispatch)
     if cmd_name == Cmd.ZIP:
         return await run_zip(scopes, flag_kwargs, dispatch, ns)
+    if cmd_name == Cmd.REALPATH:
+        return await realpath(flat_scopes(scopes),
+                              stat=door_stat(dispatch),
+                              cwd=cwd,
+                              follow=link_follow(ns.links if ns else None),
+                              flags=parse_flags(flag_kwargs))
     return await run_cmp(scopes, text_args, flag_kwargs, dispatch, stdin)

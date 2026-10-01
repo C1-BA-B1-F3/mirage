@@ -221,7 +221,7 @@ def test_get_function_body():
 
 
 def test_get_function_body_rejects_non_function_node():
-    with pytest.raises(ValueError, match="no compound body"):
+    with pytest.raises(ValueError, match="has no body"):
         get_function_body(_first("echo hello"))
 
 

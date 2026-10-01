@@ -998,10 +998,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "rg --sort path -e top -e deep /data; rg --sortr path -e top -e deep /data",
+      "command": "rg --sort path -e top -e deep /data; rg --sortr path -e top -e deep /data; rg --null --files /data | tr '\\0\\n' '|#'; echo; rg --null -l -e top -e deep /data | tr '\\0\\n' '|#'; echo; rg --null-data deep /data | tr '\\0\\n' '|#'; echo; printf 'pad\\n\\n' > /data/pad.txt; rg --heading -e top -e deep -e '^$' /data; grep -rh '^$' /data | wc -l; rm /data/pad.txt",
       "expect": {
         "exit": 0,
-        "stdout": "/data/inner/leaf.txt:deep\n/data/top.txt:top\n/data/top.txt:top\n/data/inner/leaf.txt:deep\n",
+        "stdout": "/data/inner/leaf.txt:deep\n/data/top.txt:top\n/data/top.txt:top\n/data/inner/leaf.txt:deep\n/data/top.txt|/data/inner/leaf.txt|\n/data/top.txt|/data/inner/leaf.txt|\n/data/inner/leaf.txt:deep#|\n/data/pad.txt\n\n\n/data/top.txt\ntop\n\n/data/inner/leaf.txt\ndeep\n1\n",
         "stderr": ""
       }
     },

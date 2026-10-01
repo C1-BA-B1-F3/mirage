@@ -12,9 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 import shlex
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import cast
 
 from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
                                     FD_STDOUT)
@@ -399,11 +402,15 @@ def get_for_parts(
     """Get (variable, values, body_commands) from for/select.
 
     Returns the do_group's children list so multi-statement
-    bodies are preserved.
+    bodies are preserved. The parser spells a name the grammar cannot
+    read as ``for 0 in NAME``, so that header names NAME.
     """
     nc = node.named_children
     variable = get_text(nc[0])
     values = [c for c in nc[1:] if c.type not in (NT.DO_GROUP, "ERROR")]
+    if variable == "0" and values and not re.fullmatch(
+            r"\w+", get_text(values[0]), re.ASCII):
+        variable, values = get_text(values[0]), values[1:]
     body = list(nc[-1].named_children)
     return variable, values, body
 
@@ -591,7 +598,7 @@ def _parse_herestring_redirect(child: TSNodeLike) -> Redirect:
     content = ""
     target_node = None
     for candidate in child.named_children:
-        if candidate.type in _TARGET_TYPES:
+        if candidate.type in _TARGET_TYPES or candidate.type == NT.NUMBER:
             content = get_text(candidate)
             target_node = candidate
             break
@@ -725,6 +732,12 @@ def get_redirects(
     for child in nc if command is None else nc[1:]:
         if child.type == "ERROR" and get_text(child) == "<<":
             recover_herestring = True
+            continue
+        if child.type == "ERROR" and get_text(child).strip().isdigit():
+            # After a compound command the grammar reads `0<f` as an
+            # error `0` and an undecorated redirect; the digits touching
+            # the operator are its descriptor (claimed_descriptor).
+            claimed, command_end = int(get_text(child)), child.end_byte
             continue
         if child.type == NT.HEREDOC_REDIRECT:
             body, _, quoted = get_heredoc_meta(child)
@@ -1004,10 +1017,45 @@ def get_function_name(node: TSNodeLike) -> str:
 def get_function_body(node: TSNodeLike) -> FunctionBody:
     """Get function body commands.
 
-    Returns the compound_statement's children list so
-    multi-statement bodies are preserved.
+    Returns the compound_statement's children list so multi-statement
+    bodies are preserved; any other compound command (``f() ( ... )``)
+    is the one statement. The redirects a definition carries, its own
+    and those of a statement it is the body of (``f() { ...; } >o
+    2>&1``), apply at every call, as bash's do, so then the body is one
+    statement: the group under them.
+
+    Args:
+        node (TSNodeLike): the function_definition node.
     """
-    for c in node.named_children:
-        if c.type == NT.COMPOUND_STATEMENT:
-            return list(c.named_children)
-    raise ValueError("function definition has no compound body")
+    body = node.child_by_field_name("body")
+    if body is None:
+        raise ValueError("function definition has no body")
+    redirects = [
+        c for c in node.named_children if c.type in REDIRECT_NODE_TYPES
+    ]
+    outer = node.parent
+    if (outer is not None and outer.type == NT.REDIRECTED_STATEMENT
+            and outer.named_children[0].id == node.id):
+        redirects += [
+            c for c in outer.named_children[1:]
+            if c.type in REDIRECT_NODE_TYPES
+        ]
+    if not redirects:
+        return (list(body.named_children)
+                if body.type == NT.COMPOUND_STATEMENT else [body])
+    parts = [body, *redirects]
+    return [
+        cast(
+            TSNodeLike,
+            SimpleNamespace(type=NT.REDIRECTED_STATEMENT,
+                            children=parts,
+                            named_children=parts,
+                            next_sibling=None,
+                            parent=None,
+                            id=node.id,
+                            text=node.text,
+                            start_byte=node.start_byte,
+                            end_byte=node.end_byte,
+                            start_point=node.start_point,
+                            end_point=node.end_point))
+    ]

@@ -767,7 +767,8 @@ async def rg(
     mounts = opts.ns.mounts if opts.ns is not None else None
     mount_prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     rd = mount_parent_readdir(
-        partial(call_readdir, readdir, prefix=mount_prefix), mounts)
+        partial(call_readdir, readdir, prefix=mount_prefix), mounts,
+        mount_prefix)
     st = mount_parent_stat(partial(call_stat, stat, prefix=mount_prefix),
                            mounts)
     rb = partial(call_read_bytes, read_bytes, prefix=mount_prefix)

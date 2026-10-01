@@ -241,6 +241,7 @@ async function runProgram(
           // status becomes the return's. Anywhere else the signal
           // belongs to an enclosing function call.
           if (session.sourceDepth <= 0) throw err
+          if (err.stdout !== null) allStdout.push(err.stdout)
           if (err.stderr.byteLength > 0) {
             mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
           }

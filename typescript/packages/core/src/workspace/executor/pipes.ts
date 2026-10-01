@@ -30,6 +30,7 @@ import {
 } from './statement.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { ExitSignal, PipeClosed } from '../../shell/errors.ts'
+import { carried, isUnwinding } from './control.ts'
 import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
@@ -236,19 +237,6 @@ export async function handlePipe(
   return [lastStdout, lastIo, execNode]
 }
 
-async function mergeLeftIntoExit(
-  sig: ExitSignal,
-  leftBytes: ByteSource | null,
-  leftIo: IOResult,
-): Promise<ExitSignal> {
-  // Fold the left side's completed output into a propagating exit.
-  const leftStderr = await materialize(leftIo.stderr)
-  const left = await materialize(leftBytes)
-  sig.stdout = concat([left, sig.stdout ?? new Uint8Array()])
-  sig.stderr = concat([leftStderr, sig.stderr])
-  return sig
-}
-
 export async function handleConnection(
   executeNode: ExecuteNodeFn,
   left: TSNodeLike,
@@ -287,7 +275,7 @@ export async function handleConnection(
         callStack,
       )
     } catch (err) {
-      if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
+      if (isUnwinding(err)) throw await carried(err, leftBytes, leftIo)
       throw err
     }
     children.push(rightExec)
@@ -318,7 +306,7 @@ export async function handleConnection(
         callStack,
       )
     } catch (err) {
-      if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
+      if (isUnwinding(err)) throw await carried(err, leftBytes, leftIo)
       throw err
     }
     children.push(rightExec)
@@ -341,7 +329,7 @@ export async function handleConnection(
       callStack,
     )
   } catch (err) {
-    if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
+    if (isUnwinding(err)) throw await carried(err, leftBytes, leftIo)
     throw err
   }
   children.push(rightExec)

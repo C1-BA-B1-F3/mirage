@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { ByteSource } from '../../../../io/types.ts'
+import type { JobConsole } from '../../../../shell/console/index.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
@@ -22,13 +23,18 @@ export async function handleEval(
   args: string[],
   session: SessionState,
   stdin: ByteSource | null = null,
+  sink?: JobConsole,
 ): Promise<Result> {
   const script = args.join(' ')
-  const io = await executeFn(script, { sessionId: session.sessionId, stdin })
+  const io = await executeFn(script, {
+    sessionId: session.sessionId,
+    stdin,
+    ...(sink === undefined ? {} : { sink }),
+  })
   return [io.stdout, io, new ExecutionNode({ command: 'eval', exitCode: io.exitCode })]
 }
 
 /** The `eval` arm. */
 export async function evalBuiltin(call: BuiltinCall): Promise<Result> {
-  return handleEval(call.executeFn, [...call.argv.args], call.session, call.stdin)
+  return handleEval(call.executeFn, [...call.argv.args], call.session, call.stdin, call.sink)
 }

@@ -12,11 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { chmodSync, statSync } from 'node:fs'
+import { chmodSync, existsSync, statSync } from 'node:fs'
 import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { CapacityState, FileType, PathSpec, VFSName } from '@struktoai/mirage-core/types'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as UtilsModule from '../../core/disk/utils.ts'
+import {
+  CapacityState,
+  FileType,
+  ListingVersion,
+  MountMode,
+  PathSpec,
+  ReadPolicy,
+  VFSName,
+} from '@struktoai/mirage-core/types'
+import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { ops } from '@struktoai/mirage-core/test-utils'
 import { copy as copyCore } from '../../core/disk/copy.ts'
 import { size as duSize } from '../../core/disk/du/index.ts'
@@ -24,8 +34,16 @@ import { exists as existsCore } from '../../core/disk/exists.ts'
 import { find as findCore } from '../../core/disk/find.ts'
 import { rmR as rmRCore } from '../../core/disk/rm.ts'
 import { stream as streamCore } from '../../core/disk/stream.ts'
+import * as diskUtils from '../../core/disk/utils.ts'
 import { spec, tmpRoot } from '../../test-utils.ts'
+import { Workspace } from '../../workspace.ts'
+import { buildVfs } from '../registry.ts'
 import { DiskVFS } from './disk.ts'
+
+vi.mock('../../core/disk/utils.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof UtilsModule>()
+  return { ...original, readEntries: vi.fn(original.readEntries) }
+})
 
 let root: string
 let cleanup: () => void
@@ -335,6 +353,75 @@ describe('DiskVFS — shared host-link contract', () => {
       }
     } finally {
       await chmod(join(root, 'root/lib'), 0o700)
+    }
+  })
+})
+
+describe('DiskVFS — folder versions knob', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.mocked(diskUtils.readEntries).mockReset()
+  })
+
+  it.each([
+    ['no', "'no'"],
+    [1, '1'],
+    [null, 'None'],
+  ])('folderVersions must be a boolean (%s)', (value, shown) => {
+    const fresh = join(root, 'never-made')
+    expect(() => new DiskVFS({ root: fresh, folderVersions: value as unknown as boolean })).toThrow(
+      new TypeError(`folder_versions must be a boolean, got ${shown}`),
+    )
+    expect(existsSync(fresh)).toBe(false)
+  })
+
+  it('folder versions default on', async () => {
+    const vfs = await buildVfs('disk', { root })
+    expect(vfs.listingVersion).toBe(ListingVersion.FOLDER)
+    expect(((await vfs.getState()) as { config?: unknown }).config).toEqual({
+      root,
+      folderVersions: true,
+    })
+  })
+
+  it('the state carries the knob turned off', async () => {
+    const vfs = await buildVfs('disk', { root, folder_versions: false })
+    expect(vfs.listingVersion).toBe(ListingVersion.NONE)
+    expect(((await vfs.getState()) as { config?: unknown }).config).toEqual({
+      root,
+      folderVersions: false,
+    })
+  })
+
+  it.each([
+    [true, 0],
+    [false, 1],
+  ])('the knob reaches the mount through the config door (on: %s)', async (on, scansPerCommand) => {
+    await writeFile(join(root, 'a.txt'), 'a')
+    const st = statSync(root, { bigint: true })
+    const changed = st.ctimeNs > st.mtimeNs ? st.ctimeNs : st.mtimeNs
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Number(changed / 1000000n) + 3000)
+    const actual = await vi.importActual<typeof UtilsModule>('../../core/disk/utils.ts')
+    let scans = 0
+    vi.mocked(diskUtils.readEntries).mockImplementation(async (directory: string) => {
+      scans += 1
+      return actual.readEntries(directory)
+    })
+    const vfs = await buildVfs('disk', { root, folder_versions: on })
+    const ws = new Workspace({
+      '/m': new Mount(vfs, { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+    })
+    try {
+      const outputs: string[] = []
+      for (let i = 0; i < 3; i++) {
+        const result = await ws.shell('ls /m')
+        outputs.push(new TextDecoder().decode(result.stdout))
+      }
+      expect(outputs).toEqual(['a.txt\n', 'a.txt\n', 'a.txt\n'])
+      expect(scans).toBe(1 + 2 * scansPerCommand)
+    } finally {
+      await ws.close()
     }
   })
 })

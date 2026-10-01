@@ -13,9 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import importlib
+import json
+import os
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +28,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.scope import command_scope
 from mirage.types import ListingVersion, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.disk import DiskVFS
 from mirage.vfs.loader import load_attr
 from mirage.vfs.registry import REGISTRY, build_vfs, known_vfs_names
 from mirage.workspace import Workspace
@@ -32,6 +38,9 @@ from tests.fixtures.github_api import FakeGitHub, serve
 from tests.fixtures.hf_hub_api import FakeHub
 from tests.fixtures.hf_hub_api import serve as serve_hub
 from tests.fixtures.versioned_vfs import VersionedVFS
+
+disk_readdir = importlib.import_module("mirage.core.disk.readdir")
+disk_stat = importlib.import_module("mirage.core.disk.stat")
 
 
 @dataclass
@@ -45,6 +54,9 @@ class Harness:
         nested (str): a folder below the root, listed by the same fill.
         counts (Callable): (checks, refills) sent to the backend so far.
         change (Callable): change the backend outside mirage.
+        checks (int): the checks one command listing ``key`` and
+            ``nested`` sends: one for a MOUNT version, one per folder for
+            a FOLDER version.
     """
 
     ws: Workspace
@@ -52,6 +64,7 @@ class Harness:
     nested: str
     counts: Callable[[], tuple[int, int]]
     change: Callable[[], None]
+    checks: int = 1
 
 
 @asynccontextmanager
@@ -126,6 +139,80 @@ def _hf(name: str, segment: str) -> Callable[[], AsyncIterator[Harness]]:
     return harness
 
 
+SPEC_VFS = Path(__file__).resolve().parents[3] / "spec" / "python" / "vfs.json"
+
+
+@asynccontextmanager
+async def _disk() -> AsyncIterator[Harness]:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        pytest.MonkeyPatch.context() as mp,
+    ):
+        root = Path(tmp)
+        (root / "docs" / "sub").mkdir(parents=True)
+        (root / "docs" / "sub" / "a.txt").write_bytes(b"a\n")
+        (root / "top.txt").write_bytes(b"t\n")
+        clock = {"now": 0}
+
+        def settle() -> None:
+            # The clock rule: 3 s past the latest change of every folder
+            # listed, re-read after each outside change, so no version is
+            # withheld by the racy guard.
+            clock["now"] = (
+                max(
+                    max(st.st_ctime_ns, st.st_mtime_ns)
+                    for st in map(os.stat, (root, root / "docs" / "sub"))
+                )
+                + 3_000_000_000
+            )
+
+        settle()
+        mp.setattr(
+            "mirage.core.disk.listing_version.time_ns", lambda: clock["now"]
+        )
+        scans: list[str] = []
+        checks: list[str] = []
+        scan = disk_readdir.read_entries
+        check = Reconciler._listing_fingerprint
+
+        def counted_scan(directory):
+            scans.append(str(directory))
+            return scan(directory)
+
+        async def counted_check(self, mount, path):
+            checks.append(path)
+            return await check(self, mount, path)
+
+        mp.setattr(disk_readdir, "read_entries", counted_scan)
+        mp.setattr(Reconciler, "_listing_fingerprint", counted_check)
+
+        def change() -> None:
+            (root / "new.txt").write_bytes(b"n\n")
+            settle()
+
+        vfs = build_vfs("disk", {"root": tmp})
+        ws = Workspace(
+            {
+                "/m": Mount(
+                    vfs=vfs,
+                    mode=MountMode.WRITE,
+                    read=ReadSpec(policy=ReadPolicy.FRESH, ttl=600),
+                )
+            }
+        )
+        try:
+            yield Harness(
+                ws=ws,
+                key="/m",
+                nested="/m/docs/sub",
+                counts=lambda: (len(checks), len(scans)),
+                change=change,
+                checks=2,
+            )
+        finally:
+            await ws.close()
+
+
 # A declarer gets a harness proving that its check and its fill agree, so
 # the gate's stat and the stored version are one kind of token. Each
 # declaring backend adds its row with its declaration.
@@ -134,6 +221,7 @@ HARNESSES: dict[str, Callable[[], AsyncIterator[Harness]]] = {
     "hf_models": _hf("hf_models", "models"),
     "hf_datasets": _hf("hf_datasets", "datasets"),
     "hf_spaces": _hf("hf_spaces", "spaces"),
+    "disk": _disk,
 }
 
 
@@ -156,6 +244,7 @@ def test_the_harness_roster_is_pinned():
     # A literal, not the derived set: the expectation must not move with
     # the registry it checks.
     assert sorted(HARNESSES) == [
+        "disk",
         "github",
         "hf_datasets",
         "hf_models",
@@ -219,7 +308,7 @@ async def _check_contract(name: str) -> None:
         checks, refills = (
             now - then for now, then in zip(harness.counts(), before)
         )
-        assert (checks, refills) == (1, 0)
+        assert (checks, refills) == (harness.checks, 0)
         assert mount.vfs.listing_version == type(mount.vfs).listing_version
         harness.change()
         moved = await mount.execute_op(
@@ -265,3 +354,28 @@ async def test_the_contract_goes_red_on_hf_seeding_the_root_only(monkeypatch):
     monkeypatch.setattr(RAMIndexCacheStore, "seed", seed)
     with pytest.raises(AssertionError):
         await _check_contract("hf_models")
+
+
+@pytest.mark.asyncio
+async def test_the_contract_goes_red_on_disk_stat_formatting_its_own_way(
+    monkeypatch,
+):
+    # disk made to answer its folder check in another layout than its
+    # readdir stores: the same four numbers, in a different order.
+    def reordered(st, now_ns):
+        return f"{st.st_ino}:{st.st_dev}:{st.st_mtime_ns}:{st.st_ctime_ns}"
+
+    monkeypatch.setattr(disk_stat, "stamp", reordered)
+    with pytest.raises(AssertionError):
+        await _check_contract("disk")
+
+
+def test_turning_folder_versions_off_leaves_the_declaration(tmp_path):
+    off = DiskVFS(str(tmp_path), folder_versions=False)
+    on = DiskVFS(str(tmp_path))
+    assert off.listing_version is ListingVersion.NONE
+    assert on.listing_version is ListingVersion.FOLDER
+    assert DiskVFS.listing_version is ListingVersion.FOLDER
+    assert "disk" in _declared()
+    caps = json.loads(SPEC_VFS.read_text())["capabilities"]
+    assert caps["disk"]["listing_version"] == "folder"

@@ -12,13 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type * as UtilsModule from '../core/disk/utils.ts'
+import type * as StatModule from '../core/disk/stat.ts'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
-import { FileStat, FileType, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
+import {
+  FileStat,
+  FileType,
+  ListingVersion,
+  MountMode,
+  PathSpec,
+  ReadPolicy,
+} from '@struktoai/mirage-core/types'
 import type { MountEntry } from '@struktoai/mirage-core/workspace/mount/mount'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
@@ -26,8 +36,21 @@ import { Reconciler } from '@struktoai/mirage-core/workspace/reconcile'
 import { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { Workspace as NodeWorkspace } from '../workspace.ts'
 import { FakeHub, serveHub } from '../core/hf_hub/_test_util.ts'
+import * as diskStat from '../core/disk/stat.ts'
+import * as diskUtils from '../core/disk/utils.ts'
+import { DiskVFS } from './disk/disk.ts'
 import { InlineGitHub } from './fixtures/github.ts'
 import { buildVfs, knownVfsNames } from './registry.ts'
+
+vi.mock('../core/disk/utils.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof UtilsModule>()
+  return { ...original, readEntries: vi.fn(original.readEntries) }
+})
+
+vi.mock('../core/disk/stat.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof StatModule>()
+  return { ...original, stat: vi.fn(original.stat) }
+})
 
 const SPEC_VFS = resolve(
   fileURLToPath(import.meta.url),
@@ -43,6 +66,9 @@ interface Harness {
   counts: () => [number, number]
   change: () => void
   close?: () => Promise<void>
+  // The checks one command listing `key` and `nested` sends: one for a MOUNT
+  // version, one per folder for a FOLDER version.
+  checks?: number
 }
 
 async function githubHarness(): Promise<Harness> {
@@ -93,6 +119,68 @@ function hfHarness(name: string, segment: string): () => Promise<Harness> {
   }
 }
 
+function changedNs(folder: string): bigint {
+  const st = statSync(folder, { bigint: true })
+  return st.ctimeNs > st.mtimeNs ? st.ctimeNs : st.mtimeNs
+}
+
+async function diskHarness(): Promise<Harness> {
+  const root = mkdtempSync(join(tmpdir(), 'mirage-disk-contract-'))
+  mkdirSync(join(root, 'docs', 'sub'), { recursive: true })
+  writeFileSync(join(root, 'docs', 'sub', 'a.txt'), 'a\n')
+  writeFileSync(join(root, 'top.txt'), 't\n')
+  // The clock rule: 3 s past the latest change of every folder listed,
+  // re-read after each outside change, so no version is withheld by the
+  // racy guard.
+  const settle = (): void => {
+    const latest = [root, join(root, 'docs', 'sub')]
+      .map(changedNs)
+      .reduce((a, b) => (a > b ? a : b))
+    vi.setSystemTime(Number(latest / 1000000n) + 3000)
+  }
+  vi.useFakeTimers({ toFake: ['Date'] })
+  settle()
+  const actual = await vi.importActual<typeof UtilsModule>('../core/disk/utils.ts')
+  let scans = 0
+  vi.mocked(diskUtils.readEntries).mockImplementation(async (directory: string) => {
+    scans += 1
+    return actual.readEntries(directory)
+  })
+  const proto = Reconciler.prototype as unknown as {
+    listingFingerprint: (mount: unknown, path: string) => Promise<string | null>
+  }
+  const check = proto.listingFingerprint
+  let checks = 0
+  vi.spyOn(proto, 'listingFingerprint').mockImplementation(async function (
+    this: unknown,
+    mount: unknown,
+    path: string,
+  ) {
+    checks += 1
+    return check.call(this, mount, path)
+  })
+  const vfs = await buildVfs('disk', { root })
+  const ws = new NodeWorkspace({
+    '/m': new Mount(vfs, { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+  })
+  return {
+    ws,
+    key: '/m',
+    nested: '/m/docs/sub',
+    counts: () => [checks, scans],
+    change: () => {
+      writeFileSync(join(root, 'new.txt'), 'n\n')
+      settle()
+    },
+    close: () => {
+      vi.useRealTimers()
+      rmSync(root, { recursive: true, force: true })
+      return Promise.resolve()
+    },
+    checks: 2,
+  }
+}
+
 // A declarer gets a harness proving that its check and its fill agree, so
 // the gate's stat and the stored version are one kind of token. Each
 // declaring backend adds its row with its declaration.
@@ -101,6 +189,7 @@ const HARNESSES: Record<string, () => Promise<Harness>> = {
   hf_models: hfHarness('hf_models', 'models'),
   hf_datasets: hfHarness('hf_datasets', 'datasets'),
   hf_spaces: hfHarness('hf_spaces', 'spaces'),
+  disk: diskHarness,
 }
 
 async function shell(ws: NodeWorkspace, line: string): Promise<void> {
@@ -132,7 +221,7 @@ async function checkContract(name: string): Promise<void> {
     const before = harness.counts()
     await shell(ws, `ls ${harness.key} ${harness.nested}`)
     const after = harness.counts()
-    expect([after[0] - before[0], after[1] - before[1]]).toEqual([1, 0])
+    expect([after[0] - before[0], after[1] - before[1]]).toEqual([harness.checks ?? 1, 0])
     expect(mount.vfs.listingVersion).toBe(manifest()[name]?.listing_version)
     harness.change()
     const moved = await throwawayStat(ws, mount, harness.key)
@@ -179,6 +268,7 @@ describe('listing version declarations', () => {
     // A literal, not the derived set: the expectation must not move with the
     // spec it checks.
     expect(Object.keys(HARNESSES).sort()).toEqual([
+      'disk',
       'github',
       'hf_datasets',
       'hf_models',
@@ -221,6 +311,8 @@ describe('listing version declarations', () => {
 describe('a declarer checks what its fill stored', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.mocked(diskStat.stat).mockReset()
+    vi.mocked(diskUtils.readEntries).mockReset()
     vi.unstubAllGlobals()
   })
 
@@ -243,5 +335,34 @@ describe('a declarer checks what its fill stored', () => {
       seed.call(this, entries, children, expiresAt, version == null ? version : 'f'.repeat(40))
     })
     await expect(checkContract('github')).rejects.toThrow()
+  })
+
+  it('goes red on disk stat formatting its own way', async () => {
+    // disk made to answer its folder check in another layout than its
+    // readdir stores: the same four numbers, in a different order.
+    const actual = await vi.importActual<typeof StatModule>('../core/disk/stat.ts')
+    vi.mocked(diskStat.stat).mockImplementation(async (accessor, p) => {
+      const st = await actual.stat(accessor, p)
+      if (st.type !== FileType.DIRECTORY || st.fingerprint === null) return st
+      const [dev, ino, ctime, mtime] = st.fingerprint.split(':')
+      return st.with({ fingerprint: [ino, dev, mtime, ctime].join(':') })
+    })
+    await expect(checkContract('disk')).rejects.toThrow()
+  })
+})
+
+describe('disk folder versions knob', () => {
+  it('turning folder versions off leaves the declaration', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mirage-disk-knob-'))
+    try {
+      const off = new DiskVFS({ root, folderVersions: false })
+      const on = new DiskVFS({ root })
+      expect(off.listingVersion).toBe(ListingVersion.NONE)
+      expect(on.listingVersion).toBe(ListingVersion.FOLDER)
+      expect(declared()).toContain('disk')
+      expect(manifest().disk?.listing_version).toBe('folder')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

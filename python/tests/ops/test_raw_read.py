@@ -81,8 +81,10 @@ async def test_raw_read_is_not_served_from_the_file_cache():
 
 
 class _RenderingRAM(_CachingRAM):
-    """A VFS that ships the renderer itself, as gdocs does, so its own
-    command reads already return what the filetype op renders."""
+    """Stands in for a VFS that ships its renderer in ``ops()``, as gdocs
+    does. Only which ops it ships matters to the cache check; a real one
+    must also make its command reads return the rendering, which this
+    stand-in does not, so its cache is seeded directly."""
 
     def ops(self):
         return [*super().ops(), *_read_tally._registered_ops]

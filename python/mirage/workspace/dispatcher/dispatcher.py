@@ -512,17 +512,16 @@ class Dispatcher:
         # not be served from that cache; nothing populates it from here,
         # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
-        renders = mount.renders_user_read(
-            kwargs["filetype"]
-            if "filetype" in kwargs
-            else get_extension(path.virtual)
-        )
 
         if (
             caches_reads
             and not raw
-            and not renders
             and op in DISPATCH_READ_OPS
+            and not mount.renders_user_read(
+                kwargs["filetype"]
+                if "filetype" in kwargs
+                else get_extension(path.virtual)
+            )
         ):
             cached = await self._cache.get(path.virtual)
             if (

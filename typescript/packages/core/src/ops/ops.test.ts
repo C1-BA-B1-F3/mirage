@@ -434,8 +434,10 @@ describe('Ops is one door with the dispatcher', () => {
     expect(new TextDecoder().decode(named as Uint8Array)).toBe('rendered')
   })
 
-  // A VFS that ships the renderer itself (gdocs) reads the same rendering
-  // through its commands, so its entry is still served warm.
+  // Stands in for a VFS that ships its renderer in ops(), as gdocs does.
+  // Only which ops it ships matters to the cache check; a real one must
+  // also make its command reads return the rendering, which this stand-in
+  // does not, so its cache is seeded directly.
   it('still serves a renderer the VFS ships from the file cache', async () => {
     const vfs = new RAMVFS()
     Object.assign(vfs, { cachesReads: true })

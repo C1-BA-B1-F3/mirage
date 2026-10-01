@@ -468,15 +468,19 @@ export class Dispatcher {
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
     const requested = kwargs?.filetype
-    const renders = this.opsRegistry.rendersUserRead(
-      vfs,
-      requested === undefined
-        ? getExtension(p.virtual)
-        : typeof requested === 'string'
-          ? requested
-          : null,
-    )
-    if (caches && !raw && !renders && DISPATCH_READ_OPS.has(opName)) {
+    if (
+      caches &&
+      !raw &&
+      DISPATCH_READ_OPS.has(opName) &&
+      !this.opsRegistry.rendersUserRead(
+        vfs,
+        requested === undefined
+          ? getExtension(p.virtual)
+          : typeof requested === 'string'
+            ? requested
+            : null,
+      )
+    ) {
       const cached = await this.cache.get(p.virtual)
       if (
         cached !== null &&

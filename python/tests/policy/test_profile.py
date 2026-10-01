@@ -2042,14 +2042,16 @@ RELAY_DOC = {
     "commands": {
         "allow": [
             "mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls", "awk",
-            "csplit"
+            "csplit", "mktemp", "unzip"
         ],
         "deny": [{
             "reason": "cut",
             "commands": {
                 "split": ["/data/out/xab"],
                 "csplit": ["/data/out/xx01"],
-                "awk": ["/data/out/locked"]
+                "awk": ["/data/out/locked"],
+                "mktemp": ["/data/tmpd/*"],
+                "unzip": ["/data/uz/*"]
             }
         }, {
             "reason": "tarred",
@@ -2300,6 +2302,36 @@ async def test_find_delete_meets_the_command_rules():
             ws, "find /data/w -name a.txt -delete",
             "g") == (1, "", "find: cannot delete '/data/w/a.txt': sealed\n")
         assert (await _line(ws, "ls /data/w", "g"))[1] == "a.txt\nb.txt\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_create_through_the_command_dispatcher_meets_the_rules():
+    # mktemp and unzip create their files and directories through the
+    # dispatcher they are handed; a rule on the directory's contents
+    # refuses each create in the command's own voice, and nothing lands.
+    ws = _relay_ws()
+    try:
+        await _seed_relay_tree(ws)
+        await ws.shell("mkdir -p /data/tmpd /data/uz && cd /other && "
+                       "zip -r /other/z.zip src > /dev/null")
+        assert await _line(
+            ws, "mktemp -d -p /data/tmpd",
+            "g") == (1, "", "mktemp: failed to create directory via template "
+                     "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n")
+        assert await _line(
+            ws, "mktemp -p /data/tmpd",
+            "g") == (1, "", "mktemp: failed to create file via template "
+                     "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n")
+        refused = "".join("checkdir error:  cannot create /data/uz/src\n"
+                          "                 Permission denied\n"
+                          f"                 unable to process src/{name}.\n"
+                          for name in ("", "open", "sec"))
+        assert await _line(ws, "unzip -q -d /data/uz /other/z.zip",
+                           "g") == (50, "", refused)
+        assert (await _line(ws, "find /data/tmpd /data/uz",
+                            "g"))[1] == "/data/tmpd\n/data/uz\n"
     finally:
         await ws.close()
 

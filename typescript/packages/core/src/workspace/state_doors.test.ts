@@ -2278,7 +2278,20 @@ describe('a relayed walk meets the command rules', () => {
   const RELAY_DOC: SessionProfile = parseSessionProfile({
     paths: { hide: ['/data/r/ghost'] },
     commands: {
-      allow: ['mkdir', 'echo', 'cat', 'cp', 'tar', 'find', 'split', 'ls', 'awk', 'csplit'],
+      allow: [
+        'mkdir',
+        'echo',
+        'cat',
+        'cp',
+        'tar',
+        'find',
+        'split',
+        'ls',
+        'awk',
+        'csplit',
+        'mktemp',
+        'unzip',
+      ],
       deny: [
         {
           reason: 'cut',
@@ -2286,6 +2299,8 @@ describe('a relayed walk meets the command rules', () => {
             split: ['/data/out/xab'],
             csplit: ['/data/out/xx01'],
             awk: ['/data/out/locked'],
+            mktemp: ['/data/tmpd/*'],
+            unzip: ['/data/uz/*'],
           },
         },
         { reason: 'tarred', commands: { tar: ['/data/r/sec', '/data/r/ghost'] } },
@@ -2370,6 +2385,36 @@ describe('a relayed walk meets the command rules', () => {
       'awk: cannot open "/data/out/locked" for output (Permission denied)\n',
     ])
     expect((await line(ws, 'ls /data/out'))[1]).toBe('xaa\nxx00\n')
+  })
+
+  // mktemp and unzip create their files and directories through the
+  // dispatcher they are handed; a rule on the directory's contents refuses
+  // each create in the command's own voice, and nothing lands.
+  it('holds a create through the command dispatcher to the rules', async () => {
+    const ws = await relayWs()
+    await ws.shell(
+      'mkdir -p /data/tmpd /data/uz && cd /other && zip -r /other/z.zip src > /dev/null',
+    )
+    expect(await line(ws, 'mktemp -d -p /data/tmpd')).toEqual([
+      1,
+      '',
+      "mktemp: failed to create directory via template '/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+    ])
+    expect(await line(ws, 'mktemp -p /data/tmpd')).toEqual([
+      1,
+      '',
+      "mktemp: failed to create file via template '/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+    ])
+    const refused = ['', 'open', 'sec']
+      .map(
+        (name) =>
+          'checkdir error:  cannot create /data/uz/src\n' +
+          '                 Permission denied\n' +
+          `                 unable to process src/${name}.\n`,
+      )
+      .join('')
+    expect(await line(ws, 'unzip -q -d /data/uz /other/z.zip')).toEqual([50, '', refused])
+    expect((await line(ws, 'find /data/tmpd /data/uz'))[1]).toBe('/data/tmpd\n/data/uz\n')
   })
 
   // A rule on a hidden path stays silent: the relayed walk passes the

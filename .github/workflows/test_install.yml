@@ -47,12 +47,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Its own entry: these installs resolve fresh on 3.11 as well as
-      # 3.12, wheels the shared entry never holds.
+      # Its own entry: these installs resolve fresh from PyPI on 3.11 as
+      # well as 3.12, wheels the shared entry never holds. The lock does
+      # not pin a fresh resolution and an entry is never re-saved, so the
+      # key also turns over weekly: a release is cached within the week
+      # rather than fetched on every run until the lock next changes.
+      - name: Name the week's install cache
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
       - name: Install uv
         uses: ./.github/actions/setup-uv
         with:
-          cache-suffix: install
+          cache-suffix: install-${{ steps.week.outputs.week }}
 
       - name: Base install (no extras) on 3.11 and 3.12
         working-directory: python

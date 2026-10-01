@@ -16,6 +16,7 @@ import { classify } from '../../../errors/index.ts'
 import { normDir } from '../../../utils/slash.ts'
 import { DIR_MODE } from '../../../utils/stat_view.ts'
 import { parseMode } from '../../handles/mode.ts'
+import { applyOpen } from '../../open.ts'
 import type { RuntimeVFS } from '../../vfs.ts'
 import type { MontyBindingBits } from './binding.ts'
 import { MAX_URANDOM_BYTES, NOT_A_LINK } from './constants.ts'
@@ -144,7 +145,7 @@ function parentOf(path: string): string {
  *
  * Monty hands the door whole-file calls: an open, then reads of the
  * whole file and appends of each new write. So an open applies its
- * mode's effect on the mount (`RuntimeVFS.open`) and nothing else, and
+ * mode's effect on the mount (`applyOpen`) and nothing else, and
  * each write after it ships only its own bytes.
  *
  * Args:
@@ -463,7 +464,7 @@ export class MirageOSAccess {
     // Handle first, mirroring monty's own tree: a malformed mode must
     // raise before any side effect lands on the mount.
     const handle = new this.fileHandle(path, mode)
-    await door.open(path, parseMode(mode))
+    await applyOpen(door, path, parseMode(mode))
     return handle
   }
 

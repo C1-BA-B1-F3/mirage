@@ -253,6 +253,18 @@
         {
           "command": "cat /data/seed.txt",
           "expect": { "exit": 0, "stdout": "seed\n" }
+        },
+        {
+          "command": "ln -s /data/gone /data/lnk",
+          "expect": { "exit": 0 }
+        },
+        {
+          "command": "js -e \"console.log(std.open('/data/lnk', 'wx') === null)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n",
+            "ops_absent": ["create /data/lnk", "create /data/gone"]
+          }
         }
       ]
     },

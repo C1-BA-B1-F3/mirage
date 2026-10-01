@@ -172,6 +172,29 @@ class TestMirageFile:
         # refused open leaves the existing content untouched.
         assert _read(ops, "/data/dir/f.txt") == b"new"
 
+    def test_exclusive_mode_refuses_a_dangling_link(self):
+        # O_CREAT|O_EXCL follows no link, so the link's own name is
+        # there even though its target is not; creating through it would
+        # put a file at the target the open never named.
+        ops, _ = make_ops_with_dir()
+        asyncio.run(ops.symlink("/data/dir/lnk", "/data/dir/gone"))
+        with pytest.raises(FileExistsError):
+            MirageFile(ops, "/data/dir/lnk", "x")
+        with pytest.raises(FileNotFoundError):
+            _read(ops, "/data/dir/gone")
+
+    def test_a_write_mode_refuses_a_directory(self):
+        ops, _ = make_ops_with_dir()
+        with pytest.raises(IsADirectoryError):
+            MirageFile(ops, "/data/dir", "w")
+        assert asyncio.run(ops.is_dir("/data/dir"))
+
+    def test_a_read_of_a_missing_file_fails_at_open(self):
+        # CPython raises at open, not at the first read.
+        ops, _ = make_ops_with_dir()
+        with pytest.raises(FileNotFoundError):
+            MirageFile(ops, "/data/dir/nope.txt", "r")
+
     def test_append_mode_creates_missing_file_on_open(self):
         ops, _ = make_ops_with_dir()
         f = MirageFile(ops, "/data/dir/f.txt", "a")

@@ -198,6 +198,23 @@
           }
         },
         {
+          "command": "ln -s /ram/gone /ram/lnk",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"open('/ram/lnk', 'x')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileExistsError",
+            "ops_absent": [
+              "create /ram/lnk",
+              "create /ram/gone"
+            ]
+          }
+        },
+        {
           "command": "python3 -c \"f = open('/ram/fresh.txt', 'x'); f.write('fresh'); f.close()\" && cat /ram/fresh.txt",
           "expect": {
             "exit": 0,

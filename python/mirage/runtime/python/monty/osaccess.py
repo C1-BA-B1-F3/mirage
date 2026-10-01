@@ -20,6 +20,7 @@ from typing import Any
 
 from mirage.errors import FsCondition, classify
 from mirage.runtime.handles import parse_mode
+from mirage.runtime.open import apply_open
 from mirage.runtime.python.monty.binding import (
     MontyFileHandle,
     OSAccess,
@@ -74,7 +75,7 @@ class MirageOSAccess(OSAccess):
 
     Monty hands the door whole-file calls: an open, then reads of the
     whole file and appends of each new write. So an open applies its
-    mode's effect on the mount (``RuntimeVFS.open``) and nothing else,
+    mode's effect on the mount (``apply_open``) and nothing else,
     and each write after it ships only its own bytes.
 
     The bridge uses synchronous callbacks, so the core's hop parks the
@@ -244,7 +245,7 @@ class MirageOSAccess(OSAccess):
         # raise before any effect lands on the mount.
         handle = MontyFileHandle(str(path), mode)
         with _as_guest(str(path)):
-            door.open(str(path), parse_mode(mode))
+            apply_open(door, str(path), parse_mode(mode))
         return handle
 
     def path_read_text(self, path: PurePosixPath | MontyFileHandle) -> str:

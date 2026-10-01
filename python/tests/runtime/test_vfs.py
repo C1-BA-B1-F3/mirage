@@ -20,7 +20,6 @@ import pytest
 
 from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
-from mirage.runtime.handles import parse_mode
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
@@ -89,25 +88,15 @@ class RecordingVFS(RuntimeVFS):
 
 
 class WorldVFS(RuntimeVFS):
-    """Core over a small world: files, directories, implied directories.
+    """Core over an empty world, or one where every op is refused."""
 
-    An implied directory lists but has no row, the root above a nested
-    mount; a dangling link has a row only for a no-follow stat; a
-    refusal answers every op.
-    """
-
-    def __init__(self, files=(), dirs=(), implied=(), links=(), refuse=None):
+    def __init__(self, refuse=None):
         super().__init__(
             dispatch=None,
             loop=None,
             resolver=PrefixResolver(lambda: ["/data/"]),
         )
-        self.files = set(files)
-        self.dirs = set(dirs)
-        self.implied = set(implied)
-        self.links = set(links)
         self.refuse = refuse
-        self.mutations = []
 
     def _wait(self, pending):
         return asyncio.run(pending)
@@ -115,20 +104,7 @@ class WorldVFS(RuntimeVFS):
     async def _op(self, op, path, **kwargs):
         if self.refuse is not None:
             raise self.refuse
-        if op == "stat":
-            if path in self.files:
-                return FileStat(name=path, size=1, type=FileType.FILE)
-            if path in self.dirs:
-                return FileStat(name=path, type=FileType.DIRECTORY)
-            if path in self.links and kwargs.get("nofollow"):
-                return FileStat(name=path, size=8, type=FileType.SYMLINK)
-            raise FileNotFoundError(path)
-        if op == "readdir":
-            if path in self.dirs or path in self.implied:
-                return []
-            raise FileNotFoundError(path)
-        self.mutations.append((op, path))
-        return None
+        raise FileNotFoundError(path)
 
 
 class RecordingDispatch:
@@ -212,38 +188,6 @@ def test_serves_a_path_reached_through_a_link_outside_every_mount():
 
 
 F = "/data/f"
-
-
-@pytest.mark.parametrize(
-    "mode, world, effect, kept, refusal",
-    [
-        ("r", {"files": [F]}, [], True, None),
-        ("r", {}, [], False, FileNotFoundError),
-        ("r", {"dirs": [F]}, [], False, IsADirectoryError),
-        ("r", {"implied": [F]}, [], False, IsADirectoryError),
-        ("w", {"files": [F]}, [("truncate", F)], False, None),
-        ("w", {}, [("create", F)], False, None),
-        ("w", {"implied": [F]}, [], False, IsADirectoryError),
-        ("a", {"files": [F]}, [], True, None),
-        ("a", {}, [("create", F)], False, None),
-        ("a", {"implied": [F]}, [], False, IsADirectoryError),
-        ("wx", {"files": [F]}, [], False, FileExistsError),
-        ("wx", {"links": [F]}, [], False, FileExistsError),
-        ("wx", {"implied": [F]}, [], False, FileExistsError),
-        ("wx", {}, [("create", F)], False, None),
-        ("r", {"links": [F]}, [], False, FileNotFoundError),
-    ],
-)
-def test_open_lands_its_modes_effect_before_any_byte_moves(
-    mode, world, effect, kept, refusal
-):
-    vfs = WorldVFS(**world)
-    if refusal is None:
-        assert (vfs.open(F, parse_mode(mode)) is not None) == kept
-    else:
-        with pytest.raises(refusal):
-            vfs.open(F, parse_mode(mode))
-    assert vfs.mutations == effect
 
 
 def test_a_refusal_is_not_read_as_an_absence():

@@ -21,13 +21,13 @@ from typing import Any, Callable, Literal
 
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import FileHandle, FileTable
+from mirage.runtime.handles.mode import OpenMode
+from mirage.runtime.open import apply_open
 from mirage.runtime.types import VFSStat
 from mirage.runtime.wasm.abi import (
     EBADF,
-    EEXIST,
     EINVAL,
     EIO,
-    EISDIR,
     ENOENT,
     ENOTDIR,
     FDFLAG_APPEND,
@@ -130,6 +130,31 @@ def _call_guarded(
     except Exception as exc:
         logger.debug("wasi host call failed: %r", exc)
         return EIO
+
+
+def _open_mode(oflags: int, rights_base: int, fdflags: int) -> OpenMode:
+    """The open facts preview1 spells as oflags, rights and fdflags.
+
+    Args:
+        oflags (int): the open's oflags bag.
+        rights_base (int): the rights the guest asked for.
+        fdflags (int): the descriptor flags.
+    """
+    create = bool(oflags & OFLAG_CREAT)
+    truncate = bool(oflags & OFLAG_TRUNC)
+    append = bool(fdflags & FDFLAG_APPEND)
+    return OpenMode(
+        readable=True,
+        writable=create
+        or truncate
+        or append
+        or bool(rights_base & RIGHT_FD_WRITE),
+        truncate=truncate,
+        append=append,
+        create=create,
+        exclusive=create and bool(oflags & OFLAG_EXCL),
+        binary=True,
+    )
 
 
 @dataclass(slots=True)
@@ -279,44 +304,34 @@ class WasiFs:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
-        st = self._fs.stat_or_none(path)
-        if oflags & OFLAG_DIRECTORY or (
-            st is not None and st.is_dir and not oflags & OFLAG_CREAT
-        ):
+        if oflags & OFLAG_DIRECTORY:
+            st = self._fs.stat_or_none(path)
             if st is None:
                 return ENOENT
             if not st.is_dir:
                 return ENOTDIR
-            fd = self._fds.add(FdEntry(kind="dir", path=path))
-            self._store(caller, out, pack_u32(fd))
-            return OK
-        if st is not None and st.is_dir:
-            return EISDIR
-        if oflags & OFLAG_CREAT and oflags & OFLAG_EXCL and st is not None:
-            return EEXIST
-        if st is None and not oflags & OFLAG_CREAT:
-            return ENOENT
-        writable = (
-            bool(oflags & (OFLAG_CREAT | OFLAG_TRUNC))
-            or bool(rights_base & RIGHT_FD_WRITE)
-            or bool(fdflags & FDFLAG_APPEND)
-        )
-        if st is None:
-            # Created through the workspace now, so write modes and a
-            # missing parent answer at open time, not at close.
-            self._fs.create(path)
-            data = b""
-        elif oflags & OFLAG_TRUNC:
-            self._fs.truncate(path)
-            data = b""
-        else:
-            data = self._fs.read(path)
+            return self._open_dir(caller, path, out)
+        mode = _open_mode(oflags, rights_base, fdflags)
+        try:
+            row = apply_open(self._fs, path, mode)
+        except IsADirectoryError:
+            # POSIX opens a directory read-only without O_DIRECTORY too;
+            # only a mode that would write refuses it.
+            if mode.writable:
+                raise
+            return self._open_dir(caller, path, out)
+        data = b"" if row is None else self._fs.read(path)
         handle = FileHandle.opened(
-            path, data, writable=writable, append=bool(fdflags & FDFLAG_APPEND)
+            path, data, writable=mode.writable, append=mode.append
         )
         fd = self._fds.add(
-            FdEntry(kind="file", handle=handle, path=path, stat=st)
+            FdEntry(kind="file", handle=handle, path=path, stat=row)
         )
+        self._store(caller, out, pack_u32(fd))
+        return OK
+
+    def _open_dir(self, caller: "wasmtime.Caller", path: str, out: int) -> int:
+        fd = self._fds.add(FdEntry(kind="dir", path=path))
         self._store(caller, out, pack_u32(fd))
         return OK
 

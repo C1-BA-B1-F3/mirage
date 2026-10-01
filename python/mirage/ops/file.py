@@ -22,7 +22,11 @@ from typing import Self, TypeVar
 
 from mirage.bridge.sync import run_async_from_sync
 from mirage.ops import Ops
+from mirage.runtime.constants import ABSENT_PATH
 from mirage.runtime.handles.mode import parse_mode
+from mirage.runtime.open import apply_open
+from mirage.runtime.types import VFSEntry, VFSStat
+from mirage.runtime.vfs import stat_row
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -33,6 +37,48 @@ logger = logging.getLogger(__name__)
 # the caller's word up as a codec raised LookupError on the ordinary
 # path the moment `io.open` was patched.
 LOCALE_ENCODING = "locale"
+
+
+class _OpsSurface:
+    """The questions an open asks, put to the ``Ops`` facade.
+
+    Args:
+        ops (Ops): the facade the file reads and writes through.
+        loop (asyncio.AbstractEventLoop | None): the loop that drives it.
+    """
+
+    def __init__(
+        self, ops: Ops, loop: asyncio.AbstractEventLoop | None
+    ) -> None:
+        self._ops = ops
+        self._loop = loop
+
+    def stat_or_none(
+        self, path: str, *, nofollow: bool = False
+    ) -> VFSStat | None:
+        try:
+            row = run_async_from_sync(
+                self._ops.stat(path, nofollow=nofollow), self._loop
+            )
+        except ABSENT_PATH:
+            return None
+        return stat_row(row)
+
+    def listing_or_none(self, path: str) -> list[VFSEntry] | None:
+        try:
+            names = run_async_from_sync(self._ops.readdir(path), self._loop)
+        except ABSENT_PATH:
+            return None
+        return [
+            VFSEntry(path=name, size=0, is_dir=name.endswith("/"))
+            for name in names
+        ]
+
+    def create(self, path: str) -> None:
+        run_async_from_sync(self._ops.create(path), self._loop)
+
+    def truncate(self, path: str) -> None:
+        run_async_from_sync(self._ops.truncate(path, 0), self._loop)
 
 
 class MirageFile:
@@ -77,26 +123,12 @@ class MirageFile:
         self._errors = errors if errors is not None else "strict"
         self._newline = newline
         codecs.lookup(self._encoding)
-        self._closed = False
         self._dirty = False
         self._buf: io.BytesIO | io.StringIO | None = None
-        # Exclusivity outranks truncation: wx carries both facts, and
-        # testing truncate first would create over the existing file the
-        # mode promises to refuse.
-        if self._facts.exclusive:
-            try:
-                self._run(self._ops.stat(self._path))
-            except FileNotFoundError:
-                self._run(self._ops.create(self._path))
-            else:
-                raise FileExistsError(self._path)
-        elif self._facts.truncate:
-            self._run(self._ops.create(self._path))
-        elif self._facts.append:
-            try:
-                self._run(self._ops.stat(self._path))
-            except FileNotFoundError:
-                self._run(self._ops.create(self._path))
+        # The open's effect lands now, by the rule every door shares; a
+        # refusal leaves the file closed, so nothing flushes behind it.
+        apply_open(_OpsSurface(ops, loop), path, self._facts)
+        self._closed = False
 
     def _run(self, coro: Awaitable[T]) -> T:
         return run_async_from_sync(coro, self._loop)

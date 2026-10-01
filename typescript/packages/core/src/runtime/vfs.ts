@@ -14,7 +14,7 @@
 
 import { ConcurrencyLimiter } from '../concurrency/limiter.ts'
 import { classify } from '../errors/index.ts'
-import { eexist, eisdir, enoent, isMissingOp, isMissingPath } from '../utils/errors.ts'
+import { isMissingOp, isMissingPath } from '../utils/errors.ts'
 import {
   contentSize,
   deviceRdev,
@@ -28,7 +28,6 @@ import { ABSENT_PATH, LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import { normDir, rstripSlash } from '../utils/slash.ts'
 import { planFlush } from './handles/index.ts'
-import type { OpenMode } from './handles/mode.ts'
 import { PrefixResolver, type MountResolver } from './resolver.ts'
 import type { BridgeDispatchFn, RuntimeContext } from './types.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
@@ -286,45 +285,6 @@ export class RuntimeVFS {
       if (isAbsent(err)) return null
       throw err
     }
-  }
-
-  /**
-   * Apply an open's effect on the mount, before any byte moves.
-   *
-   * One rule for every guest open, however it is spelled (a mode string,
-   * preview1 oflags): a directory refuses, an exclusive create refuses
-   * what exists, a missing path is created when the mode creates and
-   * refused when it does not, and a truncating mode empties what exists.
-   * The effect lands at open because CPython's `open('w')` leaves an
-   * empty file behind even when nothing is written; a bare open and
-   * close never flushes.
-   *
-   * Returns the file's row when its content survives the open (a read
-   * or an append), null when it starts empty (created or truncated).
-   * Throws EEXIST for an exclusive create that found the path, a
-   * dangling link included, EISDIR for a directory, a mount's implied
-   * one included, and ENOENT for a missing path the mode does not
-   * create.
-   */
-  async open(path: string, mode: OpenMode): Promise<VFSStat | null> {
-    // An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so a
-    // dangling one is a name that is there. A path with no row may still
-    // be a directory the mount lists, and a create there would put a
-    // file at a directory's name.
-    const row = await this.statOrNull(path, mode.exclusive)
-    const listed = row !== null ? row.isDir : (await this.listingOrNull(path)) !== null
-    if (mode.exclusive && (row !== null || listed)) throw eexist(path)
-    if (listed) throw eisdir(path)
-    if (row === null) {
-      if (!mode.create) throw enoent(path)
-      await this.create(path)
-      return null
-    }
-    if (mode.truncate) {
-      await this.truncate(path)
-      return null
-    }
-    return row
   }
 
   /**

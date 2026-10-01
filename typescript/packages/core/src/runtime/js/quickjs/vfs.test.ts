@@ -38,6 +38,10 @@ function makeStatProbeBridge(statCode: string, content: string): StatProbeBridge
       return Promise.reject(Object.assign(new Error(`stat refused: ${path}`), { code: statCode }))
     }
     if (op === 'read') return Promise.resolve(new TextEncoder().encode(content))
+    // A missing file has no listing either, as a real mount answers.
+    if (op === 'readdir') {
+      return Promise.reject(Object.assign(new Error(`no dir: ${path}`), { code: 'ENOENT' }))
+    }
     return Promise.resolve(undefined)
   }
   return { dispatch, ops }

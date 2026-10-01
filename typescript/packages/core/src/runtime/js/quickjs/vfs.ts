@@ -14,14 +14,14 @@
 
 import { resolvePath } from '../../../utils/path.ts'
 import { PathSpec } from '../../../types.ts'
-import { isMissingPath } from '../../../utils/errors.ts'
 import { WASI } from './wasi.ts'
 import { wasiErrno } from './errors.ts'
 import { readdir } from './list.ts'
 import { stat } from './stat.ts'
 import { epochToIso } from '../../../utils/dates.ts'
 import { FileHandle, FileTable, parseMode, type OpenMode } from '../../handles/index.ts'
-import type { RuntimeVFS, VFSStat } from '../../vfs.ts'
+import { applyOpen } from '../../open.ts'
+import type { RuntimeVFS } from '../../vfs.ts'
 import type { QuickJSAsyncContext, QuickJSHandle } from 'quickjs-emscripten'
 
 const ENC = new TextEncoder()
@@ -102,38 +102,16 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
       return ctx.newNumber(-2)
     }
     if (vfs === null || !underMount(path)) return ctx.newNumber(-1)
-    let st: VFSStat | null = null
-    try {
-      st = await vfs.stat(path)
-    } catch (err) {
-      // Only a confirmed absence reads as "no file yet" (the python
-      // host's stat_or_none makes the same distinction): a transient
-      // failure or a policy denial on an existing file must refuse the
-      // open, or a create-capable mode would create over content this
-      // open never saw.
-      if (!isMissingPath(err)) return ctx.newNumber(-1)
-    }
-    // The same ladder as the python wasi host's path_open, so the two
-    // engines refuse the same opens: a directory, an exclusive open
-    // over an existing file (EEXIST in the real engine), and a missing
-    // file whose mode does not create.
-    if (st?.isDir === true) return ctx.newNumber(-1)
-    if (st !== null && mode.exclusive) return ctx.newNumber(-1)
-    if (st === null && !mode.create) return ctx.newNumber(-1)
-    // The establishing op goes through the mount at open as the op it
-    // is — create for a missing file, truncate for a discarded one —
-    // so write modes and a read-narrowed session refuse here (the
-    // guest gets null), the ledger records the real op, and a backend
-    // with a native truncate receives it.
+    // The open's effect lands through the mount at open, by the rule
+    // every door shares, so write modes and a read-narrowed session
+    // refuse here (the guest gets null), the ledger records the real
+    // op, and a backend with a native truncate receives it. Any refusal
+    // or failure is the guest's null: a transient failure or a policy
+    // denial on an existing file must refuse the open, or a
+    // create-capable mode would create over content this open never saw.
     let buf: Uint8Array = new Uint8Array()
     try {
-      if (st === null) {
-        await vfs.create(path)
-      } else if (mode.truncate) {
-        await vfs.truncate(path)
-      } else {
-        buf = await vfs.read(path)
-      }
+      if ((await applyOpen(vfs, path, mode)) !== null) buf = await vfs.read(path)
     } catch {
       return ctx.newNumber(-1)
     }

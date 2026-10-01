@@ -17,6 +17,7 @@ from pathlib import Path
 from stat import S_ISCHR
 from typing import Any
 
+from mirage.runtime.constants import ABSENT_PATH
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
 from mirage.runtime.wasm.abi import (
@@ -195,11 +196,36 @@ class WasmVFS:
             raise FileNotFoundError(path)
         return self._core.stat(path, nofollow=nofollow)
 
-    def stat_or_none(self, path: str) -> VFSStat | None:
+    def stat_or_none(
+        self, path: str, *, nofollow: bool = False
+    ) -> VFSStat | None:
+        """The path's row, or None when neither side has it.
+
+        Args:
+            path (str): guest-absolute path.
+            nofollow (bool): report a trailing symlink itself.
+        """
         try:
-            return self.stat(path)
-        except (FileNotFoundError, NotADirectoryError):
+            return self.lstat(path) if nofollow else self.stat(path)
+        except ABSENT_PATH:
             return None
+
+    def listing_or_none(self, path: str) -> list[VFSEntry] | None:
+        """The mount's unclassified rows for `path`, or None.
+
+        Asked of a path with no row. The build directory holds rows for
+        everything it holds, so a path it serves never lists here.
+
+        Args:
+            path (str): guest-absolute path.
+        """
+        try:
+            build = self._serving_build(path)
+        except FileNotFoundError:
+            return None
+        if build is not None:
+            return None
+        return self._require_core().listing_or_none(path)
 
     def read(self, path: str) -> bytes:
         build = self._serving_build(path)

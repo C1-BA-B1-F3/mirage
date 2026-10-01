@@ -19,7 +19,6 @@ import { CHAR_MODE, DIR_MODE, DIR_SIZE, FILE_MODE, LINK_MODE } from '../utils/st
 import { LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import type { BridgeDispatchFn } from './types.ts'
-import { parseMode } from './handles/mode.ts'
 import { RuntimeVFS } from './vfs.ts'
 import { PrefixResolver } from './resolver.ts'
 
@@ -402,43 +401,12 @@ describe('RuntimeVFS routing', () => {
   })
 })
 
-interface World {
-  files?: string[]
-  dirs?: string[]
-  implied?: string[]
-  links?: string[]
-}
-
-// A small world: files, directories, implied directories (they list
-// but have no row, the root above a nested mount) and dangling links
-// (a row only for a no-follow stat). Mutations are recorded.
-function world(shape: World, refusal?: Error): { vfs: RuntimeVFS; mutations: string[] } {
-  const mutations: string[] = []
-  const gone = (path: string): Promise<never> =>
-    Promise.reject(Object.assign(new Error(path), { code: 'ENOENT' }))
-  const dispatch = vi.fn<BridgeDispatchFn>((op, path, _bytes, _dst, attrs) => {
-    if (refusal !== undefined) return Promise.reject(refusal)
-    if (op === 'stat') {
-      if (shape.files?.includes(path) === true) {
-        return Promise.resolve(new FileStat({ name: path, size: 1, type: FileType.FILE }))
-      }
-      if (shape.dirs?.includes(path) === true) {
-        return Promise.resolve(new FileStat({ name: path, type: FileType.DIRECTORY }))
-      }
-      if (shape.links?.includes(path) === true && attrs?.nofollow === true) {
-        return Promise.resolve(new FileStat({ name: path, size: 8, type: FileType.SYMLINK }))
-      }
-      return gone(path)
-    }
-    if (op === 'readdir') {
-      const bare = path.replace(/\/$/, '')
-      const listed = shape.dirs?.includes(bare) === true || shape.implied?.includes(bare) === true
-      return listed ? Promise.resolve([]) : gone(path)
-    }
-    mutations.push(`${op} ${path}`)
-    return Promise.resolve(undefined)
-  })
-  return { vfs: new RuntimeVFS(dispatch, new PrefixResolver(() => ['/data/'])), mutations }
+// A door over an empty world, or one where every op is refused.
+function world(refusal?: Error): { vfs: RuntimeVFS } {
+  const dispatch = vi.fn<BridgeDispatchFn>((_op, path) =>
+    Promise.reject(refusal ?? Object.assign(new Error(path), { code: 'ENOENT' })),
+  )
+  return { vfs: new RuntimeVFS(dispatch, new PrefixResolver(() => ['/data/'])) }
 }
 
 const F = '/data/f'
@@ -462,45 +430,16 @@ describe('RuntimeVFS guest rules', () => {
     expect(door.serves('/tmp/a.txt')).toBe(false)
   })
 
-  it.each<[string, World, string[], boolean, string | null]>([
-    ['r', { files: [F] }, [], true, null],
-    ['r', {}, [], false, 'ENOENT'],
-    ['r', { dirs: [F] }, [], false, 'EISDIR'],
-    ['r', { implied: [F] }, [], false, 'EISDIR'],
-    ['r', { links: [F] }, [], false, 'ENOENT'],
-    ['w', { files: [F] }, [`truncate ${F}`], false, null],
-    ['w', {}, [`create ${F}`], false, null],
-    ['w', { implied: [F] }, [], false, 'EISDIR'],
-    ['a', { files: [F] }, [], true, null],
-    ['a', {}, [`create ${F}`], false, null],
-    ['a', { implied: [F] }, [], false, 'EISDIR'],
-    ['wx', { files: [F] }, [], false, 'EEXIST'],
-    ['wx', { links: [F] }, [], false, 'EEXIST'],
-    ['wx', { implied: [F] }, [], false, 'EEXIST'],
-    ['wx', {}, [`create ${F}`], false, null],
-  ])(
-    "open '%s' over %j lands its effect before any byte moves",
-    async (mode, shape, effect, kept, refusal) => {
-      const { vfs, mutations } = world(shape)
-      if (refusal === null) {
-        expect((await vfs.open(F, parseMode(mode))) !== null).toBe(kept)
-      } else {
-        await expect(vfs.open(F, parseMode(mode))).rejects.toMatchObject({ code: refusal })
-      }
-      expect(mutations).toEqual(effect)
-    },
-  )
-
   // A backend that will not answer has said nothing about whether the
   // path is there, and "not there" is the one answer a guest cannot
   // tell from the truth.
   it('reads a refusal as itself, never as an absence', async () => {
     const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
-    const { vfs } = world({}, denied)
+    const { vfs } = world(denied)
     await expect(vfs.statOrNull(F)).rejects.toBe(denied)
     await expect(vfs.listingOrNull(F)).rejects.toBe(denied)
-    expect(await world({}).vfs.statOrNull(F)).toBeNull()
-    expect(await world({}).vfs.listingOrNull(F)).toBeNull()
+    expect(await world().vfs.statOrNull(F)).toBeNull()
+    expect(await world().vfs.listingOrNull(F)).toBeNull()
   })
 })
 

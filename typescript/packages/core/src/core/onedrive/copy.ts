@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { OneDriveAccessor } from '../../accessor/onedrive.ts'
-import { invalidateSubtree } from '../../cache/context.ts'
+import { invalidateSubtreeAfter } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import { copyTree } from '../msgraph/drive.ts'
 import { driveLoc } from './client.ts'
@@ -38,9 +38,7 @@ export async function copy(
   dst: PathSpec,
 ): Promise<void> {
   const config = accessor.config
-  try {
-    await copyTree(config, driveLoc(config, src.vfsPath), driveLoc(config, dst.vfsPath))
-  } finally {
-    await invalidateSubtree(dst)
-  }
+  await invalidateSubtreeAfter(dst, () =>
+    copyTree(config, driveLoc(config, src.vfsPath), driveLoc(config, dst.vfsPath)),
+  )
 }

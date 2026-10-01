@@ -39,6 +39,7 @@ import { mountKey } from '../../../utils/key_prefix.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
 import { DIFY_COMMANDS } from '../dify/index.ts'
 import { CHROMA_COMMANDS } from '../chroma/index.ts'
+import { parseFindExpression } from '../find_parse.ts'
 import { readsSizes, readsTimes } from './find.ts'
 
 function doc(id: string, name: string, slug: string): Record<string, unknown> {
@@ -59,14 +60,17 @@ function doc(id: string, name: string, slug: string): Record<string, unknown> {
 describe('readsTimes and readsSizes', () => {
   it.each([
     [['-name', '*.md'], false, false],
+    [['-name', '-size'], false, false],
     [['-mtime', '-1'], true, false],
+    [['-mtime', '+0', '-o', '-mtime', '-1'], true, false],
     [['-newer', '/knowledge/README.md'], true, false],
     [['-newermt', '2024-01-01'], true, false],
     [['-size', '+1k'], false, true],
-    [['-empty'], false, true],
+    [['!', '-empty'], false, true],
     [['-printf', '%TY %s\n'], false, false],
   ])('which fields %j tests', (texts, times, sizes) => {
-    expect([readsTimes(texts), readsSizes(texts)]).toEqual([times, sizes])
+    const expr = parseFindExpression(texts)
+    expect([readsTimes(expr), readsSizes(expr)]).toEqual([times, sizes])
   })
 })
 
@@ -135,13 +139,14 @@ const REFERENCE = '/knowledge/api/reference'
 
 describe('chroma find', () => {
   it.each([
-    [QUICKSTART, SIZED, [REFERENCE], true],
-    [null, SIZED, [REFERENCE, QUICKSTART], true],
-    [REFERENCE, NEWER, [QUICKSTART], false],
-    [null, NEWER, [QUICKSTART], false],
+    [QUICKSTART, SIZED, {}, [REFERENCE], true],
+    [null, SIZED, {}, [REFERENCE, QUICKSTART], true],
+    [QUICKSTART, [], { type: 'f', size: '+0' }, [REFERENCE], true],
+    [REFERENCE, NEWER, {}, [QUICKSTART], false],
+    [null, NEWER, {}, [QUICKSTART], false],
   ])(
-    'hiding %s, %j prints its rows and scans chunks only for a size test',
-    async (hidden, texts, rows, scans) => {
+    'hiding %s, %j %j prints its rows and scans chunks only for a size test',
+    async (hidden, texts, flags, rows, scans) => {
       const find = CHROMA_COMMANDS.find((c) => c.name === 'find')
       if (find === undefined) throw new Error('chroma registers no find')
       const gets: Record<string, unknown>[] = []
@@ -154,7 +159,7 @@ describe('chroma find', () => {
       sess.hiddenPaths = { paths: hidden === null ? [] : [hidden] }
       const opts = {
         stdin: null,
-        flags: {},
+        flags,
         filetypeFns: null,
         cwd: '/',
         index: new RAMIndexCacheStore(),

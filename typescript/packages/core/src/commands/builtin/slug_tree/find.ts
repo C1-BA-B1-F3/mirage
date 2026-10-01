@@ -30,6 +30,8 @@ import {
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
+import { treeHasMtime } from '../find_eval.ts'
+import { parseFindExpression, type FindExpr } from '../find_parse.ts'
 import { findGeneric } from '../generic/find.ts'
 import {
   resolveGlobOf,
@@ -66,17 +68,19 @@ async function normalizeFindOutput(
   return ENC.encode(normalized.join('\n') + '\n')
 }
 
-const TIME_TESTS = new Set(['-mtime', '-newer', '-newermt'])
-const SIZE_TESTS = new Set(['-size', '-empty'])
-
 /** Whether the expression tests a timestamp. `-printf` and `-ls` are not tests: they stat through the dispatcher. */
-export function readsTimes(texts: readonly string[]): boolean {
-  return texts.some((word) => TIME_TESTS.has(word))
+export function readsTimes(expr: FindExpr): boolean {
+  return expr.newer.length > 0 || treeHasMtime(expr.tree)
 }
 
 /** Whether the expression tests a file size (`-empty` compares one with zero). */
-export function readsSizes(texts: readonly string[]): boolean {
-  return texts.some((word) => SIZE_TESTS.has(word))
+export function readsSizes(expr: FindExpr): boolean {
+  return expr.minSize !== null || expr.maxSize !== null || expr.usesEmpty
+}
+
+/** Whether the flag bag carries a size or time test. Only a direct call hands tests over as flags; the shell passes them as words. */
+function flagsTest(fl: FlagView): boolean {
+  return fl.asStr('size') !== undefined || fl.asStr('mtime') !== undefined || fl.asBool('empty')
 }
 
 /**
@@ -99,7 +103,7 @@ export function makeFind<A extends Accessor>(
   tree: SlugTree<A>,
   stat: StatOp<A>,
   statLight: StatOp<A>,
-  needsFull: (texts: readonly string[]) => boolean,
+  needsFull: (expr: FindExpr) => boolean,
 ): RegisteredCommand[] {
   const resolveGlob = resolveGlobOf(io)
   const findFull = makeSearchBackedFind<A>({ resolvePath: tree.resolve, stat, walk: tree.walk })
@@ -129,7 +133,7 @@ export function makeFind<A extends Accessor>(
       const bag: Record<string, FlagValue> = { ...opts.flags }
       const name = defaultName(fl.asStr('name'), texts)
       if (name !== undefined) bag.name = name
-      const full = needsFull(texts)
+      const full = texts.length > 0 ? needsFull(parseFindExpression(texts)) : flagsTest(fl)
       const findCore = full ? findFull : findLight
       const statFn = full ? stat : statLight
       // A tree walk classifies on the raw backend tree, so under hidden

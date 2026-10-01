@@ -19,8 +19,8 @@ import pytest
 from mirage.cache.context import (active_cache_manager,
                                   invalidate_after_unlink,
                                   invalidate_after_write, invalidate_ancestors,
-                                  invalidate_subtree, listing_refreshed,
-                                  push_cache_manager)
+                                  invalidate_subtree, invalidate_subtree_after,
+                                  listing_refreshed, push_cache_manager)
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
@@ -176,3 +176,46 @@ async def test_listing_refreshed_follows_the_managers_listing_rule(
         assert listing_refreshed("/data") is False
     finally:
         push_cache_manager(prev)
+
+
+class _OpFailed(Exception):
+    pass
+
+
+class _EvictFailed(Exception):
+    pass
+
+
+class _BrokenEviction(FakeManager):
+
+    async def invalidate_subtree(self, path: PathSpec) -> None:
+        await super().invalidate_subtree(path)
+        raise _EvictFailed
+
+
+async def _op(error: type[Exception] | None) -> None:
+    if error is not None:
+        raise error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op_error, evict_breaks, raised", [
+    (None, False, None),
+    (_OpFailed, False, _OpFailed),
+    (_OpFailed, True, _OpFailed),
+    (None, True, _EvictFailed),
+])
+async def test_invalidate_subtree_after_evicts_and_keeps_the_ops_error(
+        op_error, evict_breaks, raised):
+    # The op's own error wins over an eviction that fails after it.
+    manager = _BrokenEviction() if evict_breaks else FakeManager()
+    previous = push_cache_manager(manager)
+    try:
+        if raised is None:
+            await invalidate_subtree_after(_spec("/c"), _op(op_error))
+        else:
+            with pytest.raises(raised):
+                await invalidate_subtree_after(_spec("/c"), _op(op_error))
+    finally:
+        push_cache_manager(previous)
+    assert [p.virtual for p in manager.subtrees] == ["/c"]

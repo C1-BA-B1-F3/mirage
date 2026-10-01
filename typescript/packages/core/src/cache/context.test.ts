@@ -26,6 +26,7 @@ import {
   invalidateAfterWrite,
   invalidateAncestors,
   invalidateSubtree,
+  invalidateSubtreeAfter,
   listingRefreshed,
   runWithCacheManager,
 } from './context.ts'
@@ -171,5 +172,40 @@ describe('listingRefreshed', () => {
       expect(listingRefreshed('/data')).toBe(false)
       return Promise.resolve()
     })
+  })
+})
+
+class OpFailed extends Error {}
+class EvictFailed extends Error {}
+
+class BrokenEviction extends FakeManager {
+  override invalidateSubtree(path: string | PathSpec): Promise<void> {
+    void super.invalidateSubtree(path)
+    return Promise.reject(new EvictFailed())
+  }
+}
+
+describe('invalidateSubtreeAfter', () => {
+  // The op's own error wins over an eviction that fails after it; that
+  // eviction error is reported instead.
+  it.each([
+    [null, false, null],
+    [OpFailed, false, OpFailed],
+    [OpFailed, true, OpFailed],
+    [null, true, EvictFailed],
+  ] as const)('op error %o, eviction breaks %s: raises %o', async (opError, breaks, raised) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const manager = breaks ? new BrokenEviction() : new FakeManager()
+    const path = new PathSpec({ virtual: '/c', directory: '/c', vfsPath: 'c' })
+    const run = runWithCacheManager(manager, () =>
+      invalidateSubtreeAfter(path, () =>
+        opError === null ? Promise.resolve() : Promise.reject(new opError()),
+      ),
+    )
+    if (raised === null) await run
+    else await expect(run).rejects.toBeInstanceOf(raised)
+    expect(manager.subtrees).toEqual([path])
+    expect(warn).toHaveBeenCalledTimes(opError !== null && breaks ? 1 : 0)
+    warn.mockRestore()
   })
 })

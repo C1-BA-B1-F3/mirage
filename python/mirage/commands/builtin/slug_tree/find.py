@@ -17,6 +17,8 @@ from dataclasses import replace
 from functools import partial
 from typing import Any, cast
 
+from mirage.commands.builtin.find_eval import tree_has_mtime
+from mirage.commands.builtin.find_parse import FindExpr, parse_find_expression
 from mirage.commands.builtin.generic.find import (find_generic,
                                                   find_walk_generic)
 from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
@@ -36,28 +38,37 @@ from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.vfs.types import StatOp
 
-_TIME_TESTS = frozenset({"-mtime", "-newer", "-newermt"})
-_SIZE_TESTS = frozenset({"-size", "-empty"})
 
-
-def reads_times(texts: list[str]) -> bool:
+def reads_times(expr: FindExpr) -> bool:
     """Whether the expression tests a timestamp. ``-printf`` and ``-ls``
     are not tests: they stat through the dispatcher.
 
     Args:
-        texts (list[str]): the raw expression words.
+        expr (FindExpr): the parsed expression.
     """
-    return any(word in _TIME_TESTS for word in texts)
+    return bool(expr.newer) or tree_has_mtime(expr.tree)
 
 
-def reads_sizes(texts: list[str]) -> bool:
+def reads_sizes(expr: FindExpr) -> bool:
     """Whether the expression tests a file size (``-empty`` compares one
     with zero).
 
     Args:
-        texts (list[str]): the raw expression words.
+        expr (FindExpr): the parsed expression.
     """
-    return any(word in _SIZE_TESTS for word in texts)
+    return (expr.min_size is not None or expr.max_size is not None
+            or expr.uses_empty)
+
+
+def _flags_test(fl: FlagView) -> bool:
+    """Whether the flag bag carries a size or time test. Only a direct
+    call hands tests over as flags; the shell passes them as words.
+
+    Args:
+        fl (FlagView): the find flags.
+    """
+    return (fl.as_str("size") is not None or fl.as_str("mtime") is not None
+            or fl.as_bool("empty"))
 
 
 def _is_bare_name(texts: list[str]) -> bool:
@@ -95,7 +106,7 @@ async def _normalize_find_output(
 
 def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
               stat_light: StatOp,
-              needs_full: Callable[[list[str]], bool]) -> Callable[..., Any]:
+              needs_full: Callable[[FindExpr], bool]) -> Callable[..., Any]:
     """Build ``find`` for a slug-tree backend, filtered over one tree walk.
 
     Args:
@@ -105,7 +116,7 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
         stat (StatOp): the full stat.
         stat_light (StatOp): the index-only stat, used unless the
             expression tests a field it lacks.
-        needs_full (Callable[[list[str]], bool]): whether an expression
+        needs_full (Callable[[FindExpr], bool]): whether an expression
             tests a field ``stat_light`` lacks: ``reads_sizes`` where the
             size costs a content scan, ``reads_times`` where the listing
             carries no modified time.
@@ -134,7 +145,9 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
         default_name = _default_name(fl.as_str("name"), texts)
         if default_name is not None:
             bag["name"] = default_name
-        full = needs_full(texts)
+        words = _expr_texts(texts)
+        full = (needs_full(parse_find_expression(words))
+                if words else _flags_test(fl))
         # A native find op classifies on the raw backend tree, so under
         # hidden paths or a path rule it would answer for entries the
         # session cannot see; the walk classifies through the guarded
@@ -144,14 +157,14 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
             walk_io = walk_full if full else walk_light
             stdout, result = await find_walk_generic(
                 paths,
-                _expr_texts(texts),
+                words,
                 replace(opts, flags=bag),
                 readdir=partial(walk_io.readdir, accessor),
                 stat=partial(walk_io.stat, accessor))
             return await _normalize_find_output(stdout, search_path), result
         stdout, result = await find_generic(
             paths,
-            _expr_texts(texts),
+            words,
             replace(opts, flags=bag),
             find_core=partial(find_full if full else find_light,
                               accessor,

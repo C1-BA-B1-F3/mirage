@@ -17,6 +17,7 @@ import type { CommandFnResult } from '@struktoai/mirage-core/commands/config'
 import { UsageError } from '@struktoai/mirage-core/commands/errors'
 import { FlagView } from '@struktoai/mirage-core/commands/spec/index'
 import type { DispatchFn } from '@struktoai/mirage-core/runtime/types'
+import { boundedMap } from '@struktoai/mirage-core/concurrency/limiter'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { isMissingPath } from '@struktoai/mirage-core/utils/errors'
 import { fnmatch } from '@struktoai/mirage-core/utils/fnmatch'
@@ -210,17 +211,15 @@ async function fetchIntoCache(
     await ensureDir(dispatch, parent(ref))
     await dispatch('write', PathSpec.fromStrPath(ref), [new TextEncoder().encode(sha)])
   }
-  const written = new Array<string>(paths.length)
-  let next = 0
-  const worker = async (): Promise<void> => {
-    for (let i = next++; i < paths.length; i = next++) {
-      const path = paths[i] ?? ''
+  const written = await boundedMap(
+    paths,
+    async (path) => {
       const entry = tree.get(path)
-      if (entry === undefined) continue
-      written[i] = await cacheFile(dispatch, accessor, entry, cacheDir, folder, sha, force)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, workers), paths.length) }, worker))
+      if (entry === undefined) throw new Error(`missing tree entry: ${path}`)
+      return cacheFile(dispatch, accessor, entry, cacheDir, folder, sha, force)
+    },
+    workers,
+  )
   return [snapshotDir(cacheDir, folder, sha), written]
 }
 
@@ -267,16 +266,7 @@ async function fetchAll(
   localDir: string,
   workers: number,
 ): Promise<string[]> {
-  const width = Math.max(1, workers)
-  const written = new Array<string>(paths.length)
-  let next = 0
-  const worker = async (): Promise<void> => {
-    for (let i = next++; i < paths.length; i = next++) {
-      written[i] = await writeFile(dispatch, accessor, paths[i] ?? '', localDir)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(width, paths.length) }, worker))
-  return written
+  return boundedMap(paths, (path) => writeFile(dispatch, accessor, path, localDir), workers)
 }
 
 /**

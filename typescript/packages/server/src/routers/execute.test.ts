@@ -15,7 +15,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../app.ts'
 
 async function createWs(app: ReturnType<typeof buildApp>, id: string): Promise<void> {
@@ -274,4 +274,45 @@ describe('execute router', () => {
     expect(body[0]?.workspaceId).toBe('ew3')
     await app.close()
   })
+})
+
+it('returns 499 when a synchronous execute job is canceled', async () => {
+  const app = buildApp()
+  let enter!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  try {
+    await createWs(app, 'cancel-sync')
+    const ws = app.registry.get('cancel-sync').runner.ws
+    vi.spyOn(ws, 'shell').mockImplementation(async (_command, options) => {
+      enter()
+      await new Promise<never>((_, reject) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          },
+          { once: true },
+        )
+      })
+      throw new Error('unreachable')
+    })
+    const pending = app
+      .inject({
+        method: 'POST',
+        url: '/v1/workspaces/cancel-sync/execute',
+        payload: { command: 'sleep 60' },
+      })
+      .then((reply) => reply)
+    await entered
+    const job = app.jobs.list('cancel-sync')[0]
+    if (job === undefined) throw new Error('execute did not register a job')
+    app.jobs.cancel(job.id)
+    const response = await pending
+    expect(response.statusCode).toBe(499)
+    expect(response.json()).toEqual({ detail: 'job canceled' })
+  } finally {
+    await app.close()
+  }
 })

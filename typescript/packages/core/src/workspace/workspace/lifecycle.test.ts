@@ -641,3 +641,21 @@ describe('closeWorkspace surfaces closer failures', () => {
     expect(order).toContain('vfs')
   }, 30_000)
 })
+
+it('releases later resources after multiple teardown failures and retains the failure', async () => {
+  const ws = buildWs()
+  const vfs = ws.mount('/m').vfs
+  const closed: string[] = []
+  vi.spyOn(vfs, 'close').mockImplementation(() => {
+    closed.push('vfs')
+    return Promise.reject(new Error('vfs close failed'))
+  })
+  vi.spyOn(ws.stateStore, 'close').mockImplementation(() => {
+    closed.push('store')
+    return Promise.reject(new Error('store close failed'))
+  })
+  await expect(ws.close()).rejects.toBeInstanceOf(AggregateError)
+  expect(closed).toEqual(['vfs', 'store'])
+  await expect(ws.close()).rejects.toBeInstanceOf(AggregateError)
+  expect(closed).toEqual(['vfs', 'store'])
+})

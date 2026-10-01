@@ -159,3 +159,16 @@ async def test_a_body_that_swallows_both_cancels_is_joined_and_warned(
         "not letting CancelledError propagate" in r.getMessage()
         for r in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_cancellable_sleep_leaves_no_tasks_on_parent_cancel():
+    before = asyncio.all_tasks()
+    task = asyncio.create_task(
+        abort_module.cancellable_sleep(60, asyncio.Event())
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not (asyncio.all_tasks() - before)

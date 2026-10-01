@@ -100,6 +100,8 @@ class RuntimeVFS:
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()
+        self._pending: set[asyncio.Task[Any]] = set()
+        self._aborted = False
         self._limiter = ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
 
     @classmethod
@@ -120,8 +122,35 @@ class RuntimeVFS:
             )
         return result
 
+    async def _tracked(self, pending: Coroutine[Any, Any, T]) -> T:
+        if self._aborted:
+            pending.close()
+            raise asyncio.CancelledError()
+        task = asyncio.current_task()
+        assert task is not None
+        self._pending.add(task)
+        try:
+            return await pending
+        finally:
+            self._pending.discard(task)
+
+    async def abort(self) -> None:
+        """Stop admitting guest calls and join outstanding host operations."""
+        self._aborted = True
+        pending = list(self._pending)
+        for task in pending:
+            task.cancel()
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.debug(
+                    "guest operation failed during abort", exc_info=result
+                )
+
     def _wait(self, pending: Coroutine[Any, Any, T]) -> T:
-        return asyncio.run_coroutine_threadsafe(pending, self._loop).result()
+        return asyncio.run_coroutine_threadsafe(
+            self._tracked(pending), self._loop
+        ).result()
 
     def _raw(self, op: str, path: str, **kwargs: Any) -> Any:
         return self._wait(self._op(op, path, **kwargs))

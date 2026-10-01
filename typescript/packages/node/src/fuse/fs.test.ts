@@ -768,3 +768,24 @@ describe('MirageFS — a policy deny on read surfaces EACCES', () => {
     expect(buf.subarray(0, cleanLen).toString()).toBe('hello\n')
   })
 })
+
+it.each([
+  ['EIO', -5],
+  ['EROFS', -30],
+  ['ENOSPC', -28],
+  ['EACCES', -13],
+] as const)('reports %s from read and write', async (code, expected) => {
+  const ws = await mkWs()
+  try {
+    const mfs = new MirageFS(ws.vfs)
+    const error = Object.assign(new Error(code), { code })
+    vi.spyOn(mfs.core, 'read').mockRejectedValue(error)
+    vi.spyOn(mfs.core, 'write').mockRejectedValue(error)
+    const buf = Buffer.alloc(8)
+    expect(expected).toBeLessThan(0)
+    expect(await callOp(mfs, 'read', '/data/f', 1, buf, 8, 0)).toEqual([expected])
+    expect(await callOp(mfs, 'write', '/data/f', 1, buf, 8, 0)).toEqual([expected])
+  } finally {
+    await ws.close()
+  }
+})

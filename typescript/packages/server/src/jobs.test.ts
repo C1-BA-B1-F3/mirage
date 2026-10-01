@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { JobStatus, JobTable, newJobId } from './jobs.ts'
 
 describe('newJobId', () => {
@@ -82,4 +82,71 @@ describe('JobTable', () => {
     const entry = await table.wait(job.id)
     expect(entry.status).toBe(JobStatus.FAILED)
   })
+})
+
+it('keeps canceled jobs running until cleanup settles', async () => {
+  let started!: () => void
+  let release!: () => void
+  const cleanup = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const table = new JobTable()
+  const job = table.submit('ws', 'probe', async (signal) => {
+    try {
+      await new Promise<void>((_, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          },
+          { once: true },
+        )
+      })
+    } finally {
+      started()
+      await gate
+    }
+  })
+  expect(table.cancel(job.id)).toBe(true)
+  await cleanup
+  expect(job.finishedAt).toBeNull()
+  expect(job.status).toBe(JobStatus.RUNNING)
+  expect(table.cancel(job.id)).toBe(false)
+  release()
+  expect((await table.wait(job.id)).status).toBe(JobStatus.CANCELED)
+})
+
+it('captures synchronous factories and bounds completed retention without evicting active jobs', async () => {
+  const table = new JobTable(2, 10)
+  let release!: () => void
+  const active = table.submit(
+    'ws',
+    'active',
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      }),
+  )
+  const first = table.submit('ws', 'first', () => Promise.resolve('one'))
+  await table.wait(first.id)
+  const second = table.submit('ws', 'second', () => {
+    throw new Error('synchronous failure')
+  })
+  expect(second.status).toBe(JobStatus.FAILED)
+  const third = table.submit('ws', 'third', () => Promise.resolve('three'))
+  await table.wait(third.id)
+  expect(table.has(first.id)).toBe(false)
+  expect(table.has(active.id)).toBe(true)
+  if (third.finishedAt === null) throw new Error('job did not finish')
+  const clock = vi.spyOn(Date, 'now').mockReturnValue((third.finishedAt + 11) * 1000)
+  try {
+    expect(table.list()).toEqual([active])
+  } finally {
+    clock.mockRestore()
+  }
+  release()
+  await table.wait(active.id)
 })

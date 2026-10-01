@@ -156,7 +156,7 @@ async function deniedResult(
       options.signal,
     )
   }
-  await joinOrAbort(env.sessions.flush(), options.signal)
+  await joinOrAbort(env.sessions.flush(session.sessionId), options.signal)
   return new ExecuteResult(new Uint8Array(), msg, exitCode, refusal)
 }
 
@@ -482,7 +482,7 @@ async function runLine(
     // every execute, success or failure, mirroring Python's finally. It
     // joins under the grace like the tree: a stalled store finishes in
     // the background instead of holding an aborted caller.
-    await joinOrAbort(env.sessions.flush(), options.signal)
+    await joinOrAbort(env.sessions.flush(targetSession.sessionId), options.signal)
   }
 }
 

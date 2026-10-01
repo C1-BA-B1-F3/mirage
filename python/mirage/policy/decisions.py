@@ -79,15 +79,16 @@ async def answered(
         return ABANDONED
     wait_task = asyncio.ensure_future(start())
     cancel_task = asyncio.create_task(cancel.wait())
-    done, pending = await asyncio.wait(
-        {wait_task, cancel_task},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    for task in pending:
-        task.cancel()
-    if wait_task in done:
-        return wait_task.result()
-    return ABANDONED
+    try:
+        done, _ = await asyncio.wait(
+            {wait_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        return wait_task.result() if wait_task in done else ABANDONED
+    finally:
+        for task in (wait_task, cancel_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(wait_task, cancel_task, return_exceptions=True)
 
 
 def decision_id(session_id: str, cwd: str, argv: tuple[str, ...]) -> str:

@@ -2953,6 +2953,13 @@
           "id": "capped"
         }
       ]
+    },
+    {
+      "id": "independent_sessions_do_not_wait_for_each_others_persistence",
+      "settings": {"mode": "write", "mounts": {}, "runtimes": []},
+      "steps": [
+        {"op": "session_persistence_isolation", "expect": {"value": true}}
+      ]
     }
   ]
 }

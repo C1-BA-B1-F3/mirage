@@ -81,6 +81,11 @@ class WasmVFS:
         self._build = BuildDir(Path(root)) if root is not None else None
         self._core = core
 
+    async def abort(self) -> None:
+        """Cancel the workspace operations owned by this guest."""
+        if self._core is not None:
+            await self._core.abort()
+
     def _prefixes(self) -> list[str]:
         """Mount prefixes that claim a path away from the build directory.
 

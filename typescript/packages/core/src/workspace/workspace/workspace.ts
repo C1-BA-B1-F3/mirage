@@ -1680,15 +1680,17 @@ export class Workspace {
   }
 
   private async runClose(): Promise<void> {
-    await this.sessionManager.settle()
-    await this.scriptPolicy.close()
     try {
       await closeWorkspace({
         watch: this.watchManager,
         cache: this.cache,
         ownsStateStore: this.ownsStateStore,
         stateStore: this.stateStoreInternal,
-        closers: this.closers,
+        closers: [
+          () => this.sessionManager.settle(),
+          () => this.scriptPolicy.close(),
+          ...this.closers.splice(0),
+        ],
         jobTable: this.jobTable,
         registry: this.registry,
         sharedMounts: this.sharedMounts,

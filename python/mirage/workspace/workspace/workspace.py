@@ -251,6 +251,7 @@ class Workspace:
         self._closed = False
         self._closing = False
         self._async_closed = False
+        self._close_error: BaseException | None = None
         self._close_lock = asyncio.Lock()
         # mounts reused from another live workspace (copy() / load
         # VFS overrides) stay open here; their origin closes them.

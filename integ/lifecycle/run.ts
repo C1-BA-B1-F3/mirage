@@ -57,6 +57,7 @@ interface Case {
 }
 
 type Step = (
+  | { op: 'session_persistence_isolation' }
   | ({ op: 'mount'; path: string; mode?: MountMode } & ResourceConfig)
   | { op: 'unmount' | 'read' | 'readdir' | 'stat' | 'cached'; path: string }
   | { op: 'write'; path: string; data: string }
@@ -144,6 +145,52 @@ interface Held {
   state?: WorkspaceStateDict
 }
 
+async function sessionPersistenceIsolation(ws: Workspace): Promise<boolean> {
+  ws.createSession('slow-save')
+  ws.createSession('fast-save')
+  await ws.shell('true')
+  const store = ws.stateStore.sessions(ws.workspaceId)
+  const original = store.casSet.bind(store)
+  let enter!: () => void
+  let release!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  store.casSet = async (id, fields, expected) => {
+    if (id === 'slow-save') {
+      enter()
+      await gate
+    }
+    return original(id, fields, expected)
+  }
+  let settled = false
+  const slow = ws.shell('X=slow', { sessionId: 'slow-save' }).then(() => {
+    settled = true
+  })
+  let fast: Promise<unknown> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('session persistence did not progress'))
+    }, 5000)
+  })
+  try {
+    await Promise.race([entered, timeout])
+    const running = ws.shell('X=fast; echo $X', { sessionId: 'fast-save' })
+    fast = running
+    const result = await Promise.race([running, timeout])
+    return result.stdoutText === 'fast\n' && !settled
+  } finally {
+    clearTimeout(timer)
+    release()
+    await Promise.all([slow, fast])
+    store.casSet = original
+  }
+}
+
 async function action(
   host: Host,
   ws: Workspace,
@@ -156,6 +203,8 @@ async function action(
     return runWithSession(ws.getSession(session), () => action(host, ws, unbound, policies, held))
   }
   switch (step.op) {
+    case 'session_persistence_isolation':
+      return sessionPersistenceIsolation(ws)
     case 'cached': {
       const value = await ws.cache.get(step.path)
       return value === null ? null : DEC.decode(value)

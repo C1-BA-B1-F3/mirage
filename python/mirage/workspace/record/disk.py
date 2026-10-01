@@ -19,7 +19,7 @@ import os
 import time
 from collections.abc import Iterable
 from itertools import count
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import quote, unquote
 
 import aiofiles
@@ -47,7 +47,11 @@ def _acquire_lock(lock_path: str) -> int | None:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         return None
-    os.write(fd, str(os.getpid()).encode())
+    try:
+        os.write(fd, str(os.getpid()).encode())
+    except BaseException:
+        _release_lock(fd, lock_path)
+        raise
     return fd
 
 
@@ -80,6 +84,45 @@ def _release_lock(fd: int, lock_path: str) -> None:
         logger.warning(
             "lock %s vanished before release (reclaimed?)", lock_path
         )
+
+
+_T = TypeVar("_T")
+
+
+async def _settle(task: asyncio.Task[_T]) -> _T:
+    """Join lock ownership transfer despite repeated cancellation."""
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            logger.debug(
+                "deferring cancellation until disk lock cleanup finishes"
+            )
+    return task.result()
+
+
+async def _acquire_owned(lock_path: str) -> int | None:
+    task = asyncio.create_task(asyncio.to_thread(_acquire_lock, lock_path))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        fd = await _settle(task)
+        if fd is not None:
+            await _settle(
+                asyncio.create_task(
+                    asyncio.to_thread(_release_lock, fd, lock_path)
+                )
+            )
+        raise
+
+
+async def _release_owned(fd: int, lock_path: str) -> None:
+    task = asyncio.create_task(asyncio.to_thread(_release_lock, fd, lock_path))
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await _settle(task)
+        raise
 
 
 class DiskRecordClient:
@@ -129,11 +172,11 @@ class DiskRecordClient:
         await aiofiles.os.makedirs(self._dir, exist_ok=True)
         path = self.path(name)
         lock_path = path + ".lock"
-        fd = await asyncio.to_thread(_acquire_lock, lock_path)
+        fd = await _acquire_owned(lock_path)
         if fd is None:
             if not await asyncio.to_thread(_reclaim_stale_lock, lock_path):
                 return False
-            fd = await asyncio.to_thread(_acquire_lock, lock_path)
+            fd = await _acquire_owned(lock_path)
             if fd is None:
                 return False
         try:
@@ -143,7 +186,7 @@ class DiskRecordClient:
             await self._write_record(path, fields)
             return True
         finally:
-            await asyncio.to_thread(_release_lock, fd, lock_path)
+            await _release_owned(fd, lock_path)
 
     async def lock(self, name: str) -> int:
         """Block until this record's lockfile is held; fd to release.
@@ -155,7 +198,7 @@ class DiskRecordClient:
         await aiofiles.os.makedirs(self._dir, exist_ok=True)
         lock_path = self.path(name) + ".lock"
         for _ in range(LOCK_RETRY_LIMIT):
-            fd = await asyncio.to_thread(_acquire_lock, lock_path)
+            fd = await _acquire_owned(lock_path)
             if fd is not None:
                 return fd
             if await asyncio.to_thread(_reclaim_stale_lock, lock_path):
@@ -164,7 +207,7 @@ class DiskRecordClient:
         raise RuntimeError(f"could not acquire lock {lock_path}")
 
     async def unlock(self, name: str, fd: int) -> None:
-        await asyncio.to_thread(_release_lock, fd, self.path(name) + ".lock")
+        await _release_owned(fd, self.path(name) + ".lock")
 
     async def _write_record(self, path: str, fields: dict[str, Any]) -> None:
         tmp = f"{path}.{os.getpid()}.{next(_TMP_COUNTER)}.tmp"

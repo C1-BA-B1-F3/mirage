@@ -166,3 +166,25 @@ async def test_a_cold_and_a_warm_ranged_read_agree():
     await ws.apply_io(
         IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"]))
     assert await ws.vfs.read("/data/f.bin", 2, 3) == cold
+
+
+@op("read", vfs="ram", filetype=".tally")
+async def _read_tally_override(accessor, path: PathSpec, **kwargs) -> bytes:
+    return b"USER"
+
+
+@pytest.mark.asyncio
+async def test_a_user_override_of_a_vfs_renderer_is_never_served_warm():
+    # Same key as the renderer the VFS ships, a different op: the commands
+    # still read through the VFS, so the entry is not this rendering.
+    ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
+    ws.mount("/data/").register_fns([_read_tally_override])
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"USER"
+
+
+@pytest.mark.asyncio
+async def test_an_extensionless_path_beside_a_user_renderer_is_served_warm():
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/README")
+    assert await ws.vfs.read("/data/README") == b"CACHED"

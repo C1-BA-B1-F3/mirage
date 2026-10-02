@@ -91,12 +91,16 @@ async def execute(
         else entry.runner.ws.default_session_id
     )
     kwargs["session_id"] = session_id
+
+    async def run(scope):
+        return await entry.runner.call(
+            _invoke_execute(entry.runner.ws, kwargs, scope)
+        )
+
     job = await job_table.submit(
         workspace_id=workspace_id,
         command=req_obj.command,
-        factory=lambda scope: entry.runner.call(
-            _invoke_execute(entry.runner.ws, kwargs, scope)
-        ),
+        factory=run,
         session_id=session_id,
     )
     if background:

@@ -12,82 +12,81 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
 import os
 import stat
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import asyncssh
 import pytest
 
 from mirage.server.ssh.keys import HOST_KEY_ALGORITHM, load_host_key
+from mirage.workspace.record.disk import DiskRecordClient
 
 
 def _public(key: asyncssh.SSHKey) -> bytes:
     return key.export_public_key()
 
 
-def test_first_load_mints_an_owner_only_key(tmp_path):
+@pytest.mark.asyncio
+async def test_first_load_mints_an_owner_only_key(tmp_path):
     path = tmp_path / "ssh" / "host_key"
-    key = load_host_key(path)
+    key = await load_host_key(path)
     assert key.get_algorithm() == HOST_KEY_ALGORITHM
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
-def test_later_loads_keep_the_same_key(tmp_path):
+@pytest.mark.asyncio
+async def test_later_loads_keep_the_same_key(tmp_path):
     path = tmp_path / "host_key"
-    first = load_host_key(path)
-    assert _public(load_host_key(path)) == _public(first)
+    first = await load_host_key(path)
+    assert _public(await load_host_key(path)) == _public(first)
 
 
-def test_an_existing_key_is_read_not_replaced(tmp_path):
+@pytest.mark.asyncio
+async def test_an_existing_key_is_read_not_replaced(tmp_path):
     path = tmp_path / "host_key"
     mine = asyncssh.generate_private_key("ssh-ed25519")
     path.write_bytes(mine.export_private_key())
-    assert _public(load_host_key(path)) == _public(mine)
+    assert _public(await load_host_key(path)) == _public(mine)
 
 
-def test_racing_loads_never_read_a_partial_key(tmp_path):
-    path = tmp_path / "host_key"
-    with ThreadPoolExecutor(8) as pool:
-        keys = list(pool.map(load_host_key, [path] * 8))
-    assert len({_public(key) for key in keys}) == 1
-    assert [p.name for p in tmp_path.iterdir()] == ["host_key"]
-
-
-def test_storage_without_hard_links_publishes_by_rename(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_racing_loads_agree_on_one_key_without_hard_links(
+    tmp_path, monkeypatch
+):
     path = tmp_path / "host_key"
 
     def no_links(src, dst):
         raise PermissionError(errno.EPERM, "Operation not permitted")
 
     monkeypatch.setattr(os, "link", no_links)
-    key = load_host_key(path)
-    assert _public(asyncssh.read_private_key(str(path))) == _public(key)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    keys = await asyncio.gather(*(load_host_key(path) for _ in range(8)))
+    assert len({_public(key) for key in keys}) == 1
+    assert _public(asyncssh.read_private_key(str(path))) == _public(keys[0])
     assert [p.name for p in tmp_path.iterdir()] == ["host_key"]
 
 
-def test_a_failed_write_leaves_no_key_file(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_a_start_waiting_on_the_lock_reads_the_winner(tmp_path):
+    path = tmp_path / "host_key"
+    records = DiskRecordClient(str(tmp_path), "")
+    lock = await records.lock(path.name)
+    loading = asyncio.ensure_future(load_host_key(path))
+    await asyncio.sleep(0.05)
+    winner = asyncssh.generate_private_key("ssh-ed25519")
+    path.write_bytes(winner.export_private_key())
+    await records.unlock(path.name, lock)
+    assert _public(await loading) == _public(winner)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_write_leaves_no_key_file(tmp_path, monkeypatch):
     def disk_full(self, *args, **kwargs):
         raise OSError(errno.ENOSPC, "No space left on device")
 
     monkeypatch.setattr(asyncssh.SSHKey, "export_private_key", disk_full)
     with pytest.raises(OSError):
-        load_host_key(tmp_path / "host_key")
+        await load_host_key(tmp_path / "host_key")
     assert list(tmp_path.iterdir()) == []
-
-
-def test_losing_the_mint_race_reads_the_winner(tmp_path, monkeypatch):
-    path = tmp_path / "host_key"
-    winner = asyncssh.generate_private_key("ssh-ed25519")
-    path.write_bytes(winner.export_private_key())
-    real_exists = Path.exists
-    monkeypatch.setattr(
-        Path,
-        "exists",
-        lambda self: False if self == path else real_exists(self),
-    )
-    assert _public(load_host_key(path)) == _public(winner)

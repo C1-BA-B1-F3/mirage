@@ -16,6 +16,7 @@ import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DiskRecordClient } from '@struktoai/mirage-node'
 import ssh2 from 'ssh2'
 import { describe, expect, it, vi } from 'vitest'
 import { loadHostKey, mintKeyPair } from './keys.ts'
@@ -47,29 +48,38 @@ describe('loadHostKey', () => {
     expect(publicOf(await loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
   })
 
-  it('racing loads never read a partial key', async () => {
+  it('racing loads agree on one key without hard links', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
     const path = join(dir, 'host_key')
-    const keys = await Promise.all(Array.from({ length: 8 }, () => loadHostKey(path, ssh2.utils)))
-    expect(new Set(keys.map(publicOf)).size).toBe(1)
-    expect(readdirSync(dir)).toEqual(['host_key'])
+    vi.mocked(fs.link).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }))
+    try {
+      const keys = await Promise.all(Array.from({ length: 8 }, () => loadHostKey(path, ssh2.utils)))
+      expect(new Set(keys.map(publicOf)).size).toBe(1)
+      expect(readFileSync(path, 'utf-8')).toBe(keys[0])
+      expect(readdirSync(dir)).toEqual(['host_key'])
+    } finally {
+      vi.mocked(fs.link).mockReset()
+    }
   })
 
-  it('publishes by rename where the storage has no hard links', async () => {
+  it('a start waiting on the lock reads the winner', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
     const path = join(dir, 'host_key')
-    vi.mocked(fs.link).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }))
-    const key = await loadHostKey(path, ssh2.utils)
-    expect(readFileSync(path, 'utf-8')).toBe(key)
-    expect(statSync(path).mode & 0o777).toBe(0o600)
-    expect(readdirSync(dir)).toEqual(['host_key'])
+    const records = new DiskRecordClient(dir, '')
+    const lock = await records.lock('host_key')
+    const loading = loadHostKey(path, ssh2.utils)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const winner = mintKeyPair(ssh2.utils).private
+    writeFileSync(path, winner)
+    await records.unlock('host_key', lock)
+    expect(await loading).toBe(winner)
   })
 
   it('leaves no key file behind when writing it fails', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
-    vi.mocked(fs.writeFile).mockImplementationOnce(async (file) => {
+    vi.mocked(fs.writeFile).mockImplementationOnce((file) => {
       writeFileSync(file as string, 'partial')
-      throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+      return Promise.reject(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }))
     })
     await expect(loadHostKey(join(dir, 'host_key'), ssh2.utils)).rejects.toThrow('ENOSPC')
     expect(readdirSync(dir)).toEqual([])

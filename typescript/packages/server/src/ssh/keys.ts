@@ -13,8 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { randomUUID } from 'node:crypto'
-import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { DiskRecordClient } from '@struktoai/mirage-node'
 import type * as Ssh2Mod from 'ssh2'
 
 const HOST_KEY_ALGORITHM = 'ed25519'
@@ -34,40 +35,52 @@ export function mintKeyPair(utils: typeof Ssh2Mod.utils): Ssh2Mod.utils.KeyPairR
   }
 }
 
+async function readHostKey(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf-8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+}
+
+async function writeHostKey(path: string, key: string): Promise<void> {
+  const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}`)
+  try {
+    await writeFile(temp, key, { mode: 0o600, flag: 'wx' })
+    await rename(temp, path)
+  } finally {
+    await rm(temp, { force: true })
+  }
+}
+
 /**
  * The daemon's SSH host key (OpenSSH private-key text), minted on first
  * use and kept.
  *
  * A fresh key per start would make every client's known_hosts entry look
  * like a man-in-the-middle, so the first start writes one with owner-only
- * permissions and every later start reads it back. Two daemons racing to
- * mint it both end up reading the one that won: the key is written whole
- * before it is linked into place, so the loser never reads a partial file.
- * Storage without hard links gets the whole file by rename instead, where
- * two daemons starting at once may each keep the key they minted. The
- * format is OpenSSH's own, the same file the Python daemon writes, so
- * either daemon can serve the other's key.
+ * permissions and every later start reads it back. Minting holds a
+ * lockfile beside the key and looks again under it, so two daemons
+ * starting at once agree on one key; the key is written whole and renamed
+ * into place, so a reader never sees a partial file. Only exclusive create
+ * and rename are needed, which every local filesystem has. The format is
+ * OpenSSH's own, the same file the Python daemon writes, so either daemon
+ * can serve the other's key.
  */
 export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Promise<string> {
-  try {
-    return await readFile(path, 'utf-8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-  }
-  const pair = mintKeyPair(utils)
+  const existing = await readHostKey(path)
+  if (existing !== null) return existing
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}`)
+  const records = new DiskRecordClient(dirname(path), '')
+  const lock = await records.lock(basename(path))
   try {
-    await writeFile(temp, pair.private, { mode: 0o600, flag: 'wx' })
-    try {
-      await link(temp, path)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return await readFile(path, 'utf-8')
-      console.debug(`could not link host key ${path}`, err)
-      await rename(temp, path)
-    }
+    const minted = await readHostKey(path)
+    if (minted !== null) return minted
+    const key = mintKeyPair(utils).private
+    await writeHostKey(path, key)
+    return key
   } finally {
-    await rm(temp, { force: true })
+    await records.unlock(basename(path), lock)
   }
-  return pair.private
 }

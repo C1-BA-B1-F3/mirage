@@ -115,9 +115,7 @@ async def start_ssh_server(
     acceptor = await asyncssh.listen(
         config.host,
         config.port,
-        server_host_keys=[
-            await run_blocking(load_host_key, config.host_key_file)
-        ],
+        server_host_keys=[await load_host_key(config.host_key_file)],
         server_factory=functools.partial(
             MirageSSHServer, config.authorized_keys_file
         ),

@@ -94,11 +94,7 @@ async def _acquire_owned(lock_path: str) -> int | None:
     except asyncio.CancelledError:
         fd = await settle(task)
         if fd is not None:
-            await settle(
-                asyncio.create_task(
-                    asyncio.to_thread(_release_lock, fd, lock_path)
-                )
-            )
+            await _release_owned(fd, lock_path)
         raise
 
 

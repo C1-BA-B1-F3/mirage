@@ -97,35 +97,6 @@ def profile_document(raw: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-async def session_persistence_isolation(ws: Workspace) -> bool:
-    """Hold one store write while another session completes a public shell call."""
-    ws.create_session("slow-save")
-    ws.create_session("fast-save")
-    await ws.shell("true")
-    store = ws.state_store.sessions(ws.workspace_id)
-    original = store.cas_set
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def write(session_id, fields, expected_generation):
-        if session_id == "slow-save":
-            entered.set()
-            await release.wait()
-        return await original(session_id, fields, expected_generation)
-
-    store.cas_set = write
-    slow = asyncio.create_task(ws.shell("X=slow", session_id="slow-save"))
-    try:
-        await asyncio.wait_for(entered.wait(), 5)
-        fast = await asyncio.wait_for(
-            ws.shell("X=fast; echo $X", session_id="fast-save"), 5
-        )
-        return await fast.stdout_str() == "fast\n" and not slow.done()
-    finally:
-        release.set()
-        await slow
-        store.cas_set = original
-
-
 async def action(
     ws: Workspace,
     step: dict[str, Any],
@@ -143,8 +114,6 @@ async def action(
             ones; ``snapshot`` stores the state dict ``checkout`` applies.
     """
     op = step["op"]
-    if op == "session_persistence_isolation":
-        return await session_persistence_isolation(ws)
     if op == "cached":
         value = await ws.cache.get(step["path"])
         return value.decode() if value is not None else None

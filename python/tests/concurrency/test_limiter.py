@@ -103,7 +103,7 @@ async def test_cancellation_releases_capacity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bounded_map_owns_workers_on_error_and_cancel():
+async def test_bounded_map_keeps_order_and_owns_its_workers():
     entered = asyncio.Event()
     cleaned = asyncio.Event()
     admitted = []
@@ -133,11 +133,8 @@ async def test_bounded_map_owns_workers_on_error_and_cancel():
         await task
     assert cleaned.is_set()
 
-
-@pytest.mark.asyncio
-async def test_bounded_map_preserves_order():
-    async def one(value):
+    async def double(value):
         await asyncio.sleep(0)
         return value * 2
 
-    assert await bounded_map(list(range(10)), one, 3) == list(range(0, 20, 2))
+    assert await bounded_map([3, 1, 2], double, 2) == [6, 2, 4]

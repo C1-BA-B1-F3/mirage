@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -27,6 +28,8 @@ from mirage.cache.types import WriteReceipt
 from mirage.observe.context import active_recorder
 from mirage.types import DEFAULT_READ_TTL, FileStat, PathSpec, ReadPolicy
 from mirage.utils.key_prefix import mount_key
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> float:
@@ -480,9 +483,13 @@ class CacheManager:
         the bytes sent drops (SharePoint promotes properties into an
         uploaded Office file), a token keeps the bytes with it, and a reply
         that says nothing keeps them only under ``bounded``, where nothing
-        would verify them anyway. Keep or drop, in-flight reads and probe
-        answers are retired, so a read that began before the write cannot
-        stamp its bytes over these.
+        would verify them anyway. Bytes larger than the whole cache are
+        dropped too: kept, they would evict every warm entry and then
+        themselves. Keep or drop, in-flight reads and probe answers are
+        retired, so a read that began before the write cannot stamp its
+        bytes over these. The write has landed by now, so a fill the cache
+        store refuses is logged and skipped, as a background drain's is,
+        never raised.
 
         Args:
             path (PathSpec): Path that was written; only ``virtual`` is
@@ -497,6 +504,7 @@ class CacheManager:
                 keep = (
                     started == self._read_generation
                     and self._owns_path(key)
+                    and len(data) <= self._file_cache.cache_limit
                     and self._vouched(receipt, len(data))
                 )
                 self._retire()
@@ -504,12 +512,19 @@ class CacheManager:
                 # still filling the old bytes in the background.
                 await self._file_cache.remove(key)
                 if keep:
-                    await self._file_cache.set(
-                        key,
-                        data,
-                        fingerprint=receipt.token if receipt else None,
-                        ttl=self._read_ttl,
-                    )
+                    try:
+                        await self._file_cache.set(
+                            key,
+                            data,
+                            fingerprint=receipt.token if receipt else None,
+                            ttl=self._read_ttl,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "cache fill after a write failed for %s",
+                            key,
+                            exc_info=True,
+                        )
         else:
             self._retire()
         await self._invalidate_parent(key)

@@ -285,7 +285,7 @@ jobs:
         run: ./python/.venv/bin/python integ/lifecycle/run.py
 
   integ-ts:
-    needs: [changes, typescript-build]
+    needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
     services:
@@ -333,12 +333,13 @@ jobs:
         working-directory: typescript
         run: pnpm install --frozen-lockfile=false
 
-      - name: Download TypeScript build outputs
-        uses: actions/download-artifact@v8
-        with:
-          github-token: ${{ github.token }}
-          name: integ-typescript-dist
-          path: typescript/packages
+      # Built here rather than downloaded from the bootstrap job: waiting for
+      # that job held this one, among the last to finish, back by a minute
+      # and a half, and the three packages every step here imports build in
+      # under one.
+      - name: Build mirage-core, mirage-node and mirage-browser
+        working-directory: typescript
+        run: pnpm --filter @struktoai/mirage-core --filter @struktoai/mirage-node --filter @struktoai/mirage-browser build
 
       - name: Wait for Nextcloud and tune it for the battery
         uses: ./.github/actions/nextcloud-tune
@@ -703,7 +704,7 @@ jobs:
         run: integ/scripts/background.sh wait airtable-atlas
 
   integ-shared-ts:
-    needs: [changes, typescript-build]
+    needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -741,9 +742,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/integ-battery-setup
-        with:
-          build-packages: "false"
-          typescript-build-artifact: integ-typescript-dist
 
       # The http facet rides the same split: its fixture server is python
       # (the adapter's startPythonServer), which this job has and integ-ts

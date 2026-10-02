@@ -849,3 +849,89 @@ describe('rmdir namespace entries', () => {
     }
   })
 })
+
+describe('a marked op is judged on the path the door reaches', () => {
+  // An EntryGate that refuses one path and remembers what it was asked.
+  function refusing(refused: string) {
+    const asked: string[] = []
+    return {
+      asked,
+      gate: {
+        scoped: true,
+        granted: [],
+        check: (virtual: string): void => {
+          asked.push(virtual)
+          if (virtual === refused) throw new Error(`sealed ${virtual}`)
+        },
+        refuses: (virtual: string): boolean => virtual === refused,
+      },
+    }
+  }
+
+  async function linkedWs(): Promise<Workspace> {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+    )
+    await ws.shell(
+      'mkdir -p /data/real && echo s > /data/real/secret && ' +
+        'ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink',
+    )
+    return ws
+  }
+
+  // The door walks every link above the final name before it acts, so an
+  // op on the name itself is judged on the walked path, and one that
+  // follows the final link on the target as well.
+  it('judges the walked and followed paths', async () => {
+    const ws = await linkedWs()
+    try {
+      const { gate, asked } = refusing('/data/real/secret')
+      await expect(
+        ws.dispatch('unlink', '/data/alias/secret', [], { ruleGate: gate }),
+      ).rejects.toThrow('sealed')
+      await expect(
+        ws.dispatch('rename', '/data/real/other', [PathSpec.fromStrPath('/data/alias/secret')], {
+          ruleGate: gate,
+        }),
+      ).rejects.toThrow('sealed')
+      await expect(ws.dispatch('read', '/data/flink', [], { ruleGate: gate })).rejects.toThrow(
+        'sealed',
+      )
+      expect(asked).toEqual([
+        '/data/real/secret',
+        '/data/real/other',
+        '/data/real/secret',
+        '/data/flink',
+        '/data/real/secret',
+      ])
+      // Unmarked, the same op is the door's alone: no command rule.
+      await ws.dispatch('unlink', '/data/alias/secret')
+      expect(await ws.dispatch('readdir', '/data/real')).toEqual([])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A link into hidden space is missing for the session; the door says so
+  // before the command's rule on the visible link is asked.
+  it('answers hidden space before the rule', async () => {
+    const ws = await linkedWs()
+    try {
+      const { gate, asked } = refusing('/data/flink')
+      const session = new SessionState({
+        sessionId: 'hider',
+        hiddenPaths: { paths: ['/data/real'] },
+      })
+      await runWithSession(session, async () => {
+        await expect(
+          ws.dispatch('read', '/data/flink', [], { ruleGate: gate }),
+        ).rejects.toMatchObject({ code: 'ENOENT' })
+      })
+      expect(asked).toEqual([])
+    } finally {
+      await ws.close()
+    }
+  })
+})

@@ -467,7 +467,7 @@ export async function fanOutTraversal(
   ) {
     let stdout: ByteSource | null = null
     let io = new IOResult()
-    const guarded = withDispatchRuleGuard(dispatch, ns?.links)
+    const guarded = withDispatchRuleGuard(dispatch)
     try {
       const result = await rgGeneric(
         flatten([...paths]),

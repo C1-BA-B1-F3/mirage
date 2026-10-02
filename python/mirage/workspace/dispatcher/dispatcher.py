@@ -46,6 +46,7 @@ from mirage.policy.errors import PolicyDenied, PolicyError
 from mirage.types import (
     DEFAULT_READ_TTL,
     CacheFacts,
+    EntryGate,
     FileStat,
     FileType,
     PathSpec,
@@ -311,6 +312,11 @@ class Dispatcher:
         report: OpReport | None = None,
         **kwargs: Any,
     ) -> tuple[Any, IOResult]:
+        # A command's own dispatcher marks its ops with the gate the
+        # command was admitted under (with_dispatch_rule_guard); the door
+        # judges that gate on the paths it actually reaches, after its
+        # own walk, and never forwards the mark to an op.
+        rule_gate: EntryGate | None = kwargs.pop("rule_gate", None)
         await self._namespace.ensure_loaded()
         # Pending fingerprint checks from a strict snapshot restore run
         # before the op can touch a mount, whichever surface called:
@@ -357,8 +363,17 @@ class Dispatcher:
         # directory lands in the directory the link names, not under a
         # name nothing else would look up.
         path = self._walked(path, op in HIDDEN_CREATE_OPS)
+        # An op that acts on the name itself reaches the walked path, so
+        # that is what the command's rules judge, before anything about
+        # the name is acted on; one that follows the final link is judged
+        # below, once the follow has answered for hidden space.
+        no_follow = op in NO_FOLLOW_OPS or bool(kwargs.get("nofollow"))
+        if rule_gate is not None and no_follow:
+            rule_gate.check(path.virtual)
         if op == "rename" and isinstance(dst, PathSpec):
             dst = kwargs["dst"] = self._walked(dst, True)
+            if rule_gate is not None:
+                rule_gate.check(dst.virtual)
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would
             # land at paths the session can see. Destroying hidden
@@ -402,6 +417,7 @@ class Dispatcher:
         # `nofollow` is the caller's AT_SYMLINK_NOFOLLOW: an op that acts
         # on a link entry itself (chown -h writing the link's own attrs)
         # keeps the typed path. Consumed here, never forwarded.
+        walked = path
         if op not in NO_FOLLOW_OPS and not kwargs.pop("nofollow", False):
             try:
                 followed = self._namespace.follow(path.virtual)
@@ -411,6 +427,10 @@ class Dispatcher:
                 path = PathSpec.from_str_path(followed)
                 if not path_allowed(path.virtual):
                     raise hidden_refusal(path.virtual, op in HIDDEN_CREATE_OPS)
+        if rule_gate is not None and not no_follow:
+            rule_gate.check(walked.virtual)
+            if path.virtual != walked.virtual:
+                rule_gate.check(path.virtual)
         if op in XATTR_OPS:
             return await self._xattr_op(op, path, kwargs, report), IOResult()
         mount = self._namespace.try_mount_for(path.virtual)

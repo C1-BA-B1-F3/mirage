@@ -1100,3 +1100,87 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
             reset_current_session(token)
         assert not ws.namespace.is_link("/data/d/old")
         assert ws.namespace.readlink("/data/d/late") == "nowhere"
+
+
+class _RefusingGate:
+    """An EntryGate that refuses one path and remembers what it was asked."""
+
+    scoped = True
+    granted = ()
+
+    def __init__(self, refused: str) -> None:
+        self.refused = refused
+        self.asked: list[str] = []
+
+    def check(self, virtual: str) -> None:
+        self.asked.append(virtual)
+        if virtual == self.refused:
+            raise PermissionError(errno.EACCES, "sealed", virtual)
+
+    def refuses(self, virtual: str) -> bool:
+        return virtual == self.refused
+
+
+async def _linked_ws() -> Workspace:
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
+    await ws.shell(
+        "mkdir -p /data/real && echo s > /data/real/secret && "
+        "ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink"
+    )
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_a_marked_op_is_judged_on_the_path_the_door_reaches():
+    # The door walks every link above the final name before it acts, so
+    # an op on the name itself is judged on the walked path, and one that
+    # follows the final link on the target as well.
+    ws = await _linked_ws()
+    try:
+        gate = _RefusingGate("/data/real/secret")
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "unlink", _path("/data/alias/secret"), rule_gate=gate
+            )
+        with pytest.raises(PermissionError):
+            await ws.dispatch(
+                "rename",
+                _path("/data/real/other"),
+                dst=_path("/data/alias/secret"),
+                rule_gate=gate,
+            )
+        with pytest.raises(PermissionError):
+            await ws.dispatch("read", _path("/data/flink"), rule_gate=gate)
+        assert gate.asked == [
+            "/data/alias/secret".replace("alias", "real"),
+            "/data/real/other",
+            "/data/real/secret",
+            "/data/flink",
+            "/data/real/secret",
+        ]
+        # Unmarked, the same op is the door's alone: no command rule.
+        await ws.dispatch("unlink", _path("/data/alias/secret"))
+        assert (await ws.dispatch("readdir", _path("/data/real")))[0] == []
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_marked_op_answers_hidden_space_before_the_rule():
+    # A link into hidden space is missing for the session; the door says
+    # so before the command's rule on the visible link is asked.
+    ws = await _linked_ws()
+    session = SessionState(
+        session_id="hider", hidden_paths=HiddenPaths(paths=("/data/real",))
+    )
+    token = set_current_session(session)
+    try:
+        gate = _RefusingGate("/data/flink")
+        with pytest.raises(FileNotFoundError):
+            await ws.dispatch("read", _path("/data/flink"), rule_gate=gate)
+        assert gate.asked == []
+    finally:
+        reset_current_session(token)
+        await ws.close()

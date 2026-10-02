@@ -38,11 +38,9 @@ from mirage.context import (
 )
 from mirage.context.session_context import require_paths_writable
 from mirage.io import IOResult
-from mirage.ops.config import NO_FOLLOW_OPS
 from mirage.ops.types import (
     ChildMounts,
     LinkTargetStat,
-    LinkView,
     StatOverlay,
 )
 from mirage.policy.constants import METADATA_OPS
@@ -55,7 +53,6 @@ from mirage.utils.errors import (
     ReadOnlyError,
     eexist,
     eisdir,
-    eloop,
     enoent,
     enotdir,
     enotsup,
@@ -63,7 +60,7 @@ from mirage.utils.errors import (
 )
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
-from mirage.utils.path import CycleError, norm, parent
+from mirage.utils.path import norm, parent
 from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.vfs.types import (
     ContentSearchOps,
@@ -1023,30 +1020,25 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
     return replace(ops, **changes)
 
 
-def with_dispatch_rule_guard(
-    dispatch: DispatchFn, links: LinkView | None = None
-) -> DispatchFn:
-    """Return ``dispatch`` asking the admitted command's gate about each
-    path before an op goes to the door.
+def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
+    """Return ``dispatch`` marking each op with the admitted command's
+    gate, for the door to judge.
 
     The op dispatcher a command is handed (``opts.dispatch``, the
     cross-mount relay's) reaches a mount without passing the command's
     own guarded slots, so ``with_rule_guard`` never sees what a relayed
     ``tar -cf -`` or a cross-mount ``cp -r`` reads and writes. The door
     enforces hiding, modes and pure path rules on its own but cannot
-    tell which command issued an op; the bound gate can. A metadata op
-    passes as the slot chain lets ``stat`` pass, and a hidden path is
-    left for the door to answer as missing, so no rule names it. The
-    door follows a link before it acts, so an op that follows one is
-    also judged on the target it reaches: a path a command names inside
-    its own program (awk's getline) arrives unjudged, and a rule on the
-    target must hold through the link as it holds on the target.
+    tell which command issued an op, so the op carries the bound gate
+    as ``rule_gate`` and the door judges it on the paths it actually
+    reaches: after its own walk (a ``..`` through a missing directory,
+    a link into hidden space answer as missing first), with every link
+    above the final name followed, and the final one for an op that
+    follows it. A metadata op passes unmarked, as the slot chain lets
+    ``stat`` pass.
 
     Args:
         dispatch (DispatchFn): the workspace op dispatcher.
-        links (LinkView | None): the namespace's symlink facts; None
-            where the caller has no namespace, and then no link is
-            followed.
     """
 
     async def guarded(
@@ -1054,21 +1046,7 @@ def with_dispatch_rule_guard(
     ) -> tuple[Any, IOResult]:
         gate = get_admission()
         if gate is not None and op not in METADATA_OPS:
-            for spec in (path, *options.values()):
-                if isinstance(spec, PathSpec) and path_allowed(spec.virtual):
-                    gate.check(spec.virtual)
-            if (
-                links is not None
-                and op not in NO_FOLLOW_OPS
-                and not options.get("nofollow")
-                and path_allowed(path.virtual)
-            ):
-                try:
-                    target = links.resolve(path.virtual)
-                except CycleError:
-                    raise eloop(path) from None
-                if target != norm(path.virtual) and path_allowed(target):
-                    gate.check(target)
+            options = {**options, "rule_gate": gate}
         return await dispatch(op, path, **options)
 
     return guarded

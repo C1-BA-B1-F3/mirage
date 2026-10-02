@@ -45,12 +45,10 @@ import { hasAborted, makeAbortError } from '../../../workspace/abort.ts'
 import { moveReveals } from '../../../utils/hidden.ts'
 import { removeRemnants, visibleBelow, type RemnantChannel } from '../../../utils/remnants.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
-import type { LinkView, StatOverlay } from '../../../ops/types.ts'
-import { NO_FOLLOW_OPS } from '../../../ops/config.ts'
+import type { StatOverlay } from '../../../ops/types.ts'
 
 import { FileType, MountMode, PathSpec, type FileStat, type WalkProbe } from '../../../types.ts'
 import {
-  eloop,
   eacces,
   eexist,
   eisdir,
@@ -70,7 +68,7 @@ import {
   resolveGlobWith,
   type TargetStat,
 } from '../../../utils/glob_walk.ts'
-import { CycleError, norm, parent } from '../../../utils/path.ts'
+import { norm, parent } from '../../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
 import type { AggregateFn, CommandFnResult, CommandOpts } from '../../config.ts'
@@ -388,47 +386,26 @@ export function withRuleGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
 }
 
 /**
- * Return `dispatch` asking the admitted command's gate about each path
- * before an op goes to the door.
+ * Return `dispatch` marking each op with the admitted command's gate, for
+ * the door to judge.
  *
  * The op dispatcher a command is handed (`opts.dispatch`, the cross-mount
  * relay's) reaches a mount without passing the command's own guarded
  * slots, so `withRuleGuard` never sees what a relayed `tar -cf -` or a
  * cross-mount `cp -r` reads and writes. The door enforces hiding, modes and
- * pure path rules on its own but cannot tell which command issued an op;
- * the bound gate can. A metadata op passes as the slot chain lets `stat`
- * pass, and a hidden path is left for the door to answer as missing, so no
- * rule names it. The door follows a link before it acts, so an op that
- * follows one is also judged on the target it reaches: a path a command
- * names inside its own program (awk's getline) arrives unjudged, and a rule
- * on the target must hold through the link as it holds on the target.
- * `links` is the namespace's symlink facts; without them no link is
- * followed.
+ * pure path rules on its own but cannot tell which command issued an op,
+ * so the op carries the bound gate as `ruleGate` and the door judges it on
+ * the paths it actually reaches: after its own walk (a `..` through a
+ * missing directory, a link into hidden space answer as missing first),
+ * with every link above the final name followed, and the final one for an
+ * op that follows it. A metadata op passes unmarked, as the slot chain
+ * lets `stat` pass.
  */
-export function withDispatchRuleGuard(dispatch: DispatchFn, links?: LinkView): DispatchFn {
+export function withDispatchRuleGuard(dispatch: DispatchFn): DispatchFn {
   return async (op, path, args, options, report) => {
     const gate = getAdmission()
-    if (gate !== null && !METADATA_OPS.has(op)) {
-      for (const spec of [path, ...(args ?? []), ...Object.values(options ?? {})]) {
-        if (spec instanceof PathSpec && pathAllowed(spec.virtual)) gate.check(spec.virtual)
-      }
-      if (
-        links !== undefined &&
-        !NO_FOLLOW_OPS.has(op) &&
-        options?.nofollow !== true &&
-        pathAllowed(path.virtual)
-      ) {
-        let target: string
-        try {
-          target = links.resolve(path.virtual)
-        } catch (err) {
-          if (err instanceof CycleError) throw eloop(path.virtual)
-          throw err
-        }
-        if (target !== norm(path.virtual) && pathAllowed(target)) gate.check(target)
-      }
-    }
-    return dispatch(op, path, args, options, report)
+    if (gate === null || METADATA_OPS.has(op)) return dispatch(op, path, args, options, report)
+    return dispatch(op, path, args, { ...options, ruleGate: gate }, report)
   }
 }
 

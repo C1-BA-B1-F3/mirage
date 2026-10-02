@@ -21,7 +21,10 @@ from pydantic import ValidationError
 
 from mirage.agents.io_text import with_refusal
 from mirage.commands.cli.specs import cli_spec_for
+from mirage.commands.config import CommandOpts, command
+from mirage.commands.spec.types import CommandSpec
 from mirage.context import reset_current_session, set_current_session
+from mirage.io.types import IOResult
 from mirage.policy import Action, Ask, CommandContext, Decision, Policy, Scope
 from mirage.policy.constants import DEFAULT_ASK_REASON, DEFAULT_DENY_REASON
 from mirage.policy.errors import PolicyError
@@ -39,7 +42,13 @@ from mirage.process.config import ProcessPermissions
 from mirage.runtime.base import Runtime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.types import RunResult, ScriptSource
-from mirage.types import HiddenPaths, HiddenVars, MountMode, ShowEntry
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    MountMode,
+    PathSpec,
+    ShowEntry,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.abort import MirageAbortError
@@ -2464,6 +2473,117 @@ async def test_a_dispatched_read_through_a_link_meets_the_target_rule():
             0,
             "ok\n",
             "",
+        )
+    finally:
+        await ws.close()
+
+
+@command("zap", vfs="ram", spec=CommandSpec())
+async def _zap(
+    store, paths: list[PathSpec], texts: list[str], opts: CommandOpts
+):
+    # A host command that removes or moves a name through the dispatcher
+    # it is handed, the way a custom command reaches a mount.
+    target = PathSpec.from_str_path("/data/alias/secret")
+    try:
+        if texts and texts[0] == "rename":
+            await opts.dispatch(
+                "rename", target, dst=PathSpec.from_str_path("/data/moved")
+            )
+        else:
+            await opts.dispatch("unlink", target)
+    except OSError as exc:
+        return None, IOResult(
+            exit_code=1, stderr=f"zap: {exc.strerror}\n".encode()
+        )
+    return b"done\n", IOResult()
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_op_meets_the_rule_through_a_linked_parent():
+    # The door walks every link above the final name before it acts, so
+    # /data/alias/secret is /data/real/secret by the time anything is
+    # removed or moved. The rule on the real path holds there for an op
+    # on the name itself (unlink, rename) as for one that follows it.
+    doc = {
+        "commands": {
+            "allow": ["zap", "ls", "ln", "mkdir", "echo"],
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {"zap": ["/data/real/secret"]},
+                }
+            ],
+        }
+    }
+    for op in ("unlink", "rename"):
+        ws = Workspace(
+            {"/data/": (RAMVFS(), MountMode.WRITE)},
+            mode=MountMode.WRITE,
+            profiles={"zapped": doc},
+        )
+        for rc in _zap._registered_commands:
+            ws._registry.mount_for("/data/").register(rc)
+        ws.create_session("g", profile="zapped")
+        try:
+            await ws.shell(
+                "mkdir -p /data/real && echo s > /data/real/secret && "
+                "ln -s /data/real /data/alias"
+            )
+            assert await _line(ws, f"zap {op}", "g") == (
+                1,
+                "",
+                "zap: sealed\n",
+            )
+            assert (await _line(ws, "ls /data/real", "g"))[1] == "secret\n"
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_op_answers_missing_before_any_rule():
+    # The door answers for the path it can actually reach first: a link
+    # into hidden space, and a name behind a missing directory, are not
+    # there, as GNU reports them, whatever a rule says about the name.
+    doc = {
+        "paths": {"hide": ["/data/real"]},
+        "commands": {
+            "allow": ["sed", "awk", "ln", "echo", "mkdir"],
+            "deny": [
+                {
+                    "reason": "sealed",
+                    "commands": {
+                        "sed": ["/data/flink"],
+                        "awk": ["/data/secret"],
+                    },
+                }
+            ],
+        },
+    }
+    ws = Workspace(
+        {"/data/": (RAMVFS(), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"walled": doc},
+    )
+    ws.create_session("g", profile="walled")
+    try:
+        await ws.shell(
+            "mkdir -p /data/real && echo s > /data/real/secret && "
+            "echo s > /data/secret && ln -s /data/real/secret /data/flink && "
+            "ln -s /data/secret /data/alias && echo o > /data/f"
+        )
+        assert await _line(ws, "sed -n 'w /data/flink' /data/f", "g") == (
+            4,
+            "",
+            "sed: couldn't open file /data/flink: No such file or directory\n",
+        )
+        assert await _line(
+            ws, 'awk \'BEGIN { print "x" > "/data/missing/../alias" }\'', "g"
+        ) == (
+            2,
+            "",
+            'awk: cannot open "/data/missing/../alias" for output '
+            "(No such file or directory)\n",
         )
     finally:
         await ws.close()

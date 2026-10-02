@@ -404,102 +404,31 @@ async def test_rule_guard_asks_the_bound_gate_and_leaves_stat_alone():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
+async def test_dispatch_rule_guard_marks_an_op_with_the_bound_gate():
     from mirage.commands.builtin.generic_bind.adapter import (
         with_dispatch_rule_guard,
     )
 
-    calls: list[tuple[str, str]] = []
+    seen: list[tuple[str, object]] = []
 
     async def door(op, path, **kwargs):
-        calls.append((op, path.virtual))
+        seen.append((op, kwargs.get("rule_gate")))
         return None, None
 
     dispatch = with_dispatch_rule_guard(door)
-    # No gate bound: every op reaches the door.
-    await dispatch("read", _spec("/data/locked/y"))
-    gate = _Gate(refused="/data/locked/y")
-    token = set_admission(gate)
-    session = SessionState(
-        session_id="relay-hidden",
-        hidden_paths=HiddenPaths(paths=("/data/hidden",)),
-    )
-    st = set_current_session(session)
-    try:
-        with pytest.raises(PermissionError):
-            await dispatch("read", _spec("/data/locked/y"))
-        # A destination passed by keyword is as refused as the subject.
-        with pytest.raises(PermissionError):
-            await dispatch(
-                "rename", _spec("/data/a"), dst=_spec("/data/locked/y")
-            )
-        # Every PathSpec the op carries is asked, not only the first.
-        with pytest.raises(PermissionError):
-            await dispatch(
-                "copy",
-                _spec("/data/a"),
-                src=_spec("/data/b"),
-                dst=_spec("/data/locked/y"),
-            )
-        # A listing asks about the directory it lists.
-        with pytest.raises(PermissionError):
-            await dispatch("readdir", _spec("/data/locked/y"))
-        # A metadata op is never refused: deny is present and refused.
-        await dispatch("stat", _spec("/data/locked/y"))
-        await dispatch("exists", _spec("/data/locked/y"))
-        # A hidden path is the door's to answer as missing, so the gate
-        # is never asked and never names it.
-        await dispatch("read", _spec("/data/hidden/k"))
-    finally:
-        reset_current_session(st)
-        reset_admission(token)
-    assert calls == [
-        ("read", "/data/locked/y"),
-        ("stat", "/data/locked/y"),
-        ("exists", "/data/locked/y"),
-        ("read", "/data/hidden/k"),
-    ]
-    assert gate.asked == [
-        "/data/locked/y",
-        "/data/a",
-        "/data/locked/y",
-        "/data/a",
-        "/data/b",
-        "/data/locked/y",
-        "/data/locked/y",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_dispatch_rule_guard_judges_the_link_target_the_door_follows():
-    from types import SimpleNamespace
-
-    from mirage.commands.builtin.generic_bind.adapter import (
-        with_dispatch_rule_guard,
-    )
-
-    calls: list[tuple[str, str]] = []
-
-    async def door(op, path, **kwargs):
-        calls.append((op, path.virtual))
-        return None, None
-
-    links = SimpleNamespace(
-        resolve=lambda v: "/data/locked/y" if v == "/data/alias" else v
-    )
-    dispatch = with_dispatch_rule_guard(door, links)
+    # No gate bound: the op goes to the door unmarked.
+    await dispatch("read", _spec("/data/f"))
     gate = _Gate(refused="/data/locked/y")
     token = set_admission(gate)
     try:
-        # The door follows the link, so the target is what the op reaches.
-        with pytest.raises(PermissionError):
-            await dispatch("read", _spec("/data/alias"))
-        # An op on the link itself never reaches the target.
-        await dispatch("unlink", _spec("/data/alias"))
-        await dispatch("read", _spec("/data/alias"), nofollow=True)
+        await dispatch("read", _spec("/data/f"), dst=_spec("/data/g"))
+        # A metadata op is never judged: deny is present and refused.
+        await dispatch("stat", _spec("/data/f"))
     finally:
         reset_admission(token)
-    assert calls == [("unlink", "/data/alias"), ("read", "/data/alias")]
+    assert seen == [("read", None), ("read", gate), ("stat", None)]
+    # The wrapper judges nothing itself: the door does, on its own paths.
+    assert gate.asked == []
 
 
 class _SealedRead(Policy):

@@ -45,7 +45,6 @@ import type { Action, OpsContext } from '../../../policy/types.ts'
 import { SessionState } from '../../../workspace/session/session.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
-import type { LinkView } from '../../../ops/types.ts'
 
 const accessor = {} as never
 // No namespace facts, which is what a command bound outside a workspace
@@ -360,120 +359,36 @@ describe('withDispatchRuleGuard', () => {
       resolved: true,
     })
 
-  it('asks the bound gate before the door', async () => {
-    const calls: string[][] = []
-    const door: DispatchFn = (op, path) => {
-      calls.push([op, path.virtual])
+  it('marks an op with the bound gate for the door to judge', async () => {
+    const seen: [string, unknown][] = []
+    const door: DispatchFn = (op, _path, _args, kwargs) => {
+      seen.push([op, kwargs?.ruleGate])
       return Promise.resolve([null, new IOResult()])
     }
     const dispatch = withDispatchRuleGuard(door)
-    // No gate bound: every op reaches the door.
-    await dispatch('read', spec('/data/locked/y'))
+    // No gate bound: the op goes to the door unmarked.
+    await dispatch('read', spec('/data/f'))
     const asked: string[] = []
     const gate = {
       scoped: true,
       granted: [],
       check: (virtual: string) => {
         asked.push(virtual)
-        if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
       },
-      refuses: (virtual: string) => virtual === '/data/locked/y',
-    }
-    const session = new SessionState({
-      sessionId: 'relay-hidden',
-      hiddenPaths: { paths: ['/data/hidden'] },
-    })
-    await runWithSession(session, () =>
-      runWithAdmission(gate, async () => {
-        await expect(dispatch('read', spec('/data/locked/y'))).rejects.toThrow('refused')
-        // A destination passed alongside the subject is as refused as it.
-        await expect(dispatch('rename', spec('/data/a'), [spec('/data/locked/y')])).rejects.toThrow(
-          'refused',
-        )
-        await expect(
-          dispatch('write', spec('/data/a'), [], { dst: spec('/data/locked/y') }),
-        ).rejects.toThrow('refused')
-        // Every PathSpec the op carries is asked, not only the first.
-        await expect(
-          dispatch('copy', spec('/data/a'), [spec('/data/b'), spec('/data/locked/y')]),
-        ).rejects.toThrow('refused')
-        await expect(
-          dispatch('copy', spec('/data/a'), [], {
-            src: spec('/data/b'),
-            dst: spec('/data/locked/y'),
-          }),
-        ).rejects.toThrow('refused')
-        // A listing asks about the directory it lists.
-        await expect(dispatch('readdir', spec('/data/locked/y'))).rejects.toThrow('refused')
-        // A metadata op is never refused: deny is present and refused.
-        await dispatch('stat', spec('/data/locked/y'))
-        await dispatch('exists', spec('/data/locked/y'))
-        // A hidden path is the door's to answer as missing, so the gate is
-        // never asked and never names it.
-        await dispatch('read', spec('/data/hidden/k'))
-      }),
-    )
-    expect(calls).toEqual([
-      ['read', '/data/locked/y'],
-      ['stat', '/data/locked/y'],
-      ['exists', '/data/locked/y'],
-      ['read', '/data/hidden/k'],
-    ])
-    expect(asked).toEqual([
-      '/data/locked/y',
-      '/data/a',
-      '/data/locked/y',
-      '/data/a',
-      '/data/locked/y',
-      '/data/a',
-      '/data/b',
-      '/data/locked/y',
-      '/data/a',
-      '/data/b',
-      '/data/locked/y',
-      '/data/locked/y',
-    ])
-  })
-})
-
-describe('withDispatchRuleGuard on a link', () => {
-  const spec = (virtual: string): PathSpec =>
-    new PathSpec({
-      virtual,
-      directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
-      vfsPath: virtual,
-      resolved: true,
-    })
-
-  it('judges the link target the door follows', async () => {
-    const calls: string[][] = []
-    const door: DispatchFn = (op, path) => {
-      calls.push([op, path.virtual])
-      return Promise.resolve([null, new IOResult()])
-    }
-    const links = {
-      resolve: (v: string) => (v === '/data/alias' ? '/data/locked/y' : v),
-    } as unknown as LinkView
-    const dispatch = withDispatchRuleGuard(door, links)
-    const gate = {
-      scoped: true,
-      granted: [],
-      check: (virtual: string) => {
-        if (virtual === '/data/locked/y') throw new Error(`refused ${virtual}`)
-      },
-      refuses: (virtual: string) => virtual === '/data/locked/y',
+      refuses: () => false,
     }
     await runWithAdmission(gate, async () => {
-      // The door follows the link, so the target is what the op reaches.
-      await expect(dispatch('read', spec('/data/alias'))).rejects.toThrow('refused')
-      // An op on the link itself never reaches the target.
-      await dispatch('unlink', spec('/data/alias'))
-      await dispatch('read', spec('/data/alias'), [], { nofollow: true })
+      await dispatch('read', spec('/data/f'), [spec('/data/g')])
+      // A metadata op is never judged: deny is present and refused.
+      await dispatch('stat', spec('/data/f'))
     })
-    expect(calls).toEqual([
-      ['unlink', '/data/alias'],
-      ['read', '/data/alias'],
+    expect(seen).toEqual([
+      ['read', undefined],
+      ['read', gate],
+      ['stat', undefined],
     ])
+    // The wrapper judges nothing itself: the door does, on its own paths.
+    expect(asked).toEqual([])
   })
 })
 

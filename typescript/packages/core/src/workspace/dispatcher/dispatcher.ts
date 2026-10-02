@@ -43,6 +43,7 @@ import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
 import { CycleError, norm, parent } from '../../utils/path.ts'
+import type { EntryGate } from '../../types.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -146,6 +147,24 @@ function takeIssuer(
   return [issuer, rest]
 }
 
+/**
+ * The `ruleGate` kwarg lifted off an op, with the kwargs it leaves behind.
+ *
+ * A command's own dispatcher (`withDispatchRuleGuard`) marks each op with
+ * the gate the command was admitted under, and the door consumes it here,
+ * like `issuer`: it judges the paths the op actually reaches and is never
+ * forwarded to a backend.
+ */
+function takeRuleGate(
+  kwargs: Record<string, unknown> | undefined,
+): [EntryGate | undefined, Record<string, unknown> | undefined] {
+  const gate = kwargs?.ruleGate
+  if (gate === undefined) return [undefined, kwargs]
+  const rest = { ...kwargs }
+  delete rest.ruleGate
+  return [gate as EntryGate, rest]
+}
+
 /** The byte window a read asked for, whole file when it asked none. */
 function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   return [
@@ -231,7 +250,12 @@ export class Dispatcher {
     // The caller's own mark on the op, lifted before any gate fires so
     // each one is told whose op it judges.
     const [issuer, stripped] = takeIssuer(kwargs)
-    kwargs = stripped
+    // A command's own dispatcher marks its ops with the gate the command
+    // was admitted under (withDispatchRuleGuard); the door judges that
+    // gate on the paths it actually reaches, after its own walk, and
+    // never forwards the mark to an op.
+    const [ruleGate, unmarked] = takeRuleGate(stripped)
+    kwargs = unmarked
     await this.namespace.ensureLoaded()
     // Pending fingerprint checks from a strict snapshot restore run
     // before the op can touch a mount, whichever surface called: FUSE
@@ -287,9 +311,17 @@ export class Dispatcher {
     // under a linked directory lands in the directory the link names, not
     // under a name nothing else would look up.
     path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
+    // An op that acts on the name itself reaches the walked path, so that
+    // is what the command's rules judge, before anything about the name is
+    // acted on; one that follows the final link is judged below, once the
+    // follow has answered for hidden space.
+    const noFollow = NO_FOLLOW_OPS.has(opName) || kwargs?.nofollow === true
+    if (ruleGate !== undefined && noFollow) ruleGate.check(path.virtual)
     if (opName === 'rename' && dstArg instanceof PathSpec) {
-      dstArg = this.walked(dstArg, true)
-      args = [dstArg, ...(args ?? []).slice(1)]
+      const walkedDst = this.walked(dstArg, true)
+      dstArg = walkedDst
+      args = [walkedDst, ...(args ?? []).slice(1)]
+      ruleGate?.check(walkedDst.virtual)
     }
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
@@ -342,6 +374,10 @@ export class Dispatcher {
         p = PathSpec.fromStrPath(followed)
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
       }
+    }
+    if (ruleGate !== undefined && !noFollow) {
+      ruleGate.check(path.virtual)
+      if (p.virtual !== path.virtual) ruleGate.check(p.virtual)
     }
     if (XATTR_OPS.has(opName)) {
       return [await this.xattrOp(opName, p, kwargs ?? {}, report, issuer), new IOResult()]

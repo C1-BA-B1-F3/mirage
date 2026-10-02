@@ -2569,6 +2569,104 @@ describe('a dispatched read through a link meets the target rule', () => {
   })
 })
 
+describe('a dispatched op meets the rule on the path the door reaches', () => {
+  // A host command that removes or moves a name through the dispatcher it
+  // is handed, the way a custom command reaches a mount.
+  const zap = new RegisteredCommand({
+    name: 'zap',
+    spec: CMD_SPEC,
+    vfs: VFSName.RAM,
+    fn: async (_accessor, _paths, texts, opts) => {
+      const target = PathSpec.fromStrPath('/data/alias/secret')
+      const dispatch = opts.dispatch
+      if (dispatch === undefined) throw new Error('no dispatcher')
+      try {
+        if (texts[0] === 'rename') {
+          await dispatch('rename', target, [PathSpec.fromStrPath('/data/moved')])
+        } else {
+          await dispatch('unlink', target)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return [
+          null,
+          new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`zap: ${message}\n`) }),
+        ]
+      }
+      return [new TextEncoder().encode('done\n'), new IOResult()]
+    },
+  })
+
+  async function line(ws: Workspace, text: string): Promise<[number, string, string]> {
+    const r = await ws.shell(text, { sessionId: 'g' })
+    return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+  }
+
+  // The door walks every link above the final name before it acts, so
+  // /data/alias/secret is /data/real/secret by the time anything is removed
+  // or moved. The rule on the real path holds there for an op on the name
+  // itself (unlink, rename) as for one that follows it.
+  it('holds the rule through a linked parent', async () => {
+    const doc = parseSessionProfile({
+      commands: {
+        allow: ['zap', 'ls', 'ln', 'mkdir', 'echo'],
+        deny: [{ reason: 'sealed', commands: { zap: ['/data/real/secret'] } }],
+      },
+    })
+    for (const op of ['unlink', 'rename']) {
+      const parser = await getTestParser()
+      const ws = new Workspace(
+        { '/data': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParser: parser, profiles: { zapped: doc } },
+      )
+      open.push(ws)
+      ws.registry.mountForPrefix('/data').register(zap)
+      ws.createSession('g', { profile: 'zapped' })
+      await ws.shell(
+        'mkdir -p /data/real && echo s > /data/real/secret && ln -s /data/real /data/alias',
+      )
+      const [code, out, err] = await line(ws, `zap ${op}`)
+      expect([code, out]).toEqual([1, ''])
+      expect(err).toContain('sealed')
+      expect((await line(ws, 'ls /data/real'))[1]).toBe('secret\n')
+    }
+  })
+
+  // The door answers for the path it can actually reach first: a link into
+  // hidden space, and a name behind a missing directory, are not there, as
+  // GNU reports them, whatever a rule says about the name.
+  it('answers missing before any rule', async () => {
+    const doc = parseSessionProfile({
+      paths: { hide: ['/data/real'] },
+      commands: {
+        allow: ['sed', 'awk', 'ln', 'echo', 'mkdir'],
+        deny: [{ reason: 'sealed', commands: { sed: ['/data/flink'], awk: ['/data/secret'] } }],
+      },
+    })
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { walled: doc } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'walled' })
+    await ws.shell(
+      'mkdir -p /data/real && echo s > /data/real/secret && echo s > /data/secret && ' +
+        'ln -s /data/real/secret /data/flink && ln -s /data/secret /data/alias && echo o > /data/f',
+    )
+    expect(await line(ws, "sed -n 'w /data/flink' /data/f")).toEqual([
+      4,
+      '',
+      "sed: couldn't open file /data/flink: No such file or directory\n",
+    ])
+    expect(await line(ws, `awk 'BEGIN { print "x" > "/data/missing/../alias" }'`)).toEqual([
+      2,
+      '',
+      'awk: cannot open "/data/missing/../alias" for output (No such file or directory)\n',
+    ])
+  })
+})
+
 describe('a walk the executor fans out meets the command rules', () => {
   const FANOUT_DOC: SessionProfile = parseSessionProfile({
     commands: {

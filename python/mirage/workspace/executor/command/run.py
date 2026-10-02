@@ -283,9 +283,7 @@ async def run_on_mount(
     readdir_path = (
         functools.partial(
             path_readdir,
-            with_dispatch_rule_guard(
-                dispatch, ns.links if ns is not None else None
-            ),
+            with_dispatch_rule_guard(dispatch),
         )
         if dispatch is not None
         else None

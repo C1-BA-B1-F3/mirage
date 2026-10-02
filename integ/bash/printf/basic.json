@@ -1640,7 +1640,7 @@
       "expect": {
         "exit": 1,
         "stdout": "0\n",
-        "stderr": "printf: abc: invalid number\n"
+        "stderr": "bash: printf: abc: invalid number\n"
       }
     },
     {

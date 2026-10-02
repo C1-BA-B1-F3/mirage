@@ -878,7 +878,10 @@ def statement_redirects(node: Any, home: str | None) -> tuple[Word, ...]:
     owner = node
     parent = owner.parent
     while parent is not None and parent.type in REDIRECT_CHAIN:
-        if not parent.named_children or parent.named_children[-1] != owner:
+        if (
+            not parent.named_children
+            or parent.named_children[-1].start_byte != owner.start_byte
+        ):
             return ()
         owner = parent
         parent = owner.parent
@@ -886,7 +889,7 @@ def statement_redirects(node: Any, home: str | None) -> tuple[Word, ...]:
         parent is None
         or parent.type != NT.REDIRECTED_STATEMENT
         or not parent.named_children
-        or parent.named_children[0] != owner
+        or parent.named_children[0].start_byte != owner.start_byte
     ):
         return ()
     _, redirects = get_redirects(parent)

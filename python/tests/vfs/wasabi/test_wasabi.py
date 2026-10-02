@@ -12,13 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
-from mirage.types import VFSName
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.secrets import reveal_secret
-from mirage.vfs.wasabi import WasabiConfig, WasabiVFS
+from mirage.vfs.wasabi import WasabiConfig
 
 
 def test_wasabi_default_region_endpoint():
@@ -49,12 +45,6 @@ def test_wasabi_custom_endpoint_override():
     assert config.resolved_endpoint_url() == "https://custom.example.com"
 
 
-def test_wasabi_config_immutable():
-    config = WasabiConfig(bucket="b", access_key_id="k", secret_access_key="s")
-    with pytest.raises(ValidationError):
-        config.bucket = "other"
-
-
 def test_wasabi_to_s3_config():
     config = WasabiConfig(
         bucket="b",
@@ -67,11 +57,3 @@ def test_wasabi_to_s3_config():
     assert s3.endpoint_url == "https://s3.us-east-2.wasabisys.com"
     assert s3.path_style is False
     assert reveal_secret(s3.aws_access_key_id) == "key"
-
-
-def test_wasabi_resource_uses_s3_resource_type():
-    vfs = WasabiVFS(
-        WasabiConfig(bucket="b", access_key_id="k", secret_access_key="s")
-    )
-    assert vfs.name == VFSName.S3
-    assert isinstance(vfs.config, S3Config)

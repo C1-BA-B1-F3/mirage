@@ -413,10 +413,10 @@
         "git-disk",
         "git-ram"
       ],
-      "command": "git -C /repo show -s --pretty=format:%h",
+      "command": "git -C /repo show -s --pretty=format:%h; echo; git -C /repo show --format=%h --name-status HEAD -- no-such-path",
       "expect": {
         "exit": 0,
-        "stdout": "8ef2542",
+        "stdout": "8ef2542\n8ef2542\n",
         "stderr": ""
       }
     },
@@ -4772,6 +4772,62 @@
         "exit": 0,
         "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_compares_the_working_tree",
+      "seq": 567998,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && rm /repo/numbers.txt && printf 'x\\n' > /repo/fresh.txt && git -C /repo diff; git -C /repo diff --stat -- numbers.txt; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; printf 'one\\ntwo\\n' > /repo/numbers.txt; rm /repo/fresh.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "diff --git a/letters.txt b/letters.txt\nindex 7a28df3..7663aa7 100644\n--- a/letters.txt\n+++ b/letters.txt\n@@ -1,4 +1 @@\n-alpha\n-beta\n-gamma\n-delta\n+edited\ndiff --git a/numbers.txt b/numbers.txt\ndeleted file mode 100644\nindex 814f4a4..0000000\n--- a/numbers.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-two\n numbers.txt | 2 --\n 1 file changed, 2 deletions(-)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_names_a_revision_against_the_working_tree",
+      "seq": 567999,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && printf 'staged\\n' > staged.txt && git add staged.txt && printf 'edited\\n' > letters.txt && git diff --name-status; git diff HEAD --name-status; git diff HEAD -- letters.txt; result=$?; git reset -q; rm staged.txt; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tletters.txt\nM\tletters.txt\nA\tstaged.txt\ndiff --git a/letters.txt b/letters.txt\nindex 7a28df3..7663aa7 100644\n--- a/letters.txt\n+++ b/letters.txt\n@@ -1,4 +1 @@\n-alpha\n-beta\n-gamma\n-delta\n+edited\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_reports_a_file_turned_symlink",
+      "seq": 567979,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(rm /repo/letters.txt && ln -s numbers.txt /repo/letters.txt && git -C /repo status --short && git -C /repo diff --name-status; result=$?; rm /repo/letters.txt; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " T letters.txt\nT\tletters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_rm_refuses_a_file_turned_symlink",
+      "seq": 567973,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(rm /repo/letters.txt && ln -s numbers.txt /repo/letters.txt && git -C /repo rm -q letters.txt; result=$?; git -C /repo status --short; rm /repo/letters.txt; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 1,
+        "stdout": " T letters.txt\n",
+        "stderr": "error: the following file has local modifications:\n    letters.txt\n(use --cached to keep the file, or -f to force removal)\n"
       }
     }
   ]

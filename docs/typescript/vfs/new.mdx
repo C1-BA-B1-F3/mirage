@@ -299,17 +299,17 @@ Glob resolution is not a per-backend file: `makeGenericOps` derives a `glob` op 
 
 ## 3. Ops Layer
 
-Build `X_IO = new VFSAdapter({ read, native, writes }).toCommandIO()` in `commands/builtin/<name>/io.ts`, omitting groups the backend does not implement.
+Build `IO = new VFSAdapter({ read, native, writes }).toCommandIO()` in `commands/builtin/<name>/io.ts`, omitting groups the backend does not implement.
 
 Ops are the workspace dispatcher's typed adapters onto the core functions, and they are generated, not hand-written:
 
 ```ts
-import { QDRANT_IO } from '../../commands/builtin/qdrant/io.ts'
+import { IO } from '../../commands/builtin/qdrant/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const QDRANT_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.QDRANT, QDRANT_IO)
+export const QDRANT_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.QDRANT, IO)
 ```
 
 Write an op by hand only for an irregular handler, and pass its name through `overrides` so the derived set skips it. Mark every mutation `write: true`.

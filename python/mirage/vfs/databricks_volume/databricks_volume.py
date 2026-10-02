@@ -53,14 +53,4 @@ class DatabricksVolumeVFS(BaseVFS):
         return registered_commands(DATABRICKS_VOLUME_COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
-        redacted = ["token"]
-        cfg = self.config.model_dump()
-        for field in redacted:
-            if cfg.get(field) is not None:
-                cfg[field] = "<REDACTED>"
-        return {
-            "type": self.name,
-            "needs_override": True,
-            "redacted_fields": redacted,
-            "config": cfg,
-        }
+        return self.config_state(self.config, needs_override=True)

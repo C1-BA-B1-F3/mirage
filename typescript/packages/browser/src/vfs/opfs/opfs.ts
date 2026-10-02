@@ -22,7 +22,7 @@ import { OPFSAccessor } from '../../accessor/opfs.ts'
 import { OPFS_COMMANDS } from '../../commands/builtin/opfs/index.ts'
 import { iterEntries, toWritableChunk } from '../../core/opfs/utils.ts'
 import { OPFS_OPS } from '../../ops/opfs/index.ts'
-import { OPFS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 export interface OPFSVFSOptions {
   root?: string
 }
@@ -82,7 +82,7 @@ export class OPFSVFS extends BaseVFS {
   // OPFS is a real filesystem: getFile().size is the exact byte count a
   // read returns.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly prompt = OPFS_PROMPT
+  override readonly prompt = PROMPT
   readonly rootName: string
   override readonly accessor: OPFSAccessor
   private rootHandle: FileSystemDirectoryHandle | null = null

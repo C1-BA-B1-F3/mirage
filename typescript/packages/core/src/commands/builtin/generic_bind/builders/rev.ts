@@ -15,7 +15,7 @@
 import { revGeneric } from '../../generic/rev.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const REV_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'rev',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

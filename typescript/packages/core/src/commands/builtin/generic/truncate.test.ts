@@ -179,12 +179,14 @@ describe('truncate operands', () => {
     return new PathSpec({ virtual, directory: '/', vfsPath: virtual.slice(1), rawPath })
   }
 
-  it('settles a slashed operand by the truncate op', async () => {
+  it("answers a slashed operand with the open's EISDIR", async () => {
     // GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
     // the open's EISDIR, not the stat's miss, and an absent bare name is
-    // made where its directory exists. The chain answers first: under an
-    // absent directory the name is ENOENT and the op never runs, every
-    // operand is still tried, and -c leaves an absent name alone.
+    // made where its directory exists. The EISDIR is settled before the
+    // op, so a backend with no truncate op says it too. The chain answers
+    // first: under an absent directory the name is ENOENT and the op never
+    // runs, every operand is still tried, and -c leaves an absent name
+    // alone.
     const lengths: [string, number][] = []
     const stat = (path: PathSpec): Promise<FileStat> => Promise.reject(enoent(path))
     const truncate = (path: PathSpec, length: number): Promise<void> => {
@@ -197,13 +199,11 @@ describe('truncate operands', () => {
       stat,
       truncate,
     )
-    expect(lengths).toEqual([
-      ['/missing/', 4],
-      ['/missing', 4],
-    ])
+    expect(lengths).toEqual([['/missing', 4]])
     expect(io.exitCode).toBe(1)
     expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
-      "truncate: cannot open '/nodir/x' for writing: No such file or directory\n",
+      "truncate: cannot open '/missing/' for writing: Is a directory\n" +
+        "truncate: cannot open '/nodir/x' for writing: No such file or directory\n",
     )
     const [, kept] = await truncateGeneric(
       [operand('/missing')],
@@ -212,7 +212,7 @@ describe('truncate operands', () => {
       truncate,
     )
     expect(kept.exitCode).toBe(0)
-    expect(lengths).toHaveLength(2)
+    expect(lengths).toHaveLength(1)
   })
 })
 

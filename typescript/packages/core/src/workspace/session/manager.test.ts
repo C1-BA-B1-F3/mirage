@@ -739,3 +739,13 @@ it.each([false, true])(
     }
   },
 )
+
+it('a final flush after session deletion does not recreate it', async () => {
+  const store = new RAMSessionStore()
+  const manager = new SessionManager('default', store)
+  manager.create('gone')
+  await manager.flush('gone')
+  await manager.close('gone')
+  await manager.flush('gone')
+  expect((await store.load()).has('gone')).toBe(false)
+})

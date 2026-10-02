@@ -115,7 +115,9 @@ run_case() {
   local cli="$1" host="$2" suite="$3" case_json="$4" work="$5"
   local case_id wsid world_json session_id
   case_id="$suite/$(jq -r '.id' <<<"$case_json")"
-  wsid="rt-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
+  # The suite is part of the id: suites share case ids by design (each
+  # runtime's open, view and structure cases).
+  wsid="rt-$(tr '_' '-' <<<"$suite")-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
   world_json=$(jq -c '.world // {}' <<<"$case_json")
   write_world_yaml "$world_json" "$work"
 
@@ -261,10 +263,10 @@ run_case() {
 }
 
 run_host() {
-  local cli="$1" host="$2" port="$3"
+  local cli="$1" host="$2" port="$3" lane="$4"
   local home work
-  home="$(mktemp -d "/tmp/rt-cli-$host-home.XXXXXX")"
-  work="$(mktemp -d "/tmp/rt-cli-$host-work.XXXXXX")"
+  home="$(mktemp -d "/tmp/rt-cli-$host-$lane-home.XXXXXX")"
+  work="$(mktemp -d "/tmp/rt-cli-$host-$lane-work.XXXXXX")"
   export MIRAGE_HOME="$home"
   unset MIRAGE_DAEMON_PORT MIRAGE_DAEMON_URL MIRAGE_ALLOWED_HOSTS \
     MIRAGE_AUTH_MODE 2>/dev/null || true
@@ -276,6 +278,16 @@ run_host() {
     suite_json=$(cat "$file")
     suite=$(jq -r '.suite' <<<"$suite_json")
     if [ "${#ONLY_SUITES[@]}" -gt 0 ] && [[ " ${ONLY_SUITES[*]} " != *" $suite "* ]]; then
+      continue
+    fi
+    # Whichever of the host's lanes reaches a suite first runs it: mkdir
+    # either creates the claim or fails because another lane already did.
+    # Any other failure would drop the suite from both lanes, so it counts.
+    if ! mkdir "$RESULT_DIR/claims/$host-$suite" 2>/dev/null; then
+      if [ ! -d "$RESULT_DIR/claims/$host-$suite" ]; then
+        failures+=("$host/$suite: could not claim the suite")
+        fail=$((fail + 1))
+      fi
       continue
     fi
     requires=$(jq -r --arg h "$host" \
@@ -325,35 +337,46 @@ run_host() {
   $cli daemon stop >/dev/null 2>&1 </dev/null || true
   sleep 1
 
-  # Each host runs in its own subshell, so its tally has to leave through
+  # Each lane runs in its own subshell, so its tally has to leave through
   # the filesystem: a subshell's variables die with it.
-  printf '%s %s %s\n' "$pass" "$fail" "$skipped" > "$RESULT_DIR/$host.tally"
-  : > "$RESULT_DIR/$host.failures"
+  printf '%s %s %s\n' "$pass" "$fail" "$skipped" > "$RESULT_DIR/$host.$lane.tally"
+  : > "$RESULT_DIR/$host.$lane.failures"
   for line in "${failures[@]:-}"; do
-    [ -n "$line" ] && printf '%s\n' "$line" >> "$RESULT_DIR/$host.failures"
+    [ -n "$line" ] && printf '%s\n' "$line" >> "$RESULT_DIR/$host.$lane.failures"
   done
 }
 
-# The two hosts are independent: separate daemon ports, a MIRAGE_HOME each,
-# and only ram mounts reach the CLI (see cli_expressible), so they share no
-# store. The docker suite is the one thing they do share, and its cases are
+# Every lane is independent: its own daemon port and MIRAGE_HOME, and only
+# ram mounts reach the CLI (see cli_expressible), so no two share a store.
+# The docker suite is the one thing the hosts do share, and its cases are
 # stateless execs (echo, exit, wc, uname) rather than writes, so two
-# `docker exec` sessions in the one container cannot collide. Running them
-# together halves the longest step in the integ workflow.
+# `docker exec` sessions in the one container cannot collide. Two lanes per
+# host keep a 4-core runner busy, where one host's suites in a row left the
+# longest step of the integ workflow waiting on a single process.
 RESULT_DIR="$(mktemp -d "/tmp/rt-cli-results.XXXXXX")"
+mkdir "$RESULT_DIR/claims"
+LANES=(0 1)
 
-(run_host "$PY_CLI" "python" 8791) > "$RESULT_DIR/python.log" 2>&1 &
-py_pid=$!
-(run_host "$TS_CLI" "typescript" 8792) > "$RESULT_DIR/typescript.log" 2>&1 &
-ts_pid=$!
-wait "$py_pid"
-wait "$ts_pid"
+pids=()
+for lane in "${LANES[@]}"; do
+  (run_host "$PY_CLI" "python" $((8791 + 2 * lane)) "$lane") \
+    > "$RESULT_DIR/python.$lane.log" 2>&1 &
+  pids+=($!)
+  (run_host "$TS_CLI" "typescript" $((8792 + 2 * lane)) "$lane") \
+    > "$RESULT_DIR/typescript.$lane.log" 2>&1 &
+  pids+=($!)
+done
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
 
-# Printed per host rather than interleaved, which is what makes a failure
-# readable: the two hosts would otherwise write over each other's lines.
+# Printed per lane rather than interleaved, which is what makes a failure
+# readable: the lanes would otherwise write over each other's lines.
 for host in python typescript; do
-  echo "=== $host ==="
-  cat "$RESULT_DIR/$host.log"
+  for lane in "${LANES[@]}"; do
+    echo "=== $host (lane $lane) ==="
+    cat "$RESULT_DIR/$host.$lane.log"
+  done
 done
 
 pass=0
@@ -361,18 +384,20 @@ fail=0
 skipped=0
 failures=()
 for host in python typescript; do
-  if [ ! -s "$RESULT_DIR/$host.tally" ]; then
-    failures+=("$host: no tally written (the host died before finishing)")
-    fail=$((fail + 1))
-    continue
-  fi
-  read -r host_pass host_fail host_skipped < "$RESULT_DIR/$host.tally"
-  pass=$((pass + host_pass))
-  fail=$((fail + host_fail))
-  skipped=$((skipped + host_skipped))
-  while IFS= read -r line; do
-    [ -n "$line" ] && failures+=("$line")
-  done < "$RESULT_DIR/$host.failures"
+  for lane in "${LANES[@]}"; do
+    if [ ! -s "$RESULT_DIR/$host.$lane.tally" ]; then
+      failures+=("$host lane $lane: no tally written (it died before finishing)")
+      fail=$((fail + 1))
+      continue
+    fi
+    read -r lane_pass lane_fail lane_skipped < "$RESULT_DIR/$host.$lane.tally"
+    pass=$((pass + lane_pass))
+    fail=$((fail + lane_fail))
+    skipped=$((skipped + lane_skipped))
+    while IFS= read -r line; do
+      [ -n "$line" ] && failures+=("$line")
+    done < "$RESULT_DIR/$host.$lane.failures"
+  done
 done
 
 echo ""

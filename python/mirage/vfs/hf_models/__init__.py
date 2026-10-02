@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.hf_models.hf_models import HfModelsConfig, HfModelsVFS
+from typing import TYPE_CHECKING
+
+from mirage.vfs.hf_models.config import HfModelsConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.hf_models.hf_models import HfModelsVFS
 
 __all__ = ["HfModelsConfig", "HfModelsVFS"]
+
+
+def __getattr__(name: str) -> "type[HfModelsVFS]":
+    if name == "HfModelsVFS":
+        from mirage.vfs.hf_models.hf_models import HfModelsVFS
+
+        return HfModelsVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

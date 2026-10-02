@@ -1,3 +1,4 @@
+import { named } from '../../shell/errors.ts'
 import { unescapeUnquoted } from '../../shell/escapes.ts'
 import { getText } from '../../shell/helpers.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
@@ -81,13 +82,14 @@ export async function* substringOperands(
   for (const [begin, stop] of spans) {
     const pieces: string[] = []
     let cursor = begin
+    const word = text.slice(begin, stop)
     for (const atom of nodes) {
       const [atomStart, atomEnd] = span(atom)
       const left = atomStart - base
       const right = atomEnd - base
       if (begin <= left && right <= stop) {
         pieces.push(unescapeUnquoted(text.slice(cursor, left)))
-        pieces.push(await expandChild(atom))
+        pieces.push(await named(word, expandChild(atom)))
         cursor = right
       }
     }

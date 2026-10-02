@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { DU_BUILDER } from './du.ts'
+import { BUILDER } from './du.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
@@ -64,7 +64,7 @@ async function runDu(
   flags: Record<string, string | boolean | number | string[]> = {},
   cwd = '/',
 ): Promise<string[]> {
-  const result = await DU_BUILDER.fn(OPS, ACCESSOR, paths, [], {
+  const result = await BUILDER.fn(OPS, ACCESSOR, paths, [], {
     stdin: null,
     flags,
     filetypeFns: null,
@@ -102,7 +102,7 @@ describe('du walk fallback (no native du op)', () => {
 
   it('stops the walk and exits 1 once the entry budget is spent', async () => {
     const bounded: CommandIO = { ...OPS, maxDuEntries: 1 }
-    const result = await DU_BUILDER.fn(bounded, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
+    const result = await BUILDER.fn(bounded, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
       stdin: null,
       flags: {},
       filetypeFns: null,
@@ -123,7 +123,7 @@ describe('du walk fallback (no native du op)', () => {
   })
 
   it('reports an unreadable operand and exits 1, like GNU', async () => {
-    const result = await DU_BUILDER.fn(
+    const result = await BUILDER.fn(
       OPS,
       ACCESSOR,
       [PathSpec.fromStrPath('/nope'), PathSpec.fromStrPath('/db')],
@@ -160,7 +160,7 @@ describe('du walk fallback (no native du op)', () => {
       stat: () => Promise.reject(new Error('403 Forbidden')),
     }
     await expect(
-      DU_BUILDER.fn(failing, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
+      BUILDER.fn(failing, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
         stdin: null,
         flags: {},
         filetypeFns: null,
@@ -211,7 +211,7 @@ async function runScoped(
   paths: PathSpec[],
 ): Promise<[Uint8Array, { exitCode: number; stderr: Uint8Array | null }]> {
   const result = await runWithAdmission(SCOPED_GATE, async () =>
-    DU_BUILDER.fn(ops, ACCESSOR, paths, [], {
+    BUILDER.fn(ops, ACCESSOR, paths, [], {
       stdin: null,
       flags: {},
       filetypeFns: null,
@@ -328,7 +328,7 @@ describe('du rows for directories no file points at', () => {
     "du: cannot read directory '/db/walled': Permission denied\n"
 
   async function run(flags: Record<string, boolean>): Promise<[string, number, string]> {
-    const result = await DU_BUILDER.fn(ops, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
+    const result = await BUILDER.fn(ops, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
       stdin: null,
       flags,
       filetypeFns: null,

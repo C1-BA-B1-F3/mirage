@@ -15,12 +15,13 @@
 import asyncio
 import re
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
 from mirage.core.gridfs import driver as gridfs_driver
 from mirage.core.gridfs.client import prefix_query
 from mirage.core.gridfs.driver import build_query, glob_regex
 from mirage.core.gridfs.find import find
 from mirage.types import PathSpec
+from mirage.vfs.gridfs.config import GridFSConfig
 
 
 def _matches(query_regex: dict, value: str) -> bool:

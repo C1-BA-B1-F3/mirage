@@ -12,7 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import os
+import shutil
 from urllib.parse import quote
 
 from mirage.observe.disk_store import DiskObserverStore
@@ -25,6 +27,11 @@ from mirage.workspace.session.store import SessionStore
 from mirage.workspace.store.base import WorkspaceFields, WorkspaceStateStore
 
 DEFAULT_STATE_ROOT = "~/.mirage/state"
+
+
+# The workspace ids that would name the state root or its `workspaces`
+# directory rather than one workspace's own.
+DOT_IDS = frozenset({"", ".", ".."})
 
 
 class DiskWorkspaceStateStore(WorkspaceStateStore):
@@ -64,6 +71,11 @@ class DiskWorkspaceStateStore(WorkspaceStateStore):
         self._sessions: dict[str, DiskSessionStore] = {}
 
     def _ws_root(self, workspace_id: str) -> str:
+        # The id is one path segment, quoted so a separator cannot leave
+        # it; the dot names are the escapes quoting keeps, and deleting a
+        # workspace removes this directory whole, so they are refused.
+        if workspace_id in DOT_IDS:
+            raise ValueError(f"invalid workspace id: {workspace_id!r}")
         return os.path.join(
             self._root, "workspaces", quote(workspace_id, safe="")
         )
@@ -114,6 +126,20 @@ class DiskWorkspaceStateStore(WorkspaceStateStore):
         return await self._meta_client(workspace_id).cas_put(
             "workspace", fields, expected_generation
         )
+
+    async def _forget(self, workspace_id: str) -> None:
+        for handles in (
+            self._namespaces,
+            self._observers,
+            self._sessions,
+            self._meta,
+        ):
+            handle = handles.pop(workspace_id, None)
+            if handle is not None:
+                await handle.close()
+        root = self._ws_root(workspace_id)
+        if os.path.isdir(root):
+            await asyncio.to_thread(shutil.rmtree, root)
 
     async def _close(self) -> None:
         for ns in self._namespaces.values():

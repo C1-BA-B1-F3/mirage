@@ -109,4 +109,15 @@ describe('S3WorkspaceStateStore', () => {
     expect(currentFakeS3().entry(BUCKET, 'mirage/ws1/sessions/main.json')).toBeDefined()
     expect(currentFakeS3().entry(BUCKET, 'mirage/workspaces/ws1.json')).toBeDefined()
   })
+
+  it('drops the sessions and meta objects of a workspace', async () => {
+    const store = new RAMWorkspaceStateStore({ workspace: new S3WorkspaceStateStore(config()) })
+    await store.sessions('ws1').set('main', { session_id: 'main' })
+    await store.setMeta('ws1', { workspace_id: 'ws1' })
+    await store.drop('ws1')
+    expect(await store.loadMeta('ws1')).toBeNull()
+    await store.close()
+    expect(currentFakeS3().entry(BUCKET, 'mirage/workspaces/ws1.json')).toBeUndefined()
+    expect(currentFakeS3().entry(BUCKET, 'mirage/ws1/sessions/main.json')).toBeUndefined()
+  })
 })

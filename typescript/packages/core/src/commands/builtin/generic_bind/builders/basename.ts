@@ -15,7 +15,7 @@
 import { basenameFn } from '../../generic/basename.ts'
 import type { Builder } from '../adapter.ts'
 
-export const BASENAME_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'basename',
   fn: (_ops, accessor, paths, texts, opts) => basenameFn(accessor, paths, texts, opts),
 }

@@ -2,7 +2,7 @@ import inspect
 
 from mirage.shell.types import ShellBuiltin
 from mirage.workspace.executor.builtins.table import BUILTINS
-from mirage.workspace.names import JOB_BUILTINS
+from mirage.workspace.lookup.constants import JOB_BUILTINS
 
 # Interpreters are general mount commands (commands/builtin/general),
 # reserved in ShellBuiltin only so no CLI can take the name.

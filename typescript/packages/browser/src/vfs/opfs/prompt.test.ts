@@ -13,14 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { OPFS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
-describe('OPFS_PROMPT', () => {
+describe('PROMPT', () => {
   it('is a non-empty string', () => {
-    expect(typeof OPFS_PROMPT).toBe('string')
-    expect(OPFS_PROMPT.length).toBeGreaterThan(0)
+    expect(typeof PROMPT).toBe('string')
+    expect(PROMPT.length).toBeGreaterThan(0)
   })
   it('mentions OPFS or browser storage', () => {
-    expect(OPFS_PROMPT.toLowerCase()).toMatch(/opfs|browser|storage|persist/)
+    expect(PROMPT.toLowerCase()).toMatch(/opfs|browser|storage|persist/)
   })
 })

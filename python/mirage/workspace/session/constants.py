@@ -32,6 +32,7 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "readonly_functions",
     "last_exit_code",
     "pipe_status",
+    "function_names",
     "shell_options",
     "shopts",
     "aliases",
@@ -56,6 +57,7 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "last_bg_job_id",
     "positional_args",
     "script_name",
+    "descriptors",
     "exec_stdout",
     "exec_stdout_append",
     "exec_stdout_input",
@@ -65,17 +67,15 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",
-    "_exec_opened",
     "_getopts_pos",
     "_getopts_optind",
 )
 
 # State that belongs to the line being executed, not to the shell, so a
-# fork starts it fresh: the errexit marker, the source nesting depth and
-# the running function's locals.
+# fork starts it fresh: the errexit marker and the running function's
+# locals.
 TRANSIENT_FIELDS: tuple[str, ...] = (
     "errexit_immune",
-    "source_depth",
     "_local_vars",
     "_local_frames",
     "_local_random",
@@ -88,6 +88,8 @@ TRANSIENT_FIELDS: tuple[str, ...] = (
     "_random_last",
     "_parse_seq",
     "_parse_current",
+    "_line_open",
+    "terminal",
     "_alias_marks",
     "_alias_stack",
     "status_writer",
@@ -104,7 +106,7 @@ TRANSIENT_FIELDS: tuple[str, ...] = (
 CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "cwd",
     "logical_cwd",
-    "source_depth",
+    "function_names",
     "vars",
     "functions",
     "readonly_functions",
@@ -115,6 +117,7 @@ CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "positional_args",
     "script_name",
     "last_bg_job_id",
+    "descriptors",
     "exec_stdout",
     "exec_stdout_append",
     "exec_stdout_input",
@@ -124,7 +127,6 @@ CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",
-    "_exec_opened",
     "_getopts_pos",
     "_getopts_optind",
     "_random_state",

@@ -15,6 +15,7 @@
 import errno
 import functools
 import os
+import posixpath
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ from typing import Any
 from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
-from mirage.commands.builtin.utils.paths import dot_refusal
+from mirage.commands.builtin.utils.paths import dot_refusal, walk_spelling
 from mirage.context import (
     get_current_session,
     hidden_paths_intersect,
@@ -54,6 +55,7 @@ from mirage.types import (
 )
 from mirage.utils.errors import (
     MISS_ERRORS,
+    eisdir,
     eloop,
     enoent,
     no_mount,
@@ -67,6 +69,8 @@ from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.workspace.dispatcher.constants import (
     DISPATCH_READ_OPS,
     DISPATCH_WRITE_OPS,
+    ENTRY_CREATE_OPS,
+    FILE_CREATE_OPS,
     HIDDEN_CREATE_OPS,
     LINK_ENTRY_OPS,
     NAMESPACE_TABLE_OPS,
@@ -358,9 +362,15 @@ class Dispatcher:
         # A `.` or `..` resolves against the directory it sits in, so
         # every name in front of one has to be a directory: `virtual`
         # simplified the dots away and reaches `f` through a missing
-        # `nope/..`, the typed spelling (`dotted`) does not.
+        # `nope/..`, the typed spelling (`dotted`) does not. A trailing
+        # slash is part of that spelling: `x/` must be a directory, so a
+        # create of one is EISDIR before anything is looked up.
+        if op in FILE_CREATE_OPS and (path.dotted or "").endswith("/"):
+            raise eisdir(path)
         follow = self._namespace.follow
-        refusal = await dot_refusal(self._walk_stat, path, follow)
+        refusal = await dot_refusal(
+            self._walk_stat, path, follow, op in ENTRY_CREATE_OPS
+        )
         if refusal is None and op == "rename" and isinstance(dst, PathSpec):
             refusal = await dot_refusal(self._walk_stat, dst, follow)
         if refusal is not None:
@@ -811,10 +821,13 @@ class Dispatcher:
             DotWalkLoop: when a link above the name loops (ELOOP), as the
                 OSError every caller's per-operand catch words.
         """
+        spelled = walk_spelling(path, self._namespace.follow)
         try:
-            walked = self._namespace.follow_parent(path.virtual)
+            walked = self._namespace.follow_parent(spelled)
         except CycleError:
             raise eloop(path) from None
+        if spelled != path.virtual:
+            walked = posixpath.normpath(walked)
         if walked == path.virtual:
             return path
         if not path_allowed(walked):
@@ -1325,6 +1338,9 @@ class Dispatcher:
         if self._namespace.is_link(path.virtual) or not mount.supports_op(
             "setattr", path.virtual
         ):
+            # No backend inode answers for the path here, so nothing
+            # would refuse a missing one: the overlay would stamp it.
+            await self._xattr_target(mount, path)
             return await self._overlay_setattr(path, kwargs)
         residual = await mount.execute_op("setattr", path.virtual, **kwargs)
         applied = [

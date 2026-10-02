@@ -36,7 +36,7 @@ import { truncate as redisTruncate } from '../../../core/redis/truncate.ts'
 import { unlink as redisUnlink } from '../../../core/redis/unlink.ts'
 import { writeBytes as redisWrite } from '../../../core/redis/write.ts'
 
-export const REDIS_IO: CommandIO<RedisAccessor> = new VFSAdapter<RedisAccessor>({
+export const IO: CommandIO<RedisAccessor> = new VFSAdapter<RedisAccessor>({
   read: { readdir: redisReaddir, readBytes: redisRead, stat: redisStat },
   native: {
     readRange: rangeOf(redisRead),

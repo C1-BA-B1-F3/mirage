@@ -22,7 +22,7 @@ import { resolvePath } from '../../../utils/path.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import type { Namespace } from '../../mount/namespace/namespace.ts'
 import { ExecutionNode } from '../../types.ts'
-import { IDENTIFIER_RE } from './constants.ts'
+import { COUNT_WORD_RE, IDENTIFIER_RE } from './constants.ts'
 import type { Result } from './types.ts'
 
 const ENC = new TextEncoder()
@@ -309,6 +309,25 @@ export function isValidName(name: string): boolean {
  * `shift`, `return` and `exit` accept as their argument.
  */
 export function isCountWord(word: string): boolean {
-  const body = word.startsWith('-') || word.startsWith('+') ? word.slice(1) : word
-  return /^\d+$/.test(body)
+  if (!COUNT_WORD_RE.test(word)) return false
+  const value = BigInt(word.trim())
+  return value >= -(2n ** 63n) && value < 2n ** 63n
+}
+
+/** A shell builtin's diagnostic in bash's voice. Mirrors Python's builtin_error. */
+export function builtinError(name: string, message: string): Uint8Array {
+  return new TextEncoder().encode(`bash: ${name}: ${message}\n`)
+}
+
+/**
+ * The words a numeric builtin reads: a leading `--` ends its options, as
+ * bash's `get_numeric_arg` skips it. Mirrors Python's numeric_operands.
+ */
+export function numericOperands(args: readonly string[]): readonly string[] {
+  return args[0] === '--' ? args.slice(1) : args
+}
+
+/** A count word's value modulo 256, the status bash keeps of it. */
+export function statusOf(word: string): number {
+  return Number(((BigInt(word.trim()) % 256n) + 256n) % 256n)
 }

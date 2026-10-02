@@ -16,14 +16,13 @@ from mirage.commands.builtin.utils.links import LinkDoor
 from mirage.commands.builtin.utils.operands import normalized_read
 from mirage.commands.builtin.utils.stream import stdin_stream
 from mirage.io.types import ByteSource, IOResult, materialize
-from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
+from mirage.types import PathSpec, PolymorphicReadFn, StatFn
 from mirage.utils.compress import gunzip_stream
 from mirage.utils.errors import (
     FS_ERRORS,
     DotWalkMissing,
     GzipDataError,
     eloop,
-    enotdir,
     fs_error_line,
 )
 from mirage.utils.key_prefix import mounted_path
@@ -180,7 +179,6 @@ async def open_gzip_input(
     suffix: str = GZIP_SUFFIX,
     decompress: bool = True,
     follow: bool = False,
-    stat: StatFn | None = None,
     door: LinkDoor | None = None,
 ) -> GzipInput | None:
     """Open one operand the way gzip 1.13's open_input_file does.
@@ -203,8 +201,6 @@ async def open_gzip_input(
         suffix (str): the -S suffix.
         decompress (bool): whether a missing name is retried.
         follow (bool): -c, -t or -f, under which a link is followed.
-        stat (StatFn | None): the operand mount's stat, which a name
-            typed with a trailing slash is checked with.
         door (LinkDoor | None): the namespace's links, None when there
             are none.
     """
@@ -218,12 +214,6 @@ async def open_gzip_input(
         try:
             if door is not None and name is path and door.vanished(name):
                 raise FileNotFoundError(name.raw_path)
-            if (
-                name.raw_path.endswith("/")
-                and stat is not None
-                and (await stat(name)).type is not FileType.DIRECTORY
-            ):
-                raise enotdir(name)
             # The router followed the operand itself; a retried name it
             # never saw is followed through the door.
             reads = (
@@ -363,7 +353,6 @@ async def decompress_inputs(
                     report,
                     suffix=suffix,
                     follow=follow,
-                    stat=stat,
                     door=door,
                 )
             )

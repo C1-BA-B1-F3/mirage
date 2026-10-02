@@ -21,97 +21,9 @@ from mirage.cache.index import IndexConfig
 from mirage.commands.cli.types import CLISpec
 from mirage.context import reset_current_session, set_current_session
 from mirage.io.types import IOResult
-from mirage.vfs.dev.dev import DevStore, DevVFS, _DevFiles
+from mirage.vfs.dev.dev import DevVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace.session.session import SessionState
-
-
-def test_contains_dev_names_with_or_without_slash():
-    files = _DevFiles()
-    assert "/null" in files
-    assert "null" in files
-    assert "/zero" in files
-    assert "zero" in files
-    assert "/other" not in files
-
-
-def test_synthetic_devices_use_empty_store_placeholders():
-    files = _DevFiles()
-    assert files["/null"] == b""
-    assert files["/zero"] == b""
-    with pytest.raises(KeyError):
-        files["/missing"]
-
-
-def test_set_on_active_device_is_discarded():
-    files = _DevFiles()
-    files["/null"] = b"overwrite"
-    assert files["/null"] == b""
-    assert files["/zero"] == b""
-
-
-def test_delete_tombstones_a_synthetic_device():
-    files = _DevFiles()
-    del files["/null"]
-    assert "/null" not in files
-    assert list(files.keys()) == ["/zero"]
-    assert len(files) == 1
-    with pytest.raises(KeyError):
-        files["/null"]
-    with pytest.raises(KeyError):
-        del files["/null"]
-
-
-def test_set_after_delete_stores_real_bytes():
-    files = _DevFiles()
-    del files["/null"]
-    files["/null"] = b"recreated"
-    assert "/null" in files
-    assert files["/null"] == b"recreated"
-    assert list(files.keys()) == ["/zero", "/null"]
-    assert len(files) == 2
-
-
-def test_delete_of_recreated_file_removes_it_again():
-    files = _DevFiles()
-    del files["/null"]
-    files["/null"] = b"recreated"
-    del files["/null"]
-    assert "/null" not in files
-    assert list(files.keys()) == ["/zero"]
-
-
-def test_non_device_names_store_for_real():
-    files = _DevFiles()
-    files["/custom"] = b"bytes"
-    assert "/custom" in files
-    assert files["/custom"] == b"bytes"
-    assert list(files.keys()) == ["/null", "/zero", "/custom"]
-    del files["/custom"]
-    assert "/custom" not in files
-
-
-def test_pop_mirrors_delete_semantics():
-    files = _DevFiles()
-    assert files.pop("/null") == b""
-    assert "/null" not in files
-    assert files.pop("/null", b"gone") == b"gone"
-    files["/null"] = b"real"
-    assert files.pop("/null") == b"real"
-    assert "/null" not in files
-
-
-def test_iterates_synthetic_then_real():
-    files = _DevFiles()
-    assert list(files) == ["/null", "/zero"]
-    assert len(files) == 2
-
-
-def test_dev_store_starts_with_synthetic_files_and_root():
-    store = DevStore()
-    assert list(store.files.keys()) == ["/null", "/zero"]
-    assert "/" in store.dirs
-    assert store.modified == {}
 
 
 @pytest.mark.asyncio

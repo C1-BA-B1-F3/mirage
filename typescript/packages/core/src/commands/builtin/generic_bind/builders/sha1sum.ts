@@ -15,7 +15,7 @@
 import { sha1sumGeneric } from '../../generic/sha1sum.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const SHA1SUM_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'sha1sum',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

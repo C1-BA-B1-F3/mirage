@@ -208,7 +208,9 @@ describe('--help and man through the executor', () => {
   it('a shell function shadows a CLI and type -a shows both', async () => {
     const ws = await cliWs()
     const io = await ws.shell('linear() { echo shadowed; }; type -a linear')
-    expect(stdoutStr(io)).toBe('linear is a function\nlinear is /usr/bin/linear\n')
+    expect(stdoutStr(io)).toBe(
+      'linear is a function\nlinear () \n{ \n    echo shadowed\n}\nlinear is /usr/bin/linear\n',
+    )
   })
 
   it('workspace filePrompt mentions --help and man (with and without args)', async () => {

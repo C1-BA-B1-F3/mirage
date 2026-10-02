@@ -15,7 +15,7 @@
 import json
 from datetime import datetime, timezone
 
-from mirage.ops.host_io import with_host_io
+from mirage.runtime.python.host.host_io import with_host_io
 from mirage.types import (
     Delta,
     FileChangeKind,

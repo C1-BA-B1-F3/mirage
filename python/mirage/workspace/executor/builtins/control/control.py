@@ -16,22 +16,16 @@ from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ExitSignal, ReturnSignal
-from mirage.workspace.executor.builtins.shared import is_count_word
+from mirage.workspace.executor.builtins.shared import (
+    builtin_error,
+    is_count_word,
+    numeric_operands,
+    status_of,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.executor.control import BreakSignal, ContinueSignal
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
-
-
-def loop_levels(args: list[str]) -> int:
-    """Parse the optional numeric level of ``break``/``continue``.
-
-    Args:
-        args (list[str]): words after the builtin name.
-    """
-    if args and args[0].isdigit() and int(args[0]) > 0:
-        return int(args[0])
-    return 1
 
 
 async def handle_true() -> tuple[ByteSource | None, IOResult, ExecutionNode]:
@@ -60,39 +54,42 @@ async def handle_return(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Return from a function or sourced script, with bash's checks.
 
+    bash reads the status before it looks for a function to leave, so a
+    bad one is reported even where ``return`` then refuses.
+
     Args:
         args (list[str]): words after the command name; at most one,
             the return status.
         session (SessionState): session whose last exit code is the default
-            status and whose source depth marks sourced execution.
+            status.
         call_stack (CallStack | None): active call stack; a pushed
-            frame marks function execution.
+            frame (a function's or a sourced file's) is what returns.
     """
-    in_function = call_stack is not None and call_stack.depth > 1
-    if not in_function and session.source_depth == 0:
+    args = numeric_operands(args)
+    status = session.last_exit_code
+    err = b""
+    if args and not is_count_word(args[0]):
+        err = builtin_error("return", f"{args[0]}: numeric argument required")
+        status = 2
+    elif len(args) > 1:
+        # bash abandons everything still to run, as `exit 1 2` does.
+        raise ExitSignal(
+            1, stderr=builtin_error("return", "too many arguments")
+        )
+    elif args:
+        status = status_of(args[0])
+    if call_stack is None or call_stack.depth <= 1:
         # bash prints the diagnostic, sets $? to 2, and carries on with
         # the rest of the line.
-        err = b"return: can only `return' from a function or sourced script\n"
+        err += builtin_error(
+            "return", "can only `return' from a function or sourced script"
+        )
         return (
             None,
             IOResult(exit_code=2, stderr=err),
             ExecutionNode(command="return", exit_code=2, stderr=err),
         )
-    if args and not is_count_word(args[0]):
-        # bash prints the error and the function returns 2.
-        raise ReturnSignal(
-            2,
-            stderr=f"return: {args[0]}: numeric argument required\n".encode(),
-        )
-    if len(args) > 1:
-        err = b"return: too many arguments\n"
-        return (
-            None,
-            IOResult(exit_code=1, stderr=err),
-            ExecutionNode(command="return", exit_code=1, stderr=err),
-        )
-    # A bare return propagates the status of the last command executed.
-    raise ReturnSignal(int(args[0]) % 256 if args else session.last_exit_code)
+    raise ReturnSignal(status, stderr=err)
 
 
 async def handle_exit(
@@ -107,21 +104,71 @@ async def handle_exit(
         session (SessionState): session whose last exit code is the default
             status.
     """
+    args = numeric_operands(args)
     if args and not is_count_word(args[0]):
         # bash exits with 2 after the diagnostic.
         raise ExitSignal(
-            2, stderr=f"exit: {args[0]}: numeric argument required\n".encode()
+            2,
+            stderr=builtin_error(
+                "exit", f"{args[0]}: numeric argument required"
+            ),
         )
     if len(args) > 1:
-        # bash refuses to exit and the command fails with 1.
-        err = b"exit: too many arguments\n"
+        # bash abandons everything still to run, and exits nowhere.
+        raise ExitSignal(1, stderr=builtin_error("exit", "too many arguments"))
+    raise ExitSignal(
+        status_of(args[0]) if args else session.last_exit_code % 256
+    )
+
+
+def leave_loops(
+    name: str,
+    args: list[str],
+    session: SessionState,
+    call_stack: CallStack | None,
+) -> Result:
+    """``break`` or ``continue`` as bash 5.2 reads its count.
+
+    The loops are the current frame's: a function starts outside its
+    caller's, and so does a ``( )`` or ``&`` child. Outside every loop
+    the builtin only complains; a count past the loops is the loops; a
+    count below 1 ends them all, ``continue`` included, and fails. A
+    word that is no number throws to the top level with 128 over ``$?``,
+    and a second word abandons everything still to run.
+
+    Args:
+        name (str): ``break`` or ``continue``.
+        args (list[str]): words after the builtin name.
+        session (SessionState): whose ``$?`` a bad count builds on.
+        call_stack (CallStack | None): the frames; the current one's
+            loops are the ones it can leave.
+    """
+    loops = call_stack.current.loop_level if call_stack is not None else 0
+    if loops == 0:
+        err = builtin_error(
+            name, "only meaningful in a `for', `while', or `until' loop"
+        )
         return (
             None,
-            IOResult(exit_code=1, stderr=err),
-            ExecutionNode(command="exit", exit_code=1, stderr=err),
+            IOResult(stderr=err),
+            ExecutionNode(command=name, stderr=err),
         )
-    code = int(args[0]) if args else session.last_exit_code
-    raise ExitSignal(code % 256)
+    args = numeric_operands(args)
+    if args and not is_count_word(args[0]):
+        raise ExitSignal(
+            session.last_exit_code | 128,
+            stderr=builtin_error(
+                name, f"{args[0]}: numeric argument required"
+            ),
+        )
+    if len(args) > 1:
+        raise ExitSignal(1, stderr=builtin_error(name, "too many arguments"))
+    count = int(args[0]) if args else 1
+    if count <= 0:
+        err = builtin_error(name, f"{args[0]}: loop count out of range")
+        raise BreakSignal(io=IOResult(exit_code=1, stderr=err), levels=loops)
+    signal = BreakSignal if name == "break" else ContinueSignal
+    raise signal(levels=min(count, loops))
 
 
 async def true_builtin(call: BuiltinCall) -> Result:
@@ -177,7 +224,9 @@ async def break_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    raise BreakSignal(levels=loop_levels(list(call.argv.args)))
+    return leave_loops(
+        "break", list(call.argv.args), call.session, call.call_stack
+    )
 
 
 async def continue_builtin(call: BuiltinCall) -> Result:
@@ -186,4 +235,6 @@ async def continue_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    raise ContinueSignal(levels=loop_levels(list(call.argv.args)))
+    return leave_loops(
+        "continue", list(call.argv.args), call.session, call.call_stack
+    )

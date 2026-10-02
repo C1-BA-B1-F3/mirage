@@ -14,7 +14,7 @@
 
 import os
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.gdrive import GoogleDriveConfig, GoogleDriveVFS
@@ -73,7 +73,7 @@ def _make_ssh_vfs(state: MountState) -> SSHVFS:
     state.sftp_files = {}
     state.sftp_dirs = {SSH_ROOT}
     vfs.accessor._sftp = MockSFTPClient(state.sftp_files, state.sftp_dirs)
-    vfs.accessor._conn = MagicMock()
+    vfs.accessor._conn = MagicMock(wait_closed=AsyncMock())
     return vfs
 
 

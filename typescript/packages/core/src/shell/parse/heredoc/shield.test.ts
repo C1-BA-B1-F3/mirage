@@ -20,7 +20,6 @@ import {
   firstContentLine,
   heredocOperators,
   protectedSource,
-  sameShape,
   terminatorLookalikes,
 } from './shield.ts'
 
@@ -234,19 +233,5 @@ describe('protectedSource', () => {
     const cmd = 'cat <<xyz\nxyz1\nxyz\n'
     const out = protectedSource(cmd, root(cmd))
     expect(diff(cmd, out ?? '')).toEqual([[cmd.indexOf('xyz1'), 'y']])
-  })
-})
-
-describe('sameShape', () => {
-  it('is true for equal parses', () => {
-    expect(sameShape(root('echo a | grep b'), root('echo a | grep b'))).toBe(true)
-  })
-
-  it('is false for a different tree', () => {
-    expect(sameShape(root('echo a | grep b'), root('echo a; grep b'))).toBe(false)
-  })
-
-  it('is false when a span moves', () => {
-    expect(sameShape(root('echo ab'), root('echo abc'))).toBe(false)
   })
 })

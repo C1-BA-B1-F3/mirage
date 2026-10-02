@@ -85,7 +85,7 @@ export function handleSet(
       // Without this a typo — or an option mirage has yet to wire, as
       // `physical` once was — reads as success.
       if (!SET_OPTION_NAMES.has(option)) {
-        const err = new TextEncoder().encode(`set: ${option}: invalid option name\n`)
+        const err = new TextEncoder().encode(`bash: set: ${option}: invalid option name\n`)
         return [
           null,
           new IOResult({ exitCode: 2, stderr: err }),

@@ -1,6 +1,5 @@
 import pytest
 
-from mirage.io.stream import materialize
 from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.workspace.executor.builtins.control import (
@@ -9,7 +8,6 @@ from mirage.workspace.executor.builtins.control import (
     handle_false,
     handle_return,
     handle_true,
-    loop_levels,
 )
 from mirage.workspace.session.session import SessionState
 
@@ -29,7 +27,7 @@ async def test_return_non_numeric_raises_2_with_message():
     with pytest.raises(ReturnSignal) as exc:
         await handle_return(["x"], make_session(), make_function_stack())
     assert exc.value.exit_code == 2
-    assert exc.value.stderr == b"return: x: numeric argument required\n"
+    assert exc.value.stderr == b"bash: return: x: numeric argument required\n"
 
 
 @pytest.mark.asyncio
@@ -58,21 +56,19 @@ async def test_return_outside_function_fails_without_signal():
 
 @pytest.mark.asyncio
 async def test_return_in_source_raises_signal():
-    session = make_session()
-    session.source_depth = 1
-    session.last_exit_code = 0
+    cs = CallStack()
+    cs.push([], function_name="source", sourced=True)
     with pytest.raises(ReturnSignal) as exc:
-        await handle_return([], session, None)
+        await handle_return([], make_session(), cs)
     assert exc.value.exit_code == 0
 
 
 @pytest.mark.asyncio
-async def test_return_too_many_args_fails_without_signal():
-    _, io, _ = await handle_return(
-        ["1", "2"], make_session(), make_function_stack()
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"return: too many arguments\n"
+async def test_return_too_many_args_abandons_the_line():
+    with pytest.raises(ExitSignal) as exc:
+        await handle_return(["1", "2"], make_session(), make_function_stack())
+    assert exc.value.exit_code == 1
+    assert exc.value.stderr == b"bash: return: too many arguments\n"
 
 
 @pytest.mark.asyncio
@@ -107,14 +103,15 @@ async def test_exit_non_numeric_exits_2_with_message():
     with pytest.raises(ExitSignal) as exc:
         await handle_exit(["abc"], make_session())
     assert exc.value.exit_code == 2
-    assert exc.value.stderr == b"exit: abc: numeric argument required\n"
+    assert exc.value.stderr == b"bash: exit: abc: numeric argument required\n"
 
 
 @pytest.mark.asyncio
-async def test_exit_too_many_arguments_does_not_exit():
-    _, io, _ = await handle_exit(["1", "2"], make_session())
-    assert io.exit_code == 1
-    assert await materialize(io.stderr) == b"exit: too many arguments\n"
+async def test_exit_too_many_arguments_abandons_the_line():
+    with pytest.raises(ExitSignal) as exc:
+        await handle_exit(["1", "2"], make_session())
+    assert exc.value.exit_code == 1
+    assert exc.value.stderr == b"bash: exit: too many arguments\n"
 
 
 @pytest.mark.asyncio
@@ -140,11 +137,3 @@ async def test_true_false_colon_fixed_status():
         "false",
         1,
     )
-
-
-def test_loop_levels():
-    assert loop_levels([]) == 1
-    assert loop_levels(["3"]) == 3
-    assert loop_levels(["0"]) == 1
-    assert loop_levels(["x"]) == 1
-    assert loop_levels(["2", "9"]) == 2

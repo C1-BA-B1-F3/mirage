@@ -22,17 +22,13 @@ import { buildDeltaHook } from '@struktoai/mirage-core/core/s3/watch'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 import { S3_OPS } from '@struktoai/mirage-core/ops/s3/index'
 
+import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { s3StorageLocation } from '@struktoai/mirage-core/vfs/s3/storage_id'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { redactConfig, type S3Config, type S3ConfigRedacted } from './config.ts'
-
-export const S3_BROWSER_PROMPT = `{prefix}
-  Remote S3 bucket accessed via presigned URLs (browser runtime).
-  Supports the full filesystem command set: ls/tree/cat/grep/find/du/cp/mv/rm/etc.
-  Listing operations require the presigner to sign LIST/COPY operations in
-  addition to GET/PUT/HEAD/DELETE — see S3BrowserPresignedUrlProvider docs.`
+import { PROMPT } from './prompt.ts'
 
 export interface S3VFSState {
   type: string
@@ -50,13 +46,22 @@ export class S3VFS extends BaseVFS {
   // stat and read both stamp the ETag, so the gate compares like with
   // like. Inherited by every S3AliasVFS provider.
   override readonly readRevalidatable: boolean = true
-  override readonly prompt: string = S3_BROWSER_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: S3Config
   override readonly accessor: S3Accessor
 
   constructor(config: S3Config) {
     super()
-    this.config = config
+    // Normalized as node's S3VFS does: the keys are `prefix + path`, so a
+    // raw `team/x` keyed `team/xa.txt` and a raw `/team/x/` a leading slash.
+    const normalized = normalizeKeyPrefix(config.keyPrefix)
+    const cfg: S3Config = { ...config }
+    if (normalized !== undefined) {
+      cfg.keyPrefix = normalized
+    } else {
+      delete cfg.keyPrefix
+    }
+    this.config = cfg
     this.accessor = new S3Accessor(this.config)
   }
 
@@ -65,7 +70,7 @@ export class S3VFS extends BaseVFS {
   // unlinks the source. Node has always declared it; the shared helper keeps
   // the two runtimes from computing different identities for one bucket.
   override storageLocation(): string {
-    return s3StorageLocation(this.name, this.config)
+    return s3StorageLocation(this.config)
   }
 
   override commands(): readonly RegisteredCommand[] {

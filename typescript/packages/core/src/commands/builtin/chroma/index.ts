@@ -19,13 +19,13 @@ import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { makeFind, readsSizes } from '../slug_tree/find.ts'
-import { CHROMA_IO } from './io.ts'
+import { IO } from './io.ts'
 import { CHROMA_SEARCH } from './search.ts'
 
 export const CHROMA_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<ChromaAccessor>(VFSName.CHROMA, CHROMA_IO, {
+  ...makeGenericCommands<ChromaAccessor>(VFSName.CHROMA, IO, {
     overrides: new Set(['find']),
   }),
-  ...makeFind(VFSName.CHROMA, CHROMA_IO, CHROMA_TREE, stat, statLight, readsSizes),
+  ...makeFind(VFSName.CHROMA, IO, CHROMA_TREE, stat, statLight, readsSizes),
   ...CHROMA_SEARCH,
 ]

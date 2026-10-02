@@ -73,20 +73,13 @@ def typescript_prompts(paths: list[Path]) -> dict[str, dict[str, str]]:
     loaded = json.loads(run.stdout)
     prompts: dict[str, dict[str, str]] = {}
     for path in paths:
-        values = loaded[str(path)]
-        prefix = path.parent.name.upper() + "_"
         found: dict[str, str] = {}
-        for name, value in values.items():
+        for name, value in loaded[str(path)].items():
             if not name.endswith("PROMPT"):
                 continue
-            if not name.startswith(prefix) or not isinstance(value, str):
-                raise ValueError(f"{path}: unsupported prompt {name}")
-            key = name[len(prefix) :]
-            if key == "BROWSER_PROMPT":
-                key = "PROMPT"
-            if key in found:
-                raise ValueError(f"{path}: duplicate prompt {key}")
-            found[key] = normalize(value)
+            if not isinstance(value, str):
+                raise ValueError(f"{path}: {name} is not a string")
+            found[name] = normalize(value)
         if not found:
             raise ValueError(f"{path}: no prompt constants found")
         prompts[str(path)] = found
@@ -166,21 +159,19 @@ def selftest() -> None:
             + "\n"
         )
         ts.write_text(
-            "export const DEMO_PROMPT: string = " + json.dumps(value) + "\n"
+            "export const PROMPT: string = " + json.dumps(value) + "\n"
         )
         assert differences(repo) == {}
-        ts.write_text(
-            ts.read_text() + "export const DEMO_WRITE_PROMPT = `write`\n"
-        )
+        ts.write_text(ts.read_text() + "export const WRITE_PROMPT = `write`\n")
         assert differences(repo) == {
             "core/demo/WRITE_PROMPT": "missing Python prompt"
         }
-        ts.write_text("export const DEMO_PROMPT = `wrong`\n")
+        ts.write_text("export const PROMPT = `wrong`\n")
         assert differences(repo) == {"core/demo/PROMPT": "prompt text differs"}
         ts.unlink()
         other = ts.parent.parent / "other/prompt.ts"
         other.parent.mkdir()
-        other.write_text('export const OTHER_PROMPT = "x"\n')
+        other.write_text('export const PROMPT = "x"\n')
         assert differences(repo) == {
             "core/other/PROMPT": "missing Python prompt",
             "python/demo/PROMPT": "missing TypeScript backend",

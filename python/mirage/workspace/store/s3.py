@@ -12,8 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.s3 import S3Config
 from mirage.observe.store import ObserverStore
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.mount.namespace import NamespaceStore
 from mirage.workspace.record.s3 import S3RecordClient
 from mirage.workspace.session.s3 import S3SessionStore
@@ -87,6 +87,12 @@ class S3WorkspaceStateStore(WorkspaceStateStore):
         return await self._meta.cas_put(
             workspace_id, fields, expected_generation
         )
+
+    async def _forget(self, workspace_id: str) -> None:
+        handle = self._sessions.pop(workspace_id, None)
+        if handle is not None:
+            await handle.close()
+        await self._meta.delete([workspace_id])
 
     async def _close(self) -> None:
         for sess in self._sessions.values():

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const LANCEDB_PROMPT = `This mount is a LanceDB table exposed as a filesystem.
+export const PROMPT = `This mount is a LanceDB table exposed as a filesystem.
 
 Directories are the configured group-by columns; descending narrows a filter.
 Each matching row is a <id>.md card plus a <id>.<ext> blob file. For semantic

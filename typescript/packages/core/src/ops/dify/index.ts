@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { DIFY_IO } from '../../commands/builtin/dify/io.ts'
+import { IO } from '../../commands/builtin/dify/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const DIFY_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.DIFY, DIFY_IO)
+export const DIFY_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.DIFY, IO)

@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { Accessor, NOOPAccessor } from '../accessor/base.ts'
 import { RAMAccessor } from '../accessor/ram.ts'
-import { RAM_IO } from '../commands/builtin/ram/io.ts'
+import { IO } from '../commands/builtin/ram/io.ts'
 import type { CommandIO } from '../commands/builtin/generic_bind/index.ts'
 import { streamFromBytes } from '../commands/builtin/utils/wrap.ts'
 import { command, type RegisteredCommand } from '../commands/config.ts'
@@ -382,7 +382,7 @@ describe('custom VFS capability fallbacks', () => {
     const store = new RAMStore()
     store.dirs.add('/empty')
     store.files.set('/file', ENC.encode('keep'))
-    const io = { ...RAM_IO }
+    const io = { ...IO }
     delete io.rmR
     delete io.rmdir
     const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
@@ -411,7 +411,7 @@ describe('custom VFS capability fallbacks', () => {
       const store = new RAMStore()
       for (const dir of ['/src', '/src/empty', '/src/sub']) store.dirs.add(dir)
       store.files.set('/src/sub/file', ENC.encode('payload'))
-      const io = { ...RAM_IO }
+      const io = { ...IO }
       delete io.copy
       delete io.find
       const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
@@ -443,7 +443,7 @@ describe('custom VFS capability fallbacks', () => {
     for (const dir of ['/src', '/src/empty']) store.dirs.add(dir)
     store.files.set('/src/file', ENC.encode('payload'))
     const before = new Set(store.dirs)
-    const io = { ...RAM_IO }
+    const io = { ...IO }
     delete io.copy
     delete io.write
     const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
@@ -468,7 +468,7 @@ describe('custom VFS capability fallbacks', () => {
     const before = ENC.encode('before')
     await ops(builtin).write(path, before)
     const vfs = custom
-      ? new BaseVFS({ name: 'probe', accessor: builtin.accessor, io: RAM_IO })
+      ? new BaseVFS({ name: 'probe', accessor: builtin.accessor, io: IO })
       : builtin
     const ws = new Workspace(
       { '/data': vfs },

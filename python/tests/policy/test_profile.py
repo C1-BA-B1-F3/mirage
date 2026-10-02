@@ -944,7 +944,7 @@ async def test_allow_list_hides_unlisted_tools_from_dispatch_and_enumerators():
         assert await _line(ws, "type sort; echo $?") == (
             0,
             "1\n",
-            "type: sort: not found\n",
+            "bash: type: sort: not found\n",
         )
         assert await _line(ws, "command -v sort; echo $?") == (0, "1\n", "")
         assert await _line(ws, "which sort; echo $?") == (0, "1\n", "")
@@ -966,7 +966,7 @@ async def test_allow_list_hides_unlisted_tools_from_dispatch_and_enumerators():
         assert await _line(ws, "type pwd; echo $?") == (
             0,
             "1\n",
-            "type: pwd: not found\n",
+            "bash: type: pwd: not found\n",
         )
         assert await _line(ws, "history") == (
             127,

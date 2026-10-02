@@ -21,7 +21,7 @@ from mirage.commands.spec import SPECS
 from mirage.secrets.summary import error_summary
 from mirage.types import JsonValue
 from mirage.workspace.cli.types import CLIInstall
-from mirage.workspace.names import (
+from mirage.workspace.lookup.constants import (
     JOB_BUILTINS,
     KEYWORDS,
     NAMESPACE_COMMANDS,

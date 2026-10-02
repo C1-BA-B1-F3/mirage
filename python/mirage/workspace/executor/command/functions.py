@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
 from typing import Any
 
 from mirage.context import clear_program_invocation, reset_program_invocation
@@ -22,12 +23,14 @@ from mirage.io.types import ByteSource
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
 from mirage.shell.errors import ReturnSignal
 from mirage.shell.job_table import JobTable
 from mirage.shell.variable import ShellVar
 from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.command.types import ExecuteNodeFn
+from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.jobs import run_statement
 from mirage.workspace.executor.statement import fd0_binding, finish_statement
 from mirage.workspace.session import SessionState
@@ -46,6 +49,7 @@ async def run_shell_function(
     agent_id: str | None = None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run a user-defined shell function's body statement by statement.
 
@@ -68,14 +72,21 @@ async def run_shell_function(
         agent_id (str | None): agent identity for job bookkeeping.
         handed (HandOff | None): approval claims inherited by a job.
         decisions (Decisions | None): ledger that holds those claims.
+        sink (JobConsole | None): where each statement writes as it
+            finishes, None to return the body's output.
     """
     func_body = session.functions[cmd_name]
+    if sink is not None:
+        execute_node = partial(execute_node, sink=sink)
     # The body's statements read the caller's stdin in turn.
     stdin = share(stdin)
     cs = call_stack if call_stack is not None else CallStack()
     # Positional args carry the word as typed ($1 stays sub/a.txt).
     text_args = [word_text(p) for p in parts[1:]]
     cs.push(text_args, function_name=cmd_name)
+    outer_names = session.function_names
+    if outer_names is not None:
+        session.function_names = cs.function_names()
     # One stack: a local shadows the whole record, so the caller's
     # value and attributes are saved and put back together.
     saved_locals: dict[str, ShellVar | None] = {}
@@ -108,12 +119,20 @@ async def run_shell_function(
                     decisions,
                 )
             except ReturnSignal as sig:
+                if sig.stdout is not None:
+                    all_stdout.append(sig.stdout)
                 if sig.stderr:
                     merged_io = await merged_io.merge(
                         IOResult(stderr=sig.stderr)
                     )
                 merged_io.exit_code = sig.exit_code
                 break
+            except UNWINDING as sig:
+                raise await carried(
+                    sig,
+                    async_chain(all_stdout) if all_stdout else None,
+                    merged_io,
+                )
             # $? tracks each statement inside the body, so a bare
             # `return` (and mid-function $?) sees the last command.
             stdout = await finish_statement(stdout, io, session, cmd)
@@ -134,6 +153,8 @@ async def run_shell_function(
     finally:
         reset_program_invocation(marked)
         cs.pop()
+        if session.function_names is not None:
+            session.function_names = outer_names
         restore_locals(session, saved_locals)
         session._local_frames.pop()
         session._local_vars = outer_locals

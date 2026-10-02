@@ -15,7 +15,7 @@
 import { sortGeneric } from '../../generic/sort.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const SORT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'sort',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

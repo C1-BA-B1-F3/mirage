@@ -15,7 +15,7 @@
 import { iconvGeneric } from '../../generic/iconv.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const ICONV_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'iconv',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

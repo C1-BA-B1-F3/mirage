@@ -3,17 +3,19 @@ import type { FlagView } from '../../../spec/flag_view.ts'
 import { pairRenames, kindOf } from './changes.ts'
 import { combinedLines } from './combined.ts'
 import { GitError } from './errors.ts'
+import { pathspecSelects } from './pathspec.ts'
 import type { CommitFacts } from './format.ts'
-import { filePatch, shortOid } from './patch.ts'
+import { blobData, filePatch, shortOid } from './patch.ts'
 import { quotePath } from './render.ts'
 import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import { similarityScore } from './similarity.ts'
 import { diffstat, statTable, type FileStat } from './summary.ts'
-import { treeEntries, treeItems, type TreeEntry } from './tree.ts'
+import { TREE_MODE, treeEntries, treeItems, type TreeEntry } from './tree.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const RENAME_SCORE = 50
 
+/** One interpretation of Git diff options, shared by all tree readers. */
 export interface DiffFlags {
   nameOnly: boolean
   nameStatus: boolean
@@ -30,6 +32,7 @@ export interface DiffFlags {
   functionContext: boolean
   context: number
   quotePathFully: boolean
+  pathspecs: readonly string[]
 }
 
 export function parseDiffFlags(
@@ -99,6 +102,7 @@ export function parseDiffFlags(
     raw: raw || (!porcelain && !modes && !patch),
     abbrev: porcelain,
     quotePathFully,
+    pathspecs: [],
   }
 }
 
@@ -180,11 +184,6 @@ function renameName(old: string, fresh: string, fully = true): string {
   return prefix.length || suffix.length ? [...prefix, `{${middle}}`, ...suffix].join('/') : middle
 }
 
-async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
-  if (!entry) return new Uint8Array()
-  if (entry.mode === '160000') return new TextEncoder().encode(`Subproject commit ${entry.oid}\n`)
-  return (await git.readBlob({ ...repoArgs(repo), oid: entry.oid })).blob
-}
 function lines(data: Uint8Array): string[] {
   const text = new TextDecoder().decode(data)
   return text === '' ? [] : text.split(/(?<=\n)/)
@@ -287,15 +286,45 @@ function summaryLines(row: Change, display: string, shown: string): string[] {
   return []
 }
 
+/**
+ * A tree's entries a diff compares, limited to a pathspec.
+ *
+ * @param repo repository to read
+ * @param tree the tree id, null for the empty tree
+ * @param recursive whether to descend into subtrees
+ * @param pathspecs repository-relative patterns, all paths when empty
+ */
 async function entries(
   repo: Repo,
   tree: string | null,
   recursive: boolean,
+  pathspecs: readonly string[] = [],
 ): Promise<Map<string, TreeEntry>> {
   if (tree === null) return new Map()
-  if (recursive) return treeEntries(repo, tree)
+  if (recursive) return limited(await treeEntries(repo, tree), pathspecs)
   const items = await treeItems(repo, tree)
-  return new Map(items.map((e) => [e.path, { mode: e.mode, oid: e.oid }]))
+  return limited(new Map(items.map((e) => [e.path, { mode: e.mode, oid: e.oid }])), pathspecs)
+}
+
+/**
+ * The entries a pathspec names, all of them for none.
+ *
+ * Applied before pairing, so a rename is found only where both paths match
+ * (pinned against git 2.54).
+ *
+ * @param found path to entry
+ * @param pathspecs repository-relative patterns
+ */
+export function limited(
+  found: Map<string, TreeEntry>,
+  pathspecs: readonly string[],
+): Map<string, TreeEntry> {
+  if (!pathspecs.length) return found
+  return new Map(
+    [...found].filter(([path, entry]) =>
+      pathspecSelects(path, pathspecs, entry.mode === TREE_MODE),
+    ),
+  )
 }
 
 /**
@@ -332,6 +361,7 @@ export async function commitSummary(
     raw: false,
     abbrev: true,
     quotePathFully: fully,
+    pathspecs: [],
   })
 }
 
@@ -342,42 +372,66 @@ export async function treeOutput(
   flags: DiffFlags,
   recursive = true,
 ): Promise<string> {
-  return renderChanges(
-    repo,
-    await compare(
-      repo,
-      await entries(repo, before, recursive),
-      await entries(repo, after, recursive),
-      flags.renames,
-    ),
-    flags,
-  )
+  return (await block(repo, before, after, flags, recursive)) ?? ''
 }
 
+/** One parent's diff block, null when the commit does not differ from it. */
+async function block(
+  repo: Repo,
+  before: string | null,
+  after: string,
+  flags: DiffFlags,
+  recursive = true,
+): Promise<string | null> {
+  const rows = await compare(
+    repo,
+    await entries(repo, before, recursive, flags.pathspecs),
+    await entries(repo, after, recursive, flags.pathspecs),
+    flags.renames,
+  )
+  return rows.length ? renderChanges(repo, rows, flags) : null
+}
+
+/**
+ * A commit's diff blocks, one per parent the merge mode compares.
+ *
+ * A parent the commit does not differ from is null, so its header is not
+ * printed either (pinned against git 2.54).
+ *
+ * @param repo repository to read
+ * @param commit the commit to diff
+ * @param flags the diff flags
+ * @param recursive whether to descend into subtrees
+ * @param root whether a root commit diffs against the empty tree
+ */
 export async function commitOutput(
   repo: Repo,
   commit: CommitFacts,
   flags: DiffFlags,
   recursive = true,
   root = true,
-): Promise<string[]> {
+): Promise<(string | null)[]> {
   const trees: string[] = []
   for (const p of commit.parents) trees.push((await commitFacts(repo, p)).tree)
-  if (!trees.length)
-    return root ? [await treeOutput(repo, null, commit.tree, flags, recursive)] : []
+  if (!trees.length) return root ? [await block(repo, null, commit.tree, flags, recursive)] : []
   if (trees.length === 1 || flags.merge === 'first-parent')
-    return [await treeOutput(repo, trees[0] ?? null, commit.tree, flags, recursive)]
+    return [await block(repo, trees[0] ?? null, commit.tree, flags, recursive)]
   if (flags.merge === 'off') return []
   if (flags.merge === 'separate') {
-    const out: string[] = []
-    for (const tree of trees) out.push(await treeOutput(repo, tree, commit.tree, flags, recursive))
+    const out: (string | null)[] = []
+    for (const tree of trees) out.push(await block(repo, tree, commit.tree, flags, recursive))
     return out
   }
-  const after = await entries(repo, commit.tree, recursive),
+  const after = await entries(repo, commit.tree, recursive, flags.pathspecs),
     comparisons: Change[][] = []
   for (const tree of trees)
     comparisons.push(
-      await compare(repo, await entries(repo, tree, recursive), after, flags.renames),
+      await compare(
+        repo,
+        await entries(repo, tree, recursive, flags.pathspecs),
+        after,
+        flags.renames,
+      ),
     )
   const maps = comparisons.map((rows) => new Map(rows.map((row) => [row.path, row])))
   const common = [...(maps[0]?.keys() ?? [])]
@@ -513,7 +567,7 @@ export function separatorLine(commit: CommitFacts, kind: string, flags: DiffFlag
 export function joinOutput(
   commit: CommitFacts,
   head: string,
-  bodies: string[],
+  bodies: readonly (string | null)[],
   kind: string,
   width: number,
   flags: DiffFlags,
@@ -521,7 +575,9 @@ export function joinOutput(
 ): string {
   if (!bodies.length) return head
   const line = separatorLine(commit, kind, flags)
-  const blocks = bodies.map((body, index) => {
+  const blocks: string[] = []
+  bodies.forEach((body, index) => {
+    if (body === null) return
     let text = head
     if (bodies.length > 1 && !['format', 'tformat'].includes(kind)) {
       const length = kind === 'oneline' ? width : 40
@@ -531,8 +587,8 @@ export function joinOutput(
     }
     let gap = text && body && line !== null ? `${line}\n` : ''
     if (!body && text && emptySummary) gap = '\n'
-    return text + gap + body
+    blocks.push(text + gap + body)
   })
   const separator = ['format', 'tformat', 'oneline'].includes(kind) ? '' : '\n'
-  return blocks.join(separator)
+  return blocks.join(separator) || head
 }

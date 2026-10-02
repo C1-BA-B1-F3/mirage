@@ -15,7 +15,12 @@
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
-from mirage.workspace.executor.builtins.shared import is_count_word
+from mirage.shell.errors import ExitSignal
+from mirage.workspace.executor.builtins.shared import (
+    builtin_error,
+    is_count_word,
+    numeric_operands,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import (
@@ -42,23 +47,22 @@ async def handle_shift(
         call_stack (CallStack | None): function-call positional frames.
         session (SessionState): shell session state.
     """
-    if len(args) > 1:
-        err = b"shift: too many arguments\n"
+    args = numeric_operands(args)
+    if args and not is_count_word(args[0]):
+        err = builtin_error("shift", f"{args[0]}: numeric argument required")
         return (
             None,
             IOResult(exit_code=1, stderr=err),
             ExecutionNode(command="shift", exit_code=1),
         )
-    if args and not is_count_word(args[0]):
-        err = f"shift: {args[0]}: numeric argument required\n".encode()
-        return (
-            None,
-            IOResult(exit_code=1, stderr=err),
-            ExecutionNode(command="shift", exit_code=1),
+    if len(args) > 1:
+        # bash abandons everything still to run, as `exit 1 2` does.
+        raise ExitSignal(
+            1, stderr=builtin_error("shift", "too many arguments")
         )
     n = int(args[0]) if args else 1
     if n < 0:
-        err = f"shift: {args[0]}: shift count out of range\n".encode()
+        err = builtin_error("shift", f"{args[0]}: shift count out of range")
         return (
             None,
             IOResult(exit_code=1, stderr=err),

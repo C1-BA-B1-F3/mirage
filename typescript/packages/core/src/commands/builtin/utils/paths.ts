@@ -15,8 +15,8 @@
 import type { LinkView, StatPath } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { FileStat } from '../../../types.ts'
-import { FileType, PathSpec, type StatFn } from '../../../types.ts'
-import { dotWalkError, enoent, isMissingPath, type DotWalkError } from '../../../utils/errors.ts'
+import { FileType, LINK_TARGET_KEY, PathSpec, type StatFn } from '../../../types.ts'
+import { dotWalkError, eexist, enoent, isMissingPath, type FsError } from '../../../utils/errors.ts'
 import { rekey } from '../../../utils/key_prefix.ts'
 import {
   CycleError,
@@ -133,6 +133,18 @@ export function linkFollow(links: LinkView | null | undefined): ((path: string) 
   return links === null || links === undefined ? null : (path: string) => links.resolve(path)
 }
 
+// One link's target, the hop a canonicalizing walk reads, null while no
+// link exists. Mirrors Python's link_target.
+export function linkTarget(
+  links: LinkView | null | undefined,
+): ((path: string) => string | null) | null {
+  if (links === null || links === undefined) return null
+  return (path: string) => {
+    const row = links.statAt(path)
+    return row === null ? null : (row.extra[LINK_TARGET_KEY] as string)
+  }
+}
+
 // Whether `virtual` is the path a dotted spelling names: the textual
 // simplification, or that simplification taken through the links. The
 // kernel walk (`followPaths`) resolves an operand before its command runs,
@@ -146,17 +158,32 @@ function spells(
   const spelled = resolvePath(dotted, '/')
   if (spelled === virtual) return true
   if (follow === null) return false
-  const cut = spelled.lastIndexOf('/')
-  const head = spelled.slice(0, cut)
-  const name = spelled.slice(cut + 1)
+  const trimmed = rstripSlash(dotted)
+  const cut = trimmed.lastIndexOf('/')
+  const head = trimmed.slice(0, cut)
+  const name = trimmed.slice(cut + 1)
   try {
-    const whole = follow(spelled)
+    const whole = resolvePath(follow(dotted), '/')
     const above = follow(head === '' ? '/' : head)
-    return virtual === whole || virtual === `${rstripSlash(above)}/${name}`
+    return virtual === whole || virtual === resolvePath(`${rstripSlash(above)}/${name}`, '/')
   } catch (err) {
     if (err instanceof CycleError) return false
     throw err
   }
+}
+
+/**
+ * The typed spelling, links before `..`, while it names the path. Mirrors
+ * Python's walk_spelling.
+ *
+ * Without a trailing slash: that is a final `.`, which `dotRefusal` proves,
+ * and a store that keeps no directories reads a slashed key as one, so
+ * `cat reg/` there was ENOENT, not ENOTDIR.
+ */
+export function walkSpelling(path: PathSpec, follow: ((path: string) => string) | null): string {
+  const dotted = path.dotted
+  if (dotted !== null && spells(dotted, path.virtual, follow)) return rstripSlash(dotted) || '/'
+  return path.virtual
 }
 
 /**
@@ -168,10 +195,11 @@ function spells(
  * in `virtual` reached `f` regardless. Each name in front of a dot is proved
  * a directory, in walk order, and one that is not is judged by its chain the
  * way a create is, so a miss under a plain file is ENOTDIR on every store.
- * `..` itself stays textual: `link/..` is the link's parent, the logical
- * reading bash's `cd` gives it, where GNU's file commands would reach the
- * target's (a documented divergence: resolved physically, an operand would
- * part from every path a walker derives from it).
+ * A link in front of a dot is followed first, as the kernel walks (only
+ * bash's `cd` reads `link/..` logically). A trailing slash is a final `.`:
+ * an existing name in front of it has to be a directory too (`cat reg/`); a
+ * call that creates that name (`creates`: mkdir, symlink) answers EEXIST
+ * instead (`mkdir reg/`), however the store keeps the name.
  *
  * Only the path the spelling names is walked: a path derived from it (a
  * child a walker builds, a respelled match) carries the field along but no
@@ -184,11 +212,19 @@ export async function dotRefusal(
   stat: StatFn,
   path: PathSpec,
   follow: ((path: string) => string) | null = null,
-): Promise<DotWalkError | null> {
+  creates = false,
+): Promise<FsError | null> {
   const dotted = path.dotted
-  if (dotted === null || !spells(dotted, path.virtual, follow)) return null
+  if (dotted === null || !spells(dotted, resolvePath(path.virtual, '/'), follow)) return null
   const proved: string[] = []
-  for (const prefix of dotPrefixes(dotted)) {
+  let prefixes: string[]
+  try {
+    prefixes = dotPrefixes(dotted, follow)
+  } catch (err) {
+    if (err instanceof CycleError) return dotWalkError(path, 'ELOOP')
+    throw err
+  }
+  for (const prefix of prefixes) {
     if (proved.some((done) => done.startsWith(`${prefix}/`))) continue
     const spec = PathSpec.fromStrPath(prefix)
     const { exists, isDir } = await entryKind(stat, spec)
@@ -198,6 +234,10 @@ export async function dotRefusal(
     }
     if (!exists && (await nearestAncestor(stat, spec))[1]) return dotWalkError(path, 'ENOENT')
     return dotWalkError(path, 'ENOTDIR')
+  }
+  if (dotted.endsWith('/')) {
+    const { exists, isDir } = await entryKind(stat, PathSpec.fromStrPath(path.virtual))
+    if (exists && !isDir) return creates ? eexist(path) : dotWalkError(path, 'ENOTDIR')
   }
   return null
 }

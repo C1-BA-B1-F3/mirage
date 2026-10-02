@@ -16,7 +16,7 @@ import { concatAggregate } from '../../aggregators.ts'
 import { catGeneric } from '../../generic/cat.ts'
 import { type Builder, dirAwareStat, resolveGlobOf } from '../adapter.ts'
 
-export const CAT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'cat',
   read: true,
   aggregate: concatAggregate,

@@ -23,11 +23,11 @@
         "nextcloud",
         "box"
       ],
-      "command": "exit 1 2; echo after code=$?",
+      "command": "( exit -- 4 ); echo \"s=$?\"; ( exit 1 2; echo in ); echo \"t=$?\"; exit 1 2; echo after code=$?",
       "expect": {
-        "exit": 0,
-        "stdout": "after code=1\n",
-        "stderr": "exit: too many arguments\n"
+        "exit": 1,
+        "stdout": "s=4\nt=1\n",
+        "stderr": "bash: exit: too many arguments\nbash: exit: too many arguments\n"
       }
     }
   ]

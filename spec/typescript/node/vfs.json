@@ -933,7 +933,7 @@
         "stat"
       ]
     },
-    "hf": {
+    "hf_buckets": {
       "local": false,
       "max_du_entries": 10000,
       "max_glob_matches": 10000,

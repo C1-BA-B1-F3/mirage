@@ -66,6 +66,7 @@ import { type SessionState, type StatusWriter, newStatusWriter } from '../sessio
 import { ExecutionNode } from '../types.ts'
 import { abortable, joinOrAbort } from '../abort.ts'
 import { failureResult, isControlFlowError } from './failure.ts'
+import { ended, isUnwinding } from '../executor/control.ts'
 import type { ResolvedSource } from '../../secrets/types.ts'
 import { cliEnvNames, fillEnv, fillNames, guestBound, lineNodes } from './fill.ts'
 import { admitLine, isPending, isPendingRefusal } from '../node/admission.ts'
@@ -156,7 +157,7 @@ async function deniedResult(
       options.signal,
     )
   }
-  await joinOrAbort(env.sessions.flush(), options.signal)
+  await joinOrAbort(env.sessions.flush(session.sessionId), options.signal)
   return new ExecuteResult(new Uint8Array(), msg, exitCode, refusal)
 }
 
@@ -379,6 +380,10 @@ async function runLine(
     // stdin so `... | command cat` filters the upstream output; the same
     // path carries `echo hi | bash -c 'cat'` into the inner line.
     if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
+    // A line run in place under a sink (eval, source, a nested shell)
+    // writes its statements there as they finish.
+    if (opts.sink !== undefined) innerOpts.sink = opts.sink
+    if (opts.callStack !== undefined) innerOpts.callStack = opts.callStack
     const session = opts.session ?? effectiveSession
     const substitutionTree =
       opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION
@@ -411,6 +416,11 @@ async function runLine(
         stderr: res.stderr,
         refusal: res.refusal,
       })
+    } catch (err) {
+      // A substitution runs on a copy of the caller's frames, and it is a
+      // child shell: whatever unwinds out of it ends it.
+      if (saved === null || !isUnwinding(err)) throw err
+      return ended(err)
     } finally {
       if (saved !== null) {
         session.terminalOutput = terminalOutput
@@ -482,7 +492,7 @@ async function runLine(
     // every execute, success or failure, mirroring Python's finally. It
     // joins under the grace like the tree: a stalled store finishes in
     // the background instead of holding an aborted caller.
-    await joinOrAbort(env.sessions.flush(), options.signal)
+    await joinOrAbort(env.sessions.flush(targetSession.sessionId), options.signal)
   }
 }
 
@@ -742,12 +752,14 @@ async function runParsedLine(
         // caller is released here. Leaf checks below this point exist to
         // stop side effects and free producers, not to release the caller.
         const result = await joinOrAbort(
-          runCommandTree(deps, rootNode, effectiveSession, stdin),
+          runCommandTree(deps, rootNode, effectiveSession, stdin, false, options.callStack ?? null),
           killed,
         )
         if (killed?.aborted === true) throw makeAbortError(killed)
         return result
       } catch (error) {
+        // A line run in its caller's frame unwinds into the caller.
+        if (options.callStack !== undefined && isUnwinding(error)) throw error
         // Return through the recording scope so completed op records survive
         // a throw. Once the caller aborted, the line's answer is the abort,
         // whatever a leaf threw while unwinding.
@@ -776,7 +788,8 @@ async function runParsedLine(
       // execution failure (timeout, usage error, an unsupported shell
       // construct) is surfaced as a failed command rather than crashing
       // the caller.
-      if (isControlFlowError(err)) throw err
+      if (isControlFlowError(err) || (options.callStack !== undefined && isUnwinding(err)))
+        throw err
       const failed = failureResult(err)
       recordStatus(targetSession, failed.exitCode)
       return new ExecuteResult(new Uint8Array(), failed.stderr, failed.exitCode)

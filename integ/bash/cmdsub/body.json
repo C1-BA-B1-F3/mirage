@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo $(if true; then echo yes; fi)",
+      "command": "echo $(if true; then echo yes; fi); csf() { echo \"[$(echo $1 $#)]\"; csx=$(echo a; return 3; echo no); echo \"r=$? $csx\"; }; csf p q; for csi in 1 2; do csy=$(echo b; break; echo no); echo \"$csi $csy\"; done; csz=$(return 4); echo \"t=$?\"",
       "expect": {
         "exit": 0,
-        "stdout": "yes\n",
-        "stderr": ""
+        "stdout": "yes\n[p 2]\nr=3 a\n1 b\n2 b\nt=2\n",
+        "stderr": "bash: return: can only `return' from a function or sourced script\n"
       }
     },
     {

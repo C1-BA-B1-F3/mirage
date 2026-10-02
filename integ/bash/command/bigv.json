@@ -98,7 +98,41 @@
       "command": "command -V nope_zzz 2>&1; echo \"rc=$?\"",
       "expect": {
         "exit": 0,
-        "stdout": "command: nope_zzz: not found\nrc=1\n",
+        "stdout": "bash: command: nope_zzz: not found\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cmd_bigv_function",
+      "seq": 503023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "bvf() { echo hi; }; command -V bvf",
+      "expect": {
+        "exit": 0,
+        "stdout": "bvf is a function\nbvf () \n{ \n    echo hi\n}\n",
         "stderr": ""
       }
     }

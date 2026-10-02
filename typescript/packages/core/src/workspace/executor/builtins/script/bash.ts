@@ -15,6 +15,7 @@
 import { runAsShell } from '../../../../context/session_context.ts'
 import { materialize, IOResult } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
+import type { JobConsole } from '../../../../shell/console/index.ts'
 import { IFS_DEFAULT } from '../../../../shell/constants.ts'
 import { parseOptionWord } from '../../../../shell/options.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -118,6 +119,7 @@ export async function handleBash(
   session: SessionState,
   stdin: ByteSource | null = null,
   name = 'bash',
+  sink?: JobConsole,
 ): Promise<Result> {
   const parsed = parseBashArgs(args)
   if (parsed.invalid !== null) {
@@ -156,16 +158,21 @@ export async function handleBash(
   // bash starts every shell with the default IFS and never reads one from
   // its environment, so `IFS=, bash -c ...` splits on blanks.
   seedVar(session, 'IFS', IFS_DEFAULT)
-  // A child shell is outside every `source` its caller is inside, so a
-  // top-level `return` in the script it runs is the error bash reports
-  // rather than an early exit the program loop absorbs.
-  session.sourceDepth = 0
+  // A child shell is outside every function and `source` its caller is
+  // inside: it runs on a call stack of its own, and `FUNCNAME` is empty.
+  session.functionNames = []
   for (const [option, enable] of parsed.settings) session.shellOptions[option] = enable
   let io
   // A nested shell is a program of its own: the builtins it runs are its
   // builtins again, whatever `find -exec` marked the outer line.
   try {
-    io = await runAsShell(() => executeFn(script, { sessionId: session.sessionId, stdin }))
+    io = await runAsShell(() =>
+      executeFn(script, {
+        sessionId: session.sessionId,
+        stdin,
+        ...(sink === undefined ? {} : { sink }),
+      }),
+    )
   } finally {
     session.restore(saved)
   }
@@ -182,5 +189,6 @@ export async function bashBuiltin(call: BuiltinCall): Promise<Result> {
     call.session,
     call.stdin,
     call.argv.name,
+    call.sink,
   )
 }

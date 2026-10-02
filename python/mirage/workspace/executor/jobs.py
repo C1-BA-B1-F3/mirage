@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.commands.errors import CommandTimeoutError
+from mirage.context import program_invocation
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import close_quietly
@@ -36,7 +37,7 @@ from mirage.shell.helpers import get_text, is_backgrounded
 from mirage.shell.job_table import Job, JobStatus, JobTable
 from mirage.shell.types import TSNodeLike
 from mirage.workspace.executor.builtins.getopt import scan_options
-from mirage.workspace.executor.statement import statement_stdin
+from mirage.workspace.executor.statement import failed_read, statement_stdin
 from mirage.workspace.node.occurrence import occurrence_of
 from mirage.workspace.session import (
     SessionState,
@@ -80,6 +81,37 @@ async def pump(
             return
 
 
+async def drained(
+    sink: JobConsole,
+    stdout: ByteSource | None,
+    io: IOResult,
+    exec_node: ExecutionNode,
+) -> tuple[None, IOResult, ExecutionNode]:
+    """Write a finished statement's returned output to a sink.
+
+    Its stdout goes before its stderr, since one command keeps no order
+    between them; what it already wrote there as it ran (a function
+    body, a redirected group) came first. A read its stream fails is the
+    statement's own failure (``failed_read``). The result carries no
+    output, so nothing lands twice.
+
+    Args:
+        sink (JobConsole): where the statement writes.
+        stdout (ByteSource | None): the output it returned.
+        io (IOResult): its result, its stderr emptied once written.
+        exec_node (ExecutionNode): its record.
+    """
+    try:
+        await pump(sink, Channel.STDOUT, stdout)
+    except OSError as exc:
+        await failed_read(io, exc, exec_node)
+    stderr = await io.materialize_stderr()
+    if stderr:
+        await sink.emit(Channel.STDERR, stderr)
+        io.stderr = None
+    return None, io, exec_node
+
+
 async def handle_background(
     execute_node,
     left: TSNodeLike,
@@ -107,7 +139,9 @@ async def handle_background(
     still holds.
     """
     bg_session = session.fork()
-    bg_call_stack = call_stack.fork() if call_stack is not None else None
+    # A job is a child shell outside every loop: `{ break; } &` in a
+    # loop refuses, as bash's does.
+    bg_call_stack = (call_stack or CallStack()).fork(loops=False)
     job_handed = (
         decisions.split(
             session.session_id, handed, occurrence_of(left, handed)
@@ -169,7 +203,7 @@ async def handle_background(
                     exit_code=sig.contained_code,
                 )
             except ReturnSignal as sig:
-                stdout = None
+                stdout = sig.stdout
                 io = IOResult(
                     exit_code=sig.exit_code, stderr=sig.stderr or None
                 )
@@ -685,7 +719,7 @@ async def handle_fg(
     if len(parts) <= 1:
         running = [j for j in jobs if j.status == JobStatus.RUNNING]
         if not running:
-            err = b"fg: current: no such job\n"
+            err = b"bash: fg: current: no such job\n"
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
@@ -697,14 +731,14 @@ async def handle_fg(
         try:
             job_id = int(raw)
         except ValueError:
-            err = f"fg: {parts[1]}: no such job\n".encode()
+            err = f"bash: fg: {parts[1]}: no such job\n".encode()
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
                 ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
             )
         if _job_numbered(jobs, job_id) is None:
-            err = f"fg: {parts[1]}: no such job\n".encode()
+            err = f"bash: fg: {parts[1]}: no such job\n".encode()
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
@@ -807,12 +841,17 @@ async def handle_kill(
     signal = _KILL_SIGNALS["TERM"]
     words = parts[1:]
     saw_signal = False
+    voice = (
+        "" if session is not None and program_invocation(session) else "bash: "
+    )
     while words:
         word = words[0]
         if word in ("-s", "-n"):
             if len(words) < 2:
                 return _job_result(
-                    cmd_str, f"kill: {word}: option requires an argument\n", 1
+                    cmd_str,
+                    f"{voice}kill: {word}: option requires an argument\n",
+                    1,
                 )
             spec, words = words[1], words[2:]
         elif word == "--":
@@ -827,7 +866,9 @@ async def handle_kill(
         number = _signal_number(spec)
         if number is None:
             return _job_result(
-                cmd_str, f"kill: {spec}: invalid signal specification\n", 1
+                cmd_str,
+                f"{voice}kill: {spec}: invalid signal specification\n",
+                1,
             )
         signal = number
     if not words:
@@ -839,7 +880,7 @@ async def handle_kill(
         jobs = job_table.list_jobs(sid)
         pid, refusal = _kill_pid(jobs, operand)
         if pid is None:
-            errors.append(f"kill: {refusal}")
+            errors.append(f"{voice}kill: {refusal}")
             continue
         try:
             if signal == 0:
@@ -850,10 +891,10 @@ async def handle_kill(
                 if found and job is not None:
                     await job_table.kill(job.id, sid)
         except PermissionError:
-            errors.append(f"kill: ({pid}) - Operation not permitted")
+            errors.append(f"{voice}kill: ({pid}) - Operation not permitted")
             continue
         if not found:
-            errors.append(f"kill: ({pid}) - No such process")
+            errors.append(f"{voice}kill: ({pid}) - No such process")
             continue
         signalled = True
     code = 0 if signalled else 1

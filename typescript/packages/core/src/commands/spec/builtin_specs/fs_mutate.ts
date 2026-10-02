@@ -241,7 +241,18 @@ export const SPECS: Record<string, CommandSpec> = {
     rest: new Operand({ type: 'path' }),
   }),
   realpath: new CommandSpec({
-    options: [new Option({ short: '-e' }), new Option({ short: '-m' })],
+    options: [
+      new Option({ short: '-e', long: '--canonicalize-existing' }),
+      new Option({ short: '-m', long: '--canonicalize-missing' }),
+      new Option({ short: '-L', long: '--logical' }),
+      new Option({ short: '-P', long: '--physical' }),
+      new Option({ short: '-q', long: '--quiet' }),
+      new Option({ long: '--relative-to', type: 'str' }),
+      new Option({ long: '--relative-base', type: 'str' }),
+      new Option({ short: '-s', long: '--strip' }),
+      new Option({ long: '--no-symlinks' }),
+      new Option({ short: '-z', long: '--zero' }),
+    ],
     rest: new Operand({ type: 'path' }),
   }),
   rm: new CommandSpec({

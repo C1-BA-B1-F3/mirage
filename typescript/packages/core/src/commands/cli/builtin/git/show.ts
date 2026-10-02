@@ -39,9 +39,11 @@ import {
   renamesEnabled,
   type DiffFlags,
 } from './diff_output.ts'
-import { commitFacts, configBool, opened, repoArgs } from './repo.ts'
+import { pathspecPatterns } from './pathspec.ts'
+import { commitFacts, configBool, repoArgs } from './repo.ts'
+import { opened } from './session.ts'
 import { resolveCommit, resolveObject } from './revparse.ts'
-import { checkOperands, escaped, fatal, revisionArg } from './util.ts'
+import { checkOperands, escaped, fatal, revisionArg, splitMarked, startPoint } from './util.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
 /**
@@ -101,13 +103,20 @@ function header(
   return `${presetBlock(commit, fmt.kind, width, flags.date, flags.useMailmap ? flags.mailmap : []).join('\n')}\n`
 }
 
-/** Show one commit: its log entry, then its diff against its parent. */
+/**
+ * Show one commit: its log entry, then its diff against its parent.
+ *
+ * Operands after `--` are pathspecs, read once the revision has resolved, as
+ * git reads them; they limit the diff to the paths they name, and a commit
+ * that changes nothing they name prints nothing at all.
+ */
 export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
   const doors = inv.doors ?? {}
   const texts = [...inv.texts]
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(texts, undefined, escaped(inv.argv))
+    const [revisions, paths] = splitMarked(texts, inv.argv)
     const repo = await opened(fl, doors)
     const base = parseShowFlags(
       fl,
@@ -115,13 +124,12 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
       await configBool(repo, 'core.quotepath', true),
       inv.env,
     )
-    const parsed = {
-      ...base,
-      mailmap: await loadMailmap(repo.dispatch, repo.location),
-      useMailmap: useMailmap(fl, await configBool(repo, 'log.mailmap', true)),
-    }
-    const revision = revisionArg(texts)
+    const mailmap = await loadMailmap(repo.dispatch, repo.location)
+    const mapped = useMailmap(fl, await configBool(repo, 'log.mailmap', true))
+    const revision = revisionArg(revisions)
     const obj = await resolveObject(repo, revision)
+    const pathspecs = pathspecPatterns(repo.location, startPoint(fl), paths)
+    const parsed = { ...base, mailmap, useMailmap: mapped, diff: { ...base.diff, pathspecs } }
     if (obj.type === 'blob') {
       const { blob } = await git.readBlob({ ...repoArgs(repo), oid: obj.oid })
       return [blob, new IOResult()]
@@ -138,6 +146,9 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
     const decor = needsDecorations(parsed.pretty) ? await decorations(repo) : null
     const head = header(facts, parsed, repo.abbrev, decor)
     const bodies = await commitOutput(repo, facts, parsed.diff)
+    const combined =
+      facts.parents.length > 1 &&
+      (parsed.diff.merge === 'combined' || parsed.diff.merge === 'dense-combined')
     return [
       encodeText(
         joinOutput(
@@ -147,7 +158,7 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
           parsed.pretty.kind,
           repo.abbrev,
           parsed.diff,
-          parsed.diff.summary && !parsed.diff.noPatch,
+          (parsed.diff.summary || combined) && !parsed.diff.noPatch,
         ),
       ),
       new IOResult(),
@@ -158,19 +169,32 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
   }
 }
 
+/**
+ * Compare a commit with its parents.
+ *
+ * Every block opens with the commit id unless `--no-commit-id`, and a parent
+ * the commit does not differ from prints nothing, id included. Operands after
+ * `--` are pathspecs, read once the commit has resolved; they limit every block
+ * to the paths they name.
+ */
 export async function diffTree(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     const repo = await opened(fl, inv.doors ?? {})
-    const commit = await commitFacts(repo, await resolveCommit(repo, inv.texts[0] ?? 'HEAD'))
-    const bodies = await commitOutput(
-      repo,
-      commit,
-      parseDiffFlags(fl, false, 'off', false, true, await configBool(repo, 'core.quotepath', true)),
-      fl.asBool('r'),
+    const parsed = parseDiffFlags(
+      fl,
       false,
+      'off',
+      false,
+      true,
+      await configBool(repo, 'core.quotepath', true),
     )
+    const [revisions, paths] = splitMarked(inv.texts, inv.argv)
+    const commit = await commitFacts(repo, await resolveCommit(repo, revisionArg(revisions)))
+    const pathspecs = pathspecPatterns(repo.location, startPoint(fl), paths)
+    const bodies = await commitOutput(repo, commit, { ...parsed, pathspecs }, fl.asBool('r'), false)
     const out = bodies
+      .filter((body) => body !== null)
       .map((body) => (fl.asBool('no_commit_id') ? '' : commit.oid + '\n') + body)
       .join('')
     return [encodeText(out), new IOResult()]

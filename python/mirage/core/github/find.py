@@ -23,7 +23,6 @@ from mirage.commands.builtin.find_eval import (
     tree_has_empty,
 )
 from mirage.types import PathSpec
-from mirage.utils.dates import matches_mtime
 from mirage.utils.stat_view import DIR_SIZE
 
 
@@ -45,6 +44,10 @@ async def find(
     empty: bool = False,
     tree: PredNode | None = None,
 ) -> list[str]:
+    # A git tree carries no timestamp, so every entry's mtime is
+    # unknown, which -mtime excludes: nothing here is ever in the window.
+    if mtime_min is not None or mtime_max is not None:
+        return []
     base = path.mount_path.strip("/")
     base_depth = 0 if base == "" else base.count("/") + 1
     start_name = start_basename(path)
@@ -112,15 +115,8 @@ async def find(
             continue
         if max_size is not None and size > max_size:
             continue
-        # A git tree carries no timestamp, so every entry's mtime is
-        # unknown, which -mtime excludes. That is what the index answered
-        # too: nothing here ever set IndexEntry.remote_time.
-        if not matches_mtime("", mtime_min, mtime_max):
-            continue
         results.append(full_path)
-    if (start_kind is not None or has_child) and matches_mtime(
-        "", mtime_min, mtime_max
-    ):
+    if start_kind is not None or has_child:
         root_kind = start_kind or "d"
         emit_start_path(
             results,

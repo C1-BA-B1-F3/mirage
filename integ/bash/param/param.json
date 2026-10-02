@@ -1557,11 +1557,11 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "echo ${zz_pd9:-$(echo subbed)}",
+      "command": "echo ${zz_pd9:-$(echo subbed)}\necho ${pdx!y}; echo same\necho \"next $?\"\neval $'echo ${pdx!y}; echo a\\necho second'\nreadonly pdr=1; pdr=2; echo same\necho \"after $?\"",
       "expect": {
         "exit": 0,
-        "stdout": "subbed\n",
-        "stderr": ""
+        "stdout": "subbed\nnext 1\nsecond\nafter 1\n",
+        "stderr": "bash: ${pdx!y}: bad substitution\nbash: ${pdx!y}: bad substitution\nbash: pdr: readonly variable\n"
       }
     },
     {
@@ -2956,6 +2956,108 @@
         "exit": 0,
         "stdout": "3|abc|abc|j|fallback\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "param_bad_substitution_fails_when_expanded",
+      "seq": 500687,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "true || echo ${pb1 * b}; if false; then echo ${pb1 b}; fi; pbf() { echo ${ pb1}; }; echo before; echo ${pb1 * b}; echo after",
+      "expect": {
+        "exit": 1,
+        "stdout": "before\n",
+        "stderr": "bash: ${pb1 * b}: bad substitution\n"
+      }
+    },
+    {
+      "id": "param_bad_substitution_names_the_word",
+      "seq": 500688,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "pb2=set; (echo x${pb2 b}y); (echo \"[${pb2 b}]\"); (echo ${pbu:-${pb2 c}}); (pbx=1${pb2 b}2); (echo $(( 1 + ${pb2 b} ))); echo ${pb2:-${pb2 c}} ${pbu:+${pb2 c}}; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "set\nrc=0\n",
+        "stderr": "bash: x${pb2 b}y: bad substitution\nbash: [${pb2 b}]: bad substitution\nbash: ${pb2 c}: bad substitution\nbash: 1${pb2 b}2: bad substitution\nbash:  1 + ${pb2 b} : bad substitution\n"
+      }
+    },
+    {
+      "id": "param_bad_substitution_forms",
+      "seq": 500689,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "(: ${}); (: ${.}); (: ${pb3.b}); (: ${1a}); (: ${pb3:}); (: ${#pb3 b}); (: ${#pb3-x}); (: ${!pb3 b}); (: ${pb3;b}); (: ${pb3[1]x}); (: ${pb3*}); (: ${ pb3}); (: ${pb3 b}); (: ${pb3 }); (: ${%pb3}); (: ${-pb3}); (: ${$pb3}); (: ${#%}); (: ${#!x}); (: ${!$}); (: ${pb3[]}); (: ${@pb3}); (: ${pb3\\ b}); (: ${pb3\"b\"}); set -- p1 p2; pb3=hello; echo ${#} ${!#} ${@:2} ${pb3-x} ${#pb3} ${pb3:1:2}; (: ${_} ${10} ${00} ${-} ${?} ${##} ${#-} ${#pb3[@]} ${!pb3} ${!pb3*} ${!pb3[@]} ${pb3:-} ${pb3::} ${pb3: } ${pb3@Q} ${@:1} ${pb3-b c}); echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2 p2 p2 hello 5 el\nrc=0\n",
+        "stderr": "bash: ${}: bad substitution\nbash: ${.}: bad substitution\nbash: ${pb3.b}: bad substitution\nbash: ${1a}: bad substitution\nbash: ${pb3:}: bad substitution\nbash: ${#pb3 b}: bad substitution\nbash: ${#pb3-x}: bad substitution\nbash: ${!pb3 b}: bad substitution\nbash: ${pb3;b}: bad substitution\nbash: ${pb3[1]x}: bad substitution\nbash: ${pb3*}: bad substitution\nbash: ${ pb3}: bad substitution\nbash: ${pb3 b}: bad substitution\nbash: ${pb3 }: bad substitution\nbash: ${%pb3}: bad substitution\nbash: ${-pb3}: bad substitution\nbash: ${$pb3}: bad substitution\nbash: ${#%}: bad substitution\nbash: ${#!x}: bad substitution\nbash: ${!$}: bad substitution\nbash: ${pb3[]}: bad substitution\nbash: ${@pb3}: bad substitution\nbash: ${pb3\\ b}: bad substitution\nbash: ${pb3\"b\"}: bad substitution\n"
       }
     }
   ]

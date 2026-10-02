@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.hf_spaces.hf_spaces import HfSpacesConfig, HfSpacesVFS
+from typing import TYPE_CHECKING
+
+from mirage.vfs.hf_spaces.config import HfSpacesConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.hf_spaces.hf_spaces import HfSpacesVFS
 
 __all__ = ["HfSpacesConfig", "HfSpacesVFS"]
+
+
+def __getattr__(name: str) -> "type[HfSpacesVFS]":
+    if name == "HfSpacesVFS":
+        from mirage.vfs.hf_spaces.hf_spaces import HfSpacesVFS
+
+        return HfSpacesVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

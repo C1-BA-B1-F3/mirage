@@ -13,9 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import pytest
-from pydantic import ValidationError
 
-from mirage.types import VFSName
 from mirage.vfs.r2 import R2VFS, R2Config
 from mirage.vfs.s3 import S3Config
 from mirage.vfs.secrets import reveal_secret
@@ -28,12 +26,6 @@ def test_r2config_defaults():
     assert config.resolved_endpoint_url() == (
         "https://account-123.r2.cloudflarestorage.com"
     )
-
-
-def test_r2config_immutable():
-    config = R2Config(bucket="my-bucket", account_id="account-123")
-    with pytest.raises(ValidationError):
-        config.bucket = "other-bucket"
 
 
 def test_r2config_to_s3_config():
@@ -69,16 +61,6 @@ def test_r2config_requires_account_id_or_endpoint():
     config = R2Config(bucket="my-bucket")
     with pytest.raises(ValueError):
         config.resolved_endpoint_url()
-
-
-def test_r2resource_uses_s3_resource_type():
-    vfs = R2VFS(R2Config(bucket="my-bucket", account_id="account-123"))
-    assert vfs.name == VFSName.S3
-    assert vfs.caches_reads is True
-    assert isinstance(vfs.config, S3Config)
-    assert vfs.config.endpoint_url == (
-        "https://account-123.r2.cloudflarestorage.com"
-    )
 
 
 def test_r2vfs_preserves_original_config():

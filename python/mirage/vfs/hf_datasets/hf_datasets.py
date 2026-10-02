@@ -12,8 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.hf_datasets import HfDatasetsAccessor, HfDatasetsConfig
+from mirage.accessor.hf_hub import HfDatasetsAccessor
 from mirage.types import VFSName
+from mirage.vfs.hf_datasets.config import HfDatasetsConfig
 from mirage.vfs.hf_datasets.prompt import PROMPT
 from mirage.vfs.hf_hub.base import HfHubVFS
 

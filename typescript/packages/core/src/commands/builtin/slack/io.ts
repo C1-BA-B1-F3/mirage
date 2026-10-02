@@ -21,7 +21,7 @@ import { readdir as slackReaddir } from '../../../core/slack/readdir.ts'
 import { stat as slackStat } from '../../../core/slack/stat.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const SLACK_IO: CommandIO<SlackAccessor> = new VFSAdapter<SlackAccessor>({
+export const IO: CommandIO<SlackAccessor> = new VFSAdapter<SlackAccessor>({
   read: { readdir: slackReaddir, readBytes: slackRead, stat: slackStat },
   native: {
     readRange: rangeOf(slackReadRange),

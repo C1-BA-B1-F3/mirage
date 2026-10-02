@@ -30,6 +30,7 @@ from mirage.policy.types import HandOff
 from mirage.process.supervisor import ProcessSupervisor
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.console.pipe import PipeConsole
 from mirage.shell.console.types import Channel
 from mirage.shell.constants import (
@@ -37,21 +38,22 @@ from mirage.shell.constants import (
     FORK_FAILED,
     FORK_FAILED_STATUS,
 )
-from mirage.shell.errors import ExitSignal, PipeClosed
+from mirage.shell.descriptors import ENCLOSING, Recorder
+from mirage.shell.errors import ExitSignal, PipeClosed, ReturnSignal
 from mirage.shell.job_table import JobTable
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
-from mirage.workspace.executor.builtins.exec import (
-    divert_statement,
-    stdout_to_stderr,
-)
+from mirage.workspace.executor.builtins.exec import divert_statement
+from mirage.workspace.executor.control import UNWINDING, carried, ended
 from mirage.workspace.executor.jobs import handle_background, pump
 from mirage.workspace.executor.statement import (
     carry_status,
     fd0_binding,
     finish_statement,
+    land,
     record_status,
+    statement_output,
     statement_stdin,
 )
 from mirage.workspace.session import (
@@ -100,17 +102,19 @@ async def handle_pipe(
                 cmd,
                 child,
                 input_stream,
-                call_stack.fork() if call_stack is not None else None,
+                (call_stack or CallStack()).fork(),
                 sink=output,
             )
             await pump(output, Channel.STDOUT, stdout)
             await pump(output, Channel.STDERR, io.stderr)
         except PipeClosed:
             io.exit_code = 141
-        except ExitSignal as sig:
-            io.exit_code = sig.contained_code
-            await pump(output, Channel.STDOUT, sig.stdout)
-            await pump(output, Channel.STDERR, sig.stderr)
+        except UNWINDING as sig:
+            # A stage is a subshell: whatever unwinds ends it there.
+            unwound = ended(sig)
+            io.exit_code = unwound.exit_code
+            await pump(output, Channel.STDOUT, unwound.stdout)
+            await pump(output, Channel.STDERR, unwound.stderr)
         except BaseException as error:
             output.end(error)
             raise
@@ -210,19 +214,6 @@ async def handle_pipe(
     return last_stdout, last_io, exec_node
 
 
-async def _merge_left_into_exit(
-    sig: ExitSignal,
-    left_bytes: ByteSource | None,
-    left_io: IOResult,
-) -> ExitSignal:
-    """Fold the left side's completed output into a propagating exit."""
-    left_stderr = await materialize(left_io.stderr) or b""
-    left = await materialize(left_bytes) or b""
-    sig.stdout = left + (sig.stdout or b"")
-    sig.stderr = left_stderr + sig.stderr
-    return sig
-
-
 async def handle_connection(
     execute_node,
     left: TSNodeLike,
@@ -239,86 +230,27 @@ async def handle_connection(
     )
     children = [left_exec]
 
-    if op == NT.AND:
-        left_bytes = await finish_statement(
-            left_stdout, left_io, session, left
-        )
-        if left_io.exit_code != 0:
-            # The failing command is left of the final `&&`, which bash
-            # exempts from `set -e`. The list ran only its left side, so
-            # the list boundary reports that pipeline.
-            session.errexit_immune = True
-            carry_status(session)
-            return (
-                left_bytes,
-                left_io,
-                ExecutionNode(
-                    op="&&", exit_code=left_io.exit_code, children=children
-                ),
-            )
-        try:
-            right_stdout, right_io, right_exec = await execute_node(
-                right,
-                session,
-                statement_stdin(session, stdin, bound),
-                call_stack,
-            )
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
-        children.append(right_exec)
-        right_bytes = await materialize(right_stdout)
-        merged = await left_io.merge(right_io)
-        combined = async_chain([left_bytes, right_bytes])
-        return (
-            combined,
-            merged,
-            ExecutionNode(
-                op="&&", exit_code=merged.exit_code, children=children
-            ),
-        )
-
-    if op == NT.OR:
-        left_bytes = await finish_statement(
-            left_stdout, left_io, session, left
-        )
-        if left_io.exit_code == 0:
-            carry_status(session)
-            return (
-                left_bytes,
-                left_io,
-                ExecutionNode(
-                    op="||", exit_code=left_io.exit_code, children=children
-                ),
-            )
-        try:
-            right_stdout, right_io, right_exec = await execute_node(
-                right,
-                session,
-                statement_stdin(session, stdin, bound),
-                call_stack,
-            )
-        except ExitSignal as sig:
-            raise await _merge_left_into_exit(sig, left_bytes, left_io)
-        children.append(right_exec)
-        right_bytes = await materialize(right_stdout)
-        merged = await left_io.merge(right_io)
-        combined = async_chain([left_bytes, right_bytes])
-        return (
-            combined,
-            merged,
-            ExecutionNode(
-                op="||", exit_code=merged.exit_code, children=children
-            ),
-        )
-
-    # semicolon or other
     left_bytes = await finish_statement(left_stdout, left_io, session, left)
+    if (op == NT.AND and left_io.exit_code != 0) or (
+        op == NT.OR and left_io.exit_code == 0
+    ):
+        if op == NT.AND:
+            session.errexit_immune = True
+        carry_status(session)
+        return (
+            left_bytes,
+            left_io,
+            ExecutionNode(
+                op=str(op), exit_code=left_io.exit_code, children=children
+            ),
+        )
+
     try:
         right_stdout, right_io, right_exec = await execute_node(
             right, session, statement_stdin(session, stdin, bound), call_stack
         )
-    except ExitSignal as sig:
-        raise await _merge_left_into_exit(sig, left_bytes, left_io)
+    except UNWINDING as sig:
+        raise await carried(sig, left_bytes, left_io)
     children.append(right_exec)
     # Materialize right side to match && and || behavior, ensuring
     # lazy exit codes (e.g. from exit_on_empty) are finalized before
@@ -346,6 +278,7 @@ async def handle_subshell(
     dispatch: DispatchFn | None = None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Execute body in isolated env.
 
@@ -365,8 +298,16 @@ async def handle_subshell(
             an `exec` redirect the way the program loop does. A subshell
             is a child shell, so the redirect it installs is restored
             with the rest of the snapshot when the body ends.
+        sink (JobConsole | None): where each statement's output goes as
+            it finishes; the body is a shell of its own, which routes
+            what it wrote to its terminal through a copy, so a program
+            nested in it (``$( )``, ``eval``) leaves that to it.
     """
     saved = session.snapshot()
+    session._line_open = True
+    # A child shell: `shift` or `set --` in it leaves the caller's
+    # parameters alone, and it runs in none of the caller's loops.
+    call_stack = (call_stack or CallStack()).fork(loops=False)
     try:
         all_stdout: list[Any] = []
         merged_io = IOResult()
@@ -424,48 +365,53 @@ async def handle_subshell(
                 continue
             i += 1
             child_stdin = statement_stdin(session, stdin, bound)
+            recorder = Recorder()
+            enclosing = ENCLOSING.set(recorder)
             try:
                 stdout, io, last_exec = await execute_node(
-                    child, session, child_stdin, call_stack
+                    child, session, child_stdin, call_stack, sink=recorder
                 )
-            except ExitSignal as sig:
+            except (ExitSignal, ReturnSignal) as sig:
                 # A subshell is its own shell: exit (or ${var:?}) ends
-                # the subshell only, becoming its exit status.
-                if sig.stdout:
-                    all_stdout.append(sig.stdout)
-                sig_io = IOResult(
-                    exit_code=sig.contained_code, stderr=sig.stderr or None
+                # the subshell only, becoming its exit status, and so
+                # does the `return` of a function it runs in.
+                merged_io = await land(
+                    await statement_output(
+                        recorder,
+                        sig.stdout or None,
+                        IOResult(),
+                        session.terminal,
+                        sink,
+                    ),
+                    sink,
+                    all_stdout,
+                    merged_io,
                 )
+                status = ended(sig).exit_code
+                sig_io = IOResult(exit_code=status, stderr=sig.stderr or None)
                 merged_io = await merged_io.merge(sig_io)
-                merged_io.exit_code = sig.contained_code
-                record_status(session, sig.contained_code)
+                merged_io.exit_code = status
+                record_status(session, status)
                 last_exec = ExecutionNode(
-                    command="()",
-                    exit_code=sig.contained_code,
-                    stderr=sig.stderr,
+                    command="()", exit_code=status, stderr=sig.stderr
                 )
                 break
+            finally:
+                ENCLOSING.reset(enclosing)
             stdout = await finish_statement(
                 stdout, io, session, child, last_exec
             )
-            if dispatch is not None and (
-                session.exec_stdout is not None
-                or session.exec_stderr is not None
-            ):
-                materialized = await materialize(stdout)
-                before_divert = io.exit_code
-                stdout = await divert_statement(
-                    dispatch,
-                    session,
-                    materialized,
-                    io,
-                    last_exec.command or "",
-                    stdout_to_stderr(child),
-                )
-                if io.exit_code != before_divert:
-                    record_status(session, io.exit_code)
-            if stdout is not None:
-                all_stdout.append(stdout)
+            written = await divert_statement(
+                dispatch,
+                session,
+                await statement_output(
+                    recorder, stdout, io, session.terminal, sink
+                ),
+                io,
+                child,
+                last_exec.command or "",
+            )
+            merged_io = await land(written, sink, all_stdout, merged_io)
             merged_io = await merged_io.merge(io)
             if (
                 io.exit_code != 0

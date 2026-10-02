@@ -30,10 +30,17 @@ from mirage.shell.array import (
 )
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
-from mirage.shell.errors import ArithError, ExitSignal, UnboundVariable
+from mirage.shell.errors import (
+    ArithError,
+    BadSubstitution,
+    DiscardSignal,
+    ExitSignal,
+    UnboundVariable,
+    named,
+)
 from mirage.shell.escapes import decode_ansi_c
 from mirage.shell.helpers import get_text, source_parts
-from mirage.shell.parameter import scan_parameter
+from mirage.shell.parameter import bad_substitution, scan_parameter
 from mirage.shell.types import ArithWrite, TSNodeLike
 from mirage.shell.types import NodeType as NT
 from mirage.utils.fnmatch import fnmatch
@@ -139,22 +146,22 @@ def guard_expansion_write(session: SessionState, *names: str) -> None:
         try:
             ensure_var_visible(session, name)
         except PolicyDenied as exc:
-            raise ExitSignal(
-                1, stderr=f"bash: {exc.strerror}\n".encode(), contained_code=1
-            ) from exc
+            raise DiscardSignal(f"bash: {exc.strerror}\n".encode()) from exc
 
 
 def _write_refusal(exc: PolicyDenied | ArithError) -> ExitSignal:
     """The line's death for a refused expansion-time write.
 
-    The gate's own reason, or the ``-i`` coercion refusing the text;
-    status 1, the shape ``${var:?}`` uses.
+    The gate's own reason discards the line, as a readonly name's does;
+    the ``-i`` coercion refusing the text ends the shell with 1, as
+    ``n=1+`` does.
 
     Args:
         exc (PolicyDenied | ArithError): the refusal.
     """
-    why = exc.strerror if isinstance(exc, PolicyDenied) else str(exc)
-    return ExitSignal(1, stderr=f"bash: {why}\n".encode(), contained_code=1)
+    if isinstance(exc, PolicyDenied):
+        return DiscardSignal(f"bash: {exc.strerror}\n".encode())
+    return ExitSignal(1, stderr=f"bash: {exc}\n".encode(), contained_code=1)
 
 
 async def _expansion_index(
@@ -258,10 +265,8 @@ async def expansion_write(
     if status == "readonly":
         raise ReadonlyVariableError(name)
     if status != "ok":
-        raise ExitSignal(
-            1,
-            stderr=(f"bash: {name}[{key}]: bad array subscript\n").encode(),
-            contained_code=1,
+        raise DiscardSignal(
+            f"bash: {name}[{key}]: bad array subscript\n".encode()
         )
 
 
@@ -783,13 +788,14 @@ async def _nested_string(
         expand_child (ExpandChild): nested-node expander.
     """
     out: list[Chunk] = [Piece("")]
+    inside = get_text(node)[1:-1]
     for part in source_parts(node):
         if isinstance(part, str) or part.type == NT.STRING_CONTENT:
             text = part if isinstance(part, str) else get_text(part)
         elif part.type == NT.DQUOTE:
             text = get_text(part)[:-1]
         else:
-            out.extend(await expand_child(part, True))
+            out.extend(await named(inside, expand_child(part, True)))
             continue
         out.append(Piece(mark_globs(_unescape_all(text))))
     return out
@@ -1063,8 +1069,20 @@ async def _operator_word(
     """
     if not p.groups:
         return []
-    return await _word_chunks(
-        p.groups[0], expand_child, quoted, session, call_stack
+    return await named(
+        _source(p.groups[0]),
+        _word_chunks(p.groups[0], expand_child, quoted, session, call_stack),
+    )
+
+
+def _source(parts: tuple[str | TSNodeLike, ...]) -> str:
+    """An operand's text as written, the word a bad substitution names.
+
+    Args:
+        parts (tuple[str | TSNodeLike, ...]): the operand's source parts.
+    """
+    return "".join(
+        part if isinstance(part, str) else get_text(part) for part in parts
     )
 
 
@@ -1195,6 +1213,9 @@ async def _expand_braces(
     operand: _ArithOperand,
     quoted: bool,
 ) -> list[Chunk]:
+    text = get_text(node).lstrip()
+    if bad_substitution(text):
+        raise BadSubstitution(text)
     p = _parse_braces(node)
     env = visible_env(session)
     arrays = visible_arrays(session)
@@ -1214,15 +1235,21 @@ async def _expand_braces(
         for gi, group in enumerate(p.groups):
             if gi == 0 and p.op in _PATTERN_OPS:
                 groups.append(
-                    await _pattern_group(
-                        group, expand_child, session, call_stack
+                    await named(
+                        _source(group),
+                        _pattern_group(
+                            group, expand_child, session, call_stack
+                        ),
                     )
                 )
             else:
                 groups.append(
                     chunks_text(
-                        await _word_chunks(
-                            group, expand_child, False, session, call_stack
+                        await named(
+                            _source(group),
+                            _word_chunks(
+                                group, expand_child, False, session, call_stack
+                            ),
                         )
                     )
                 )
@@ -1256,7 +1283,7 @@ async def _expand_braces(
         # (GNU warns "bad array subscript" on stderr and expands
         # empty; expansion has no warning channel, so the empty
         # answer stands alone).
-        key = await _expand_subscript_key(p, expand_child)
+        key = await named(p.subscript, _expand_subscript_key(p, expand_child))
         val = amap.get(key, "")
         var_in_env = key in amap
         write_key = key
@@ -1268,7 +1295,9 @@ async def _expand_braces(
             arr = [env[p.var_name]] if p.var_name in env else []
         # Expanded first (`${a[$k]}` resolves $k, `${a[i+1]}` stays
         # arithmetic), then evaluated as an index.
-        sub_text = await _expand_subscript_key(p, expand_child)
+        sub_text = await named(
+            p.subscript, _expand_subscript_key(p, expand_child)
+        )
         idx = await _expansion_index(session, view, sub_text)
         if idx < 0:
             idx += array_extent(arr)
@@ -1400,18 +1429,14 @@ async def _expand_braces(
     return [value_piece(_value_op(p.op, val, groups), quoted)]
 
 
-def _bad_subscript(p: _BraceParse) -> ExitSignal:
+def _bad_subscript(p: _BraceParse) -> DiscardSignal:
     """The refusal of a ``:=`` that names no single element.
 
     Args:
         p (_BraceParse): the parsed expansion.
     """
-    return ExitSignal(
-        1,
-        stderr=(
-            f"bash: {p.var_name}[{p.subscript}]: bad array subscript\n"
-        ).encode(),
-        contained_code=1,
+    return DiscardSignal(
+        f"bash: {p.var_name}[{p.subscript}]: bad array subscript\n".encode()
     )
 
 
@@ -1547,12 +1572,8 @@ async def _expand_splat(
         if triggered and p.subscript is not None:
             raise _bad_subscript(p)
         if triggered:
-            raise ExitSignal(
-                1,
-                stderr=(
-                    f"bash: ${p.var_name}: cannot assign in this way\n"
-                ).encode(),
-                contained_code=1,
+            raise DiscardSignal(
+                f"bash: ${p.var_name}: cannot assign in this way\n".encode()
             )
     if star and quoted:
         return [value_piece(joiner.join(items), True)]

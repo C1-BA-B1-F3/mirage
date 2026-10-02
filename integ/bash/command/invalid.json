@@ -30,7 +30,7 @@
       "command": "command -x cd 2>&1; echo \"rc=$?\"",
       "expect": {
         "exit": 0,
-        "stdout": "command: -x: invalid option\ncommand: usage: command [-pVv] command [arg ...]\nrc=2\n",
+        "stdout": "bash: command: -x: invalid option\ncommand: usage: command [-pVv] command [arg ...]\nrc=2\n",
         "stderr": ""
       }
     }

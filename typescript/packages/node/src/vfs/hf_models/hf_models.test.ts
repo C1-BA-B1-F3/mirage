@@ -15,7 +15,7 @@
 import { ops } from '@struktoai/mirage-core/test-utils'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fakeHfOperator, installFakeOperator } from '../../core/hf/mock.ts'
+import { fakeHfOperator, installFakeOperator } from '../../core/hf_buckets/mock.ts'
 import { HfBucketsVFS } from '../hf_buckets/hf_buckets.ts'
 import { HfModelsVFS } from './hf_models.ts'
 

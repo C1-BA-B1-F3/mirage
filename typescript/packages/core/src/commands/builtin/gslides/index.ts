@@ -16,14 +16,14 @@ import type { GSlidesAccessor } from '../../../accessor/gslides.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { GSLIDES_IO } from './io.ts'
+import { IO } from './io.ts'
 import { GSLIDES_RM } from './rm.ts'
 
 // Slides API passthroughs live in the gws CLI
 // (commands/cli/builtin/gws), installed by name; the mount only serves
 // the filesystem surface.
 export const GSLIDES_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<GSlidesAccessor>(VFSName.GSLIDES, GSLIDES_IO, {
+  ...makeGenericCommands<GSlidesAccessor>(VFSName.GSLIDES, IO, {
     overrides: new Set(['rm']),
   }),
   ...GSLIDES_RM,

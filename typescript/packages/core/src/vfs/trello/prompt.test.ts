@@ -15,9 +15,9 @@
 import { describe, expect, it } from 'vitest'
 import { TRELLO_COMMANDS } from '../../commands/builtin/trello/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-import { TRELLO_PROMPT, TRELLO_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
-const TEXT = `${TRELLO_PROMPT}\n${TRELLO_WRITE_PROMPT}`
+const TEXT = `${PROMPT}\n${WRITE_PROMPT}`
 
 function verbs(): Map<string, RegisteredCommand> {
   return new Map(

@@ -33,6 +33,24 @@
       }
     },
     {
+      "id": "nextcloud_password_is_a_credential",
+      "vfs": "nextcloud",
+      "config": {
+        "url": "https://cloud.example/remote.php/dav/files/u/",
+        "username": "u",
+        "password": "pw",
+        "verify_ssl": false
+      },
+      "expect": {
+        "state": {
+          "url": "https://cloud.example/remote.php/dav/files/u/",
+          "username": "u",
+          "password": "<REDACTED>",
+          "verify_ssl": false
+        }
+      }
+    },
+    {
       "id": "s3_bucket_must_be_a_string",
       "vfs": "s3",
       "config": {

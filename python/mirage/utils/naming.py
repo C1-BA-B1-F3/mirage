@@ -60,6 +60,32 @@ def fit_id_name(label: str, resource_id: str, suffix: str = "") -> str:
     return f"{label}{SEPARATOR}{resource_id}{suffix}"
 
 
+def file_id_name(resource_id: str, *names: str | None) -> str:
+    """Name a file blob ``<stem>__<id>.<ext>`` after its first non-empty name.
+
+    An empty name is a missing one, so the next candidate answers for it,
+    and a blob with none is ``file``. The extension is what follows the
+    last dot only when both sides of that dot hold something and it holds
+    no ``/``: ``photo.``, ``.bashrc`` and ``1.2/notes`` keep their whole
+    spelling as the stem. The stem goes through ``path_safe_name`` and is
+    the only part trimmed to fit NAME_MAX -- the id and extension are what
+    make the name resolve, so they are spent first.
+
+    Args:
+        resource_id (str): the id the name has to keep addressing.
+        *names (str | None): the service's names for the blob, most
+            preferred first.
+
+    Returns:
+        str: ``<stem>__<resource_id><.ext>``.
+    """
+    name = next((n for n in names if n), "file")
+    stem, _, ext = name.rpartition(".")
+    if stem and ext and "/" not in ext:
+        return fit_id_name(path_safe_name(stem), resource_id, f".{ext}")
+    return fit_id_name(path_safe_name(name), resource_id)
+
+
 def make_id_name(
     display_name: str,
     resource_id: str,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RAMAccessor } from '../accessor/ram.ts'
-import { RAM_IO } from '../commands/builtin/ram/io.ts'
+import { IO } from '../commands/builtin/ram/io.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import { FileStat, FileType, PathSpec } from '../types.ts'
 import { VFSAdapter } from './adapter.ts'
@@ -20,14 +20,14 @@ const fixture: ReadFixture = {
 describe('adapter conformance', () => {
   it.each([false, true])('checks builtin and minimal adapters, native=%s', async (native) => {
     const accessor = new RAMAccessor(new RAMStore())
-    await RAM_IO.write?.(accessor, FILE, fixture.content)
+    await IO.write?.(accessor, FILE, fixture.content)
     const adapter = native
-      ? RAM_IO
+      ? IO
       : new VFSAdapter({
           read: {
-            readdir: RAM_IO.readdir,
-            readBytes: RAM_IO.readBytes,
-            stat: RAM_IO.stat,
+            readdir: IO.readdir,
+            readBytes: IO.readBytes,
+            stat: IO.stat,
           },
         })
     await checkReadContract(adapter, accessor, fixture)
@@ -35,11 +35,11 @@ describe('adapter conformance', () => {
 
   it('catches a range callback treating size as end', async () => {
     const accessor = new RAMAccessor(new RAMStore())
-    await RAM_IO.write?.(accessor, FILE, fixture.content)
+    await IO.write?.(accessor, FILE, fixture.content)
     await expect(
       checkReadContract(
         {
-          ...RAM_IO,
+          ...IO,
           readRange: (_a, _p, _i, offset, size) =>
             Promise.resolve(fixture.content.slice(offset, size ?? undefined)),
         },
@@ -52,13 +52,13 @@ describe('adapter conformance', () => {
   it.each(['', 'a', 'ab', 'é: hello\n'])('only probes valid native ranges for %j', async (text) => {
     const content = new TextEncoder().encode(text)
     const accessor = new RAMAccessor(new RAMStore())
-    await RAM_IO.write?.(accessor, FILE, content)
-    const readRange = vi.fn<NonNullable<typeof RAM_IO.readRange>>((_a, _p, _i, offset, size) => {
+    await IO.write?.(accessor, FILE, content)
+    const readRange = vi.fn<NonNullable<typeof IO.readRange>>((_a, _p, _i, offset, size) => {
       if (size === 0 || offset >= content.length)
         return Promise.reject(new Error('unsatisfiable native range'))
       return Promise.resolve(content.slice(offset, size === null ? undefined : offset + size))
     })
-    await checkReadContract({ ...RAM_IO, readRange }, accessor, { ...fixture, content })
+    await checkReadContract({ ...IO, readRange }, accessor, { ...fixture, content })
     expect(readRange).toHaveBeenCalledTimes(content.length > 0 ? 2 : 0)
     if (content.length > 0) {
       expect(readRange.mock.calls[0]?.[4]).not.toBeNull()
@@ -70,7 +70,7 @@ describe('adapter conformance', () => {
     const accessor = new RAMAccessor(new RAMStore())
     await expect(
       checkReadContract(
-        { ...RAM_IO, readBytes: () => Promise.reject(new Error('denied')) },
+        { ...IO, readBytes: () => Promise.reject(new Error('denied')) },
         accessor,
         fixture,
       ),
@@ -83,7 +83,7 @@ function custom(store: RAMStore, ops: RegisteredOp[] = []): BaseVFS<RAMAccessor>
     name: 'custom',
     accessor: new RAMAccessor(store),
     io: new VFSAdapter({
-      read: { readdir: RAM_IO.readdir, readBytes: RAM_IO.readBytes, stat: RAM_IO.stat },
+      read: { readdir: IO.readdir, readBytes: IO.readBytes, stat: IO.stat },
     }),
     ops,
   })
@@ -91,7 +91,7 @@ function custom(store: RAMStore, ops: RegisteredOp[] = []): BaseVFS<RAMAccessor>
 
 async function seeded(content: Uint8Array): Promise<RAMStore> {
   const store = new RAMStore()
-  await RAM_IO.write?.(new RAMAccessor(store), FILE, content)
+  await IO.write?.(new RAMAccessor(store), FILE, content)
   return store
 }
 
@@ -129,7 +129,7 @@ describe('driver conformance', () => {
       fn: (accessor, path, _args, kwargs) =>
         path.vfsPath === fixture.missing.vfsPath
           ? Promise.resolve(new FileStat({ name: 'missing', type: FileType.FILE, size: 0 }))
-          : RAM_IO.stat(accessor as RAMAccessor, path, kwargs.index),
+          : IO.stat(accessor as RAMAccessor, path, kwargs.index),
     }
     await expect(
       checkDriverContract(custom(await seeded(fixture.content), [lenientStat]), fixture),

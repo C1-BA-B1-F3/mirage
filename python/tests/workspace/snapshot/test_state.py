@@ -681,9 +681,9 @@ async def test_a_snapshot_mount_with_no_matching_prefix_is_reported(caplog):
     assert not any("/b" in m for m in messages)
 
 
-# An alias VFS saves its own config under its parent's `type`
-# (MinIO reports `s3`), so the class the type names has the wrong secret
-# field names; the redaction check scans every value instead (#1019).
+# An alias VFS saves its own config under its own `type` (MinIO reports
+# `minio`, as on TypeScript); the redaction check scans every value, so the
+# inline credentials still demand an override (#1019).
 @pytest.mark.asyncio
 async def test_an_alias_saved_with_redacted_creds_requires_an_override():
     minio = MinIOVFS(
@@ -704,18 +704,15 @@ async def test_an_alias_saved_with_redacted_creds_requires_an_override():
         for m in state[StateKey.MOUNTS]
         if m[MountKey.PREFIX].rstrip("/") == "/s3"
     )
-    assert mount[MountKey.VFS_STATE][VFSStateKey.TYPE] == "s3"
+    assert mount[MountKey.VFS_STATE][VFSStateKey.TYPE] == "minio"
     assert requires_vfs_override(mount)
     with pytest.raises(ValueError, match="/s3"):
         build_mount_args(state, None, None)
 
 
 # The same alias built in code with no inline credentials needs no
-# override, and its `type` still names the parent: rebuilding through the
-# type's entry handed MinIO's own config to `S3Config`, which dropped
-# `access_key_id` and the rest and rebuilt a plain S3 mount, and refuses
-# them now that configs refuse unknown keys. The saved class names the
-# alias, so the mount comes back as what it was.
+# override and comes back as what it was: both the saved class and the
+# saved `type` name the alias, whose own entry takes its own config.
 @pytest.mark.asyncio
 async def test_an_alias_built_in_code_rebuilds_as_itself():
     config = MinIOConfig(bucket="b", endpoint_url="http://localhost:9000")

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GDRIVE_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Mirrors Google Drive folder hierarchy. May contain:
     <name>.gdoc.json    Google Docs    (cat returns gdoc.json - see /gdocs prompt)
     <name>.gsheet.json  Google Sheets  (cat returns gsheet.json - see /gsheets prompt)

@@ -234,7 +234,9 @@ async def test_a_name_only_the_fallback_takes_runs_but_is_not_found():
             assert result.exit_code == 1, line
             assert await result.stdout_str() == "", line
         result = await ws.shell("type native-tool")
-        assert await result.stderr_str() == "type: native-tool: not found\n"
+        assert (
+            await result.stderr_str() == "bash: type: native-tool: not found\n"
+        )
         assert (await ws.shell("native-tool")).exit_code == 0
         assert probe.requests[0].argv == ("native-tool",)
 

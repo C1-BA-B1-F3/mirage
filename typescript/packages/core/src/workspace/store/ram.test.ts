@@ -111,4 +111,28 @@ describe('WorkspaceStateStore group overrides', () => {
     await base.setMeta('ws', { workspace_id: 'ws', created_at: 1 })
     expect(await control.loadMeta('ws')).toEqual({ workspace_id: 'ws', created_at: 1 })
   })
+
+  it('drops one workspace from every plane and provider', async () => {
+    const store = new RAMWorkspaceStateStore({ observer: new RAMWorkspaceStateStore() })
+    const fill = async (id: string): Promise<void> => {
+      await store.namespace(id).set('/a', { mode: 0o600 })
+      await store.observer(id).append('d/s1.jsonl', new TextEncoder().encode('{}\n'))
+      await store.sessions(id).set('s1', { session_id: 's1' })
+      await store.setMeta(id, { workspace_id: id })
+    }
+    const held = async (id: string): Promise<string[]> => {
+      const planes: [string, boolean][] = [
+        ['meta', (await store.loadMeta(id)) !== null],
+        ['namespace', (await store.namespace(id).load()).size > 0],
+        ['observer', (await store.observer(id).readAll()).size > 0],
+        ['sessions', (await store.sessions(id).load()).size > 0],
+      ]
+      return planes.filter(([, has]) => has).map(([name]) => name)
+    }
+    await fill('ws1')
+    await fill('ws2')
+    await store.drop('ws1')
+    expect(await held('ws1')).toEqual([])
+    expect(await held('ws2')).toEqual(['meta', 'namespace', 'observer', 'sessions'])
+  })
 })

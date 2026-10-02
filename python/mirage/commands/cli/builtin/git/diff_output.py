@@ -12,40 +12,41 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Sequence
+import stat
 from dataclasses import dataclass, replace
-from difflib import SequenceMatcher
 from io import BytesIO
 
 from dulwich.config import ConfigFile
 from dulwich.diff_tree import _similarity_score
-from dulwich.objects import Blob, Commit, ObjectID, Tree
+from dulwich.objects import Commit, ObjectID, Tree
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.changes import pair_renames
 from mirage.commands.cli.builtin.git.combined import combined_lines
-from mirage.commands.cli.builtin.git.constants import FUNCNAME_START, GIT_SPACE
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.io import read_optional
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.patch import (
+    DEV_NULL,
+    HUNK_CONTEXT,
+    OID_HEX,
+    blob_data,
+    file_patch,
+    short_oid,
+)
+from mirage.commands.cli.builtin.git.pathspec import pathspec_selects
 from mirage.commands.cli.builtin.git.render import quote_path
 from mirage.commands.cli.builtin.git.summary import (
-    BINARY_SNIFF,
     FileStat,
     diffstat,
     stat_table,
-    tree_entries,
 )
+from mirage.commands.cli.builtin.git.tree import tree_entries
 from mirage.commands.cli.builtin.git.types import RepoLocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 from mirage.shell.bytes import encode_text
 
-OID_HEX = 40
-DEV_NULL = "/dev/null"
-HUNK_CONTEXT = 3
-FUNCNAME_BYTES = 80
-HUNK_HEADER_BYTES = 128
 RENAME_SCORE = 50
 
 
@@ -68,6 +69,7 @@ class DiffFlags:
     function_context: bool = False
     context: int = HUNK_CONTEXT
     quote_path_fully: bool = True
+    pathspecs: tuple[str, ...] = ()
 
 
 def parse_diff_flags(
@@ -310,7 +312,7 @@ def render_changes(
         if flags.raw:
             lines.append(
                 f":{_mode(row.old):06o} {_mode(row.new):06o} "
-                f"{_short(row.old, width)} {_short(row.new, width)} "
+                f"{short_oid(row.old, width)} {short_oid(row.new, width)} "
                 f"{status}\t{paths}"
             )
         display = (
@@ -331,9 +333,11 @@ def render_changes(
             patches.append(
                 file_patch(
                     repo,
-                    row,
                     name,
                     origin,
+                    row.old,
+                    row.new,
+                    row.score if row.status == "R" else None,
                     abbrev_for(repo),
                     fully,
                     flags.context,
@@ -386,16 +390,6 @@ def _mode(entry: tuple[int, bytes] | None) -> int:
     return entry[0] if entry else 0
 
 
-def _short(entry: tuple[int, bytes] | None, width: int) -> str:
-    """An entry's object id cut to ``width``, zeros for a missing side.
-
-    Args:
-        entry (tuple[int, bytes] | None): the (mode, id) pair or None.
-        width (int): how many hex digits to keep.
-    """
-    return (entry[1].decode() if entry else "0" * OID_HEX)[:width]
-
-
 def _row_stat(repo: BaseRepo, row: Change, display: str) -> FileStat:
     """The diffstat row for one change, named the way git prints it.
 
@@ -438,248 +432,53 @@ def _summary(row: Change, display: str, shown: str) -> list[str]:
     return []
 
 
-def file_patch(
-    repo: BaseRepo,
-    row: Change,
-    name: str,
-    origin: str,
-    width: int,
-    fully: bool = True,
-    context: int = HUNK_CONTEXT,
-    function_context: bool = False,
-) -> bytes:
-    """One path's patch, headers and hunks, as git's builtin_diff writes it.
-
-    A change between a file and a symlink is split into a deletion and
-    a creation, the way git's run_diff splits a type change. A ``---``
-    or ``+++`` label holding a space ends in a tab, so a patch tool can
-    tell where the name stops.
-
-    Args:
-        repo (BaseRepo): repository to read blobs from.
-        row (Change): the paired delta.
-        name (str): the destination path, surrogate-escaped.
-        origin (str): the source path, surrogate-escaped.
-        width (int): how many hex digits the index line keeps.
-        fully (bool): ``core.quotePath``.
-        context (int): the requested number of context lines.
-        function_context (bool): ``-W``, widen hunks to whole functions.
-    """
-    old, new = row.old, row.new
-    if old and new and old[0] & 0o170000 != new[0] & 0o170000:
-        return file_patch(
-            repo,
-            replace(row, new=None),
-            name,
-            origin,
-            width,
-            fully,
-            context,
-            function_context,
-        ) + file_patch(
-            repo,
-            replace(row, old=None),
-            name,
-            origin,
-            width,
-            fully,
-            context,
-            function_context,
-        )
-    source = quote_path(f"a/{origin}", False, fully)
-    target = quote_path(f"b/{name}", False, fully)
-    head = [f"diff --git {source} {target}"]
-    if old is None and new:
-        head.append(f"new file mode {new[0]:06o}")
-    elif new is None and old:
-        head.append(f"deleted file mode {old[0]:06o}")
-    elif old and new and old[0] != new[0]:
-        head += [f"old mode {old[0]:06o}", f"new mode {new[0]:06o}"]
-    if row.status == "R":
-        head += [
-            f"similarity index {row.score}%",
-            f"rename from {quote_path(origin, False, fully)}",
-            f"rename to {quote_path(name, False, fully)}",
-        ]
-    if old and new and old[1] == new[1]:
-        return encode_text("".join(line + "\n" for line in head))
-    index = f"index {_short(old, width)}..{_short(new, width)}"
-    if old and new and old[0] == new[0]:
-        index += f" {old[0]:06o}"
-    head.append(index)
-    before, after = blob_data(repo, old), blob_data(repo, new)
-    source = source if old else DEV_NULL
-    target = target if new else DEV_NULL
-    if any(b"\0" in data[:BINARY_SNIFF] for data in (before, after)):
-        head.append(f"Binary files {source} and {target} differ")
-        return encode_text("".join(line + "\n" for line in head))
-    body = hunks(
-        byte_lines(before), byte_lines(after), context, function_context
-    )
-    if body:
-        head += [
-            f"--- {source}" + ("\t" if " " in source else ""),
-            f"+++ {target}" + ("\t" if " " in target else ""),
-        ]
-    return encode_text("".join(line + "\n" for line in head)) + body
-
-
-def byte_lines(data: bytes) -> list[bytes]:
-    """Split a blob at each newline only, keeping them, as xdiff does.
-
-    Args:
-        data (bytes): the blob's bytes.
-    """
-    *whole, rest = data.split(b"\n")
-    return [line + b"\n" for line in whole] + ([rest] if rest else [])
-
-
-def hunks(
-    old: list[bytes],
-    new: list[bytes],
-    count: int = HUNK_CONTEXT,
-    function_context: bool = False,
-) -> bytes:
-    """The ``@@`` hunks of a two-way patch, as xdiff's xdl_emit_diff emits.
-
-    Each header carries the nearest earlier line of the old side that
-    starts with a letter, ``_`` or ``$`` (git's default funcname), and
-    keeps the previous hunk's when none lies between the two.
-
-    Args:
-        old (list[bytes]): the old side's lines, newlines kept.
-        new (list[bytes]): the new side's lines, newlines kept.
-        count (int): the requested number of context lines.
-        function_context (bool): ``-W``, widen each hunk to the whole
-            function around its change.
-    """
-    out = []
-    context = b""
-    searched = -1
-    matcher = SequenceMatcher(a=old, b=new, autojunk=False)
-    codes = list(matcher.get_opcodes())
-    groups = list(matcher.get_grouped_opcodes(count))
-    if function_context:
-        groups = _function_groups(old, codes, groups)
-    for group in groups:
-        start, stop = group[0][1], group[-1][2]
-        found = next(
-            (
-                old[k]
-                for k in range(start - 1, searched, -1)
-                if old[k] and chr(old[k][0]) in FUNCNAME_START
-            ),
-            None,
-        )
-        searched = start - 1
-        if found is not None:
-            context = found[:FUNCNAME_BYTES].rstrip(GIT_SPACE)
-        head = (
-            f"@@ -{_span(start, stop)} +{_span(group[0][3], group[-1][4])} @@"
-        ).encode()
-        if context:
-            head += b" " + context[: HUNK_HEADER_BYTES - len(head) - 2]
-        out.append(head + b"\n")
-        for tag, i1, i2, j1, j2 in group:
-            if tag == "equal":
-                out.extend(_hunk_line(b" ", line) for line in old[i1:i2])
-                continue
-            out.extend(_hunk_line(b"-", line) for line in old[i1:i2])
-            out.extend(_hunk_line(b"+", line) for line in new[j1:j2])
-    return b"".join(out)
-
-
-def _function_groups(
-    old: list[bytes],
-    codes: Sequence[tuple[str, int, int, int, int]],
-    groups: list[list[tuple[str, int, int, int, int]]],
-) -> list[list[tuple[str, int, int, int, int]]]:
-    """Widen changed ranges to Git's default function boundaries.
-
-    Pinned against Git 2.47.3 (Debian stable) and 2.50.1.
-
-    Args:
-        old (list[bytes]): original lines.
-        codes (Sequence[tuple[str, int, int, int, int]]): diff opcodes.
-        groups (list[list[tuple[str, int, int, int, int]]]): bounded hunks.
-    """
-    boundaries = [
-        i
-        for i, line in enumerate(old)
-        if line and chr(line[0]) in FUNCNAME_START
-    ]
-    ranges: list[tuple[int, int]] = []
-    for group in groups:
-        changes = [code for code in group if code[0] != "equal"]
-        start = min(
-            group[0][1],
-            max((i for i in boundaries if i <= changes[0][1]), default=0),
-        )
-        end = min(
-            (
-                i
-                for i in boundaries
-                if i >= max(changes[-1][2], changes[-1][1] + 1)
-            ),
-            default=len(old),
-        )
-        while (
-            end < len(old)
-            and end > changes[-1][2]
-            and not old[end - 1].strip()
-        ):
-            end -= 1
-        end = max(end, group[-1][2])
-        if ranges and start <= ranges[-1][1]:
-            ranges[-1] = (ranges[-1][0], max(end, ranges[-1][1]))
-        else:
-            ranges.append((start, end))
-    result = []
-    for start, end in ranges:
-        group = []
-        for tag, i1, i2, j1, j2 in codes:
-            if tag == "equal":
-                lo, hi = max(start, i1), min(end, i2)
-                if lo < hi:
-                    group.append((tag, lo, hi, j1 + lo - i1, j1 + hi - i1))
-            elif i1 <= end and i2 >= start:
-                group.append((tag, i1, i2, j1, j2))
-        result.append(group)
-    return result
-
-
-def _span(start: int, stop: int) -> str:
-    """A hunk range: ``start,count``, the count dropped when it is one.
-
-    Args:
-        start (int): the first line, counted from zero.
-        stop (int): one past the last line.
-    """
-    if stop - start == 1:
-        return str(start + 1)
-    return f"{start + 1 if stop > start else start},{stop - start}"
-
-
-def _hunk_line(marker: bytes, line: bytes) -> bytes:
-    """One hunk line, with git's marker when it has no newline.
-
-    Args:
-        marker (bytes): ``b' '``, ``b'-'`` or ``b'+'``.
-        line (bytes): the line, with its newline when it has one.
-    """
-    if line.endswith(b"\n"):
-        return marker + line
-    return marker + line + b"\n\\ No newline at end of file\n"
-
-
 def entries(
-    repo: BaseRepo, tree: bytes | None, recursive: bool
+    repo: BaseRepo,
+    tree: bytes | None,
+    recursive: bool,
+    pathspecs: tuple[str, ...] = (),
 ) -> dict[bytes, tuple[int, bytes]]:
+    """A tree's entries a diff compares, limited to a pathspec.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        tree (bytes | None): the tree id, None for the empty tree.
+        recursive (bool): whether to descend into subtrees.
+        pathspecs (tuple[str, ...]): repository-relative patterns, all
+            paths when empty.
+    """
     if recursive or tree is None:
-        return tree_entries(repo.object_store, tree)
-    obj = repo.object_store[ObjectID(tree)]
-    assert isinstance(obj, Tree)
-    return {entry.path: (entry.mode, entry.sha) for entry in obj.iteritems()}
+        found = tree_entries(repo.object_store, tree)
+    else:
+        obj = repo.object_store[ObjectID(tree)]
+        assert isinstance(obj, Tree)
+        found = {e.path: (e.mode, e.sha) for e in obj.iteritems()}
+    return limited(found, pathspecs)
+
+
+def limited(
+    found: dict[bytes, tuple[int, bytes]], pathspecs: tuple[str, ...]
+) -> dict[bytes, tuple[int, bytes]]:
+    """The entries a pathspec names, all of them for none.
+
+    Applied before pairing, so a rename is found only where both paths
+    match (pinned against git 2.54).
+
+    Args:
+        found (dict[bytes, tuple[int, bytes]]): path to (mode, id).
+        pathspecs (tuple[str, ...]): repository-relative patterns.
+    """
+    if not pathspecs:
+        return found
+    return {
+        path: entry
+        for path, entry in found.items()
+        if pathspec_selects(
+            path.decode("utf-8", errors="surrogateescape"),
+            pathspecs,
+            stat.S_ISDIR(entry[0]),
+        )
+    }
 
 
 def tree_output(
@@ -689,16 +488,32 @@ def tree_output(
     flags: DiffFlags,
     recursive: bool = True,
 ) -> bytes:
-    return render_changes(
+    return _block(repo, before, after, flags, recursive) or b""
+
+
+def _block(
+    repo: BaseRepo,
+    before: bytes | None,
+    after: bytes,
+    flags: DiffFlags,
+    recursive: bool = True,
+) -> bytes | None:
+    """One parent's diff block, None when the commit does not differ.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        before (bytes | None): the parent's tree, None for a root.
+        after (bytes): the commit's tree.
+        flags (DiffFlags): the diff flags.
+        recursive (bool): whether to descend into subtrees.
+    """
+    rows = compare(
         repo,
-        compare(
-            repo,
-            entries(repo, before, recursive),
-            entries(repo, after, recursive),
-            flags.renames,
-        ),
-        flags,
+        entries(repo, before, recursive, flags.pathspecs),
+        entries(repo, after, recursive, flags.pathspecs),
+        flags.renames,
     )
+    return render_changes(repo, rows, flags) if rows else None
 
 
 def commit_output(
@@ -707,28 +522,42 @@ def commit_output(
     flags: DiffFlags,
     recursive: bool = True,
     root: bool = True,
-) -> list[bytes]:
+) -> list[bytes | None]:
+    """A commit's diff blocks, one per parent the merge mode compares.
+
+    A parent the commit does not differ from is None, so its header is
+    not printed either (pinned against git 2.54).
+
+    Args:
+        repo (BaseRepo): repository to read.
+        commit (Commit): the commit to diff.
+        flags (DiffFlags): the diff flags.
+        recursive (bool): whether to descend into subtrees.
+        root (bool): whether a root commit diffs against the empty tree.
+    """
     parents = [repo.object_store[p] for p in commit.parents]
     assert all(isinstance(p, Commit) for p in parents)
     trees = [p.tree for p in parents if isinstance(p, Commit)]
     if not trees:
         return (
-            [tree_output(repo, None, commit.tree, flags, recursive)]
-            if root
-            else []
+            [_block(repo, None, commit.tree, flags, recursive)] if root else []
         )
     if len(trees) == 1 or flags.merge == "first-parent":
-        return [tree_output(repo, trees[0], commit.tree, flags, recursive)]
+        return [_block(repo, trees[0], commit.tree, flags, recursive)]
     if flags.merge == "off":
         return []
     if flags.merge == "separate":
         return [
-            tree_output(repo, tree, commit.tree, flags, recursive)
-            for tree in trees
+            _block(repo, tree, commit.tree, flags, recursive) for tree in trees
         ]
-    after = entries(repo, commit.tree, recursive)
+    after = entries(repo, commit.tree, recursive, flags.pathspecs)
     comparisons = [
-        compare(repo, entries(repo, tree, recursive), after, flags.renames)
+        compare(
+            repo,
+            entries(repo, tree, recursive, flags.pathspecs),
+            after,
+            flags.renames,
+        )
         for tree in trees
     ]
     common = set.intersection(
@@ -769,7 +598,7 @@ def commit_output(
                 ":" * len(maps)
                 + " ".join(f"{_mode(e):06o}" for e in sides)
                 + " "
-                + " ".join(_short(e, width) for e in sides)
+                + " ".join(short_oid(e, width) for e in sides)
                 + f" {status}\t{shown}"
             )
     head = stat + encode_text("".join(line + "\n" for line in lines))
@@ -841,9 +670,9 @@ def combined_patch(
         )
         out.append(
             "index "
-            + ",".join(_short(entry, width) for entry in old)
+            + ",".join(short_oid(entry, width) for entry in old)
             + ".."
-            + _short(new, width)
+            + short_oid(new, width)
             + "\n"
         )
         if moved and created:
@@ -880,16 +709,6 @@ def text_lines(data: bytes) -> list[str]:
     """
     *whole, rest = data.decode("utf-8", errors="replace").split("\n")
     return [line + "\n" for line in whole] + ([rest] if rest else [])
-
-
-def blob_data(repo: BaseRepo, entry: tuple[int, bytes] | None) -> bytes:
-    if entry is None:
-        return b""
-    if entry[0] == 0o160000:
-        return b"Subproject commit " + entry[1] + b"\n"
-    obj = repo.object_store[ObjectID(entry[1])]
-    assert isinstance(obj, Blob)
-    return obj.data
 
 
 async def renames_enabled(
@@ -933,7 +752,7 @@ def separator_line(commit: Commit, kind: str, flags: DiffFlags) -> str | None:
 def join_output(
     commit: Commit,
     header: bytes,
-    bodies: list[bytes],
+    bodies: list[bytes | None],
     kind: str,
     width: int,
     flags: DiffFlags,
@@ -944,6 +763,8 @@ def join_output(
     line = separator_line(commit, kind, flags)
     blocks = []
     for index, body in enumerate(bodies):
+        if body is None:
+            continue
         head = header
         if len(bodies) > 1 and kind not in ("format", "tformat"):
             parent = commit.parents[index].decode()
@@ -960,4 +781,4 @@ def join_output(
             gap = b"\n"
         blocks.append(head + gap + body)
     separator = b"\n" if kind not in ("format", "tformat", "oneline") else b""
-    return separator.join(blocks)
+    return separator.join(blocks) or header

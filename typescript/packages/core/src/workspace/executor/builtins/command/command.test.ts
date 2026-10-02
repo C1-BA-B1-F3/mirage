@@ -143,7 +143,7 @@ describe('handleCommandBuiltin -v/-V', () => {
       makeRegistry(),
     )
     expect(out).toBeNull()
-    expect(decode(await materialize(io.stderr))).toBe('command: nope_xyz: not found\n')
+    expect(decode(await materialize(io.stderr))).toBe('bash: command: nope_xyz: not found\n')
     expect(io.exitCode).toBe(1)
   })
 
@@ -157,15 +157,7 @@ describe('handleCommandBuiltin -v/-V', () => {
       makeRegistry(),
     )
     expect(await body(out)).toBe('cd is a shell builtin\n')
-    expect(decode(await materialize(io.stderr))).toBe('command: nope_xyz: not found\n')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('reports a function', async () => {
-    const session = makeSession()
-    session.functions.myfn = []
-    const [out, io] = await handleCommandBuiltin(vi.fn(), ['-V', 'myfn'], session, makeRegistry())
-    expect(await body(out)).toBe('myfn is a function\n')
+    expect(decode(await materialize(io.stderr))).toBe('bash: command: nope_xyz: not found\n')
     expect(io.exitCode).toBe(0)
   })
 
@@ -192,7 +184,7 @@ describe('handleCommandBuiltin errors and no-op', () => {
     const [, io] = await handleCommandBuiltin(vi.fn(), ['-x', 'ls'], makeSession(), makeRegistry())
     expect(io.exitCode).toBe(2)
     expect(decode(await materialize(io.stderr))).toBe(
-      'command: -x: invalid option\ncommand: usage: command [-pVv] command [arg ...]\n',
+      'bash: command: -x: invalid option\ncommand: usage: command [-pVv] command [arg ...]\n',
     )
   })
 

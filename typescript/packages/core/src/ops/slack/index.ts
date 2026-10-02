@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { SLACK_IO } from '../../commands/builtin/slack/io.ts'
+import { IO } from '../../commands/builtin/slack/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const SLACK_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.SLACK, SLACK_IO)
+export const SLACK_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.SLACK, IO)

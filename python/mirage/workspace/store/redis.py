@@ -121,6 +121,16 @@ class RedisWorkspaceStateStore(WorkspaceStateStore):
         )
         return bool(result)
 
+    async def _forget(self, workspace_id: str) -> None:
+        for handles in (self._namespaces, self._observers, self._sessions):
+            handle = handles.pop(workspace_id, None)
+            if handle is not None:
+                await handle.close()
+        await cast(
+            Awaitable[Any],
+            self._meta_client.hdel(self._meta_key, workspace_id),
+        )
+
     async def _close(self) -> None:
         for ns in self._namespaces.values():
             await ns.close()

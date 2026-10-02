@@ -312,6 +312,35 @@ export class PathspecError extends GitError {
 }
 
 /**
+ * An empty pathspec operand, which git refuses rather than reading as
+ * everything (pinned against git 2.54).
+ */
+export class EmptyPathspecError extends GitError {
+  constructor() {
+    super(
+      'empty string is not a valid pathspec. please use . instead if ' +
+        'you meant to match all paths',
+    )
+  }
+}
+
+/**
+ * Pathspec magic git has but this build does not read.
+ *
+ * `:(top)`, `:!`, `:(icase)` and their kin are real git; matching the operand
+ * as a plain path would select nothing, or the wrong paths, and look like an
+ * answer, so the refusal says unsupported and names what exists instead.
+ */
+export class UnsupportedPathspecError extends GitError {
+  constructor(pathspec: string) {
+    super(
+      `unsupported pathspec magic: ${pathspec} (this build implements ` +
+        'paths, leading directories and wildcard patterns)',
+    )
+  }
+}
+
+/**
  * Explicitly named paths that an ignore rule covers.
  *
  * git refuses rather than staging them, because naming an ignored path is far

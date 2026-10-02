@@ -20,7 +20,7 @@ import { tarGeneric } from '../../generic/tar/tar.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 import { isDirOf, relayIsDirOf, walkOf } from '../archive_io.ts'
 
-export const TAR_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tar',
   write: true,
   fn: async (ops, accessor, paths, texts, opts) => {

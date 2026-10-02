@@ -15,7 +15,7 @@
 import { tacGeneric } from '../../generic/tac.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const TAC_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tac',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

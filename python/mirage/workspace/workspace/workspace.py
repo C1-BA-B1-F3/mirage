@@ -77,7 +77,8 @@ from mirage.secrets.registry import source_for
 from mirage.secrets.sources import resolve_sources
 from mirage.secrets.types import ResolvedSource
 from mirage.shell import parse
-from mirage.shell.console import Channel
+from mirage.shell.call_stack import CallStack
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import ConsoleFactory, JobTable
 from mirage.shell.literal import literal_tree
@@ -251,6 +252,8 @@ class Workspace:
         self._closed = False
         self._closing = False
         self._async_closed = False
+        self._state_dropped = False
+        self._close_error: BaseException | None = None
         self._close_lock = asyncio.Lock()
         # mounts reused from another live workspace (copy() / load
         # VFS overrides) stay open here; their origin closes them.
@@ -379,6 +382,10 @@ class Workspace:
         )
 
         self.observer = Observer(store=stores.observe)
+        # The stores this workspace's state lives in, whether the state
+        # store built them or the caller passed one in directly: delete
+        # clears these, not only what the state store would hand out.
+        self._planes = (stores.namespace, stores.observe, stores.sessions)
         # Explicit at the construction site: the history view does not
         # cache reads, so its policy can only ever be bounded.
         self._registry.mount(
@@ -1120,6 +1127,23 @@ class Workspace:
     async def close(self) -> None:
         await close_async(self)
 
+    async def delete(self) -> None:
+        """Close the workspace and delete its state from the store.
+
+        Links, history, sessions and the metadata record all go, so a
+        workspace created later under this id starts empty. ``close``
+        keeps them, which is how a daemon's workspace survives a restart.
+
+        Raises:
+            RuntimeError: the workspace was closed first, which closed
+                the stores its state lives in, so nothing was deleted.
+        """
+        await close_async(self, drop_state=True)
+        if not self._state_dropped:
+            raise RuntimeError(
+                "workspace was closed before delete; its state is kept"
+            )
+
     # ── snapshot / load / copy ─────────────────────────────────────────────
 
     async def snapshot(self, target, *, compress: str | None = None) -> None:
@@ -1712,6 +1736,8 @@ class Workspace:
         runtime: str | None = None,
         routing_decision: RouteDecision | None = None,
         handed: HandOff | None = None,
+        sink: JobConsole | None = None,
+        call_stack: CallStack | None = None,
     ) -> IOResult:
         """Execute a shell command in the workspace.
 
@@ -1754,6 +1780,17 @@ class Workspace:
                 executor's nested evals under the outer line's so an
                 inner line spends the grants the outer line's pass
                 claimed for it.
+            sink: Internal. The console the executor's nested lines
+                (``eval``, ``source``, a nested shell) write to as each
+                statement finishes, stdout and stderr in the order they
+                were produced. Every path answers there, a refusal or a
+                syntax error included, so the result carries the exit
+                status and no output.
+            call_stack: Internal. The frames of the caller a nested line
+                runs in place of (``eval``): its commands see the
+                caller's positional parameters and locals, and an
+                ``exit``, ``return``, ``break`` or ``continue`` in it
+                unwinds into the caller instead of ending the line.
         """
         # The one cancellation seam: the whole line is one task, so a
         # cancel set while a store is still loading, a secret is still
@@ -1763,7 +1800,7 @@ class Workspace:
         # sets it.
         frame = LineFrame()
         try:
-            return await run_cancellable(
+            result = await run_cancellable(
                 self._serialize_line(
                     session_id,
                     partial(
@@ -1781,6 +1818,8 @@ class Workspace:
                         routing_decision,
                         handed,
                         frame,
+                        sink=sink,
+                        call_stack=call_stack,
                     ),
                 ),
                 cancel,
@@ -1796,3 +1835,12 @@ class Workspace:
                     frame.session, frame.status_before, frame.writer
                 )
             raise
+        if sink is not None and isinstance(result, IOResult):
+            for channel, data in (
+                (Channel.STDOUT, await result.materialize_stdout()),
+                (Channel.STDERR, await result.materialize_stderr()),
+            ):
+                if data:
+                    await sink.emit(channel, data)
+            result.stdout = result.stderr = None
+        return result

@@ -1,9 +1,7 @@
 {
   "command_io": {},
   "command_io_aliases": {
-    "python": {
-      "hf_buckets": "hf"
-    }
+    "python": {}
   },
   "commands": {},
   "config_fields": {

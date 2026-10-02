@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GMAIL_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   <label>/
     <yyyy-mm-dd>/
       <subject>__<message-id>.gmail.json    # email JSON file (the email itself)
@@ -74,7 +74,7 @@ export const GMAIL_PROMPT = `{prefix}
   To act on messages (read by id, triage, raw API calls), use the gws
   CLI if installed: gws gmail --help`
 
-export const GMAIL_WRITE_PROMPT = `  Sending mail goes through the gws CLI if installed:
+export const WRITE_PROMPT = `  Sending mail goes through the gws CLI if installed:
     gws gmail send --to "to@email.com" --subject "Hi" --body "..."
 
   Body gotcha: bash double-quoted "...\\n..." is NOT a newline.

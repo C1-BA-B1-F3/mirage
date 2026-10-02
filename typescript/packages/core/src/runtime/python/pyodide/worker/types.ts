@@ -14,7 +14,7 @@
 
 import type { RunArgs, EvalValue, RunResult, EvalResult, BridgeDispatchFn } from '../../../types.ts'
 import type { PyodideConfig } from '../runtime.ts'
-import type { MirageMutation } from '../vfs/journal.ts'
+import type { MirageMutation } from '../fs/journal.ts'
 
 export type ReadOperation = 'read' | 'stat' | 'readdir' | 'readlink'
 export interface VfsRequest {

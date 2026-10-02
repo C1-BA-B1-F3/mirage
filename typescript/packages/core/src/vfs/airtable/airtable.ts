@@ -24,7 +24,7 @@ import { AIRTABLE_OPS } from '../../ops/airtable/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
 import { BaseVFS } from '../base.ts'
-import { AIRTABLE_PROMPT, AIRTABLE_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
 export interface AirtableVFSState {
   type: string
@@ -44,8 +44,8 @@ export class AirtableVFS extends BaseVFS {
   // unknown until the bytes exist.
   override readonly sizesAlwaysKnown: boolean = false
   override readonly supportsSnapshot: boolean = false
-  override readonly prompt: string = AIRTABLE_PROMPT
-  override readonly writePrompt: string = AIRTABLE_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   override readonly accessor: AirtableAccessor
 
   private readonly config: AirtableConfig

@@ -15,7 +15,7 @@
 import { pasteGeneric } from '../../generic/paste.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const PASTE_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'paste',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

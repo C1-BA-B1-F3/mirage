@@ -17,7 +17,7 @@ import { applyIo } from '../../cache/file/io.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
 import { applyOpLimit, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
-import { dispatchStat, dotRefusal } from '../../commands/builtin/utils/paths.ts'
+import { dispatchStat, dotRefusal, walkSpelling } from '../../commands/builtin/utils/paths.ts'
 import { getExtension } from '../../commands/resolve.ts'
 import { IOResult, type OpReport } from '../../io/types.ts'
 import {
@@ -42,7 +42,7 @@ import { Policies, PolicyDenied, postOpsGate, preOpsGate } from '../../policy/in
 import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
-import { CycleError, norm, parent } from '../../utils/path.ts'
+import { CycleError, norm, parent, posixNormpath } from '../../utils/path.ts'
 import type { EntryGate } from '../../types.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
@@ -73,6 +73,8 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import {
   DISPATCH_READ_OPS,
   DISPATCH_WRITE_OPS,
+  ENTRY_CREATE_OPS,
+  FILE_CREATE_OPS,
   HIDDEN_CREATE_OPS,
   LINK_ENTRY_OPS,
   NAMESPACE_TABLE_OPS,
@@ -180,9 +182,14 @@ function memoryAnswered(report: OpReport | undefined, moved: number | null = nul
 /** The door's link follow of one path, the final name too (`last`) or
  * only the names above it, with a loop thrown as ELOOP rather than the
  * namespace's CycleError. */
-function followOrLoop(namespace: Namespace, path: PathSpec, last: boolean): string {
+function followOrLoop(
+  namespace: Namespace,
+  path: PathSpec,
+  last: boolean,
+  spelled: string = path.virtual,
+): string {
   try {
-    return last ? namespace.follow(path.virtual) : namespace.followParent(path.virtual)
+    return last ? namespace.follow(spelled) : namespace.followParent(spelled)
   } catch (err) {
     if (err instanceof CycleError) throw eloop(path.virtual)
     throw err
@@ -278,13 +285,16 @@ export class Dispatcher {
     // A `.` or `..` resolves against the directory it sits in, so every
     // name in front of one has to be a directory: `virtual` simplified the
     // dots away and reaches `f` through a missing `nope/..`, the typed
-    // spelling (`dotted`) does not. Mirrors Python's Dispatcher.dispatch.
+    // spelling (`dotted`) does not. A trailing slash is part of that
+    // spelling: `x/` must be a directory, so a create of one is EISDIR
+    // before anything is looked up. Mirrors Python's Dispatcher.dispatch.
+    if (FILE_CREATE_OPS.has(opName) && path.dotted?.endsWith('/') === true) throw eisdir(path)
     const renamed = opName === 'rename' && dstArg instanceof PathSpec ? dstArg : null
     if (path.dotted !== null || (renamed !== null && renamed.dotted !== null)) {
       const walkStat = dispatchStat(this.dispatch)
       const follow = (virtual: string): string => this.namespace.follow(virtual)
       const refusal =
-        (await dotRefusal(walkStat, path, follow)) ??
+        (await dotRefusal(walkStat, path, follow, ENTRY_CREATE_OPS.has(opName))) ??
         (renamed !== null ? await dotRefusal(walkStat, renamed, follow) : null)
       if (refusal !== null) throw refusal
     }
@@ -536,7 +546,7 @@ export class Dispatcher {
               runWithTimeout(
                 Promise.resolve(
                   opName === 'setattr'
-                    ? this.applySetattr(vfs, scope, p, fullKwargs)
+                    ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
                     : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
@@ -867,7 +877,9 @@ export class Dispatcher {
    * words. Mirrors Python's Dispatcher._walked.
    */
   private walked(path: PathSpec, create: boolean): PathSpec {
-    const walked = followOrLoop(this.namespace, path, false)
+    const spelled = walkSpelling(path, (p) => this.namespace.follow(p))
+    let walked = followOrLoop(this.namespace, path, false, spelled)
+    if (spelled !== path.virtual) walked = posixNormpath(walked)
     if (walked === path.virtual) return path
     if (!pathAllowed(walked)) throw hiddenRefusal(walked, create)
     return PathSpec.fromStrPath(walked)
@@ -1310,12 +1322,16 @@ export class Dispatcher {
    * gates as the native half. Mirrors Python's Dispatcher._apply_setattr.
    */
   private async applySetattr(
+    mount: MountEntry,
     vfs: BaseVFS,
     scope: PathSpec,
     p: PathSpec,
     kwargs: OpKwargs,
   ): Promise<Record<string, number | string>> {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
+      // No backend inode answers for the path here, so nothing would
+      // refuse a missing one: the overlay would stamp it.
+      await this.xattrTarget(mount, p)
       return this.overlaySetattr(p, kwargs)
     }
     const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)

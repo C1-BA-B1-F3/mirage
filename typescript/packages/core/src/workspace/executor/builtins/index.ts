@@ -61,14 +61,7 @@ export { handleEval } from './eval/index.ts'
 export { handleBash, handleExecPath, handleSource } from './script/index.ts'
 export { handleSleep } from './sleep/index.ts'
 export { handleTest } from './condition/index.ts'
-export {
-  handleColon,
-  handleExit,
-  handleFalse,
-  handleReturn,
-  handleTrue,
-  loopLevels,
-} from './control/index.ts'
+export { handleColon, handleExit, handleFalse, handleReturn, handleTrue } from './control/index.ts'
 export { handleTimeout } from './timeout/index.ts'
 export { handleXargs } from './xargs/index.ts'
 export { handleCommandBuiltin } from './command/index.ts'

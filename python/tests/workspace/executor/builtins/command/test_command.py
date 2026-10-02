@@ -112,7 +112,9 @@ async def test_V_warns_for_a_missing_name_while_exiting_0():
         FakeShell(), ["-V", "cd", "nope_xyz"], make_session(), make_registry()
     )
     assert await materialize(out) == b"cd is a shell builtin\n"
-    assert await materialize(io.stderr) == b"command: nope_xyz: not found\n"
+    assert (
+        await materialize(io.stderr) == b"bash: command: nope_xyz: not found\n"
+    )
     assert io.exit_code == 0
 
 
@@ -140,7 +142,9 @@ async def test_V_not_found_warns_on_stderr_rc1():
         FakeShell(), ["-V", "nope_xyz"], make_session(), make_registry()
     )
     assert out is None
-    assert await materialize(io.stderr) == b"command: nope_xyz: not found\n"
+    assert (
+        await materialize(io.stderr) == b"bash: command: nope_xyz: not found\n"
+    )
     assert io.exit_code == 1
 
 
@@ -152,7 +156,7 @@ async def test_invalid_option_rc2_with_usage():
     assert io.exit_code == 2
     err = await materialize(io.stderr)
     assert err == (
-        b"command: -x: invalid option\n"
+        b"bash: command: -x: invalid option\n"
         b"command: usage: command [-pVv] command [arg ...]\n"
     )
 

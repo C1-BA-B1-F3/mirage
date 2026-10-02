@@ -21,7 +21,9 @@ async def _read_ws() -> Workspace:
 async def test_read_invalid_option_exits_2():
     _, io, _ = await handle_read(["-q", "v"], make_session(), b"line\n")
     assert io.exit_code == 2
-    assert await materialize(io.stderr) == b"read: -q: invalid option\n"
+    assert (await materialize(io.stderr)).startswith(
+        b"bash: read: -q: invalid option\nread: usage: read [-ers]"
+    )
 
 
 @pytest.mark.asyncio

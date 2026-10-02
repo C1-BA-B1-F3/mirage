@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const REDIS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Redis-backed persistent filesystem. Behaves like a standard filesystem.
   Standard commands: ls, cat, head, tail, grep, wc, find, tree, mkdir, touch, cp, mv, rm, tee.`

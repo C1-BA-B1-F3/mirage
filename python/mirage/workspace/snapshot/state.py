@@ -886,15 +886,16 @@ def _builtin_entry_for_class(cls_path: str) -> VFSEntry | None:
     """The builtin entry that builds exactly the saved class, or None.
 
     A mount constructed in code records no ref, and its ``type`` is the
-    class's ``name``, which a subclass inherits: every S3-compatible
-    alias reports ``s3`` while saving its own provider-shaped config.
-    Rebuilding through the type's entry handed that config to
-    ``S3Config``, which dropped the alias's field names without a word
-    while configs ignored unknown keys, and refuses them now that they
-    do not. The saved class path names the class that was running, so
-    the entry whose class it is -- matched by identity, after narrowing
-    by class name so only that candidate is imported -- is the one to
-    rebuild through.
+    class's ``name``, which a subclass inherits unless it declares its
+    own: a subclass of a builtin that keeps the builtin's name saves its
+    own config under the builtin's type, and rebuilding through the
+    type's entry hands that config to the builtin's config class, which
+    refuses the keys it does not know. (The S3-compatible aliases once
+    did exactly this under ``s3``; each now carries its own name.) The
+    saved class path names the class that was running, so the entry
+    whose class it is -- matched by identity, after narrowing by class
+    name so only that candidate is imported -- is the one to rebuild
+    through.
 
     Args:
         cls_path (str): the saved ``module.ClassName``.

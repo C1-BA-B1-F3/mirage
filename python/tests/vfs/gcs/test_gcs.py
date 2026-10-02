@@ -12,9 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
 from mirage.vfs.gcs import GCSVFS, GCSConfig
 from mirage.vfs.secrets import reveal_secret
 
@@ -29,16 +26,6 @@ def test_gcs_config_defaults():
     assert c.region == "auto"
     assert c.timeout == 30
     assert c.proxy is None
-
-
-def test_gcs_config_immutable():
-    c = GCSConfig(
-        bucket="x",
-        access_key_id="GOOG123",
-        secret_access_key="secret",
-    )
-    with pytest.raises(ValidationError):
-        c.bucket = "y"
 
 
 def test_gcs_config_custom_endpoint():

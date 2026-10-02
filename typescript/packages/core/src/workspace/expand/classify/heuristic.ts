@@ -49,8 +49,8 @@ export function classifyWord(
     // `rawPath` keeps the spelling as typed, the way relativeSpec does:
     // `virtual` has already lost any `..`, and `cd -P` has to resolve the
     // link a `..` follows before applying it. `dotted` keeps it for the
-    // walk that proves each `..` a directory; a pattern leaves it textual,
-    // as its matches are respelled.
+    // walk that proves each `..` a directory, and a pattern's for the head
+    // its listing walks.
     if (wordHasGlob) {
       const lastSlash = path.lastIndexOf('/')
       return new PathSpec({
@@ -60,6 +60,7 @@ export function classifyWord(
         pattern: path.slice(lastSlash + 1),
         rawPath: word,
         resolved: false,
+        dotted: dottedSpelling(word),
       })
     }
     if (isDir) {

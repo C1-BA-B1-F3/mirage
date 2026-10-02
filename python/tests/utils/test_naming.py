@@ -16,11 +16,17 @@ import pytest
 
 from mirage.utils.naming import (
     SEPARATOR,
+    file_id_name,
     fit_id_name,
     make_id_name,
     parse_id_name,
 )
-from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
+from mirage.utils.sanitize import (
+    ESCAPE_LEAD,
+    NAME_MAX_BYTES,
+    SAFE_SLASH,
+    byte_len,
+)
 
 CJK = "会議の記録" * 40
 SLACK_ID = "C01ABCDEFGH"
@@ -91,6 +97,39 @@ def test_fit_id_name_leaves_no_trailing_underscore_from_the_cut():
     name = fit_id_name("a" * 300 + "_" * 5, "id1")
     assert byte_len(name) <= NAME_MAX_BYTES
     assert "___" not in name
+
+
+@pytest.mark.parametrize(
+    "names,expected",
+    [
+        (("report.pdf",), "report__F1.pdf"),
+        (("readme",), "readme__F1"),
+        (("a.tar.gz",), "a.tar__F1.gz"),
+        (("photo.",), "photo.__F1"),
+        ((".bashrc",), f"{ESCAPE_LEAD}.bashrc__F1"),
+        (("Q3/Q4 plan.pdf",), f"Q3{SAFE_SLASH}Q4 plan__F1.pdf"),
+        (("release 1.2/notes",), f"release 1.2{SAFE_SLASH}notes__F1"),
+        (("", "design doc.docx"), "design doc__F1.docx"),
+        ((None, ""), "file__F1"),
+        ((), "file__F1"),
+    ],
+)
+def test_file_id_name(names, expected):
+    assert file_id_name("F1", *names) == expected
+
+
+@pytest.mark.parametrize("ext", [".txt", ""])
+def test_a_long_file_name_fits_name_max_and_keeps_id_and_extension(ext):
+    """The stem is the only part that gives.
+
+    A trimmed id stops addressing the file and a trimmed extension changes
+    its type, so both are spent before the stem gets its budget.
+    """
+    name = file_id_name(SLACK_ID, CJK + ext)
+
+    assert byte_len(name) <= NAME_MAX_BYTES
+    assert name.endswith(f"{SLACK_ID}{ext}")
+    assert "�" not in name
 
 
 def test_parse_id_name_recovers_the_id():

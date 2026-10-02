@@ -56,20 +56,47 @@ export class JobEntry {
   }
 }
 
+/** Keep at most 1024 completed jobs; expire them after one hour on access/completion. */
 export class JobTable {
   private jobs = new Map<string, JobEntry>()
+  private completed = new Map<string, JobEntry>()
+
+  constructor(
+    private readonly maxCompleted = 1024,
+    private readonly retentionSeconds = 3600,
+  ) {
+    if (maxCompleted < 1 || retentionSeconds <= 0)
+      throw new Error('job retention limits must be positive')
+  }
+
+  private prune(): void {
+    const cutoff = Date.now() / 1000 - this.retentionSeconds
+    for (const [id, job] of this.completed) {
+      if (
+        this.completed.size <= this.maxCompleted &&
+        job.finishedAt !== null &&
+        job.finishedAt > cutoff
+      )
+        break
+      this.completed.delete(id)
+      this.jobs.delete(id)
+    }
+  }
 
   has(id: string): boolean {
+    this.prune()
     return this.jobs.has(id)
   }
 
   get(id: string): JobEntry {
+    this.prune()
     const entry = this.jobs.get(id)
     if (entry === undefined) throw new Error(`job not found: ${id}`)
     return entry
   }
 
   list(workspaceId?: string): JobEntry[] {
+    this.prune()
     const all = Array.from(this.jobs.values())
     if (workspaceId === undefined) return all
     return all.filter((j) => j.workspaceId === workspaceId)
@@ -80,61 +107,63 @@ export class JobTable {
     command: string,
     coroFactory: (signal: AbortSignal) => Promise<unknown>,
   ): JobEntry {
+    this.prune()
     const entry = new JobEntry(newJobId(), workspaceId, command)
     this.jobs.set(entry.id, entry)
     entry.status = JobStatus.RUNNING
     entry.startedAt = Date.now() / 1000
-    coroFactory(entry.controller.signal).then(
-      (result) => {
-        if (entry.controller.signal.aborted) {
-          entry.status = JobStatus.CANCELED
-        } else {
-          entry.status = JobStatus.DONE
-          entry.result = result
-        }
-        entry.markFinished()
-      },
-      (err: unknown) => {
-        if (entry.controller.signal.aborted) {
-          entry.status = JobStatus.CANCELED
-        } else {
-          entry.status = JobStatus.FAILED
-          entry.error = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-        }
-        entry.markFinished()
-      },
-    )
+    void this.run(entry, coroFactory)
     return entry
+  }
+
+  private async run(
+    entry: JobEntry,
+    factory: (signal: AbortSignal) => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      entry.result = await factory(entry.controller.signal)
+      entry.status = JobStatus.DONE
+    } catch (err) {
+      entry.status = JobStatus.FAILED
+      entry.error = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    } finally {
+      if (entry.controller.signal.aborted) {
+        entry.status = JobStatus.CANCELED
+        entry.result = null
+      }
+      entry.markFinished()
+      this.completed.set(entry.id, entry)
+      this.prune()
+    }
   }
 
   async wait(id: string, timeoutSeconds?: number): Promise<JobEntry> {
     const entry = this.get(id)
-    if (
-      entry.status === JobStatus.DONE ||
-      entry.status === JobStatus.FAILED ||
-      entry.status === JobStatus.CANCELED
-    )
-      return entry
+    if (entry.finishedAt !== null) return entry
     if (timeoutSeconds === undefined) {
       await entry.done
       return entry
     }
-    await Promise.race([
-      entry.done,
-      new Promise<void>((resolve) => setTimeout(resolve, timeoutSeconds * 1000)),
-    ])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        entry.done,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, timeoutSeconds * 1000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
     return entry
   }
 
   cancel(id: string): boolean {
     const entry = this.get(id)
-    if (
-      entry.status === JobStatus.DONE ||
-      entry.status === JobStatus.FAILED ||
-      entry.status === JobStatus.CANCELED
-    ) {
+    if (entry.finishedAt !== null) {
       return false
     }
+    if (entry.controller.signal.aborted) return false
     entry.controller.abort()
     return true
   }

@@ -23,7 +23,7 @@ import { readdir as postgresReaddir } from '../../../core/postgres/readdir.ts'
 import { stat as postgresStat } from '../../../core/postgres/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const POSTGRES_IO: CommandIO<PostgresAccessor> = new VFSAdapter<PostgresAccessor>({
+export const IO: CommandIO<PostgresAccessor> = new VFSAdapter<PostgresAccessor>({
   search: {
     search: makeSearchOp(detectScope, SEARCHERS, postgresStat),
     meta: { grep: { mode: 'literal', stream: false } },

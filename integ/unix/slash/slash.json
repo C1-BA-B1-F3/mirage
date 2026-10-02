@@ -367,10 +367,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cat /data/slashd/sub/../reg /data/slashd/dlink/./f2 /data/slashd/reg/ /data/slashd/reg/. /data/slashd/nope/../reg /data/slashd/dlink/nope/../f2 2>&1",
+      "command": "cat /data/slashd/sub/../reg /data/slashd/dlink/./f2 /data/slashd/reg/ /data/slashd/reg/. /data/slashd/nope/../reg /data/slashd/dlink/nope/../f2 2>&1; head -c1 /data/slashd/reg/ 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "hi\nhello\ncat: /data/slashd/reg/: Not a directory\ncat: /data/slashd/reg/.: Not a directory\ncat: /data/slashd/nope/../reg: No such file or directory\ncat: /data/slashd/dlink/nope/../f2: No such file or directory\n",
+        "stdout": "hi\nhello\ncat: /data/slashd/reg/: Not a directory\ncat: /data/slashd/reg/.: Not a directory\ncat: /data/slashd/nope/../reg: No such file or directory\ncat: /data/slashd/dlink/nope/../f2: No such file or directory\nhead: cannot open '/data/slashd/reg/' for reading: Not a directory\n",
         "stderr": ""
       }
     },
@@ -499,10 +499,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rm /data/slashd/dlink/ 2>&1",
+      "command": "rm /data/slashd/dlink/ 2>&1; rm /data/slashd/reg/ 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "rm: cannot remove '/data/slashd/dlink/': Is a directory\n",
+        "stdout": "rm: cannot remove '/data/slashd/dlink/': Is a directory\nrm: cannot remove '/data/slashd/reg/': Not a directory\n",
         "stderr": ""
       }
     },
@@ -912,6 +912,316 @@
         "stderr": ""
       },
       "note": "GNU coreutils 9.7: an intermediate component must be created even when it equals the final normalized path."
+    },
+    {
+      "id": "slash_reg_setup",
+      "seq": 94102,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/slashr/d && printf 'x\\n' > /data/slashr/d/f && printf 'hi\\n' > /data/slashr/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "note": "d holds a file: a store that shows no empty directory (hf) would answer test -d d/ false."
+    },
+    {
+      "id": "slash_reg_readers",
+      "seq": 94103,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "grep hi /data/slashr/a.txt/ 2>&1; sort /data/slashr/a.txt/ 2>&1; wc -l /data/slashr/a.txt/ 2>&1; head /data/slashr/a.txt/ 2>&1; tac /data/slashr/a.txt/ 2>&1; od -c /data/slashr/a.txt/ 2>&1",
+      "note": "GNU coreutils on debian:stable-slim: a trailing slash makes a plain file ENOTDIR for every reader, as `cat reg/` already did.",
+      "expect": {
+        "exit": 1,
+        "stdout": "grep: /data/slashr/a.txt/: Not a directory\nsort: cannot read: /data/slashr/a.txt/: Not a directory\nwc: /data/slashr/a.txt/: Not a directory\nhead: cannot open '/data/slashr/a.txt/' for reading: Not a directory\ntac: failed to open '/data/slashr/a.txt/' for reading: Not a directory\nod: /data/slashr/a.txt/: Not a directory\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_compare",
+      "seq": 94104,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff /data/slashr/a.txt/ /data/slashr/a.txt 2>&1; cmp /data/slashr/a.txt/ /data/slashr/a.txt 2>&1; md5sum /data/slashr/a.txt/ 2>&1",
+      "expect": {
+        "exit": 1,
+        "stdout": "diff: /data/slashr/a.txt/: Not a directory\ncmp: /data/slashr/a.txt/: Not a directory\nmd5sum: /data/slashr/a.txt/: Not a directory\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_redirect_in",
+      "seq": 94105,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat < /data/slashr/a.txt/",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "/data/slashr/a.txt/: Not a directory\n"
+      }
+    },
+    {
+      "id": "slash_reg_realpath",
+      "seq": 94106,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "realpath /data/slashr/a.txt/ 2>&1; realpath -e /data/slashr/a.txt/ 2>&1; realpath -m /data/slashr/a.txt/",
+      "expect": {
+        "exit": 0,
+        "stdout": "realpath: /data/slashr/a.txt/: Not a directory\nrealpath: /data/slashr/a.txt/: Not a directory\n/data/slashr/a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_test",
+      "seq": 94107,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "test -f /data/slashr/a.txt/; echo f=$?; test -e /data/slashr/a.txt/; echo e=$?; test -d /data/slashr/d/; echo d=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "f=1\ne=1\nd=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_creates",
+      "seq": 94108,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir /data/slashr/a.txt/ 2>&1; ln -s x /data/slashr/a.txt/ 2>&1; touch /data/slashr/a.txt/ 2>&1; touch -c /data/slashr/a.txt/ 2>&1; ln -s a.txt /data/slashr/flink && touch /data/slashr/flink/ 2>&1; rm /data/slashr/flink; cat /data/slashr/a.txt",
+      "note": "GNU on debian:stable-slim: mkdir and symlink answer an existing name EEXIST before the slash is judged; touch words the slashed refusal as `setting times of`; the file is left as it was.",
+      "expect": {
+        "exit": 0,
+        "stdout": "mkdir: cannot create directory '/data/slashr/a.txt/': File exists\nln: failed to create symbolic link '/data/slashr/a.txt/': File exists\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\ntouch: setting times of '/data/slashr/a.txt/': Not a directory\ntouch: setting times of '/data/slashr/flink/': Not a directory\nhi\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_crossmount",
+      "seq": 94109,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'B\\n' > /data2/slashr_reg && cp /data/slashr/a.txt/ /data2/slashr_x 2>&1; mv /data/slashr/a.txt/ /data2/slashr_x 2>&1; cp /data/slashr/a.txt /data2/slashr_reg/ 2>&1; mv /data/slashr/a.txt /data2/slashr_reg/ 2>&1; cat /data/slashr/a.txt /data2/slashr_reg; ls /data2/slashr_x 2>&1; rm /data2/slashr_reg",
+      "note": "GNU on debian:stable-slim (one filesystem; the wording does not depend on it): a slashed plain-file source or destination fails the stat across mounts too, and neither side changes.",
+      "expect": {
+        "exit": 0,
+        "stdout": "cp: cannot stat '/data/slashr/a.txt/': Not a directory\nmv: cannot stat '/data/slashr/a.txt/': Not a directory\ncp: cannot stat '/data2/slashr_reg/': Not a directory\nmv: cannot stat '/data2/slashr_reg/': Not a directory\nhi\nB\nls: cannot access '/data2/slashr_x': No such file or directory\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slash_reg_cleanup",
+      "seq": 94110,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rm -r /data/slashr",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
     }
   ]
 }

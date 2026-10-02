@@ -27,11 +27,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "exec; echo ok",
+      "command": "exec; echo ok\nexec <<EOF; echo same\n${exq!y}\nEOF\necho \"after $?\"\nread exv <<< \"${exq!y}\"; echo same\necho \"next $?\"\ncat <<< \"${exq!y}\"; echo \"cat $?\"",
       "expect": {
         "exit": 0,
-        "stdout": "ok\n",
-        "stderr": ""
+        "stdout": "ok\nafter 1\nnext 1\ncat 1\n",
+        "stderr": "bash: ${exq!y}\n: bad substitution\nbash: ${exq!y}: bad substitution\nbash: ${exq!y}: bad substitution\n"
       }
     },
     {
@@ -265,10 +265,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "( exec 2>&1; echo err >&2 ); ( exec 1>&2; echo a ); ( exec 1>&2; exec 2>&1; echo c; echo d >&2 ); ( exec 2>&1 < exmissing.txt; echo out; echo err2 >&2 ); echo after >&2",
+      "command": "( exec 2>&1; echo err >&2 ); ( exec 1>&2; echo a ); ( exec 1>&2; exec 2>&1; echo c; echo d >&2 ); ( exec 2>&1 < exmissing.txt; echo out; echo err2 >&2 ); ( exec 3>&1; exec 2>&1; { printf A; printf B >&3; printf C >&2; printf D; }; echo ); echo after >&2",
       "expect": {
         "exit": 0,
-        "stdout": "err\nexmissing.txt: No such file or directory\nout\n",
+        "stdout": "err\nexmissing.txt: No such file or directory\nout\nABCD\n",
         "stderr": "a\nc\nd\nerr2\nafter\n"
       }
     },

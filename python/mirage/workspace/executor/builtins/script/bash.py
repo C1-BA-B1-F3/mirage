@@ -20,6 +20,7 @@ from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.console import JobConsole
 from mirage.shell.constants import IFS_DEFAULT
 from mirage.shell.options import parse_option_word
 from mirage.workspace.executor.builtins.script.constants import (
@@ -100,6 +101,7 @@ async def handle_bash(
     session: SessionState,
     stdin: ByteSource | None = None,
     name: str = "bash",
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run a nested shell: inline text from ``-c``, or a script file.
 
@@ -120,6 +122,8 @@ async def handle_bash(
         name (str): the head word (``bash`` or ``sh``). bash reports
             itself by ``argv[0]``, so the diagnostics follow the spelling
             the caller used.
+        sink (JobConsole | None): where the program's statements write
+            as they finish, None to return them.
     """
     parsed = parse_bash_args(args)
     if parsed.invalid is not None:
@@ -157,10 +161,9 @@ async def handle_bash(
     # bash starts every shell with the default IFS and never reads one
     # from its environment, so `IFS=, bash -c ...` splits on blanks.
     seed_var(session, "IFS", IFS_DEFAULT)
-    # A child shell is outside every `source` its caller is inside, so a
-    # top-level `return` in the script it runs is the error bash reports
-    # rather than an early exit the program loop absorbs.
-    session.source_depth = 0
+    # A child shell is outside every function and `source` its caller is
+    # inside: it runs on a call stack of its own, and `FUNCNAME` is empty.
+    session.function_names = ()
     for option, enable in parsed.settings:
         session.shell_options[option] = enable
     # A nested shell is a program of its own: the builtins it runs are
@@ -168,7 +171,7 @@ async def handle_bash(
     token = clear_program_invocation()
     try:
         io = await execute_fn(
-            script, session_id=session.session_id, stdin=stdin
+            script, session_id=session.session_id, stdin=stdin, sink=sink
         )
     finally:
         reset_program_invocation(token)
@@ -191,4 +194,5 @@ async def bash_builtin(call: BuiltinCall) -> Result:
         call.session,
         call.stdin,
         str(call.argv.name),
+        call.sink,
     )

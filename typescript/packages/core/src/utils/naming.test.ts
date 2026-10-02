@@ -13,8 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { SEPARATOR, fitIdName, makeIdName, parseIdName } from './naming.ts'
-import { NAME_MAX_BYTES, byteLength } from './sanitize.ts'
+import { SEPARATOR, fileIdName, fitIdName, makeIdName, parseIdName } from './naming.ts'
+import { ESCAPE_LEAD, NAME_MAX_BYTES, SAFE_SLASH, byteLength } from './sanitize.ts'
 
 const CJK = '会議の記録'.repeat(40)
 const SLACK_ID = 'C01ABCDEFGH'
@@ -83,6 +83,32 @@ describe('fitIdName', () => {
     const name = fitIdName('a'.repeat(300) + '_'.repeat(5), 'id1')
     expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
     expect(name).not.toContain('___')
+  })
+})
+
+describe('fileIdName', () => {
+  it.each<[(string | undefined)[], string]>([
+    [['report.pdf'], 'report__F1.pdf'],
+    [['readme'], 'readme__F1'],
+    [['a.tar.gz'], 'a.tar__F1.gz'],
+    [['photo.'], 'photo.__F1'],
+    [['.bashrc'], `${ESCAPE_LEAD}.bashrc__F1`],
+    [['Q3/Q4 plan.pdf'], `Q3${SAFE_SLASH}Q4 plan__F1.pdf`],
+    [['release 1.2/notes'], `release 1.2${SAFE_SLASH}notes__F1`],
+    [['', 'design doc.docx'], 'design doc__F1.docx'],
+    [[undefined, ''], 'file__F1'],
+    [[], 'file__F1'],
+  ])('names %j as %s', (names, expected) => {
+    expect(fileIdName('F1', ...names)).toBe(expected)
+  })
+
+  it.each(['.txt', ''])('fits a long name inside NAME_MAX, keeping id and %j', (ext) => {
+    // The stem is the only part that gives: a trimmed id stops addressing the
+    // file and a trimmed extension changes its type.
+    const name = fileIdName(SLACK_ID, CJK + ext)
+    expect(byteLength(name)).toBeLessThanOrEqual(NAME_MAX_BYTES)
+    expect(name.endsWith(`${SLACK_ID}${ext}`)).toBe(true)
+    expect(name).not.toContain('\uFFFD')
   })
 })
 

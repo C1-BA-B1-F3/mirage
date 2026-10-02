@@ -1,6 +1,7 @@
 import pytest
 
 from mirage.io.stream import materialize
+from mirage.shell.errors import ExitSignal
 from mirage.workspace.executor.builtins.shift import handle_shift
 from mirage.workspace.session.session import SessionState
 
@@ -15,14 +16,15 @@ async def test_shift_non_numeric_errors_like_bash():
     assert io.exit_code == 1
     assert (
         await materialize(io.stderr)
-    ) == b"shift: x: numeric argument required\n"
+    ) == b"bash: shift: x: numeric argument required\n"
 
 
 @pytest.mark.asyncio
-async def test_shift_too_many_arguments():
-    _, io, _ = await handle_shift(["1", "2"], None, session=make_session())
-    assert io.exit_code == 1
-    assert await materialize(io.stderr) == b"shift: too many arguments\n"
+async def test_shift_too_many_arguments_abandons_the_line():
+    with pytest.raises(ExitSignal) as exc:
+        await handle_shift(["1", "2"], None, session=make_session())
+    assert exc.value.exit_code == 1
+    assert exc.value.stderr == b"bash: shift: too many arguments\n"
 
 
 @pytest.mark.asyncio
@@ -52,4 +54,4 @@ async def test_shift_negative_count_is_out_of_range():
     assert io.exit_code == 1
     assert (
         await materialize(io.stderr)
-    ) == b"shift: -1: shift count out of range\n"
+    ) == b"bash: shift: -1: shift count out of range\n"

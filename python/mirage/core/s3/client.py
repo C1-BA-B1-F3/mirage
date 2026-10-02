@@ -19,8 +19,8 @@ from typing import Any
 import aioboto3
 from botocore.config import Config
 
-from mirage.accessor.s3 import S3Config
 from mirage.utils import key_prefix as kp
+from mirage.vfs.s3.config import S3Config
 from mirage.vfs.secrets import reveal_secret
 
 

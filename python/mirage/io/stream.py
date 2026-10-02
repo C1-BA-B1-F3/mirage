@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator, Iterable
 from mirage.io import CachableAsyncIterator, IOResult
 from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize  # noqa: F401
-from mirage.utils.stream import ensure_stream
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +185,18 @@ async def chain_cachables(
 
 async def yield_bytes(data: bytes) -> AsyncIterator[bytes]:
     yield data
+
+
+def ensure_stream(src: ByteSource) -> AsyncIterator[bytes]:
+    """Present a byte source as a stream.
+
+    An iterator is returned as itself, so closing the consumer closes
+    its source; bytes become a one-chunk stream.
+
+    Args:
+        src (ByteSource): Bytes or an async byte iterator.
+
+    Returns:
+        AsyncIterator[bytes]: ``src`` itself, or ``yield_bytes(src)``.
+    """
+    return yield_bytes(src) if isinstance(src, bytes) else src

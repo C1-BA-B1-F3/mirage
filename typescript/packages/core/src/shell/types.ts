@@ -191,6 +191,7 @@ export const RedirectKind = Object.freeze({
   STDOUT: 'stdout',
   STDERR: 'stderr',
   STDIN: 'stdin',
+  READWRITE: 'readwrite',
   STDERR_TO_STDOUT: 'stderr_to_stdout',
   HEREDOC: 'heredoc',
   HERESTRING: 'herestring',
@@ -199,6 +200,10 @@ export const RedirectKind = Object.freeze({
   // before the command runs, so the target is kept for the message and
   // nothing is opened.
   AMBIGUOUS: 'ambiguous',
+  // A heredoc whose body failed to expand: bash fails the command with the
+  // expansion's status and diagnostic and goes on with the line, so the
+  // error is kept as the target and nothing is read.
+  UNEXPANDED: 'unexpanded',
 } as const)
 
 export type RedirectKind = (typeof RedirectKind)[keyof typeof RedirectKind]
@@ -470,10 +475,20 @@ export interface BacktickSegment {
 }
 
 export interface ShellNode extends TSNodeLike {
+  readonly id: number
   readonly hasError: boolean
+  readonly isNamed: boolean
+  readonly isMissing: boolean
+  readonly startIndex: number
+  readonly endIndex: number
+  readonly startPosition: { row: number; column: number }
+  readonly endPosition: { row: number; column: number }
   readonly childCount: number
   readonly children: ShellNode[]
   readonly namedChildren: ShellNode[]
+  readonly parent: ShellNode | null
+  readonly previousSibling: ShellNode | null
+  readonly nextSibling: ShellNode | null
   child(index: number): ShellNode | null
   childForFieldName(name: string): ShellNode | null
 }

@@ -23,7 +23,7 @@ import { readdir as langfuseReaddir } from '../../../core/langfuse/readdir.ts'
 import { stat as langfuseStat } from '../../../core/langfuse/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const LANGFUSE_IO: CommandIO<LangfuseAccessor> = new VFSAdapter<LangfuseAccessor>({
+export const IO: CommandIO<LangfuseAccessor> = new VFSAdapter<LangfuseAccessor>({
   search: { search: makeSearchOp(detectScope, SEARCHERS), meta: { grep: { mode: 'regex' } } },
   read: { readdir: langfuseReaddir, readBytes: langfuseRead, stat: langfuseStat },
   isMounted: () => true,

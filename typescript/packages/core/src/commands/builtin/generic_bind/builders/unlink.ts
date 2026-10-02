@@ -19,7 +19,7 @@ import { FileType } from '../../../../types.ts'
 import { fsStrerror, isFsError } from '../../../../utils/errors.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const UNLINK_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'unlink',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const TRELLO_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   workspaces/
     <workspace-name>__<workspace-id>/
       workspace.json
@@ -43,7 +43,7 @@ export const TRELLO_PROMPT = `{prefix}
     trello card show <card-id>
     trello card comments <card-id>`
 
-export const TRELLO_WRITE_PROMPT = `  Write commands (nested names; ids are flags, and --desc / --text also
+export const WRITE_PROMPT = `  Write commands (nested names; ids are flags, and --desc / --text also
   read a file via --desc_file / --text_file, or stdin):
     trello card create --list_id <list-id> --name <name> [--desc <text>]
     trello card update --card_id <card-id> [--name <name>] [--desc <text>]

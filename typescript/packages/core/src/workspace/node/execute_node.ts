@@ -25,7 +25,9 @@ import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
+import { literalText } from '../../shell/parse/names.ts'
+import { BASH_BUILTINS } from '../lookup/constants.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import {
   assignmentStatus,
@@ -65,6 +67,7 @@ import { expandAndClassify } from '../expand/parts.ts'
 import { assignElement } from '../session/elements.ts'
 import type { ArithResult, TSNodeLike } from '../../shell/types.ts'
 import {
+  carried,
   type CforEval,
   handleCase,
   handleCfor,
@@ -73,9 +76,11 @@ import {
   handleSelect,
   handleUntil,
   handleWhile,
+  isUnwinding,
 } from '../executor/control.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
 import { handleTest, handleUnset } from '../executor/builtins/index.ts'
+import { isValidName } from '../executor/builtins/shared.ts'
 import { handleConnection, handlePipe, handleSubshell } from '../executor/pipes.ts'
 import { handleRedirect } from '../executor/redirect.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
@@ -99,8 +104,8 @@ import {
   sessionView,
   visibleEnv,
 } from '../session/state.ts'
-import { Channel, type JobConsole } from '../../shell/console/index.ts'
-import { type ExecuteNodeOpts, pump, runStatement } from '../executor/jobs.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
+import { drained, type ExecuteNodeOpts, runStatement } from '../executor/jobs.ts'
 
 const STREAMING_KINDS: ReadonlySet<NodeKind> = new Set([
   NodeKind.PROGRAM,
@@ -257,6 +262,7 @@ async function recurseReassociated(
     [...redirects],
     signal,
     processes,
+    undefined,
     session,
     stdin,
     callStack,
@@ -349,6 +355,7 @@ async function recurseStage(
     bound,
     signal,
     processes,
+    undefined,
     session,
     stdin,
     callStack,
@@ -478,10 +485,16 @@ async function runRedirected(
   redirects: Redirect[],
   signal: AbortSignal | undefined,
   processes: ProcessSupervisor | undefined,
+  sink: JobConsole | undefined,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
 ): Promise<Result> {
+  if (command !== null && command.type === NT.FUNCTION_DEFINITION) {
+    // The redirects belong to the function, applied at each call
+    // (getFunctionBody), not to the definition.
+    return recurse(command, session, stdin, callStack)
+  }
   if (command !== null && command.type === NT.LIST) {
     // tree-sitter hoists a trailing redirect over the whole &&/||
     // list; bash binds it to the last command:
@@ -533,6 +546,7 @@ async function runRedirected(
       redirects,
       signal,
       processes,
+      sink,
       session,
       stdin,
       callStack,
@@ -546,14 +560,17 @@ async function runRedirected(
     registry,
     callStack,
     sessionView(session, registry.policies),
+    forks(command, session),
   )
   // `exec > file` with no command installs the redirects on the shell
   // for every later statement, rather than applying them to one
   // command. `exec cmd > file` still has a command and falls through
   // to the ordinary path, which refuses the command form.
   if (isBareExec(command)) {
-    return await installExecRedirects(dispatch, session, expandedRedirects)
+    return await installExecRedirects(dispatch, session, expandedRedirects, stdin)
   }
+  // A heredoc's operator line reads the routed stdout, so then it is
+  // returned rather than written.
   let [stdout, io, execNode] = await handleRedirect(
     recurse,
     dispatch,
@@ -562,6 +579,8 @@ async function runRedirected(
     session,
     stdin,
     callStack,
+    false,
+    pipeNode === null ? sink : undefined,
   )
   if (pipeNode !== null && stdout !== null) {
     const [stdout2, io2, execNode2] = await recurse(pipeNode, session, stdout, callStack)
@@ -705,6 +724,41 @@ function isBareExec(command: TSNodeLike | null): boolean {
   return named.length === 1 && named[0]?.type === NT.COMMAND_NAME && getText(named[0]) === 'exec'
 }
 
+/**
+ * Whether bash forks to run a redirected command, so its redirects expand
+ * in the child and an error there fails that command alone: a subshell or a
+ * program. A builtin, a function or another compound command is the shell's
+ * own, which expands its redirects itself and discards the line on an
+ * error. `command -v` is the builtin itself; `command X` is X with functions
+ * masked; a name only an expansion spells is taken for a program. Mirrors
+ * Python's _forks.
+ */
+function forks(command: TSNodeLike | null, session: SessionState): boolean {
+  if (command?.type !== NT.COMMAND) return command?.type === NT.SUBSHELL
+  let words = getParts(command).filter((part) => part.type !== NT.VARIABLE_ASSIGNMENT)
+  let functions = true
+  while (words[0] !== undefined && getText(words[0]) === 'command') {
+    words = words.slice(1)
+    functions = false
+    while (words[0] !== undefined && getText(words[0]).startsWith('-')) {
+      const option = getText(words[0])
+      words = words.slice(1)
+      if (option === '--') break
+      if (option.includes('v') || option.includes('V')) return false
+    }
+  }
+  let head = words[0]
+  if (head === undefined) return false
+  if (head.type === NT.COMMAND_NAME && head.namedChildren[0] !== undefined) {
+    head = head.namedChildren[0]
+  }
+  const name = literalText(head)
+  return (
+    name === null ||
+    (!BASH_BUILTINS.has(name) && !(functions && session.functions[name] !== undefined))
+  )
+}
+
 export async function executeNode(
   deps: ExecuteNodeDeps,
   node: TSNodeLike,
@@ -796,6 +850,10 @@ async function executeNodeBody(
   // ambient frame cannot identify this node's nested evaluations.
   const executeFn: ExecuteFn = (cmd, opts) => deps.executeFn(cmd, { session, ...opts })
   const kind = nodeKind(node)
+  // A root run on a caller's frames is the caller's own line (eval,
+  // source, an alias, `$( )`); one given none is a shell of its own.
+  const inline = callStack !== null
+  callStack ??= new CallStack()
 
   // The statements a construct runs all read one descriptor, as bash's
   // do: `read` takes its line and the command after it gets the rest, in
@@ -827,16 +885,13 @@ async function executeNodeBody(
   // statement lands as it finishes; everything else runs unchanged and
   // has its result drained here. Only STREAMING_KINDS inherit a sink,
   // so capture sites keep receiving their output as a value.
-  if (sink !== undefined && !STREAMING_KINDS.has(kind)) {
-    const [stdout, io, execNode] = await recurse(node, session, stdin, callStack)
-    await pump(sink, Channel.STDOUT, stdout)
-    const stderr = await io.materializeStderr()
-    if (stderr.byteLength > 0) {
-      await sink.emit(Channel.STDERR, stderr)
-      // Cleared so the job's tail does not emit it a second time.
-      io.stderr = null
-    }
-    return [null, io, execNode]
+  if (
+    sink !== undefined &&
+    !STREAMING_KINDS.has(kind) &&
+    kind !== NodeKind.COMMAND &&
+    kind !== NodeKind.REDIRECT
+  ) {
+    return drained(sink, ...(await recurse(node, session, stdin, callStack)))
   }
 
   if (kind === NodeKind.TIMED) {
@@ -869,7 +924,7 @@ async function executeNodeBody(
 
   if (kind === NodeKind.PROGRAM) {
     return executeProgram(
-      stream,
+      recurse,
       node,
       session,
       stdin,
@@ -879,11 +934,13 @@ async function executeNodeBody(
       dispatch,
       deps.handed ?? null,
       registry.decisions,
+      sink ?? null,
+      inline,
     )
   }
 
   if (kind === NodeKind.COMMAND) {
-    return runInCommandScope(() =>
+    const result = await runInCommandScope(() =>
       executeCommand(
         recurse,
         dispatch,
@@ -901,8 +958,10 @@ async function executeNodeBody(
         deps.reparse,
         agentId,
         deps.handed,
+        sink,
       ),
     )
+    return sink === undefined ? result : drained(sink, ...result)
   }
 
   if (kind === NodeKind.PIPELINE) {
@@ -946,9 +1005,13 @@ async function executeNodeBody(
       redirects,
       deps.signal,
       jobTable.processes,
+      sink,
     )
-    if (continuation.length === 0) return runLeft(session, stdin, callStack)
-    return runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
+    const result =
+      continuation.length === 0
+        ? await runLeft(session, stdin, callStack)
+        : await runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
+    return sink === undefined ? result : drained(sink, ...result)
   }
 
   if (kind === NodeKind.SUBSHELL) {
@@ -958,7 +1021,7 @@ async function executeNodeBody(
     const subTable = new JobTable(null, jobTable.processes)
     const abort = new AbortController()
     const subDeps: ExecuteNodeDeps = {
-      ...deps,
+      ...captureDeps,
       jobTable: subTable,
       signal:
         deps.signal === undefined ? abort.signal : AbortSignal.any([deps.signal, abort.signal]),
@@ -1003,6 +1066,7 @@ async function executeNodeBody(
               dispatch,
               deps.handed ?? null,
               registry.decisions,
+              sink ?? null,
             )
           result = await runWithSession(childSession, () =>
             asProgram ? runAsProgram(childSession, body) : body(),
@@ -1120,18 +1184,25 @@ async function executeNodeBody(
     const bound = fd0Binding(session)
     for (const child of node.namedChildren) {
       if (child.type === NT.COMMENT) continue
-      const [rawStdout, io, execNode] = await runStatement(
-        stream,
-        child,
-        session,
-        stdin,
-        bound,
-        callStack,
-        jobTable,
-        agentId,
-        deps.handed ?? null,
-        registry.decisions,
-      )
+      let result: Result
+      try {
+        result = await runStatement(
+          stream,
+          child,
+          session,
+          stdin,
+          bound,
+          callStack,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+        )
+      } catch (sig) {
+        if (!isUnwinding(sig)) throw sig
+        throw await carried(sig, allStdout.length > 0 ? asyncChain(allStdout) : null, mergedIo)
+      }
+      const [rawStdout, io, execNode] = result
       lastExec = execNode
       const stdout = await finishStatement(rawStdout, io, session, child)
       if (stdout !== null) allStdout.push(stdout)
@@ -1174,23 +1245,33 @@ async function executeNodeBody(
     const [exprs, body] = getCforParts(node)
     const evalExpr: CforEval = (e, d) =>
       evalCforExpr(e, d, session, executeFn, callStack, sessionView(session, registry.policies))
-    return handleCfor(
-      stream,
-      exprs,
-      body,
-      evalExpr,
-      session,
-      stdin,
-      callStack,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+    return callStack.loop(() =>
+      handleCfor(
+        stream,
+        exprs,
+        body,
+        evalExpr,
+        session,
+        stdin,
+        callStack,
+        jobTable,
+        agentId,
+        deps.handed ?? null,
+        registry.decisions,
+      ),
     )
   }
 
   if (kind === NodeKind.FOR || kind === NodeKind.SELECT) {
     const [variable, values, body] = getForParts(node)
+    if (!isValidName(variable)) {
+      const err = new TextEncoder().encode(`bash: \`${variable}': not a valid identifier\n`)
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: err }),
+        new ExecutionNode({ command: kind, exitCode: 1, stderr: err }),
+      ]
+    }
     const resolved = await runInCommandScope(async () => {
       const classified = await expandAndClassify(
         values,
@@ -1212,7 +1293,27 @@ async function executeNodeBody(
       )
     })
     if (kind === NodeKind.SELECT) {
-      return handleSelect(
+      return callStack.loop(() =>
+        handleSelect(
+          stream,
+          variable,
+          resolved,
+          body,
+          session,
+          stdin,
+          callStack,
+          registry.policies,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+          mergeSignals(deps.signal, session.abortSignal),
+          sink,
+        ),
+      )
+    }
+    return callStack.loop(() =>
+      handleFor(
         stream,
         variable,
         resolved,
@@ -1225,29 +1326,30 @@ async function executeNodeBody(
         agentId,
         deps.handed ?? null,
         registry.decisions,
-        mergeSignals(deps.signal, session.abortSignal),
-      )
-    }
-    return handleFor(
-      stream,
-      variable,
-      resolved,
-      body,
-      session,
-      stdin,
-      callStack,
-      registry.policies,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+      ),
     )
   }
 
   if (kind === NodeKind.WHILE || kind === NodeKind.UNTIL) {
     const [condition, body] = getWhileParts(node)
     if (kind === NodeKind.UNTIL) {
-      return handleUntil(
+      return callStack.loop(() =>
+        handleUntil(
+          stream,
+          condition,
+          body,
+          session,
+          stdin,
+          callStack,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+        ),
+      )
+    }
+    return callStack.loop(() =>
+      handleWhile(
         stream,
         condition,
         body,
@@ -1258,19 +1360,7 @@ async function executeNodeBody(
         agentId,
         deps.handed ?? null,
         registry.decisions,
-      )
-    }
-    return handleWhile(
-      stream,
-      condition,
-      body,
-      session,
-      stdin,
-      callStack,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+      ),
     )
   }
 

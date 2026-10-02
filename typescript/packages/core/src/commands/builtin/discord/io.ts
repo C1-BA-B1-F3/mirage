@@ -20,7 +20,7 @@ import { readdir as discordReaddir } from '../../../core/discord/readdir.ts'
 import { stat as discordStat } from '../../../core/discord/stat.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const DISCORD_IO: CommandIO<DiscordAccessor> = new VFSAdapter<DiscordAccessor>({
+export const IO: CommandIO<DiscordAccessor> = new VFSAdapter<DiscordAccessor>({
   read: { readdir: discordReaddir, readBytes: discordRead, stat: discordStat },
   native: {
     readRange: rangeOf(discordReadRange),

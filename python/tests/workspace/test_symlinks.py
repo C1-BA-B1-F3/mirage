@@ -196,7 +196,7 @@ async def test_pwd_rejects_an_unknown_option():
     r = await ws.shell("pwd -x")
     assert r.exit_code == 2
     assert r.stderr.decode() == (
-        "pwd: -x: invalid option\npwd: usage: pwd [-LP]\n"
+        "bash: pwd: -x: invalid option\npwd: usage: pwd [-LP]\n"
     )
 
 
@@ -238,7 +238,7 @@ async def test_set_o_rejects_a_name_bash_does_not_have():
     ws = _ws()
     r = await ws.shell("set -o bogusname")
     assert r.exit_code == 2
-    assert r.stderr.decode() == "set: bogusname: invalid option name\n"
+    assert r.stderr.decode() == "bash: set: bogusname: invalid option name\n"
 
 
 @pytest.mark.asyncio

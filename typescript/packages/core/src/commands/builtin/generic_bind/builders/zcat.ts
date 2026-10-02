@@ -15,7 +15,7 @@
 import { zcatGeneric } from '../../generic/zcat.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const ZCAT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'zcat',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

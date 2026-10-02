@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.s3.watch import build_delta_hook
@@ -22,6 +22,7 @@ from mirage.ops.registry import RegisteredOp
 from mirage.ops.s3 import OPS as S3_OPS
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.s3.config import S3Config
 from mirage.vfs.s3.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
@@ -52,12 +53,14 @@ class S3VFS(BaseVFS):
     def storage_location(self) -> str:
         # Endpoint, bucket and key prefix pin the object namespace. The
         # endpoint matters because the same bucket name on two providers
-        # (AWS vs MinIO vs R2) is two different stores. The prefix joins
+        # (AWS vs MinIO vs R2) is two different stores, so it, not an
+        # alias's name, tells them apart: an s3 mount and a minio mount of
+        # one endpoint and bucket are one store. The prefix joins
         # path-like so two mounts whose prefixes nest still resolve to
         # one key once the mount-relative path is appended.
         cfg = self.config
         prefix = (cfg.key_prefix or "").strip("/")
-        base = f"{self.name}:{cfg.endpoint_url or 'aws'}:{cfg.bucket}"
+        base = f"{VFSName.S3}:{cfg.endpoint_url or 'aws'}:{cfg.bucket}"
         return f"{base}/{prefix}" if prefix else base
 
     def delta_hook(self) -> DeltaHook:

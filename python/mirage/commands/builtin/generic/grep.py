@@ -255,7 +255,7 @@ async def grep(
     mounts = opts.ns.mounts if opts.ns is not None else None
     prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
     rd = mount_parent_readdir(
-        partial(call_readdir, readdir, prefix=prefix), mounts
+        partial(call_readdir, readdir, prefix=prefix), mounts, prefix
     )
     st = mount_parent_stat(partial(call_stat, stat, prefix=prefix), mounts)
     rb = partial(call_read_bytes, read_bytes, prefix=prefix)

@@ -14,8 +14,8 @@
 
 import asyncssh
 
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.utils import join_root
+from mirage.vfs.ssh.config import SSHConfig
 
 
 async def walk(

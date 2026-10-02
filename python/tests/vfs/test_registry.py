@@ -423,17 +423,25 @@ def test_an_aliased_field_is_known_under_either_name(key):
     assert built.config.schema_name == "s"
 
 
-def test_every_registry_config_forbids_extra_keys():
+@pytest.mark.parametrize(
+    "name",
+    sorted(n for n, e in REGISTRY.items() if e.config_path is not None),
+)
+def test_every_registry_config_is_frozen_and_forbids_extra_keys(name):
     """pydantic's default ``extra="ignore"`` drops a key no field takes,
-    so one config class that leaves the setting off reopens the hole for
-    its backend alone. Every class the registry can build is checked,
-    subclasses included, because a subclass may set its own
-    ``model_config``."""
-    lax = []
-    for name, entry in REGISTRY.items():
-        if entry.config_path is None:
-            continue
-        cls = registry.resolve_class(entry.config_path)
-        if cls.model_config.get("extra") != "forbid":
-            lax.append(f"{name}: {cls.__name__}")
-    assert lax == []
+    and a mutable config lets a write after construction drift from what
+    the accessor was built with and what a snapshot recorded. Every class
+    the registry can build is checked, subclasses included, because a
+    subclass may set its own ``model_config``."""
+    cls = registry.resolve_class(REGISTRY[name].config_path)
+    assert cls.model_config.get("frozen") is True
+    assert cls.model_config.get("extra") == "forbid"
+
+
+@pytest.mark.parametrize("name", sorted(REGISTRY))
+def test_every_registry_vfs_is_named_after_its_entry(name):
+    """The name is what a mount registers commands under and what a
+    snapshot records as the ``type``, so it must lead back to the entry;
+    the S3-compatible aliases inherited ``s3`` and saved their own configs
+    under it. TypeScript's aliases always carried their own."""
+    assert registry.resolve_class(REGISTRY[name].vfs_path).name == name

@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { IOResult } from '../../../../io/types.ts'
+import { ExitSignal } from '../../../../shell/errors.ts'
 import { HISTORY_PREFIX } from '../../../../vfs/history/history.ts'
 import type { MountRegistry } from '../../../mount/registry.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -59,7 +60,7 @@ function parseArgs(args: string[]): ParsedArgs {
       while (j < token.length) {
         const ch = token[j] ?? ''
         if (!OPTION_CHARS.includes(ch)) {
-          return { flags: {}, texts: [], error: `history: -${ch}: invalid option\n` }
+          return { flags: {}, texts: [], error: `bash: history: -${ch}: invalid option\n` }
         }
         flags[ch] = true
         if (ch === 'd') {
@@ -70,7 +71,11 @@ function parseArgs(args: string[]): ParsedArgs {
             i += 1
             flags.d = args[i] ?? ''
           } else {
-            return { flags: {}, texts: [], error: 'history: -d: option requires an argument\n' }
+            return {
+              flags: {},
+              texts: [],
+              error: 'bash: history: -d: option requires an argument\n',
+            }
           }
           break
         }
@@ -97,9 +102,14 @@ export async function handleHistory(
 ): Promise<Result> {
   const { flags, texts, error } = parseArgs(args)
   if (error !== null) return usageError(error)
+  // bash abandons everything still to run, as `exit 1 2` does; `-p` and
+  // `-s` take any number of words.
+  if (Object.keys(flags).length === 0 && texts.length > 1) {
+    throw new ExitSignal(1, ENC.encode('bash: history: too many arguments\n'))
+  }
   const mount = registry.tryMountFor(HISTORY_PREFIX)
   if (mount === null) {
-    const err = ENC.encode('history: not enabled for this workspace\n')
+    const err = ENC.encode('bash: history: not enabled for this workspace\n')
     return [
       null,
       new IOResult({ exitCode: 1, stderr: err }),

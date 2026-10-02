@@ -19,7 +19,8 @@ from moto import mock_aws
 from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
-from mirage.vfs.s3.s3 import S3VFS, S3Config
+from mirage.vfs.s3.config import S3Config
+from mirage.vfs.s3.s3 import S3VFS
 from mirage.workspace.mount import MountRegistry
 
 

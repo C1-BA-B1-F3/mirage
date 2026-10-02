@@ -21,6 +21,7 @@ import {
   closeQuietly,
   discardStreams,
   drain,
+  ensureStream,
   exitOnEmpty,
   wrapCachableStreams,
   yieldBytes,
@@ -163,6 +164,14 @@ describe('asyncChain', () => {
 describe('yieldBytes', () => {
   it('yields one chunk and stops', async () => {
     expect(await collect(yieldBytes(encode('once')))).toBe('once')
+  })
+})
+
+describe('ensureStream', () => {
+  it('wraps bytes and passes a stream through', async () => {
+    expect(await collect(ensureStream(encode('hello')))).toBe('hello')
+    const source = fromChunks([encode('foo'), encode('bar')])
+    expect(ensureStream(source)).toBe(source)
   })
 })
 

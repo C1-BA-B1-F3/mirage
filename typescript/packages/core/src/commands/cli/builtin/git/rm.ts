@@ -16,7 +16,7 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { DELETED, headEntries, MODIFIED, workChanges } from './changes.ts'
+import { DELETED, headEntries, MODIFIED, TYPE_CHANGED, workChanges } from './changes.ts'
 import {
   GitError,
   NoPathspecRemoveError,
@@ -30,7 +30,8 @@ import {
 import { readIndex, updateIndex } from './index_file.ts'
 import { removeEmptyParents, removeFile, under } from './io.ts'
 import { matched, repoRelative } from './pathspec.ts'
-import { opened, type Repo } from './repo.ts'
+import type { Repo } from './repo.ts'
+import { opened } from './session.ts'
 import type { TreeEntry } from './tree.ts'
 import type { Dispatch, IndexEntry, RepoLocation, WorkTree } from './types.ts'
 import { checkOperands, escaped, fatal, startPoint, switches } from './util.ts'
@@ -169,7 +170,8 @@ export async function refuseLostWork(
     const recorded = tree.get(path)
     const stagedChanges =
       recorded?.oid !== entry.oid || Number.parseInt(recorded.mode, 8) !== entry.mode
-    const localChanges = unstaged.get(path) === MODIFIED || hidden.has(path)
+    const code = unstaged.get(path)
+    const localChanges = code === MODIFIED || code === TYPE_CHANGED || hidden.has(path)
     if (localChanges && stagedChanges) both.push(path)
     else if (!cached) {
       if (stagedChanges) staged.push(path)

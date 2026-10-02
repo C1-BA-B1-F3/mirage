@@ -45,7 +45,8 @@ import {
   TAG_PREFIX,
   validRefName,
 } from './refs.ts'
-import { opened, repoArgs } from './repo.ts'
+import { repoArgs } from './repo.ts'
+import { opened } from './session.ts'
 import { resolveCommit } from './revparse.ts'
 import { checkOperands, escaped, fatal, switches } from './util.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'

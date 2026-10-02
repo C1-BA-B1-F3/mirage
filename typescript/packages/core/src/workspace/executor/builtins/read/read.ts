@@ -26,7 +26,7 @@ import type { SessionView } from '../../../../ops/types.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { arithRefusal, isValidName, readonlyRefusal, refusal, requireView } from '../shared.ts'
 import { TARGET_RE } from '../constants.ts'
-import { READ_VALUE_LETTERS } from './constants.ts'
+import { READ_USAGE, READ_VALUE_LETTERS } from './constants.ts'
 import type { BuiltinCall, Result } from '../types.ts'
 import { sessionView } from '../../../session/state.ts'
 
@@ -180,12 +180,25 @@ async function readRaw(
 }
 
 /**
+ * One line as a bare `read` stores it in REPLY: backslashes processed, a
+ * continuation joined, nothing split off; null at end of input. `select`
+ * takes its choice this way (bash calls this builtin).
+ */
+export async function readReply(
+  buffer: AsyncLineIterator,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const [line, complete] = await readRaw(buffer, false, 10, null, null, signal)
+  return complete ? unescapeRead(line) : null
+}
+
+/**
  * Read one line (or delimited record, or character count) into
  * variables, with bash's option surface. `-r` turns off backslash
  * processing; `-d C` reads to `C`; `-n N`/`-N N` bound the read; `-a
  * NAME` stores fields in an array; `-t` accepts a timeout (0 answers
- * whether a source is present); `-p -s -e -i` are non-tty no-ops; `-u
- * 0` is this shell's input and any other descriptor is refused. The
+ * whether a source is present); `-p -s -e -i` are non-tty no-ops; `-u FD`
+ * reads an open descriptor, sharing its cursor with aliases. The
  * status is 1 when end of input ended the read.
  */
 export async function handleRead(
@@ -198,7 +211,7 @@ export async function handleRead(
   const parse = parseShellOptions(SHELL_SPECS.read, args)
   if (parse.invalid !== null) {
     const token = parse.invalid.startsWith('--') ? parse.invalid : `-${parse.invalid}`
-    const err = new TextEncoder().encode(`read: ${token}: invalid option\n`)
+    const err = new TextEncoder().encode(`bash: read: ${token}: invalid option\n${READ_USAGE}`)
     return [
       null,
       new IOResult({ exitCode: 2, stderr: err }),
@@ -207,7 +220,7 @@ export async function handleRead(
   }
   if (parse.needsValue !== null) {
     const err = new TextEncoder().encode(
-      `read: -${parse.needsValue}: option requires an argument\n`,
+      `bash: read: -${parse.needsValue}: option requires an argument\n${READ_USAGE}`,
     )
     return [
       null,
@@ -239,7 +252,10 @@ export async function handleRead(
     }
   }
   if (typeof flags.u === 'string' && flags.u !== '0') {
-    return readRefusal(`bash: read: ${flags.u}: invalid file descriptor: Bad file descriptor\n`)
+    const descriptor = /^\d+$/.test(flags.u) ? session.descriptors.get(Number(flags.u)) : undefined
+    if (descriptor?.source == null)
+      return readRefusal(`bash: read: ${flags.u}: invalid file descriptor: Bad file descriptor\n`)
+    stdin = descriptor.source
   }
   const arrayName = typeof flags.a === 'string' ? flags.a : null
   if (arrayName !== null && !isValidName(arrayName)) {
@@ -285,7 +301,11 @@ export async function handleRead(
       new ExecutionNode({ command: 'read', exitCode: code }),
     ]
   }
-  const parts = exact !== null ? [line] : splitReadLine(line, ifs, variables.length)
+  // With no name the line goes to REPLY whole, its blanks kept.
+  const parts =
+    exact !== null || parse.operands.length === 0
+      ? [line]
+      : splitReadLine(line, ifs, variables.length)
   for (let i = 0; i < variables.length; i++) {
     const name = variables[i]
     if (name === undefined) continue

@@ -15,6 +15,9 @@
 import re
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# bash's `legal_number`: strtoimax's leading whitespace and sign, then
+# the trailing blanks bash skips itself.
+COUNT_WORD_RE = re.compile(r"[ \t\n\v\f\r]*[+-]?[0-9]+[ \t]*")
 
 # An assignment target with an optional subscript (`name` or `name[sub]`).
 # A subscript must be non-empty: bash rejects `a[]` as an invalid

@@ -21,7 +21,7 @@ import { readdir as notionReaddir } from '../../../core/notion/readdir.ts'
 import { stat as notionStat } from '../../../core/notion/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const NOTION_IO: CommandIO<NotionAccessor> = new VFSAdapter<NotionAccessor>({
+export const IO: CommandIO<NotionAccessor> = new VFSAdapter<NotionAccessor>({
   read: { readdir: notionReaddir, readBytes: notionRead, stat: notionStat },
   native: { find: notionFind },
   isMounted: () => true,

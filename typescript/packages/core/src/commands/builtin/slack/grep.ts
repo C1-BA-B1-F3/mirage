@@ -21,7 +21,7 @@ import {
   formatGrepResults,
 } from '../../../core/slack/formatters.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { SLACK_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read as slackRead } from '../../../core/slack/read.ts'
 import { readdir as slackReaddir } from '../../../core/slack/readdir.ts'
 import { detectScope, NATIVE_KINDS, searchTarget } from '../../../core/slack/scope.ts'
@@ -37,7 +37,7 @@ import { pushdownOperand, textSearchResults } from '../grep_pushdown.ts'
 import { prependStderr } from '../utils/output.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
-const resolveSlackGlob = resolveGlobOf(SLACK_IO)
+const resolveSlackGlob = resolveGlobOf(IO)
 
 const ENC = new TextEncoder()
 

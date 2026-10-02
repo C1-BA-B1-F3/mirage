@@ -35,6 +35,7 @@ from mirage.shell.constants import (
     RANDOM_UNSET,
     SHELL_ARGV0,
 )
+from mirage.shell.descriptors import Descriptor, StreamOwner
 from mirage.shell.types import FunctionBody
 from mirage.shell.variable import (
     ManagedRef,
@@ -275,6 +276,13 @@ class SessionState:
     # Empty in a fresh shell, as bash's is: the first `${PIPESTATUS[*]}`
     # expands to nothing until a statement records one.
     pipe_status: tuple[int, ...] = ()
+    # `${FUNCNAME[@]}`: the function frames on the call stack, innermost
+    # first, a sourced file as `source` (`CallStack.function_names`).
+    # Written where a frame is pushed and popped, and answered by the
+    # arrays view before the store, so an assignment to it is ignored.
+    # None once `unset FUNCNAME` has made it an ordinary name, as bash's
+    # unset does for the rest of the shell.
+    function_names: tuple[str, ...] | None = ()
     # Which line stamped the two fields above, so a cancelled line puts
     # back only what it overwrote. Two `execute()` calls can share one
     # session, and a restore of a snapshot older than a concurrent
@@ -343,9 +351,6 @@ class SessionState:
     # came from a short-circuited &&/|| branch or a `!`-negated command,
     # which bash exempts from errexit. Reset on every node execution.
     errexit_immune: bool = field(default=False, repr=False)
-    # Depth of nested `source`/`.` execution: `return` is legal and the
-    # program loop absorbs its signal only while a file is being sourced.
-    source_depth: int = field(default=0, repr=False)
     # Variables shadowed by `local` / `declare` in the running function;
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so
@@ -404,14 +409,14 @@ class SessionState:
     # and stdin point after a bare `exec > file` / `exec 2> file` /
     # `exec < file`. None is the terminal (the workspace's own output);
     # `""` is a closed descriptor (`exec >&-`), whose writes are
-    # dropped. `_exec_opened` names the targets already truncated, so a
-    # later statement appends rather than re-truncating. `exec_stdin`
-    # is the one descriptor an `exec <` opened: every statement after
-    # it reads on from where the one before stopped, across lines and
-    # into a child shell, which shares it as bash's fork shares fd 0.
+    # dropped. `exec_stdin` is the one descriptor an `exec <` opened:
+    # every statement after it reads on from where the one before
+    # stopped, across lines and into a child shell, which shares it as
+    # bash's fork shares fd 0.
     # `exec_stdout_input` and `exec_stderr_input` are the read end a
     # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
     # the offset of.
+    descriptors: dict[int, Descriptor] = field(default_factory=dict)
     exec_stdout: str | None = None
     exec_stdout_append: bool = False
     exec_stdout_input: SharedInput | None = None
@@ -426,9 +431,15 @@ class SessionState:
     # stdout) or is refused (`0: Bad file descriptor`); None for the
     # read end itself.
     exec_stdin_identity: str | None = None
-    _exec_opened: set[str] = field(default_factory=set, repr=False)
     _parse_seq: int = field(default=0, repr=False)
     _parse_current: int = field(default=0, repr=False)
+    # The owner of this session's terminal streams, which an `exec` copy
+    # of one names (`exec 3>&1`), and whether a line of the session is
+    # running, whose outermost program routes what was written to them.
+    # Each fork gets its own: a child shell writing to its parent's
+    # terminal is writing to a stream it did not open.
+    terminal: StreamOwner = field(default_factory=StreamOwner, repr=False)
+    _line_open: bool = field(default=False, repr=False)
     _alias_marks: dict[str, tuple[int, int]] = field(
         default_factory=dict, repr=False
     )

@@ -15,7 +15,7 @@
 import { trGeneric } from '../../generic/tr.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const TR_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'tr',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

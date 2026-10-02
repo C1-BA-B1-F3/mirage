@@ -30,6 +30,9 @@ concurrency:
 # extra) before any test ran.
 env:
   UV_HTTP_TIMEOUT: 120
+  # mem0 turns its telemetry on by default: importing it starts a PostHog
+  # client, and every Python process then waits ~5 s at exit to flush it.
+  MEM0_TELEMETRY: "False"
 
 jobs:
   changes:
@@ -348,9 +351,14 @@ jobs:
           # the reset and the battery cannot disagree about the password.
           admin-password: ${{ env.NEXTCLOUD_PASSWORD }}
 
-      - name: Run declarative battery on Nextcloud
-        working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --target nextcloud --strict
+      # The nextcloud battery is this job's long pole and holds one PHP worker
+      # and one runner process at a time, so every step after it runs on the
+      # other cores meanwhile; none of them talks to Nextcloud. The step that
+      # collects it ends the job.
+      - name: Start the declarative battery on Nextcloud (background)
+        run: |
+          integ/scripts/background.sh start nextcloud \
+            'cd integ && pnpm exec tsx runners/typescript/main.ts --target nextcloud --strict'
 
       - name: Start MinIO
         run: |
@@ -455,6 +463,11 @@ jobs:
       - name: Run find arg-error battery (SaaS backends, dummy creds, no server)
         working-directory: integ
         run: pnpm exec tsx runners/typescript/main.ts --facet argerr --strict
+
+      - name: Run declarative battery on Nextcloud
+        if: ${{ !cancelled() }}
+        timeout-minutes: 20
+        run: integ/scripts/background.sh wait nextcloud
 
   # Partition the manifest, not cases: every target keeps its ordered stateful
   # battery, and new core targets automatically run in exactly one shard.
@@ -565,13 +578,17 @@ jobs:
           typescript-build-artifact: integ-typescript-dist
           start-services: "false"
 
-      # Every "verified by integ" claim rests on the runner failing when it
-      # tests nothing, so assert the gates themselves in this required job.
-      # Setup installs both the Python venv and the prebuilt TypeScript dist
-      # the runner imports. --require-ts turns an absent tsx into a failure
-      # rather than a silent half-run.
-      - name: Assert the integ runner gates (strict exit, services, case ids)
-        run: ./python/.venv/bin/python integ/runners/tools/gate_selftest.py --require-ts
+      # The two long checks run behind the fake selftests below, which leave
+      # most of the runner's cores idle: the gates spawn one runner after
+      # another, and the Airtable replay pages every table through its fake.
+      # Neither binds a fixed port. Each is collected, output and status, by
+      # the step that bears its name at the end of the job.
+      - name: Start the runner gates and the Airtable replay (background)
+        run: |
+          integ/scripts/background.sh start gates \
+            './python/.venv/bin/python integ/runners/tools/gate_selftest.py --require-ts'
+          integ/scripts/background.sh start airtable-atlas \
+            'cd integ && pnpm run airtable:atlas'
 
       # The same argument one level down. gate_selftest asserts the runner
       # fails when it tests nothing; this asserts the kit the fakes are built
@@ -652,10 +669,6 @@ jobs:
         working-directory: integ
         run: pnpm run slack:atlas
 
-      - name: Replay MCP-Atlas live Airtable recordings
-        working-directory: integ
-        run: pnpm run airtable:atlas
-
       # github's corpus coverage is the `gh` porcelain, which never builds
       # history: a client that does calls POST /git/trees then /git/commits, and
       # that is the only path on which a commit can state its own author and
@@ -673,6 +686,21 @@ jobs:
       - name: Assert the multi-fake launcher (isolation, arms, refusals)
         working-directory: integ
         run: pnpm run launcher:selftest
+
+      # Every "verified by integ" claim rests on the runner failing when it
+      # tests nothing, so assert the gates themselves in this required job.
+      # Setup installs both the Python venv and the prebuilt TypeScript dist
+      # the runner imports. --require-ts turns an absent tsx into a failure
+      # rather than a silent half-run.
+      - name: Assert the integ runner gates (strict exit, services, case ids)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: integ/scripts/background.sh wait gates
+
+      - name: Replay MCP-Atlas live Airtable recordings
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: integ/scripts/background.sh wait airtable-atlas
 
   integ-shared-ts:
     needs: [changes, typescript-build]
@@ -1468,14 +1496,15 @@ jobs:
       # broken build download cannot silently drop wasi/quickjs/docker
       # coverage.
       INTEG_RUNTIME_STRICT: "1"
-      # cli.sh runs the two hosts concurrently and waits on both, so a leg
-      # costs max(python, typescript) rather than their sum. This list was
+      # cli.sh runs both hosts at once, each over two lanes that take the
+      # next suite nobody has claimed, so a leg costs about half of
+      # max(python, typescript) rather than their sum. This list was
       # picked off measured per-suite wall clock to halve BOTH hosts (python
       # 50/50, typescript 48/52), so the balance holds whichever one binds on
       # a given runner. Re-read the `suite <host>/<name> <n>s` lines cli.sh
       # prints before moving a suite across; that step is 89% of the job's
       # test time, and it is the only one timed per suite.
-      LEG_A_SUITES: "defaults guestops limits lines policy quickjs registry script_cli"
+      LEG_A_SUITES: "defaults facade limits lines policy quickjs registry script_cli"
     steps:
       - uses: actions/checkout@v7
 
@@ -1495,6 +1524,7 @@ jobs:
           # itself a legal name shape, so the emptiness check cannot be
           # folded into the pattern check.
           names=()
+          s3_suites=()
           for f in integ/runtime/*.json; do
             n=$(jq -r '.suite // empty' "$f")
             if [ -z "$n" ]; then
@@ -1507,6 +1537,11 @@ jobs:
                 exit 1 ;;
             esac
             names+=("$n")
+            # A case's `backends` runs it once per backend, so a suite
+            # with an s3 one needs MinIO wherever it lands.
+            if jq -e 'any(.cases[]?; any((.backends // [])[]; . == "s3"))' "$f" >/dev/null; then
+              s3_suites+=("$n")
+            fi
           done
           all=$(printf '%s\n' "${names[@]}" | sort -u)
           a=$(printf '%s' "$LEG_A_SUITES" | tr ' ' '\n' | grep -v '^$' | sort -u)
@@ -1534,6 +1569,9 @@ jobs:
           in_leg() { grep -qx "$1" <<<"$suites"; }
           if in_leg wasi; then echo "NEEDS_WASI=1" >> "$GITHUB_ENV"; fi
           if in_leg bridge; then echo "NEEDS_MINIO=1" >> "$GITHUB_ENV"; fi
+          for s in "${s3_suites[@]}"; do
+            if in_leg "$s"; then echo "NEEDS_MINIO=1" >> "$GITHUB_ENV"; break; fi
+          done
           if in_leg docker; then echo "NEEDS_DOCKER=1" >> "$GITHUB_ENV"; fi
           if in_leg ssh; then echo "NEEDS_SSH=1" >> "$GITHUB_ENV"; fi
           if in_leg docker || in_leg ssh; then
@@ -1799,14 +1837,25 @@ jobs:
         working-directory: integ
         run: pnpm run prisma:clients
 
+      # Trello, Linear and Discord are `shared` services: each fake holds ONE
+      # world and re-seeds it on connect, so the two hosts, whose batteries
+      # run at the same time below, get an instance each. The 51xx ones are
+      # the python host's.
       - name: Start fake Trello and Linear APIs
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/trello/main.ts --port 5095 > /tmp/trello.log 2>&1 &
           nohup ./node_modules/.bin/tsx server/linear/main.ts --port 5094 > /tmp/linear.log 2>&1 &
-          for f in trello linear; do
+          nohup ./node_modules/.bin/tsx server/trello/main.ts --port 5195 > /tmp/trello-python.log 2>&1 &
+          nohup ./node_modules/.bin/tsx server/linear/main.ts --port 5194 > /tmp/linear-python.log 2>&1 &
+          for f in trello linear trello-python linear-python; do
             for i in $(seq 1 30); do grep -q "_URL=" /tmp/$f.log && break; sleep 1; done
             cat /tmp/$f.log
+          done
+          # Fail HERE, not later as a connection refused inside one host's
+          # battery: a fake that died on startup still prints its log.
+          for f in trello linear trello-python linear-python; do
+            grep -q "_URL=" /tmp/$f.log
           done
           echo "TRELLO_URL=http://127.0.0.1:5095" >> "$GITHUB_ENV"
           echo "LINEAR_URL=http://127.0.0.1:5094" >> "$GITHUB_ENV"
@@ -1855,8 +1904,14 @@ jobs:
         working-directory: integ
         run: |
           nohup ./node_modules/.bin/tsx server/discord/main.ts --port 5090 > /tmp/discord.log 2>&1 &
-          for i in $(seq 1 30); do grep -q "DISCORD_URL=" /tmp/discord.log && break; sleep 1; done
-          cat /tmp/discord.log
+          nohup ./node_modules/.bin/tsx server/discord/main.ts --port 5190 > /tmp/discord-python.log 2>&1 &
+          for f in discord discord-python; do
+            for i in $(seq 1 30); do grep -q "DISCORD_URL=" /tmp/$f.log && break; sleep 1; done
+            cat /tmp/$f.log
+          done
+          for f in discord discord-python; do
+            grep -q "DISCORD_URL=" /tmp/$f.log
+          done
           echo "DISCORD_URL=http://127.0.0.1:5090" >> "$GITHUB_ENV"
 
       # A different Hugging Face product from the hf/ Xet store: hf_hub/ is
@@ -1894,17 +1949,23 @@ jobs:
           echo "NOTION_ENABLED=1" >> "$GITHUB_ENV"
 
       # Every facet in turn, each in its own log group. A failing facet does
-      # not stop the ones after it, and the typescript step runs even when the
-      # python one failed, so one run reports every facet on both hosts.
-      - name: Run every facet battery (python host)
+      # not stop the ones after it, and each host's step reports whatever the
+      # other's did, so one run reports every facet on both hosts. The python
+      # host runs behind the typescript one, the two sharing the runner's
+      # cores, and its step below collects it.
+      - name: Start every facet battery on the python host (background)
         run: |
-          failed=""
-          for facet in $FACETS; do
-            echo "::group::$facet"
-            ./python/.venv/bin/python integ/runners/python/main.py --facet "$facet" --strict || failed="$failed $facet"
-            echo "::endgroup::"
-          done
-          if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
+          export TRELLO_URL=http://127.0.0.1:5195 LINEAR_URL=http://127.0.0.1:5194 \
+            DISCORD_URL=http://127.0.0.1:5190
+          integ/scripts/background.sh start facets-python '
+            failed=""
+            for facet in $FACETS; do
+              echo "::group::$facet"
+              ./python/.venv/bin/python integ/runners/python/main.py --facet "$facet" --strict || failed="$failed $facet"
+              echo "::endgroup::"
+            done
+            if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
+          '
 
       - name: Run every facet battery (typescript host)
         if: ${{ !cancelled() }}
@@ -1917,6 +1978,11 @@ jobs:
             echo "::endgroup::"
           done
           if [ -n "$failed" ]; then echo "failed facets:$failed"; exit 1; fi
+
+      - name: Run every facet battery (python host)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: integ/scripts/background.sh wait facets-python
 
       # A 404 is an answer to a real client -- "no such repository", "no such
       # file" -- so an endpoint the fake does not implement is indistinguishable

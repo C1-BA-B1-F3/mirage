@@ -14,7 +14,7 @@
 
 import pytest
 
-from mirage.runtime.python.monty.binding import pydantic_monty
+from mirage.runtime.python.monty.loader import pydantic_monty
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.types import VFSStat
 

@@ -17,7 +17,7 @@ import { zipGeneric } from '../../generic/zip_cmd.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 import { walkOf } from '../archive_io.ts'
 
-export const ZIP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'zip',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

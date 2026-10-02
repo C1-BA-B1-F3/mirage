@@ -490,7 +490,7 @@
       "command": "linear() { echo shadowed; }; type -a linear",
       "expect": {
         "exit": 0,
-        "stdout": "linear is a function\nlinear is /usr/bin/linear\n",
+        "stdout": "linear is a function\nlinear () \n{ \n    echo shadowed\n}\nlinear is /usr/bin/linear\n",
         "stderr": ""
       }
     },

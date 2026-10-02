@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const HF_DATASETS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote Hugging Face Dataset. Maps dataset repo files to virtual paths.
   IMPORTANT: This is a remote mount. Prefer targeted reads (grep, head) over full scans. Large parquet/safetensors files stream lazily via byte-range reads.
   Supports: ls, cat, head, tail, grep, rg, wc, find, tree, jq, stat.`

@@ -13,15 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { DISK_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
-describe('DISK_PROMPT', () => {
+describe('PROMPT', () => {
   it('is a non-empty string', () => {
-    expect(typeof DISK_PROMPT).toBe('string')
-    expect(DISK_PROMPT.length).toBeGreaterThan(0)
+    expect(typeof PROMPT).toBe('string')
+    expect(PROMPT.length).toBeGreaterThan(0)
   })
 
   it('mentions disk', () => {
-    expect(DISK_PROMPT.toLowerCase()).toContain('disk')
+    expect(PROMPT.toLowerCase()).toContain('disk')
   })
 })

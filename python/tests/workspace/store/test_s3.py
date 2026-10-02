@@ -16,7 +16,7 @@ import asyncio
 
 import pytest
 
-from mirage.accessor.s3 import S3Config
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.store.ram import RAMWorkspaceStateStore
 from mirage.workspace.store.s3 import S3WorkspaceStateStore
 from tests.workspace.s3_fake import FakeConditionalS3Client, patch_record_s3
@@ -120,3 +120,18 @@ async def test_workspace_group_override_routes_to_s3():
         await store.close()
     assert (BUCKET, "mirage/ws1/sessions/main.json") in client.objects
     assert (BUCKET, "mirage/workspaces/ws1.json") in client.objects
+
+
+@pytest.mark.asyncio
+async def test_drop_deletes_the_sessions_and_meta_objects():
+    client = FakeConditionalS3Client()
+    with patch_record_s3(client):
+        store = RAMWorkspaceStateStore(
+            workspace=S3WorkspaceStateStore(_config())
+        )
+        await store.sessions("ws1").set("main", {"session_id": "main"})
+        await store.set_meta("ws1", {"workspace_id": "ws1"})
+        await store.drop("ws1")
+        assert await store.load_meta("ws1") is None
+        await store.close()
+    assert [key for _, key in client.objects if "ws1" in key] == []

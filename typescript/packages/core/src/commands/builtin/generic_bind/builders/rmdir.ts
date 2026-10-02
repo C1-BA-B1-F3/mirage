@@ -21,7 +21,7 @@ import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const RMDIR_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'rmdir',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

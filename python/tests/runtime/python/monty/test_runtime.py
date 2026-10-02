@@ -374,39 +374,31 @@ def test_reach_is_vfs():
     assert MontyRuntime.reach == "workspace"
 
 
-def test_monty_scratch_paths_live_in_the_tree():
-    # A path under no mount is real scratch space once the guest makes
-    # its directory, served by monty's own in-memory tree; the TS
-    # runtime answers the same from its ScratchTree.
+def test_monty_refuses_a_path_no_mount_serves():
+    # The only filesystem a guest sees is the workspace's: with nothing
+    # mounted, a directory cannot be made and a file cannot be written,
+    # and a probe answers False rather than inventing a scratch tree.
     runtime = MontyRuntime()
+    for code in (
+        "from pathlib import Path\nPath('/tmp').mkdir()",
+        "open('/tmp/x.txt', 'w').write('hi')",
+    ):
+        result = asyncio.run(runtime.run(RunArgs(code=code)))
+        assert result.exit_code == 1
+        assert b"FileNotFoundError" in result.stderr
     result = asyncio.run(
         runtime.run(
             RunArgs(
-                code="from pathlib import Path\n"
-                "Path('/tmp').mkdir()\n"
-                "open('/tmp/s.txt', 'w').write('scratch')\n"
-                "print(open('/tmp/s.txt').read())\n"
-                "print(Path('/nope').exists())"
+                code="from pathlib import Path\nprint(Path('/tmp').exists())"
             )
         )
     )
     assert result.exit_code == 0, result.stderr
-    assert result.stdout == b"scratch\nFalse\n"
-
-
-def test_monty_scratch_write_without_directory_misses():
-    # The tree gives scratch space, not a pre-made /tmp: writing under
-    # a directory nobody created raises, as CPython would.
-    runtime = MontyRuntime()
-    result = asyncio.run(
-        runtime.run(RunArgs(code="open('/tmp/x.txt', 'w').write('hi')"))
-    )
-    assert result.exit_code == 1
-    assert b"FileNotFoundError" in result.stderr
+    assert result.stdout == b"False\n"
 
 
 def test_monty_serves_the_host_clock():
-    # The binding's OSAccess defaults these to the host clock; the TS
+    # MontyFs leaves these to the engine's host clock; the TS
     # door answers with DateTime markers, and both hosts must agree a
     # guest can read a naive local now and an aware UTC now.
     runtime = MontyRuntime()

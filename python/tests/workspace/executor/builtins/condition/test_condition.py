@@ -34,6 +34,9 @@ class _StubNamespace:
     def is_link(self, path: str) -> bool:
         return False
 
+    def follow(self, path: str) -> str:
+        return path
+
 
 class _StubSession:
     """Session stand-in exposing only what the evaluator touches."""

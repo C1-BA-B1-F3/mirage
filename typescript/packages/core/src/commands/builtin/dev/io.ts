@@ -45,7 +45,7 @@ async function* finiteStream(
   if (data.byteLength > 0) yield data
 }
 
-export const DEV_IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
+export const IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
   read: { readdir: ramReaddir, readBytes: read, stat },
   native: {
     readRange,
@@ -73,6 +73,6 @@ export const DEV_IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
 }).toCommandIO()
 
 export const DEV_STREAMING: CommandIO<RAMAccessor> = {
-  ...DEV_IO,
+  ...IO,
   readStream: stream,
 }

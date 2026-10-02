@@ -17,6 +17,7 @@ import type { ByteSource } from '../../../io/types.ts'
 import { IOResult } from '../../../io/types.ts'
 import { fd0Binding, finishStatement } from '../statement.ts'
 import { CallStack } from '../../../shell/call_stack.ts'
+import type { JobConsole } from '../../../shell/console/index.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../../shell/constants.ts'
 import type { PathSpec } from '../../../types.ts'
 import { wordText } from '../../../types.ts'
@@ -31,6 +32,7 @@ import type { JobTable } from '../../../shell/job_table/index.ts'
 import type { HandOff } from '../../../policy/types.ts'
 import type { Decisions } from '../../../policy/decisions.ts'
 import { ReturnSignal } from '../../../shell/errors.ts'
+import { carried, isUnwinding } from '../control.ts'
 import { runAsShell } from '../../../context/session_context.ts'
 import type { Result } from './types.ts'
 
@@ -46,6 +48,9 @@ export async function executeShellFunction(
   agentId: string | null = null,
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  // Where each statement writes as it finishes, undefined to return the
+  // body's output.
+  sink?: JobConsole,
 ): Promise<Result> {
   // The body's statements read the caller's stdin in turn.
   const bodyStdin = share(stdin)
@@ -53,6 +58,8 @@ export async function executeShellFunction(
   // Positional args carry the word as typed ($1 stays sub/a.txt).
   const textArgs = restParts.map(wordText)
   cs.push(textArgs, cmdName)
+  const outerNames = session.functionNames
+  if (outerNames !== null) session.functionNames = cs.functionNames()
   // One stack: a local shadows the whole record, so the caller's value
   // and attributes are saved and put back together.
   const savedLocals = new Map<string, ShellVar | null>()
@@ -75,7 +82,9 @@ export async function executeShellFunction(
         try {
           const cmdNode = cmd as Parameters<ExecuteNodeFn>[0]
           const [rawStdout, io, execNode] = await runStatement(
-            executeNode,
+            sink === undefined
+              ? executeNode
+              : (n, s, i, c, opts) => executeNode(n, s, i, c, { sink, ...opts }),
             cmdNode,
             session,
             bodyStdin,
@@ -103,18 +112,21 @@ export async function executeShellFunction(
           }
         } catch (err) {
           if (err instanceof ReturnSignal) {
+            if (err.stdout !== null) allStdout.push(err.stdout)
             if (err.stderr.length > 0) {
               mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
             }
             mergedIo.exitCode = err.exitCode
             break
           }
-          throw err
+          if (!isUnwinding(err)) throw err
+          throw await carried(err, allStdout.length > 0 ? asyncChain(allStdout) : null, mergedIo)
         }
       }
     })
   } finally {
     cs.pop()
+    if (session.functionNames !== null) session.functionNames = outerNames
     restoreLocals(session, savedLocals)
     session.localFrames.pop()
     session.localVars = outerLocals

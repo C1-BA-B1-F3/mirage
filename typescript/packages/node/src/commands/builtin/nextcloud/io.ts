@@ -23,7 +23,7 @@ import { truncate } from '../../../core/nextcloud/truncate.ts'
 import { unlink } from '../../../core/nextcloud/unlink.ts'
 import { write } from '../../../core/nextcloud/write.ts'
 
-export const NEXTCLOUD_IO: CommandIO<NextcloudAccessor> = new VFSAdapter<NextcloudAccessor>({
+export const IO: CommandIO<NextcloudAccessor> = new VFSAdapter<NextcloudAccessor>({
   read: { readdir, readBytes: read, stat },
   native: {
     readRange: rangeOf(read),

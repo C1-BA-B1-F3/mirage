@@ -34,7 +34,8 @@ import { loadIgnores } from './ignore.ts'
 import { readIndex, updateIndex, type StagedEntry } from './index_file.ts'
 import { entryBytes, under } from './io.ts'
 import { matched, repoRelative } from './pathspec.ts'
-import { opened, repoArgs, type Repo } from './repo.ts'
+import { repoArgs, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { EXECUTABLE, OWNER_EXECUTE, REGULAR, SYMLINK } from './constants.ts'
 import type { Dispatch, IndexEntry, IndexState, RepoLocation, WorkTree } from './types.ts'
 import { checkOperands, escaped, fatal, startPoint, switches } from './util.ts'
@@ -66,7 +67,7 @@ function parseFlags(fl: FlagView): AddFlags {
 }
 
 /** The mode git would record for a working-tree file. */
-function entryMode(info: FileStat): number {
+export function entryMode(info: FileStat): number {
   if (info.type === FileType.SYMLINK) return SYMLINK
   return info.mode !== null && (info.mode & OWNER_EXECUTE) !== 0 ? EXECUTABLE : REGULAR
 }

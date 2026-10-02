@@ -20,7 +20,7 @@ import { readdir as trelloReaddir } from '../../../core/trello/readdir.ts'
 import { stat as trelloStat } from '../../../core/trello/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const TRELLO_IO: CommandIO<TrelloAccessor> = new VFSAdapter<TrelloAccessor>({
+export const IO: CommandIO<TrelloAccessor> = new VFSAdapter<TrelloAccessor>({
   read: { readdir: trelloReaddir, readBytes: trelloRead, stat: trelloStat },
   isMounted: () => true,
   local: false,

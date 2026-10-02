@@ -10,7 +10,7 @@ async function* concatSources(sources: AsyncIterable<Uint8Array>[]): AsyncIterab
   }
 }
 
-export const OD_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'od',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

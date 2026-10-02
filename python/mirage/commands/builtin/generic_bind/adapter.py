@@ -594,12 +594,15 @@ def _with_operation_guards(fn: OperationFn, slot: str) -> OperationFn:
     access = _MUTATIONS.get(slot)
     if access is None:
         return functools.partial(
-            _walked_call, None, functools.partial(_guarded_call, fn, False)
+            _walked_call,
+            None,
+            slot == "mkdir",
+            functools.partial(_guarded_call, fn, False),
         )
     fn = functools.partial(_mode_call, fn, access.first_source, access.subtree)
     fn = functools.partial(_rule_call, fn)
     fn = functools.partial(_guarded_call, fn, access.create)
-    fn = functools.partial(_walked_call, None, fn)
+    fn = functools.partial(_walked_call, None, slot == "mkdir", fn)
     return functools.partial(
         _policy_call, _op_policy_scope(), fn, slot, True, access.first_source
     )
@@ -679,7 +682,9 @@ _WALK_SLOTS = (
 )
 
 
-async def _walk_admit(probe: WalkProbe, specs: list[PathSpec]) -> None:
+async def _walk_admit(
+    probe: WalkProbe, specs: list[PathSpec], creates: bool
+) -> None:
     """Raise what the first unwalkable operand's dots answer.
 
     Args:
@@ -687,25 +692,25 @@ async def _walk_admit(probe: WalkProbe, specs: list[PathSpec]) -> None:
             reads.
         specs (list[PathSpec]): the call's PathSpec positionals that
             carry a dotted spelling.
+        creates (bool): the op creates the name it is handed (mkdir).
     """
     for spec in specs:
-        refusal = await dot_refusal(probe.stat, spec, probe.follow)
+        refusal = await dot_refusal(probe.stat, spec, probe.follow, creates)
         if refusal is not None:
             raise refusal
 
 
 async def _walked_await(
-    probe: WalkProbe, specs: list[PathSpec], pending: Awaitable[Any]
+    admit: Callable[[], Awaitable[None]], pending: Awaitable[Any]
 ) -> Any:
     """Await an op once its operands walk; close it unstarted if not.
 
     Args:
-        probe (WalkProbe): what the walk reads.
-        specs (list[PathSpec]): the dotted operands.
+        admit (Callable[[], Awaitable[None]]): the bound operand walk.
         pending (Awaitable[Any]): the op's not-yet-awaited result.
     """
     try:
-        await _walk_admit(probe, specs)
+        await admit()
     except BaseException:
         close = getattr(pending, "close", None)
         if close is not None:
@@ -715,17 +720,16 @@ async def _walked_await(
 
 
 async def _walked_stream(
-    probe: WalkProbe, specs: list[PathSpec], source: AsyncIterator[bytes]
+    admit: Callable[[], Awaitable[None]], source: AsyncIterator[bytes]
 ) -> AsyncIterator[bytes]:
     """Drain a stream once its operands walk; close it if they do not.
 
     Args:
-        probe (WalkProbe): what the walk reads.
-        specs (list[PathSpec]): the dotted operands.
+        admit (Callable[[], Awaitable[None]]): the bound operand walk.
         source (AsyncIterator[bytes]): the not-yet-started stream.
     """
     try:
-        await _walk_admit(probe, specs)
+        await admit()
     except BaseException:
         close = getattr(source, "aclose", None)
         if close is not None:
@@ -736,7 +740,11 @@ async def _walked_stream(
 
 
 def _walked_call(
-    walk: WalkProbe | None, fn: OperationFn, *args: Any, **kwargs: Any
+    walk: WalkProbe | None,
+    creates: bool,
+    fn: OperationFn,
+    *args: Any,
+    **kwargs: Any,
 ) -> Any:
     """Call a backend op once the dots of its PathSpec positionals walk.
 
@@ -750,6 +758,7 @@ def _walked_call(
     Args:
         walk (WalkProbe | None): the wrap-time probe, else the one bound
             to the running command is read at call time.
+        creates (bool): the op creates the name it is handed (mkdir).
         fn (OperationFn): the guarded backend op.
         *args: the call's positionals, PathSpecs among them.
         **kwargs: forwarded untouched.
@@ -765,10 +774,11 @@ def _walked_call(
     probe = walk if walk is not None else get_walk_probe()
     if not specs or probe is None:
         return fn(*args, **kwargs)
+    admit = functools.partial(_walk_admit, probe, specs, creates)
     result = fn(*args, **kwargs)
     if hasattr(result, "__aiter__") and not hasattr(result, "__await__"):
-        return _walked_stream(probe, specs, result)
-    return _walked_await(probe, specs, result)
+        return _walked_stream(admit, result)
+    return _walked_await(admit, result)
 
 
 def with_walk_guard(ops: CommandIO) -> CommandIO:
@@ -794,7 +804,9 @@ def with_walk_guard(ops: CommandIO) -> CommandIO:
     for slot in _WALK_SLOTS:
         fn = getattr(ops, slot)
         if fn is not None:
-            changes[slot] = functools.partial(_walked_call, walk, fn)
+            changes[slot] = functools.partial(
+                _walked_call, walk, slot == "mkdir", fn
+            )
     return replace(ops, **changes)
 
 

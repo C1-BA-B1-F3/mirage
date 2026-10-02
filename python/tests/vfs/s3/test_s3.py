@@ -12,18 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
 from mirage.core.s3.client import _client_kwargs
 from mirage.vfs.s3 import S3VFS, S3Config
-
-
-def test_s3config_defaults():
-    c = S3Config(bucket="my-bucket")
-    assert c.region is None
-    assert c.timeout == 30
-    assert c.proxy is None
 
 
 def test_s3_client_kwargs_route_through_proxy():
@@ -50,12 +40,6 @@ def test_s3_state_redacts_proxy_credentials():
     assert "proxy-user" not in blob
     assert "proxy-secret" not in blob
     assert "<REDACTED>" in blob
-
-
-def test_s3config_immutable():
-    c = S3Config(bucket="x")
-    with pytest.raises(ValidationError):
-        c.bucket = "y"
 
 
 def test_s3_write_commands_tagged():

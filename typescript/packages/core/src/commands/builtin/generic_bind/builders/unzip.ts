@@ -17,7 +17,7 @@ import { readBytesOp, statOp } from '../../generic/crossmount/utils.ts'
 import { unzipGeneric } from '../../generic/unzip.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const UNZIP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'unzip',
   write: true,
   fn: async (ops, accessor, paths, texts, opts) => {

@@ -167,7 +167,9 @@ async def handle_printf(
         if parsed is None:
             # bash validates the name before formatting, so a bad name
             # suppresses the conversion errors the format would report.
-            err = f"printf: `{target}': not a valid identifier\n".encode()
+            err = (
+                f"bash: printf: `{target}': not a valid identifier\n".encode()
+            )
             return (
                 None,
                 IOResult(exit_code=2, stderr=err),
@@ -215,7 +217,9 @@ async def handle_printf(
             # `-v` short of its NAME is left to the format path, where
             # bash's own `option requires an argument` is a separate
             # change.
-            err = f"printf: -{first[1]}: invalid option\n{_USAGE}".encode()
+            err = (
+                f"bash: printf: -{first[1]}: invalid option\n{_USAGE}".encode()
+            )
             return (
                 None,
                 IOResult(exit_code=2, stderr=err),
@@ -233,17 +237,16 @@ async def handle_printf(
             ExecutionNode(command="printf", exit_code=1, stderr=err),
         )
     if not args:
-        if target is not None:
-            # `printf -v x` with no format is a usage error in bash.
-            err = _USAGE.encode()
-            return (
-                None,
-                IOResult(exit_code=2, stderr=err),
-                ExecutionNode(command="printf", exit_code=2),
-            )
-        return b"", IOResult(), ExecutionNode(command="printf", exit_code=0)
+        # A format is required: bash's usage error, `printf -v x` too.
+        err = _USAGE.encode()
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="printf", exit_code=2),
+        )
     output, messages, failed, excess = run_printf(args[0], args[1:])
-    err_bytes = "".join(messages).encode() if messages else b""
+    voice = "" if program_invocation(session) else "bash: "
+    err_bytes = "".join(voice + message for message in messages).encode()
     exit_code = 1 if failed else 0
     if target is not None and parsed is not None:
         base, subscript = parsed.group(1), parsed.group(2)

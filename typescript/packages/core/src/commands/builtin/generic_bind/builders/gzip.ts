@@ -15,7 +15,7 @@
 import { gzipGeneric } from '../../generic/gzip.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const GZIP_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'gzip',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

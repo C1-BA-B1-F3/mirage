@@ -15,10 +15,16 @@
 import { lstripSlash, rstripSlash, stripSlash } from '../utils/slash.ts'
 import { PathSpec } from '../types.ts'
 
-/** Normalize a key prefix: empty/undefined → '', strip leading /, ensure trailing /. */
+/**
+ * Normalize a key prefix, the one rule every object-key backend applies on
+ * both hosts: strip leading slashes and ensure one trailing slash. A prefix
+ * that is empty once its leading slashes are gone ('', '/') is no prefix at
+ * all, so a root-spelled prefix never puts a slash in front of every key.
+ * Mirrors Python `normalize` (`utils/key_prefix.py`).
+ */
 export function normalize(raw: string | undefined): string {
-  if (raw === undefined || raw === '') return ''
-  const stripped = lstripSlash(raw)
+  const stripped = lstripSlash(raw ?? '')
+  if (stripped === '') return ''
   return stripped.endsWith('/') ? stripped : `${stripped}/`
 }
 

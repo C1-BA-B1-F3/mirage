@@ -1,7 +1,7 @@
 import { parseFlags, truncateGeneric } from '../../generic/truncate.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const TRUNCATE_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'truncate',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

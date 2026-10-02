@@ -14,16 +14,11 @@
 
 import git from 'isomorphic-git'
 
-import type { FlagView } from '../../../spec/flag_view.ts'
-import { discover, requireWorkTree } from './discover.ts'
-import { NoWorkspaceError } from './errors.ts'
 import { abbrevLength, type CommitFacts } from './format.ts'
 import { configValues, gitFs } from './fs.ts'
-import { exists, readNames, readRange, under, writeFile } from './io.ts'
-import { basename } from './path.ts'
+import { basename, exists, readNames, readRange, under, writeFile } from './io.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
-import type { CLIDoors } from '../../types.ts'
-import { gitBool, startPoint } from './util.ts'
+import { gitBool } from './util.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
 
 const PACK_DIR = 'objects/pack'
@@ -60,6 +55,8 @@ export interface Repo {
   readonly cache: Record<symbol, unknown>
   /** How many hex digits this repository abbreviates an id to. */
   readonly abbrev: number
+  /** Blobs this invocation hashed from the working tree and never wrote. */
+  readonly held: Map<string, Uint8Array>
 }
 
 /** The argument bag every isomorphic-git call in this package shares. */
@@ -200,42 +197,17 @@ export async function openRepo(dispatch: Dispatch, location: RepoLocation): Prom
     location,
     cache: {},
     abbrev: abbrevLength(await packedCount(dispatch, location.commondir)),
+    held: new Map(),
   }
 }
 
 /**
- * Discover and open the repository a verb was invoked against.
- *
- * Every verb starts the same way: honor `-C`, walk up to the mount root looking
- * for a `.git`, then open the object database across the dispatcher. Kept in one
- * place so a new verb inherits the discovery rules rather than restating them.
- *
- * @param fl the leaf's flag bag, read for `-C`, `--git-dir` and `--work-tree`
- * @param doors the invocation's doors, one per state plane
- * @param workTree the verb reads or writes working files, so there must be a
- *   work tree to enter, as git's `NEED_WORK_TREE` asks
+ * A blob's bytes, a held one first: what `git diff` hashes from the working
+ * tree is rendered like any blob, but git writes none of it. Mirrors
+ * Python's VfsObjectStore.hold.
  */
-export async function opened(fl: FlagView, doors: CLIDoors, workTree = false): Promise<Repo> {
-  const dispatch = doors.dispatch
-  const statPath = doors.statPath
-  // The mount root comes from the name plane rather than a door of its own:
-  // `ns.mounts.rootOf` is the same fact the command tier reads, and a second
-  // field holding the same callable is a second thing to keep in step.
-  const mounts = doors.ns?.mounts
-  if (statPath === undefined || mounts === undefined || dispatch === undefined) {
-    throw new NoWorkspaceError()
-  }
-  const chosen = fl.asStr('work_tree')
-  const location = await discover(
-    dispatch,
-    statPath,
-    (path: string) => mounts.rootOf(path),
-    startPoint(fl),
-    fl.asStr('git_dir'),
-    chosen,
-  )
-  if (workTree) await requireWorkTree(dispatch, statPath, location, chosen !== undefined)
-  return openRepo(dispatch, location)
+export async function readBlobBytes(repo: Repo, oid: string): Promise<Uint8Array> {
+  return repo.held.get(oid) ?? (await git.readBlob({ ...repoArgs(repo), oid })).blob
 }
 
 /**

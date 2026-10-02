@@ -12,9 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-from pydantic import ValidationError
-
 from mirage.types import VFSName
 from mirage.vfs.hf_spaces import HfSpacesConfig, HfSpacesVFS
 
@@ -23,12 +20,6 @@ def test_vfs_name():
     r = HfSpacesVFS(HfSpacesConfig(repo_id="org/space"))
     assert r.name == VFSName.HF_SPACES
     assert r.caches_reads is True
-
-
-def test_config_immutable():
-    cfg = HfSpacesConfig(repo_id="org/space")
-    with pytest.raises(ValidationError):
-        cfg.repo_id = "other/other"
 
 
 def test_vfs_registers_ops_and_commands():

@@ -233,6 +233,20 @@ REDACTION_CASES = [
         ["GCS-AKIA-LEAK", "GCS-SECRET-LEAK"],
     ),
     (
+        "mirage.vfs.hf_buckets",
+        "HfBucketsVFS",
+        "HfBucketsConfig",
+        dict(bucket="o/b", token="HF-BUCKET-TOKEN-LEAK"),
+        ["HF-BUCKET-TOKEN-LEAK"],
+    ),
+    (
+        "mirage.vfs.hf_models",
+        "HfModelsVFS",
+        "HfModelsConfig",
+        dict(repo_id="o/r", token="HF-REPO-TOKEN-LEAK"),
+        ["HF-REPO-TOKEN-LEAK"],
+    ),
+    (
         "mirage.vfs.gdrive",
         "GoogleDriveVFS",
         "GoogleDriveConfig",
@@ -333,6 +347,17 @@ REDACTION_CASES = [
             password="EMAIL-PWD-LEAK",
         ),
         ["EMAIL-PWD-LEAK"],
+    ),
+    (
+        "mirage.vfs.nextcloud",
+        "NextcloudVFS",
+        "NextcloudConfig",
+        dict(
+            url="https://cloud.example.com/remote.php/dav/files/u/",
+            username="u",
+            password="NC-PWD-LEAK",
+        ),
+        ["NC-PWD-LEAK"],
     ),
     (
         "mirage.vfs.langfuse",

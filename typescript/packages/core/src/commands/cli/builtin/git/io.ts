@@ -20,7 +20,6 @@ import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { LinkView, MountView, StatPath } from '../../../../ops/types.ts'
 import { PERMISSION_BITS, SYMLINK_MODE } from './constants.ts'
 import { MountInWayError } from './errors.ts'
-import { basename } from './path.ts'
 import type { Dispatch } from './types.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 
@@ -215,6 +214,20 @@ export async function readNames(dispatch: Dispatch, path: string): Promise<strin
     if (isMissingPath(err)) return []
     throw err
   }
+}
+
+/**
+ * The final segment of a readdir entry, directory marker stripped.
+ *
+ * A backend may report a bare name or a whole path, and may or may not mark a
+ * directory with a trailing slash; every caller here wants the name.
+ *
+ * @param entry one entry as the backend reported it
+ */
+export function basename(entry: string): string {
+  const trimmed = rstripSlash(entry)
+  const cut = trimmed.lastIndexOf('/')
+  return cut === -1 ? trimmed : trimmed.slice(cut + 1)
 }
 
 /**

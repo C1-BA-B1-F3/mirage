@@ -20,8 +20,9 @@ from gridfs import AsyncGridFSBucket
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
 from mirage.utils import key_prefix as kp
+from mirage.vfs.gridfs.config import GridFSConfig
 
 # Newest revision of a filename wins; _id breaks uploadDate ties because
 # ObjectIds are monotonic within a process.

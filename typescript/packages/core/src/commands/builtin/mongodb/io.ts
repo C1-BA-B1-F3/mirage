@@ -24,7 +24,7 @@ import { stat as mongodbStat } from '../../../core/mongodb/stat.ts'
 import { streamAny as mongodbStream } from '../../../core/mongodb/read.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const MONGODB_IO: CommandIO<MongoDBAccessor> = new VFSAdapter<MongoDBAccessor>({
+export const IO: CommandIO<MongoDBAccessor> = new VFSAdapter<MongoDBAccessor>({
   search: {
     search: makeSearchOp(detectScope, SEARCHERS, mongodbStat),
     meta: { grep: { mode: 'regex', stream: true } },

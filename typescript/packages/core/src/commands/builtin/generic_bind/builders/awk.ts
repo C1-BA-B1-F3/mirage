@@ -45,7 +45,7 @@ async function resolveOperands(
   return out
 }
 
-export const AWK_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'awk',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

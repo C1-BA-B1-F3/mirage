@@ -15,7 +15,7 @@
 import { jqGeneric } from '../../generic/jq.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const JQ_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'jq',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {

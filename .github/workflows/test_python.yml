@@ -35,6 +35,9 @@ concurrency:
 # extra) before any test ran.
 env:
   UV_HTTP_TIMEOUT: 120
+  # mem0 turns its telemetry on by default: importing it starts a PostHog
+  # client, and every Python process then waits ~5 s at exit to flush it.
+  MEM0_TELEMETRY: "False"
 
 jobs:
   changes:
@@ -328,7 +331,7 @@ jobs:
         working-directory: python
         env:
           MIRAGE_WASI_HOME: /tmp/cpython-wasi
-        run: uv run pytest tests/runtime/python/test_wasi.py -v --no-cov
+        run: uv run pytest tests/runtime/python/wasi/ -v --no-cov
 
       - name: Run quickjs runtime tests
         working-directory: python

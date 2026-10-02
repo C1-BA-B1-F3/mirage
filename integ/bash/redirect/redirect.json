@@ -575,10 +575,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "{ echo out; echo err >&2; } |& sort",
+      "command": "{ echo out; echo err >&2; } |& sort; ({ echo o1; echo e1 >&2; echo o2; echo e2 >&2; } 2>&1 | cat; f() { echo fo; echo fe >&2; } 2>&1; f | cat; bash -c 'echo bo; echo be >&2' 2>&1 | cat; for i in 1 2; do { echo a$i; break; } > /data/rbrk; done; cat /data/rbrk; rm /data/rbrk; g() { echo go; echo ge >&2; } >/data/rfo 2>&1; g; cat /data/rfo; rm /data/rfo)",
       "expect": {
         "exit": 0,
-        "stdout": "err\nout\n",
+        "stdout": "err\nout\no1\ne1\no2\ne2\nfo\nfe\nbo\nbe\na1\ngo\nge\n",
         "stderr": ""
       }
     },
@@ -923,11 +923,11 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "echo dynamic > \"$(printf RT)\" && cat RT",
+      "command": "echo dynamic > \"$(printf RT)\" && cat RT\n{ echo ${rdq!y}; } 2>/dev/null; echo same\necho \"n=$?\"; exit 1 2 2>&1 | cat; rdf() { return x; }; rdf 2>/dev/null; echo \"rf=$?\"; cat > \"${rdq!y}\"; echo \"c=$?\"\ncommand -v echo > \"${rdq!y}\"; echo same\necho \"v=$?\"\nrdh() { :; }; command rdh > \"${rdq!y}\"; echo \"m=$?\"\ncat > \"${rdq!y}\" > \"$(touch rdside; printf rddest)\"; echo \"s=$?\"; test -e rdside; echo \"side=$?\"",
       "expect": {
         "exit": 0,
-        "stdout": "dynamic\n",
-        "stderr": ""
+        "stdout": "dynamic\nn=1\nbash: exit: too many arguments\nrf=2\nc=1\nv=1\nm=1\ns=1\nside=1\n",
+        "stderr": "bash: ${rdq!y}: bad substitution\nbash: ${rdq!y}: bad substitution\nbash: ${rdq!y}: bad substitution\nbash: ${rdq!y}: bad substitution\n"
       }
     },
     {

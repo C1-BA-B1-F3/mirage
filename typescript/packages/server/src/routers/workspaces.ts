@@ -18,9 +18,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { MountSpec } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import type { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
-import { DiskWorkspaceStateStore, Workspace } from '@struktoai/mirage-node'
+import { DiskWorkspaceStateStore, DOT_IDS, Workspace } from '@struktoai/mirage-node'
 import { newWorkspaceId } from '@struktoai/mirage-core/utils/ids'
 import { type WorkspaceRegistry } from '../registry.ts'
+import type { VersionBackend } from '../version/backend.ts'
 import { z } from '@struktoai/mirage-core/vfs/secrets'
 import { SecretsError } from '@struktoai/mirage-core/secrets/errors'
 import { buildOverrideMounts, cloneWorkspaceWithOverride, type OverrideShape } from '../clone.ts'
@@ -36,6 +37,7 @@ export interface WorkspaceRoutesDeps {
   registry: WorkspaceRegistry
   snapshotRoot: string
   stateRoot: string
+  versionBackend: VersionBackend
 }
 
 const WRITE_RATE_LIMIT = {
@@ -68,6 +70,11 @@ interface LoadWorkspaceBody {
   path: string
   id?: string
   override?: OverrideShape
+}
+
+/** Refuse an id that would name the state root, not a workspace. */
+function refuseId(reply: FastifyReply, id: string): FastifyReply {
+  return reply.status(400).send({ detail: `invalid workspace id: ${id}` })
 }
 
 export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRoutesDeps): void {
@@ -118,6 +125,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       // so resolve it before construction: explicit REST id, then the
       // config's workspaceId, then a fresh mint.
       const wid = body.id ?? args.options.workspaceId ?? newWorkspaceId()
+      if (DOT_IDS.has(wid)) return refuseId(reply, wid)
       let ws: Workspace
       try {
         // Every option the config produced rides through: enumerating
@@ -170,6 +178,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       if (!safePath.startsWith(snapshotRoot + sep)) {
         return reply.status(400).send({ detail: 'path escapes the configured root' })
       }
+      if (workspaceId !== undefined && DOT_IDS.has(workspaceId)) return refuseId(reply, workspaceId)
       if (workspaceId !== undefined && deps.registry.has(workspaceId)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${workspaceId}` })
       }
@@ -221,7 +230,13 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
   app.delete<{ Params: WorkspaceIdParams }>('/v1/workspaces/:id', async (req, reply) => {
     const { id } = req.params
     if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
-    await deps.registry.remove(id)
+    try {
+      await deps.registry.remove(id, () => deps.versionBackend.dropRepo(id))
+    } catch (err) {
+      return reply
+        .status(500)
+        .send({ detail: `workspace delete failed: ${(err as Error).message}` })
+    }
     return { id, closedAt: Date.now() / 1000 }
   })
 
@@ -231,6 +246,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       const { id } = req.params
       if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
       const body = req.body
+      if (body.id !== undefined && DOT_IDS.has(body.id)) return refuseId(reply, body.id)
       if (body.id !== undefined && deps.registry.has(body.id)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${body.id}` })
       }

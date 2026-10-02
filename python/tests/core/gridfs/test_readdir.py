@@ -19,10 +19,11 @@ from unittest.mock import patch
 import pytest
 from bson import ObjectId
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.gridfs.readdir import readdir
 from mirage.types import PathSpec
+from mirage.vfs.gridfs.config import GridFSConfig
 
 _UPLOAD = datetime(2026, 1, 1, tzinfo=timezone.utc)
 

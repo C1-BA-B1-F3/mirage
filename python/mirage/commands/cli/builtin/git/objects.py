@@ -26,6 +26,7 @@ from dulwich.repo import BaseRepo
 from mirage.bridge.sync import run_async_from_sync
 from mirage.commands.cli.builtin.git.format import abbrev_length
 from mirage.commands.cli.builtin.git.io import (
+    basename,
     file_size,
     read_file,
     read_names,
@@ -42,16 +43,6 @@ PACK_SUFFIX = ".pack"
 FANOUT_LEN = 2
 SHA_LEN = 40
 HEX_DIGITS = frozenset(b"0123456789abcdef")
-
-
-def _basename(entry: str) -> str:
-    """The final segment of a readdir entry, directory marker stripped.
-
-    Args:
-        entry (str): one entry as the backend reported it, which may be
-            a bare name or a path and may carry a trailing slash.
-    """
-    return entry.rstrip("/").rsplit("/", 1)[-1]
 
 
 def loose_path(commondir: str, oid: ObjectID) -> str:
@@ -157,7 +148,7 @@ class LooseObjects:
         )
         found = []
         for entry in names:
-            rest = _basename(entry)
+            rest = basename(entry)
             if len(fanout) + len(rest) == SHA_LEN:
                 found.append(ObjectID(f"{fanout}{rest}".encode()))
         return found
@@ -167,7 +158,7 @@ class LooseObjects:
         for entry in run_async_from_sync(
             read_names(self._dispatch, self._root), self._loop
         ):
-            fanout = _basename(entry)
+            fanout = basename(entry)
             if len(fanout) == FANOUT_LEN:
                 yield from self.ids_under(fanout)
 
@@ -189,6 +180,14 @@ class LooseObjects:
             self._loop,
         )
         self._cache[oid] = obj
+
+    def hold(self, obj: ShaFile) -> None:
+        """Cache an object as if it were loose, without writing it.
+
+        Args:
+            obj (ShaFile): the object to hold.
+        """
+        self._cache[obj.id] = obj
 
 
 def _packed_under(pack: Pack, prefix: bytes) -> Iterator[ObjectID]:
@@ -238,6 +237,17 @@ class VfsObjectStore(PackCapableObjectStore):
         self._loose = loose
         self._packs = packs
         self.object_format = SHA1
+
+    def hold(self, obj: ShaFile) -> None:
+        """Make an object readable for this invocation without writing it.
+
+        What ``git diff`` hashes from the working tree is compared and
+        rendered like any blob, but git writes none of it.
+
+        Args:
+            obj (ShaFile): the object to hold.
+        """
+        self._loose.hold(obj)
 
     @property
     def packed_count(self) -> int:
@@ -371,7 +381,7 @@ async def load_packs(
     root = posixpath.join(gitdir, PACK_DIR)
     packs: list[Pack] = []
     for entry in await read_names(dispatch, root):
-        name = _basename(entry)
+        name = basename(entry)
         if not name.endswith(IDX_SUFFIX):
             continue
         stem = name[: -len(IDX_SUFFIX)]

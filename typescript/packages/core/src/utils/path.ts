@@ -68,22 +68,24 @@ const DOTS = new Set(['.', '..'])
  * The kernel resolves `.` and `..` against the directory they sit in, so
  * every component in front of one has to be a directory, while the textual
  * simplification a virtual path gets lets `nope/../f` reach `f` past a
- * missing `nope`. This keeps the spelling a walk needs. Null when no dot
- * follows a named component: a leading climb (`../x`) only walks up from
- * `base`, a directory already, so the common `cd ..` and `cat ../f` cost
- * nothing. Mirrors Python's dotted_spelling.
+ * missing `nope`. This keeps the spelling a walk needs. A trailing slash is
+ * kept too, since `x/` resolves as `x/.` and so names a directory. Null when
+ * neither follows a named component: a leading climb (`../x`) only walks up
+ * from `base`, a directory already, so the common `cd ..` and `cat ../f`
+ * cost nothing. Mirrors Python's dotted_spelling.
  */
 export function dottedSpelling(word: string, base = '/'): string | null {
   const parts = word.split('/').filter((part) => part !== '')
   let lead = 0
   while (lead < parts.length && DOTS.has(parts[lead] ?? '')) lead += 1
   const rest = parts.slice(lead)
-  if (!rest.some((part) => DOTS.has(part))) return null
+  const slashed = rest.length > 0 && word.endsWith('/') && !DOTS.has(rest[rest.length - 1] ?? '')
+  if (!slashed && !rest.some((part) => DOTS.has(part))) return null
   const start = resolvePath(
     parts.slice(0, lead).join('/') || '.',
     word.startsWith('/') ? '/' : base,
   )
-  return `${rstripSlash(start)}/${rest.join('/')}`
+  return `${rstripSlash(start)}/${rest.join('/')}${slashed ? '/' : ''}`
 }
 
 /**
@@ -93,11 +95,15 @@ export function dottedSpelling(word: string, base = '/'): string | null {
  * to be a directory; each is spelled as the walk has simplified it so far,
  * and the root, always one, is left out. Mirrors Python's dot_prefixes.
  */
-export function dotPrefixes(dotted: string): string[] {
+export function dotPrefixes(
+  dotted: string,
+  follow: ((path: string) => string) | null = null,
+): string[] {
   let current = '/'
   const found: string[] = []
   for (const part of dotted.split('/').filter((p) => p !== '')) {
     if (DOTS.has(part)) {
+      if (follow !== null) current = follow(current)
       if (current !== '/' && !found.includes(current)) found.push(current)
       if (part === '..') current = parent(current)
       continue
@@ -117,7 +123,11 @@ export function dotPrefixes(dotted: string): string[] {
  * the directory a relative word starts from is there already. Mirrors
  * Python's walk_nodes.
  */
-export function walkNodes(dotted: string, raw: string): [string, string][] {
+export function walkNodes(
+  dotted: string,
+  raw: string,
+  follow: ((path: string) => string) | null = null,
+): [string, string][] {
   const typed = raw.split('/').filter((part) => part !== '')
   let lead = 0
   while (lead < typed.length && DOTS.has(typed[lead] ?? '')) lead += 1
@@ -129,6 +139,14 @@ export function walkNodes(dotted: string, raw: string): [string, string][] {
   for (let index = lead; index < typed.length - 1; index++) {
     const part = typed[index] ?? ''
     if (DOTS.has(part)) {
+      if (follow !== null) {
+        try {
+          current = follow(current)
+        } catch (err) {
+          if (!(err instanceof CycleError)) throw err
+          return entered
+        }
+      }
       if (part === '..') current = parent(current)
       continue
     }

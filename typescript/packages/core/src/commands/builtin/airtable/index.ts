@@ -17,10 +17,10 @@ import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { AIRTABLE_HEAD } from './head.ts'
-import { AIRTABLE_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const AIRTABLE_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<AirtableAccessor>(VFSName.AIRTABLE, AIRTABLE_IO, {
+  ...makeGenericCommands<AirtableAccessor>(VFSName.AIRTABLE, IO, {
     overrides: new Set(['head']),
   }),
   ...AIRTABLE_HEAD,

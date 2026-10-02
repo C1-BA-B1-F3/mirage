@@ -32,6 +32,7 @@ import { MountMode } from '../../types.ts'
 import { ExecutionNode } from '../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace.ts'
+import { RAMNamespaceStore } from '../mount/namespace/ram.ts'
 import { dropMountCaches } from '../executor/command/run.ts'
 import { toStateDict } from '../snapshot/state.ts'
 import { Mount } from '../mount/spec.ts'
@@ -602,14 +603,18 @@ describe('closeWorkspace surfaces closer failures', () => {
     await expect(ws.close()).rejects.toThrow('journal replay failed')
   }, 30_000)
 
-  it('keeps the closer failure when a later teardown stage fails too', async () => {
+  it('keeps every teardown failure and still releases the later stages', async () => {
     const vfs = new RAMVFS()
     const ws = new Workspace(
       { '/m': [vfs, MountMode.WRITE] },
       { mode: MountMode.WRITE, shellParser: parser },
     )
     await ws.dispatch('stat', '/m')
+    vi.spyOn(ws.processes, 'stop').mockImplementation(() => {
+      throw new Error('process cancellation failed')
+    })
     vi.spyOn(vfs, 'close').mockRejectedValue(new Error('VFS close failed'))
+    vi.spyOn(ws.stateStore, 'close').mockRejectedValue(new Error('store close failed'))
     const closers = (ws as unknown as { closers: (() => Promise<void>)[] }).closers
     closers.push(() => Promise.reject(new Error('journal replay failed')))
     const err = await ws.close().then(
@@ -619,10 +624,13 @@ describe('closeWorkspace surfaces closer failures', () => {
     // The later rejection must not carry the replay failure back out of sight.
     expect(err).toBeInstanceOf(AggregateError)
     expect((err as AggregateError).errors.map((e: Error) => e.message)).toEqual([
+      'process cancellation failed',
       'journal replay failed',
       'VFS close failed',
+      'store close failed',
     ])
     expect((ws as unknown as { closed: boolean }).closed).toBe(true)
+    await expect(ws.close()).rejects.toBe(err)
   }, 30_000)
 
   it('aggregates when more than one closer fails', async () => {
@@ -640,4 +648,24 @@ describe('closeWorkspace surfaces closer failures', () => {
     expect(order).toContain('later closer')
     expect(order).toContain('vfs')
   }, 30_000)
+})
+
+describe('Workspace.delete', () => {
+  it('clears a namespace store passed in directly', async () => {
+    // A store handed in directly is where this workspace's links live, so
+    // delete clears it too, not only the planes the state store owns.
+    const namespaceStore = new RAMNamespaceStore()
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE, namespaceStore })
+    await namespaceStore.set('/data/l', { mode: 0o600 })
+    await ws.delete()
+    expect((await namespaceStore.load()).size).toBe(0)
+  })
+
+  it('refuses after close rather than keep the state quietly', async () => {
+    // close() closed the stores the state lives in, so a later delete has
+    // nothing it can drop; it says so instead of answering success.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.close()
+    await expect(ws.delete()).rejects.toThrow('closed before delete')
+  })
 })

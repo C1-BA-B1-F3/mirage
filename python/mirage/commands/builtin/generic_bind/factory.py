@@ -19,7 +19,6 @@ from typing import Any
 
 from mirage.accessor.base import Accessor
 from mirage.cache.context import active_cache_manager
-from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.cache.read_through import (
     cache_aware_read_bytes,
     cache_aware_read_stream,
@@ -34,8 +33,8 @@ from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
-from mirage.types import FileType, PathSpec
-from mirage.utils.errors import MISS_ERRORS, eisdir, enotdir
+from mirage.types import PathSpec
+from mirage.utils.errors import eisdir
 
 
 def _cached_stat(
@@ -103,55 +102,6 @@ def with_read_cache(ops: CommandIO) -> CommandIO:
     )
 
 
-async def _slash_checked_stat(
-    stat: Callable[..., Any],
-    accessor: Accessor,
-    path: PathSpec,
-    *args,
-    **kwargs,
-):
-    result = await stat(accessor, path, *args, **kwargs)
-    if (
-        path.raw_path.endswith("/")
-        and getattr(result, "type", None) != FileType.DIRECTORY
-    ):
-        raise enotdir(path)
-    return result
-
-
-async def _slash_checked_readdir(
-    readdir: Callable[..., Any],
-    stat: Callable[..., Any],
-    accessor: Accessor,
-    path: PathSpec,
-    index: IndexCacheStore = NULL_INDEX,
-):
-    # A listing never reaches the stat wrapper, and on a keyed store it
-    # cannot tell "not a directory" from "no keys under this prefix" on
-    # its own: `ls flink/` answered with an empty listing and exit 0
-    # where GNU says "Not a directory". One stat decides it, and only
-    # for an operand actually typed with a slash.
-    if path.raw_path.endswith("/"):
-        # Only a stat that ANSWERS can refuse. On a prefix or synthetic
-        # store a directory is the set of keys under it rather than an
-        # object, so a miss here is not evidence of a non-directory and
-        # the listing is the authority (see "absence takes two
-        # channels"); slack's per-channel directories stat as nothing.
-        # The index rides along: a synthetic backend resolves a path
-        # through it and cannot stat without one (chroma answers
-        # "missing index"), so dropping it here turns the probe into a
-        # crash. It is a declared parameter rather than a dig through
-        # kwargs because the op contract names it, and callers spell it
-        # both positionally and by keyword.
-        try:
-            entry = await stat(accessor, path, index)
-        except MISS_ERRORS:
-            entry = None
-        if entry is not None and entry.type != FileType.DIRECTORY:
-            raise enotdir(path)
-    return await readdir(accessor, path, index)
-
-
 async def _slash_checked_write(
     write: Callable[..., Any],
     accessor: Accessor,
@@ -173,53 +123,25 @@ async def _slash_checked_write(
 
 
 def with_slash_guard(ops: CommandIO) -> CommandIO:
-    """Return ``ops`` whose ``stat`` honors a trailing slash on an operand.
+    """Return ``ops`` whose writes refuse a slash-terminated operand.
 
-    POSIX resolves ``x/`` as ``x/.``, so the operand has to name a
-    directory: GNU answers ``cat reg/`` with "Not a directory" where
-    plain ``cat reg`` reads the file. Enforcing it on ``stat`` covers
-    every family at once, because the read chokepoint
-    (``dir_aware_stat``) and the metadata commands (ls/du/find/stat)
-    all reach the backend through this slot, and each one already
-    renders whatever strerror it gets in its own GNU voice. ``readdir``
-    is wrapped too, because a listing never stats on its own and a keyed
-    store answers a non-directory prefix with an empty list rather than
-    an error.
-
-    A missing path is left alone on the read side: its own ENOENT is
-    already GNU's answer (``cat dangle/`` is "No such file or
-    directory"). On the write side it is not: ``write``, ``append`` and
-    ``truncate`` refuse a slashed operand with EISDIR whether or not
-    anything is there, as open(2) does with O_CREAT, so ``tee missing/``
-    cannot leave a regular file named ``missing`` behind. The link half is the
-    router's, not this wrapper's: by the time an operand arrives here a
-    trailing slash has already resolved the final symlink, so ``dlink/``
-    stats the directory it points at and passes.
+    open(2) with O_CREAT answers ``x/`` with EISDIR whether or not
+    anything is there, so ``write``, ``append`` and ``truncate`` refuse
+    it before the backend sees it and ``tee missing/`` cannot leave a
+    regular file named ``missing`` behind. The read side is the walk
+    guard's: a slashed operand carries a ``dotted`` spelling, so
+    ``dot_refusal`` proves the name a directory there (``cat reg/`` is
+    "Not a directory", ``cat dangle/`` keeps its own ENOENT).
 
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
-    guarded = replace(
-        ops,
-        stat=functools.partial(_slash_checked_stat, ops.stat),
-        readdir=functools.partial(
-            _slash_checked_readdir, ops.readdir, ops.stat
-        ),
-    )
-    if ops.write is not None:
-        guarded = replace(
-            guarded, write=functools.partial(_slash_checked_write, ops.write)
-        )
-    if ops.append is not None:
-        guarded = replace(
-            guarded, append=functools.partial(_slash_checked_write, ops.append)
-        )
-    if ops.truncate is not None:
-        guarded = replace(
-            guarded,
-            truncate=functools.partial(_slash_checked_write, ops.truncate),
-        )
-    return guarded
+    changes: dict[str, Any] = {
+        slot: functools.partial(_slash_checked_write, getattr(ops, slot))
+        for slot in ("write", "append", "truncate")
+        if getattr(ops, slot) is not None
+    }
+    return replace(ops, **changes)
 
 
 def with_stat_cache(ops: CommandIO) -> CommandIO:

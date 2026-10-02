@@ -19,7 +19,6 @@ from mirage.shell.parse.heredoc import (
     first_content_line,
     heredoc_operators,
     protected_source,
-    same_shape,
     terminator_lookalikes,
 )
 from mirage.shell.parse.parse import TS_PARSER
@@ -226,15 +225,3 @@ def test_protected_source_writes_the_alternate_letter_over_the_filler():
     out = protected_source(cmd.encode(), _root(cmd))
     assert out is not None
     assert _diff(cmd, out) == [(cmd.index("xyz1"), "y")]
-
-
-def test_same_shape_true_for_equal_parses():
-    assert same_shape(_root("echo a | grep b"), _root("echo a | grep b"))
-
-
-def test_same_shape_false_for_a_different_tree():
-    assert not same_shape(_root("echo a | grep b"), _root("echo a; grep b"))
-
-
-def test_same_shape_false_when_a_span_moves():
-    assert not same_shape(_root("echo ab"), _root("echo abc"))

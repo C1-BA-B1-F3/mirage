@@ -64,3 +64,28 @@ export class ConcurrencyLimiter {
     this.available += 1
   }
 }
+
+/** Map in order with bounded workers; a failure stops admission and joins active work. */
+export async function boundedMap<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+  workers: number,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  const remaining = items.entries()
+  let failure: { reason: unknown } | undefined
+  const worker = async (): Promise<void> => {
+    for (const [index, item] of remaining) {
+      if (failure !== undefined) return
+      try {
+        results[index] = await fn(item)
+      } catch (reason) {
+        failure ??= { reason }
+        return
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, workers), items.length) }, worker))
+  if (failure !== undefined) throw failure.reason
+  return results
+}

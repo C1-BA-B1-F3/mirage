@@ -21,6 +21,7 @@ from dulwich.index import IndexEntry
 from mirage.commands.cli.builtin.git.changes import (
     DELETED,
     MODIFIED,
+    TYPE_CHANGED,
     head_entries,
     work_changes,
 )
@@ -223,7 +224,9 @@ async def refuse_lost_work(
             or recorded[1] != entry.sha
             or recorded[0] != entry.mode
         )
-        local_changes = unstaged.get(path) == MODIFIED or path in hidden
+        local_changes = (
+            unstaged.get(path) in (MODIFIED, TYPE_CHANGED) or path in hidden
+        )
         if local_changes and staged_changes:
             both.append(path)
         elif not cached:

@@ -4815,6 +4815,20 @@
         "stdout": " T letters.txt\nT\tletters.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "git_rm_refuses_a_file_turned_symlink",
+      "seq": 567973,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(rm /repo/letters.txt && ln -s numbers.txt /repo/letters.txt && git -C /repo rm -q letters.txt; result=$?; git -C /repo status --short; rm /repo/letters.txt; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 1,
+        "stdout": " T letters.txt\n",
+        "stderr": "error: the following file has local modifications:\n    letters.txt\n(use --cached to keep the file, or -f to force removal)\n"
+      }
     }
   ]
 }

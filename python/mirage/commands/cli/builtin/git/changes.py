@@ -478,22 +478,20 @@ async def work_entries(
         dispatch, location.worktree, state.entries, found
     )
     entries = staged_entries(state)
-    paths = {
-        path.decode("utf-8", errors="replace"): path
-        for path in (set(entries) | set(state.conflicts))
-    }
-    for path in state.conflicts:
-        name = path.decode("utf-8", errors="replace")
-        if name in found.files:
-            changes[name] = MODIFIED
     store = repo.object_store
     assert isinstance(store, VfsObjectStore)
-    for name, code in changes.items():
-        path = paths[name]
-        if code == DELETED:
+    for path in [*state.entries, *state.conflicts]:
+        name = path.decode("utf-8", errors="replace")
+        info = found.files.get(name)
+        if path in state.conflicts:
+            code = None if info is None else MODIFIED
+        else:
+            code = changes.get(name)
+        if code is None:
+            continue
+        if info is None:
             del entries[path]
             continue
-        info = found.files[name]
         blob = Blob.from_string(
             await entry_bytes(
                 dispatch, posixpath.join(location.worktree, name), info

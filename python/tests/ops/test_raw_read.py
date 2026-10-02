@@ -95,16 +95,6 @@ async def _seed(ws: Workspace, path: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_user_renderer_is_never_served_from_the_file_cache():
-    # Commands fill the cache with what their own reads return, which a
-    # renderer registered on the mount never sees: serving the entry would
-    # answer a rendered read with raw bytes.
-    ws = _workspace(_CachingRAM())
-    await _seed(ws, "/data/books.tally")
-    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "line",
     [
@@ -134,21 +124,6 @@ async def test_a_renderer_named_by_filetype_is_never_served_warm():
 
 
 @pytest.mark.asyncio
-async def test_a_renderer_the_vfs_ships_is_never_served_from_the_file_cache():
-    # Whoever registered it, a filetype read op renders on every read.
-    ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
-    await _seed(ws, "/data/books.tally")
-    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
-
-
-@pytest.mark.asyncio
-async def test_a_plain_path_beside_a_user_renderer_is_still_served_warm():
-    ws = _workspace(_CachingRAM())
-    await _seed(ws, "/data/notes.txt")
-    assert await ws.vfs.read("/data/notes.txt") == b"CACHED"
-
-
-@pytest.mark.asyncio
 async def test_a_warm_cache_still_answers_a_ranged_read_with_the_window():
     # The cache holds the whole object; a ranged read asked for a
     # window instead of the file, so serving the file back is wrong.
@@ -175,13 +150,6 @@ async def test_a_cold_and_a_warm_ranged_read_agree():
         IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"])
     )
     assert await ws.vfs.read("/data/f.bin", 2, 3) == cold
-
-
-@pytest.mark.asyncio
-async def test_an_extensionless_path_beside_a_user_renderer_is_served_warm():
-    ws = _workspace(_CachingRAM())
-    await _seed(ws, "/data/README")
-    assert await ws.vfs.read("/data/README") == b"CACHED"
 
 
 def _fresh_rendering_workspace(vfs: RAMVFS) -> Workspace:
@@ -249,11 +217,49 @@ async def _stat_tally(accessor, path: PathSpec, **kwargs) -> FileStat:
     return await ram_stat(accessor, path)
 
 
+def _renderer_on_mount() -> Workspace:
+    return _workspace(_CachingRAM())
+
+
+def _renderer_in_vfs() -> Workspace:
+    return Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
+
+
 @pytest.mark.asyncio
-async def test_a_filetype_op_other_than_read_leaves_the_read_warm():
-    # Only a filetype-scoped read op renders; a stat scoped to the same
-    # extension changes nothing about what the cache may serve.
+@pytest.mark.parametrize(
+    "build",
+    [_renderer_on_mount, _renderer_in_vfs],
+    ids=["added-on-the-mount", "shipped-by-the-vfs"],
+)
+async def test_a_filetype_renderer_is_never_served_from_the_file_cache(build):
+    # Commands fill the cache with what their own reads return. A filetype
+    # read op, whoever registered it, renders on every read instead.
+    ws = build()
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+def _stat_only_for_tally() -> Workspace:
     ws = Workspace({"/data/": _CachingRAM()}, mode=MountMode.WRITE)
     ws.mount("/data/").register_fns([_stat_tally])
-    await _seed(ws, "/data/books.tally")
-    assert await ws.vfs.read("/data/books.tally") == b"CACHED"
+    return ws
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("build", "path"),
+    [
+        (_renderer_on_mount, "/data/notes.txt"),
+        (_renderer_on_mount, "/data/README"),
+        (_stat_only_for_tally, "/data/books.tally"),
+    ],
+    ids=["plain-path", "extensionless-path", "non-read-op-for-the-extension"],
+)
+async def test_a_read_no_filetype_renderer_resolves_is_still_served_warm(
+    build, path
+):
+    # Only a read op scoped to the path's filetype renders: another path,
+    # no extension, or another op scoped to it leaves the cache in charge.
+    ws = build()
+    await _seed(ws, path)
+    assert await ws.vfs.read(path) == b"CACHED"

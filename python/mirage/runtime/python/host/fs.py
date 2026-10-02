@@ -31,7 +31,7 @@ from mirage.runtime.python.host.constants import (
     XATTR_CREATE,
     XATTR_REPLACE,
 )
-from mirage.runtime.python.host.errors import refused
+from mirage.runtime.python.host.errors import numbered, refused
 from mirage.runtime.python.host.host_io import in_host_io
 from mirage.runtime.python.host.list import (
     MountDirEntry,
@@ -113,7 +113,13 @@ class HostFs:
         self._gid = _real_os.getgid() if hasattr(_real_os, "getgid") else 0
 
     def _run(self, coro: Awaitable[T]) -> T:
-        return run_async_from_sync(coro, self._loop)
+        try:
+            return run_async_from_sync(coro, self._loop)
+        except OSError as exc:
+            renumbered = numbered(exc)
+            if renumbered is exc:
+                raise
+            raise renumbered from exc
 
     def _virtual(self, path: Any) -> str | None:
         """The mounted virtual path this argument names, else None.

@@ -39,6 +39,11 @@ from tests.fixtures.driver_ops import ops as driver_ops
 from .conftest import make_ops_with_dir, run
 
 
+async def _shell(ws, line):
+    result = await ws.shell(line)
+    return result.exit_code, await result.stdout_str()
+
+
 def seeded():
     """An ops facade over /data with one file and one subdirectory."""
     ops, _ = make_ops_with_dir()
@@ -511,6 +516,37 @@ class TestProcessPatch:
             assert os.path.exists("/mem/dir/a.txt") is True
         assert os.listdir is host_listdir
         assert sys.modules["os"] is os
+
+    def test_pathlib_predicates_answer_false_for_a_missing_path(self):
+        # pathlib reads the errno to tell missing from broken, so a
+        # backend's bare FileNotFoundError used to escape `exists()`.
+        ws = Workspace({"/mem/": RAMVFS()}, mode=MountMode.WRITE)
+        with ws:
+            missing = Path("/mem/nope.txt")
+            assert missing.exists() is False
+            assert missing.is_file() is False
+            assert missing.is_dir() is False
+            with pytest.raises(FileNotFoundError) as caught:
+                os.stat("/mem/nope.txt")
+        assert caught.value.errno == errno.ENOENT
+        assert caught.value.filename == "/mem/nope.txt"
+
+    def test_a_runtime_command_inside_the_block_shares_its_files(self):
+        # A command runs with the patch transparent (its mount op holds
+        # host_io), so the guest reaches the workspace through its own
+        # door while the block's code reaches it through the patch.
+        ws = Workspace({"/mem/": RAMVFS()}, mode=MountMode.EXEC)
+        with ws:
+            Path("/mem/host.txt").write_text("from host")
+            result = run(
+                _shell(
+                    ws,
+                    "python3 -c \"print(open('/mem/host.txt').read()); "
+                    "open('/mem/guest.txt', 'w').write('from guest')\"",
+                )
+            )
+            assert result == (0, "from host\n")
+            assert Path("/mem/guest.txt").read_text() == "from guest"
 
     def test_pathlib_routes_for_content_and_metadata(self):
         ws = Workspace({"/mem/": RAMVFS()}, mode=MountMode.WRITE)

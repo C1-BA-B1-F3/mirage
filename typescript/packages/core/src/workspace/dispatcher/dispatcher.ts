@@ -461,36 +461,26 @@ export class Dispatcher {
     }
     const caches = vfs.cachesReads
     // The file cache holds what commands read, keyed on the path alone. A
-    // raw read, or a read through a filetype renderer (whoever registered
-    // it), asks for a different value under the same key, so it must not be
-    // served from that cache; nothing populates it from here, so skipping
-    // the probe is the whole fix. Mirrors Python's Dispatcher.dispatch.
+    // raw read asks for a different value under the same key, so it skips
+    // the probe. A read through a filetype renderer (whoever registered it)
+    // still gets the freshness check, so a path the backend reports gone
+    // fails, but is never served the cached bytes. Mirrors Python's
+    // Dispatcher.dispatch.
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
     const requested = kwargs?.filetype
-    const eligible = caches && !raw && DISPATCH_READ_OPS.has(opName)
-    const readType = !eligible
-      ? null
-      : requested === undefined
-        ? getExtension(p.virtual)
-        : typeof requested === 'string'
-          ? requested
-          : null
-    const renders = (): boolean =>
-      readType !== null && this.opsRegistry.find('read', vfs, readType) !== null
-    if (eligible && renders()) {
-      // The cached bytes are never this read's rendering, but their
-      // freshness check still runs, so a path the backend reports gone fails
-      // here as it does for any other warm read.
-      if (await this.cache.exists(p.virtual)) {
-        await this.reconciler.mayServeCached(mount, p.virtual)
-      }
-    } else if (eligible) {
+    if (caches && !raw && DISPATCH_READ_OPS.has(opName)) {
       const cached = await this.cache.get(p.virtual)
+      const readType =
+        requested === undefined
+          ? getExtension(p.virtual)
+          : typeof requested === 'string'
+            ? requested
+            : null
       if (
         cached !== null &&
         (await this.reconciler.mayServeCached(mount, p.virtual)) &&
-        !renders() &&
+        !(readType !== null && this.opsRegistry.find('read', vfs, readType) !== null) &&
         !mount.retiring &&
         this.namespace.tryMountFor(p.virtual) === mount
       ) {

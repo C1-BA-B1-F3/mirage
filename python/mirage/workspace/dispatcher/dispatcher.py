@@ -507,34 +507,20 @@ class Dispatcher:
         await mount.ensure_ready()
         caches_reads = mount.vfs.caches_reads
         # The file cache holds what commands read, keyed on the path
-        # alone. A raw read, or a read through a filetype renderer (whoever
-        # registered it), asks for a different value under the same key, so it must
-        # not be served from that cache; nothing populates it from here,
-        # so skipping the probe is the whole fix.
+        # alone. A raw read asks for a different value under the same key,
+        # so it skips the probe. A read through a filetype renderer
+        # (whoever registered it) still gets the freshness check, so a path
+        # the backend reports gone fails, but is never served the cached
+        # bytes.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
 
-        eligible = caches_reads and not raw and op in DISPATCH_READ_OPS
-        filetype = (
-            (
+        if caches_reads and not raw and op in DISPATCH_READ_OPS:
+            cached = await self._cache.get(path.virtual)
+            filetype = (
                 kwargs["filetype"]
                 if "filetype" in kwargs
                 else get_extension(path.virtual)
             )
-            if eligible
-            else None
-        )
-        if (
-            eligible
-            and filetype is not None
-            and mount.has_filetype_op("read", filetype)
-        ):
-            # The cached bytes are never this read's rendering, but their
-            # freshness check still runs, so a path the backend reports
-            # gone fails here as it does for any other warm read.
-            if await self._cache.exists(path.virtual):
-                await self._reconciler.may_serve_cached(mount, path.virtual)
-        elif eligible:
-            cached = await self._cache.get(path.virtual)
             if (
                 cached is not None
                 and await self._reconciler.may_serve_cached(

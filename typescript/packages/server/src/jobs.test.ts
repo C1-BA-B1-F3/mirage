@@ -143,21 +143,49 @@ describe('async execution ownership', () => {
     expect(finished.revision).toBe(3)
   })
 
-  it('failed completion stays unconfirmed', async () => {
-    const attempted = gate()
+  it('a wait keeps the completion it observed', async () => {
+    class EvictingStore extends RAMExecutionStore {
+      evicted = false
+      override async get(id: string): Promise<ExecutionRecord | null> {
+        return this.evicted ? null : super.get(id)
+      }
+      override async waitForChange(
+        id: string,
+        revision: number,
+        timeoutSeconds?: number,
+        signal?: AbortSignal,
+      ): Promise<ExecutionRecord | null> {
+        const record = await super.waitForChange(id, revision, timeoutSeconds, signal)
+        this.evicted = record?.finishedAt != null
+        return record
+      }
+    }
+    const table = new JobTable(new EvictingStore())
+    const job = await submit(table, () => Promise.resolve('value'))
+    const finished = await table.wait(job.id)
+    expect(finished.status).toBe(JobStatus.DONE)
+    expect(finished.result).toBe('value')
+  })
+
+  it('failed completion stays unconfirmed and wakes its waiter', async () => {
+    const release = gate()
     class BrokenStore extends RAMExecutionStore {
       override async compareAndSet(record: ExecutionRecord, revision: number): Promise<boolean> {
-        if (record.finishedAt !== null) {
-          attempted.release()
-          throw new Error('store unavailable')
-        }
+        if (record.finishedAt !== null) throw new Error('store unavailable')
         return super.compareAndSet(record, revision)
       }
     }
     const table = new JobTable(new BrokenStore())
-    const job = await submit(table, () => Promise.resolve('value'))
-    await attempted.wait
-    await expect(table.wait(job.id)).rejects.toThrow('could not be published')
+    const job = await submit(table, async () => {
+      await release.wait
+      return 'value'
+    })
+    const outcome = expect(table.wait(job.id)).rejects.toThrow('could not be published')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const released = performance.now()
+    release.release()
+    await outcome
+    expect(performance.now() - released).toBeLessThan(500)
     expect((await table.get(job.id)).finishedAt).toBeNull()
   })
 

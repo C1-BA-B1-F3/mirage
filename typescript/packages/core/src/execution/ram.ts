@@ -52,11 +52,9 @@ export class RAMExecutionStore extends ExecutionStore {
   list(workspaceId?: string): Promise<ExecutionRecord[]> {
     this.prune()
     return Promise.resolve(
-      structuredClone(
-        [...this.records.values()].filter(
-          (r) => workspaceId === undefined || r.workspaceId === workspaceId,
-        ),
-      ),
+      [...this.records.values()]
+        .filter((r) => workspaceId === undefined || r.workspaceId === workspaceId)
+        .map((r) => ({ ...r, result: null })),
     )
   }
 
@@ -86,6 +84,7 @@ export class RAMExecutionStore extends ExecutionStore {
     id: string,
     revision: number,
     timeoutSeconds?: number,
+    signal?: AbortSignal,
   ): Promise<ExecutionRecord | null> {
     const deadline =
       timeoutSeconds === undefined ? Infinity : performance.now() + timeoutSeconds * 1000
@@ -95,16 +94,19 @@ export class RAMExecutionStore extends ExecutionStore {
         wake = resolve
       })
       this.listeners.add(wake)
+      signal?.addEventListener('abort', wake, { once: true })
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
         const record = await this.get(id)
         const remaining = deadline - performance.now()
-        if (record?.revision !== revision || remaining <= 0) return record
+        if (record?.revision !== revision || remaining <= 0 || signal?.aborted === true)
+          return record
         if (Number.isFinite(remaining)) timer = setTimeout(wake, Math.min(remaining, 2_147_483_647))
         await changed
       } finally {
         clearTimeout(timer)
         this.listeners.delete(wake)
+        signal?.removeEventListener('abort', wake)
       }
     }
   }

@@ -31,6 +31,10 @@ it('isolates snapshots, observes revision changes and preserves terminal records
   expect(await waiting).toEqual(running)
   expect(await store.waitForChange(first.id, 0)).toEqual(running)
   expect(await store.waitForChange(first.id, 1, 0.001)).toEqual(running)
+  const stop = new AbortController()
+  const stopped = store.waitForChange(first.id, 1, undefined, stop.signal)
+  stop.abort()
+  expect(await stopped).toEqual(running)
   const finished = {
     ...running,
     revision: 2,
@@ -44,6 +48,7 @@ it('isolates snapshots, observes revision changes and preserves terminal records
   expect(JSON.parse(JSON.stringify(read))).toEqual(finished)
   ;(read.result as { stdout: string[] }).stdout.push('mutation')
   expect((await store.get(first.id))?.result).toEqual({ stdout: ['hi'] })
+  expect(await store.list()).toEqual([{ ...finished, result: null }])
   expect(
     await store.compareAndSet({ ...finished, revision: 3, status: ExecutionStatus.RUNNING }, 2),
   ).toBe(false)

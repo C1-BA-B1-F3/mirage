@@ -32,9 +32,16 @@ interface Run {
   controller: AbortController
   completion: Promise<void>
   publicationError: unknown
+  settled: AbortController
 }
 
-/** Local execution owner. Only serializable snapshots reach the async store. */
+/**
+ * Local execution owner over an asynchronous record store.
+ *
+ * Submit persists admission before any work starts. A shell marks running
+ * only after acquiring its session. Cancellation is an intent; completion
+ * is published after the work and its cleanup settle.
+ */
 export class JobTable {
   readonly store: ExecutionStore
   private ownsStore: boolean
@@ -124,6 +131,7 @@ export class JobTable {
       controller: new AbortController(),
       completion: Promise.resolve(),
       publicationError: null,
+      settled: new AbortController(),
     }
     this.live.set(record.id, control)
     control.completion = this.run(record.id, control, factory)
@@ -162,6 +170,8 @@ export class JobTable {
     } catch (err) {
       control.publicationError = err
       console.error(`could not publish completion of ${id}`, err)
+    } finally {
+      control.settled.abort()
     }
   }
 
@@ -170,18 +180,25 @@ export class JobTable {
       timeoutSeconds === undefined
         ? Infinity
         : performance.now() + Math.max(0, timeoutSeconds) * 1000
-    for (;;) {
-      const record = await this.get(id)
-      if (record.finishedAt !== null) return record
-      const control = this.live.get(id)
+    const control = this.live.get(id)
+    let record = await this.get(id)
+    while (record.finishedAt === null) {
       if (control?.publicationError != null)
         throw new Error('execution completion could not be published', {
           cause: control.publicationError,
         })
       const remaining = (deadline - performance.now()) / 1000
-      if (remaining <= 0) return record
-      await this.store.waitForChange(id, record.revision, Math.min(remaining, 1))
+      if (remaining <= 0) break
+      const changed = await this.store.waitForChange(
+        id,
+        record.revision,
+        timeoutSeconds === undefined ? undefined : remaining,
+        control?.settled.signal,
+      )
+      if (changed === null) throw new Error(`job not found: ${id}`)
+      record = changed
     }
+    return record
   }
 
   async cancel(id: string): Promise<boolean> {

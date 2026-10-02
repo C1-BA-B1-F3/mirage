@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import functools
 
 import pytest
 
@@ -26,15 +25,7 @@ async def submit(table, work):
         await scope.start()
         return await work()
 
-    return await table.submit(
-        "ws",
-        "probe",
-        functools.partial(
-            asyncio.run_coroutine_threadsafe, loop=asyncio.get_running_loop()
-        ),
-        run,
-        session_id="session",
-    )
+    return await table.submit("ws", "probe", run, session_id="session")
 
 
 @pytest.mark.asyncio
@@ -130,21 +121,44 @@ async def test_cancel_survives_a_delayed_completion_write():
 
 
 @pytest.mark.asyncio
+async def test_wait_keeps_the_completion_it_observed():
+    class EvictingStore(RAMExecutionStore):
+        evicted = False
+
+        async def get(self, execution_id):
+            return None if self.evicted else await super().get(execution_id)
+
+        async def wait_for_change(self, *args):
+            record = await super().wait_for_change(*args)
+            self.evicted = (
+                record is not None and record.finished_at is not None
+            )
+            return record
+
+    table = JobTable(EvictingStore())
+    job = await submit(table, lambda: asyncio.sleep(0, result="value"))
+    finished = await table.wait(job.id)
+    assert finished.status == JobStatus.DONE
+    assert finished.result == "value"
+
+
+@pytest.mark.asyncio
 async def test_failed_completion_is_unconfirmed_not_successful():
-    attempted = asyncio.Event()
+    release = asyncio.Event()
 
     class BrokenStore(RAMExecutionStore):
         async def compare_and_set(self, record, revision):
             if record.finished_at is not None:
-                attempted.set()
                 raise OSError("store unavailable")
             return await super().compare_and_set(record, revision)
 
     table = JobTable(BrokenStore())
-    job = await submit(table, lambda: asyncio.sleep(0, result="value"))
-    await asyncio.wait_for(attempted.wait(), 2)
+    job = await submit(table, release.wait)
+    waiting = asyncio.create_task(table.wait(job.id))
+    await asyncio.sleep(0.01)
+    release.set()
     with pytest.raises(RuntimeError, match="could not be published"):
-        await table.wait(job.id)
+        await asyncio.wait_for(waiting, 0.5)
     assert (await table.get(job.id)).finished_at is None
 
 

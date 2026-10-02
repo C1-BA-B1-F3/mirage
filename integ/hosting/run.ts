@@ -319,17 +319,18 @@ async function run(
     lines.close()
     const watchdog = setTimeout(() => child.kill('SIGKILL'), 5000)
     child.kill('SIGTERM')
-    const [exitCode, signal] = await exited
+    await exited
     clearTimeout(watchdog)
     await rm(home, { recursive: true, force: true })
-    assert(output.includes('STOPPED\n'), `${host} did not finish shutdown: ${errors}`)
-    // Uvicorn re-raises SIGTERM after its lifespan has finished.
-    assert(
-      signal === null || (host === 'python' && signal === 'SIGTERM'),
-      `${host} was killed: ${String(signal)}`,
-    )
-    if (signal === null) assert.equal(exitCode, 0, `${host} shutdown failed: ${errors}`)
   }
+  const [exitCode, signal] = await exited
+  assert(output.includes('STOPPED\n'), `${host} did not finish shutdown: ${errors}`)
+  // Uvicorn re-raises SIGTERM after its lifespan has finished.
+  assert(
+    signal === null || (host === 'python' && signal === 'SIGTERM'),
+    `${host} was killed: ${String(signal)}`,
+  )
+  if (signal === null) assert.equal(exitCode, 0, `${host} shutdown failed: ${errors}`)
 }
 
 const selected = process.argv.slice(2).filter((arg) => arg !== '--mounts')

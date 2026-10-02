@@ -70,13 +70,8 @@ session, and becomes `stopping` when cancellation is accepted. `cancelRequested`
 records that intent; `canceled` is published after the managed call settles.
 A wait timeout returns the latest snapshot without canceling the job.
 
-The server stores serializable records separately from live tasks and controllers.
-`buildApp({ executionStore })` accepts an asynchronous `ExecutionStore`; the
-default `RAMExecutionStore` retains up to 1,024 completed jobs for one hour.
-The Python equivalent is `build_app(execution_store=...)`. Supplied stores are
-borrowed and remain the caller's responsibility to close. This version has one
-local execution owner: replacing record storage does not migrate a workspace or
-route cancellation to another server.
+Job records stay in the server's memory: running jobs are never evicted, and
+up to 1,024 completed jobs are kept for one hour.
 
 Shell evaluation yields cooperatively between nodes. Blocking Python CLI
 callbacks run in owned threads; cancellation waits for the callback to return.

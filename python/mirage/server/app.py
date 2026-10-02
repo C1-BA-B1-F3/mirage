@@ -24,7 +24,6 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from mirage.concurrency.limiter import run_blocking
-from mirage.execution.base import ExecutionStore
 from mirage.server.auth import (
     AuthConfig,
     AuthMiddleware,
@@ -154,7 +153,6 @@ def build_app(
     state_root: str | Path | None = None,
     pid_file: str | Path | None = None,
     ssh_config: SSHConfig | None = None,
-    execution_store: ExecutionStore | None = None,
 ) -> FastAPI:
     """Construct a daemon FastAPI app.
 
@@ -216,7 +214,7 @@ def build_app(
         idle_grace_seconds=idle_grace_seconds,
         exit_event=app.state.exit_event,
     )
-    app.state.jobs = JobTable(execution_store)
+    app.state.jobs = JobTable()
     app.state.pid_file = pid_file_path(pid_file)
     app.state.version_backend = LocalBackend(version_root_path(version_root))
     app.state.snapshot_root = snapshot_root_path(snapshot_root)

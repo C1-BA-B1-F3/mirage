@@ -24,6 +24,13 @@ async def test_snapshots_revision_waits_and_terminal_records():
     assert await asyncio.wait_for(waiter, 1) == running
     assert await store.wait_for_change(record.id, 0) == running
     assert await store.wait_for_change(record.id, 1, 0.001) == running
+    stop = asyncio.Event()
+    stopped = asyncio.create_task(
+        store.wait_for_change(record.id, 1, None, stop)
+    )
+    await asyncio.sleep(0)
+    stop.set()
+    assert await asyncio.wait_for(stopped, 1) == running
     finished = replace(
         running,
         revision=2,
@@ -36,6 +43,7 @@ async def test_snapshots_revision_waits_and_terminal_records():
     json.dumps(asdict(read))
     read.result["stdout"].append("mutation")
     assert (await store.get(record.id)).result == {"stdout": ["hi"]}
+    assert (await store.list()) == [replace(finished, result=None)]
     assert not await store.compare_and_set(
         replace(finished, revision=3, status=ExecutionStatus.RUNNING), 2
     )

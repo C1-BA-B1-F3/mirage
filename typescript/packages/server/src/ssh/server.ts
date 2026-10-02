@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import type * as Ssh2Mod from 'ssh2'
 import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel } from 'ssh2'
@@ -279,12 +278,15 @@ export async function startSSHServer(
   config: SSHConfig,
 ): Promise<SSHListener> {
   const ssh2 = await loadSsh2()
-  if (!existsSync(config.authorizedKeysFile)) {
+  try {
+    await access(config.authorizedKeysFile)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     console.warn(
       `ssh: ${config.authorizedKeysFile} does not exist; every login will be refused until it holds a public key`,
     )
   }
-  const hostKey = loadHostKey(config.hostKeyFile, ssh2.utils)
+  const hostKey = await loadHostKey(config.hostKeyFile, ssh2.utils)
   const clients = new Set<Connection>()
   let port = config.port
   const server = new ssh2.Server({ hostKeys: [hostKey] }, (client, info) => {

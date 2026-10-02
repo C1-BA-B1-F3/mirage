@@ -13,10 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import concurrent.futures
 import logging
 import threading
 from typing import Any, Coroutine, TypeVar
 
+from mirage.concurrency.limiter import settle
 from mirage.workspace.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ class WorkspaceRunner:
 
     The workspace's coroutines run only on the workspace loop. Callers
     dispatch work via :meth:`call`, which is safe from any other
-    asyncio loop.
+    asyncio loop and refused once :meth:`stop` begins.
 
     Example:
 
@@ -57,23 +59,34 @@ class WorkspaceRunner:
         """
         self.ws = ws
         self.loop = asyncio.new_event_loop()
+        self._stopped = False
+        self._stopping: asyncio.Task[None] | None = None
         self._thread = threading.Thread(
             target=self._run,
             name=f"mirage-ws-{id(ws):x}",
             daemon=True,
         )
         self._thread.start()
-        # call_soon_threadsafe queues work even before run_forever starts.
 
     def _run(self) -> None:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
+    def _schedule(
+        self, coro: Coroutine[Any, Any, T]
+    ) -> concurrent.futures.Future[T]:
+        if self._stopped:
+            coro.close()
+            raise RuntimeError("WorkspaceRunner is stopped")
+        return asyncio.run_coroutine_threadsafe(coro, self.loop)
+
     async def call(self, coro: Coroutine[Any, Any, T]) -> T:
         """Run ``coro`` on the workspace loop and await the result.
 
         Safe to call from any other event loop. The current loop is
-        not blocked while the workspace loop processes ``coro``.
+        not blocked while the workspace loop processes ``coro``. A
+        cancelled caller cancels ``coro`` there and returns only once it
+        has settled, so nothing it holds outlives the call.
 
         Args:
             coro (Awaitable[T]): a coroutine produced from the
@@ -81,9 +94,43 @@ class WorkspaceRunner:
 
         Returns:
             T: whatever ``coro`` resolves to.
+
+        Raises:
+            RuntimeError: ``stop`` has begun.
         """
-        fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        return await asyncio.wrap_future(fut)
+        work: asyncio.Task[Any] | None = None
+        canceled = False
+
+        async def run() -> T:
+            nonlocal work
+            if canceled:
+                coro.close()
+                raise asyncio.CancelledError()
+            work = asyncio.current_task()
+            return await coro
+
+        def cancel() -> None:
+            nonlocal canceled
+            canceled = True
+            if work is not None:
+                work.cancel()
+
+        try:
+            result = asyncio.wrap_future(self._schedule(run()))
+        except RuntimeError:
+            coro.close()
+            raise
+        try:
+            return await asyncio.shield(result)
+        except asyncio.CancelledError:
+            self.loop.call_soon_threadsafe(cancel)
+            try:
+                await settle(result)
+            except Exception:
+                logger.debug(
+                    "workspace call failed during cancellation", exc_info=True
+                )
+            raise
 
     def call_sync(
         self, coro: Coroutine[Any, Any, T], timeout: float | None = None
@@ -102,24 +149,34 @@ class WorkspaceRunner:
         Returns:
             T: whatever ``coro`` resolves to.
         """
-        fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        return fut.result(timeout=timeout)
+        return self._schedule(coro).result(timeout=timeout)
 
     async def stop(self, *, delete: bool = False) -> None:
         """Close the workspace and shut down the runner cleanly.
 
-        Calls ``self.ws.close()`` on the workspace loop (``delete()``
-        when ``delete`` is set), then stops the loop and joins the
-        thread. Idempotent.
+        Refuses new work, calls ``self.ws.close()`` on the workspace
+        loop (``delete()`` when ``delete`` is set), then stops the loop
+        and joins the thread. Idempotent; concurrent calls are
+        deduplicated.
 
         Args:
             delete (bool): delete the workspace's state as it closes.
         """
+        if self._stopping is None:
+            self._stopped = True
+            self._stopping = asyncio.ensure_future(self._stop(delete))
+        await asyncio.shield(self._stopping)
+
+    async def _stop(self, delete: bool) -> None:
         if not self._thread.is_alive():
             return
         failure: Exception | None = None
         try:
-            await self.call(self.ws.delete() if delete else self.ws.close())
+            await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(
+                    self.ws.delete() if delete else self.ws.close(), self.loop
+                )
+            )
         except Exception as exc:
             if delete:
                 failure = exc

@@ -12,8 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-import functools
 import json
 from typing import Any
 
@@ -70,8 +68,8 @@ def _build_execute_kwargs(
     return kwargs
 
 
-async def _invoke_execute(runner, kwargs: dict[str, Any], scope):
-    result = await runner.ws.shell(**kwargs, execution_scope=scope)
+async def _invoke_execute(ws, kwargs: dict[str, Any], scope):
+    result = await ws.shell(**kwargs, execution_scope=scope)
     return await io_result_to_dict(result)
 
 
@@ -85,9 +83,6 @@ async def execute(
     job_table = request.app.state.jobs
     content_type = request.headers.get("content-type", "")
     req_obj, stdin_bytes = await _parse_execute_body(request, content_type)
-    schedule = functools.partial(
-        asyncio.run_coroutine_threadsafe, loop=entry.runner.loop
-    )
     await entry.runner.call(entry.runner.ws.ensure_sessions_loaded())
     kwargs = _build_execute_kwargs(req_obj, stdin_bytes)
     session_id = (
@@ -99,8 +94,9 @@ async def execute(
     job = await job_table.submit(
         workspace_id=workspace_id,
         command=req_obj.command,
-        schedule=schedule,
-        coro_factory=functools.partial(_invoke_execute, entry.runner, kwargs),
+        factory=lambda scope: entry.runner.call(
+            _invoke_execute(entry.runner.ws, kwargs, scope)
+        ),
         session_id=session_id,
     )
     if background:

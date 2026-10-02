@@ -1,13 +1,13 @@
+import asyncio
 from abc import ABC, abstractmethod
 
 from mirage.execution.types import ExecutionRecord
 
 
 class ExecutionStore(ABC):
-    """Async request tracking; live tasks and process handles stay with the owner.
+    """Async request tracking; live work stays with the execution owner.
 
     Records are independent snapshots. Revisions increase on successful CAS.
-    A wait observes a revision, so a change before subscription is not lost.
     Implementations may expire completed records, never active executions.
     """
 
@@ -21,7 +21,8 @@ class ExecutionStore(ABC):
     @abstractmethod
     async def list(
         self, workspace_id: str | None = None
-    ) -> list[ExecutionRecord]: ...
+    ) -> list[ExecutionRecord]:
+        """Records without their results; ``get`` returns one in full."""
 
     @abstractmethod
     async def compare_and_set(
@@ -31,9 +32,18 @@ class ExecutionStore(ABC):
 
     @abstractmethod
     async def wait_for_change(
-        self, execution_id: str, revision: int, timeout: float | None = None
+        self,
+        execution_id: str,
+        revision: int,
+        timeout: float | None = None,
+        cancel: asyncio.Event | None = None,
     ) -> ExecutionRecord | None:
-        """Return changed/current state, or None if it has expired."""
+        """Return the changed or current record, None once it has expired.
+
+        A wait observes a revision, so a change made before it registered is
+        not lost. ``cancel`` ends it early with the current record, as a
+        timeout does.
+        """
 
     @abstractmethod
     async def close(self) -> None: ...

@@ -12,15 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import {
-  closeSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  writeSync,
-} from 'node:fs'
+import { constants } from 'node:fs'
+import { type FileHandle, mkdir, open, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type * as Ssh2Mod from 'ssh2'
 
@@ -52,21 +45,25 @@ export function mintKeyPair(utils: typeof Ssh2Mod.utils): Ssh2Mod.utils.KeyPairR
  * own, the same file the Python daemon writes, so either daemon can serve
  * the other's key.
  */
-export function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): string {
-  if (existsSync(path)) return readFileSync(path, 'utf-8')
-  const pair = mintKeyPair(utils)
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  let fd: number
+export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Promise<string> {
   try {
-    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
+    return await readFile(path, 'utf-8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return readFileSync(path, 'utf-8')
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+  }
+  const pair = mintKeyPair(utils)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  let file: FileHandle
+  try {
+    file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return readFile(path, 'utf-8')
     throw err
   }
   try {
-    writeSync(fd, pair.private)
+    await file.writeFile(pair.private)
   } finally {
-    closeSync(fd)
+    await file.close()
   }
   return pair.private
 }

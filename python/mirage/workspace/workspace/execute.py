@@ -341,24 +341,24 @@ async def execute_line(
     execution_scope = execution_scope or ExecutionScope()
     await execution_scope.start()
     run_line = partial(
-        _run_line,
+        run_prepared_line,
         ws,
         command,
         session,
-        stdin,
-        agent_id,
-        cwd,
-        env,
-        cancel,
-        record,
-        runtime,
-        routing_decision,
-        handed,
-        frame,
-        argv,
-        sink,
-        call_stack,
-        execution_scope,
+        stdin=stdin,
+        agent_id=agent_id,
+        cwd=cwd,
+        env=env,
+        cancel=cancel,
+        record=record,
+        runtime=runtime,
+        routing_decision=routing_decision,
+        handed=handed,
+        frame=frame,
+        argv=argv,
+        sink=sink,
+        call_stack=call_stack,
+        execution_scope=execution_scope,
     )
     if session.process_id is None:
         results: list[IOResult] = []
@@ -394,10 +394,11 @@ async def execute_line(
     return await run_line()
 
 
-async def _run_line(
+async def run_prepared_line(
     ws: "Workspace",
     command: str,
     session: SessionState,
+    *,
     stdin: ByteSource | None,
     agent_id: str | None,
     cwd: str | None,
@@ -413,6 +414,16 @@ async def _run_line(
     call_stack: CallStack | None,
     execution_scope: ExecutionScope,
 ) -> IOResult:
+    """Run a line on the session it acquired, after admission is published.
+
+    Both paths of ``execute_line``, inside the managed process or not, end
+    here; the other arguments are ``execute_line``'s.
+
+    Args:
+        ws: the workspace the line runs in.
+        command (str): the line's text.
+        session (SessionState): the session the line acquired.
+    """
     session_id = session.session_id
     cache_facts = ws._dispatcher.capture_cache_facts()
     effective_session = fork_for_call(session, cwd, env)
@@ -452,6 +463,7 @@ async def _run_line(
             offending = find_unterminated_backtick((ast.text or b"").decode())
         if offending is not None:
             io = syntax_error_result(offending, ast)
+            record_status(session, io.exit_code)
             return io
         decision = await ws._router.decide(
             ast,

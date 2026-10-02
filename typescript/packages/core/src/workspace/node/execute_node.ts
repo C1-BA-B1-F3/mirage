@@ -772,24 +772,17 @@ export async function executeNode(
 ): Promise<Result> {
   const executionScope = deps.executionScope ?? new ExecutionScope()
   await executionScope.checkpoint(deps.signal ?? session.abortSignal ?? undefined)
-  const inner = deps.executeFn
-  deps = {
-    ...deps,
-    executionScope,
-    executeFn: (cmd, opts) => {
-      if (opts.executionScope !== undefined) return inner(cmd, opts)
-      const signal = mergeSignals(deps.signal, opts.signal)
-      return inner(cmd, {
-        ...opts,
-        executionScope,
-        ...(signal !== undefined ? { signal } : {}),
-      })
-    },
-  }
   const outer = session.diagnostics
   session.diagnostics = []
   try {
-    const [stdout, io, execNode] = await executeNodeBody(deps, node, session, stdin, callStack)
+    const [stdout, io, execNode] = await executeNodeBody(
+      deps,
+      node,
+      session,
+      stdin,
+      callStack,
+      executionScope,
+    )
     // A statement that settles after the caller aborted is an orphan: its
     // status must not reach the shell the caller was already released from.
     if (deps.signal?.aborted === true || session.abortSignal?.aborted === true) {
@@ -843,9 +836,31 @@ async function executeNodeBody(
   deps: ExecuteNodeDeps,
   node: TSNodeLike,
   session: SessionState,
-  stdin: ByteSource | null = null,
-  callStack: CallStack | null = null,
+  stdin: ByteSource | null,
+  callStack: CallStack | null,
+  executionScope: ExecutionScope,
 ): Promise<Result> {
+  // The scope and signal this subtree runs under are the ones its nested
+  // evaluations run under, bound into `executeFn` here, at the one door
+  // every node goes through, as Python binds them into `execute_fn`: a
+  // background job runs without the caller's signal, and so must the lines
+  // it evaluates, or a `$(...)` inside the job would die of an abort that
+  // was never the job's.
+  const inner = deps.executeFn
+  const signal = deps.signal
+  deps = {
+    ...deps,
+    executionScope,
+    executeFn: (cmd, opts) => {
+      if (opts.executionScope !== undefined) return inner(cmd, opts)
+      const merged = mergeSignals(signal, opts.signal)
+      return inner(cmd, {
+        ...opts,
+        executionScope,
+        ...(merged !== undefined ? { signal: merged } : {}),
+      })
+    },
+  }
   const { sink, ...captureDeps } = deps
   const recurse = (
     n: TSNodeLike,

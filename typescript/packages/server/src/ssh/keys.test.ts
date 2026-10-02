@@ -26,39 +26,39 @@ function publicOf(privateKey: string): string {
 }
 
 describe('loadHostKey', () => {
-  it('mints an owner-only ed25519 key on first use', () => {
+  it('mints an owner-only ed25519 key on first use', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'ssh', 'host_key')
-    const key = loadHostKey(path, ssh2.utils)
+    const key = await loadHostKey(path, ssh2.utils)
     const parsed = ssh2.utils.parseKey(key)
     expect(parsed instanceof Error ? parsed : parsed.type).toBe('ssh-ed25519')
     expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(statSync(join(path, '..')).mode & 0o777).toBe(0o700)
   })
 
-  it('keeps the same key across loads', () => {
+  it('keeps the same key across loads', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
-    const first = loadHostKey(path, ssh2.utils)
-    expect(publicOf(loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
+    const first = await loadHostKey(path, ssh2.utils)
+    expect(publicOf(await loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
   })
 
-  it('reads an existing key instead of replacing it', () => {
+  it('reads an existing key instead of replacing it', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
     const mine = mintKeyPair(ssh2.utils).private
     writeFileSync(path, mine)
-    expect(loadHostKey(path, ssh2.utils)).toBe(mine)
+    expect(await loadHostKey(path, ssh2.utils)).toBe(mine)
     expect(readFileSync(path, 'utf-8')).toBe(mine)
   })
 })
 
 describe('mintKeyPair', () => {
-  it('mints again when ssh2 hands back a pair it cannot read', () => {
+  it('mints again when ssh2 hands back a pair it cannot read', async () => {
     const pairs = [{ private: 'truncated', public: 'truncated' }]
     const utils = {
       ...ssh2.utils,
       generateKeyPairSync: () => pairs.shift() ?? ssh2.utils.generateKeyPairSync('ed25519'),
     }
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
-    const key = loadHostKey(path, utils)
+    const key = await loadHostKey(path, utils)
     expect(ssh2.utils.parseKey(key)).not.toBeInstanceOf(Error)
     expect(readFileSync(path, 'utf-8')).toBe(key)
   })

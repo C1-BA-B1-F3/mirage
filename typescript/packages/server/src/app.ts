@@ -17,7 +17,6 @@ import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import { WorkspaceRegistry } from './registry.ts'
 import { JobTable } from './jobs.ts'
-import type { ExecutionStore } from '@struktoai/mirage-core/execution/base'
 import type { AuthConfig } from './auth/index.ts'
 import { registerAuth, resolveAuthConfig } from './auth/index.ts'
 import { isHostAllowed, resolveAllowedHosts } from './host_validation.ts'
@@ -41,7 +40,6 @@ import type { SSHDoor } from './ssh/types.ts'
 import { LocalBackend } from './version/backend.ts'
 
 export interface BuildAppOptions {
-  executionStore?: ExecutionStore
   idleGraceSeconds?: number
   onIdleExit?: () => void
   allowedHosts?: readonly string[]
@@ -75,7 +73,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       : {}),
     onIdleExit: exitFn,
   })
-  const jobs = new JobTable(options.executionStore)
+  const jobs = new JobTable()
   const versionBackend = new LocalBackend(versionRootPath(options.versionRoot))
   const snapshotRoot = snapshotRootPath(options.snapshotRoot)
   const stateRoot = stateRootPath(options.stateRoot)

@@ -720,32 +720,33 @@ class MountCore:
 
         POSIX keeps an open descriptor on the bytes it had, and a chunked
         handle holds one chunk of them, so an unlink or a rename onto the
-        file would leave the rest unreadable. A read serves the handles
-        open when it started; one opened while it was out may have opened
-        on newer bytes, so the next round reads again for it. A read that
-        fails (a policy may allow the removal and refuse the read) leaves
-        the handles chunked rather than refusing a mutation the caller is
-        allowed.
+        file would leave the rest unreadable. One read serves every such
+        handle; FUSE runs single-threaded here, so none opens meanwhile. A
+        read that fails (a policy may allow the removal and refuse the
+        read) leaves them chunked rather than refusing a mutation the
+        caller is allowed.
 
         Args:
             path (str): mount path about to be removed or replaced.
         """
         key = self.identity(path)
-        while held := [
+        held = [
             ctx
             for ctx in self._handles.values()
             if ctx.key == key and ctx.chunked is not None
-        ]:
-            try:
-                data = self._run(self._ops.read(self.resolve(path)))
-            except Exception as err:
-                logger.debug(
-                    "fuse: holding %s before it goes failed: %r", path, err
-                )
-                return
-            for ctx in held:
-                ctx.data = data
-                ctx.chunked = None
+        ]
+        if not held:
+            return
+        try:
+            data = self._run(self._ops.read(self.resolve(path)))
+        except Exception as err:
+            logger.debug(
+                "fuse: holding %s before it goes failed: %r", path, err
+            )
+            return
+        for ctx in held:
+            ctx.data = data
+            ctx.chunked = None
 
     def release(self, fh: int) -> None:
         ctx = self._handles.get(fh)

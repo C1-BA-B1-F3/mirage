@@ -86,6 +86,28 @@ export interface MountCoreOptions {
  * `drainOps`. Reaching `ws.dispatch` from here instead would skip the
  * record; reaching a backend directly would skip the door.
  */
+/**
+ * Run `fn` after every call already queued under `key` in `queues`, and let
+ * the next one wait for it, whether it resolves or throws.
+ */
+function queue<T>(
+  queues: Map<string, Promise<void>>,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = queues.get(key) ?? Promise.resolve()
+  const run = prev.then(fn, fn)
+  const tail: Promise<void> = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  queues.set(key, tail)
+  void tail.then(() => {
+    if (queues.get(key) === tail) queues.delete(key)
+  })
+  return run
+}
+
 export class MountCore {
   readonly ops: Ops
   readonly session: SessionState | null
@@ -104,6 +126,9 @@ export class MountCore {
   // buffer and that buffer landing, which would let the flush restore the
   // old body over a truncation that already succeeded.
   private readonly pending = new Map<string, Promise<void>>()
+  // One chain per file identity that its removals (an unlink, a rename
+  // onto it) join, which an open of the file waits out: see `removing`.
+  private readonly removals = new Map<string, Promise<void>>()
   private readonly uid: number
   private readonly gid: number
 
@@ -293,17 +318,20 @@ export class MountCore {
    * truncate that would then be undone when the flush completes.
    */
   private mutate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.pending.get(key) ?? Promise.resolve()
-    const run = prev.then(fn, fn)
-    const tail: Promise<void> = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    this.pending.set(key, tail)
-    void tail.then(() => {
-      if (this.pending.get(key) === tail) this.pending.delete(key)
-    })
-    return run
+    return queue(this.pending, key, fn)
+  }
+
+  /**
+   * Run `fn`, which removes or replaces the file at `path`, with opens of
+   * that file held back until it is done, as the kernel orders an open
+   * and an unlink of one name. `hold` reads the rest for the handles open
+   * before; an open that slipped in while that read was out would get a
+   * chunked handle onto bytes about to go. A chain of its own rather than
+   * `pending`, which a rename holds for its source: holding the target's
+   * there too would let two renames that cross wait on each other.
+   */
+  private removing(path: string, fn: () => Promise<void>): Promise<void> {
+    return queue(this.removals, this.identity(path), fn)
   }
 
   /** Drain and return accumulated op records (mirrors Python's drainOps). */
@@ -470,8 +498,10 @@ export class MountCore {
    */
   async unlink(path: string): Promise<void> {
     await this.mutate(this.identity(path), async () => {
-      await this.hold(path)
-      await this.op(() => this.ops.unlink(this.resolve(path)))
+      await this.removing(path, async () => {
+        await this.hold(path)
+        await this.op(() => this.ops.unlink(this.resolve(path)))
+      })
       await this.changed(path, false)
     })
   }
@@ -530,8 +560,10 @@ export class MountCore {
     await this.mutate(this.identity(src), async () => {
       const source = this.resolve(src)
       const target = this.resolve(dst)
-      await this.hold(dst)
-      await this.op(() => this.ops.rename(source, target))
+      await this.removing(dst, async () => {
+        await this.hold(dst)
+        await this.op(() => this.ops.rename(source, target))
+      })
       for (const ctx of this.handles.values()) {
         if (ctx.key === source || ctx.key.startsWith(`${source}/`)) {
           ctx.key = target + ctx.key.slice(source.length)
@@ -659,6 +691,7 @@ export class MountCore {
   }
 
   async open(path: string, flags = 0): Promise<number> {
+    await this.removals.get(this.identity(path))
     const s = await this.op(() => this.ops.stat(this.resolve(path)))
     const ctx: Handle = { path, key: this.identity(path) }
     if (s.type === FileType.DIRECTORY) return this.handles.add(ctx)
@@ -694,31 +727,28 @@ export class MountCore {
    * Read the rest of the chunked handles on `path` before it goes. POSIX
    * keeps an open descriptor on the bytes it had, and a chunked handle
    * holds one chunk of them, so an unlink or a rename onto the file would
-   * leave the rest unreadable. A read serves the handles open when it
-   * started; one opened while it was out may have opened on newer bytes,
-   * so the next round reads again for it. A read that fails (a policy may
-   * allow the removal and refuse the read) leaves the handles chunked
-   * rather than refusing a mutation the caller is allowed. Mirrors
-   * Python's `MountCore._hold`.
+   * leave the rest unreadable. One read serves every such handle; it runs
+   * under `removing`, so no handle opens on the file meanwhile. A read
+   * that fails (a policy may allow the removal and refuse the read) leaves
+   * them chunked rather than refusing a mutation the caller is allowed.
+   * Mirrors Python's `MountCore._hold`.
    */
   private async hold(path: string): Promise<void> {
     const key = this.identity(path)
-    for (;;) {
-      const held = [...this.handles.values()].filter(
-        (ctx) => ctx.key === key && ctx.chunked !== undefined,
-      )
-      if (held.length === 0) return
-      let data: Uint8Array
-      try {
-        data = await this.op(() => this.ops.readFile(this.resolve(path)))
-      } catch (err) {
-        console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
-        return
-      }
-      for (const ctx of held) {
-        ctx.data = data
-        delete ctx.chunked
-      }
+    const held = [...this.handles.values()].filter(
+      (ctx) => ctx.key === key && ctx.chunked !== undefined,
+    )
+    if (held.length === 0) return
+    let data: Uint8Array
+    try {
+      data = await this.op(() => this.ops.readFile(this.resolve(path)))
+    } catch (err) {
+      console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
+      return
+    }
+    for (const ctx of held) {
+      ctx.data = data
+      delete ctx.chunked
     }
   }
 

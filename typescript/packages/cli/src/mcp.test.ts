@@ -90,10 +90,10 @@ describe('mirage mcp over stdio', () => {
       await client.callTool({ name: 'write', arguments: { path: '/a.txt', content: 'hi\n' } })
       const read = await client.callTool({ name: 'read', arguments: { path: '/a.txt' } })
       const ran = await client.callTool({
-        name: 'execute_command',
+        name: 'shell',
         arguments: { command: 'wc -l /a.txt' },
       })
-      expect(tools).toEqual(['edit', 'execute_command', 'grep', 'ls', 'read', 'write'])
+      expect(tools).toEqual(['edit', 'glob', 'grep', 'ls', 'read', 'shell', 'write'])
       expect((read.content as { text: string }[])[0]?.text).toBe('     1\thi\n')
       expect((ran.content as { text: string }[])[0]?.text).toBe('1 /a.txt\n')
     } finally {

@@ -30,14 +30,15 @@ def server(workspace):
 
 
 @pytest.mark.asyncio
-async def test_lists_the_six_tools(server):
+async def test_lists_the_tools(server):
     tools = await list_tools(server)
     assert sorted(t.name for t in tools) == [
         "edit",
-        "execute_command",
+        "glob",
         "grep",
         "ls",
         "read",
+        "shell",
         "write",
     ]
 
@@ -51,6 +52,8 @@ async def test_read_only_tools_are_annotated(server):
     assert annotations["read"] is True
     assert annotations["ls"] is True
     assert annotations["grep"] is True
+    assert annotations["glob"] is True
+    assert annotations["shell"] is None
     assert annotations["write"] is None
     assert annotations["edit"] is None
 
@@ -60,12 +63,13 @@ async def test_every_tool_declares_its_required_arguments(server):
     required = {
         t.name: t.input_schema["required"] for t in await list_tools(server)
     }
-    assert required["execute_command"] == ["command"]
+    assert required["shell"] == ["command"]
     assert required["read"] == ["path"]
     assert required["write"] == ["path", "content"]
     assert required["edit"] == ["path", "old_string", "new_string"]
     assert required["ls"] == ["path"]
     assert required["grep"] == ["pattern", "path"]
+    assert required["glob"] == ["pattern"]
 
 
 @pytest.mark.asyncio
@@ -73,15 +77,21 @@ async def test_read_and_edit_advertise_their_argument_types(server):
     tools = {t.name: t for t in await list_tools(server)}
     read = tools["read"].input_schema["properties"]
     edit = tools["edit"].input_schema["properties"]
-    assert read["path"] == {"type": "string"}
-    assert read["offset"] == {"type": "integer", "minimum": 0}
-    assert read["limit"] == {"type": "integer", "minimum": 1}
-    assert edit["replace_all"] == {"type": "boolean"}
+    assert read["path"]["type"] == "string"
+    assert (read["offset"]["type"], read["offset"]["minimum"]) == (
+        "integer",
+        0,
+    )
+    assert (read["limit"]["type"], read["limit"]["minimum"]) == ("integer", 1)
+    assert edit["replace_all"]["type"] == "boolean"
+    for tool in tools.values():
+        for name, prop in tool.input_schema["properties"].items():
+            assert prop["description"], (tool.name, name)
 
 
 @pytest.mark.asyncio
-async def test_call_execute_command(server):
-    result = await call_tool(server, "execute_command", {"command": "echo hi"})
+async def test_call_shell(server):
+    result = await call_tool(server, "shell", {"command": "echo hi"})
     assert "hi" in result.content[0].text
     assert result.is_error is False
 
@@ -128,6 +138,8 @@ async def test_call_ls_and_grep(server):
     assert "a.txt" in listing.content[0].text
     found = await call_tool(server, "grep", {"pattern": "needle", "path": "/"})
     assert "needle" in found.content[0].text
+    globbed = await call_tool(server, "glob", {"pattern": "*.txt"})
+    assert globbed.content[0].text == "/d/a.txt\n"
 
 
 @pytest.mark.asyncio

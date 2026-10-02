@@ -190,21 +190,21 @@ afterEach(async () => {
 })
 
 describe('the mcp subsystem', () => {
-  it('serves the six tools', async () => {
+  it('serves the tools', async () => {
     const channel = await mcp(await startHarness())
     const listed = await channel.request('tools/list', {})
     const written = await channel.call('write', { path: '/a.txt', content: 'hi\n' })
     const read = await channel.call('read', { path: '/a.txt' })
     const tools = (listed.result as { tools: { name: string }[] }).tools.map((t) => t.name)
-    expect(tools.sort()).toEqual(['edit', 'execute_command', 'grep', 'ls', 'read', 'write'])
+    expect(tools.sort()).toEqual(['edit', 'glob', 'grep', 'ls', 'read', 'shell', 'write'])
     expect(written.isError).toBe(false)
     expect(read.text).toBe('     1\thi\n')
   })
 
   it('runs the channel as one session', async () => {
     const channel = await mcp(await startHarness())
-    await channel.call('execute_command', { command: 'mkdir /d && cd /d' })
-    expect((await channel.call('execute_command', { command: 'pwd' })).text).toBe('/d\n')
+    await channel.call('shell', { command: 'mkdir /d && cd /d' })
+    expect((await channel.call('shell', { command: 'pwd' })).text).toBe('/d\n')
   })
 
   it('runs the tools under the key profile', async () => {
@@ -213,7 +213,7 @@ describe('the mcp subsystem', () => {
     const opened = await (await mcp(h)).call('read', { path: '/vault/secret' })
     const channel = await mcp(h, guarded)
     const refused = await channel.call('read', { path: '/vault/secret' })
-    const shell = await channel.call('execute_command', { command: 'cat /vault/secret' })
+    const shell = await channel.call('shell', { command: 'cat /vault/secret' })
     expect(opened.text).toBe('     1\ttoken\n')
     expect(refused.isError).toBe(true)
     expect(shell.isError).toBe(true)
@@ -222,7 +222,7 @@ describe('the mcp subsystem', () => {
   it('closes the session with the channel', async () => {
     const h = await startHarness()
     const channel = await mcp(h)
-    await channel.call('execute_command', { command: 'true' })
+    await channel.call('shell', { command: 'true' })
     const done = closed(channel.channel)
     channel.channel.end()
     await done

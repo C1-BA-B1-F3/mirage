@@ -52,7 +52,7 @@ async def call(url: str, name: str, arguments: dict) -> CallToolResult:
 
 
 @pytest.mark.asyncio
-async def test_serves_the_six_tools(tmp_path):
+async def test_serves_the_tools(tmp_path):
     async with daemon(tmp_path) as (base, _):
         url = f"{base}/v1/workspaces/{await create_workspace(base)}/mcp"
         async with Client(url) as client:
@@ -61,7 +61,7 @@ async def test_serves_the_six_tools(tmp_path):
                 "write", {"path": "/a.txt", "content": "hi\n"}
             )
             read = await client.call_tool("read", {"path": "/a.txt"})
-    assert tools == ["edit", "execute_command", "grep", "ls", "read", "write"]
+    assert tools == ["edit", "glob", "grep", "ls", "read", "shell", "write"]
     assert written.is_error is False
     assert read.content[0].text == "     1\thi\n"
 
@@ -70,8 +70,8 @@ async def test_serves_the_six_tools(tmp_path):
 async def test_the_session_outlives_each_request(tmp_path):
     async with daemon(tmp_path) as (base, _):
         url = f"{base}/v1/workspaces/{await create_workspace(base)}/mcp"
-        await call(url, "execute_command", {"command": "mkdir /d && cd /d"})
-        pwd = await call(url, "execute_command", {"command": "pwd"})
+        await call(url, "shell", {"command": "mkdir /d && cd /d"})
+        pwd = await call(url, "shell", {"command": "pwd"})
     assert pwd.content[0].text == "/d\n"
 
 
@@ -87,13 +87,13 @@ async def test_session_id_names_the_session(tmp_path):
         url = f"{base}/v1/workspaces/{workspace_id}/mcp"
         await call(
             f"{url}?session_id=agent",
-            "execute_command",
+            "shell",
             {"command": "mkdir /d && cd /d"},
         )
         named = await call(
-            f"{url}?session_id=agent", "execute_command", {"command": "pwd"}
+            f"{url}?session_id=agent", "shell", {"command": "pwd"}
         )
-        default = await call(url, "execute_command", {"command": "pwd"})
+        default = await call(url, "shell", {"command": "pwd"})
     assert named.content[0].text == "/d\n"
     assert default.content[0].text == "/\n"
 
@@ -159,4 +159,4 @@ async def test_the_endpoint_sits_behind_auth(tmp_path, monkeypatch):
             async with Client(transport) as client:
                 tools = (await client.list_tools()).tools
     assert refused.status_code == 401
-    assert len(tools) == 6
+    assert len(tools) == 7

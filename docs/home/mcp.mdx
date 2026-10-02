@@ -6,7 +6,7 @@ icon: plug
 
 ## What It Does
 
-Mirage serves six tools to any [MCP](https://modelcontextprotocol.io) client: `execute_command`, `read`, `write`, `edit`, `ls` and `grep`. Every call runs in a mirage session, so commands go through the shell, file calls go through the workspace's mounts, and the session's profile and policies apply. `edit` refuses to overwrite a file that changed since the agent last read it.
+Mirage serves seven tools to any [MCP](https://modelcontextprotocol.io) client: `shell`, `read`, `write`, `edit`, `ls`, `grep` and `glob`, the set coding-agent harnesses expect. Each parameter carries a description, and `read`, `ls`, `grep` and `glob` are marked read-only, which lets Claude run them in parallel. Every call runs in a mirage session, so commands go through the shell, file calls go through the workspace's mounts, and the session's profile and policies apply. `edit` refuses to overwrite a file that changed since the agent last read it.
 
 There are three ways to reach them:
 

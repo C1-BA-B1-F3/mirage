@@ -12,11 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const EXECUTE_DESCRIPTION =
-  'Run a shell-style command on the Mirage virtual filesystem. ' +
-  'Supports cat, grep, find, head, tail, ls, wc, sort, uniq, tee, pipe, ' +
-  'and any other Unix command on mounts (S3, disk, RAM, etc.). ' +
-  'Files with no registered renderer, such as .parquet or .orc, read back as raw bytes.'
+export const SHELL_DESCRIPTION =
+  'Run a shell command line on the Mirage virtual filesystem, in the ' +
+  "session's working directory. Supports pipes, redirects, cat, grep, " +
+  'find, head, tail, ls, wc, sort, uniq, tee and any other Unix command ' +
+  'on mounts (S3, disk, RAM, etc.); a cd or export holds for the next ' +
+  'call. Files with no registered renderer, such as .parquet or .orc, ' +
+  'read back as raw bytes.'
 
 export const READ_DESCRIPTION =
   'Read the contents of a file on the Mirage virtual filesystem. ' +
@@ -30,8 +32,8 @@ export const WRITE_DESCRIPTION =
 
 export const EDIT_DESCRIPTION =
   'Replace a string in an existing file on the Mirage virtual filesystem. ' +
-  'Fails if the file changed since it was last read, old_string is not found, ' +
-  'or old_string appears more than once. ' +
+  'Fails if the file changed since it was last read, old_string is not ' +
+  'found, or old_string appears more than once. ' +
   'Pass replace_all=true (default false) to replace every occurrence.'
 
 export const LS_DESCRIPTION =
@@ -40,3 +42,119 @@ export const LS_DESCRIPTION =
 export const GREP_DESCRIPTION =
   'Search for a pattern in files on the Mirage virtual filesystem. ' +
   'Supports regex. Searches recursively under path.'
+
+export const GLOB_DESCRIPTION =
+  'Find files on the Mirage virtual filesystem whose name matches a ' +
+  'pattern such as *.py, searching recursively under path (default /). ' +
+  'Returns one path per line.'
+
+export const SHELL_INPUT = {
+  type: 'object',
+  properties: {
+    command: {
+      type: 'string',
+      description: 'The command line to run.',
+    },
+  },
+  required: ['command'],
+} as const
+
+export const READ_INPUT = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Absolute path of the file to read.',
+    },
+    offset: {
+      type: 'integer',
+      minimum: 0,
+      description: 'First line to return, zero-based (default 0).',
+    },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      description: 'Maximum number of lines to return (default 2000).',
+    },
+  },
+  required: ['path'],
+} as const
+
+export const WRITE_INPUT = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Absolute path of the new file.',
+    },
+    content: {
+      type: 'string',
+      description: 'The text to write.',
+    },
+  },
+  required: ['path', 'content'],
+} as const
+
+export const EDIT_INPUT = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Absolute path of the file to edit.',
+    },
+    old_string: {
+      type: 'string',
+      description: 'The exact text to replace.',
+    },
+    new_string: {
+      type: 'string',
+      description: 'The text to put in its place.',
+    },
+    replace_all: {
+      type: 'boolean',
+      description: 'Replace every occurrence instead of exactly one (default false).',
+    },
+  },
+  required: ['path', 'old_string', 'new_string'],
+} as const
+
+export const LS_INPUT = {
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Absolute path of the directory to list.',
+    },
+  },
+  required: ['path'],
+} as const
+
+export const GREP_INPUT = {
+  type: 'object',
+  properties: {
+    pattern: {
+      type: 'string',
+      description: 'Regular expression to search for.',
+    },
+    path: {
+      type: 'string',
+      description: 'Absolute path of the file or directory to search under.',
+    },
+  },
+  required: ['pattern', 'path'],
+} as const
+
+export const GLOB_INPUT = {
+  type: 'object',
+  properties: {
+    pattern: {
+      type: 'string',
+      description: 'File-name pattern such as *.py; only its last path component is matched.',
+    },
+    path: {
+      type: 'string',
+      description: 'Absolute path of the directory to search under (default /).',
+    },
+  },
+  required: ['pattern'],
+} as const

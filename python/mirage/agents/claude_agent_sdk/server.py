@@ -25,11 +25,19 @@ except ImportError as exc:
 from mirage import __version__
 from mirage.agents.tool_descriptions import (
     EDIT_DESCRIPTION,
-    EXECUTE_DESCRIPTION,
+    EDIT_INPUT,
+    GLOB_DESCRIPTION,
+    GLOB_INPUT,
     GREP_DESCRIPTION,
+    GREP_INPUT,
     LS_DESCRIPTION,
+    LS_INPUT,
     READ_DESCRIPTION,
+    READ_INPUT,
+    SHELL_DESCRIPTION,
+    SHELL_INPUT,
     WRITE_DESCRIPTION,
+    WRITE_INPUT,
 )
 from mirage.agents.tool_operations import (
     DEFAULT_READ_LIMIT,
@@ -62,8 +70,8 @@ class _MirageTools:
     ) -> None:
         self._ops = MirageToolOperations(workspace, stale_write_protection)
 
-    async def execute_command(self, args: dict[str, Any]) -> dict[str, Any]:
-        return _to_sdk(await self._ops.execute(args["command"]))
+    async def shell(self, args: dict[str, Any]) -> dict[str, Any]:
+        return _to_sdk(await self._ops.shell(args["command"]))
 
     async def read(self, args: dict[str, Any]) -> dict[str, Any]:
         offset = int(args.get("offset", 0))
@@ -90,6 +98,11 @@ class _MirageTools:
     async def grep(self, args: dict[str, Any]) -> dict[str, Any]:
         return _to_sdk(await self._ops.grep(args["pattern"], args["path"]))
 
+    async def glob(self, args: dict[str, Any]) -> dict[str, Any]:
+        return _to_sdk(
+            await self._ops.glob(args["pattern"], args.get("path", "/"))
+        )
+
 
 def MirageServer(
     workspace: Workspace, stale_write_protection: bool = True
@@ -110,34 +123,32 @@ def MirageServer(
         name="mirage",
         version=__version__,
         tools=[
-            tool("execute_command", EXECUTE_DESCRIPTION, {"command": str})(
-                tools_impl.execute_command
-            ),
+            tool("shell", SHELL_DESCRIPTION, SHELL_INPUT)(tools_impl.shell),
             tool(
                 "read",
                 READ_DESCRIPTION,
-                {"path": str},
+                READ_INPUT,
                 annotations=ToolAnnotations(readOnlyHint=True),
             )(tools_impl.read),
-            tool("write", WRITE_DESCRIPTION, {"path": str, "content": str})(
-                tools_impl.write
-            ),
-            tool(
-                "edit",
-                EDIT_DESCRIPTION,
-                {"path": str, "old_string": str, "new_string": str},
-            )(tools_impl.edit),
+            tool("write", WRITE_DESCRIPTION, WRITE_INPUT)(tools_impl.write),
+            tool("edit", EDIT_DESCRIPTION, EDIT_INPUT)(tools_impl.edit),
             tool(
                 "ls",
                 LS_DESCRIPTION,
-                {"path": str},
+                LS_INPUT,
                 annotations=ToolAnnotations(readOnlyHint=True),
             )(tools_impl.ls),
             tool(
                 "grep",
                 GREP_DESCRIPTION,
-                {"pattern": str, "path": str},
+                GREP_INPUT,
                 annotations=ToolAnnotations(readOnlyHint=True),
             )(tools_impl.grep),
+            tool(
+                "glob",
+                GLOB_DESCRIPTION,
+                GLOB_INPUT,
+                annotations=ToolAnnotations(readOnlyHint=True),
+            )(tools_impl.glob),
         ],
     )

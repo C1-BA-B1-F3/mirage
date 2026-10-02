@@ -61,12 +61,13 @@ const options = {
 
 | Tool | Maps to |
 | --- | --- |
-| `execute_command` | `Workspace.shell()`, the full shell pipeline (cat, grep, find, pipe, ...). |
+| `shell` | `Workspace.shell()`, the full shell pipeline (cat, grep, find, pipe, ...). |
 | `read` | Line-paginated file read with `offset` and `limit`. |
 | `write` | Create a new file (fails if it already exists). |
 | `edit` | Replace a string in an existing file. |
 | `ls` | List a directory. |
 | `grep` | Recursive `grep -rn` over the workspace. |
+| `glob` | Find files by name pattern (`*.py`) under a directory. |
 
 ## Exports
 

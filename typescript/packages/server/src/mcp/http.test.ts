@@ -74,7 +74,7 @@ afterEach(async () => {
 })
 
 describe('the MCP door over HTTP', () => {
-  it('serves the six tools', async () => {
+  it('serves the tools', async () => {
     const { base } = await daemon()
     const client = await connect(`${base}/v1/workspaces/${await createWorkspace(base)}/mcp`)
     const tools = (await client.listTools()).tools.map((t) => t.name).sort()
@@ -83,7 +83,7 @@ describe('the MCP door over HTTP', () => {
       arguments: { path: '/a.txt', content: 'hi\n' },
     })
     const read = await client.callTool({ name: 'read', arguments: { path: '/a.txt' } })
-    expect(tools).toEqual(['edit', 'execute_command', 'grep', 'ls', 'read', 'write'])
+    expect(tools).toEqual(['edit', 'glob', 'grep', 'ls', 'read', 'shell', 'write'])
     expect(written.isError).not.toBe(true)
     expect((read.content as { text: string }[])[0]?.text).toBe('     1\thi\n')
   })
@@ -91,8 +91,8 @@ describe('the MCP door over HTTP', () => {
   it('keeps the session between requests', async () => {
     const { base } = await daemon()
     const url = `${base}/v1/workspaces/${await createWorkspace(base)}/mcp`
-    await call(url, 'execute_command', { command: 'mkdir /d && cd /d' })
-    expect(await call(url, 'execute_command', { command: 'pwd' })).toBe('/d\n')
+    await call(url, 'shell', { command: 'mkdir /d && cd /d' })
+    expect(await call(url, 'shell', { command: 'pwd' })).toBe('/d\n')
   })
 
   it('runs in the session sessionId names', async () => {
@@ -104,9 +104,9 @@ describe('the MCP door over HTTP', () => {
       body: JSON.stringify({ sessionId: 'agent' }),
     })
     const url = `${base}/v1/workspaces/${id}/mcp`
-    await call(`${url}?sessionId=agent`, 'execute_command', { command: 'mkdir /d && cd /d' })
-    expect(await call(`${url}?sessionId=agent`, 'execute_command', { command: 'pwd' })).toBe('/d\n')
-    expect(await call(url, 'execute_command', { command: 'pwd' })).toBe('/\n')
+    await call(`${url}?sessionId=agent`, 'shell', { command: 'mkdir /d && cd /d' })
+    expect(await call(`${url}?sessionId=agent`, 'shell', { command: 'pwd' })).toBe('/d\n')
+    expect(await call(url, 'shell', { command: 'pwd' })).toBe('/\n')
   })
 
   it("guards the next request's edit with this request's read", async () => {
@@ -161,6 +161,6 @@ describe('the MCP door over HTTP', () => {
     })
     const client = await connect(url, auth)
     expect(refused.status).toBe(401)
-    expect((await client.listTools()).tools).toHaveLength(6)
+    expect((await client.listTools()).tools).toHaveLength(7)
   })
 })

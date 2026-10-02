@@ -14,16 +14,23 @@
 
 import { VERSION } from '@struktoai/mirage-core/version'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
-import { McpServer } from '@modelcontextprotocol/server'
+import { fromJsonSchema, McpServer, type JsonSchemaType } from '@modelcontextprotocol/server'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
-import { z } from 'zod'
 import {
   EDIT_DESCRIPTION,
-  EXECUTE_DESCRIPTION,
+  EDIT_INPUT,
+  GLOB_DESCRIPTION,
+  GLOB_INPUT,
   GREP_DESCRIPTION,
+  GREP_INPUT,
   LS_DESCRIPTION,
+  LS_INPUT,
   READ_DESCRIPTION,
+  READ_INPUT,
+  SHELL_DESCRIPTION,
+  SHELL_INPUT,
   WRITE_DESCRIPTION,
+  WRITE_INPUT,
 } from '@struktoai/mirage-agents/tool_descriptions'
 import {
   MirageToolOperations,
@@ -52,19 +59,20 @@ export function createMirageMcpServer(
   })
 
   server.registerTool(
-    'execute_command',
-    { description: EXECUTE_DESCRIPTION, inputSchema: z.object({ command: z.string() }) },
-    (args) => operations.execute(args.command),
+    'shell',
+    {
+      description: SHELL_DESCRIPTION,
+      inputSchema: fromJsonSchema<{ command: string }>(SHELL_INPUT as JsonSchemaType),
+    },
+    (args) => operations.shell(args.command),
   )
   server.registerTool(
     'read',
     {
       description: READ_DESCRIPTION,
-      inputSchema: z.object({
-        path: z.string(),
-        offset: z.number().int().min(0).optional(),
-        limit: z.number().int().min(1).optional(),
-      }),
+      inputSchema: fromJsonSchema<{ path: string; offset?: number; limit?: number }>(
+        READ_INPUT as JsonSchemaType,
+      ),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.read(args.path, args.offset, args.limit),
@@ -73,7 +81,7 @@ export function createMirageMcpServer(
     'write',
     {
       description: WRITE_DESCRIPTION,
-      inputSchema: z.object({ path: z.string(), content: z.string() }),
+      inputSchema: fromJsonSchema<{ path: string; content: string }>(WRITE_INPUT as JsonSchemaType),
     },
     (args) => operations.write(args.path, args.content),
   )
@@ -81,12 +89,12 @@ export function createMirageMcpServer(
     'edit',
     {
       description: EDIT_DESCRIPTION,
-      inputSchema: z.object({
-        path: z.string(),
-        old_string: z.string(),
-        new_string: z.string(),
-        replace_all: z.boolean().optional(),
-      }),
+      inputSchema: fromJsonSchema<{
+        path: string
+        old_string: string
+        new_string: string
+        replace_all?: boolean
+      }>(EDIT_INPUT as JsonSchemaType),
     },
     (args) => operations.edit(args.path, args.old_string, args.new_string, args.replace_all),
   )
@@ -94,7 +102,7 @@ export function createMirageMcpServer(
     'ls',
     {
       description: LS_DESCRIPTION,
-      inputSchema: z.object({ path: z.string() }),
+      inputSchema: fromJsonSchema<{ path: string }>(LS_INPUT as JsonSchemaType),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.ls(args.path),
@@ -103,10 +111,19 @@ export function createMirageMcpServer(
     'grep',
     {
       description: GREP_DESCRIPTION,
-      inputSchema: z.object({ pattern: z.string(), path: z.string() }),
+      inputSchema: fromJsonSchema<{ pattern: string; path: string }>(GREP_INPUT as JsonSchemaType),
       annotations: { readOnlyHint: true },
     },
     (args) => operations.grep(args.pattern, args.path),
+  )
+  server.registerTool(
+    'glob',
+    {
+      description: GLOB_DESCRIPTION,
+      inputSchema: fromJsonSchema<{ pattern: string; path?: string }>(GLOB_INPUT as JsonSchemaType),
+      annotations: { readOnlyHint: true },
+    },
+    (args) => operations.glob(args.pattern, args.path),
   )
 
   return server

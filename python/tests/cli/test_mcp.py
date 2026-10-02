@@ -90,9 +90,7 @@ async def test_serves_the_tools_over_stdio(tree):
         tools = sorted(t.name for t in (await client.list_tools()).tools)
         await client.call_tool("write", {"path": "/a.txt", "content": "hi\n"})
         read = await client.call_tool("read", {"path": "/a.txt"})
-        ran = await client.call_tool(
-            "execute_command", {"command": "wc -l /a.txt"}
-        )
-    assert tools == ["edit", "execute_command", "grep", "ls", "read", "write"]
+        ran = await client.call_tool("shell", {"command": "wc -l /a.txt"})
+    assert tools == ["edit", "glob", "grep", "ls", "read", "shell", "write"]
     assert read.content[0].text == "     1\thi\n"
     assert ran.content[0].text == "1 /a.txt\n"

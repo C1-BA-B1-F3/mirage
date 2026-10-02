@@ -90,7 +90,7 @@ export class MirageToolOperations {
     return runWithSession(this.ws.getSession(this.sessionId), fn)
   }
 
-  async execute(command: string): Promise<ToolResult> {
+  async shell(command: string): Promise<ToolResult> {
     return ioResult(await this.ws.shell(command, this.shellOptions))
   }
 
@@ -175,5 +175,17 @@ export class MirageToolOperations {
     const result = textResult(ioToStr(io))
     if (io.exitCode > 1) result.isError = true
     return result
+  }
+
+  /**
+   * Find files whose name matches a pattern. Only the pattern's last path
+   * component is matched, as `find -name` matches it, so a pattern with
+   * directories in it finds every file of that name under `path`.
+   */
+  async glob(pattern: string, path = '/'): Promise<ToolResult> {
+    const name = pattern.split('/').pop() ?? pattern
+    return ioResult(
+      await this.ws.shell(`find ${shQuote(path)} -name ${shQuote(name)}`, this.shellOptions),
+    )
   }
 }

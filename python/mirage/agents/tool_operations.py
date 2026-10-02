@@ -101,7 +101,7 @@ async def ensure_parents(ws: Workspace, path: str) -> None:
 
 
 class MirageToolOperations:
-    """The six agent tools, independent of any agent framework.
+    """The agent tools, independent of any agent framework.
 
     Args:
         workspace (Workspace): The workspace the tools act on.
@@ -133,8 +133,8 @@ class MirageToolOperations:
         finally:
             reset_current_session(token)
 
-    async def execute(self, command: str) -> ToolResult:
-        """Run a shell-style command line.
+    async def shell(self, command: str) -> ToolResult:
+        """Run a command line in the session's shell.
 
         Args:
             command (str): The command line to run.
@@ -265,3 +265,25 @@ class MirageToolOperations:
         # the second is a tool error; reporting the first as one would
         # tell the agent its search broke every time nothing matched.
         return ToolResult(io_to_str(io), io.exit_code > 1)
+
+    async def glob(self, pattern: str, path: str = "/") -> ToolResult:
+        """Find files whose name matches a pattern.
+
+        Only the pattern's last path component is matched, as ``find
+        -name`` matches it, so ``src/**/*.py`` finds every ``.py`` file
+        under ``path``.
+
+        Args:
+            pattern (str): A file-name pattern such as ``*.py``.
+            path (str): Directory to search under.
+
+        Returns:
+            ToolResult: One path per line, or the failure.
+        """
+        name = pattern.rsplit("/", 1)[-1]
+        return _io_result(
+            await self._ws.shell(
+                f"find {shlex.quote(path)} -name {shlex.quote(name)}",
+                session_id=self._session_id,
+            )
+        )

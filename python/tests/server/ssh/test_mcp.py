@@ -89,7 +89,7 @@ def text(result: dict) -> str:
 
 
 @pytest.mark.asyncio
-async def test_serves_the_six_tools(ssh):
+async def test_serves_the_tools(ssh):
     async with mcp(ssh) as channel:
         listed = await channel.request("tools/list", {})
         written = await channel.call(
@@ -97,7 +97,7 @@ async def test_serves_the_six_tools(ssh):
         )
         read = await channel.call("read", {"path": "/a.txt"})
     names = sorted(t["name"] for t in listed["result"]["tools"])
-    assert names == ["edit", "execute_command", "grep", "ls", "read", "write"]
+    assert names == ["edit", "glob", "grep", "ls", "read", "shell", "write"]
     assert written.get("isError") is not True
     assert text(read) == "     1\thi\n"
 
@@ -105,8 +105,8 @@ async def test_serves_the_six_tools(ssh):
 @pytest.mark.asyncio
 async def test_the_channel_is_one_session(ssh):
     async with mcp(ssh) as channel:
-        await channel.call("execute_command", {"command": "mkdir /d && cd /d"})
-        pwd = await channel.call("execute_command", {"command": "pwd"})
+        await channel.call("shell", {"command": "mkdir /d && cd /d"})
+        pwd = await channel.call("shell", {"command": "pwd"})
     assert text(pwd) == "/d\n"
 
 
@@ -120,7 +120,7 @@ async def test_tools_run_under_the_key_profile(tmp_path):
         async with mcp(harness, key=guarded) as channel:
             refused = await channel.call("read", {"path": "/vault/secret"})
             shell = await channel.call(
-                "execute_command", {"command": "cat /vault/secret"}
+                "shell", {"command": "cat /vault/secret"}
             )
     finally:
         await stop_harness(harness)
@@ -132,7 +132,7 @@ async def test_tools_run_under_the_key_profile(tmp_path):
 @pytest.mark.asyncio
 async def test_the_session_is_closed_on_exit(ssh):
     async with mcp(ssh) as channel:
-        await channel.call("execute_command", {"command": "true"})
+        await channel.call("shell", {"command": "true"})
     await asyncio.sleep(0.2)
     ids = [s.session_id for s in ssh.entry.runner.ws.list_sessions()]
     assert not [sid for sid in ids if sid.startswith("ssh_")]

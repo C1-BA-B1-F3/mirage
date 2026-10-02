@@ -13,8 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 """Drive every Mirage tool through the Claude Agent SDK.
 
-Gives a Sonnet agent a task that exercises all six tools the Mirage
-MCP server exposes (execute_command, read, write, edit, ls, grep)
+Gives a Sonnet agent a task that exercises every tool the Mirage
+MCP server exposes (shell, read, write, edit, ls, grep, glob)
 against a RAM-backed workspace, prints each tool call, and verifies
 the final file contents.
 
@@ -47,13 +47,14 @@ Use exactly one mirage tool per step and do them in order:
 3. Use the read tool on '/notes.txt'.
 4. Use the edit tool on '/notes.txt' to replace 'beta' with 'BETA'.
 5. Use the grep tool to search for 'a' in '/notes.txt'.
-6. Use the execute_command tool to run: cat /notes.txt | sort | wc -l
+6. Use the shell tool to run: cat /notes.txt | sort | wc -l
+7. Use the glob tool to find '*.txt' under '/'.
 Briefly report what each step returned.
 """
 
 EXPECTED = {
     f"mcp__mirage__{name}"
-    for name in ("execute_command", "read", "write", "edit", "ls", "grep")
+    for name in ("shell", "read", "write", "edit", "ls", "grep", "glob")
 }
 
 
@@ -78,7 +79,7 @@ async def main() -> None:
     print(used)
     missing = EXPECTED - set(used)
     print(
-        "all six tools exercised:",
+        "every tool exercised:",
         not missing,
         "| missing:",
         missing or "none",

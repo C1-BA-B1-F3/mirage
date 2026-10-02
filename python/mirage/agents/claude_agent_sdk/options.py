@@ -33,7 +33,7 @@ def build_options(
     """Build ClaudeAgentOptions backed by a Mirage Workspace.
 
     Disables all built-in file tools and registers Mirage tools
-    (execute_command, read, write, edit, ls, grep) as the agent's
+    (shell, read, write, edit, ls, grep, glob) as the agent's
     only file access layer.
 
     Args:

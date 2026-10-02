@@ -45,7 +45,7 @@ describe('createMirageMcpServer', () => {
     await client.connect(clientTransport)
     const tools = await client.listTools()
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
-      ['edit', 'execute_command', 'grep', 'ls', 'read', 'write'].sort(),
+      ['edit', 'glob', 'grep', 'ls', 'read', 'shell', 'write'].sort(),
     )
     const write = await client.callTool({
       name: 'write',
@@ -54,6 +54,8 @@ describe('createMirageMcpServer', () => {
     expect(write.isError).not.toBe(true)
     const read = await client.callTool({ name: 'read', arguments: { path: '/hello.txt' } })
     expect(firstText(read.content)).toContain('hello')
+    const globbed = await client.callTool({ name: 'glob', arguments: { pattern: '*.txt' } })
+    expect(firstText(globbed.content)).toBe('/hello.txt\n')
     await client.close()
     await server.close()
     await workspace.close()
@@ -69,12 +71,13 @@ describe('createMirageMcpServer', () => {
     const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]))
     const required = (name: string): unknown => tools.get(name)?.inputSchema.required
     const readOnly = (name: string): unknown => tools.get(name)?.annotations?.readOnlyHint
-    expect(required('execute_command')).toEqual(['command'])
+    expect(required('shell')).toEqual(['command'])
     expect(required('read')).toEqual(['path'])
     expect(required('write')).toEqual(['path', 'content'])
     expect(required('edit')).toEqual(['path', 'old_string', 'new_string'])
     expect(required('ls')).toEqual(['path'])
     expect(required('grep')).toEqual(['pattern', 'path'])
+    expect(required('glob')).toEqual(['pattern'])
     expect(tools.get('read')?.inputSchema.properties).toMatchObject({
       path: { type: 'string' },
       offset: { type: 'integer', minimum: 0 },
@@ -83,8 +86,8 @@ describe('createMirageMcpServer', () => {
     expect(tools.get('edit')?.inputSchema.properties).toMatchObject({
       replace_all: { type: 'boolean' },
     })
-    expect(['read', 'ls', 'grep'].map(readOnly)).toEqual([true, true, true])
-    expect(['execute_command', 'write', 'edit'].map(readOnly)).toEqual([
+    expect(['read', 'ls', 'grep', 'glob'].map(readOnly)).toEqual([true, true, true, true])
+    expect(['shell', 'write', 'edit'].map(readOnly)).toEqual([
       undefined,
       undefined,
       undefined,

@@ -17,16 +17,16 @@ def tools(workspace):
 
 
 @pytest.mark.asyncio
-async def test_execute_command_echo(tools):
-    result = await tools.execute_command({"command": "echo hello"})
+async def test_shell_echo(tools):
+    result = await tools.shell({"command": "echo hello"})
     assert "hello" in result["content"][0]["text"]
     assert result.get("is_error") is not True
 
 
 @pytest.mark.asyncio
-async def test_execute_command_pipe(tools, workspace):
+async def test_shell_pipe(tools, workspace):
     await workspace.vfs.write("/pipe.txt", b"aaa\nbbb\naaa\n")
-    result = await tools.execute_command(
+    result = await tools.shell(
         {"command": "cat /pipe.txt | sort | uniq | wc -l"}
     )
     assert "2" in result["content"][0]["text"]

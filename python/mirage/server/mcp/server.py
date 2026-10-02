@@ -33,11 +33,19 @@ from mcp.types import (
 from mirage import __version__
 from mirage.agents.tool_descriptions import (
     EDIT_DESCRIPTION,
-    EXECUTE_DESCRIPTION,
+    EDIT_INPUT,
+    GLOB_DESCRIPTION,
+    GLOB_INPUT,
     GREP_DESCRIPTION,
+    GREP_INPUT,
     LS_DESCRIPTION,
+    LS_INPUT,
     READ_DESCRIPTION,
+    READ_INPUT,
+    SHELL_DESCRIPTION,
+    SHELL_INPUT,
     WRITE_DESCRIPTION,
+    WRITE_INPUT,
 )
 from mirage.agents.tool_operations import (
     DEFAULT_READ_LIMIT,
@@ -53,76 +61,43 @@ READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 TOOLS = [
     Tool(
-        name="execute_command",
-        description=EXECUTE_DESCRIPTION,
-        input_schema={
-            "type": "object",
-            "properties": {"command": {"type": "string"}},
-            "required": ["command"],
-        },
+        name="shell",
+        description=SHELL_DESCRIPTION,
+        input_schema=SHELL_INPUT,
     ),
     Tool(
         name="read",
         description=READ_DESCRIPTION,
         annotations=READ_ONLY,
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "offset": {"type": "integer", "minimum": 0},
-                "limit": {"type": "integer", "minimum": 1},
-            },
-            "required": ["path"],
-        },
+        input_schema=READ_INPUT,
     ),
     Tool(
         name="write",
         description=WRITE_DESCRIPTION,
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-            },
-            "required": ["path", "content"],
-        },
+        input_schema=WRITE_INPUT,
     ),
     Tool(
         name="edit",
         description=EDIT_DESCRIPTION,
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "old_string": {"type": "string"},
-                "new_string": {"type": "string"},
-                "replace_all": {"type": "boolean"},
-            },
-            "required": ["path", "old_string", "new_string"],
-        },
+        input_schema=EDIT_INPUT,
     ),
     Tool(
         name="ls",
         description=LS_DESCRIPTION,
         annotations=READ_ONLY,
-        input_schema={
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-        },
+        input_schema=LS_INPUT,
     ),
     Tool(
         name="grep",
         description=GREP_DESCRIPTION,
         annotations=READ_ONLY,
-        input_schema={
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "path": {"type": "string"},
-            },
-            "required": ["pattern", "path"],
-        },
+        input_schema=GREP_INPUT,
+    ),
+    Tool(
+        name="glob",
+        description=GLOB_DESCRIPTION,
+        annotations=READ_ONLY,
+        input_schema=GLOB_INPUT,
     ),
 ]
 
@@ -135,7 +110,7 @@ def _to_mcp(result: ToolResult) -> CallToolResult:
 
 
 class MirageMcpServer:
-    """Serves one workspace's six tools over the MCP protocol.
+    """Serves one workspace's tools over the MCP protocol.
 
     The handlers are bound methods handed to the SDK's constructor, so
     the tool table stays readable and nothing nests.
@@ -241,8 +216,8 @@ class MirageMcpServer:
     async def _run(
         self, name: str, arguments: dict[str, Any]
     ) -> CallToolResult:
-        if name == "execute_command":
-            return _to_mcp(await self._ops.execute(arguments["command"]))
+        if name == "shell":
+            return _to_mcp(await self._ops.shell(arguments["command"]))
         if name == "read":
             return _to_mcp(
                 await self._ops.read(
@@ -269,6 +244,12 @@ class MirageMcpServer:
         if name == "grep":
             return _to_mcp(
                 await self._ops.grep(arguments["pattern"], arguments["path"])
+            )
+        if name == "glob":
+            return _to_mcp(
+                await self._ops.glob(
+                    arguments["pattern"], arguments.get("path", "/")
+                )
             )
         raise ValueError(f"unknown tool: {name}")
 

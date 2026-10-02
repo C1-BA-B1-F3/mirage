@@ -17,9 +17,10 @@ export { buildOptions, type BuildOptionsOptions } from './options.ts'
 export { MIRAGE_SYSTEM_PROMPT, buildSystemPrompt } from '../prompt.ts'
 export {
   EDIT_DESCRIPTION,
-  EXECUTE_DESCRIPTION,
+  GLOB_DESCRIPTION,
   GREP_DESCRIPTION,
   LS_DESCRIPTION,
   READ_DESCRIPTION,
+  SHELL_DESCRIPTION,
   WRITE_DESCRIPTION,
 } from '../tool_descriptions.ts'

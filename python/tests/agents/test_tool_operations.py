@@ -15,22 +15,22 @@ def ops(workspace):
 
 
 @pytest.mark.asyncio
-async def test_execute_command_echo(ops):
-    result = await ops.execute("echo hello")
+async def test_shell_echo(ops):
+    result = await ops.shell("echo hello")
     assert "hello" in result.text
     assert result.is_error is False
 
 
 @pytest.mark.asyncio
-async def test_execute_command_pipe(ops, workspace):
+async def test_shell_pipe(ops, workspace):
     await workspace.vfs.write("/pipe.txt", b"aaa\nbbb\naaa\n")
-    result = await ops.execute("cat /pipe.txt | sort | uniq | wc -l")
+    result = await ops.shell("cat /pipe.txt | sort | uniq | wc -l")
     assert "2" in result.text
 
 
 @pytest.mark.asyncio
-async def test_execute_reports_failure(ops):
-    result = await ops.execute("ls /nowhere")
+async def test_shell_reports_failure(ops):
+    result = await ops.shell("ls /nowhere")
     assert result.is_error is True
 
 
@@ -175,3 +175,20 @@ def test_number_lines_keeps_unterminated_last_line():
 
 def test_number_lines_empty():
     assert number_lines("", 0, 10) == ""
+
+
+@pytest.mark.asyncio
+async def test_glob_finds_files_by_name(ops):
+    await ops.write("/src/a.py", "a")
+    await ops.write("/src/deep/b.py", "b")
+    await ops.write("/src/c.txt", "c")
+    result = await ops.glob("*.py", "/src")
+    assert sorted(result.text.split()) == ["/src/a.py", "/src/deep/b.py"]
+    assert result.is_error is False
+
+
+@pytest.mark.asyncio
+async def test_glob_matches_the_last_component(ops):
+    await ops.write("/src/deep/b.py", "b")
+    result = await ops.glob("src/**/*.py")
+    assert result.text.split() == ["/src/deep/b.py"]

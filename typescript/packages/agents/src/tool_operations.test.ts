@@ -68,3 +68,23 @@ describe('edit', () => {
     expect(await ws.vfs.readFileText('/a.txt')).toBe('goodbye there')
   })
 })
+
+describe('glob', () => {
+  it('finds files by name under a path', async () => {
+    await ops.write('/src/a.ts', 'a')
+    await ops.write('/src/deep/b.ts', 'b')
+    await ops.write('/src/c.txt', 'c')
+    const result = await ops.glob('*.ts', '/src')
+    expect((result.content[0]?.text ?? '').split(/\s+/).filter(Boolean).sort()).toEqual([
+      '/src/a.ts',
+      '/src/deep/b.ts',
+    ])
+    expect(result.isError).not.toBe(true)
+  })
+
+  it('matches only the last path component', async () => {
+    await ops.write('/src/deep/b.ts', 'b')
+    const result = await ops.glob('src/**/*.ts')
+    expect((result.content[0]?.text ?? '').trim()).toBe('/src/deep/b.ts')
+  })
+})

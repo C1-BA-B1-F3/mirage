@@ -409,7 +409,7 @@ async def test_dispatch_rule_guard_marks_an_op_with_the_bound_gate():
         with_dispatch_rule_guard,
     )
 
-    seen: list[tuple[str, object]] = []
+    seen: list[tuple[str, _Gate | None]] = []
 
     async def door(op, path, **kwargs):
         seen.append((op, kwargs.get("rule_gate")))

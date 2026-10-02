@@ -850,37 +850,41 @@ describe('rmdir namespace entries', () => {
   })
 })
 
-describe('a marked op is judged on the path the door reaches', () => {
-  // An EntryGate that refuses one path and remembers what it was asked.
-  function refusing(refused: string) {
-    const asked: string[] = []
-    return {
-      asked,
-      gate: {
-        scoped: true,
-        granted: [],
-        check: (virtual: string): void => {
-          asked.push(virtual)
-          if (virtual === refused) throw new Error(`sealed ${virtual}`)
-        },
-        refuses: (virtual: string): boolean => virtual === refused,
+// An EntryGate that refuses one path and remembers what it was asked.
+function refusing(refused: string) {
+  const asked: string[] = []
+  return {
+    asked,
+    gate: {
+      scoped: true,
+      granted: [],
+      check: (virtual: string): void => {
+        asked.push(virtual)
+        if (virtual === refused) throw new Error(`sealed ${virtual}`)
       },
-    }
+      refuses: (virtual: string): boolean => virtual === refused,
+    },
   }
+}
 
-  async function linkedWs(): Promise<Workspace> {
-    const parser = await getTestParser()
-    const ws = new Workspace(
-      { '/data': new RAMVFS() },
-      { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
-    )
-    await ws.shell(
-      'mkdir -p /data/real && echo s > /data/real/secret && ' +
-        'ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink',
-    )
-    return ws
-  }
+// A workspace with a linked directory and a link to a file inside it.
+async function linkedWs(): Promise<Workspace> {
+  const parser = await getTestParser()
+  const ws = new Workspace(
+    { '/data': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+  )
+  await ws.shell(
+    'mkdir -p /data/real && echo s > /data/real/secret && ' +
+      'ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink',
+  )
+  return ws
+}
 
+const text = async (ws: Workspace, virtual: string): Promise<string> =>
+  new TextDecoder().decode((await ws.dispatch('read', virtual)) as Uint8Array)
+
+describe('a marked op is judged on the path the door reaches', () => {
   // The door walks every link above the final name before it acts, so an
   // op on the name itself is judged on the walked path, and one that
   // follows the final link on the target as well.
@@ -974,38 +978,6 @@ describe('a marked op is judged on the path the door reaches', () => {
 })
 
 describe('a marked op keeps every endpoint to its rule', () => {
-  function refusing(refused: string) {
-    const asked: string[] = []
-    return {
-      asked,
-      gate: {
-        scoped: true,
-        granted: [],
-        check: (virtual: string): void => {
-          asked.push(virtual)
-          if (virtual === refused) throw new Error(`sealed ${virtual}`)
-        },
-        refuses: (virtual: string): boolean => virtual === refused,
-      },
-    }
-  }
-
-  async function linkedWs(): Promise<Workspace> {
-    const parser = await getTestParser()
-    const ws = new Workspace(
-      { '/data': new RAMVFS() },
-      { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
-    )
-    await ws.shell(
-      'mkdir -p /data/real && echo s > /data/real/secret && ' +
-        'ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink',
-    )
-    return ws
-  }
-
-  const text = async (ws: Workspace, virtual: string): Promise<string> =>
-    new TextDecoder().decode((await ws.dispatch('read', virtual)) as Uint8Array)
-
   // A rename whose destination reaches a protected file through a linked
   // parent is refused before the move: the protected bytes stay.
   it('overwrites nothing on a refused rename', async () => {

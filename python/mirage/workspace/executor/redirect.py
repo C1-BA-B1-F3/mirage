@@ -58,7 +58,7 @@ from mirage.workspace.executor.builtins.exec.constants import (
     TO_STDIN,
     TO_STDOUT,
 )
-from mirage.workspace.executor.control import UNWINDING, carried
+from mirage.workspace.executor.control import UNWINDING, carried, take_stderr
 from mirage.workspace.executor.create import write_description
 from mirage.workspace.executor.jobs import drained, pump
 from mirage.workspace.session import SessionState
@@ -344,6 +344,16 @@ async def handle_redirect(
             refused = exec_node.refused
     except UNWINDING as sig:
         unwound, io = sig, IOResult()
+        # What the command wrote on its way out goes where it writes; an
+        # error expanding its own words came before its redirects.
+        if not (
+            isinstance(sig, ExitSignal)
+            and command is not None
+            and sig.expanding == command.id
+        ):
+            diagnostic = await take_stderr(sig)
+            if diagnostic:
+                await recorder.emit(Channel.STDERR, diagnostic)
     finally:
         ENCLOSING.reset(enclosing)
         for file in files:

@@ -37,7 +37,7 @@ function parseIntStrict(value: string): number | null {
 function outOfRange(value: string): IOResult {
   return new IOResult({
     exitCode: 1,
-    stderr: ENC.encode(`history: ${value}: history position out of range\n`),
+    stderr: ENC.encode(`bash: history: ${value}: history position out of range\n`),
   })
 }
 
@@ -96,7 +96,7 @@ async function historyFn(
   if (texts.length > 1) {
     return [
       null,
-      new IOResult({ exitCode: 1, stderr: ENC.encode('history: too many arguments\n') }),
+      new IOResult({ exitCode: 1, stderr: ENC.encode('bash: history: too many arguments\n') }),
     ]
   }
   let count: number | undefined
@@ -108,7 +108,7 @@ async function historyFn(
         null,
         new IOResult({
           exitCode: 1,
-          stderr: ENC.encode(`history: ${arg}: numeric argument required\n`),
+          stderr: ENC.encode(`bash: history: ${arg}: numeric argument required\n`),
         }),
       ]
     }

@@ -66,7 +66,7 @@ import { type SessionState, type StatusWriter, newStatusWriter } from '../sessio
 import { ExecutionNode } from '../types.ts'
 import { abortable, joinOrAbort } from '../abort.ts'
 import { failureResult, isControlFlowError } from './failure.ts'
-import { isUnwinding } from '../executor/control.ts'
+import { ended, isUnwinding } from '../executor/control.ts'
 import type { ResolvedSource } from '../../secrets/types.ts'
 import { cliEnvNames, fillEnv, fillNames, guestBound, lineNodes } from './fill.ts'
 import { admitLine, isPending, isPendingRefusal } from '../node/admission.ts'
@@ -416,6 +416,11 @@ async function runLine(
         stderr: res.stderr,
         refusal: res.refusal,
       })
+    } catch (err) {
+      // A substitution runs on a copy of the caller's frames, and it is a
+      // child shell: whatever unwinds out of it ends it.
+      if (saved === null || !isUnwinding(err)) throw err
+      return ended(err)
     } finally {
       if (saved !== null) {
         session.terminalOutput = terminalOutput

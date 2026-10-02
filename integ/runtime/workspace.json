@@ -256,7 +256,7 @@
           "expect": {
             "exit": 0,
             "stdout": "exit=1\n",
-            "stderr": "type: python3: not found\ntype: node: not found\n"
+            "stderr": "bash: type: python3: not found\nbash: type: node: not found\n"
           }
         },
         {

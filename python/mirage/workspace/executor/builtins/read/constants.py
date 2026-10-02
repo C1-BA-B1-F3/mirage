@@ -15,3 +15,9 @@
 # `read` options that take a value, so a scan of the raw words can step
 # over the value rather than read its letters as options.
 READ_VALUE_LETTERS = frozenset("adnNtpiu")
+
+# The usage line bash prints under an option error.
+READ_USAGE = (
+    "read: usage: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] "
+    "[-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]\n"
+)

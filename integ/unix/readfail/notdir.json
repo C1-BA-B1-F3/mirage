@@ -285,7 +285,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "cd: /data/a.txt/x: Not a directory\n"
+        "stderr": "bash: cd: /data/a.txt/x: Not a directory\n"
       }
     },
     {
@@ -493,7 +493,7 @@
       "expect": {
         "exit": 0,
         "stdout": "after=1\n",
-        "stderr": "cd: /data/a.txt/x: Not a directory\n"
+        "stderr": "bash: cd: /data/a.txt/x: Not a directory\n"
       }
     },
     {

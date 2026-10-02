@@ -22,6 +22,7 @@ from mirage.shell.errors import ArithError
 from mirage.utils.errors import BadDescriptorError
 from mirage.workspace.executor.builtins.constants import TARGET_RE
 from mirage.workspace.executor.builtins.read.constants import (
+    READ_USAGE,
     READ_VALUE_LETTERS,
 )
 from mirage.workspace.executor.builtins.shared import (
@@ -315,7 +316,7 @@ async def handle_read(
             if parse.invalid.startswith("--")
             else f"-{parse.invalid}"
         )
-        err = f"read: {token}: invalid option\n".encode()
+        err = f"bash: read: {token}: invalid option\n{READ_USAGE}".encode()
         return (
             None,
             IOResult(exit_code=2, stderr=err),
@@ -323,7 +324,8 @@ async def handle_read(
         )
     if parse.needs_value is not None:
         missing = (
-            f"read: -{parse.needs_value}: option requires an argument\n"
+            f"bash: read: -{parse.needs_value}: option requires an argument\n"
+            f"{READ_USAGE}"
         ).encode()
         return (
             None,

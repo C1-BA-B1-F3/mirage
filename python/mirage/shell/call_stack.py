@@ -12,7 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import dataclass, field
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 
 
 @dataclass
@@ -21,23 +23,35 @@ class CallFrame:
     locals: dict[str, str] = field(default_factory=dict)
     function_name: str = ""
     loop_level: int = 0
+    sourced: bool = False
 
 
 class CallStack:
     def __init__(self) -> None:
         self._frames: list[CallFrame] = [CallFrame()]
+        # A fork is a child shell's stack: an error that discards the
+        # rest of the line ends the child instead of resuming.
+        self.subshell = False
 
-    def fork(self) -> "CallStack":
+    def fork(self, loops: bool = True) -> "CallStack":
+        """The stack a child shell runs on, a copy of every frame.
+
+        Args:
+            loops (bool): keep the loops the caller is in, as a pipeline
+                stage and ``$( )`` do; a ``( )`` or ``&`` child starts
+                outside every loop (bash 5.2, POSIX interp 842).
+        """
         child = CallStack()
         child._frames = [
-            CallFrame(
-                list(frame.positional),
-                dict(frame.locals),
-                frame.function_name,
-                frame.loop_level,
+            replace(
+                frame,
+                positional=list(frame.positional),
+                locals=dict(frame.locals),
+                loop_level=frame.loop_level if loops else 0,
             )
             for frame in self._frames
         ]
+        child.subshell = True
         return child
 
     @property
@@ -45,12 +59,27 @@ class CallStack:
         return self._frames[-1]
 
     def push(
-        self, positional: list[str] | None = None, function_name: str = ""
+        self,
+        positional: list[str] | None = None,
+        function_name: str = "",
+        sourced: bool = False,
     ) -> None:
+        """Enter a function, or a sourced file (``function_name`` is
+        ``source``). A function starts outside every loop, so ``break``
+        in it cannot end its caller's; a sourced file runs in its
+        caller's loops.
+
+        Args:
+            positional (list[str] | None): the frame's ``$1``... .
+            function_name (str): what ``FUNCNAME`` names the frame.
+            sourced (bool): the frame is a sourced file's.
+        """
         self._frames.append(
             CallFrame(
                 positional=positional or [],
                 function_name=function_name,
+                loop_level=self.current.loop_level if sourced else 0,
+                sourced=sourced,
             )
         )
 
@@ -62,6 +91,26 @@ class CallStack:
     @property
     def depth(self) -> int:
         return len(self._frames)
+
+    @contextmanager
+    def loop(self) -> Iterator[None]:
+        """Count a loop the current frame runs, for ``break`` and
+        ``continue`` to find."""
+        frame = self.current
+        frame.loop_level += 1
+        try:
+            yield
+        finally:
+            frame.loop_level -= 1
+
+    def function_names(self) -> tuple[str, ...]:
+        """``${FUNCNAME[@]}``: the frames innermost first, a sourced
+        file as ``source``. Empty while no function runs, as bash hides
+        a sourced file's entry outside one."""
+        frames = self._frames[1:]
+        if all(frame.sourced for frame in frames):
+            return ()
+        return tuple(frame.function_name for frame in reversed(frames))
 
     def get_positional(self, index: int) -> str:
         pos = self.current.positional

@@ -26,7 +26,6 @@ import {
 } from '../../../../shell/descriptors.ts'
 import { Channel } from '../../../../shell/console/index.ts'
 import { recordStatus, type Written } from '../../statement.ts'
-import { ExitSignal } from '../../../../shell/errors.ts'
 import { type Redirect, RedirectKind } from '../../../../shell/types.ts'
 import { fsStrerror, isFsError, isMissingPath } from '../../../../utils/errors.ts'
 import { PathSpec } from '../../../../types.ts'
@@ -287,9 +286,6 @@ async function installDescriptor(
   if (redirect.kind === RedirectKind.AMBIGUOUS) {
     const word = target instanceof PathSpec ? target.rawPath : String(target)
     return new TextEncoder().encode(`${word}: ambiguous redirect\n`)
-  }
-  if (redirect.kind === RedirectKind.UNEXPANDED && target instanceof ExitSignal) {
-    return target.stderr
   }
   if (redirect.kind === RedirectKind.HEREDOC || redirect.kind === RedirectKind.HERESTRING) {
     const data = String(target) + (redirect.kind === RedirectKind.HERESTRING ? '\n' : '')

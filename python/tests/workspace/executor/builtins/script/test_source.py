@@ -29,7 +29,7 @@ async def test_source_of_the_empty_name_is_a_missing_file():
     assert io.exit_code == 1
     assert (
         await materialize(io.stderr)
-    ) == b"source: : No such file or directory\n"
+    ) == b"bash: : No such file or directory\n"
     assert node.command == "source "
 
 

@@ -70,11 +70,12 @@ export const FD_BOTH = -1
 export const FD_CLOSE = -1
 export const SHELL_FDS: ReadonlySet<number> = new Set([FD_STDIN, FD_STDOUT, FD_STDERR])
 
-// The two dynamic variables the shell answers itself: PIPESTATUS reads the
-// session's record of the last pipeline (`SessionState.pipeStatus`) and RANDOM
-// steps a generator (`session/rng.ts`). Neither lives in the variable
-// store.
+// The dynamic variables the shell answers itself: PIPESTATUS reads the
+// session's record of the last pipeline (`SessionState.pipeStatus`), FUNCNAME
+// the frames on the call stack (`SessionState.functionNames`) and RANDOM
+// steps a generator (`session/rng.ts`). None lives in the variable store.
 export const PIPESTATUS = 'PIPESTATUS'
+export const FUNCNAME = 'FUNCNAME'
 export const RANDOM = 'RANDOM'
 // bash 5.2's generator (lib/sh/random.c): a Park-Miller minimal-standard
 // step through Schrage's method, the value folding the state's two halves

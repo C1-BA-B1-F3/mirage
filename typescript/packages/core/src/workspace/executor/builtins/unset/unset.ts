@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { FUNCNAME } from '../../../../shell/constants.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
@@ -37,6 +38,7 @@ import { TARGET_RE } from '../constants.ts'
  */
 function unsetVariable(session: SessionState, name: string): void {
   if (name === 'OPTIND') session.getoptsOptind = null
+  if (name === FUNCNAME) session.functionNames = null
 }
 
 /**

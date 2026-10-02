@@ -18,7 +18,7 @@ import posixpath
 from mirage.ops.config import NamespaceLinks
 from mirage.ops.namespace_view import child_mount_names, namespace_names
 from mirage.shell.constants import SHOPT_DEFAULTS
-from mirage.shell.errors import ExitSignal
+from mirage.shell.errors import DiscardSignal
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import WALK_ERRORS
 from mirage.utils.glob_walk import (
@@ -673,10 +673,8 @@ async def resolve_globs(
                     # push-down still reads it as no entity name.
                     if opts.failglob:
                         word = unmark_globs(typed.raw_path)
-                        raise ExitSignal(
-                            1,
-                            stderr=f"bash: no match: {word}\n".encode(),
-                            contained_code=1,
+                        raise DiscardSignal(
+                            f"bash: no match: {word}\n".encode()
                         )
                     if not opts.nullglob:
                         result.append(

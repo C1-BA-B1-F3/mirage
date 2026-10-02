@@ -37,6 +37,7 @@ async def expand_redirects(
     registry: MountRegistry,
     call_stack: CallStack | None = None,
     view: SessionView | None = None,
+    forked: bool = False,
 ) -> tuple[list[Redirect], Any]:
     """Expand redirect targets: heredoc vars, target words, pipelines.
 
@@ -52,116 +53,45 @@ async def expand_redirects(
         execute_fn (Callable): recursive execute (for expansions).
         registry (MountRegistry): mount registry for classification.
         call_stack (CallStack | None): shell call stack for expansion.
+        view (SessionView | None): the session plane's gated door.
+        forked (bool): the redirects belong to a program bash forks
+            for, which expands them in the child: an error there is
+            kept for the command to fail on (``UNEXPANDED``) rather
+            than raised into the shell, which discards the line.
 
     Returns:
         (expanded, pipe_node): expanded redirects and the detached
         pipeline node (or None).
     """
     expanded: list[Redirect] = []
-    for r in redirects:
-        if r.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
-            body = r.target
-            if r.target_node is not None and r.expand_vars:
-                try:
-                    body = await expand_node(
-                        r.target_node,
-                        session,
-                        execute_fn,
-                        call_stack,
-                        view=view,
-                    )
-                except ExitSignal as exc:
-                    if r.kind != RedirectKind.HEREDOC:
-                        raise
-                    expanded.append(
-                        Redirect(
-                            fd=r.fd, target=exc, kind=RedirectKind.UNEXPANDED
-                        )
-                    )
-                    continue
-            elif isinstance(body, str) and r.expand_vars:
-                for var, val in visible_env(session).items():
-                    body = body.replace("$" + var, val)
+    for index, r in enumerate(redirects):
+        try:
+            expanded.append(
+                await _expand_redirect(
+                    r, session, execute_fn, registry, call_stack, view
+                )
+            )
+        except ExitSignal as exc:
+            if not forked:
+                raise
+            # The child performs no redirect after the first that fails;
+            # a pipeline the line attached to one of them still runs.
             expanded.append(
                 Redirect(
                     fd=r.fd,
-                    target=body,
-                    target_node=r.target_node,
-                    kind=r.kind,
-                    append=r.append,
-                    clobber=r.clobber,
-                    pipeline=r.pipeline,
-                    expand_vars=r.expand_vars,
-                    continuation=r.continuation,
+                    target=exc,
+                    kind=RedirectKind.UNEXPANDED,
+                    pipeline=next(
+                        (
+                            later.pipeline
+                            for later in redirects[index:]
+                            if later.pipeline is not None
+                        ),
+                        None,
+                    ),
                 )
             )
-            continue
-        if isinstance(r.target, int):
-            expanded.append(r)
-            continue
-        if (
-            r.target_node is not None
-            and r.target_node.type == NT.PROCESS_SUBSTITUTION
-        ):
-            if (
-                r.kind == RedirectKind.STDIN
-                and get_process_sub_direction(r.target_node)
-                == ProcessSubDirection.INPUT
-            ):
-                # `cmd < <(inner)` — run the inner command and feed its
-                # stdout as stdin, reusing the heredoc delivery path.
-                inner = get_process_sub_body(r.target_node)
-                inner_data = b""
-                if inner:
-                    io_ps = await child_line(
-                        session, execute_fn, inner, r.target_node
-                    )
-                    inner_data = await materialize(io_ps.stdout)
-                    session._diagnostics.append(
-                        await io_ps.materialize_stderr()
-                    )
-                expanded.append(
-                    Redirect(
-                        fd=r.fd,
-                        target=inner_data,
-                        kind=RedirectKind.HEREDOC,
-                        expand_vars=False,
-                    )
-                )
-                continue
-            # `> >(cmd)` and friends would otherwise classify the
-            # procsub text as a literal filename and write silently
-            # wrong state; fail loudly like the argv-position check.
-            raise ExitSignal(
-                2,
-                stderr=b"mirage: unsupported: process substitution >(...)\n",
-                contained_code=2,
-            )
-        target_node = r.target_node
-        if target_node is not None:
-            target_str = await expand_node(
-                target_node, session, execute_fn, call_stack, view=view
-            )
-            # A redirect target is a path by definition (the operator is
-            # the context), so force classification like a PATH-kind word;
-            # classify_word alone leaves extensionless relative targets as
-            # text. Mirrors the TS classifyBarePath call.
-            target_scope = classify_bare_path(
-                target_str, registry, session.cwd
-            )
-        else:
-            target_scope = r.target
-        expanded.append(
-            Redirect(
-                fd=r.fd,
-                target=target_scope,
-                target_node=r.target_node,
-                kind=r.kind,
-                append=r.append,
-                clobber=r.clobber,
-                pipeline=r.pipeline,
-            )
-        )
+            break
     pipe_node = None
     for r in expanded:
         if r.pipeline is not None:
@@ -169,3 +99,97 @@ async def expand_redirects(
             r.pipeline = None
             break
     return expanded, pipe_node
+
+
+async def _expand_redirect(
+    r: Redirect,
+    session: SessionState,
+    execute_fn: Callable[..., Any],
+    registry: MountRegistry,
+    call_stack: CallStack | None,
+    view: SessionView | None,
+) -> Redirect:
+    """Expand one redirect's body or target.
+
+    Args:
+        r (Redirect): the parsed redirect.
+        session (SessionState): shell session state.
+        execute_fn (Callable): recursive execute (for expansions).
+        registry (MountRegistry): mount registry for classification.
+        call_stack (CallStack | None): shell call stack for expansion.
+        view (SessionView | None): the session plane's gated door.
+    """
+    if r.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
+        body = r.target
+        if r.target_node is not None and r.expand_vars:
+            body = await expand_node(
+                r.target_node, session, execute_fn, call_stack, view=view
+            )
+        elif isinstance(body, str) and r.expand_vars:
+            for var, val in visible_env(session).items():
+                body = body.replace("$" + var, val)
+        return Redirect(
+            fd=r.fd,
+            target=body,
+            target_node=r.target_node,
+            kind=r.kind,
+            append=r.append,
+            clobber=r.clobber,
+            pipeline=r.pipeline,
+            expand_vars=r.expand_vars,
+            continuation=r.continuation,
+        )
+    if isinstance(r.target, int):
+        return r
+    if (
+        r.target_node is not None
+        and r.target_node.type == NT.PROCESS_SUBSTITUTION
+    ):
+        if (
+            r.kind == RedirectKind.STDIN
+            and get_process_sub_direction(r.target_node)
+            == ProcessSubDirection.INPUT
+        ):
+            # `cmd < <(inner)` — run the inner command and feed its
+            # stdout as stdin, reusing the heredoc delivery path.
+            inner = get_process_sub_body(r.target_node)
+            inner_data = b""
+            if inner:
+                io_ps = await child_line(
+                    session, execute_fn, inner, r.target_node, call_stack
+                )
+                inner_data = await materialize(io_ps.stdout)
+                session._diagnostics.append(await io_ps.materialize_stderr())
+            return Redirect(
+                fd=r.fd,
+                target=inner_data,
+                kind=RedirectKind.HEREDOC,
+                expand_vars=False,
+            )
+        # `> >(cmd)` and friends would otherwise classify the
+        # procsub text as a literal filename and write silently
+        # wrong state; fail loudly like the argv-position check.
+        raise ExitSignal(
+            2,
+            stderr=b"mirage: unsupported: process substitution >(...)\n",
+            contained_code=2,
+        )
+    target_scope = r.target
+    if r.target_node is not None:
+        target_str = await expand_node(
+            r.target_node, session, execute_fn, call_stack, view=view
+        )
+        # A redirect target is a path by definition (the operator is
+        # the context), so force classification like a PATH-kind word;
+        # classify_word alone leaves extensionless relative targets as
+        # text. Mirrors the TS classifyBarePath call.
+        target_scope = classify_bare_path(target_str, registry, session.cwd)
+    return Redirect(
+        fd=r.fd,
+        target=target_scope,
+        target_node=r.target_node,
+        kind=r.kind,
+        append=r.append,
+        clobber=r.clobber,
+        pipeline=r.pipeline,
+    )

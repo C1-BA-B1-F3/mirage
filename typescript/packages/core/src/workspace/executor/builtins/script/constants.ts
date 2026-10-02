@@ -35,5 +35,6 @@ export const BASH_LONG_OPTIONS: Readonly<Record<string, boolean>> = Object.freez
 })
 
 // GNU prints the refusal and the usage line together, both under the
-// builtin's own name, and exits 2 without ending the script.
-export const SOURCE_USAGE = 'filename argument required\nsource: usage: source filename [arguments]'
+// builtin's own name as typed (`source` or `.`), and exits 2 without ending
+// the script.
+export const SOURCE_USAGE = 'filename argument required\n{name}: usage: {name} filename [arguments]'

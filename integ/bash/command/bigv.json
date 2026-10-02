@@ -98,7 +98,7 @@
       "command": "command -V nope_zzz 2>&1; echo \"rc=$?\"",
       "expect": {
         "exit": 0,
-        "stdout": "command: nope_zzz: not found\nrc=1\n",
+        "stdout": "bash: command: nope_zzz: not found\nrc=1\n",
         "stderr": ""
       }
     },

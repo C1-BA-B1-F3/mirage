@@ -19,7 +19,7 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.array import build_assoc_literal, build_indexed_literal
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, DiscardSignal
 from mirage.shell.printer import function_text
 from mirage.shell.variable import ShellValue, VarAttr, attr_letters
 from mirage.utils.hidden import var_hidden
@@ -137,8 +137,9 @@ async def store_staged_arrays(
     for name, append, items in arrays:
         if view.is_readonly(name):
             if fatal:
-                err = f"bash: {name}: readonly variable\n".encode()
-                raise ExitSignal(1, stderr=err, contained_code=1)
+                raise DiscardSignal(
+                    f"bash: {name}: readonly variable\n".encode()
+                )
             return readonly_refusal(cmd, name)
         note_local_array(session, name)
         try:

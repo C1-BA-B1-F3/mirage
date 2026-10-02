@@ -22,7 +22,7 @@ from mirage.types import PathSpec
 
 
 def _out_of_range(value: str) -> IOResult:
-    err = f"history: {value}: history position out of range\n".encode()
+    err = f"bash: history: {value}: history position out of range\n".encode()
     return IOResult(exit_code=1, stderr=err)
 
 
@@ -83,14 +83,16 @@ async def history_cmd(
     ):
         return None, IOResult()
     if len(texts) > 1:
-        err = b"history: too many arguments\n"
+        err = b"bash: history: too many arguments\n"
         return None, IOResult(exit_code=1, stderr=err)
     count = None
     if texts:
         try:
             count = int(texts[0])
         except ValueError:
-            err = f"history: {texts[0]}: numeric argument required\n".encode()
+            err = (
+                f"bash: history: {texts[0]}: numeric argument required\n"
+            ).encode()
             return None, IOResult(exit_code=1, stderr=err)
     events = await observer.session_command_events(session)
     output = render_history_listing(events, n=count)

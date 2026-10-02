@@ -30,9 +30,9 @@ import {
   statementOutput,
   statementStdin,
 } from './statement.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
 import { ExitSignal, PipeClosed, ReturnSignal } from '../../shell/errors.ts'
-import { BreakSignal, ContinueSignal, carried, isUnwinding } from './control.ts'
+import { carried, ended, isUnwinding } from './control.ts'
 import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
@@ -100,7 +100,7 @@ export async function handlePipe(
           cmd,
           child,
           input,
-          callStack?.fork() ?? null,
+          (callStack ?? new CallStack()).fork(),
           { sink: output, signal: abort.signal },
         )
         io = result
@@ -111,12 +111,11 @@ export async function handlePipe(
         if (error instanceof PipeClosed) {
           io.exitCode = 141
         } else if (isUnwinding(error)) {
-          // A stage is a subshell: whatever unwinds ends it there, a
-          // `return` with its status, a `break` or `continue` with 0.
-          const loop = error instanceof BreakSignal || error instanceof ContinueSignal
-          io.exitCode = loop ? 0 : ended(error)
-          await pump(output, Channel.STDOUT, error.stdout)
-          await pump(output, Channel.STDERR, loop ? error.io.stderr : error.stderr)
+          // A stage is a subshell: whatever unwinds ends it there.
+          const unwound = ended(error)
+          io.exitCode = unwound.exitCode
+          await pump(output, Channel.STDOUT, unwound.stdout)
+          await pump(output, Channel.STDERR, unwound.stderr)
         } else {
           output.end(error)
           throw error
@@ -245,11 +244,6 @@ export async function handlePipe(
   return [lastStdout, lastIo, execNode]
 }
 
-/** The status a subshell ends with when `exit` or `return` ends it. */
-function ended(err: ExitSignal | ReturnSignal): number {
-  return err instanceof ExitSignal ? err.containedCode : err.exitCode
-}
-
 export async function handleConnection(
   executeNode: ExecuteNodeFn,
   left: TSNodeLike,
@@ -327,6 +321,9 @@ export async function handleSubshell(
 ): Promise<Result> {
   const saved = session.snapshot()
   session.lineOpen = true
+  // A child shell: `shift` or `set --` in it leaves the caller's
+  // parameters alone, and it runs in none of the caller's loops.
+  callStack = (callStack ?? new CallStack()).fork(false)
   try {
     const allStdout: (ByteSource | null)[] = []
     let mergedIo = new IOResult()
@@ -405,7 +402,7 @@ export async function handleSubshell(
           allStdout,
           mergedIo,
         )
-        const status = ended(err)
+        const status = ended(err).exitCode
         mergedIo = await mergedIo.merge(new IOResult({ exitCode: status, stderr: err.stderr }))
         mergedIo.exitCode = status
         recordStatus(session, status)

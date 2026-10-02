@@ -25,7 +25,9 @@ import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
-import type { CallStack } from '../../shell/call_stack.ts'
+import { CallStack } from '../../shell/call_stack.ts'
+import { literalText } from '../../shell/parse/names.ts'
+import { BASH_BUILTINS } from '../lookup/constants.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import {
   assignmentStatus,
@@ -558,6 +560,7 @@ async function runRedirected(
     registry,
     callStack,
     sessionView(session, registry.policies),
+    forks(command, session),
   )
   // `exec > file` with no command installs the redirects on the shell
   // for every later statement, rather than applying them to one
@@ -721,6 +724,41 @@ function isBareExec(command: TSNodeLike | null): boolean {
   return named.length === 1 && named[0]?.type === NT.COMMAND_NAME && getText(named[0]) === 'exec'
 }
 
+/**
+ * Whether bash forks to run a redirected command, so its redirects expand
+ * in the child and an error there fails that command alone: a subshell or a
+ * program. A builtin, a function or another compound command is the shell's
+ * own, which expands its redirects itself and discards the line on an
+ * error. `command -v` is the builtin itself; `command X` is X with functions
+ * masked; a name only an expansion spells is taken for a program. Mirrors
+ * Python's _forks.
+ */
+function forks(command: TSNodeLike | null, session: SessionState): boolean {
+  if (command?.type !== NT.COMMAND) return command?.type === NT.SUBSHELL
+  let words = getParts(command).filter((part) => part.type !== NT.VARIABLE_ASSIGNMENT)
+  let functions = true
+  while (words[0] !== undefined && getText(words[0]) === 'command') {
+    words = words.slice(1)
+    functions = false
+    while (words[0] !== undefined && getText(words[0]).startsWith('-')) {
+      const option = getText(words[0])
+      words = words.slice(1)
+      if (option === '--') break
+      if (option.includes('v') || option.includes('V')) return false
+    }
+  }
+  let head = words[0]
+  if (head === undefined) return false
+  if (head.type === NT.COMMAND_NAME && head.namedChildren[0] !== undefined) {
+    head = head.namedChildren[0]
+  }
+  const name = literalText(head)
+  return (
+    name === null ||
+    (!BASH_BUILTINS.has(name) && !(functions && session.functions[name] !== undefined))
+  )
+}
+
 export async function executeNode(
   deps: ExecuteNodeDeps,
   node: TSNodeLike,
@@ -812,6 +850,10 @@ async function executeNodeBody(
   // ambient frame cannot identify this node's nested evaluations.
   const executeFn: ExecuteFn = (cmd, opts) => deps.executeFn(cmd, { session, ...opts })
   const kind = nodeKind(node)
+  // A root run on a caller's frames is the caller's own line (eval,
+  // source, an alias, `$( )`); one given none is a shell of its own.
+  const inline = callStack !== null
+  callStack ??= new CallStack()
 
   // The statements a construct runs all read one descriptor, as bash's
   // do: `read` takes its line and the command after it gets the rest, in
@@ -881,8 +923,6 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.PROGRAM) {
-    // A root run in a caller's frame is the caller's own line (eval, an
-    // alias); one given none is a shell of its own.
     return executeProgram(
       recurse,
       node,
@@ -895,7 +935,7 @@ async function executeNodeBody(
       deps.handed ?? null,
       registry.decisions,
       sink ?? null,
-      callStack !== null,
+      inline,
     )
   }
 
@@ -1205,18 +1245,20 @@ async function executeNodeBody(
     const [exprs, body] = getCforParts(node)
     const evalExpr: CforEval = (e, d) =>
       evalCforExpr(e, d, session, executeFn, callStack, sessionView(session, registry.policies))
-    return handleCfor(
-      stream,
-      exprs,
-      body,
-      evalExpr,
-      session,
-      stdin,
-      callStack,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+    return callStack.loop(() =>
+      handleCfor(
+        stream,
+        exprs,
+        body,
+        evalExpr,
+        session,
+        stdin,
+        callStack,
+        jobTable,
+        agentId,
+        deps.handed ?? null,
+        registry.decisions,
+      ),
     )
   }
 
@@ -1251,7 +1293,27 @@ async function executeNodeBody(
       )
     })
     if (kind === NodeKind.SELECT) {
-      return handleSelect(
+      return callStack.loop(() =>
+        handleSelect(
+          stream,
+          variable,
+          resolved,
+          body,
+          session,
+          stdin,
+          callStack,
+          registry.policies,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+          mergeSignals(deps.signal, session.abortSignal),
+          sink,
+        ),
+      )
+    }
+    return callStack.loop(() =>
+      handleFor(
         stream,
         variable,
         resolved,
@@ -1264,30 +1326,30 @@ async function executeNodeBody(
         agentId,
         deps.handed ?? null,
         registry.decisions,
-        mergeSignals(deps.signal, session.abortSignal),
-        sink,
-      )
-    }
-    return handleFor(
-      stream,
-      variable,
-      resolved,
-      body,
-      session,
-      stdin,
-      callStack,
-      registry.policies,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+      ),
     )
   }
 
   if (kind === NodeKind.WHILE || kind === NodeKind.UNTIL) {
     const [condition, body] = getWhileParts(node)
     if (kind === NodeKind.UNTIL) {
-      return handleUntil(
+      return callStack.loop(() =>
+        handleUntil(
+          stream,
+          condition,
+          body,
+          session,
+          stdin,
+          callStack,
+          jobTable,
+          agentId,
+          deps.handed ?? null,
+          registry.decisions,
+        ),
+      )
+    }
+    return callStack.loop(() =>
+      handleWhile(
         stream,
         condition,
         body,
@@ -1298,19 +1360,7 @@ async function executeNodeBody(
         agentId,
         deps.handed ?? null,
         registry.decisions,
-      )
-    }
-    return handleWhile(
-      stream,
-      condition,
-      body,
-      session,
-      stdin,
-      callStack,
-      jobTable,
-      agentId,
-      deps.handed ?? null,
-      registry.decisions,
+      ),
     )
   }
 

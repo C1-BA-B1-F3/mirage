@@ -300,23 +300,40 @@ _KILL_USAGE = (
         (["-9"], 2, _KILL_USAGE),
         (["--"], 2, _KILL_USAGE),
         (["-?"], 2, _KILL_USAGE),
-        (["-s"], 1, b"kill: -s: option requires an argument\n"),
-        (["-n"], 1, b"kill: -n: option requires an argument\n"),
-        (["-FOO"], 1, b"kill: FOO: invalid signal specification\n"),
-        (["-s", "FOO", "1"], 1, b"kill: FOO: invalid signal specification\n"),
-        (["-65", "1"], 1, b"kill: 65: invalid signal specification\n"),
-        (["abc"], 1, b"kill: abc: arguments must be process or job IDs\n"),
-        (["0x1"], 1, b"kill: 0x1: arguments must be process or job IDs\n"),
-        (["--", "-"], 1, b"kill: -: arguments must be process or job IDs\n"),
-        ([""], 1, b"kill: `': not a pid or valid job spec\n"),
-        (["999"], 1, b"kill: (999) - No such process\n"),
-        (["-0", "999"], 1, b"kill: (999) - No such process\n"),
-        (["%3"], 1, b"kill: %3: no such job\n"),
-        (["%abc"], 1, b"kill: %abc: no such job\n"),
+        (["-s"], 1, b"bash: kill: -s: option requires an argument\n"),
+        (["-n"], 1, b"bash: kill: -n: option requires an argument\n"),
+        (["-FOO"], 1, b"bash: kill: FOO: invalid signal specification\n"),
+        (
+            ["-s", "FOO", "1"],
+            1,
+            b"bash: kill: FOO: invalid signal specification\n",
+        ),
+        (["-65", "1"], 1, b"bash: kill: 65: invalid signal specification\n"),
+        (
+            ["abc"],
+            1,
+            b"bash: kill: abc: arguments must be process or job IDs\n",
+        ),
+        (
+            ["0x1"],
+            1,
+            b"bash: kill: 0x1: arguments must be process or job IDs\n",
+        ),
+        (
+            ["--", "-"],
+            1,
+            b"bash: kill: -: arguments must be process or job IDs\n",
+        ),
+        ([""], 1, b"bash: kill: `': not a pid or valid job spec\n"),
+        (["999"], 1, b"bash: kill: (999) - No such process\n"),
+        (["-0", "999"], 1, b"bash: kill: (999) - No such process\n"),
+        (["%3"], 1, b"bash: kill: %3: no such job\n"),
+        (["%abc"], 1, b"bash: kill: %abc: no such job\n"),
         (
             ["999", "998"],
             1,
-            b"kill: (999) - No such process\nkill: (998) - No such process\n",
+            b"bash: kill: (999) - No such process\n"
+            b"bash: kill: (998) - No such process\n",
         ),
     ],
 )
@@ -403,14 +420,14 @@ async def test_ps_lists_the_stages_of_a_pipeline_under_a_redirect(line):
 async def test_fg_without_an_operand_reports_when_there_is_no_job():
     _, io, _ = await handle_fg(JobTable(), ["fg"])
     assert io.exit_code == 1
-    assert io.stderr == b"fg: current: no such job\n"
+    assert io.stderr == b"bash: fg: current: no such job\n"
 
 
 @pytest.mark.asyncio
 async def test_fg_rejects_an_unknown_job_id_with_the_operand_as_typed():
     _, io, _ = await handle_fg(JobTable(), ["fg", "%9"])
     assert io.exit_code == 1
-    assert io.stderr == b"fg: %9: no such job\n"
+    assert io.stderr == b"bash: fg: %9: no such job\n"
 
 
 @pytest.mark.asyncio
@@ -740,7 +757,7 @@ async def test_ps_and_kill_reach_other_sessions_as_far_as_the_profile_says():
         io = await ws.shell(stop, session_id="audit")
         assert (await io.stdout_str(), await io.stderr_str()) == (
             "rc=1\n",
-            f"kill: ({pid.decode().strip()}) - Operation not permitted\n",
+            f"bash: kill: ({pid.decode().strip()}) - Operation not permitted\n",
         )
         assert (await ws.shell(stop, session_id="ops")).stdout == b"rc=0\n"
     finally:
@@ -873,8 +890,8 @@ async def test_kill_succeeds_when_any_operand_was_signalled():
         result = await ws.shell(f"kill 999999 %9 abc {pid}; echo rc=$?")
         assert result.stdout == b"rc=0\n"
         assert result.stderr == (
-            b"kill: (999999) - No such process\nkill: %9: no such job\n"
-            b"kill: abc: arguments must be process or job IDs\n"
+            b"bash: kill: (999999) - No such process\nbash: kill: %9: no such job\n"
+            b"bash: kill: abc: arguments must be process or job IDs\n"
         )
     finally:
         await ws.close()

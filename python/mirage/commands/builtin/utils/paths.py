@@ -293,6 +293,10 @@ def _spells(
 def walk_spelling(path: PathSpec, follow: Callable[[str], str] | None) -> str:
     """The typed spelling, links before ``..``, while it names the path.
 
+    Without a trailing slash: that is a final ``.``, which ``dot_refusal``
+    proves, and a store that keeps no directories reads a slashed key as
+    one, so ``cat reg/`` there was ENOENT, not ENOTDIR.
+
     Args:
         path (PathSpec): the path as the caller named it.
         follow (Callable[[str], str] | None): the namespace's link
@@ -300,7 +304,7 @@ def walk_spelling(path: PathSpec, follow: Callable[[str], str] | None) -> str:
     """
     dotted = path.dotted
     if dotted is not None and _spells(dotted, path.virtual, follow):
-        return dotted
+        return dotted.rstrip("/") or "/"
     return path.virtual
 
 

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { canonicalize, doorStat } from '../../../../commands/builtin/generic/realpath.ts'
+import { canonicalize } from '../../../../commands/builtin/generic/realpath.ts'
 import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { PathSpec } from '../../../../types.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
@@ -73,7 +73,14 @@ export async function handleReadlink(
       if (mode !== null) {
         if (namespace.isLink(absOp)) await dispatch('readlink', PathSpec.fromStrPath(absOp))
         lines.push(
-          await canonicalize(spec.rawPath, session.cwd, mode, false, readlink, doorStat(dispatch)),
+          await canonicalize(
+            spec.rawPath,
+            session.cwd,
+            mode,
+            false,
+            readlink,
+            dispatchStat(dispatch),
+          ),
         )
         continue
       }

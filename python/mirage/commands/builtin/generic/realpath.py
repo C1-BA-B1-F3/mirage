@@ -1,5 +1,6 @@
+import functools
 import posixpath
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_target
@@ -11,12 +12,9 @@ from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import missing_operand_error
 from mirage.context import path_allowed
 from mirage.io.types import ByteSource, IOResult
-from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, StatFn
 from mirage.utils.errors import eloop, enoent, enotdir, fs_error_line
 from mirage.utils.key_prefix import mount_prefix_of
-
-PathStat = Callable[[str], Awaitable[FileStat]]
 
 _MODES = {"canonicalize_existing": "e", "canonicalize_missing": "m"}
 _LINKS = {"logical": "L", "physical": "P", "strip": "s", "no_symlinks": "s"}
@@ -61,8 +59,8 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> RealpathFlags:
     )
 
 
-async def _directory(stat: PathStat, path: str, word: str) -> None:
-    if (await stat(path)).type != FileType.DIRECTORY:
+async def _directory(stat: StatFn, path: str, word: str) -> None:
+    if (await stat(PathSpec.from_str_path(path))).type != FileType.DIRECTORY:
         raise enotdir(word)
 
 
@@ -72,7 +70,7 @@ async def canonicalize(
     mode: str,
     nolinks: bool,
     readlink: Callable[[str], str | None] | None,
-    stat: PathStat,
+    stat: StatFn,
 ) -> str:
     """gnulib's canonicalize_filename_mode, over the workspace, which
     ``realpath`` and ``readlink -f`` share.
@@ -99,7 +97,7 @@ async def canonicalize(
         readlink (Callable[[str], str | None] | None): one link's target,
             None for a path that is not a link; None while the namespace
             holds no link.
-        stat (PathStat): the workspace's stat of one path.
+        stat (StatFn): the workspace's stat of one path.
 
     Raises:
         OSError: the first check the walk fails.
@@ -147,7 +145,7 @@ async def canonicalize(
         if slash:
             await _directory(stat, path, word)
         else:
-            await stat(path)
+            await stat(PathSpec.from_str_path(path))
     except FileNotFoundError:
         if mode == "e":
             raise
@@ -171,7 +169,7 @@ def _relative(path: str, base: str) -> str:
 async def realpath(
     paths: list[PathSpec],
     *,
-    stat: PathStat,
+    stat: StatFn,
     cwd: str = "/",
     readlink: Callable[[str], str | None] | None = None,
     flags: RealpathFlags = RealpathFlags(),
@@ -184,7 +182,7 @@ async def realpath(
 
     Args:
         paths (list[PathSpec]): the operands, read as typed.
-        stat (PathStat): the workspace's stat of one path.
+        stat (StatFn): the workspace's stat of one path.
         cwd (str): the working directory.
         readlink (Callable[[str], str | None] | None): one link's target,
             None while the namespace holds no link.
@@ -249,15 +247,6 @@ async def realpath(
     )
 
 
-def door_stat(dispatch: DispatchFn) -> PathStat:
-    """The workspace's stat of one path, through the op door.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-    """
-    return lambda path: dispatch_stat(dispatch, PathSpec.from_str_path(path))
-
-
 async def realpath_generic(
     paths: list[PathSpec],
     texts: list[str],
@@ -268,12 +257,16 @@ async def realpath_generic(
         mount_prefix_of(paths[0].virtual, paths[0].vfs_path) if paths else ""
     )
 
-    async def stat(path: str) -> FileStat:
-        return await stat_fn(to_pathspec(path, prefix))
+    async def stat(path: PathSpec) -> FileStat:
+        return await stat_fn(to_pathspec(path.virtual, prefix))
 
     return await realpath(
         paths,
-        stat=door_stat(opts.dispatch) if opts.dispatch is not None else stat,
+        stat=(
+            functools.partial(dispatch_stat, opts.dispatch)
+            if opts.dispatch is not None
+            else stat
+        ),
         cwd=opts.cwd.virtual,
         readlink=link_target(opts.ns.links if opts.ns is not None else None),
         flags=parse_flags(opts.flags),

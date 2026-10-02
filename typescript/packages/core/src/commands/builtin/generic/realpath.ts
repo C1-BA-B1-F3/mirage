@@ -16,16 +16,13 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { missingOperandError } from '../../spec/usage.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { FileStat } from '../../../types.ts'
-import { FileType, PathSpec } from '../../../types.ts'
+import { FileType, PathSpec, type StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import type { DispatchFn } from '../../../runtime/types.ts'
 import { eloop, enoent, enotdir, fsErrorLine, isMissingPath } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { parent } from '../../../utils/path.ts'
 import { pathAllowed } from '../../../context/session_context.ts'
 import { dispatchStat, linkTarget } from '../utils/paths.ts'
-
-type PathStat = (path: string) => Promise<FileStat>
 
 const ENC = new TextEncoder()
 const MODES: Record<string, string> = { canonicalize_existing: 'e', canonicalize_missing: 'm' }
@@ -63,8 +60,8 @@ export function parseFlags(flags: CommandOpts['flags']): RealpathFlags {
   }
 }
 
-async function directory(stat: PathStat, path: string, word: string): Promise<void> {
-  if ((await stat(path)).type !== FileType.DIRECTORY) throw enotdir(word)
+async function directory(stat: StatFn, path: string, word: string): Promise<void> {
+  if ((await stat(PathSpec.fromStrPath(path))).type !== FileType.DIRECTORY) throw enotdir(word)
 }
 
 /**
@@ -90,7 +87,7 @@ export async function canonicalize(
   mode: string,
   nolinks: boolean,
   readlink: ((path: string) => string | null) | null,
-  stat: PathStat,
+  stat: StatFn,
 ): Promise<string> {
   if (word === '') throw enoent(word)
   const names = (word.startsWith('/') ? word : `${cwd}/${word}`).split('/').filter((n) => n !== '')
@@ -125,7 +122,7 @@ export async function canonicalize(
   if (mode === 'm' || last === undefined || last === '.' || last === '..') return path
   try {
     if (slash) await directory(stat, path, word)
-    else await stat(path)
+    else await stat(PathSpec.fromStrPath(path))
   } catch (err) {
     if (!isMissingPath(err) || mode === 'e') throw err
     if (!nolinks) await directory(stat, parent(path), word)
@@ -153,7 +150,7 @@ function relative(path: string, base: string): string {
  */
 export async function realpath(
   paths: readonly PathSpec[],
-  stat: PathStat,
+  stat: StatFn,
   cwd = '/',
   readlink: ((path: string) => string | null) | null = null,
   flags: RealpathFlags = parseFlags({}),
@@ -207,11 +204,6 @@ export async function realpath(
   return [out, new IOResult({ stderr, exitCode: failed ? 1 : 0 })]
 }
 
-/** The workspace's stat of one path, through the op door. */
-export function doorStat(dispatch: DispatchFn): PathStat {
-  return (path) => dispatchStat(dispatch)(PathSpec.fromStrPath(path))
-}
-
 export async function realpathGeneric(
   paths: PathSpec[],
   texts: string[],
@@ -220,9 +212,12 @@ export async function realpathGeneric(
 ): Promise<CommandFnResult> {
   const first = paths[0]
   const prefix = first !== undefined ? mountPrefixOf(first.virtual, first.vfsPath) : ''
-  const pathStat: PathStat =
+  const pathStat: StatFn =
     opts.dispatch !== undefined
-      ? doorStat(opts.dispatch)
-      : async (path) => (await stat(PathSpec.fromStrPath(path, mountKey(path, prefix)))) as FileStat
+      ? dispatchStat(opts.dispatch)
+      : async (path) =>
+          (await stat(
+            PathSpec.fromStrPath(path.virtual, mountKey(path.virtual, prefix)),
+          )) as FileStat
   return realpath(paths, pathStat, opts.cwd, linkTarget(opts.ns?.links), parseFlags(opts.flags))
 }

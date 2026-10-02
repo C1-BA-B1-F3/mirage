@@ -172,11 +172,17 @@ function spells(
   }
 }
 
-/** The typed spelling, links before `..`, while it names the path. Mirrors
- * Python's walk_spelling. */
+/**
+ * The typed spelling, links before `..`, while it names the path. Mirrors
+ * Python's walk_spelling.
+ *
+ * Without a trailing slash: that is a final `.`, which `dotRefusal` proves,
+ * and a store that keeps no directories reads a slashed key as one, so
+ * `cat reg/` there was ENOENT, not ENOTDIR.
+ */
 export function walkSpelling(path: PathSpec, follow: ((path: string) => string) | null): string {
   const dotted = path.dotted
-  if (dotted !== null && spells(dotted, path.virtual, follow)) return dotted
+  if (dotted !== null && spells(dotted, path.virtual, follow)) return rstripSlash(dotted) || '/'
   return path.virtual
 }
 

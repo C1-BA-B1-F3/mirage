@@ -14,7 +14,7 @@
 
 from functools import partial
 
-from mirage.commands.builtin.generic.realpath import canonicalize, door_stat
+from mirage.commands.builtin.generic.realpath import canonicalize
 from mirage.commands.builtin.utils.paths import (
     dispatch_stat,
     dot_refusal,
@@ -82,7 +82,7 @@ async def handle_readlink(
                         mode,
                         False,
                         namespace.readlink,
-                        door_stat(dispatch),
+                        partial(dispatch_stat, dispatch),
                     )
                 )
                 continue

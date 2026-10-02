@@ -12,11 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
 import os
 import tempfile
 from pathlib import Path
 
 import asyncssh
+
+logger = logging.getLogger(__name__)
 
 HOST_KEY_ALGORITHM = "ssh-ed25519"
 
@@ -29,7 +32,9 @@ def load_host_key(path: Path) -> asyncssh.SSHKey:
     owner-only permissions and every later start reads it back. Two
     daemons racing to mint it both end up reading the one that won: the
     key is written whole before it is linked into place, so the loser
-    never reads a partial file.
+    never reads a partial file. Storage without hard links gets the
+    whole file by rename instead, where two daemons starting at once
+    may each keep the key they minted.
 
     Args:
         path (Path): where the private key lives.
@@ -49,6 +54,9 @@ def load_host_key(path: Path) -> asyncssh.SSHKey:
             os.link(temp, path)
         except FileExistsError:
             return asyncssh.read_private_key(str(path))
+        except OSError:
+            logger.debug("could not link host key %s", path, exc_info=True)
+            os.replace(temp, path)
     finally:
-        os.unlink(temp)
+        Path(temp).unlink(missing_ok=True)
     return key

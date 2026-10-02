@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { randomUUID } from 'node:crypto'
-import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type * as Ssh2Mod from 'ssh2'
 
@@ -42,9 +42,11 @@ export function mintKeyPair(utils: typeof Ssh2Mod.utils): Ssh2Mod.utils.KeyPairR
  * like a man-in-the-middle, so the first start writes one with owner-only
  * permissions and every later start reads it back. Two daemons racing to
  * mint it both end up reading the one that won: the key is written whole
- * before it is linked into place, so the loser never reads a partial file. The format is OpenSSH's
- * own, the same file the Python daemon writes, so either daemon can serve
- * the other's key.
+ * before it is linked into place, so the loser never reads a partial file.
+ * Storage without hard links gets the whole file by rename instead, where
+ * two daemons starting at once may each keep the key they minted. The
+ * format is OpenSSH's own, the same file the Python daemon writes, so
+ * either daemon can serve the other's key.
  */
 export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Promise<string> {
   try {
@@ -55,12 +57,15 @@ export async function loadHostKey(path: string, utils: typeof Ssh2Mod.utils): Pr
   const pair = mintKeyPair(utils)
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}`)
-  await writeFile(temp, pair.private, { mode: 0o600, flag: 'wx' })
   try {
-    await link(temp, path)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return await readFile(path, 'utf-8')
-    throw err
+    await writeFile(temp, pair.private, { mode: 0o600, flag: 'wx' })
+    try {
+      await link(temp, path)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return await readFile(path, 'utf-8')
+      console.debug(`could not link host key ${path}`, err)
+      await rename(temp, path)
+    }
   } finally {
     await rm(temp, { force: true })
   }

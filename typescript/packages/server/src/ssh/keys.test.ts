@@ -13,11 +13,17 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import ssh2 from 'ssh2'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { loadHostKey, mintKeyPair } from './keys.ts'
+
+vi.mock('node:fs/promises', async (original) => {
+  const real = await original<typeof fs>()
+  return { ...real, link: vi.fn(real.link), writeFile: vi.fn(real.writeFile) }
+})
 
 function publicOf(privateKey: string): string {
   const parsed = ssh2.utils.parseKey(privateKey)
@@ -47,6 +53,26 @@ describe('loadHostKey', () => {
     const keys = await Promise.all(Array.from({ length: 8 }, () => loadHostKey(path, ssh2.utils)))
     expect(new Set(keys.map(publicOf)).size).toBe(1)
     expect(readdirSync(dir)).toEqual(['host_key'])
+  })
+
+  it('publishes by rename where the storage has no hard links', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    const path = join(dir, 'host_key')
+    vi.mocked(fs.link).mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }))
+    const key = await loadHostKey(path, ssh2.utils)
+    expect(readFileSync(path, 'utf-8')).toBe(key)
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    expect(readdirSync(dir)).toEqual(['host_key'])
+  })
+
+  it('leaves no key file behind when writing it fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    vi.mocked(fs.writeFile).mockImplementationOnce(async (file) => {
+      writeFileSync(file as string, 'partial')
+      throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+    })
+    await expect(loadHostKey(join(dir, 'host_key'), ssh2.utils)).rejects.toThrow('ENOSPC')
+    expect(readdirSync(dir)).toEqual([])
   })
 
   it('reads an existing key instead of replacing it', async () => {

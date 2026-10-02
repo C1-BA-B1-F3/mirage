@@ -12,18 +12,44 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from datetime import date
 from typing import Any
 
 from mirage.accessor.gcal import GCalAccessor
 from mirage.commands.builtin.gcal import COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
+from mirage.core.gcal.day import bucket_name, bucket_start
 from mirage.core.google.client import TokenManager
 from mirage.ops.gcal import OPS as GCAL_VFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.gcal.config import GCalConfig
-from mirage.vfs.gcal.prompt import PROMPT, WRITE_PROMPT
+from mirage.vfs.gcal.prompt import (
+    BUCKET_PROMPT,
+    DAY_PROMPT,
+    PROMPT,
+    WRITE_PROMPT,
+)
+
+EXAMPLE_DAY = date(2026, 8, 11)
+
+
+def tree_prompt(size: int) -> str:
+    """The prompt for a mount's tree, its examples named on that grid.
+
+    Args:
+        size (int): the mount's bucket length in days.
+    """
+    layout = DAY_PROMPT if size == 1 else BUCKET_PROMPT
+    bucket = bucket_name(bucket_start(EXAMPLE_DAY, size), size)
+    day = "" if size == 1 else f"{EXAMPLE_DAY.isoformat()}_"
+    return (
+        PROMPT.replace("{layout}", layout)
+        .replace("{days}", str(size))
+        .replace("{bucket}", bucket)
+        .replace("{day}", day)
+    )
 
 
 class GCalVFS(BaseVFS):
@@ -42,7 +68,9 @@ class GCalVFS(BaseVFS):
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GCalAccessor(self.config, self._token_manager)
-        self.prompt = PROMPT + self.accessor.time_range.prompt()
+        self.prompt = (
+            tree_prompt(config.bucket_days) + self.accessor.time_range.prompt()
+        )
 
     def ops(self) -> list[RegisteredOp]:
         return GCAL_VFS_OPS

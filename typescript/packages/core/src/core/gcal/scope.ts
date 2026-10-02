@@ -16,24 +16,24 @@ import { EVENT_SUFFIX } from '../../vfs/gcal/event_entry.ts'
 import { ContentType } from '../../types.ts'
 import { Codec } from '../hierarchy/codec.ts'
 import { Scope, Slot, makeDetectScope } from '../hierarchy/scope.ts'
-import { validDay } from './day.ts'
+import { validBucket } from './day.ts'
 
 /** Whether a segment is shaped like an event filename. */
 export function isEventName(text: string): boolean {
   return text.endsWith(EVENT_SUFFIX)
 }
 
-// A calendar day is a real date, not merely date-shaped: 2026-02-30 must
-// classify as invalid, or stat reports a directory every later call raises
-// on.
-export const DAY = new Codec({ validate: validDay })
-// The whole filename stays in the slot (no suffix strip): the id and the
-// HHMM label are recovered by parseEventFilename, which needs the name as
-// listed.
+// A bucket is a real date or a span of two, not merely date-shaped:
+// 2026-02-30 must classify as invalid, or stat reports a directory every
+// later call raises on. Whether it sits on the mount's grid is the
+// accessor's question, since the table is shared by every mount.
+export const BUCKET = new Codec({ validate: validBucket })
+// The whole filename stays in the slot (no suffix strip): the id and the day
+// are recovered by parseEventFilename, which needs the name as listed.
 export const EVENT_NAME = new Codec({ validate: isEventName })
 
 const CAL: readonly (string | Slot)[] = [new Slot('calendar')]
-const DAY_SEGS: readonly (string | Slot)[] = [...CAL, new Slot('day', DAY)]
+const BUCKET_SEGS: readonly (string | Slot)[] = [...CAL, new Slot('bucket', BUCKET)]
 
 // One description of the tree: readdir, stat, read and unlink all classify
 // through it, so the file surface and the write surface cannot disagree
@@ -47,10 +47,10 @@ export const SCOPES: readonly Scope[] = [
     leaf: true,
     filetype: ContentType.JSON,
   }),
-  new Scope({ kind: 'day', segments: DAY_SEGS }),
+  new Scope({ kind: 'bucket', segments: BUCKET_SEGS }),
   new Scope({
     kind: 'event',
-    segments: [...DAY_SEGS, new Slot('event', EVENT_NAME)],
+    segments: [...BUCKET_SEGS, new Slot('event', EVENT_NAME)],
     leaf: true,
     filetype: ContentType.JSON,
   }),

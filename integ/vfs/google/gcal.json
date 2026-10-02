@@ -155,6 +155,110 @@
         "stdout": "1\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gc_cp_reads_an_event_through_the_op_door",
+      "seq": 570012,
+      "targets": [
+        "gcal"
+      ],
+      "command": "cp /cal/primary/2026-02-12/*Conference*.gcal.json /scratch/conf.json && jq -r .summary /scratch/conf.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "Conference Offsite\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_cp_reads_calendar_json_through_the_op_door",
+      "seq": 570013,
+      "targets": [
+        "gcal"
+      ],
+      "command": "cp '/cal/Holidays_in_United_States__en.usa#holiday@group.v.calendar.google.com/calendar.json' /scratch/holidays.json && jq -r .accessRole /scratch/holidays.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "reader\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_tar_archives_a_calendar_file",
+      "seq": 570014,
+      "targets": [
+        "gcal"
+      ],
+      "command": "tar -cf /scratch/day.tar -C /cal/primary 2026-02-13 && tar -tf /scratch/day.tar | sed 's/[a-z0-9]*__/ID__/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-02-13/\n2026-02-13/ID__0000-1700_Conference_Offsite.gcal.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_week_lists_seven_day_buckets",
+      "seq": 570015,
+      "targets": [
+        "gcal"
+      ],
+      "command": "ls /week/primary",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-02-09--2026-02-15\ncalendar.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_week_names_carry_each_day",
+      "seq": 570016,
+      "targets": [
+        "gcal"
+      ],
+      "command": "ls /week/primary/2026-02-09--2026-02-15 | grep Conference_Offsite | sed 's/^[a-z0-9]*__/ID__/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "ID__2026-02-10_0900-2400_Conference_Offsite.gcal.json\nID__2026-02-11_0000-2400_Conference_Offsite.gcal.json\nID__2026-02-12_0000-2400_Conference_Offsite.gcal.json\nID__2026-02-13_0000-1700_Conference_Offsite.gcal.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_week_event_payload_is_the_api_item",
+      "seq": 570017,
+      "targets": [
+        "gcal"
+      ],
+      "command": "cat /week/primary/2026-02-09--2026-02-15/*PhD*.gcal.json | jq -r '.summary + \" \" + .start.dateTime'",
+      "expect": {
+        "exit": 0,
+        "stdout": "PhD Dissertation Defense 2026-02-11T09:00:00+08:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_week_has_no_bare_day_directory",
+      "seq": 570018,
+      "targets": [
+        "gcal"
+      ],
+      "command": "ls /week/primary/2026-02-11 > /dev/null 2>&1; echo $?; test -d /week/primary/2026-02-10--2026-02-16; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gc_month_lists_thirty_day_buckets",
+      "seq": 570019,
+      "targets": [
+        "gcal"
+      ],
+      "command": "ls /month/primary",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-02-10--2026-03-11\ncalendar.json\n",
+        "stderr": ""
+      }
     }
   ]
 }

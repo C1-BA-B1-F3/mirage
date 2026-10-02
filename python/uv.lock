@@ -6033,7 +6033,7 @@ requires-dist = [
     { name = "databricks-sdk", marker = "extra == 'databricks'", specifier = ">=0.72.0" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.176.0" },
     { name = "deepagents", marker = "extra == 'deepagents'", specifier = ">=0.7.6" },
-    { name = "dulwich", specifier = ">=1.2.15" },
+    { name = "dulwich", specifier = ">=1.2.9" },
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.35.0" },
     { name = "fastapi", specifier = ">=0.135.1" },
     { name = "httpx", specifier = ">=0.28.1" },

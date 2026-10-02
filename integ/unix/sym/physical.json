@@ -129,11 +129,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(set -P; cd /data/lkq; pwd)",
+      "command": "(set -P; cd /data/lkq; pwd); cat /data/lkq/../x.txt; ls /data/lkq/..; realpath /data/lkq/..; (cd /data && [ -f lkq/../x.txt ] && echo test-ok); echo /data/lkq/../*.txt; echo w > /data/lkq/../w960076 && cat /data/disptree/w960076 && rm /data/lkq/../w960076; ln -s /data/disptree/nope960076 /data/dq960076; cat /data/dq960076/../x.txt; realpath -m /data/dq960076/..; rm /data/dq960076",
       "expect": {
         "exit": 0,
-        "stdout": "/data/disptree/d\n",
-        "stderr": ""
+        "stdout": "/data/disptree/d\nnested\ncontent\nd\nx.txt\n/data/disptree\ntest-ok\n/data/lkq/../x.txt\nw\n/data/disptree\n",
+        "stderr": "cat: /data/dq960076/../x.txt: No such file or directory\n"
       }
     },
     {

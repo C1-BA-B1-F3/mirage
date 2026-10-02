@@ -118,13 +118,20 @@ export async function operandStat(
  * empty would let `grep -r` print the descendant mount's hits and exit 0
  * while silently omitting it. A refusal that is not absence keeps
  * propagating and gets reported.
+ *
+ * A directory a mount below this one serves lists as empty too, whatever
+ * the backend holds there: the mount shadows those keys, as a kernel mount
+ * does, and the fan-out walks it in a run of its own. `home` is the prefix
+ * of the mount the readdir is bound to.
  */
 export function mountParentReaddir(
   readdir: (p: string) => Promise<string[]>,
-  mounts?: MountView | null,
+  mounts: MountView | null | undefined,
+  home: string,
 ): (p: string) => Promise<string[]> {
   if (mounts === undefined || mounts === null) return readdir
   return async (p: string) => {
+    if (rstripSlash(mounts.rootOf(p)).startsWith(rstripSlash(home) + '/')) return []
     try {
       return await readdir(p)
     } catch (e) {

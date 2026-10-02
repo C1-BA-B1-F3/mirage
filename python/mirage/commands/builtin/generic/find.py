@@ -1166,9 +1166,11 @@ async def walk_find(
                 continue
         results.append(p)
     results.extend(
-        await link_results(
+        r
+        for r in await link_results(
             links, root_path, prefix, search_key, args, tree, follow=follow
         )
+        if path_allowed(r)
     )
     find_eval.settle_prunes(tree, learned)
     return sorted(find_eval.drop_pruned(results, tree, prefix))

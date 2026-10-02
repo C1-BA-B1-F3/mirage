@@ -605,11 +605,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "readlink -m /data/lp1",
+      "command": "readlink -m /data/lp1; (cd /data && ln -s cyc2 cyc1 && ln -s cyc3 cyc2 && ln -s cyc1 cyc3 && readlink -m cyc1/x && realpath -m cyc2 && echo z > ch0 && for i in $(seq 41); do ln -s ch$((i-1)) ch$i; done && realpath ch41 && cat ch41; rm -f cyc1 cyc2 cyc3 ch*)",
       "expect": {
         "exit": 0,
-        "stdout": "/data/lp1\n",
-        "stderr": ""
+        "stdout": "/data/lp1\n/data/cyc3/x\n/data/cyc1\n/data/ch0\n",
+        "stderr": "cat: ch41: Too many levels of symbolic links\n"
       }
     },
     {

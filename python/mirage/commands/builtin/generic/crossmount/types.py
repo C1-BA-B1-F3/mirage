@@ -92,6 +92,7 @@ class Cmd(StrEnum):
     TAR = "tar"
     UNZIP = "unzip"
     ZIP = "zip"
+    REALPATH = "realpath"
 
 
 CrossResult = tuple[ByteSource | None, IOResult]

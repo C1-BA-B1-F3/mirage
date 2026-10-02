@@ -161,7 +161,7 @@ describe('handleType', () => {
     const [out, io] = handleType(['nope'], makeSession(), makeRegistry())
     expect(out).toBeNull()
     expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe('type: nope: not found\n')
+    expect(decode(await materialize(io.stderr))).toBe('bash: type: nope: not found\n')
   })
 
   it('-t is silent for an unknown name', async () => {
@@ -186,7 +186,9 @@ describe('handleType', () => {
   it('rejects an invalid option', async () => {
     const [, io] = handleType(['-x', 'cd'], makeSession(), makeRegistry())
     expect(io.exitCode).toBe(2)
-    expect(decode(await materialize(io.stderr)).startsWith('type: -x: invalid option\n')).toBe(true)
+    expect(
+      decode(await materialize(io.stderr)).startsWith('bash: type: -x: invalid option\n'),
+    ).toBe(true)
   })
 })
 

@@ -27,11 +27,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "exec; echo ok",
+      "command": "exec; echo ok\nexec <<EOF; echo same\n${exq!y}\nEOF\necho \"after $?\"\nread exv <<< \"${exq!y}\"; echo same\necho \"next $?\"\ncat <<< \"${exq!y}\"; echo \"cat $?\"",
       "expect": {
         "exit": 0,
-        "stdout": "ok\n",
-        "stderr": ""
+        "stdout": "ok\nafter 1\nnext 1\ncat 1\n",
+        "stderr": "bash: ${exq!y}\n: bad substitution\nbash: ${exq!y}: bad substitution\nbash: ${exq!y}: bad substitution\n"
       }
     },
     {

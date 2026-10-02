@@ -33,6 +33,7 @@ from mirage.shell.array import (
 )
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import (
+    FUNCNAME,
     PIPESTATUS,
     RANDOM,
     RANDOM_MODULUS,
@@ -255,16 +256,19 @@ class _VisibleArrays(Mapping[str, ShellArray]):
             raise KeyError(name)
         if name == PIPESTATUS:
             return [str(code) for code in self._session.pipe_status]
+        if name == FUNCNAME:
+            return list(self._session.function_names)
         var = self._session.vars[name]
         if not isinstance(var.value, list):
             raise KeyError(name)
         return var.value
 
     def __iter__(self) -> Iterator[str]:
-        # PIPESTATUS answers a lookup (and so `in`, which Mapping derives
-        # from the lookup) and never lists: bash's `declare -p PIPESTATUS`
-        # is `not found`, and an assignment to it is ignored, which this
-        # view honors by answering the session's record before the store.
+        # PIPESTATUS and FUNCNAME answer a lookup (and so `in`, which
+        # Mapping derives from the lookup) and never list: bash's
+        # `declare -p PIPESTATUS` is `not found`, and an assignment to
+        # either is ignored, which this view honors by answering the
+        # session's record before the store.
         hidden = self._session.hidden_vars
         for name, var in self._session.vars.items():
             if isinstance(var.value, list) and not var_hidden(hidden, name):

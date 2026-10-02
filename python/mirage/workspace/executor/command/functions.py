@@ -84,6 +84,8 @@ async def run_shell_function(
     # Positional args carry the word as typed ($1 stays sub/a.txt).
     text_args = [word_text(p) for p in parts[1:]]
     cs.push(text_args, function_name=cmd_name)
+    outer_names = session.function_names
+    session.function_names = cs.function_names()
     # One stack: a local shadows the whole record, so the caller's
     # value and attributes are saved and put back together.
     saved_locals: dict[str, ShellVar | None] = {}
@@ -150,6 +152,7 @@ async def run_shell_function(
     finally:
         reset_program_invocation(marked)
         cs.pop()
+        session.function_names = outer_names
         restore_locals(session, saved_locals)
         session._local_frames.pop()
         session._local_vars = outer_locals

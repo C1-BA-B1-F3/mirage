@@ -33,6 +33,7 @@ import { RANDOM } from '../../shell/constants.ts'
 import {
   ArithError,
   BadSubstitution,
+  DiscardSignal,
   ExitSignal,
   named,
   UnboundVariable,
@@ -132,7 +133,7 @@ function guardExpansionWrite(session: SessionState, ...names: string[]): void {
       ensureVarVisible(session, name)
     } catch (err) {
       if (!(err instanceof PolicyDenied)) throw err
-      throw new ExitSignal(1, new TextEncoder().encode(`bash: ${err.message}\n`), null, 1)
+      throw new DiscardSignal(new TextEncoder().encode(`bash: ${err.message}\n`))
     }
   }
 }
@@ -894,14 +895,11 @@ async function unsetError(
 }
 
 /** The refusal of a `:=` that names no single element. */
-function badSubscript(p: BraceParse): ExitSignal {
-  return new ExitSignal(
-    1,
+function badSubscript(p: BraceParse): DiscardSignal {
+  return new DiscardSignal(
     new TextEncoder().encode(
       `bash: ${p.varName ?? ''}[${p.subscript ?? ''}]: bad array subscript\n`,
     ),
-    null,
-    1,
   )
 }
 
@@ -976,11 +974,14 @@ function valueOp(op: string, val: string, groups: string[]): string {
  */
 /**
  * The line's death for a refused expansion-time write: the gate's own
- * reason, or the `-i` coercion refusing the text; status 1, the shape
- * `${var:?}` uses.
+ * reason discards the line, as a readonly name's does; the `-i` coercion
+ * refusing the text ends the shell with 1, as `n=1+` does.
  */
 function writeRefusal(err: PolicyDenied | ArithError): ExitSignal {
-  return new ExitSignal(1, new TextEncoder().encode(`bash: ${err.message}\n`), null, 1)
+  const stderr = new TextEncoder().encode(`bash: ${err.message}\n`)
+  return err instanceof PolicyDenied
+    ? new DiscardSignal(stderr)
+    : new ExitSignal(1, stderr, null, 1)
 }
 
 /**
@@ -1032,11 +1033,8 @@ export async function expansionWrite(
   }
   if (status === 'readonly') throw new ReadonlyVariableError(name)
   if (status !== 'ok') {
-    throw new ExitSignal(
-      1,
+    throw new DiscardSignal(
       new TextEncoder().encode(`bash: ${name}[${key ?? ''}]: bad array subscript\n`),
-      null,
-      1,
     )
   }
 }
@@ -1363,11 +1361,8 @@ async function expandSplat(
     }
     if (triggered && p.subscript !== null) throw badSubscript(p)
     if (triggered) {
-      throw new ExitSignal(
-        1,
+      throw new DiscardSignal(
         new TextEncoder().encode(`bash: $${p.varName ?? ''}: cannot assign in this way\n`),
-        null,
-        1,
       )
     }
   }

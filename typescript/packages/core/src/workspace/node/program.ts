@@ -18,7 +18,7 @@ import { concat } from '../../io/cachable_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
-import { ExitSignal } from '../../shell/errors.ts'
+import { DiscardSignal, ExitSignal } from '../../shell/errors.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import { getText } from '../../shell/helpers.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
@@ -27,7 +27,6 @@ import { NodeType as NT } from '../../shell/types.ts'
 import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { isFsError } from '../../utils/errors.ts'
-import { ReturnSignal } from '../../shell/errors.ts'
 import { BreakSignal, ContinueSignal, carried, isUnwinding } from '../executor/control.ts'
 import { divertStatement } from '../executor/builtins/exec/index.ts'
 import { type ExecuteNodeFn, handleBackground } from '../executor/jobs.ts'
@@ -62,10 +61,11 @@ export async function executeProgram(
   // line routes what a statement wrote to the session's terminal through a
   // copy (`exec 3>&1`); a nested one (`eval`, `source`) leaves that to it.
   sink: JobConsole | null = null,
-  // An inline program runs in its caller's frame (`eval`, an alias), so an
-  // `exit`, `return`, `break` or `continue` goes on into the caller, after
-  // what the program wrote; any other program is a shell of its own and
-  // ends there.
+  // An inline program runs on its caller's frames (`eval`, `source`, an
+  // alias, `$( )`), so an `exit`, `return`, `break` or `continue` goes on
+  // into the caller, after what the program wrote; any other program is a
+  // shell of its own and ends there. Either resumes at its next line after
+  // an error that discards one, unless it runs in a child shell.
   inline = false,
 ): Promise<Result> {
   // Every program loop is one parse, which is the unit bash's alias rule
@@ -240,57 +240,49 @@ async function runProgram(
           recurse(child, session, childStdin, callStack, { sink: recorder }),
         )
       } catch (err) {
-        if (isUnwinding(err)) {
-          mergedIo = await land(
-            await statementOutput(recorder, null, new IOResult(), own, sink),
-            sink,
-            allStdout,
-            mergedIo,
+        if (!isUnwinding(err)) throw err
+        mergedIo = await land(
+          await statementOutput(recorder, null, new IOResult(), own, sink),
+          sink,
+          allStdout,
+          mergedIo,
+        )
+        if (
+          err instanceof DiscardSignal &&
+          callStack?.subshell !== true &&
+          session.shellOptions.errexit !== true
+        ) {
+          // bash's DISCARD: the rest of this line goes, and the loop
+          // resumes at the next line with `$?` at 1.
+          if (err.stdout !== null) allStdout.push(err.stdout)
+          mergedIo = await mergedIo.merge(
+            new IOResult({ exitCode: err.exitCode, stderr: err.stderr }),
           )
-          if (inline || (err instanceof ReturnSignal && session.sourceDepth <= 0)) {
-            const parts = allStdout.filter((part): part is ByteSource => part !== null)
-            throw await carried(err, parts.length > 0 ? asyncChain(parts) : null, mergedIo)
-          }
-        }
-        if (err instanceof ExitSignal) {
-          // exit (or a fatal expansion error) ends the line: keep
-          // what earlier statements produced, drop the rest.
-          if (err.stdout !== null && err.stdout.byteLength > 0) allStdout.push(err.stdout)
-          const sigIo = new IOResult({ exitCode: err.exitCode, stderr: err.stderr })
-          mergedIo = await mergedIo.merge(sigIo)
-          mergedIo.exitCode = err.exitCode
           recordStatus(session, err.exitCode)
           lastExec = new ExecutionNode({
-            command: 'exit',
+            command: getText(child),
             exitCode: err.exitCode,
             stderr: err.stderr,
           })
-          break
-        }
-        if (err instanceof ReturnSignal) {
-          // `return` inside a sourced file ends the source; the file's
-          // status becomes the return's. Anywhere else the signal
-          // belongs to an enclosing function call.
-          if (err.stdout !== null) allStdout.push(err.stdout)
-          if (err.stderr.byteLength > 0) {
-            mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
-          }
-          mergedIo.exitCode = err.exitCode
-          recordStatus(session, err.exitCode)
-          lastExec = new ExecutionNode({ command: 'return', exitCode: err.exitCode })
-          break
-        }
-        if (err instanceof BreakSignal || err instanceof ContinueSignal) {
-          // break/continue with a level beyond the loop nesting ends
-          // every enclosing loop and execution continues with the next
-          // statement, like bash (which clamps the level to the depth).
-          if (err.stdout !== null) allStdout.push(err.stdout)
-          mergedIo = await mergedIo.merge(err.io)
-          recordStatus(session, err.io.exitCode)
-          i += 1
+          i = nextLine(node, children, i)
           continue
         }
-        throw err
+        if (inline) {
+          const parts = allStdout.filter((part): part is ByteSource => part !== null)
+          throw await carried(err, parts.length > 0 ? asyncChain(parts) : null, mergedIo)
+        }
+        // Anything else ends this shell: `exit`, or an error bash treats as
+        // one, keeping what earlier statements wrote.
+        if (err.stdout !== null) allStdout.push(err.stdout)
+        const looped = err instanceof BreakSignal || err instanceof ContinueSignal
+        const code = looped ? err.io.exitCode : err.exitCode
+        mergedIo = await mergedIo.merge(
+          new IOResult({ exitCode: code, stderr: looped ? err.io.stderr : err.stderr }),
+        )
+        mergedIo.exitCode = code
+        recordStatus(session, code)
+        lastExec = new ExecutionNode({ command: 'exit', exitCode: code })
+        break
       }
       try {
         stdout = await materialize(s)
@@ -349,4 +341,25 @@ async function runProgram(
   }
   const combined = parts.length > 0 ? asyncChain(parts) : null
   return [combined, mergedIo, lastExec]
+}
+
+/**
+ * The first statement after `children[i]` on a later line, where a
+ * discarded line resumes. The parse has joined continued lines and folded
+ * each heredoc body into its statement, so a newline between two statements
+ * is a line break. Mirrors Python's _next_line.
+ */
+function nextLine(node: TSNodeLike, children: readonly TSNodeLike[], i: number): number {
+  const text = node.text
+  const base = node.startIndex ?? 0
+  let end = children[i]?.endIndex ?? base
+  let j = i + 1
+  for (; j < children.length; j++) {
+    const next = children[j]
+    if (next === undefined) continue
+    const start = next.startIndex ?? end
+    if (text.slice(end - base, start - base).includes('\n')) break
+    end = next.endIndex ?? start
+  }
+  return j
 }

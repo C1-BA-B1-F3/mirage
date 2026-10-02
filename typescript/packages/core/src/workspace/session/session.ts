@@ -54,13 +54,14 @@ import type { MountMode } from '../../types.ts'
  * field the other leaks, and adding a field here is a compile error
  * until `snapshot` and `restore` both carry it. `lastExitCode` is
  * deliberately absent: `$?` after a child shell is the child's status,
- * which is the one thing it reports back. `sourceDepth` is here because a
- * child shell starts outside any `source` its caller is inside.
+ * which is the one thing it reports back. `functionNames` is here because a
+ * child shell starts outside every function and `source` its caller is
+ * inside.
  */
 export interface ChildShellState {
   cwd: string
   logicalCwd: string | undefined
-  sourceDepth: number
+  functionNames: readonly string[]
   vars: Record<string, ShellVar>
   functions: Record<string, unknown>
   readonlyFunctions: Set<string>
@@ -422,6 +423,11 @@ export class SessionState {
   // Empty in a fresh shell, as bash's is: the first `${PIPESTATUS[*]}`
   // expands to nothing until a statement records one.
   pipeStatus: readonly number[] = []
+  // `${FUNCNAME[@]}`: the function frames on the call stack, innermost
+  // first, a sourced file as `source` (`CallStack.functionNames`). Written
+  // where a frame is pushed and popped, and answered by the arrays view
+  // before the store, so an assignment to it is ignored.
+  functionNames: readonly string[] = []
   // A pipeline's per-segment statuses, parked by `handlePipe` for the
   // statement boundary that closes it to claim. Null between them.
   pipeStatusPending: readonly number[] | null = null
@@ -450,9 +456,6 @@ export class SessionState {
   // came from a short-circuited &&/|| branch or a `!`-negated command,
   // which bash exempts from errexit. Reset on every node execution.
   errexitImmune: boolean
-  // Depth of nested `source`/`.` execution: `return` is legal and the
-  // program loop absorbs its signal only while a file is being sourced.
-  sourceDepth = 0
   // Variables shadowed by `local` / `declare` in the running function; a
   // null value means the caller had no variable of that name. One stack,
   // not one per container: a local shadows the whole record, so its
@@ -649,6 +652,7 @@ export class SessionState {
     if (this.randomSeed === RANDOM_UNSET) forked.randomSeed = RANDOM_UNSET
     forked.terminalOutput = this.terminalOutput
     forked.pipeStatus = [...this.pipeStatus]
+    forked.functionNames = this.functionNames
     forked.getoptsPos = this.getoptsPos
     forked.getoptsOptind = this.getoptsOptind
     forked.abortSignal = this.abortSignal
@@ -738,7 +742,7 @@ export class SessionState {
     const saved: ChildShellState = {
       cwd: this.cwd,
       logicalCwd: this.logicalCwd,
-      sourceDepth: this.sourceDepth,
+      functionNames: this.functionNames,
       vars: copyVars(this.vars),
       functions: ownRecord(this.functions),
       readonlyFunctions: new Set(this.readonlyFunctions),
@@ -785,7 +789,7 @@ export class SessionState {
   restore(state: ChildShellState): void {
     this.cwd = state.cwd
     this.logicalCwd = state.logicalCwd
-    this.sourceDepth = state.sourceDepth
+    this.functionNames = state.functionNames
     this.vars = state.vars
     this.functions = state.functions
     this.readonlyFunctions = state.readonlyFunctions

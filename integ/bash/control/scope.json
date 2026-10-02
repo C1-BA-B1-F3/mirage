@@ -163,10 +163,10 @@
         "sharepoint-prefix",
         "ssh"
       ],
-      "command": "select sx in aa bb; do break; done <<< '1'; echo \"$sx\"",
+      "command": "select sx in aa bb; do break; done <<< '1'; echo \"$sx\"; fna() { echo \"${FUNCNAME[*]} ${#FUNCNAME[@]} $FUNCNAME\"; fnb; }; fnb() { echo \"${FUNCNAME[@]}\"; fnx=$(echo \"$FUNCNAME\"); echo \"$fnx\"; echo \"${FUNCNAME[1]}\" | cat; }; fna; FUNCNAME=zz; echo \"top=[${FUNCNAME[*]}]\"",
       "expect": {
         "exit": 0,
-        "stdout": "aa\n",
+        "stdout": "aa\nfna 1 fna\nfnb fna\nfnb\nfna\ntop=[]\n",
         "stderr": "1) aa\n2) bb\n#? "
       }
     },

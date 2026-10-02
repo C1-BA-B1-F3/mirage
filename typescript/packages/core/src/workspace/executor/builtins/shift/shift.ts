@@ -17,7 +17,8 @@ import type { CallStack } from '../../../../shell/call_stack.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { positionalParams, setPositionalParams } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
-import { isCountWord } from '../shared.ts'
+import { ExitSignal } from '../../../../shell/errors.ts'
+import { builtinError, isCountWord, numericOperands } from '../shared.ts'
 import type { BuiltinCall, Result } from '../types.ts'
 
 /**
@@ -31,26 +32,21 @@ export function handleShift(
   callStack: CallStack | null,
   session: SessionState,
 ): Result {
-  if (args.length > 1) {
-    const err = new TextEncoder().encode('shift: too many arguments\n')
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: 'shift', exitCode: 1 }),
-    ]
-  }
-  const first = args[0]
+  const words = numericOperands(args)
+  const first = words[0]
   if (first !== undefined && !isCountWord(first)) {
-    const err = new TextEncoder().encode(`shift: ${first}: numeric argument required\n`)
+    const err = builtinError('shift', `${first}: numeric argument required`)
     return [
       null,
       new IOResult({ exitCode: 1, stderr: err }),
       new ExecutionNode({ command: 'shift', exitCode: 1 }),
     ]
   }
-  const n = first !== undefined ? Number(first) : 1
+  // bash abandons everything still to run, as `exit 1 2` does.
+  if (words.length > 1) throw new ExitSignal(1, builtinError('shift', 'too many arguments'))
+  const n = first !== undefined ? Number(first.trim()) : 1
   if (n < 0) {
-    const err = new TextEncoder().encode(`shift: ${first ?? ''}: shift count out of range\n`)
+    const err = builtinError('shift', `${first ?? ''}: shift count out of range`)
     return [
       null,
       new IOResult({ exitCode: 1, stderr: err }),

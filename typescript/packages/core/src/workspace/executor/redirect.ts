@@ -51,7 +51,7 @@ import {
   TO_STDOUT as EXEC_TO_STDOUT,
 } from './builtins/exec/constants.ts'
 import { drained, type ExecuteNodeFn, pump } from './jobs.ts'
-import { carried, isUnwinding, type Unwinding } from './control.ts'
+import { carried, isUnwinding, takeStderr, type Unwinding } from './control.ts'
 import type { JobConsole } from '../../shell/console/index.ts'
 import { Channel } from '../../shell/console/index.ts'
 import { concat } from '../../io/cachable_iterator.ts'
@@ -268,6 +268,14 @@ export async function handleRedirect(
   } catch (error) {
     if (!isUnwinding(error)) throw error
     unwound = error
+    // What the command wrote on its way out goes where it writes; an error
+    // expanding its own words came before its redirects.
+    const own =
+      error instanceof ExitSignal && error.expanding !== null && error.expanding === command?.id
+    if (!own) {
+      const diagnostic = await takeStderr(error)
+      if (diagnostic.byteLength > 0) await recorder.emit(Channel.STDERR, diagnostic)
+    }
   } finally {
     for (const file of files) file.emit = null
     session.terminalOutput = terminalOutput

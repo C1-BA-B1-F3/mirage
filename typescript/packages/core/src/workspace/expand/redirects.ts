@@ -34,7 +34,10 @@ import type { TSNodeLike } from '../../shell/types.ts'
  * then applies the redirects. Heredoc/herestring bodies get
  * session variables substituted; file targets are expanded and
  * classified into PathSpec or plain text; the first attached pipeline
- * is detached and returned separately.
+ * is detached and returned separately. `forked` says the redirects belong
+ * to a program bash forks for, which expands them in the child: an error
+ * there is kept for the command to fail on (`UNEXPANDED`) rather than
+ * thrown into the shell, which discards the line.
  */
 export async function expandRedirects(
   redirects: readonly Redirect[],
@@ -43,100 +46,23 @@ export async function expandRedirects(
   registry: MountRegistry,
   callStack: CallStack | null = null,
   view?: SessionView,
+  forked = false,
 ): Promise<[Redirect[], TSNodeLike | null]> {
   const expanded: Redirect[] = []
   for (const r of redirects) {
-    if (r.kind === RedirectKind.HEREDOC || r.kind === RedirectKind.HERESTRING) {
-      let body: unknown = r.target
-      const heredocNode = r.targetNode as TSNodeLike | null
-      if (r.expandVars && heredocNode !== null) {
-        try {
-          body = await expandNode(heredocNode, session, executeFn, callStack, view)
-        } catch (err) {
-          if (!(err instanceof ExitSignal) || r.kind !== RedirectKind.HEREDOC) throw err
-          expanded.push(new Redirect({ fd: r.fd, target: err, kind: RedirectKind.UNEXPANDED }))
-          continue
-        }
-      } else if (typeof body === 'string' && r.expandVars) {
-        let s: string = body
-        for (const [k, v] of Object.entries(visibleEnv(session))) {
-          s = s.replaceAll('$' + k, v)
-        }
-        body = s
-      }
+    try {
+      expanded.push(await expandRedirect(r, session, executeFn, registry, callStack, view))
+    } catch (err) {
+      if (!(err instanceof ExitSignal) || !forked) throw err
       expanded.push(
         new Redirect({
           fd: r.fd,
-          target: body,
-          targetNode: r.targetNode,
-          kind: r.kind,
-          append: r.append,
-          clobber: r.clobber,
+          target: err,
+          kind: RedirectKind.UNEXPANDED,
           pipeline: r.pipeline,
-          expandVars: r.expandVars,
-          continuation: r.continuation,
         }),
       )
-      continue
     }
-    if (typeof r.target === 'number') {
-      expanded.push(r)
-      continue
-    }
-    const procSubNode = r.targetNode as TSNodeLike | null
-    if (procSubNode !== null && procSubNode.type === NT.PROCESS_SUBSTITUTION) {
-      if (
-        r.kind === RedirectKind.STDIN &&
-        getProcessSubDirection(procSubNode) === ProcessSubDirection.INPUT
-      ) {
-        // `cmd < <(inner)` — run the inner command and feed its stdout
-        // as stdin, reusing the heredoc delivery path.
-        const inner = getProcessSubBody(procSubNode)
-        let innerData: Uint8Array = new Uint8Array()
-        if (inner !== '') {
-          const ioPs = await childLine(session, executeFn, inner, procSubNode)
-          innerData = await materialize(ioPs.stdout)
-          session.diagnostics.push(await ioPs.materializeStderr())
-        }
-        expanded.push(
-          new Redirect({
-            fd: r.fd,
-            target: innerData,
-            kind: RedirectKind.HEREDOC,
-            expandVars: false,
-          }),
-        )
-        continue
-      }
-      // `> >(cmd)` and friends would otherwise classify the procsub
-      // text as a literal filename and write silently wrong state;
-      // fail loudly like the argv-position check.
-      throw new ExitSignal(
-        2,
-        new TextEncoder().encode('mirage: unsupported: process substitution >(...)\n'),
-        null,
-        2,
-      )
-    }
-    const targetNode = r.targetNode as TSNodeLike | null
-    let targetScope: unknown = r.target
-    if (targetNode !== null) {
-      const targetStr = await expandNode(targetNode, session, executeFn, callStack, view)
-      targetScope = classifyBarePath(targetStr, registry, session.cwd)
-    }
-    expanded.push(
-      new Redirect({
-        fd: r.fd,
-        target: targetScope,
-        targetNode: r.targetNode,
-        kind: r.kind,
-        append: r.append,
-        clobber: r.clobber,
-        pipeline: r.pipeline,
-        expandVars: r.expandVars,
-        continuation: r.continuation,
-      }),
-    )
   }
   let pipeNode: TSNodeLike | null = null
   for (const r of expanded) {
@@ -147,4 +73,89 @@ export async function expandRedirects(
     }
   }
   return [expanded, pipeNode]
+}
+
+/** Expand one redirect's body or target. */
+async function expandRedirect(
+  r: Redirect,
+  session: SessionState,
+  executeFn: ExecuteFn,
+  registry: MountRegistry,
+  callStack: CallStack | null,
+  view: SessionView | undefined,
+): Promise<Redirect> {
+  if (r.kind === RedirectKind.HEREDOC || r.kind === RedirectKind.HERESTRING) {
+    let body: unknown = r.target
+    const heredocNode = r.targetNode as TSNodeLike | null
+    if (r.expandVars && heredocNode !== null) {
+      body = await expandNode(heredocNode, session, executeFn, callStack, view)
+    } else if (typeof body === 'string' && r.expandVars) {
+      let s: string = body
+      for (const [k, v] of Object.entries(visibleEnv(session))) {
+        s = s.replaceAll('$' + k, v)
+      }
+      body = s
+    }
+    return new Redirect({
+      fd: r.fd,
+      target: body,
+      targetNode: r.targetNode,
+      kind: r.kind,
+      append: r.append,
+      clobber: r.clobber,
+      pipeline: r.pipeline,
+      expandVars: r.expandVars,
+      continuation: r.continuation,
+    })
+  }
+  if (typeof r.target === 'number') return r
+  const procSubNode = r.targetNode as TSNodeLike | null
+  if (procSubNode !== null && procSubNode.type === NT.PROCESS_SUBSTITUTION) {
+    if (
+      r.kind === RedirectKind.STDIN &&
+      getProcessSubDirection(procSubNode) === ProcessSubDirection.INPUT
+    ) {
+      // `cmd < <(inner)` — run the inner command and feed its stdout
+      // as stdin, reusing the heredoc delivery path.
+      const inner = getProcessSubBody(procSubNode)
+      let innerData: Uint8Array = new Uint8Array()
+      if (inner !== '') {
+        const ioPs = await childLine(session, executeFn, inner, procSubNode, callStack)
+        innerData = await materialize(ioPs.stdout)
+        session.diagnostics.push(await ioPs.materializeStderr())
+      }
+      return new Redirect({
+        fd: r.fd,
+        target: innerData,
+        kind: RedirectKind.HEREDOC,
+        expandVars: false,
+      })
+    }
+    // `> >(cmd)` and friends would otherwise classify the procsub
+    // text as a literal filename and write silently wrong state;
+    // fail loudly like the argv-position check.
+    throw new ExitSignal(
+      2,
+      new TextEncoder().encode('mirage: unsupported: process substitution >(...)\n'),
+      null,
+      2,
+    )
+  }
+  const targetNode = r.targetNode as TSNodeLike | null
+  let targetScope: unknown = r.target
+  if (targetNode !== null) {
+    const targetStr = await expandNode(targetNode, session, executeFn, callStack, view)
+    targetScope = classifyBarePath(targetStr, registry, session.cwd)
+  }
+  return new Redirect({
+    fd: r.fd,
+    target: targetScope,
+    targetNode: r.targetNode,
+    kind: r.kind,
+    append: r.append,
+    clobber: r.clobber,
+    pipeline: r.pipeline,
+    expandVars: r.expandVars,
+    continuation: r.continuation,
+  })
 }

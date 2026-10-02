@@ -36,6 +36,7 @@ import {
   splitEnvPrefix,
 } from '../../shell/helpers.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
+import { ExitSignal } from '../../shell/errors.ts'
 import { NodeType as NT, ProcessSubDirection } from '../../shell/types.ts'
 import { PathSpec, wordText } from '../../types.ts'
 import { Argv, expandArgv } from '../expand/argv.ts'
@@ -100,6 +101,20 @@ import { ExecutionNode } from '../types.ts'
 import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
+
+/**
+ * Await an expansion of the command's own words; an `ExitSignal` it raises
+ * names the command, whose redirects bash had not applied. Mirrors Python's
+ * _own_words.
+ */
+async function ownWords<T>(node: TSNodeLike, pending: Promise<T>): Promise<T> {
+  try {
+    return await pending
+  } catch (err) {
+    if (err instanceof ExitSignal) err.expanding = node.id ?? null
+    throw err
+  }
+}
 
 export async function executeCommand(
   recurse: (
@@ -204,12 +219,15 @@ export async function executeCommand(
     const firstVal = valNodes[0]
     const v =
       firstVal !== undefined
-        ? await expandNode(
-            firstVal,
-            session,
-            executeFn,
-            callStack,
-            sessionView(session, registry.policies),
+        ? await ownWords(
+            node,
+            expandNode(
+              firstVal,
+              session,
+              executeFn,
+              callStack,
+              sessionView(session, registry.policies),
+            ),
           )
         : rawVal
     prefixAssignments.push([key, v])
@@ -391,22 +409,25 @@ async function runCommandBody(
       procSubInputs.push([path, allocation])
       const inner = getProcessSubBody(p)
       if (inner !== '') {
-        const io = await childLine(session, executeFn, inner, p)
+        const io = await childLine(session, executeFn, inner, p, callStack)
         dev.setInput(path, allocation, await materialize(io.stdout))
         procSubStderr.push(await materialize(io.stderr))
       }
       cleanParts.push({ type: NT.WORD, text: path, children: [], namedChildren: [] })
     }
 
-    const argv = await expandArgv(
-      cleanParts,
-      session,
-      executeFn,
-      callStack,
-      registry,
-      namespace,
-      sessionView(session, registry.policies),
-      routingDecision,
+    const argv = await ownWords(
+      node,
+      expandArgv(
+        cleanParts,
+        session,
+        executeFn,
+        callStack,
+        registry,
+        namespace,
+        sessionView(session, registry.policies),
+        routingDecision,
+      ),
     )
     seedPrefix?.(argv.name)
 

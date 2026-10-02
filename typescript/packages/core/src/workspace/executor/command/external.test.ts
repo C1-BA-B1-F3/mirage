@@ -230,7 +230,7 @@ describe('external program capture', () => {
         expect(DEC.decode(result.stdout), line).toBe('')
       }
       const typed = await ws.shell('type native-tool')
-      expect(DEC.decode(typed.stderr)).toBe('type: native-tool: not found\n')
+      expect(DEC.decode(typed.stderr)).toBe('bash: type: native-tool: not found\n')
       expect((await ws.shell('native-tool')).exitCode).toBe(0)
       expect(probe.requests[0]?.argv).toEqual(['native-tool'])
     } finally {

@@ -18,7 +18,10 @@ from mirage.policy import PolicyDenied
 from mirage.shell.errors import ArithError
 from mirage.types import PathSpec, word_text
 from mirage.utils.path import resolve_path
-from mirage.workspace.executor.builtins.constants import IDENTIFIER_RE
+from mirage.workspace.executor.builtins.constants import (
+    COUNT_WORD_RE,
+    IDENTIFIER_RE,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.types import ExecutionNode
@@ -304,11 +307,43 @@ def is_valid_name(name: str) -> bool:
 
 
 def is_count_word(word: str) -> bool:
-    """Whether the word is an optionally signed run of digits, which is
-    what ``shift``, ``return`` and ``exit`` accept as their argument.
+    """Whether the word is a number as bash's ``legal_number`` reads it,
+    which is what ``shift``, ``return``, ``exit``, ``break`` and
+    ``continue`` accept: blanks around an optionally signed run of
+    digits that fits in 64 bits.
 
     Args:
         word (str): the word to test.
     """
-    body = word[1:] if word[:1] in ("-", "+") else word
-    return body.isdigit()
+    return COUNT_WORD_RE.fullmatch(word) is not None and (
+        -(2**63) <= int(word) < 2**63
+    )
+
+
+def status_of(word: str) -> int:
+    """A count word's value modulo 256, the status bash keeps of it.
+
+    Args:
+        word (str): a word ``is_count_word`` accepted.
+    """
+    return int(word) % 256
+
+
+def builtin_error(name: str, message: str) -> bytes:
+    """A shell builtin's diagnostic in bash's voice.
+
+    Args:
+        name (str): the builtin.
+        message (str): what went wrong, without the newline.
+    """
+    return f"bash: {name}: {message}\n".encode()
+
+
+def numeric_operands(args: list[str]) -> list[str]:
+    """The words a numeric builtin reads: a leading ``--`` ends its
+    options, as bash's ``get_numeric_arg`` skips it.
+
+    Args:
+        args (list[str]): words after the builtin name.
+    """
+    return args[1:] if args[:1] == ["--"] else args

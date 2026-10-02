@@ -93,10 +93,10 @@ async def _execute_body(
             )
         except UNWINDING as sig:
             # The control builtin is a statement the loop leaves through
-            # rather than closes, so its own status (0) is recorded here:
+            # rather than closes, so its own status is recorded here:
             # bash leaves `${PIPESTATUS[@]}` at `0` after `break`.
             if isinstance(sig, (BreakSignal, ContinueSignal)):
-                record_status(session, 0)
+                record_status(session, sig.io.exit_code)
             raise await carried(sig, _chain_streams(all_stdout), merged_io)
         stdout = await finish_statement(stdout, io, session, cmd)
         all_stdout.append(stdout)
@@ -159,6 +159,46 @@ async def carried(
             else _chain_streams([stdout, sig.stdout])
         )
     return sig
+
+
+def ended(sig: Exception) -> IOResult:
+    """What a child shell reports when one of ``UNWINDING`` ends it:
+    what it wrote, its diagnostic, and its status, ``exit``'s contained
+    one, ``return``'s own, or that of ``break`` or ``continue``.
+
+    Args:
+        sig (Exception): one of ``UNWINDING``.
+    """
+    if isinstance(sig, (BreakSignal, ContinueSignal)):
+        return IOResult(
+            stdout=sig.stdout, stderr=sig.io.stderr, exit_code=sig.io.exit_code
+        )
+    assert isinstance(sig, (ExitSignal, ReturnSignal))
+    return IOResult(
+        stdout=sig.stdout,
+        stderr=sig.stderr or None,
+        exit_code=(
+            sig.contained_code
+            if isinstance(sig, ExitSignal)
+            else sig.exit_code
+        ),
+    )
+
+
+async def take_stderr(sig: Exception) -> bytes:
+    """Take the diagnostic one of ``UNWINDING`` carries, for the
+    redirects it was written under to route.
+
+    Args:
+        sig (Exception): one of ``UNWINDING``.
+    """
+    if isinstance(sig, (BreakSignal, ContinueSignal)):
+        diagnostic = await materialize(sig.io.stderr) or b""
+        sig.io.stderr = None
+        return diagnostic
+    assert isinstance(sig, (ExitSignal, ReturnSignal))
+    diagnostic, sig.stderr = sig.stderr, b""
+    return diagnostic
 
 
 async def _absorbed(

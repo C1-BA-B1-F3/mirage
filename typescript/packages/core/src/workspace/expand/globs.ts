@@ -30,7 +30,7 @@ import {
 import { CycleError } from '../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
-import { ExitSignal } from '../../shell/errors.ts'
+import { DiscardSignal, ExitSignal } from '../../shell/errors.ts'
 import { SHOPT_DEFAULTS } from '../../shell/constants.ts'
 import type { SessionState } from '../session/session.ts'
 
@@ -527,7 +527,7 @@ export async function resolveGlobs(
           // expansion error under failglob.
           if (opts.failglob) {
             const word = unmarkGlobs(typed.rawPath)
-            throw new ExitSignal(1, new TextEncoder().encode(`bash: no match: ${word}\n`), null, 1)
+            throw new DiscardSignal(new TextEncoder().encode(`bash: no match: ${word}\n`))
           }
           if (!opts.nullglob) result.push(typed)
         } else {

@@ -12,11 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { ByteSource } from '../../../../io/types.ts'
+import { type ByteSource, IOResult } from '../../../../io/types.ts'
 import type { JobConsole } from '../../../../shell/console/index.ts'
 import type { PathSpec } from '../../../../types.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
-import type { CallStack } from '../../../../shell/call_stack.ts'
+import { CallStack } from '../../../../shell/call_stack.ts'
+import { ReturnSignal } from '../../../../shell/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { positionalParams, setPositionalParams } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
@@ -36,12 +37,14 @@ export async function handleSource(
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
   sink?: JobConsole,
+  // The builtin as typed, `source` or `.`.
+  name = 'source',
 ): Promise<Result> {
   const raw = scopePath(path)
   if (wordText(path) === '') {
     // The empty name is a filename bash tries to open, not a missing
     // argument, so it fails like any file that is not there.
-    return scriptError('source', ': No such file or directory', 1, 'source ')
+    return scriptError('bash', ': No such file or directory', 1, 'source ')
   }
   let script: string
   try {
@@ -49,26 +52,42 @@ export async function handleSource(
   } catch (err) {
     const strerror = fsStrerror(err)
     if (strerror === null) throw err
-    return scriptError('source', `${raw}: ${strerror}`, 1, `source ${raw}`)
+    if ((err as { code?: unknown }).code === 'EISDIR') {
+      return scriptError(`bash: ${name}`, `${raw}: is a directory`, 1, `source ${raw}`)
+    }
+    // bash blames a file it cannot read on itself, not the builtin.
+    return scriptError('bash', `${raw}: ${strerror}`, 1, `source ${raw}`)
   }
-  // The file runs as a line of its own, which reads the shell's
-  // parameters, so the ones in scope stand in for them while it runs.
-  const shellParams = session.positionalArgs
-  session.positionalArgs = args.length > 0 ? args : positionalParams(session, callStack)
-  session.sourceDepth += 1
+  // The file is the caller, run in a frame of its own: `return` ends it,
+  // `FUNCNAME` names it `source`, and it runs in the caller's loops, so a
+  // `break` in it ends one of theirs. Its arguments are its parameters
+  // while it runs; without any it has the caller's, and a `shift` in it
+  // shifts them.
+  const cs = callStack ?? new CallStack()
+  cs.push(args.length > 0 ? args : [...positionalParams(session, cs)], 'source', true)
+  const outerNames = session.functionNames
+  session.functionNames = cs.functionNames()
+  let io: IOResult
   try {
-    const io = await executeFn(script, {
+    io = await executeFn(script, {
       sessionId: session.sessionId,
       stdin,
+      callStack: cs,
       ...(sink === undefined ? {} : { sink }),
     })
-    return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
+  } catch (err) {
+    if (!(err instanceof ReturnSignal)) throw err
+    io = new IOResult({
+      stdout: err.stdout,
+      stderr: err.stderr.byteLength > 0 ? err.stderr : null,
+      exitCode: err.exitCode,
+    })
   } finally {
-    session.sourceDepth -= 1
-    const scoped = session.positionalArgs
-    session.positionalArgs = shellParams
-    if (args.length === 0) setPositionalParams(session, callStack, scoped)
+    const frame = cs.pop()
+    session.functionNames = outerNames
+    if (args.length === 0) setPositionalParams(session, cs, frame.positional)
   }
+  return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
 }
 
 /**
@@ -78,7 +97,10 @@ export async function handleSource(
 export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
   const operands = [...call.argv.operands]
   const target = operands[0]
-  if (target === undefined) return scriptError('source', SOURCE_USAGE, 2)
+  const name = call.argv.name
+  if (target === undefined) {
+    return scriptError(`bash: ${name}`, SOURCE_USAGE.replaceAll('{name}', name), 2, name)
+  }
   const sourceArgs = operands.slice(1).map((o) => wordText(o))
   return handleSource(
     call.dispatch,
@@ -89,5 +111,6 @@ export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
     call.stdin,
     call.callStack,
     call.sink,
+    name,
   )
 }

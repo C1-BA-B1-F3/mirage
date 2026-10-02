@@ -25,7 +25,13 @@ import {
   makeArray,
   type ShellArray,
 } from '../../shell/array.ts'
-import { PIPESTATUS, RANDOM, RANDOM_MODULUS, RANDOM_UNSET } from '../../shell/constants.ts'
+import {
+  FUNCNAME,
+  PIPESTATUS,
+  RANDOM,
+  RANDOM_MODULUS,
+  RANDOM_UNSET,
+} from '../../shell/constants.ts'
 import { ArithError } from '../../shell/errors.ts'
 import type { ArithWrite, ElementOps } from '../../shell/types.ts'
 import { varHidden } from '../../utils/hidden.ts'
@@ -195,12 +201,13 @@ export function visibleArrays(session: SessionState): Record<string, ShellArray>
       out[name] = v.value
     }
   }
-  // PIPESTATUS is the session's record, never the store's: an assignment
-  // to it is ignored, as bash ignores one, because the record answers
-  // before the store.
+  // PIPESTATUS and FUNCNAME are the session's records, never the store's:
+  // an assignment to either is ignored, as bash ignores one, because the
+  // record answers before the store.
   if (!varHidden(session.hiddenVars, PIPESTATUS)) {
     out[PIPESTATUS] = session.pipeStatus.map((code) => String(code))
   }
+  if (!varHidden(session.hiddenVars, FUNCNAME)) out[FUNCNAME] = [...session.functionNames]
   return out
 }
 

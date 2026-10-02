@@ -14,10 +14,10 @@
 
 import asyncio
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypeVar
 
 from mirage.commands.builtin.utils.limit import guard_io, run_with_timeout
 from mirage.context import (
@@ -33,6 +33,7 @@ from mirage.policy import PolicyDenied, resolve_limit, resolve_producer
 from mirage.policy.types import Claimant, HandOff, SessionContext
 from mirage.runtime.routing import RouteDecision
 from mirage.shell.console import Channel, JobConsole
+from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import (
     get_command_name,
     get_parts,
@@ -97,6 +98,23 @@ from mirage.workspace.session.state import (
     set_attr,
 )
 from mirage.workspace.types import ExecutionNode
+
+T = TypeVar("T")
+
+
+async def _own_words(node: Any, pending: Awaitable[T]) -> T:
+    """Await an expansion of the command's own words; an ``ExitSignal``
+    it raises names the command, whose redirects bash had not applied.
+
+    Args:
+        node (Any): the command.
+        pending (Awaitable[T]): the expansion.
+    """
+    try:
+        return await pending
+    except ExitSignal as exc:
+        exc.expanding = node.id
+        raise
 
 
 async def execute_command(
@@ -192,12 +210,15 @@ async def execute_command(
         key, _, raw_val = atext.partition("=")
         val_nodes = [c for c in p.named_children if c.type != NT.VARIABLE_NAME]
         if val_nodes:
-            v = await expand_node(
-                val_nodes[0],
-                session,
-                execute_fn,
-                call_stack,
-                view=session_view(session, registry.policies),
+            v = await _own_words(
+                node,
+                expand_node(
+                    val_nodes[0],
+                    session,
+                    execute_fn,
+                    call_stack,
+                    view=session_view(session, registry.policies),
+                ),
             )
         else:
             v = raw_val
@@ -366,7 +387,9 @@ async def _dispatch_command_body(
             proc_sub_inputs.append((path, allocation))
             inner = get_process_sub_body(p)
             if inner:
-                io_ps = await child_line(session, execute_fn, inner, p)
+                io_ps = await child_line(
+                    session, execute_fn, inner, p, call_stack
+                )
                 data = await materialize(io_ps.stdout)
                 dev.set_input(path, allocation, data)
                 proc_sub_stderr.append(await materialize(io_ps.stderr))
@@ -380,15 +403,18 @@ async def _dispatch_command_body(
             )
         parts = clean_parts
 
-        argv = await expand_argv(
-            parts,
-            session,
-            execute_fn,
-            call_stack,
-            registry,
-            namespace,
-            view=session_view(session, registry.policies),
-            routing=routing_decision,
+        argv = await _own_words(
+            node,
+            expand_argv(
+                parts,
+                session,
+                execute_fn,
+                call_stack,
+                registry,
+                namespace,
+                view=session_view(session, registry.policies),
+                routing=routing_decision,
+            ),
         )
         seed_prefix(argv.name)
 

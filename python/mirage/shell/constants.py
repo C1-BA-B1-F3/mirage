@@ -97,11 +97,13 @@ FD_BOTH = -1
 FD_CLOSE = -1
 SHELL_FDS = frozenset({FD_STDIN, FD_STDOUT, FD_STDERR})
 
-# The two dynamic variables the shell answers itself: PIPESTATUS reads
-# the session's record of the last pipeline (`SessionState.pipe_status`) and
-# RANDOM steps a generator (`session/rng.py`). Neither lives in the
+# The dynamic variables the shell answers itself: PIPESTATUS reads the
+# session's record of the last pipeline (`SessionState.pipe_status`),
+# FUNCNAME the frames on the call stack (`SessionState.function_names`)
+# and RANDOM steps a generator (`session/rng.py`). None lives in the
 # variable store.
 PIPESTATUS = "PIPESTATUS"
+FUNCNAME = "FUNCNAME"
 RANDOM = "RANDOM"
 # bash 5.2's generator (lib/sh/random.c): a Park-Miller minimal-standard
 # step through Schrage's method, the value folding the state's two

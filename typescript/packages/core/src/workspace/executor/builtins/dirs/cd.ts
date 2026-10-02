@@ -107,11 +107,11 @@ export async function handleCd(
         refusal = await dotRefusal(linkedStat(dispatch, table), walk)
       } catch (exc) {
         if (!(exc instanceof CycleError)) throw exc
-        error = `cd: ${named}: Too many levels of symbolic links\n`
+        error = `bash: cd: ${named}: Too many levels of symbolic links\n`
         continue
       }
       if (refusal !== null) {
-        error = `cd: ${named}: ${String(fsStrerror(refusal))}\n`
+        error = `bash: cd: ${named}: ${String(fsStrerror(refusal))}\n`
         continue
       }
     }
@@ -126,7 +126,7 @@ export async function handleCd(
         resolved = resolveTarget(candidate, table, physical)
       } catch (exc) {
         if (exc instanceof CycleError) {
-          error = `cd: ${named}: Too many levels of symbolic links\n`
+          error = `bash: cd: ${named}: Too many levels of symbolic links\n`
           continue
         }
         throw exc
@@ -148,7 +148,7 @@ export async function handleCd(
       if (code === 'ENOENT' || /not found|no such file/i.test(msg)) {
         notFound = true
       } else {
-        error = `cd: ${named}: ${fsStrerror(exc) ?? msg}
+        error = `bash: cd: ${named}: ${fsStrerror(exc) ?? msg}
 `
         continue
       }
@@ -157,16 +157,16 @@ export async function handleCd(
       if (isMountRoot(resolved)) {
         return cdSuccess(session, resolved, logical, spelled, raw, printPath || announce)
       }
-      error = `cd: ${named}: No such file or directory\n`
+      error = `bash: cd: ${named}: No such file or directory\n`
       continue
     }
     if (stat.type !== FileType.DIRECTORY) {
-      error = `cd: ${named}: Not a directory\n`
+      error = `bash: cd: ${named}: Not a directory\n`
       continue
     }
     return cdSuccess(session, resolved, logical, spelled, raw, printPath || announce)
   }
-  const err = new TextEncoder().encode(error ?? `cd: ${named}: No such file or directory\n`)
+  const err = new TextEncoder().encode(error ?? `bash: cd: ${named}: No such file or directory\n`)
   return [
     null,
     new IOResult({ exitCode: 1, stderr: err }),
@@ -209,7 +209,7 @@ export async function cdBuiltin(call: BuiltinCall): Promise<Result> {
   } = splitModeOptions([...call.argv.operands], CD_OPTIONS, shellPhysical)
   const links = namespace.symlinkTargets()
   if (bad !== null) {
-    const err = new TextEncoder().encode(`cd: -${bad}: invalid option\n${CD_USAGE}`)
+    const err = new TextEncoder().encode(`bash: cd: -${bad}: invalid option\n${CD_USAGE}`)
     return [
       null,
       new IOResult({ exitCode: 2, stderr: err }),
@@ -217,7 +217,7 @@ export async function cdBuiltin(call: BuiltinCall): Promise<Result> {
     ]
   }
   if (cdOperands.length > 1) {
-    const err = new TextEncoder().encode('cd: too many arguments\n')
+    const err = new TextEncoder().encode('bash: cd: too many arguments\n')
     return [
       null,
       new IOResult({ exitCode: 1, stderr: err }),
@@ -227,7 +227,7 @@ export async function cdBuiltin(call: BuiltinCall): Promise<Result> {
   if (cdOperands.length === 0) {
     const home = homeDir(session)
     if (home === null) {
-      const err = new TextEncoder().encode('cd: HOME not set\n')
+      const err = new TextEncoder().encode('bash: cd: HOME not set\n')
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),
@@ -250,7 +250,7 @@ export async function cdBuiltin(call: BuiltinCall): Promise<Result> {
   if (rawStr === '-') {
     const old = session.env.OLDPWD
     if (!old) {
-      const err = new TextEncoder().encode('cd: OLDPWD not set\n')
+      const err = new TextEncoder().encode('bash: cd: OLDPWD not set\n')
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),

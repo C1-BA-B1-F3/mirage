@@ -1557,11 +1557,11 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "echo ${zz_pd9:-$(echo subbed)}",
+      "command": "echo ${zz_pd9:-$(echo subbed)}\necho ${pdx!y}; echo same\necho \"next $?\"\neval $'echo ${pdx!y}; echo a\\necho second'\nreadonly pdr=1; pdr=2; echo same\necho \"after $?\"",
       "expect": {
         "exit": 0,
-        "stdout": "subbed\n",
-        "stderr": ""
+        "stdout": "subbed\nnext 1\nsecond\nafter 1\n",
+        "stderr": "bash: ${pdx!y}: bad substitution\nbash: ${pdx!y}: bad substitution\nbash: pdr: readonly variable\n"
       }
     },
     {

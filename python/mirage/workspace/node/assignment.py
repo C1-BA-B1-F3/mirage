@@ -29,7 +29,7 @@ from mirage.shell.array import (
     build_indexed_literal,
 )
 from mirage.shell.call_stack import CallStack
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, DiscardSignal, ExitSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.types import NodeType as NT
 from mirage.shell.variable import ShellValue, VarAttr
@@ -116,12 +116,12 @@ async def _assign_var(view: SessionView, key: str, value: ShellValue) -> None:
     try:
         await view.set(key, value)
     except PolicyDenied as exc:
-        err = f"{exc.strerror}\n".encode()
-        raise ExitSignal(1, stderr=err, contained_code=1) from exc
+        raise DiscardSignal(f"{exc.strerror}\n".encode()) from exc
     except ArithError as exc:
-        # The `-i` coercion refused the text. GNU aborts the line the
-        # way a bad subscript does, voicing the evaluator's own message
-        # after the offending value: `bash: 1+: syntax error: ...`.
+        # The `-i` coercion refused the text. GNU ends the shell with 1
+        # the way a subscript that does not evaluate does, voicing the
+        # evaluator's own message after the offending value:
+        # `bash: 1+: syntax error: ...`.
         err = f"bash: {exc}\n".encode()
         raise ExitSignal(1, stderr=err, contained_code=1) from exc
 
@@ -258,12 +258,10 @@ async def execute_assignment(
     key = deref(session, spelled) or spelled
     append = any(c.type == "+=" for c in node.children)
     if key in session.readonly_vars:
-        # A bare assignment to a readonly variable is a fatal
-        # variable-assignment error in non-interactive bash: the
-        # rest of the line is abandoned (builtins like `export`
-        # merely fail with 1 and continue).
-        err = f"bash: {key}: readonly variable\n".encode()
-        raise ExitSignal(1, stderr=err, contained_code=1)
+        # A bare assignment to a readonly variable is a
+        # variable-assignment error: the rest of the line is discarded
+        # (builtins like `export` merely fail with 1 and continue).
+        raise DiscardSignal(f"bash: {key}: readonly variable\n".encode())
     val_nodes = [
         c
         for c in node.named_children
@@ -335,17 +333,15 @@ async def execute_assignment(
         amap = session.assocs.get(key)
         raw_sub = get_text(subscript_node)[len(spelled) + 1 : -1]
         if not raw_sub.strip() or (amap is not None and sub_text == ""):
-            # bash aborts the whole line on a bad assignment
+            # bash discards the rest of the line on a bad assignment
             # subscript (status 1), naming the raw spelling
             # (`m[$e]: bad array subscript`). An indexed subscript
             # that merely *expands* empty stays legal (arithmetic
             # on nothing is 0), so only the associative kind checks
             # the expanded text.
             name_text = text.partition("=")[0].removesuffix("+")
-            raise ExitSignal(
-                1,
-                stderr=(f"bash: {name_text}: bad array subscript\n").encode(),
-                contained_code=1,
+            raise DiscardSignal(
+                f"bash: {name_text}: bad array subscript\n".encode()
             )
         if amap is not None:
             # The subscript is the key: no arithmetic, `m[1+1]`
@@ -373,10 +369,8 @@ async def execute_assignment(
         if idx < 0:
             # Same fatal shape as the empty subscript above.
             name_text = text.partition("=")[0].removesuffix("+")
-            raise ExitSignal(
-                1,
-                stderr=(f"bash: {name_text}: bad array subscript\n").encode(),
-                contained_code=1,
+            raise DiscardSignal(
+                f"bash: {name_text}: bad array subscript\n".encode()
             )
         array_set(arr, idx, array_get(arr, idx) + val if append else val)
         await _assign_var(view, key, arr)

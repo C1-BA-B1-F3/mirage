@@ -21,12 +21,17 @@ from mirage.policy.types import HandOff
 from mirage.shell.console import JobConsole
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
 from mirage.shell.descriptors import ENCLOSING, Recorder, StreamOwner
-from mirage.shell.errors import ExitSignal, ReturnSignal
+from mirage.shell.errors import DiscardSignal, ExitSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import NodeType as NT
 from mirage.workspace.executor.builtins.exec import divert_statement
-from mirage.workspace.executor.control import UNWINDING, carried
+from mirage.workspace.executor.control import (
+    UNWINDING,
+    BreakSignal,
+    ContinueSignal,
+    carried,
+)
 from mirage.workspace.executor.jobs import handle_background
 from mirage.workspace.executor.statement import (
     failed_read,
@@ -64,10 +69,12 @@ async def execute_program(
     The outermost program of a session's line routes what a statement
     wrote to the session's terminal through a copy (``exec 3>&1``); a
     nested one (``eval``, ``source``) leaves that to it. An ``inline``
-    program runs in its caller's frame (``eval``, an alias), so an
-    ``exit``, ``return``, ``break`` or ``continue`` goes on into the
-    caller, after what the program wrote; any other program is a shell
-    of its own and ends there.
+    program runs on its caller's frames (``eval``, ``source``, an alias,
+    ``$( )``), so an ``exit``, ``return``, ``break`` or ``continue`` goes
+    on into the caller, after what the program wrote; any other program
+    is a shell of its own and ends there. Either resumes at its next
+    line after an error that discards one, unless it runs in a child
+    shell.
     """
     # Every program loop is one parse, which is the unit bash's alias
     # rule counts in: an alias defined on this parse and row is not
@@ -235,52 +242,47 @@ async def _run_program(
                     all_stdout,
                     merged_io,
                 )
-                if inline or (
-                    isinstance(sig, ReturnSignal) and session.source_depth <= 0
+                if (
+                    isinstance(sig, DiscardSignal)
+                    and not (call_stack is not None and call_stack.subshell)
+                    and not session.shell_options.get("errexit")
                 ):
-                    raise await carried(
-                        sig,
-                        async_chain(all_stdout) if all_stdout else None,
-                        merged_io,
-                    )
-                if sig.stdout:
-                    all_stdout.append(sig.stdout)
-                if isinstance(sig, ExitSignal):
-                    # exit (or a fatal expansion error) ends the line:
-                    # keep what earlier statements produced, drop the
-                    # rest.
+                    # bash's DISCARD: the rest of this line goes, and the
+                    # loop resumes at the next line with `$?` at 1.
+                    if sig.stdout:
+                        all_stdout.append(sig.stdout)
                     merged_io = await merged_io.merge(
                         IOResult(
                             exit_code=sig.exit_code, stderr=sig.stderr or None
                         )
                     )
+                    record_status(session, sig.exit_code)
                     last_exec = ExecutionNode(
-                        command="exit",
+                        command=get_text(child),
                         exit_code=sig.exit_code,
                         stderr=sig.stderr,
                     )
-                elif isinstance(sig, ReturnSignal):
-                    # `return` inside a sourced file ends the source; the
-                    # file's status becomes the return's. Anywhere else
-                    # the signal belongs to an enclosing function call.
-                    if sig.stderr:
-                        merged_io = await merged_io.merge(
-                            IOResult(stderr=sig.stderr)
-                        )
-                    last_exec = ExecutionNode(
-                        command="return", exit_code=sig.exit_code
-                    )
-                else:
-                    # break/continue with a level beyond the loop nesting
-                    # ends every enclosing loop and execution continues
-                    # with the next statement, like bash (which clamps
-                    # the level to the actual depth).
-                    merged_io = await merged_io.merge(sig.io)
-                    record_status(session, sig.io.exit_code)
-                    i += 1
+                    i = _next_line(node, children, i)
                     continue
-                merged_io.exit_code = sig.exit_code
-                record_status(session, sig.exit_code)
+                if inline:
+                    raise await carried(
+                        sig,
+                        async_chain(all_stdout) if all_stdout else None,
+                        merged_io,
+                    )
+                # Anything else ends this shell: `exit`, or an error bash
+                # treats as one, keeping what earlier statements wrote.
+                if sig.stdout:
+                    all_stdout.append(sig.stdout)
+                looped = isinstance(sig, (BreakSignal, ContinueSignal))
+                code = sig.io.exit_code if looped else sig.exit_code
+                stderr = sig.io.stderr if looped else sig.stderr
+                merged_io = await merged_io.merge(
+                    IOResult(exit_code=code, stderr=stderr or None)
+                )
+                merged_io.exit_code = code
+                record_status(session, code)
+                last_exec = ExecutionNode(command="exit", exit_code=code)
                 break
             finally:
                 ENCLOSING.reset(enclosing)
@@ -333,3 +335,27 @@ async def _run_program(
         return all_stdout[0], merged_io, last_exec
     combined = async_chain(all_stdout) if all_stdout else None
     return combined, merged_io, last_exec
+
+
+def _next_line(node: Any, children: list[Any], i: int) -> int:
+    """The first statement after ``children[i]`` on a later line, where
+    a discarded line resumes. The parse has joined continued lines and
+    folded each heredoc body into its statement, so a newline between
+    two statements is a line break.
+
+    Args:
+        node (Any): the program.
+        children (list[Any]): its children.
+        i (int): the statement that discarded its line.
+    """
+    text = node.text or b""
+    base = node.start_byte
+    end = children[i].end_byte
+    j = i + 1
+    while (
+        j < len(children)
+        and b"\n" not in text[end - base : children[j].start_byte - base]
+    ):
+        end = children[j].end_byte
+        j += 1
+    return j

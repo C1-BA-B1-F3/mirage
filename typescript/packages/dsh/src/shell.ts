@@ -164,6 +164,26 @@ interface Prepared {
   workdir: string
 }
 
+/**
+ * Wait for `work` until `signal` fires; the reason the signal carries is
+ * then the rejection, and the work runs on unwatched.
+ *
+ * @param work the step being waited for.
+ * @param signal the signal that ends the wait.
+ * @returns what the step resolved with.
+ */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => {
+      reject(signal.reason as Error)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort)
+    })
+  })
+}
+
 /** How a settled execution ended, read once it has: the first cause wins. */
 interface Classification {
   timedOut: boolean
@@ -449,6 +469,7 @@ export class MirageShellExecutor extends ShellExecutor {
   private readonly spillDir: string | undefined
   private sessionReady: Promise<void> | null = null
   private readOnlyReady: Promise<string> | null = null
+  private preparing: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, config: MirageShellConfig = {}) {
     super(ctx)
@@ -799,13 +820,14 @@ export class MirageShellExecutor extends ShellExecutor {
     }
     let prepared: Prepared
     try {
-      // Preparing binds the session and applies its DSH_* snapshot, so it
-      // runs to the end once started: one abandoned midway could land that
-      // snapshot after a later execution's. A signal that fired before or
-      // during it is answered once it is done.
+      // Preparing binds the session and applies its DSH_* snapshot.
+      // Preparations run one after another, so one this call stops waiting
+      // for (a deadline, a cancel) still lands before the next call's,
+      // never over it.
       controller.signal.throwIfAborted()
-      prepared = await this.prepare(spec)
-      controller.signal.throwIfAborted()
+      const preparation = this.preparing.then(() => this.prepare(spec))
+      this.preparing = preparation.catch(() => undefined)
+      prepared = await untilAborted(preparation, controller.signal)
     } catch (err) {
       // Expiry while the command was still being prepared settles a
       // timed-out handle with no output; a caller's cancellation or a

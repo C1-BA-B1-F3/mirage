@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { command, type RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { CommandSpec } from '@struktoai/mirage-core/commands/spec/types'
@@ -74,6 +74,23 @@ async function makeShell(
 afterEach(async () => {
   while (workspaces.length > 0) await workspaces.pop()?.close()
 })
+
+/** Hold the next managed-env step until the returned function is called. */
+function stallManagedEnv(shell: MirageShellExecutor): () => void {
+  let open = (): void => undefined
+  const gate = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  const target = shell as unknown as {
+    applyManagedEnv: (...args: unknown[]) => Promise<void>
+  }
+  const real = target.applyManagedEnv.bind(shell)
+  vi.spyOn(target, 'applyManagedEnv').mockImplementationOnce(async (...args: unknown[]) => {
+    await gate
+    await real(...args)
+  })
+  return open
+}
 
 describe('resolve', () => {
   it('declares workspace-write confinement', async () => {
@@ -467,22 +484,34 @@ describe('run', () => {
     expect(await ws.vfs.exists('/data/out.txt')).toBe(false)
   })
 
-  it('lets a preparation a cancel lands in finish before rejecting', async () => {
-    // Preparing applies the bound session's DSH_* snapshot, so one left
-    // running after execute rejected could land it over a later call's.
+  it('settles at the deadline while preparation is still stalled', async () => {
+    const { shell } = await makeShell({}, { sessionId: 'agent' })
+    const open = stallManagedEnv(shell)
+    const execution = await shell.execute(
+      shell.resolve({ command: 'true', timeoutMs: 20, dshEnv: { DSH_HOME: '/a' } }),
+    )
+    expect((await execution.result()).timedOut).toBe(true)
+    open()
+  })
+
+  it('lands a cancelled preparation before the next call, never over it', async () => {
+    // Preparing applies the bound session's DSH_* snapshot; one the caller
+    // stopped waiting for still runs, and must not land after a later one.
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
+    const open = stallManagedEnv(shell)
     const controller = new AbortController()
-    const pending = shell.execute(
-      shell.resolve({
-        command: 'echo ran > /data/out.txt',
-        signal: controller.signal,
-        dshEnv: { DSH_HOME: '/a' },
-      }),
+    const first = shell.execute(
+      shell.resolve({ command: 'true', signal: controller.signal, dshEnv: { DSH_HOME: '/a' } }),
     )
     controller.abort()
-    await expect(pending).rejects.toThrow()
-    expect(ws.getSession('agent').env.DSH_HOME).toBe('/a')
-    expect(await ws.vfs.exists('/data/out.txt')).toBe(false)
+    await expect(first).rejects.toThrow()
+    const second = shell.execute(
+      shell.resolve({ command: 'echo "$DSH_HOME"', dshEnv: { DSH_HOME: '/b' } }),
+    )
+    setTimeout(open, 20)
+    expect((await (await second).result()).stdout.text).toBe('/b\n')
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(ws.getSession('agent').env.DSH_HOME).toBe('/b')
   })
 
   it("arms no deadline under onExpiry 'none'", async () => {

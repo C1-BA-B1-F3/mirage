@@ -96,13 +96,23 @@ function charBoundary(bytes: Uint8Array, from: number): number {
 }
 
 // The end of the last whole UTF-8 sequence, so a read of a stream still
-// arriving leaves a character it holds only part of for the next read.
+// arriving leaves a character it holds only part of for the next read. Only
+// a valid lead byte opens one; any other byte (0xC0, 0xC1, 0xF5 and up)
+// decodes as a replacement mark at once rather than waiting on bytes that
+// cannot complete it.
 function charEnd(bytes: Uint8Array): number {
   const end = bytes.byteLength
   for (let back = 1; back <= Math.min(4, end); back++) {
     const byte = bytes[end - back] ?? 0
     if ((byte & 0xc0) === 0x80) continue
-    const width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1
+    const width =
+      byte >= 0xc2 && byte <= 0xdf
+        ? 2
+        : byte >= 0xe0 && byte <= 0xef
+          ? 3
+          : byte >= 0xf0 && byte <= 0xf4
+            ? 4
+            : 1
     return width > back ? end - back : end
   }
   return end
@@ -172,18 +182,27 @@ export class TailBuffer {
   }
 
   /**
-   * Everything held, joined, leaving it held.
+   * The held bytes after the first `skip`, joined, leaving them held: only
+   * what is asked for is copied.
    *
-   * @returns the held bytes, oldest first.
+   * @param skip how many of the oldest held bytes to leave out.
+   * @returns the rest, oldest first.
    */
-  peek(): Uint8Array {
-    const joined = new Uint8Array(this.bytes)
+  since(skip: number): Uint8Array {
+    const out = new Uint8Array(Math.max(0, this.bytes - skip))
+    let left = skip
     let at = 0
     for (const part of this.parts) {
-      joined.set(part, at)
-      at += part.byteLength
+      if (left >= part.byteLength) {
+        left -= part.byteLength
+        continue
+      }
+      const piece = part.subarray(left)
+      left = 0
+      out.set(piece, at)
+      at += piece.byteLength
     }
-    return joined
+    return out
   }
 
   /**
@@ -197,7 +216,7 @@ export class TailBuffer {
    */
   take(): string {
     if (this.parts.length === 0) return ''
-    const joined = this.peek()
+    const joined = this.since(0)
     this.parts = []
     this.bytes = 0
     return new TextDecoder('utf-8', { fatal: false }).decode(
@@ -238,18 +257,18 @@ export class StreamTail implements SubprocessOutputReader {
   readFrom(fromByte: number): SubprocessOutputRead {
     if (!Number.isSafeInteger(fromByte) || fromByte < 0 || fromByte > this.offset)
       throw new Error('invalid output offset')
-    const bytes = this.tail.peek()
-    const start = this.offset - bytes.byteLength
-    let from = Math.max(0, fromByte - start)
+    const start = this.offset - this.tail.size
+    const skip = Math.max(0, fromByte - start)
+    let bytes = this.tail.since(skip)
     // A tail that lost its head can begin mid-character; the reader is
     // handed whole characters only, so the stray continuation bytes go.
-    if (from === 0 && start > 0) from = charBoundary(bytes, 0)
+    if (skip === 0 && start > 0) bytes = bytes.subarray(charBoundary(bytes, 0))
     // A stream still arriving can stop mid-character too: the read ends
     // before it, so the next read decodes it whole.
-    const stop = Math.max(from, this.ended ? bytes.byteLength : charEnd(bytes))
+    const stop = this.ended ? bytes.byteLength : charEnd(bytes)
     return {
-      text: new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(from, stop)),
-      nextOffset: start + stop,
+      text: new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, stop)),
+      nextOffset: this.offset - bytes.byteLength + stop,
       lossy: fromByte < start,
     }
   }

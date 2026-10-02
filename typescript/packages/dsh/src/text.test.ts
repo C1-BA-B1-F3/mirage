@@ -94,6 +94,19 @@ describe('StreamTail', () => {
     expect(tail.readFrom(0)).toMatchObject({ text: 'a\uFFFD', nextOffset: 2 })
   })
 
+  it('shows a byte that can open no character at once', () => {
+    const tail = new StreamTail(64)
+    tail.append(new Uint8Array([0x61, 0xff]))
+    expect(tail.readFrom(0)).toMatchObject({ text: 'a\uFFFD', nextOffset: 2 })
+  })
+
+  it('reads only what follows the offset', () => {
+    const tail = new StreamTail(64)
+    tail.append(bytes('abc'))
+    tail.append(bytes('déf'))
+    expect(tail.readFrom(4)).toMatchObject({ text: 'éf', nextOffset: 7, lossy: false })
+  })
+
   it('reads lossy once the offset slid out of the tail', () => {
     const tail = new StreamTail(3)
     tail.append(bytes('abc'))

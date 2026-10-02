@@ -156,6 +156,23 @@ describe('object_store write', () => {
     expect(store.puts).toEqual([])
   })
 
+  it('mkdir refuses a directory under a file', async () => {
+    // A marker below a file put a directory under it. mkdir(2) blames the
+    // operand; the walk `mkdir -p` makes names the file it stops at.
+    const store = new FakeStore({ 'f.txt': 'x' })
+    const mkdir = makeMkdir(makeDriver(store))
+    for (const [path, parents, named] of [
+      ['/f.txt/sub', false, '/mnt/f.txt/sub'],
+      ['/f.txt/x/y', true, '/mnt/f.txt'],
+    ] as const) {
+      await expect(managed(() => mkdir(accessor, spec(path), parents))).rejects.toMatchObject({
+        code: 'ENOTDIR',
+        message: named,
+      })
+    }
+    expect(store.puts).toEqual([])
+  })
+
   it('mkdir without marker support is a no-op', async () => {
     const store = new FakeStore()
     const driver = { ...makeDriver(store), markersSupported: false }

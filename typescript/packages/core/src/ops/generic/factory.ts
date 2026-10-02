@@ -75,10 +75,11 @@ export function makeGenericOps<A extends Accessor>(
     fn: RegisteredOp['fn'],
     write: boolean,
     filetype: string | null = null,
+    ranges = false,
   ): void => {
     if (skip.has(name)) return
     for (const res of vfsNames) {
-      ops.push({ name, vfs: res, filetype, fn, write })
+      ops.push({ name, vfs: res, filetype, fn, write, ranges })
     }
   }
 
@@ -117,6 +118,8 @@ export function makeGenericOps<A extends Accessor>(
       return whole ? data : sliceWindow(data, offset, size)
     },
     false,
+    null,
+    table.readRange !== undefined,
   )
   emit(
     'readdir',

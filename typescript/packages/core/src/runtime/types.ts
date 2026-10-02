@@ -91,6 +91,11 @@ export type BridgeOpAttrs = SetAttrFields & {
   parents?: boolean
   create?: boolean
   replace?: boolean
+  /** A ranged read: where it starts and how long it is. */
+  offset?: number
+  size?: number
+  /** A read of the stored bytes rather than a rendering. */
+  raw?: boolean
 }
 
 /**

@@ -344,10 +344,24 @@ export class CacheManager {
   async readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
     const cached = await this.cachedBytes(path)
     if (cached !== null) return cached
+    return this.fill(path, fetch)
+  }
+
+  /**
+   * Run a cold whole-file read and keep its bytes for the next one.
+   *
+   * The fill half of `readThrough`, for a door that probed the cache
+   * itself (the dispatcher's). A write that lands while the fetch runs
+   * retires the generation, so the bytes it read are not kept; an answer
+   * that is not bytes is returned and kept nowhere. Mirrors Python's
+   * `CacheManager.fill`.
+   */
+  async fill<T>(path: PathSpec, fetch: () => Promise<T>): Promise<T> {
     const generation = this.readGeneration
     const records = activeRecords()
     const start = records?.length ?? 0
     const data = await fetch()
+    if (!(data instanceof Uint8Array)) return data
     const key = this.cacheKey(path)
     const cache = this.readableCache(key)
     if (cache !== null) {

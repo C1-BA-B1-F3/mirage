@@ -28,8 +28,19 @@ describe('RuntimeVFS transport', () => {
   it('forwards read to dispatch read and returns bytes', async () => {
     const dispatch = vi.fn<BridgeDispatchFn>(() => Promise.resolve(new Uint8Array([1, 2, 3])))
     const out = await new RuntimeVFS(dispatch).read('/ram/x.txt')
-    expect(dispatch).toHaveBeenCalledWith('read', '/ram/x.txt')
+    expect(dispatch).toHaveBeenCalledWith('read', '/ram/x.txt', undefined, undefined, {})
     expect(Array.from(out)).toEqual([1, 2, 3])
+  })
+
+  it('forwards a ranged and a raw read as the read attrs', async () => {
+    const dispatch = vi.fn<BridgeDispatchFn>(() => Promise.resolve(new Uint8Array([2])))
+    const door = new RuntimeVFS(dispatch)
+    await door.read('/ram/x.txt', { offset: 1, size: 1 })
+    await door.read('/ram/x.txt', { raw: true })
+    expect(dispatch.mock.calls.map((call) => call[4])).toEqual([
+      { offset: 1, size: 1 },
+      { raw: true },
+    ])
   })
 
   it('forwards write to dispatch write with bytes and resolves void', async () => {

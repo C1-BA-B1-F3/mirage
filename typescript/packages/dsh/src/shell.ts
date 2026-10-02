@@ -470,6 +470,8 @@ export class MirageShellExecutor extends ShellExecutor {
   private sessionReady: Promise<void> | null = null
   private readOnlyReady: Promise<string> | null = null
   private seeding: Promise<unknown> = Promise.resolve()
+  private issued = 0
+  private readonly seeded = new Map<string, number>()
 
   constructor(ctx: Context, config: MirageShellConfig = {}) {
     super(ctx)
@@ -767,29 +769,31 @@ export class MirageShellExecutor extends ShellExecutor {
    * Where and as whom one command runs, settled before it starts: the
    * session binding, the workdir in this world, and its managed env.
    *
-   * Seeding the env is the one step that writes, so it comes last, takes
-   * its turn after every earlier call's seed, and is skipped once the
-   * caller has stopped waiting. A preparation given up on never lands an
-   * old snapshot over a later one, and a stall before the seed holds up
+   * Seeding the env is the one step that writes, so it comes last and
+   * waits for any seed already running. Calls are numbered as they
+   * arrive, and a seed is skipped once a later call has seeded the same
+   * session, so the newest snapshot wins: a slow or abandoned preparation
+   * never lands an old one over it, and a stall before the seed holds up
    * no other call.
    *
    * @param spec the resolved spec being prepared.
-   * @param signal the call's signal; once it fires the env is left alone.
    * @returns the workspace, session and workdir the command runs under.
    */
-  private async prepare(spec: ShellExecSpec, signal: AbortSignal): Promise<Prepared> {
+  private async prepare(spec: ShellExecSpec): Promise<Prepared> {
+    const ticket = ++this.issued
     await this.ensureSession()
     const ws = await this.workspace()
     const sessionId = await this.sessionFor(spec)
     const bound = this.sessionId !== undefined
     const workdir = await this.worldWorkdir(spec)
     if (bound && sessionId !== undefined) {
-      const seeded = this.seeding.then(() => {
-        signal.throwIfAborted()
-        return this.applyManagedEnv(ws, sessionId, spec)
+      const seed = this.seeding.then(async () => {
+        if (ticket < (this.seeded.get(sessionId) ?? 0)) return
+        await this.applyManagedEnv(ws, sessionId, spec)
+        this.seeded.set(sessionId, ticket)
       })
-      this.seeding = seeded.catch(() => undefined)
-      await seeded
+      this.seeding = seed.catch(() => undefined)
+      await seed
     }
     return { ws, sessionId, bound, workdir }
   }
@@ -836,9 +840,10 @@ export class MirageShellExecutor extends ShellExecutor {
     let prepared: Prepared
     try {
       // The wait ends at the deadline or a cancel even if a step has
-      // stalled; the preparation then runs on and seeds nothing.
+      // stalled; the preparation runs on, and its seed lands only if no
+      // later call has seeded the session first.
       controller.signal.throwIfAborted()
-      prepared = await untilAborted(this.prepare(spec, controller.signal), controller.signal)
+      prepared = await untilAborted(this.prepare(spec), controller.signal)
     } catch (err) {
       // Expiry while the command was still being prepared settles a
       // timed-out handle with no output; a caller's cancellation or a

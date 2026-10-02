@@ -500,7 +500,7 @@ describe('run', () => {
     open()
   })
 
-  it('runs the next call while a given-up preparation is stalled, and never seeds it', async () => {
+  it('runs the next call while a given-up preparation is stalled', async () => {
     const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
     const { open } = stall(shell, 'worldWorkdir')
     const first = await shell.execute(
@@ -514,6 +514,23 @@ describe('run', () => {
     expect(second.stdout.text).toBe('/b\n')
     open()
     await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ws.getSession('agent').env.DSH_HOME).toBe('/b')
+  })
+
+  it('keeps the newest snapshot when an earlier call reaches its seed last', async () => {
+    const { shell, ws } = await makeShell({}, { sessionId: 'agent' })
+    const { entered, open } = stall(shell, 'worldWorkdir')
+    const first = shell.execute(
+      shell.resolve({ command: 'echo "$DSH_HOME"', dshEnv: { DSH_HOME: '/a' } }),
+    )
+    await entered
+    const second = await runOn(
+      shell,
+      shell.resolve({ command: 'echo "$DSH_HOME"', dshEnv: { DSH_HOME: '/b' } }),
+    )
+    expect(second.stdout.text).toBe('/b\n')
+    open()
+    expect((await (await first).result()).stdout.text).toBe('/b\n')
     expect(ws.getSession('agent').env.DSH_HOME).toBe('/b')
   })
 

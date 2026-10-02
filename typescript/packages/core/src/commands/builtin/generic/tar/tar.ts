@@ -175,6 +175,7 @@ export interface TarFlags {
   directoryOperands: PathSpec[]
   stripComponents: number
   exclude: string | null
+  oneFileSystem: boolean
 }
 
 const MODES = ['create', 'extract', 'list'] as const
@@ -235,6 +236,7 @@ export function parseTarFlags(bag: Record<string, FlagValue>): TarFlags {
     directoryOperands: fl.asPaths('directory'),
     stripComponents,
     exclude: fl.asStr('exclude') ?? null,
+    oneFileSystem: fl.asBool('one_file_system'),
   }
 }
 
@@ -518,6 +520,7 @@ export async function tarGeneric(
       directories,
       links: opts.ns?.links ?? null,
       mounts: opts.ns?.mounts ?? null,
+      oneFileSystem: parsed.oneFileSystem,
     })
     if (!plan.write) {
       const stderr = stderrOf(plan.notices)

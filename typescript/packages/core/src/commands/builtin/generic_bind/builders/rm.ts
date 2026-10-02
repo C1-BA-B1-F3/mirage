@@ -17,6 +17,7 @@ import { FileType } from '../../../../types.ts'
 import { cpWalk } from '../../generic/cp.ts'
 import { rmWithoutOperands } from '../../generic/rm_cmd.ts'
 import { formatRecords } from '../../utils/output.ts'
+import { mountPoints } from '../../utils/operands.ts'
 import { removalLines } from '../../utils/verbose.ts'
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -87,6 +88,12 @@ export const BUILDER: Builder = {
               )
             }
             await rmR(accessor, p)
+            // A removal never crosses into a mount below, so it says so as
+            // GNU's --one-file-system does.
+            for (const root of mountPoints(opts.ns?.mounts, p.virtual))
+              errors.push(
+                `rm: skipping '${operandSpelling(root, p)}', since it's on a different device`,
+              )
           } else if (dirFlag) {
             if ((await ops.readdir(accessor, p, idx)).length > 0) {
               errors.push(`rm: cannot remove '${p.rawPath}': Directory not empty`)

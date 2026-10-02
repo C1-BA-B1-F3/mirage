@@ -69,6 +69,7 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-C', long: '--directory', type: 'path', multiple: true }),
       new Option({ long: '--strip-components', type: 'str' }),
       new Option({ long: '--exclude', type: 'str' }),
+      new Option({ long: '--one-file-system' }),
     ],
     // Only -c reads the rest operands from the filesystem. Under -t
     // and -x each one is a member selector matched against names

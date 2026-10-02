@@ -64,7 +64,7 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec, Producer
 from mirage.utils.dates import in_mtime_window, iso_timestamp
 from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
-from mirage.utils.path import respell_one
+from mirage.utils.path import parent, respell_one
 from mirage.workspace.mount import (
     MountCommandUnsupported,
     MountEntry,
@@ -243,7 +243,9 @@ def _should_fan_out(
     True when the command is in the traversal whitelist (find/du)
     and the path has at least one descendant mount; or for grep with
     -r/-R; or for ls -R. Returns False when there's no descendant
-    mount under the path (single-mount dispatch is correct).
+    mount under the path (single-mount dispatch is correct), and for a
+    walk told to keep to its operand's filesystem (``du -x``, ``rg
+    --one-file-system``), since a mount is one.
     """
     # Use the raw mount table: hidden descendants still shadow backend keys.
     # Refused operands name nothing. Every other operand can own nested
@@ -253,6 +255,8 @@ def _should_fan_out(
         for p in paths
     ):
         return False
+    if cmd_name == "du":
+        return flag_kwargs.get("one_file_system") is not True
     if cmd_name in _TRAVERSAL_CMDS:
         return True
     if cmd_name == "grep":
@@ -732,6 +736,18 @@ async def _fan_out_traversal(
         }
         flag_kwargs.pop("max_depth", None)
 
+    # -xdev keeps the walk on its start point's filesystem: the mount
+    # points right below it are entries, nothing under them is.
+    xdev = cmd_name == "find" and (
+        flag_kwargs.get("xdev") is True or flag_kwargs.get("mount") is True
+    )
+    if xdev:
+        descendants = [
+            m
+            for m in descendants
+            if registry.try_mount_for(parent(m.prefix.rstrip("/")))
+            is primary_mount
+        ]
     synthetic: list[PathSpec] = []
     tree: PredNode | None = None
     if cmd_name == "find":
@@ -745,7 +761,7 @@ async def _fan_out_traversal(
     merged_io = IOResult()
     exit_codes: list[int] = []
     errored: list[bool] = []
-    for mount in [primary_mount] + list(descendants):
+    for mount in [primary_mount] + ([] if xdev else list(descendants)):
         if mount is primary_mount:
             # The du merge re-spells centrally, so the runs answer in
             # absolute virtual paths: a relative operand would otherwise

@@ -25,13 +25,14 @@ const byName = (name: string): (typeof OPFS_OPS)[number] => {
 }
 
 describe('OPFS_OPS', () => {
-  it('contains all 12 OPFS op names', () => {
+  it('contains all 13 OPFS op names', () => {
     expect(new Set(OPFS_OPS.map((o) => o.name))).toEqual(
       new Set([
         'append',
         'create',
         'glob',
         'mkdir',
+        'pwrite',
         'read',
         'readdir',
         'rename',
@@ -50,7 +51,17 @@ describe('OPFS_OPS', () => {
 
   it('write-side ops are flagged write:true', () => {
     expect(new Set(OPFS_OPS.filter((o) => o.write).map((o) => o.name))).toEqual(
-      new Set(['append', 'create', 'mkdir', 'rename', 'rmdir', 'truncate', 'unlink', 'write']),
+      new Set([
+        'append',
+        'create',
+        'mkdir',
+        'pwrite',
+        'rename',
+        'rmdir',
+        'truncate',
+        'unlink',
+        'write',
+      ]),
     )
   })
 

@@ -81,6 +81,7 @@ describe('makeGenericOps', () => {
         'rename',
         'truncate',
         'append',
+        'pwrite',
         'setattr',
         'create',
         'unlink',
@@ -170,6 +171,57 @@ describe('makeGenericOps', () => {
     expect(write).toHaveBeenCalledWith(ACCESSOR, PATH, new Uint8Array([1, 2, 3, 4, 0, 0]))
     await truncate?.fn(ACCESSOR, PATH, [2], {})
     expect(write).toHaveBeenLastCalledWith(ACCESSOR, PATH, new Uint8Array([1, 2]))
+  })
+
+  it('emulated pwrite splices, pads and creates missing files', async () => {
+    const write = vi.fn()
+    const readBytes = vi
+      .fn()
+      .mockResolvedValueOnce(new Uint8Array([1, 2, 3, 4, 5]))
+      .mockResolvedValueOnce(new Uint8Array([1, 2]))
+      .mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+    const op = makeGenericOps('x', makeTable({ write, readBytes })).find((o) => o.name === 'pwrite')
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array([8, 9]), 1], {})
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array([7]), 4], {})
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array([6]), 2], {})
+    expect(write).toHaveBeenNthCalledWith(1, ACCESSOR, PATH, new Uint8Array([1, 8, 9, 4, 5]))
+    expect(write).toHaveBeenNthCalledWith(2, ACCESSOR, PATH, new Uint8Array([1, 2, 0, 0, 7]))
+    expect(write).toHaveBeenNthCalledWith(3, ACCESSOR, PATH, new Uint8Array([0, 0, 6]))
+  })
+
+  it('does not overwrite after a pwrite pre-read fails, and forwards the index', async () => {
+    const write = vi.fn()
+    const error = Object.assign(new Error('denied'), { code: 'EACCES' })
+    const readBytes = vi.fn().mockRejectedValue(error)
+    const op = makeGenericOps('x', makeTable({ write, readBytes })).find((o) => o.name === 'pwrite')
+    const index = {} as never
+    await expect(op?.fn(ACCESSOR, PATH, [new Uint8Array([1]), 0], { index })).rejects.toBe(error)
+    expect(readBytes).toHaveBeenCalledWith(ACCESSOR, PATH, index)
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('a native pwrite skips the emulation', async () => {
+    const write = vi.fn()
+    const pwrite = vi.fn()
+    const table = makeTable({ write, pwrite })
+    const op = makeGenericOps('x', table).find((o) => o.name === 'pwrite')
+    await op?.fn(ACCESSOR, PATH, [new Uint8Array([1]), 3], {})
+    expect(pwrite).toHaveBeenCalledWith(ACCESSOR, PATH, new Uint8Array([1]), 3)
+    expect(table.readBytes).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('refuses a negative offset before any I/O (native %s)', async (native) => {
+    const write = vi.fn()
+    const pwrite = vi.fn()
+    const table = makeTable(native ? { write, pwrite } : { write })
+    const op = makeGenericOps('x', table).find((o) => o.name === 'pwrite')
+    await expect(
+      Promise.resolve().then(() => op?.fn(ACCESSOR, PATH, [new Uint8Array([1]), -1], {})),
+    ).rejects.toMatchObject({ code: 'EINVAL' })
+    expect(pwrite).not.toHaveBeenCalled()
+    expect(table.readBytes).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
   })
 
   it('emulated append reads current bytes and creates missing files', async () => {

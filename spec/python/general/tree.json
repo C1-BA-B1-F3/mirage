@@ -280,6 +280,10 @@
     {
       "short": "-P",
       "type": "str"
+    },
+    {
+      "short": "-x",
+      "type": "bool"
     }
   ],
   "rest": {

@@ -26,6 +26,18 @@ from mirage.utils.errors import enoent
 logger = logging.getLogger(__name__)
 
 
+def open_flags(flags: int, path: str, _mode: int) -> int:
+    """An ``opener`` for ``aiofiles.open`` that opens with ``flags``, so a
+    write can create a file without truncating one that exists.
+
+    Args:
+        flags (int): the ``os.open`` flags.
+        path (str): the host path.
+        _mode (int): the mode ``open`` would have used, ignored.
+    """
+    return os.open(path, flags, 0o666)
+
+
 def resolve_inside_sync(
     root: Path, spec: PathSpec, path: str | None = None
 ) -> Path:

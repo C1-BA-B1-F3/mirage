@@ -46,6 +46,7 @@ export interface OpsTable<A extends Accessor = Accessor> {
   create?: OpCoreFn
   truncate?: OpCoreFn
   append?: OpCoreFn
+  pwrite?: OpCoreFn
   setAttrs?: OpCoreFn
 }
 

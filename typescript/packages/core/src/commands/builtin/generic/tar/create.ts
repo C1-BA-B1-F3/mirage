@@ -51,6 +51,7 @@ export interface CreateDeps {
   directories?: readonly PathSpec[]
   links?: LinkView | null
   mounts?: MountView | null
+  oneFileSystem?: boolean
 }
 
 function refusal(notices: string[]): CreateResult {
@@ -233,6 +234,9 @@ export async function planCreate(
     })
     for (const problem of scan.problems) {
       const shown = respellOne(problem.path, base, raw)
+      // A link followed onto another mount is a crossing too, which
+      // --one-file-system leaves unreported, as in GNU.
+      if (deps.oneFileSystem === true && problem.reason === OTHER_FILESYSTEM) continue
       if (problem.unreadable === true) {
         // A directory the walk could not open: GNU names it, keeps its
         // entry, and fails the run.
@@ -248,7 +252,7 @@ export async function planCreate(
       exitCode = CREATE_ERROR_EXIT
     }
     if (scan.missing) continue
-    for (const crossing of scan.crossings) {
+    for (const crossing of deps.oneFileSystem === true ? [] : scan.crossings) {
       const shown = memberName(respellOne(crossing, base, raw), 'dir')
       notices.push(`tar: ${shown}: ${OTHER_FILESYSTEM}`)
     }

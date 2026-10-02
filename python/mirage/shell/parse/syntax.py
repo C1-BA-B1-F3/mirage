@@ -12,7 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
+from itertools import chain
 
 from mirage.io import IOResult
 from mirage.shell.parse.constants import (
@@ -101,8 +102,8 @@ def _is_structural_error(node: TSNodeLike) -> bool:
     return False
 
 
-def _stray_case_terminator(node: TSNodeLike) -> str | None:
-    """The text of a ``;;`` / ``;&`` / ``;;&`` token outside a case item.
+def _stray_case_terminators(node: TSNodeLike) -> Iterator[tuple[int, str]]:
+    """Each ``;;`` / ``;&`` / ``;;&`` token outside a case item.
 
     The grammar takes them as ordinary statement separators, so
     ``true;;s`` parses cleanly and would run ``s``; bash refuses the
@@ -110,6 +111,9 @@ def _stray_case_terminator(node: TSNodeLike) -> str | None:
 
     Args:
         node (TSNodeLike): root node from parse().
+
+    Yields:
+        tuple[int, str]: the token's start byte and text.
     """
     stack = [node]
     while stack:
@@ -117,17 +121,19 @@ def _stray_case_terminator(node: TSNodeLike) -> str | None:
         for child in current.children:
             if child.type in CASE_TERMINATORS and current.type != "case_item":
                 text = child.text
-                return text.decode(errors="replace") if text else child.type
+                yield (
+                    child.start_byte,
+                    (text.decode(errors="replace") if text else child.type),
+                )
             stack.append(child)
-    return None
 
 
 _BODY_OPENERS = ("do", "{", "then", "else")
 _BODY_CLOSERS = ("done", "}", "fi", "elif", "else")
 
 
-def _empty_compound(node: TSNodeLike) -> str | None:
-    """The token closing a compound list that holds no command.
+def _empty_compounds(node: TSNodeLike) -> Iterator[tuple[int, str]]:
+    """Each token closing a compound list that holds no command.
 
     bash requires a command in every ``do``, ``then``, ``else`` and brace
     body (5.2: ``for x in a; do done`` is a syntax error near ``done``);
@@ -135,6 +141,9 @@ def _empty_compound(node: TSNodeLike) -> str | None:
 
     Args:
         node (TSNodeLike): root node from parse().
+
+    Yields:
+        tuple[int, str]: the closer's start byte and text.
     """
     stack = [node]
     while stack:
@@ -157,12 +166,72 @@ def _empty_compound(node: TSNodeLike) -> str | None:
             )
         ):
             if opened and kid.type in _BODY_CLOSERS:
-                return (kid.text or b"").decode(errors="replace")
+                yield (
+                    kid.start_byte,
+                    (kid.text or b"").decode(errors="replace"),
+                )
             if kid.type in _BODY_OPENERS:
                 opened = True
             elif kid.is_named and kid.type != "comment":
                 opened = False
-    return None
+
+
+# Reserved words that close or continue a compound command; quoted,
+# escaped, after an assignment or a redirect, or named as an alias the
+# shell would expand there, they are plain words.
+_RESERVED_CLOSERS = frozenset(
+    {"do", "done", "elif", "else", "esac", "fi", "in", "then", "}", "]]"}
+)
+
+
+def _stray_reserved_words(
+    node: TSNodeLike,
+    aliases: frozenset[str],
+    own: Mapping[str, tuple[int, int]],
+    offsets: Sequence[int] | None,
+) -> Iterator[tuple[int, str]]:
+    """Each reserved word a command starts with, where none may stand.
+
+    The grammar reads ``echo hi; fi`` as two commands and would run both;
+    bash 5.2 refuses the line at ``fi``, as it does ``done``, ``then`` and
+    the rest when they stand where a command starts. Inside ``$(...)`` and
+    a process substitution, bash 5.2 takes such a word as reserved even
+    when an alias spells it.
+
+    Args:
+        node (TSNodeLike): root node from parse().
+        aliases (frozenset[str]): alias names the shell would expand where
+            a command starts, which bash tries before reserved words.
+        own (Mapping[str, tuple[int, int]]): each alias whose own text
+            the line opens with, to the span of the line that text covers;
+            a word spelled like the alias starting inside it is reserved,
+            since an alias never expands within its own text.
+        offsets (Sequence[int] | None): where each byte the parser read
+            sits in that line, as ``source_offsets`` maps it; None where
+            the two are the same.
+
+    Yields:
+        tuple[int, str]: the word's start byte and text.
+    """
+    stack = [(node, aliases)]
+    while stack:
+        current, names = stack.pop()
+        if current.type == "process_substitution" or (
+            current.type == "command_substitution"
+            and not (current.text or b"").startswith(b"`")
+        ):
+            names = frozenset()
+        stack.extend((child, names) for child in current.children)
+        if current.type != "command" or not current.children:
+            continue
+        name = current.children[0]
+        text = (name.text or b"").decode(errors="replace")
+        if name.type != "command_name" or text not in _RESERVED_CLOSERS:
+            continue
+        span = own.get(text)
+        at = name.start_byte if offsets is None else offsets[name.start_byte]
+        if text not in names or (span is not None and span[0] <= at < span[1]):
+            yield name.start_byte, text
 
 
 def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
@@ -209,11 +278,27 @@ def _missing_quote(node: TSNodeLike) -> str | None:
     return None
 
 
-def find_syntax_error(node: TSNodeLike) -> str | None:
+def find_syntax_error(
+    node: TSNodeLike,
+    aliases: frozenset[str] = frozenset(),
+    own: Mapping[str, tuple[int, int]] | None = None,
+    offsets: Sequence[int] | None = None,
+) -> str | None:
     """Locate structural errors and missing tokens throughout a parsed AST.
+
+    Of the tokens the grammar accepts and bash refuses, the first on the
+    line is the one reported, as bash stops there.
 
     Args:
         node (TSNodeLike): root node from parse().
+        aliases (frozenset[str]): alias names the shell would expand where
+            a command starts; a reserved word among them is a command.
+        own (Mapping[str, tuple[int, int]] | None): each alias whose own
+            text the line opens with, to the span of the line that text
+            covers, inside which its name stays reserved.
+        offsets (Sequence[int] | None): where each byte the parser read
+            sits in that line (``source_offsets``); None where the two are
+            the same.
 
     Returns:
         str | None: text of the offending region, or None if the AST is clean.
@@ -239,12 +324,16 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
             return unclosed
         if source.startswith("$(") and source.endswith(")"):
             return find_syntax_error(parse(source[2:-1]))
-    stray = _stray_case_terminator(node)
+    stray = min(
+        chain(
+            _stray_case_terminators(node),
+            _empty_compounds(node),
+            _stray_reserved_words(node, aliases, own or {}, offsets),
+        ),
+        default=None,
+    )
     if stray is not None:
-        return stray
-    empty = _empty_compound(node)
-    if empty is not None:
-        return empty
+        return stray[1]
     if not node.has_error:
         return find_unterminated_quote(node)
     previous = None
@@ -278,7 +367,7 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
             text = child.text
             return text.decode(errors="replace") if text else ""
         if child.type != "ERROR":
-            nested = find_syntax_error(child)
+            nested = find_syntax_error(child, aliases, own, offsets)
             if nested is not None:
                 return nested
         if child.is_named:

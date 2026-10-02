@@ -215,7 +215,7 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "mkdir -p /scratch/cold && echo keep > /scratch/cold/k",
+      "command": "mkdir -p /scratch/cold /scratch/drop && echo keep > /scratch/cold/k",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -279,6 +279,62 @@
       }
     },
     {
+      "id": "scriptops_drop_descriptor_writes_without_reading",
+      "seq": 923284,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "scriptedops",
+      "command": "exec 3>/scratch/drop/f; echo a >&3; echo b >&3; echo XYZ >> /scratch/drop/f; echo c >&3; exec 3>&-; echo rc=$?",
+      "note": "bash on a file with write permission only (debian:stable-slim, chmod 200): a write-only descriptor writes at its own offset, so c lands over the XY the append added, and <> is refused because it opens the file to read.",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "scriptops_drop_read_is_refused",
+      "seq": 923285,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "scriptedops",
+      "command": "cat /scratch/drop/f",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scratch/drop/f: Permission denied\n"
+      }
+    },
+    {
+      "id": "scriptops_drop_read_write_open_is_refused",
+      "seq": 923286,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "scriptedops",
+      "command": "exec 4<>/scratch/drop/f; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "/scratch/drop/f: Permission denied\n"
+      }
+    },
+    {
+      "id": "scriptops_drop_holds_what_the_descriptor_wrote",
+      "seq": 923287,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "cat /scratch/drop/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\nZ\n",
+        "stderr": ""
+      }
+    },
+    {
       "id": "scriptops_content_deny_at_the_command_gate",
       "seq": 923275,
       "targets": [
@@ -326,7 +382,7 @@
       "targets": [
         "ram-scripted"
       ],
-      "command": "mkdir -p /scratch/cold && echo keep > /scratch/cold/k",
+      "command": "mkdir -p /scratch/cold /scratch/drop && echo keep > /scratch/cold/k",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -372,6 +428,62 @@
       "expect": {
         "exit": 0,
         "stdout": "keep\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "scriptopsjs_drop_descriptor_writes_without_reading",
+      "seq": 923288,
+      "targets": [
+        "ram-scripted"
+      ],
+      "session": "scriptedopsjs",
+      "command": "exec 3>/scratch/drop/f; echo a >&3; echo b >&3; echo XYZ >> /scratch/drop/f; echo c >&3; exec 3>&-; echo rc=$?",
+      "note": "bash on a file with write permission only (debian:stable-slim, chmod 200): a write-only descriptor writes at its own offset, so c lands over the XY the append added, and <> is refused because it opens the file to read.",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "scriptopsjs_drop_read_is_refused",
+      "seq": 923289,
+      "targets": [
+        "ram-scripted"
+      ],
+      "session": "scriptedopsjs",
+      "command": "cat /scratch/drop/f",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scratch/drop/f: Permission denied\n"
+      }
+    },
+    {
+      "id": "scriptopsjs_drop_read_write_open_is_refused",
+      "seq": 923290,
+      "targets": [
+        "ram-scripted"
+      ],
+      "session": "scriptedopsjs",
+      "command": "exec 4<>/scratch/drop/f; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "/scratch/drop/f: Permission denied\n"
+      }
+    },
+    {
+      "id": "scriptopsjs_drop_holds_what_the_descriptor_wrote",
+      "seq": 923291,
+      "targets": [
+        "ram-scripted"
+      ],
+      "command": "cat /scratch/drop/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\nZ\n",
         "stderr": ""
       }
     },

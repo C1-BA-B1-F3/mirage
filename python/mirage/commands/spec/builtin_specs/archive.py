@@ -38,6 +38,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-C", long="--directory", type="path", multiple=True),
             Option(long="--strip-components", type="str"),
             Option(long="--exclude", type="str"),
+            Option(long="--one-file-system"),
         ),
         # Only -c reads the rest operands from the filesystem. Under -t
         # and -x each one is a member selector matched against names

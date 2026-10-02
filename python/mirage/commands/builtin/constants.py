@@ -185,6 +185,8 @@ FIND_BARE_PREDICATES = frozenset(
         "-delete",
         "-ls",
         "-depth",
+        "-xdev",
+        "-mount",
         "-prune",
     }
 )

@@ -39,9 +39,14 @@ export function dispatchIO(dispatch: DispatchFn): CommandIO {
   }
 }
 
+function noneBelow(): string[] {
+  return []
+}
+
 /** Run the existing builder once over the full virtual namespace. Mirrors
- * Python's run_dispatch; the mount table is dropped from `ns`, since the
- * dispatcher crosses mounts itself. The output is read before this returns,
+ * Python's run_dispatch. The dispatcher lists the mounts below a directory
+ * itself, so `ns` offers no descendant to avoid; where each mount begins
+ * stays for `--one-file-system`. The output is read before this returns,
  * inside the running command: a `fresh` mount trusts only the listings that
  * command made, so a lazy stream read after it ends would be served the
  * previous command's. */
@@ -56,8 +61,13 @@ export async function runDispatch(
   stdin: ByteSource | null = null,
   signal?: AbortSignal,
 ): Promise<[ByteSource | null, IOResult]> {
-  const view = ns === undefined ? undefined : { ...ns }
-  if (view !== undefined) delete view.mounts
+  const view =
+    ns?.mounts === undefined
+      ? ns
+      : {
+          ...ns,
+          mounts: { ...ns.mounts, descendants: noneBelow, visibleDescendants: noneBelow },
+        }
   const result = await builder.fn(
     dispatchIO(dispatch),
     new NOOPAccessor(),

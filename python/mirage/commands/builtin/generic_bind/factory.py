@@ -126,10 +126,10 @@ def with_slash_guard(ops: CommandIO) -> CommandIO:
     """Return ``ops`` whose writes refuse a slash-terminated operand.
 
     open(2) with O_CREAT answers ``x/`` with EISDIR whether or not
-    anything is there, so ``write``, ``append`` and ``truncate`` refuse
-    it before the backend sees it and ``tee missing/`` cannot leave a
-    regular file named ``missing`` behind. The read side is the walk
-    guard's: a slashed operand carries a ``dotted`` spelling, so
+    anything is there, so ``write``, ``append``, ``pwrite`` and
+    ``truncate`` refuse it before the backend sees it and ``tee missing/``
+    cannot leave a regular file named ``missing`` behind. The read side is
+    the walk guard's: a slashed operand carries a ``dotted`` spelling, so
     ``dot_refusal`` proves the name a directory there (``cat reg/`` is
     "Not a directory", ``cat dangle/`` keeps its own ENOENT).
 
@@ -138,7 +138,7 @@ def with_slash_guard(ops: CommandIO) -> CommandIO:
     """
     changes: dict[str, Any] = {
         slot: functools.partial(_slash_checked_write, getattr(ops, slot))
-        for slot in ("write", "append", "truncate")
+        for slot in ("write", "append", "pwrite", "truncate")
         if getattr(ops, slot) is not None
     }
     return replace(ops, **changes)

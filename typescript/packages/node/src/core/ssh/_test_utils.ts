@@ -25,6 +25,7 @@ import type {
 import { SSHAccessor } from '../../accessor/ssh.ts'
 import type { SSHConfig } from '../../vfs/ssh/config.ts'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
+import { FXF_CREAT } from './constants.ts'
 
 const S_IFDIR = 0o040000
 const S_IFREG = 0o100000
@@ -303,7 +304,7 @@ function makeFakeSftp(state: FakeSftp): SFTPWrapper {
     ): void {
       const cb = typeof arg3 === 'function' ? arg3 : arg4
       if (cb === undefined) throw new Error('fake sftp: open requires a callback')
-      const flags = typeof mode === 'string' ? mode : 'r'
+      const flags = typeof mode === 'string' ? mode : (mode & FXF_CREAT) !== 0 ? 'r+' : 'r'
       if (state.dirs.has(path)) {
         cb(failure(`is a directory: ${path}`), Buffer.alloc(0))
         return

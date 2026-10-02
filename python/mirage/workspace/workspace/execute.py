@@ -45,6 +45,7 @@ from mirage.workspace.abort import (
     set_line_writer,
 )
 from mirage.workspace.execution import ExecutionScope
+from mirage.workspace.executor.builtins.alias import expanding_aliases
 from mirage.workspace.executor.control import UNWINDING, ended
 from mirage.workspace.executor.statement import (
     StatusSnapshot,
@@ -456,7 +457,9 @@ async def run_prepared_line(
         # Syntax gates before policy, mirroring the TS order and
         # bash: an unparsable line exits 2 and the policy is never
         # consulted about it.
-        offending = find_syntax_error(ast)
+        offending = find_syntax_error(
+            ast, expanding_aliases(effective_session)
+        )
         if offending is None and argv is None:
             # tree-sitter accepts an unclosed backtick as a complete
             # command, so the region is scanned separately.

@@ -121,6 +121,17 @@ function aliasesOn(session: SessionState): boolean {
   return session.shopts.expand_aliases ?? SHOPT_DEFAULTS.get('expand_aliases') ?? false
 }
 
+/**
+ * The alias names a command word would expand as right now. bash checks a
+ * word where a command starts for an alias before it checks for a reserved
+ * word, so one of these names is a command there even when it is spelled
+ * `fi` or `do`. Mirrors Python's expanding_aliases.
+ */
+export function expandingAliases(session: SessionState): ReadonlySet<string> {
+  if (!aliasesOn(session)) return new Set()
+  return new Set(Object.keys(session.aliases).filter((name) => !session.aliasStack.includes(name)))
+}
+
 /** The alias text a command word expands to, or null. */
 export function aliasValue(session: SessionState, name: string, mark: AliasMark): string | null {
   if (!aliasesOn(session)) return null
@@ -135,17 +146,20 @@ export function aliasValue(session: SessionState, name: string, mark: AliasMark)
  * The command line an aliased head word rewrites to, or null. The value
  * replaces the word; a value ending in a blank asks for the next word
  * to be checked too (bash's `alias sudo='sudo '` rule); the result is a
- * fresh line the parser reads again.
+ * fresh line the parser reads again. Returned with each alias and the text
+ * it put at the line's head, in order; the rest of the line is the
+ * command's own.
  */
 export function aliasCommandText(
   session: SessionState,
   name: string,
   rest: string,
   mark: AliasMark,
-): string | null {
+): [string, [string, string][]] | null {
   const value = aliasValue(session, name, mark)
   if (value === null) return null
   const seen = new Set([name])
+  const texts: [string, string][] = [[name, value]]
   let out = value
   let tailSource = rest
   while (out.endsWith(' ') || out.endsWith('\t')) {
@@ -155,11 +169,12 @@ export function aliasCommandText(
     const nxt = aliasValue(session, match[0], mark)
     if (nxt === null) break
     seen.add(match[0])
+    texts.push([match[0], nxt])
     out += nxt
     tailSource = stripped.slice(match[0].length)
   }
   const tail = tailSource.trim()
-  return tail !== '' ? `${out} ${tail}` : out
+  return [tail !== '' ? `${out} ${tail}` : out, texts]
 }
 
 /** The `alias` arm; the row marks where the definition was made. */

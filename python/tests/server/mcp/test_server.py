@@ -69,6 +69,17 @@ async def test_every_tool_declares_its_required_arguments(server):
 
 
 @pytest.mark.asyncio
+async def test_read_and_edit_advertise_their_argument_types(server):
+    tools = {t.name: t for t in await list_tools(server)}
+    read = tools["read"].input_schema["properties"]
+    edit = tools["edit"].input_schema["properties"]
+    assert read["path"] == {"type": "string"}
+    assert read["offset"] == {"type": "integer", "minimum": 0}
+    assert read["limit"] == {"type": "integer", "minimum": 1}
+    assert edit["replace_all"] == {"type": "boolean"}
+
+
+@pytest.mark.asyncio
 async def test_call_execute_command(server):
     result = await call_tool(server, "execute_command", {"command": "echo hi"})
     assert "hi" in result.content[0].text

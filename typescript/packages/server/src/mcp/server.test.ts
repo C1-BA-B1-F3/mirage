@@ -59,6 +59,41 @@ describe('createMirageMcpServer', () => {
     await workspace.close()
   })
 
+  it("advertises each tool's arguments and read-only hint", async () => {
+    const workspace = mkWs()
+    const server = createMirageMcpServer(workspace)
+    const client = new Client({ name: 'mirage-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]))
+    const required = (name: string): unknown => tools.get(name)?.inputSchema.required
+    const readOnly = (name: string): unknown => tools.get(name)?.annotations?.readOnlyHint
+    expect(required('execute_command')).toEqual(['command'])
+    expect(required('read')).toEqual(['path'])
+    expect(required('write')).toEqual(['path', 'content'])
+    expect(required('edit')).toEqual(['path', 'old_string', 'new_string'])
+    expect(required('ls')).toEqual(['path'])
+    expect(required('grep')).toEqual(['pattern', 'path'])
+    expect(tools.get('read')?.inputSchema.properties).toMatchObject({
+      path: { type: 'string' },
+      offset: { type: 'integer', minimum: 0 },
+      limit: { type: 'integer', minimum: 1 },
+    })
+    expect(tools.get('edit')?.inputSchema.properties).toMatchObject({
+      replace_all: { type: 'boolean' },
+    })
+    expect(['read', 'ls', 'grep'].map(readOnly)).toEqual([true, true, true])
+    expect(['execute_command', 'write', 'edit'].map(readOnly)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
+    await client.close()
+    await server.close()
+    await workspace.close()
+  })
+
   it('rejects an unknown tool and answers bad arguments with an error result', async () => {
     const workspace = mkWs()
     const server = createMirageMcpServer(workspace)

@@ -15,7 +15,7 @@
 import type { PostgresAccessor } from '../../../accessor/postgres.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { POSTGRES_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read, readStream } from '../../../core/postgres/read.ts'
 import { detectScope } from '../../../core/postgres/scope.ts'
 import { stat as postgresStat } from '../../../core/postgres/stat.ts'
@@ -26,7 +26,7 @@ import { headGeneric } from '../generic/head.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { noteAfter, rowCapNotice } from '../utils/limit.ts'
 
-const resolveGlob = resolveGlobOf(POSTGRES_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 const NL = 0x0a
 

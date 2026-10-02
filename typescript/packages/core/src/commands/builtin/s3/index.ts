@@ -17,11 +17,11 @@ import { VFSName } from '../../../types.ts'
 import { CommandCatalog } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { makeObjectStoreCommands, OBJECT_STORE_OVERRIDES } from '../object_store/index.ts'
-import { S3_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const S3_COMMANDS = new CommandCatalog([
-  ...makeGenericCommands<S3Accessor>(VFSName.S3, S3_IO, {
+  ...makeGenericCommands<S3Accessor>(VFSName.S3, IO, {
     overrides: OBJECT_STORE_OVERRIDES,
   }),
-  ...makeObjectStoreCommands(VFSName.S3, S3_IO),
+  ...makeObjectStoreCommands(VFSName.S3, IO),
 ])

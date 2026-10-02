@@ -19,16 +19,16 @@ import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { makeFind, readsTimes } from '../slug_tree/find.ts'
-import { DIFY_IO } from './io.ts'
+import { IO } from './io.ts'
 import { DIFY_SEARCH } from './search.ts'
 
 export const DIFY_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<DifyAccessor>(VFSName.DIFY, DIFY_IO, {
+  ...makeGenericCommands<DifyAccessor>(VFSName.DIFY, IO, {
     overrides: new Set(['find']),
     // ls stats every listed entry, so it keeps the index-only stat instead
     // of paying one document-detail call per row, as python does.
-    opsOverrides: { ls: { ...DIFY_IO, stat: statLight } },
+    opsOverrides: { ls: { ...IO, stat: statLight } },
   }),
-  ...makeFind(VFSName.DIFY, DIFY_IO, DIFY_TREE, stat, statLight, readsTimes),
+  ...makeFind(VFSName.DIFY, IO, DIFY_TREE, stat, statLight, readsTimes),
   ...DIFY_SEARCH,
 ]

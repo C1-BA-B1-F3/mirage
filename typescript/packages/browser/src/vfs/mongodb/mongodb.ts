@@ -31,7 +31,7 @@ import type {
   MongoDBConfigRedacted,
   MongoDBConfigResolved,
 } from '@struktoai/mirage-core/vfs/mongodb/config'
-import { MONGODB_PROMPT } from '@struktoai/mirage-core/vfs/mongodb/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/mongodb/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { HttpMongoDriver } from './http_driver.ts'
@@ -67,7 +67,7 @@ export class MongoDBVFS extends BaseVFS {
     this.config = resolveMongoDBConfig(config)
     this.driver = driver ?? new HttpMongoDriver({ endpoint: endpoint ?? this.config.uri })
     this.accessor = new MongoDBAccessor(this.driver, this.config)
-    this.prompt = MONGODB_PROMPT.replace('{prefix}', prefix ?? '')
+    this.prompt = PROMPT.replace('{prefix}', prefix ?? '')
   }
 
   override getState(): MongoDBVFSState {

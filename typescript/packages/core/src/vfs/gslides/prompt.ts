@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GSLIDES_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   owned/
     <date>_<title>__<presentation-id>.gslide.json
   shared/
@@ -65,7 +65,7 @@ export const GSLIDES_PROMPT = `{prefix}
     .slides[].pageElements[].shape.text.textElements[].textRun.content  # all text
     .slides[0].objectId`
 
-export const GSLIDES_WRITE_PROMPT = `  Writes go through the gws CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the gws CLI if installed:
     gws slides presentations create --json '{"title": "My Deck"}'
     See gws slides --help for the raw API passthroughs.
 

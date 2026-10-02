@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const QDRANT_PROMPT = `This mount is a Qdrant vector database exposed as a filesystem.
+export const PROMPT = `This mount is a Qdrant vector database exposed as a filesystem.
 
 At the root each directory is a collection (unless a single collection is pinned
 in config). Inside a collection, directories are the configured group-by payload

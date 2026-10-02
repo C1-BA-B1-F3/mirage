@@ -13,11 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { LINEAR_PROMPT, LINEAR_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
-describe('LINEAR_PROMPT', () => {
+describe('PROMPT', () => {
   it('renders prefix and includes path anatomy + normalized shapes', () => {
-    const rendered = LINEAR_PROMPT.replace(/\{prefix\}/g, '/linear')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/linear')
     expect(rendered).toContain('team.json:')
     expect(rendered).toContain('issue.json:')
     expect(rendered).toContain('comments.jsonl:')
@@ -32,10 +32,10 @@ describe('LINEAR_PROMPT', () => {
   })
 })
 
-describe('LINEAR_WRITE_PROMPT', () => {
+describe('WRITE_PROMPT', () => {
   it('points at the linear CLI', () => {
-    expect(LINEAR_WRITE_PROMPT).toContain('linear issue create')
-    expect(LINEAR_WRITE_PROMPT).toContain('linear comment add')
-    expect(LINEAR_WRITE_PROMPT).toContain('linear --help')
+    expect(WRITE_PROMPT).toContain('linear issue create')
+    expect(WRITE_PROMPT).toContain('linear comment add')
+    expect(WRITE_PROMPT).toContain('linear --help')
   })
 })

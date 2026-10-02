@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SharePointAccessor } from '../../../accessor/sharepoint.ts'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
 import { PathSpec } from '../../../types.ts'
-import { SHAREPOINT_IO } from './io.ts'
+import { IO } from './io.ts'
 
 const API = 'https://graph.microsoft.com/v1.0'
 
@@ -50,7 +50,7 @@ describe('SharePoint du', () => {
     )
     const accessor = new SharePointAccessor({ accessToken: 'token' })
     const path = PathSpec.fromStrPath(key === '' ? '/sp' : `/sp/${key}`, key)
-    expect(await SHAREPOINT_IO.du?.size(accessor, path, new RAMIndexCacheStore())).toBe(7)
+    expect(await IO.du?.size(accessor, path, new RAMIndexCacheStore())).toBe(7)
     expect(seen).toEqual([
       `${API}/sites`,
       `${API}/sites/site-id/drives`,

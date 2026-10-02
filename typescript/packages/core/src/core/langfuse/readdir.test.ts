@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { LangfuseAccessor, type LangfuseAccessorConfig } from '../../accessor/langfuse.ts'
 import type { Evicted, IndexEntry, SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { LANGFUSE_IO } from '../../commands/builtin/langfuse/io.ts'
+import { IO } from '../../commands/builtin/langfuse/io.ts'
 import { BaseVFS } from '../../vfs/base.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
@@ -173,7 +173,7 @@ describe('langfuse bounded trace listing', () => {
     const vfs = new BaseVFS({
       name: 'langfuse',
       accessor: accessor(transport, { defaultTraceLimit: 2 }),
-      io: LANGFUSE_IO,
+      io: IO,
     })
     const ws = new Workspace({ '/nested/lf/': vfs }, { shellParser: await getTestParser() })
     try {

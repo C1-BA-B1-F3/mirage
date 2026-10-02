@@ -16,9 +16,9 @@ import type { NotionAccessor } from '../../../accessor/notion.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { NOTION_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const NOTION_COMMANDS: readonly RegisteredCommand[] = makeGenericCommands<NotionAccessor>(
   VFSName.NOTION,
-  NOTION_IO,
+  IO,
 )

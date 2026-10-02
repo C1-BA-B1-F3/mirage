@@ -16,9 +16,9 @@ import type { BinAccessor } from '../../../accessor/bin.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { BIN_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const BIN_COMMANDS: readonly RegisteredCommand[] = makeGenericCommands<BinAccessor>(
   VFSName.BIN,
-  BIN_IO,
+  IO,
 )

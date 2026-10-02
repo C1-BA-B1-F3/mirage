@@ -15,7 +15,7 @@
 import { cutGeneric } from '../../generic/cut.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const CUT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'cut',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

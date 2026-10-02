@@ -34,7 +34,7 @@ import { unlink as s3Unlink } from '../../../core/s3/unlink.ts'
 import { write as s3Write } from '../../../core/s3/write.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const S3_IO: CommandIO<S3Accessor> = new VFSAdapter<S3Accessor>({
+export const IO: CommandIO<S3Accessor> = new VFSAdapter<S3Accessor>({
   read: { readdir: s3Readdir, readBytes: s3Read, stat: s3Stat },
   native: {
     readRange: s3ReadRange,

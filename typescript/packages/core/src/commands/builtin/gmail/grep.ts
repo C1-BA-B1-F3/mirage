@@ -16,7 +16,7 @@ import { mountPrefixOf } from '../../../utils/key_prefix.ts'
 import type { GmailAccessor } from '../../../accessor/gmail.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { GMAIL_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read as gmailRead } from '../../../core/gmail/read.ts'
 import { readdir as gmailReaddir } from '../../../core/gmail/readdir.ts'
 import { detectScope, NATIVE_KINDS } from '../../../core/gmail/scope.ts'
@@ -31,7 +31,7 @@ import { patternArg } from '../grep_pattern.ts'
 import { pushdownOperand, textSearchResults } from '../grep_pushdown.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
-const resolveGlob = resolveGlobOf(GMAIL_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 // Gmail search answers with whole messages and the push-down prints that
 // answer verbatim, so it can stand in for a scan only when the line names one

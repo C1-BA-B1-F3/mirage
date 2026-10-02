@@ -60,7 +60,7 @@ import type { RuntimeLanguage } from '@struktoai/mirage-core/runtime/types'
 import type { RAMAccessor } from '@struktoai/mirage-core/accessor/ram'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
-import { RAM_IO } from '@struktoai/mirage-core/commands/builtin/ram/io'
+import { IO as RAM_IO } from '@struktoai/mirage-core/commands/builtin/ram/io'
 
 const HOST = 'typescript'
 const SUITE_DIR = dirname(fileURLToPath(import.meta.url))

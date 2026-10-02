@@ -15,7 +15,7 @@
 import type { MongoDBAccessor } from '../../../accessor/mongodb.ts'
 import { countDocuments } from '../../../core/mongodb/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { MONGODB_IO } from './io.ts'
+import { IO } from './io.ts'
 import { streamAny } from '../../../core/mongodb/read.ts'
 import { documentsExist } from '../../../core/mongodb/readdir.ts'
 import { detectScope } from '../../../core/mongodb/scope.ts'
@@ -32,7 +32,7 @@ import {
 
 const ENC = new TextEncoder()
 
-const resolveGlob = resolveGlobOf(MONGODB_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 function documentsScope(p: PathSpec): { database: string; name: string } | null {
   const scope = detectScope(p)

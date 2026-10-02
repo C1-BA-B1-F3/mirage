@@ -21,7 +21,7 @@ import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { DATABRICKS_VOLUME_OPS } from '@struktoai/mirage-core/ops/databricks_volume/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import { DATABRICKS_VOLUME_PROMPT } from '@struktoai/mirage-core/vfs/databricks_volume/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/databricks_volume/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import {
@@ -61,7 +61,7 @@ export class DatabricksVolumeVFS extends BaseVFS {
   // Content-Length, both the exact byte count the download returns;
   // readdir backfills any lister-omitted size with one HEAD.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly prompt: string = DATABRICKS_VOLUME_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: DatabricksVolumeConfig
   override readonly accessor: DatabricksVolumeAccessor
 

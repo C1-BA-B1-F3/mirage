@@ -15,7 +15,7 @@
 import { csplitGeneric } from '../../generic/csplit.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const CSPLIT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'csplit',
   write: true,
   fn: async (ops, accessor, paths, texts, opts) => {

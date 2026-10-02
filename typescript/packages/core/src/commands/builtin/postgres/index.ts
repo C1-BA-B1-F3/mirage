@@ -18,7 +18,7 @@ import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { POSTGRES_GREP } from './grep.ts'
 import { POSTGRES_HEAD } from './head.ts'
-import { POSTGRES_IO } from './io.ts'
+import { IO } from './io.ts'
 import { POSTGRES_RG } from './rg.ts'
 import { POSTGRES_TAIL } from './tail.ts'
 import { POSTGRES_WC } from './wc.ts'
@@ -26,7 +26,7 @@ import { POSTGRES_WC } from './wc.ts'
 const POSTGRES_OVERRIDES = new Set(['grep', 'head', 'rg', 'tail', 'wc'])
 
 export const POSTGRES_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<PostgresAccessor>(VFSName.POSTGRES, POSTGRES_IO, {
+  ...makeGenericCommands<PostgresAccessor>(VFSName.POSTGRES, IO, {
     overrides: POSTGRES_OVERRIDES,
   }),
   ...POSTGRES_GREP,

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const NOTION_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   pages/
     <page-title>__<page-id>/
       page.json
@@ -39,7 +39,7 @@ export const NOTION_PROMPT = `{prefix}
   <page-id>, ntn datasources query <data-source-id>, ntn datasources
   resolve <database-id>.`
 
-export const NOTION_WRITE_PROMPT = `  Writes go through the ntn CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the ntn CLI if installed:
     ntn pages create --parent data-source:<data-source-id> --content '# Title'
     ntn pages edit <page-id> --content '## Notes'
     ntn pages trash <page-id> --yes

@@ -15,7 +15,7 @@
 import { uniqGeneric } from '../../generic/uniq.ts'
 import { type Builder, dirAwareStat, resolveGlobOf } from '../adapter.ts'
 
-export const UNIQ_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'uniq',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -15,7 +15,7 @@
 import { commGeneric } from '../../generic/comm.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const COMM_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'comm',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

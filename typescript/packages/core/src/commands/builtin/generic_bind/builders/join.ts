@@ -15,7 +15,7 @@
 import { joinGeneric } from '../../generic/join.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const JOIN_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'join',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

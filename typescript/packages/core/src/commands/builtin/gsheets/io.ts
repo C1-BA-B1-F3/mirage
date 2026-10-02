@@ -20,7 +20,7 @@ import { readdir as gsheetsReaddir } from '../../../core/gsheets/readdir.ts'
 import { stat as gsheetsStat } from '../../../core/gsheets/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GSHEETS_IO: CommandIO<GSheetsAccessor> = new VFSAdapter<GSheetsAccessor>({
+export const IO: CommandIO<GSheetsAccessor> = new VFSAdapter<GSheetsAccessor>({
   read: { readdir: gsheetsReaddir, readBytes: gsheetsRead, stat: gsheetsStat },
   native: { readStream: gsheetsStream },
   isMounted: () => true,

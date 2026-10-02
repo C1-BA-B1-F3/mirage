@@ -28,7 +28,7 @@ import { buildDeltaHook } from '../../core/github/watch.ts'
 import { GITHUB_OPS } from '../../ops/github/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GITHUB_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import type { DeltaHook } from '../../watch/index.ts'
@@ -56,7 +56,7 @@ export class GitHubVFS extends BaseVFS {
   override readonly supportsSnapshot: boolean = true
   override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = GITHUB_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: GitHubConfig
   override readonly accessor: GitHubAccessor
 

@@ -167,7 +167,7 @@ export async function walkEntries<A extends Accessor>(
   return [entries, total]
 }
 
-export const DU_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'du',
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined

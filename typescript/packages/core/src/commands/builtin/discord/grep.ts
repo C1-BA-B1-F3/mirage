@@ -18,7 +18,7 @@ import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { DiscordApiError } from '../../../core/discord/client.ts'
 import { listChannels } from '../../../core/discord/channels.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { DISCORD_IO } from './io.ts'
+import { IO } from './io.ts'
 import { read as discordRead } from '../../../core/discord/read.ts'
 import { readdir as discordReaddir } from '../../../core/discord/readdir.ts'
 import { detectScope, NATIVE_KINDS } from '../../../core/discord/scope.ts'
@@ -34,7 +34,7 @@ import { pushdownOperand, textSearchResults } from '../grep_pushdown.ts'
 import { prependStderr } from '../utils/output.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
-const resolveDiscordGlob = resolveGlobOf(DISCORD_IO)
+const resolveDiscordGlob = resolveGlobOf(IO)
 
 const ENC = new TextEncoder()
 

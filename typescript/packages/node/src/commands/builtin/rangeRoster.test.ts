@@ -13,21 +13,21 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { DISK_IO } from './disk/io.ts'
-import { GRIDFS_IO } from './gridfs/io.ts'
-import { HF_BUCKETS_IO } from './hf_buckets/io.ts'
-import { NEXTCLOUD_IO } from './nextcloud/io.ts'
-import { SSH_IO } from './ssh/io.ts'
-import { EMAIL_IO } from './email/io.ts'
+import * as diskIo from './disk/io.ts'
+import * as gridfsIo from './gridfs/io.ts'
+import * as hfBucketsIo from './hf_buckets/io.ts'
+import * as nextcloudIo from './nextcloud/io.ts'
+import * as sshIo from './ssh/io.ts'
+import * as emailIo from './email/io.ts'
 
 // The node half of the native-range roster; core pins its own in
 // src/ops/rangeRoster.test.ts and python in tests/ops/test_read_range_roster.py.
 const NATIVE = {
-  disk: DISK_IO,
-  gridfs: GRIDFS_IO,
-  hf_buckets: HF_BUCKETS_IO,
-  nextcloud: NEXTCLOUD_IO,
-  ssh: SSH_IO,
+  disk: diskIo.IO,
+  gridfs: gridfsIo.IO,
+  hf_buckets: hfBucketsIo.IO,
+  nextcloud: nextcloudIo.IO,
+  ssh: sshIo.IO,
 }
 
 describe('native read range roster (node)', () => {
@@ -38,6 +38,6 @@ describe('native read range roster (node)', () => {
   // Messages and attachments arrive already decoded from IMAP, so there is
   // no remote window to ask for.
   it('email leaves the slot empty', () => {
-    expect(EMAIL_IO.readRange).toBeUndefined()
+    expect(emailIo.IO.readRange).toBeUndefined()
   })
 })

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const SUPABASE_PROMPT = `\
+export const PROMPT = `\
 {prefix}
   Remote Supabase Storage bucket.
   IMPORTANT: This is a remote mount. Prefer targeted reads over full scans.

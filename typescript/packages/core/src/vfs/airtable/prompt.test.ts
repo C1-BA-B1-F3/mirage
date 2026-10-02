@@ -14,11 +14,11 @@
 
 import { describe, expect, it } from 'vitest'
 import { AirtableVFS } from './airtable.ts'
-import { AIRTABLE_PROMPT, AIRTABLE_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
-describe('AIRTABLE_PROMPT', () => {
+describe('PROMPT', () => {
   it('maps every file and the record shape', () => {
-    const rendered = AIRTABLE_PROMPT.replace(/\{prefix\}/g, '/airtable')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/airtable')
     for (const name of ['base.json', 'table.json', 'records.jsonl', 'views/']) {
       expect(rendered).toContain(name)
     }
@@ -29,21 +29,21 @@ describe('AIRTABLE_PROMPT', () => {
   })
 })
 
-describe('AIRTABLE_PROMPT and the CLI', () => {
+describe('PROMPT and the CLI', () => {
   it('points at the CLI for what a file cannot do', () => {
-    const rendered = AIRTABLE_PROMPT.replace(/\{prefix\}/g, '/airtable')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/airtable')
     expect(rendered).toContain('airtable record list --formula or --view')
     expect(rendered).toContain('airtable record get')
     expect(rendered).toContain('airtable comment list')
   })
 
   it('names the write verbs and the help', () => {
-    const rendered = AIRTABLE_WRITE_PROMPT.replace(/\{prefix\}/g, '/airtable')
+    const rendered = WRITE_PROMPT.replace(/\{prefix\}/g, '/airtable')
     for (const verb of ['record create', 'record update', 'comment add']) {
       expect(rendered).toContain(`airtable ${verb} --base <base-id> --table <table-id>`)
     }
     expect(rendered).toContain('/airtable/bases/<base>/<table>/records.jsonl')
     expect(rendered.trimEnd().endsWith('See airtable --help for every verb.')).toBe(true)
-    expect(new AirtableVFS({ token: 't' }).writePrompt).toBe(AIRTABLE_WRITE_PROMPT)
+    expect(new AirtableVFS({ token: 't' }).writePrompt).toBe(WRITE_PROMPT)
   })
 })

@@ -31,7 +31,7 @@ import type {
   PostgresConfigRedacted,
   PostgresConfigResolved,
 } from '@struktoai/mirage-core/vfs/postgres/config'
-import { POSTGRES_PROMPT } from '@struktoai/mirage-core/vfs/postgres/prompt'
+import { PROMPT } from '@struktoai/mirage-core/vfs/postgres/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { NeonPgDriver } from './neon_driver.ts'
@@ -64,7 +64,7 @@ export class PostgresVFS extends BaseVFS {
     this.config = resolvePostgresConfig(config)
     this.driver = driver ?? new NeonPgDriver(this.config.dsn)
     this.accessor = new PostgresAccessor(this.driver, this.config)
-    this.prompt = POSTGRES_PROMPT.replace('{prefix}', prefix ?? '')
+    this.prompt = PROMPT.replace('{prefix}', prefix ?? '')
   }
 
   override getState(): PostgresVFSState {

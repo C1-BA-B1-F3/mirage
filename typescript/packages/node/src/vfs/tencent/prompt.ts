@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const TENCENT_PROMPT = `\
+export const PROMPT = `\
 {prefix}
   Remote Tencent Cloud COS bucket (S3-compatible).
   IMPORTANT: This is a remote mount. Prefer targeted reads over full scans.

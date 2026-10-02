@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GITHUB_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Mirrors the GitHub repository file tree.
   Standard commands: ls, cat, head, tail, grep, rg, wc, find, tree.`

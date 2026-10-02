@@ -32,7 +32,7 @@ import { unlink } from '../../../core/onedrive/unlink.ts'
 import { write } from '../../../core/onedrive/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const ONEDRIVE_IO: CommandIO<OneDriveAccessor> = new VFSAdapter<OneDriveAccessor>({
+export const IO: CommandIO<OneDriveAccessor> = new VFSAdapter<OneDriveAccessor>({
   read: { readdir, readBytes: read, stat },
   native: {
     readRange: rangeOf(read),

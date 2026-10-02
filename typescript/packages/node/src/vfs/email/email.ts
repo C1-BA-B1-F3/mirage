@@ -28,7 +28,7 @@ import {
   type EmailConfig,
   type EmailConfigRedacted,
 } from '../../core/email/config.ts'
-import { EMAIL_PROMPT, EMAIL_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
 export interface EmailVFSState {
   type: string
@@ -43,8 +43,8 @@ export class EmailVFS extends BaseVFS {
   // attachment's size is its decoded payload length.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = EMAIL_PROMPT
-  override readonly writePrompt: string = EMAIL_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: EmailConfig
   override readonly accessor: EmailAccessor
 

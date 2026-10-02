@@ -32,7 +32,7 @@ import { unlink } from '../../../core/sharepoint/unlink.ts'
 import { write } from '../../../core/sharepoint/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const SHAREPOINT_IO: CommandIO<SharePointAccessor> = new VFSAdapter<SharePointAccessor>({
+export const IO: CommandIO<SharePointAccessor> = new VFSAdapter<SharePointAccessor>({
   read: { readdir, readBytes: read, stat },
   native: {
     readRange: rangeOf(read),

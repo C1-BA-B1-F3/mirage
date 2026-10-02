@@ -15,7 +15,7 @@
 import { md5sumGeneric } from '../../generic/md5sum.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const MD5SUM_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'md5sum',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

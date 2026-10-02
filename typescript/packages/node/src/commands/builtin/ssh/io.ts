@@ -36,7 +36,7 @@ import { truncate as sshTruncate } from '../../../core/ssh/truncate.ts'
 import { unlink as sshUnlink } from '../../../core/ssh/unlink.ts'
 import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
 
-export const SSH_IO: CommandIO<SSHAccessor> = new VFSAdapter<SSHAccessor>({
+export const IO: CommandIO<SSHAccessor> = new VFSAdapter<SSHAccessor>({
   read: { readdir: sshReaddir, readBytes: sshRead, stat: sshStat },
   native: {
     readRange: rangeOf(sshRead),

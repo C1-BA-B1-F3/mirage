@@ -18,13 +18,13 @@ import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
 import { DISCORD_GREP } from './grep.ts'
 import { DISCORD_HEAD } from './head.ts'
-import { DISCORD_IO } from './io.ts'
+import { IO } from './io.ts'
 import { DISCORD_RG } from './rg.ts'
 
 const DISCORD_OVERRIDES = new Set(['grep', 'rg', 'head'])
 
 export const DISCORD_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<DiscordAccessor>(VFSName.DISCORD, DISCORD_IO, {
+  ...makeGenericCommands<DiscordAccessor>(VFSName.DISCORD, IO, {
     overrides: DISCORD_OVERRIDES,
   }),
   ...DISCORD_GREP,

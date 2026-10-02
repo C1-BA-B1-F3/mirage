@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const DIFY_PROMPT = `This is a Dify Knowledge Base mounted as a read-only filesystem.
+export const PROMPT = `This is a Dify Knowledge Base mounted as a read-only filesystem.
 
 All files are plain text assembled from Dify document segments, regardless of
 their original extension. You can use cat, head, tail, grep, find, ls, wc, and

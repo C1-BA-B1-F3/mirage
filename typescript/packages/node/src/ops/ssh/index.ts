@@ -15,8 +15,8 @@
 import { makeGenericOps } from '@struktoai/mirage-core/ops/generic/factory'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 import { VFSName } from '@struktoai/mirage-core/types'
-import { SSH_IO } from '../../commands/builtin/ssh/io.ts'
+import { IO } from '../../commands/builtin/ssh/io.ts'
 
-export const SSH_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.SSH, SSH_IO, {
+export const SSH_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.SSH, IO, {
   mkdirParents: true,
 })

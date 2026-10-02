@@ -1,4 +1,4 @@
-export const SHAREPOINT_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   SharePoint Enterprise document libraries. Multi-site, multi-drive discovery.
   Unscoped mounts use: /{site_name}/{library_name}/{path_to_file}
   Unscoped level 0 (ls /): lists all accessible SharePoint sites.

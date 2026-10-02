@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { MONGODB_IO } from '../../commands/builtin/mongodb/io.ts'
+import { IO } from '../../commands/builtin/mongodb/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const MONGODB_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.MONGODB, MONGODB_IO)
+export const MONGODB_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.MONGODB, IO)

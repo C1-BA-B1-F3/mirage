@@ -19,12 +19,12 @@ import { command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { runSearch } from '../generic_bind/search.ts'
 
-import { POSTGRES_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const POSTGRES_RG = command({
   name: 'rg',
   vfs: VFSName.POSTGRES,
   spec: specOf('rg'),
   fn: (accessor: PostgresAccessor, paths, texts, opts) =>
-    runSearch<PostgresAccessor>(POSTGRES_IO, 'rg', accessor, paths, texts, opts),
+    runSearch<PostgresAccessor>(IO, 'rg', accessor, paths, texts, opts),
 })

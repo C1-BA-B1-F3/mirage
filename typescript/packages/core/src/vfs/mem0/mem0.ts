@@ -7,7 +7,7 @@ import { MEM0_OPS } from '../../ops/mem0/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-import { MEM0_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export interface Mem0VFSState {
   type: string
@@ -21,7 +21,7 @@ export class Mem0VFS extends BaseVFS {
   // serves those same bytes, so sizes are exact by construction.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = false
-  override readonly prompt: string = MEM0_PROMPT
+  override readonly prompt: string = PROMPT
   override readonly accessor: Mem0Accessor
 
   private readonly config: Mem0Config

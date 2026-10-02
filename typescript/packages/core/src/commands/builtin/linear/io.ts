@@ -20,7 +20,7 @@ import { readdir as linearReaddir } from '../../../core/linear/readdir.ts'
 import { stat as linearStat } from '../../../core/linear/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const LINEAR_IO: CommandIO<LinearAccessor> = new VFSAdapter<LinearAccessor>({
+export const IO: CommandIO<LinearAccessor> = new VFSAdapter<LinearAccessor>({
   read: { readdir: linearReaddir, readBytes: linearRead, stat: linearStat },
   isMounted: () => true,
   local: false,

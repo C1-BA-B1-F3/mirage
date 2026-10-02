@@ -15,7 +15,7 @@
 import { unexpandGeneric } from '../../generic/unexpand.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const UNEXPAND_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'unexpand',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

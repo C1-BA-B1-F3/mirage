@@ -35,7 +35,7 @@ import { DISK_COMMANDS } from '../../commands/builtin/disk/index.ts'
 import { readEntries, resolveInside } from '../../core/disk/utils.ts'
 import { DiskAccessor } from '../../accessor/disk.ts'
 import { DISK_OPS } from '../../ops/disk/index.ts'
-import { DISK_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/disk/watch/index.ts'
 
@@ -67,7 +67,7 @@ export class DiskVFS extends BaseVFS {
   // byte store: stat() sizes every file from metadata
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 60
-  override readonly prompt = DISK_PROMPT
+  override readonly prompt = PROMPT
   readonly root: string
   override readonly accessor: DiskAccessor
 

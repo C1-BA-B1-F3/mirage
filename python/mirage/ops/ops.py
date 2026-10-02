@@ -14,6 +14,7 @@
 
 import asyncio
 import errno
+from dataclasses import replace
 from typing import Any
 
 from mirage.context import get_current_session, path_allowed
@@ -25,7 +26,7 @@ from mirage.ops.types import SessionBind
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.utils.errors import NoMountError
-from mirage.utils.path import owner_prefix
+from mirage.utils.path import dotted_spelling, owner_prefix
 
 
 class Ops:
@@ -300,9 +301,10 @@ class Ops:
                 seen.append(sess.session_id)
             if follow and self._links is not None and path_allowed(path):
                 resolved[0] = self._links.follow(path)
+            spec = PathSpec.from_str_path(resolved[0])
             return await self._dispatch(
                 op,
-                PathSpec.from_str_path(resolved[0]),
+                replace(spec, dotted=dotted_spelling(path)),
                 report=report,
                 **kwargs,
             )

@@ -604,27 +604,6 @@ async def target_dir_error(
     return None
 
 
-def _slash_aware_kind(
-    path: PathSpec, info: FileStat
-) -> tuple[bool, bool, str | None]:
-    """``(exists, is_dir, strerror)`` for an operand whose stat answered.
-
-    POSIX reads ``x/`` as ``x/.``, so a slashed operand over anything
-    but a directory is ENOTDIR (``cp reg/ d`` and ``cp f reg/`` are both
-    ``cannot stat 'reg/': Not a directory``). The single-mount stat is
-    already wrapped to say so; the cross-mount relay's is not, and the
-    verdict belongs to the operand either way.
-
-    Args:
-        path (PathSpec): The operand, spelled as typed in ``raw_path``.
-        info (FileStat): What the stat answered.
-    """
-    is_dir = info.type == FileType.DIRECTORY
-    if path.raw_path.endswith("/") and not is_dir:
-        return False, False, "Not a directory"
-    return True, is_dir, None
-
-
 async def dest_kind(
     stat: StatFn, target: PathSpec
 ) -> tuple[bool, bool, str | None]:
@@ -669,7 +648,7 @@ async def dest_kind(
     except (FileNotFoundError, ValueError):
         pass
     else:
-        return _slash_aware_kind(target, info)
+        return True, info.type == FileType.DIRECTORY, None
     return False, False, await absent_dest_strerror(stat, target)
 
 
@@ -731,7 +710,7 @@ async def source_kind(
     except (FileNotFoundError, ValueError):
         pass
     else:
-        return _slash_aware_kind(path, info)
+        return True, info.type == FileType.DIRECTORY, None
     _, is_dir = await nearest_ancestor(stat, path)
     return (
         False,

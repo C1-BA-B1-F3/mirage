@@ -4773,6 +4773,34 @@
         "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "git_diff_compares_the_working_tree",
+      "seq": 567998,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && rm /repo/numbers.txt && printf 'x\\n' > /repo/fresh.txt && git -C /repo diff; git -C /repo diff --stat -- numbers.txt; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; printf 'one\\ntwo\\n' > /repo/numbers.txt; rm /repo/fresh.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "diff --git a/letters.txt b/letters.txt\nindex 7a28df3..7663aa7 100644\n--- a/letters.txt\n+++ b/letters.txt\n@@ -1,4 +1 @@\n-alpha\n-beta\n-gamma\n-delta\n+edited\ndiff --git a/numbers.txt b/numbers.txt\ndeleted file mode 100644\nindex 814f4a4..0000000\n--- a/numbers.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-one\n-two\n numbers.txt | 2 --\n 1 file changed, 2 deletions(-)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_names_a_revision_against_the_working_tree",
+      "seq": 567999,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && printf 'staged\\n' > staged.txt && git add staged.txt && printf 'edited\\n' > letters.txt && git diff --name-status; git diff HEAD --name-status; git diff HEAD -- letters.txt; result=$?; git reset -q; rm staged.txt; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tletters.txt\nM\tletters.txt\nA\tstaged.txt\ndiff --git a/letters.txt b/letters.txt\nindex 7a28df3..7663aa7 100644\n--- a/letters.txt\n+++ b/letters.txt\n@@ -1,4 +1 @@\n-alpha\n-beta\n-gamma\n-delta\n+edited\n",
+        "stderr": ""
+      }
     }
   ]
 }

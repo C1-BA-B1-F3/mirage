@@ -508,7 +508,10 @@ export async function makeLink(
       return
     }
   }
-  const unwalked = await dotRefusal(walker, typedSpec(typed, cwd))
+  // -f and -b look at the name before making it, so a plain file behind its
+  // slash is ENOTDIR there and EEXIST only to symlink(2).
+  const replaces = flags.force || (flags.backup !== null && flags.backup !== 'none')
+  const unwalked = await dotRefusal(walker, typedSpec(typed, cwd), null, !replaces)
   if (unwalked !== null) {
     errors.push(refused(flags, typed, targetTyped, fsStrerror(unwalked) ?? ENOENT_TEXT))
     return

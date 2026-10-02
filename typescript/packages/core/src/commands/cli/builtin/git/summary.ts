@@ -12,12 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import git from 'isomorphic-git'
-
 import { getOpcodes } from '../../../builtin/diff_format.ts'
 import { DiffOpTag } from '../../../builtin/diff_types.ts'
 import { short } from './format.ts'
-import { repoArgs, type Repo } from './repo.ts'
+import { readBlobBytes, type Repo } from './repo.ts'
 import type { TreeEntry } from './tree.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
@@ -57,8 +55,7 @@ export interface FileStat {
 async function blobData(repo: Repo, oid: string | null): Promise<Uint8Array> {
   if (oid === null) return new Uint8Array(0)
   try {
-    const { blob } = await git.readBlob({ ...repoArgs(repo), oid })
-    return blob
+    return await readBlobBytes(repo, oid)
   } catch {
     return new Uint8Array(0)
   }

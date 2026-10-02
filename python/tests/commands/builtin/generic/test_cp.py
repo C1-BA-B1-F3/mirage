@@ -964,38 +964,6 @@ async def test_slashed_missing_destination_takes_a_directory_source():
     assert files["/missing/f"] == b"F"
 
 
-@pytest.mark.asyncio
-async def test_slashed_file_destination_reports_cannot_stat():
-    # `cp a.txt reg/` fails the destination's stat in GNU, and the stat
-    # itself decides here whether or not the backend's is slash-aware.
-    files = {"/a.txt": b"AAA", "/reg": b"R"}
-    stat, copy, find = _make_backend(files, set())
-    _, io = await cp(
-        [_spec("/a.txt"), _slashed("/reg")],
-        strategy=NativeCopy(copy=copy, find=find),
-        stat=stat,
-        flags=CpFlags(),
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"cp: cannot stat '/reg/': Not a directory\n"
-    assert files == {"/a.txt": b"AAA", "/reg": b"R"}
-
-
-@pytest.mark.asyncio
-async def test_slashed_file_source_reports_cannot_stat():
-    files = {"/reg": b"R"}
-    stat, copy, find = _make_backend(files, set())
-    _, io = await cp(
-        [_slashed("/reg"), _spec("/x")],
-        strategy=NativeCopy(copy=copy, find=find),
-        stat=stat,
-        flags=CpFlags(),
-    )
-    assert io.exit_code == 1
-    assert io.stderr == b"cp: cannot stat '/reg/': Not a directory\n"
-    assert files == {"/reg": b"R"}
-
-
 def _cp_flags(*argv: str) -> CpFlags:
     spec = SPECS["cp"]
     words = [*argv, "/data/a", "/data/b"]

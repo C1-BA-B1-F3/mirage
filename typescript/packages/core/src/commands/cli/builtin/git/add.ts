@@ -67,7 +67,7 @@ function parseFlags(fl: FlagView): AddFlags {
 }
 
 /** The mode git would record for a working-tree file. */
-function entryMode(info: FileStat): number {
+export function entryMode(info: FileStat): number {
   if (info.type === FileType.SYMLINK) return SYMLINK
   return info.mode !== null && (info.mode & OWNER_EXECUTE) !== 0 ? EXECUTABLE : REGULAR
 }

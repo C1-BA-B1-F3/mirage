@@ -631,7 +631,12 @@ async def make_link(
                 f"{fs_strerror(unwalked)}\n"
             )
             return
-    unwalked = await dot_refusal(walker, typed_spec(typed, cwd))
+    # -f and -b look at the name before making it, so a plain file
+    # behind its slash is ENOTDIR there and EEXIST only to symlink(2).
+    replaces = flags.force or flags.backup not in (None, "none")
+    unwalked = await dot_refusal(
+        walker, typed_spec(typed, cwd), creates=not replaces
+    )
     if unwalked is not None:
         errors.append(
             _refused(

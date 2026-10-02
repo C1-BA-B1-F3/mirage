@@ -20,9 +20,9 @@ from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, StatFn
 from mirage.utils.errors import (
-    DotWalkError,
     DotWalkMissing,
     DotWalkNotDir,
+    eexist,
     enoent,
 )
 from mirage.utils.key_prefix import rekey
@@ -270,8 +270,11 @@ def _spells(
 
 
 async def dot_refusal(
-    stat: StatFn, path: PathSpec, follow: Callable[[str], str] | None = None
-) -> DotWalkError | None:
+    stat: StatFn,
+    path: PathSpec,
+    follow: Callable[[str], str] | None = None,
+    creates: bool = False,
+) -> OSError | None:
     """What a path's dot components answer, None when every one resolves.
 
     The kernel resolves ``.`` and ``..`` against the directory they sit
@@ -284,7 +287,10 @@ async def dot_refusal(
     textual: ``link/..`` is the link's parent, the logical reading
     bash's ``cd`` gives it, where GNU's file commands would reach the
     target's (a documented divergence: resolved physically, an operand
-    would part from every path a walker derives from it).
+    would part from every path a walker derives from it). A trailing
+    slash is a final ``.``: an existing name in front of it has to be a
+    directory too (``cat reg/``); a call that creates that name answers
+    EEXIST instead (``mkdir reg/``), however the store keeps the name.
 
     Only the path the spelling names is walked: a path derived from it
     (a child a walker builds, a respelled match) carries the field along
@@ -299,9 +305,13 @@ async def dot_refusal(
         path (PathSpec): The operand, ``dotted`` set by the classifier.
         follow (Callable[[str], str] | None): the namespace's link
             resolution, so an operand already followed is still walked.
+        creates (bool): the call creates the final name (mkdir,
+            symlink), so a plain file behind a trailing slash is EEXIST.
     """
     dotted = path.dotted
-    if dotted is None or not _spells(dotted, path.virtual, follow):
+    if dotted is None or not _spells(
+        dotted, resolve_path(path.virtual, "/"), follow
+    ):
         return None
     name = path.raw_path or path.virtual
     proved: list[str] = []
@@ -318,4 +328,14 @@ async def dot_refusal(
                 errno.ENOENT, os.strerror(errno.ENOENT), name
             )
         return DotWalkNotDir(errno.ENOTDIR, os.strerror(errno.ENOTDIR), name)
+    if dotted.endswith("/"):
+        exists, is_dir = await entry_kind(
+            stat, PathSpec.from_str_path(path.virtual)
+        )
+        if exists and not is_dir:
+            if creates:
+                return eexist(name)
+            return DotWalkNotDir(
+                errno.ENOTDIR, os.strerror(errno.ENOTDIR), name
+            )
     return None

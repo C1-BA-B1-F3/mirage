@@ -16,7 +16,7 @@ import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
 import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
-import { FileType, PathSpec } from '../../../../types.ts'
+import { PathSpec } from '../../../../types.ts'
 import {
   fsStrerror,
   isEnoent,
@@ -106,9 +106,15 @@ export async function handleTouch(
       errors.push(`touch: cannot touch '${target.rawPath}': Is a directory\n`)
       continue
     }
+    // `x/` is `x/.`, so touch never creates through a trailing slash: it
+    // sets times on a directory that has to be there already, and GNU
+    // words that refusal ("setting times of") differently from its
+    // create-path one ("cannot touch").
+    const slashed = target.rawPath.endsWith('/')
     const unwalked = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
     if (unwalked !== null) {
-      errors.push(`touch: cannot touch '${target.rawPath}': ${String(fsStrerror(unwalked))}\n`)
+      const action = slashed ? 'setting times of' : 'cannot touch'
+      errors.push(`touch: ${action} '${target.rawPath}': ${String(fsStrerror(unwalked))}\n`)
       continue
     }
     let virtual: string
@@ -123,21 +129,12 @@ export async function handleTouch(
       throw err
     }
     const resolved = PathSpec.fromStrPath(virtual)
-    // `x/` is `x/.`, so touch never creates through a trailing slash: it
-    // sets times on a directory that has to be there already, and GNU
-    // words that refusal ("setting times of") differently from its
-    // create-path one ("cannot touch").
-    if (target.rawPath.endsWith('/')) {
-      let slashed: FileStat
+    if (slashed) {
       try {
-        ;[slashed] = (await dispatch('stat', resolved)) as [FileStat, unknown]
+        await dispatch('stat', resolved)
       } catch (err) {
         if (!isFsError(err)) throw err
         errors.push(`touch: setting times of '${target.rawPath}': ${String(fsStrerror(err))}\n`)
-        continue
-      }
-      if (slashed.type !== FileType.DIRECTORY) {
-        errors.push(`touch: setting times of '${target.rawPath}': Not a directory\n`)
         continue
       }
     }

@@ -72,6 +72,8 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import {
   DISPATCH_READ_OPS,
   DISPATCH_WRITE_OPS,
+  ENTRY_CREATE_OPS,
+  FILE_CREATE_OPS,
   HIDDEN_CREATE_OPS,
   LINK_ENTRY_OPS,
   NAMESPACE_TABLE_OPS,
@@ -269,13 +271,16 @@ export class Dispatcher {
     // A `.` or `..` resolves against the directory it sits in, so every
     // name in front of one has to be a directory: `virtual` simplified the
     // dots away and reaches `f` through a missing `nope/..`, the typed
-    // spelling (`dotted`) does not. Mirrors Python's Dispatcher.dispatch.
+    // spelling (`dotted`) does not. A trailing slash is part of that
+    // spelling: `x/` must be a directory, so a create of one is EISDIR
+    // before anything is looked up. Mirrors Python's Dispatcher.dispatch.
+    if (FILE_CREATE_OPS.has(opName) && path.dotted?.endsWith('/') === true) throw eisdir(path)
     const renamed = opName === 'rename' && dstArg instanceof PathSpec ? dstArg : null
     if (path.dotted !== null || (renamed !== null && renamed.dotted !== null)) {
       const walkStat = dispatchStat(this.dispatch)
       const follow = (virtual: string): string => this.namespace.follow(virtual)
       const refusal =
-        (await dotRefusal(walkStat, path, follow)) ??
+        (await dotRefusal(walkStat, path, follow, ENTRY_CREATE_OPS.has(opName))) ??
         (renamed !== null ? await dotRefusal(walkStat, renamed, follow) : null)
       if (refusal !== null) throw refusal
     }

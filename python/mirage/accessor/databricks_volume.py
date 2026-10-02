@@ -16,6 +16,7 @@ from typing import Any
 
 from mirage.accessor.base import Accessor
 from mirage.vfs.databricks_volume.config import DatabricksVolumeConfig
+from mirage.vfs.secrets import reveal_secret
 
 WorkspaceClient: Any
 WorkspaceConfig: Any
@@ -50,7 +51,7 @@ class DatabricksVolumeAccessor(Accessor):
                 )
             kwargs: dict[str, Any] = {
                 "host": self.config.host,
-                "token": self.config.token,
+                "token": reveal_secret(self.config.token),
                 "profile": self.config.profile,
                 "auth_type": "pat" if self.config.token is not None else None,
                 "http_timeout_seconds": self.config.timeout,

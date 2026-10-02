@@ -494,11 +494,16 @@ export function withPathGuards<A extends Accessor = Accessor>(
   return withWalkGuard(withHiddenGuard(withRuleGuard(withModeGuard(ops))), prefix)
 }
 
-/** Raise what the first unwalkable operand's dots answer. Mirrors
- * Python's _walk_admit. */
-async function walkAdmit(probe: WalkProbe, specs: readonly PathSpec[]): Promise<void> {
+/** Raise what the first unwalkable operand's dots answer; `creates` when
+ * the op creates the name it is handed (mkdir). Mirrors Python's
+ * _walk_admit. */
+async function walkAdmit(
+  probe: WalkProbe,
+  specs: readonly PathSpec[],
+  creates = false,
+): Promise<void> {
   for (const spec of specs) {
-    const refusal = await dotRefusal(probe.stat, spec, probe.follow)
+    const refusal = await dotRefusal(probe.stat, spec, probe.follow, creates)
     if (refusal !== null) throw refusal
   }
 }
@@ -529,11 +534,12 @@ function refuseUnwalked(args: readonly unknown[]): void {
 function walkedCall<Args extends unknown[], R>(
   bound: WalkProbe | null,
   fn: (...args: Args) => Promise<R>,
+  creates = false,
 ): (...args: Args) => Promise<R> {
   return async (...args: Args) => {
     refuseUnwalked(args)
     const walk = walkProbeOf(bound, args)
-    if (walk !== null) await walkAdmit(walk[0], walk[1])
+    if (walk !== null) await walkAdmit(walk[0], walk[1], creates)
     return fn(...args)
   }
 }
@@ -590,7 +596,7 @@ export function withWalkGuard<A extends Accessor = Accessor>(
   if (ops.append !== undefined) guarded.append = walkedCall(bound, ops.append)
   if (ops.create !== undefined) guarded.create = walkedCall(bound, ops.create)
   if (ops.truncate !== undefined) guarded.truncate = walkedCall(bound, ops.truncate)
-  if (ops.mkdir !== undefined) guarded.mkdir = walkedCall(bound, ops.mkdir)
+  if (ops.mkdir !== undefined) guarded.mkdir = walkedCall(bound, ops.mkdir, true)
   if (ops.unlink !== undefined) guarded.unlink = walkedCall(bound, ops.unlink)
   if (ops.rmdir !== undefined) guarded.rmdir = walkedCall(bound, ops.rmdir)
   if (ops.rmR !== undefined) guarded.rmR = walkedCall(bound, ops.rmR)

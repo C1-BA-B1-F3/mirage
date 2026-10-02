@@ -23,16 +23,18 @@ from dulwich.objects import Blob, ObjectID
 from dulwich.objectspec import parse_commit
 from dulwich.repo import BaseRepo
 
+from mirage.commands.cli.builtin.git.add import entry_mode
 from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD_REF
 from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import entry_bytes
+from mirage.commands.cli.builtin.git.objects import VfsObjectStore
 from mirage.commands.cli.builtin.git.types import (
     IndexState,
     RepoLocation,
     StatusEntry,
     WorkTree,
 )
-from mirage.commands.cli.builtin.git.worktree import scan
+from mirage.commands.cli.builtin.git.worktree import UNTRACKED_NO, scan
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat
@@ -415,6 +417,70 @@ async def work_changes(
         ):
             changes[name] = MODIFIED
     return changes
+
+
+def staged_entries(state: IndexState) -> dict[bytes, tuple[int, bytes]]:
+    """The index as entries, path to (mode, id), conflict stages left out.
+
+    Args:
+        state (IndexState): the index as read.
+    """
+    return {
+        path: (entry.mode, entry.sha) for path, entry in state.entries.items()
+    }
+
+
+async def work_entries(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    repo: BaseRepo,
+    location: RepoLocation,
+    state: IndexState,
+    links: LinkView | None = None,
+) -> dict[bytes, tuple[int, bytes]]:
+    """The working tree as entries, for the side ``git diff`` compares.
+
+    The index stands for every file the walk found unchanged; a modified
+    file is hashed and its blob held in the store for this invocation
+    only, as git writes nothing on a diff. Untracked files are not part
+    of it, and neither is a path the index holds only as conflict
+    stages: git shows those as a combined diff, which is not offered.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        stat_path (StatPath): dispatcher-backed stat, both channels.
+        repo (BaseRepo): the opened repository, whose store holds the
+            hashed blobs.
+        location (RepoLocation): the discovered repository.
+        state (IndexState): the index as read.
+        links (LinkView | None): the name plane's link facts.
+    """
+    tracked = {
+        path.decode("utf-8", errors="replace") for path in state.entries
+    }
+    found = await scan(
+        dispatch, stat_path, location, tracked, UNTRACKED_NO, links
+    )
+    changes = await work_changes(
+        dispatch, location.worktree, state.entries, found
+    )
+    entries = staged_entries(state)
+    store = repo.object_store
+    assert isinstance(store, VfsObjectStore)
+    for name, code in changes.items():
+        path = name.encode()
+        if code == DELETED:
+            del entries[path]
+            continue
+        info = found.files[name]
+        blob = Blob.from_string(
+            await entry_bytes(
+                dispatch, posixpath.join(location.worktree, name), info
+            )
+        )
+        store.hold(blob)
+        entries[path] = (entry_mode(info), blob.id)
+    return entries
 
 
 def merge(

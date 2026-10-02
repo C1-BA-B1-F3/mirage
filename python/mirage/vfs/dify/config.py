@@ -3,6 +3,7 @@ from pydantic import (
     ConfigDict,
     PositiveFloat,
     PositiveInt,
+    SecretStr,
     field_validator,
 )
 
@@ -10,7 +11,7 @@ from pydantic import (
 class DifyConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    api_key: str
+    api_key: SecretStr
     base_url: str
     dataset_id: str
     slug_metadata_name: str = "slug"

@@ -182,14 +182,16 @@ const RESERVED_CLOSERS = new Set([
  * when they stand where a command starts. Inside `$(...)` and a process
  * substitution, bash 5.2 takes such a word as reserved even when an alias
  * spells it. `own` maps each alias whose own text the line opens with to
- * the offsets of the parsed source that came from it; a word spelled like the
- * alias starting at one of them is reserved, since an alias never expands
- * within its own text. Mirrors Python's _stray_reserved_words.
+ * the span of the line that text covers, and `offsets` gives where each char
+ * the parser read sits in that line; a word spelled like the alias starting
+ * inside its span is reserved, since an alias never expands within its own
+ * text. Mirrors Python's _stray_reserved_words.
  */
 function* strayReservedWords(
   node: TSNodeLike,
   aliases: ReadonlySet<string>,
-  own: ReadonlyMap<string, ReadonlySet<number>>,
+  own: ReadonlyMap<string, readonly [number, number]>,
+  offsets: readonly number[] | undefined,
 ): Generator<[number, string]> {
   const stack: [TSNodeLike, ReadonlySet<string>][] = [[node, aliases]]
   for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
@@ -203,11 +205,11 @@ function* strayReservedWords(
     if (current.type !== 'command') continue
     const name = current.children[0]
     if (name?.type !== 'command_name') continue
+    if (!RESERVED_CLOSERS.has(name.text)) continue
     const start = name.startIndex ?? 0
-    if (
-      RESERVED_CLOSERS.has(name.text) &&
-      (!names.has(name.text) || own.get(name.text)?.has(start) === true)
-    ) {
+    const span = own.get(name.text)
+    const at = offsets === undefined ? start : (offsets[start] ?? start)
+    if (!names.has(name.text) || (span !== undefined && span[0] <= at && at < span[1])) {
       yield [start, name.text]
     }
   }
@@ -267,7 +269,8 @@ export function findSyntaxError(
   node: TSNodeLike,
   parse?: (command: string) => TSNodeLike,
   aliases: ReadonlySet<string> = new Set(),
-  own: ReadonlyMap<string, ReadonlySet<number>> = new Map(),
+  own: ReadonlyMap<string, readonly [number, number]> = new Map(),
+  offsets?: readonly number[],
 ): string | null {
   // Expansion and the `[` builtin own their argument grammar.
   if (node.type === 'expansion') {
@@ -290,7 +293,7 @@ export function findSyntaxError(
   for (const hit of [
     ...strayCaseTerminators(node),
     ...emptyCompounds(node),
-    ...strayReservedWords(node, aliases, own),
+    ...strayReservedWords(node, aliases, own, offsets),
   ]) {
     if (stray === null || hit[0] < stray[0]) stray = hit
   }
@@ -320,7 +323,7 @@ export function findSyntaxError(
       return child.text
     }
     if (child.type !== 'ERROR') {
-      const nested = findSyntaxError(child, parse, aliases, own)
+      const nested = findSyntaxError(child, parse, aliases, own, offsets)
       if (nested !== null) return nested
     }
     if (child.isNamed) previous = child

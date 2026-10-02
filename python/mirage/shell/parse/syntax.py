@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from itertools import chain
 
 from mirage.io import IOResult
@@ -187,7 +187,8 @@ _RESERVED_CLOSERS = frozenset(
 def _stray_reserved_words(
     node: TSNodeLike,
     aliases: frozenset[str],
-    own: Mapping[str, Collection[int]],
+    own: Mapping[str, tuple[int, int]],
+    offsets: Sequence[int] | None,
 ) -> Iterator[tuple[int, str]]:
     """Each reserved word a command starts with, where none may stand.
 
@@ -201,11 +202,13 @@ def _stray_reserved_words(
         node (TSNodeLike): root node from parse().
         aliases (frozenset[str]): alias names the shell would expand where
             a command starts, which bash tries before reserved words.
-        own (Mapping[str, Collection[int]]): each alias whose own text
-            the line opens with, to the offsets of the parsed source that
-            came from it; a word spelled like the alias starting at one of
-            them is reserved, since an alias never expands within its own
-            text.
+        own (Mapping[str, tuple[int, int]]): each alias whose own text
+            the line opens with, to the span of the line that text covers;
+            a word spelled like the alias starting inside it is reserved,
+            since an alias never expands within its own text.
+        offsets (Sequence[int] | None): where each byte the parser read
+            sits in that line, as ``source_offsets`` maps it; None where
+            the two are the same.
 
     Yields:
         tuple[int, str]: the word's start byte and text.
@@ -223,11 +226,11 @@ def _stray_reserved_words(
             continue
         name = current.children[0]
         text = (name.text or b"").decode(errors="replace")
-        if (
-            name.type == "command_name"
-            and text in _RESERVED_CLOSERS
-            and (text not in names or name.start_byte in own.get(text, ()))
-        ):
+        if name.type != "command_name" or text not in _RESERVED_CLOSERS:
+            continue
+        span = own.get(text)
+        at = name.start_byte if offsets is None else offsets[name.start_byte]
+        if text not in names or (span is not None and span[0] <= at < span[1]):
             yield name.start_byte, text
 
 
@@ -278,7 +281,8 @@ def _missing_quote(node: TSNodeLike) -> str | None:
 def find_syntax_error(
     node: TSNodeLike,
     aliases: frozenset[str] = frozenset(),
-    own: Mapping[str, Collection[int]] | None = None,
+    own: Mapping[str, tuple[int, int]] | None = None,
+    offsets: Sequence[int] | None = None,
 ) -> str | None:
     """Locate structural errors and missing tokens throughout a parsed AST.
 
@@ -289,9 +293,12 @@ def find_syntax_error(
         node (TSNodeLike): root node from parse().
         aliases (frozenset[str]): alias names the shell would expand where
             a command starts; a reserved word among them is a command.
-        own (Mapping[str, Collection[int]] | None): each alias whose own
-            text the line opens with, to the parsed offsets that came from
-            that text, where its name stays reserved.
+        own (Mapping[str, tuple[int, int]] | None): each alias whose own
+            text the line opens with, to the span of the line that text
+            covers, inside which its name stays reserved.
+        offsets (Sequence[int] | None): where each byte the parser read
+            sits in that line (``source_offsets``); None where the two are
+            the same.
 
     Returns:
         str | None: text of the offending region, or None if the AST is clean.
@@ -321,7 +328,7 @@ def find_syntax_error(
         chain(
             _stray_case_terminators(node),
             _empty_compounds(node),
-            _stray_reserved_words(node, aliases, own or {}),
+            _stray_reserved_words(node, aliases, own or {}, offsets),
         ),
         default=None,
     )
@@ -360,7 +367,7 @@ def find_syntax_error(
             text = child.text
             return text.decode(errors="replace") if text else ""
         if child.type != "ERROR":
-            nested = find_syntax_error(child, aliases, own)
+            nested = find_syntax_error(child, aliases, own, offsets)
             if nested is not None:
                 return nested
         if child.is_named:

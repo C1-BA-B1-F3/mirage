@@ -22,6 +22,7 @@ from mirage.shell.parse import (
     find_syntax_error,
     find_unterminated_backtick,
     parse,
+    source_offsets,
 )
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -303,13 +304,18 @@ def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command(
 @pytest.mark.parametrize(
     "line, own, word",
     [
-        ("echo F; fi", {"fi": range(0, 10)}, "fi"),
-        ("echo F; fi", {"fi": range(0, 7)}, None),
-        ("echo C; fi echo F", {"c": range(0, 11), "fi": range(11, 17)}, None),
-        ("echo C; echo F; fi", {"c": range(0, 8), "fi": range(8, 18)}, "fi"),
+        ("echo F; fi", {"fi": (0, 10)}, "fi"),
+        ("echo F; fi", {"fi": (0, 7)}, None),
+        ("echo C; fi echo F", {"c": (0, 11), "fi": (11, 17)}, None),
+        ("echo C; echo F; fi", {"c": (0, 8), "fi": (8, 18)}, "fi"),
+        ("echo F \\\n; fi", {"fi": (0, 13)}, "fi"),
+        ("echo F \\\n; fi", {"fi": (0, 10)}, None),
     ],
 )
 def test_an_alias_name_is_reserved_inside_its_own_text(line, own, word):
     # Pinned against bash 5.2.37: a name stays reserved only inside the
     # text its alias put there, a trailing blank's chained one included.
-    assert find_syntax_error(parse(line), frozenset(own), own) == word
+    # Spans are in the line as typed, which a continuation shifts.
+    root = parse(line)
+    offsets = source_offsets(line, root)
+    assert find_syntax_error(root, frozenset(own), own, offsets) == word

@@ -178,17 +178,13 @@ async def execute_command(
             at = head_node.start_byte - base
             line = source[:at].decode() + rewritten
             ast = parse(line)
-            offsets = source_offsets(line, ast)
-            own: dict[str, frozenset[int]] = {}
+            own: dict[str, tuple[int, int]] = {}
             for alias, text in texts:
-                end = at + len(text.encode())
-                own[alias] = frozenset(
-                    index
-                    for index, offset in enumerate(offsets)
-                    if at <= offset < end
-                )
-                at = end
-            offending = find_syntax_error(ast, expanding_aliases(session), own)
+                own[alias] = (at, at + len(text.encode()))
+                at = own[alias][1]
+            offending = find_syntax_error(
+                ast, expanding_aliases(session), own, source_offsets(line, ast)
+            )
             if offending is not None:
                 io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""

@@ -179,20 +179,19 @@ export async function executeCommand(
       let at = (headNode.startIndex ?? 0) - base
       const line = source.slice(0, at) + rewritten
       const ast = parser.parse(line)
-      const offsets = parser.sourceOffsets(line, ast)
-      const own = new Map<string, ReadonlySet<number>>()
+      const own = new Map<string, readonly [number, number]>()
       for (const [alias, text] of texts) {
-        const start = at
-        const end = start + text.length
-        const covered = new Set<number>()
-        offsets.forEach((offset, index) => {
-          if (start <= offset && offset < end) covered.add(index)
-        })
-        own.set(alias, covered)
-        at = end
+        own.set(alias, [at, at + text.length])
+        at += text.length
       }
       const reparse = (text: string): TSNodeLike => parser.parse(text)
-      const offending = findSyntaxError(ast, reparse, expandingAliases(session), own)
+      const offending = findSyntaxError(
+        ast,
+        reparse,
+        expandingAliases(session),
+        own,
+        parser.sourceOffsets(line, ast),
+      )
       if (offending !== null) {
         const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [

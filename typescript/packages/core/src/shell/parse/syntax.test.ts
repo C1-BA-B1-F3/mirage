@@ -156,15 +156,14 @@ describe('a reserved word where a command starts', () => {
       ],
       'fi',
     ],
+    ['echo F \\\n; fi', [['fi', 0, 13]], 'fi'],
+    ['echo F \\\n; fi', [['fi', 0, 10]], null],
   ]
   it.each(OWN)('reads %j with alias text %j as %j', (line, spans, word) => {
-    const own = new Map(
-      spans.map(([name, start, end]) => [
-        name,
-        new Set(Array.from({ length: end - start }, (_, i) => start + i)),
-      ]),
-    )
-    expect(findSyntaxError(parser.parse(line), undefined, new Set(own.keys()), own)).toBe(word)
+    const own = new Map(spans.map(([name, start, end]) => [name, [start, end] as const]))
+    const root = parser.parse(line)
+    const offsets = parser.sourceOffsets(line, root)
+    expect(findSyntaxError(root, undefined, new Set(own.keys()), own, offsets)).toBe(word)
   })
 })
 

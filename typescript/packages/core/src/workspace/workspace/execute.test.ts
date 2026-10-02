@@ -343,10 +343,13 @@ describe('same-session lines run one at a time', () => {
       return casSet(id, fields, expected)
     })
     const slow = ws.shell('X=1', { sessionId: 'slow' })
-    await stalled
-    expect(stdoutStr(await ws.shell('echo fast', { sessionId: 'fast' }))).toBe('fast\n')
-    release()
-    await slow
+    try {
+      await stalled
+      expect(stdoutStr(await ws.shell('echo fast', { sessionId: 'fast' }))).toBe('fast\n')
+    } finally {
+      release()
+      await slow
+    }
   })
 
   it('nested lines keep running while the outer line holds the session', async () => {

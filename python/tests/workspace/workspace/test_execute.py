@@ -504,7 +504,7 @@ async def test_a_line_waits_only_for_its_own_session_to_persist():
     store.stall = "slow"
     slow = asyncio.create_task(ws.shell("X=1", session_id="slow"))
     try:
-        await store.stalled.wait()
+        await asyncio.wait_for(store.stalled.wait(), 5)
         fast = ws.shell("echo fast", session_id="fast")
         assert (await asyncio.wait_for(fast, 5)).stdout == b"fast\n"
     finally:

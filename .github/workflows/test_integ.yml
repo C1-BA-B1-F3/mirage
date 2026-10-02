@@ -1684,12 +1684,15 @@ jobs:
             sleep 1
           done
 
-      - name: Run every runtime through the JSON suites (python)
-        run: ./python/.venv/bin/python integ/runtime/run.py $SUITES
-
-      - name: Run every runtime through the JSON suites (typescript)
-        working-directory: integ
-        run: pnpm exec tsx runtime/run.ts $SUITES
+      # The CLI step is the long pole, so both JSON drivers run behind it. They
+      # share nothing with it: run ids scope the MinIO prefixes, the sandbox
+      # suites send stateless commands, and no driver binds a fixed port.
+      - name: Start every runtime through the JSON suites (background)
+        run: |
+          integ/scripts/background.sh start json-python \
+            './python/.venv/bin/python integ/runtime/run.py $SUITES'
+          integ/scripts/background.sh start json-typescript \
+            'cd integ && pnpm exec tsx runtime/run.ts $SUITES'
 
       - name: Run every runtime through the CLI and both daemons
         run: |
@@ -1697,6 +1700,16 @@ jobs:
             "python/.venv/bin/mirage" \
             "node typescript/packages/cli/dist/bin/mirage.js" \
             $SUITES
+
+      - name: Run every runtime through the JSON suites (python)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: integ/scripts/background.sh wait json-python
+
+      - name: Run every runtime through the JSON suites (typescript)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: integ/scripts/background.sh wait json-typescript
 
   integ-observability:
     needs: [changes, typescript-build]

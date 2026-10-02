@@ -36,6 +36,43 @@
       "flags": [
         "r"
       ]
+    },
+    {
+      "id": "sort_r_astral_and_private_use_lines",
+      "seq": 14102701,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\360\\237\\230\\200\\n\\356\\200\\200\\nb\\n' > /data/cfsr.txt; sort -r /data/cfsr.txt; echo rc=$?; rm -f /data/cfsr.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "😀\n\nb\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r"
+      ]
     }
   ]
 }

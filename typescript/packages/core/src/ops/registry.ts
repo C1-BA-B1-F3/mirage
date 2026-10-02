@@ -44,6 +44,8 @@ export interface RegisteredOp {
     kwargs: OpKwargs,
   ): unknown
   write: boolean
+  /** A `read` that fetches a byte range from the store itself, rather than reading the whole file and slicing. */
+  ranges?: boolean
 }
 /* eslint-enable @typescript-eslint/no-invalid-void-type */
 
@@ -184,6 +186,22 @@ export class OpsRegistry {
     err.code = 'ENOTSUP'
     err.op = name
     throw err
+  }
+
+  /**
+   * Whether a ranged read of a file fetches only that range. False where
+   * the read op that answers it reads the whole file and slices: a backend
+   * with no native range, or a filetype-scoped render. Mirrors Python's
+   * `Mount.reads_ranges`.
+   */
+  readsRanges(vfsKind: string | BaseVFS, filetype: string | null): boolean {
+    const owner = typeof vfsKind === 'string' ? null : vfsKind
+    const kind = typeof vfsKind === 'string' ? vfsKind : vfsKind.name
+    const first =
+      (filetype !== null ? this.entry(keyFor('read', filetype, kind), owner) : null) ??
+      this.entry(keyFor('read', null, kind), owner) ??
+      this.entry(keyFor('read', null, null), owner)
+    return first?.ranges === true
   }
 
   async call(

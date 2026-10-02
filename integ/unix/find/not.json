@@ -23,7 +23,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -not -name \"*.txt\"",
       "expect": {
@@ -59,7 +61,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data ! -name \"*.txt\"",
       "expect": {
@@ -95,7 +99,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -name \"*.txt\" ! -empty",
       "expect": {
@@ -128,7 +134,13 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data ! \\( -name \"*.txt\" -o -name \"*.csv\" \\)",
       "expect": {
@@ -165,7 +177,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data ! -type f",
       "expect": {
@@ -201,7 +215,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data ! ! -name \"*.txt\"",
       "expect": {
@@ -236,7 +252,10 @@
         "s3",
         "s3-prefix",
         "sharepoint",
-        "ssh"
+        "ssh",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data2/bangglob && printf 'a\\n' > /data2/bangglob/a_b.txt && printf 'b\\n' > /data2/bangglob/axb.txt && find /data2/bangglob ! -name \"*_b.txt\"",
       "expect": {
@@ -272,7 +291,10 @@
         "s3",
         "s3-prefix",
         "sharepoint",
-        "ssh"
+        "ssh",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data2/bangexact && printf 'a\\n' > /data2/bangexact/alpha.txt && find /data2/bangexact ! -name \"ALPHA.TXT\"",
       "expect": {

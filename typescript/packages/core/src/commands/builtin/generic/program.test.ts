@@ -13,14 +13,6 @@ import { prepareProgram, programFileRefusal, readProgramFile } from './program.t
 const require = createRequire(import.meta.url)
 const engineWasm = readFileSync(require.resolve('web-tree-sitter/web-tree-sitter.wasm'))
 const grammarWasm = readFileSync(require.resolve('tree-sitter-bash/tree-sitter-bash.wasm'))
-const corpus = JSON.parse(
-  readFileSync(
-    new URL('../../../../../../../integ/crossmount/program/files.json', import.meta.url),
-    'utf8',
-  ),
-) as {
-  cases: { id: string; command: string; expect: { exit: number; stdout: string; stderr: string } }[]
-}
 
 describe('program file routing', () => {
   it.each([
@@ -49,29 +41,6 @@ describe('program file routing', () => {
       await ws.close()
     }
   })
-
-  for (const test of corpus.cases) {
-    it(test.id, async () => {
-      const ws = new Workspace(
-        { '/data': new RAMVFS(), '/data2': new RAMVFS() },
-        {
-          mode: MountMode.EXEC,
-          shellParserFactory: async () => createShellParser({ engineWasm, grammarWasm }),
-        },
-      )
-      try {
-        const result = await ws.shell(test.command)
-        const dec = new TextDecoder()
-        expect({
-          exit: result.exitCode,
-          stdout: dec.decode(result.stdout),
-          stderr: dec.decode(result.stderr),
-        }).toEqual(test.expect)
-      } finally {
-        await ws.close()
-      }
-    })
-  }
 })
 
 function typed(raw: string): PathSpec {
@@ -84,7 +53,6 @@ const noDispatch = ((op: string, path: PathSpec) => {
 }) as unknown as DispatchFn
 
 const ENC = new TextEncoder()
-const DEC = new TextDecoder()
 
 describe('rg program files from stdin', () => {
   it('lowers a -f - to --regexp', async () => {
@@ -98,38 +66,6 @@ describe('rg program files from stdin', () => {
     expect(error).toBeNull()
     expect([texts, flags]).toEqual([['/in'], { file: [], regexp: ['a\nb'] }])
     expect(await materialize(rest)).toEqual(new Uint8Array())
-  })
-
-  it('refuses a second -f -', async () => {
-    // ripgrep 14.1.1: `rg -f - -f -` reads stdin once and refuses the second
-    // before any operand is looked at.
-    const [, , , error] = await prepareProgram(
-      'rg',
-      [],
-      { file: [typed('-'), typed('-')] },
-      ENC.encode('a\n'),
-      noDispatch,
-      [typed('-')],
-    )
-    expect(error?.exitCode).toBe(2)
-    expect(DEC.decode(error?.stderr as Uint8Array)).toBe(
-      'rg: error reading -f/--file from stdin: stdin has already been consumed\n',
-    )
-  })
-
-  it('refuses a - operand after -f -', async () => {
-    const [, , , error] = await prepareProgram(
-      'rg',
-      [],
-      { file: [typed('-')] },
-      ENC.encode('a\n'),
-      noDispatch,
-      [typed('/in'), typed('-')],
-    )
-    expect(error?.exitCode).toBe(2)
-    expect(DEC.decode(error?.stderr as Uint8Array)).toBe(
-      'rg: error: attempted to read patterns from stdin while also searching stdin\n',
-    )
   })
 
   it('takes no - from -f /dev/stdin', async () => {

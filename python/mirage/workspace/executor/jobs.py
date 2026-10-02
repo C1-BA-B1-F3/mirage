@@ -707,6 +707,11 @@ async def handle_fg(
     """Foreground a background job: print its command line, then block
     on it and adopt its output and exit code.
 
+    With no operand it takes the newest running job, which is bash's
+    current job; when none runs, it takes the newest finished one, since
+    a job can end before ``fg`` runs and its output is still waiting to
+    be adopted, as ``fg %N`` would.
+
     Args:
         job_table (JobTable): the session's job table.
         parts (list[str]): argv including the command name; the
@@ -719,15 +724,15 @@ async def handle_fg(
     sid = _session_of(session)
     jobs = job_table.list_jobs(sid)
     if len(parts) <= 1:
-        running = [j for j in jobs if j.status == JobStatus.RUNNING]
-        if not running:
+        if not jobs:
             err = b"bash: fg: current: no such job\n"
             return (
                 None,
                 IOResult(exit_code=1, stderr=err),
                 ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
             )
-        job_id = running[-1].id
+        running = [j for j in jobs if j.status == JobStatus.RUNNING]
+        job_id = (running or jobs)[-1].id
     else:
         raw = parts[1].lstrip("%")
         try:

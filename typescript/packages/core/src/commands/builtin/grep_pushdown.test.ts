@@ -33,6 +33,15 @@ import {
   wholeWordLiteral,
 } from './grep_pushdown.ts'
 import { stripSlash } from '../../utils/slash.ts'
+import type { Accessor } from '../../accessor/base.ts'
+import { materialize } from '../../io/types.ts'
+import { mountKey } from '../../utils/key_prefix.ts'
+import { FakeDiscordTransport, makeFakeVfs as discordVfs } from './discord/_test_util.ts'
+import { DISCORD_GREP } from './discord/grep.ts'
+import { DISCORD_RG } from './discord/rg.ts'
+import { FakeSlackTransport, makeFakeVfs as slackVfs } from './slack/_test_util.ts'
+import { SLACK_GREP } from './slack/grep.ts'
+import { SLACK_RG } from './slack/rg.ts'
 
 describe('classifyPattern', () => {
   it('newlines and regex are REGEX, plain text is SIMPLE, fixed is EXACT', () => {
@@ -168,6 +177,8 @@ describe('hasSearchShapingFlags', () => {
     [{ A: '2' }, true],
     [{ B: '2' }, true],
     [{ C: '2' }, true],
+    [{ args_I: true }, true],
+    [{ text: true }, true],
     // rg -L walks links, which no backend's search can see.
     [{ follow: true }, true],
   ])('hasSearchShapingFlags(%j) === %j', (flags, expected) => {
@@ -205,6 +216,14 @@ function operand(virtual: string, pattern: string | null = null): PathSpec {
 }
 
 const EMAIL_HONORED = ['n', 'args_l', 'w', 'o', 'm']
+const EMAIL_RG_HONORED = [
+  'line_number',
+  'files_with_matches',
+  'word_regexp',
+  'only_matching',
+  'max_count',
+  'line_regexp',
+]
 
 const TRACES = operand('/traces')
 const SESSIONS = operand('/sessions')
@@ -281,6 +300,7 @@ describe('hasSearchShapingFlags honored', () => {
     // ...but never -v or -c, which need messages the search did not return.
     expect(hasSearchShapingFlags({ v: true }, EMAIL_HONORED)).toBe(true)
     expect(hasSearchShapingFlags({ c: true }, EMAIL_HONORED)).toBe(true)
+    expect(hasSearchShapingFlags({ invert_match: true }, EMAIL_RG_HONORED)).toBe(true)
   })
 
   it('never exempts the operand rule', () => {
@@ -388,5 +408,69 @@ describe('textCandidates', () => {
     )
     expect(textCandidates(paths).map((p) => p.virtual)).toEqual(['/a.py', '/b.txt', '/README'])
     expect(textCandidates([])).toEqual([])
+  })
+})
+
+function slackEmpty(): [{ endpoint: string }[], Accessor] {
+  const transport = new FakeSlackTransport((endpoint) =>
+    endpoint === 'search.files'
+      ? { ok: true, files: { matches: [] } }
+      : { ok: true, messages: { matches: [] } },
+  )
+  return [transport.calls, slackVfs(transport).accessor]
+}
+
+function discordEmpty(): [{ endpoint: string }[], Accessor] {
+  const transport = new FakeDiscordTransport(() => ({ total_results: 0, messages: [] }))
+  return [transport.calls, discordVfs(transport).accessor]
+}
+
+const SLACK_CHANNEL = ['/mnt/slack', '/channels/general__C1'] as const
+const SLACK_SEARCHES = ['search.messages', 'search.files']
+const DISCORD_CHANNEL = ['/mnt/discord', '/My Server__G1/channels/general__C1'] as const
+const DISCORD_SEARCHES = ['/guilds/G1/messages/search']
+
+describe('an empty search answer', () => {
+  it.each([
+    ['slack grep', SLACK_GREP, slackEmpty, SLACK_CHANNEL, { w: true }, SLACK_SEARCHES],
+    ['slack rg', SLACK_RG, slackEmpty, SLACK_CHANNEL, { word_regexp: true }, SLACK_SEARCHES],
+    [
+      'discord grep',
+      DISCORD_GREP,
+      discordEmpty,
+      DISCORD_CHANNEL,
+      { w: true, r: true },
+      DISCORD_SEARCHES,
+    ],
+    [
+      'discord rg',
+      DISCORD_RG,
+      discordEmpty,
+      DISCORD_CHANNEL,
+      { word_regexp: true },
+      DISCORD_SEARCHES,
+    ],
+  ])('is final for %s', async (_name, commands, empty, [prefix, rest], flags, searches) => {
+    const cmd = commands[0]
+    if (cmd === undefined) throw new Error('command not registered')
+    const [calls, accessor] = empty()
+    const virtual = prefix + rest
+    const spec = new PathSpec({
+      virtual,
+      directory: virtual,
+      resolved: false,
+      vfsPath: mountKey(virtual, prefix),
+    })
+    const result = await cmd.fn(accessor, [spec], ['missing'], {
+      stdin: null,
+      flags,
+      filetypeFns: null,
+      cwd: '/',
+    })
+    if (result === null) throw new Error('no result')
+    const [out, io] = result
+    expect(calls.map((c) => c.endpoint)).toEqual(searches)
+    expect(io.exitCode).toBe(1)
+    expect(await materialize(out)).toEqual(new Uint8Array())
   })
 })

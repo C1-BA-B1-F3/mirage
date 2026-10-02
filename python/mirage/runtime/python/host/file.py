@@ -14,16 +14,23 @@
 
 import asyncio
 import codecs
+import errno
 import io
 import logging
+import os
 from collections.abc import Iterable, Iterator
 from types import TracebackType
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from mirage.ops import Ops
+from mirage.runtime.handles.chunked import ChunkedHandle
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.runtime.handles.mode import parse_mode
 from mirage.runtime.open import apply_open
 from mirage.runtime.python.host.vfs import HostVFS
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 logger = logging.getLogger(__name__)
 # `io.open`'s own sentinel for "whatever the platform default is". It is
@@ -33,6 +40,41 @@ logger = logging.getLogger(__name__)
 # the caller's word up as a codec raised LookupError on the ordinary
 # path the moment `io.open` was patched.
 LOCALE_ENCODING = "locale"
+
+# The whole file in memory, or a reader over a chunked handle.
+_Buffer = io.BytesIO | io.StringIO | io.BufferedReader | io.TextIOWrapper
+
+
+class _ChunkedRaw(io.RawIOBase):
+    """A raw stream over a chunked handle, for ``io.BufferedReader``.
+
+    Args:
+        handle (ChunkedHandle): the read-only handle it reads through.
+    """
+
+    def __init__(self, handle: ChunkedHandle) -> None:
+        super().__init__()
+        self._handle = handle
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: "WriteableBuffer") -> int:
+        chunk = self._handle.read(len(memoryview(buffer)))
+        memoryview(buffer).cast("B")[: len(chunk)] = chunk
+        return len(chunk)
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        pos = self._handle.seek(offset, whence)
+        if pos is None:
+            raise OSError(errno.EINVAL, os.strerror(errno.EINVAL))
+        return pos
+
+    def tell(self) -> int:
+        return self._handle.pos
 
 
 class MirageFile:
@@ -77,18 +119,41 @@ class MirageFile:
         self._newline = newline
         codecs.lookup(self._encoding)
         self._dirty = False
-        self._buf: io.BytesIO | io.StringIO | None = None
+        self._buf: _Buffer | None = None
         # The open's effect lands now, by the rule every door shares; a
         # refusal leaves the file closed, so nothing flushes behind it.
-        self._kept = apply_open(self._door, path, self._facts) is not None
+        self._row = apply_open(self._door, path, self._facts)
         self._closed = False
 
-    def _load(self) -> io.BytesIO | io.StringIO:
+    def _load(self) -> _Buffer:
         if self._buf is not None:
             return self._buf
+        row = self._row
+        if row is not None and not self._writable and row.size > READ_CHUNK:
+            # The buffered and text layers CPython puts over a real file.
+            handle = ChunkedHandle(
+                path=self._path, size=row.size, fetch=self._read_chunk
+            )
+            buffered: io.BufferedReader = io.BufferedReader(
+                _ChunkedRaw(handle)
+            )
+            reader: _Buffer = (
+                buffered
+                if self._binary
+                else io.TextIOWrapper(
+                    buffered,
+                    encoding=self._encoding,
+                    errors=self._errors,
+                    newline=self._newline,
+                )
+            )
+            self._buf = reader
+            return reader
+        # A handle that writes starts from the stored bytes: its flush
+        # stores what it holds.
         data = (
-            self._door.run(self._door.ops.read(self._path))
-            if self._kept
+            self._door.run(self._door.ops.read(self._path, raw=self._writable))
+            if row is not None
             else b""
         )
         if self._binary:
@@ -102,11 +167,14 @@ class MirageFile:
             self._buf.seek(0, 2)
         return self._buf
 
+    def _read_chunk(self, offset: int, size: int) -> bytes:
+        return self._door.run(self._door.ops.read(self._path, offset, size))
+
     def _check_closed(self) -> None:
         if self._closed:
             raise ValueError("I/O operation on closed file")
 
-    def _read_buffer(self) -> io.BytesIO | io.StringIO:
+    def _read_buffer(self) -> _Buffer:
         self._check_closed()
         if not self.readable():
             raise io.UnsupportedOperation("not readable")
@@ -116,7 +184,9 @@ class MirageFile:
         self._check_closed()
         if not self.writable():
             raise io.UnsupportedOperation("not writable")
-        return self._load()
+        buffer = self._load()
+        assert isinstance(buffer, io.BytesIO | io.StringIO)
+        return buffer
 
     @property
     def closed(self) -> bool:
@@ -173,7 +243,9 @@ class MirageFile:
 
     def flush(self) -> None:
         self._check_closed()
-        if not self._dirty or self._buf is None:
+        if not self._dirty or not isinstance(
+            self._buf, io.BytesIO | io.StringIO
+        ):
             return
         val = self._buf.getvalue()
         if isinstance(val, str):
@@ -212,12 +284,12 @@ class MirageFile:
 
     def __iter__(self) -> Iterator[bytes] | Iterator[str]:
         buffer = self._read_buffer()
-        if isinstance(buffer, io.BytesIO):
+        if isinstance(buffer, io.BytesIO | io.BufferedReader):
             return iter(buffer)
         return iter(buffer)
 
     def __next__(self) -> bytes | str:
         buffer = self._read_buffer()
-        if isinstance(buffer, io.BytesIO):
+        if isinstance(buffer, io.BytesIO | io.BufferedReader):
             return next(buffer)
         return next(buffer)

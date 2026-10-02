@@ -37,7 +37,7 @@ from mirage.commands.builtin.trello.trello_card_move import trello_card_move
 from mirage.commands.builtin.trello.trello_card_update import (
     trello_card_update,
 )
-from mirage.commands.config import CommandFn, CommandOpts, RegisteredCommand
+from mirage.commands.config import CommandFn, CommandOpts
 from mirage.context import reset_mount_gate, set_mount_gate
 from mirage.types import MountMode
 from mirage.utils.errors import ReadOnlyError
@@ -92,37 +92,22 @@ CASES = [
 ]
 
 
-def _record(cmd: CommandFn) -> RegisteredCommand:
-    return getattr(cmd, "_registered_commands")[0]
-
-
-@pytest.mark.parametrize("cmd,flags", CASES)
-def test_every_card_write_declares_write(
-    cmd: CommandFn, flags: dict[str, str]
-) -> None:
-    """A card write must register ``write=True``.
-
-    ``Mount.execute_cmd``'s write-command gate keys on the registration
-    flag, so a card write without it runs on a fully read-only mount.
-    The TS twins all declare ``write: true``; five python commands had
-    neither the flag nor the guard.
-    """
-    assert _record(cmd).write is True
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cmd,flags", CASES)
 async def test_a_read_mount_refuses_an_id_addressed_write(
     cmd: CommandFn, flags: dict[str, str]
 ) -> None:
-    """Every card write refuses under a READ mount gate.
+    """Every card write declares ``write=True`` and refuses under a READ
+    mount gate.
 
-    An id-addressed write names no path the per-path mode guard could
-    judge, so each handler must call ``require_mount_writable`` itself
-    (the placement the TS twins pin: after its own validation, before
-    the client call). With no session bound the configured mode stands,
-    so a READ gate alone must refuse.
+    ``Mount.execute_cmd``'s write-command gate keys on the registration
+    flag. An id-addressed write names no path the per-path mode guard
+    could judge, so each handler must also call ``require_mount_writable``
+    itself (after its own validation, before the client call). With no
+    session bound the configured mode stands, so a READ gate alone must
+    refuse.
     """
+    assert getattr(cmd, "_registered_commands")[0].write is True
     token = set_mount_gate("/trello", MountMode.READ)
     try:
         with pytest.raises(ReadOnlyError):

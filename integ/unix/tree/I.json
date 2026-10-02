@@ -20,7 +20,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pti/keep /data/pti/skip && printf x>/data/pti/top.txt && tree -I 'skip' /data/pti",
       "expect": {

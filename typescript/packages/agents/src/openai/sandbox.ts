@@ -303,6 +303,10 @@ export class MirageSandboxSession implements SandboxSession<MirageSandboxSession
     return this.workspace.vfs.exists(this.resolve(path), this.sessionId)
   }
 
+  async directoryExists(path: string): Promise<boolean> {
+    return this.workspace.vfs.isDir(this.resolve(path), this.sessionId)
+  }
+
   async materializeEntry(args: MaterializeEntryArgs): Promise<void> {
     await this.writeEntry(this.resolve(args.path), args.entry)
     if (!args.path.startsWith('/')) {

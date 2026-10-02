@@ -82,6 +82,16 @@ class WriteOp(Protocol):
     ) -> Awaitable[None]: ...
 
 
+class PwriteOp(Protocol):
+    """Write ``data`` at ``offset``, keeping every byte outside it, as
+    pwrite(2) does; a gap past the end reads back as zeros and a missing
+    file is created."""
+
+    def __call__(
+        self, accessor: Any, path: PathSpec, data: bytes, offset: int, /
+    ) -> Awaitable[None]: ...
+
+
 class ExistsOp(Protocol):
     def __call__(
         self, accessor: Any, path: PathSpec, /
@@ -230,6 +240,7 @@ class WriteOps:
 
     write: WriteOp | None = None
     append: WriteOp | None = None
+    pwrite: PwriteOp | None = None
     create: PathOp | None = None
     mkdir: MkdirOp | None = None
     unlink: PathOp | None = None

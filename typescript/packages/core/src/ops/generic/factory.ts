@@ -16,9 +16,9 @@ import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import type { OpKwargs, RegisteredOp } from '../registry.ts'
 import type { MakeGenericOpsOptions, OpsTable } from './types.ts'
-import { isUnsatisfiableRange, sliceWindow } from '../../utils/ranges.ts'
+import { isUnsatisfiableRange, sliceWindow, spliceWindow } from '../../utils/ranges.ts'
 import { DEFAULT_MAX_GLOB_MATCHES, resolveGlobWith } from '../../utils/glob_walk.ts'
-import { eisdir, isMissingPath } from '../../utils/errors.ts'
+import { einval, eisdir, isMissingPath } from '../../utils/errors.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 
 const expectPathSpec = (value: unknown, op: string): PathSpec => {
@@ -41,6 +41,14 @@ const expectLength = (value: unknown): number => {
   return value
 }
 
+const expectOffset = (value: unknown, path: PathSpec): number => {
+  if (typeof value !== 'number') {
+    throw new TypeError('pwrite op requires a number offset as the second arg')
+  }
+  if (!Number.isInteger(value) || value < 0) throw einval(path)
+  return value
+}
+
 /**
  * Generate a backend's VFS/FUSE op set from its `CommandIO` table.
  *
@@ -49,9 +57,9 @@ const expectLength = (value: unknown): number => {
  * table that already feeds `makeGenericCommands`, so a backend declares
  * its core surface once. Ops whose table field is undefined are
  * omitted, mirroring how the command factory skips write commands on
- * read-only backends. A writable table without native append uses async
- * read-modify-write; like emulated truncate, this is not atomic against
- * concurrent writers.
+ * read-only backends. A writable table without a native append or pwrite
+ * builds them from read and write; like emulated truncate, this is not
+ * atomic against concurrent writers.
  */
 export function makeGenericOps<A extends Accessor>(
   vfs: string | readonly string[],
@@ -67,10 +75,11 @@ export function makeGenericOps<A extends Accessor>(
     fn: RegisteredOp['fn'],
     write: boolean,
     filetype: string | null = null,
+    ranges = false,
   ): void => {
     if (skip.has(name)) return
     for (const res of vfsNames) {
-      ops.push({ name, vfs: res, filetype, fn, write })
+      ops.push({ name, vfs: res, filetype, fn, write, ranges })
     }
   }
 
@@ -109,6 +118,8 @@ export function makeGenericOps<A extends Accessor>(
       return whole ? data : sliceWindow(data, offset, size)
     },
     false,
+    null,
+    table.readRange !== undefined,
   )
   emit(
     'readdir',
@@ -151,7 +162,7 @@ export function makeGenericOps<A extends Accessor>(
     false,
   )
 
-  const { write, mkdir, unlink, rmdir, rename, create, truncate, append, setAttrs } = table
+  const { write, mkdir, unlink, rmdir, rename, create, truncate, append, pwrite, setAttrs } = table
   if (write) {
     emit(
       'write',
@@ -201,6 +212,35 @@ export function makeGenericOps<A extends Accessor>(
         joined.set(existing)
         joined.set(data, existing.length)
         return write(asA(accessor), path, joined)
+      },
+      true,
+    )
+  }
+  if (pwrite) {
+    emit(
+      'pwrite',
+      (accessor, path, args) =>
+        pwrite(asA(accessor), path, extractWriteData(args), expectOffset(args[1], path)),
+      true,
+    )
+  } else if (write) {
+    emit(
+      'pwrite',
+      async (accessor, path, args, kwargs) => {
+        const data = extractWriteData(args)
+        const offset = expectOffset(args[1], path)
+        // The read is this op's own, below the door that judged it a write:
+        // a session that may write a file and not read it still writes at
+        // an offset, as pwrite(2) on a write-only descriptor does. It takes
+        // the caller's index for the reason append does.
+        let existing: Uint8Array
+        try {
+          existing = await table.readBytes(asA(accessor), path, kwargs.index)
+        } catch (error) {
+          if (!isMissingPath(error)) throw error
+          existing = new Uint8Array()
+        }
+        return write(asA(accessor), path, spliceWindow(existing, offset, data))
       },
       true,
     )

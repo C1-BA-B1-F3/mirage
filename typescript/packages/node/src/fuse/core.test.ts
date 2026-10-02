@@ -18,6 +18,7 @@ import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { ContentType, FileStat, FileType, MountMode } from '@struktoai/mirage-core/types'
 import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import { DIR_SIZE, mtimeMs } from '@struktoai/mirage-core/utils/stat_view'
+import { READ_CHUNK } from '@struktoai/mirage-core/runtime/handles/constants'
 import { describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../workspace.ts'
 import { MountCore } from './core.ts'
@@ -154,6 +155,46 @@ describe('MountCore', () => {
     await core.unlink('/data/lk')
     expect(ws.namespace.isLink('/data/lk')).toBe(false)
     expect(new TextDecoder().decode((await ws.shell('cat /data/f.txt')).stdout)).toBe('body\n')
+  })
+
+  it('writes a file the session may not read', async () => {
+    // Writing at an offset is one write at the door, so a policy that
+    // refuses reads leaves FUSE writes alone, as a write-only descriptor
+    // takes pwrite(2). The flush used to read the file first, and a refused
+    // read was taken for an empty file, so the write wiped what was there.
+    const vfs = new RAMVFS()
+    const ws = new Workspace({ '/data/': vfs }, { mode: MountMode.WRITE })
+    await ws.shell("printf 'line1\\n' > /data/log")
+    ws.policies.add({
+      preOps: (ctx) => (ctx.op === 'read' ? { kind: 'deny', reason: 'write-only' } : null),
+    })
+    const core = new MountCore(ws.vfs)
+    const enc = new TextEncoder()
+    await core.write('/data/log', -1, enc.encode('more\n'), 6)
+    const fd = await core.open('/data/log', fsConstants.O_WRONLY)
+    await core.write('/data/log', fd, enc.encode('a'), 11)
+    await core.write('/data/log', fd, enc.encode('b\n'), 12)
+    await core.release(fd)
+    expect(new TextDecoder().decode(vfs.store.files.get('/log'))).toBe('line1\nmore\nab\n')
+  })
+
+  it('refreshes what it holds when a flush fails after a run landed', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell('printf abcdefgh > /data/f')
+    const realPwrite = ws.vfs.pwrite.bind(ws.vfs)
+    vi.spyOn(ws.vfs, 'pwrite')
+      .mockImplementationOnce(realPwrite)
+      .mockRejectedValueOnce(errnoError('EACCES', 'denied'))
+    const core = new MountCore(ws.vfs)
+    const dec = new TextDecoder()
+    const enc = new TextEncoder()
+    const reader = await core.open('/data/f', fsConstants.O_RDONLY)
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('abcdefgh')
+    const fd = await core.open('/data/f', fsConstants.O_WRONLY)
+    await core.write('/data/f', fd, enc.encode('X'), 0)
+    await core.write('/data/f', fd, enc.encode('Y'), 5)
+    await expect(core.flush('/data/f', fd)).rejects.toMatchObject({ code: 'EACCES' })
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('Xbcdefgh')
   })
 
   it('reports a file with its real size', async () => {
@@ -575,4 +616,123 @@ describe('open handles across rename', () => {
       await expect(core.getattr('/sub/file')).rejects.toThrow()
     },
   )
+})
+
+describe('MountCore chunks', () => {
+  it('reads a large file a chunk at a time', async () => {
+    // The kernel asks in small pieces; hydrating the whole file on the
+    // first one moved all of it to answer a `head`. Mirrors Python's
+    // test_a_large_file_reads_a_chunk_at_a_time.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/big.bin', new Uint8Array(3 * READ_CHUNK).fill(1))
+    const core = new MountCore(ws.vfs)
+    const fd = await core.open('/data/big.bin')
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    expect((await core.read('/data/big.bin', fd, 0, 4096)).length).toBe(4096)
+    expect((await core.read('/data/big.bin', fd, 4096, 4096)).length).toBe(4096)
+    expect((await core.read('/data/big.bin', fd, 3 * READ_CHUNK - 2, 4096)).length).toBe(2)
+    expect(reads.mock.calls.map((call) => call[1])).toEqual([
+      { offset: 0, size: READ_CHUNK },
+      { offset: 3 * READ_CHUNK - 2, size: READ_CHUNK },
+    ])
+    await core.release(fd)
+  })
+
+  it('drops the chunk an open handle kept when the file changes', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/f.txt', 'old'.repeat(READ_CHUNK))
+    const core = new MountCore(ws.vfs)
+    const reader = await core.open('/data/f.txt')
+    expect(new TextDecoder().decode(await core.read('/data/f.txt', reader, 0, 3))).toBe('old')
+    const writer = await core.open('/data/f.txt')
+    await core.write('/data/f.txt', writer, new TextEncoder().encode('new'), 0)
+    await core.release(writer)
+    expect(new TextDecoder().decode(await core.read('/data/f.txt', reader, 0, 3))).toBe('new')
+    await core.release(reader)
+  })
+
+  it.each(['rename', 'unlink'] as const)(
+    'keeps an open handle reading past its chunk after a %s',
+    async (change) => {
+      // POSIX keeps an open descriptor on its file: a rename moves it and an
+      // unlink leaves its bytes readable, chunks it has not fetched
+      // included. Mirrors Python's test_an_open_chunked_handle_outlives.
+      const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+      const body = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
+      await ws.vfs.writeFile('/data/big.bin', body)
+      const core = new MountCore(ws.vfs)
+      const fd = await core.open('/data/big.bin')
+      expect(await core.read('/data/big.bin', fd, 0, 3)).toEqual(body.slice(0, 3))
+      if (change === 'rename') await core.rename('/data/big.bin', '/data/moved.bin')
+      else await core.unlink('/data/big.bin')
+      const far = 2 * READ_CHUNK + 5
+      expect(await core.read('/data/big.bin', fd, far, 4)).toEqual(body.slice(far, far + 4))
+      await core.release(fd)
+    },
+  )
+
+  it('holds with one read, and a refused read never blocks the removal', async () => {
+    // One read serves every open handle; a read a policy refuses leaves
+    // them chunked rather than refusing the unlink it allows. Mirrors
+    // Python's test_holding_reads_once_and_never_blocks_the_removal.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    for (const name of ['/data/a.bin', '/data/b.bin']) {
+      await ws.vfs.writeFile(name, new Uint8Array(2 * READ_CHUNK).fill(1))
+    }
+    const core = new MountCore(ws.vfs)
+    const shared = [await core.open('/data/a.bin'), await core.open('/data/a.bin')]
+    for (const fd of shared) await core.read('/data/a.bin', fd, 0, 1)
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    await core.unlink('/data/a.bin')
+    expect(reads).toHaveBeenCalledTimes(1)
+    const refused = await core.open('/data/b.bin')
+    await core.read('/data/b.bin', refused, 0, 1)
+    reads.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await core.unlink('/data/b.bin')
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+    reads.mockRestore()
+    await expect(ws.vfs.stat('/data/b.bin')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('holds an open back until the removal it raced is done', async () => {
+    // FUSE can serve an open while an unlink holds the file. It waits for
+    // the unlink, as the kernel orders an open and an unlink of one name,
+    // and then finds the file gone; the early descriptor keeps its bytes.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    const body = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
+    await ws.vfs.writeFile('/data/a.bin', body)
+    const core = new MountCore(ws.vfs)
+    const early = await core.open('/data/a.bin')
+    await core.read('/data/a.bin', early, 0, 1)
+    const real = ws.vfs.readFile.bind(ws.vfs)
+    const late: Promise<number>[] = []
+    const reads = vi.spyOn(ws.vfs, 'readFile').mockImplementation((path, options) => {
+      if (options === undefined && late.length === 0) late.push(core.open('/data/a.bin'))
+      return real(path, options)
+    })
+    await core.unlink('/data/a.bin')
+    reads.mockRestore()
+    expect(late).toHaveLength(1)
+    await expect(late[0]).rejects.toMatchObject({ code: 'ENOENT' })
+    const far = 2 * READ_CHUNK + 5
+    expect(await core.read('/data/a.bin', early, far, 4)).toEqual(body.slice(far, far + 4))
+  })
+
+  it('reads nothing to hold a target when a link to it goes', async () => {
+    // unlink(2) on a link takes the link entry, never the pointee's bytes.
+    // Mirrors Python's test_removing_a_link_leaves_its_targets_handles_alone.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.vfs.writeFile('/data/real.bin', new Uint8Array(2 * READ_CHUNK).fill(1))
+    await ws.shell('ln -s real.bin /data/alias')
+    const core = new MountCore(ws.vfs)
+    const fd = await core.open('/data/real.bin')
+    await core.read('/data/real.bin', fd, 0, 1)
+    const reads = vi.spyOn(ws.vfs, 'readFile')
+    await core.unlink('/data/alias')
+    expect(reads).not.toHaveBeenCalled()
+    reads.mockRestore()
+    await core.release(fd)
+  })
 })

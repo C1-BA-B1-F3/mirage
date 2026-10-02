@@ -134,7 +134,23 @@ def glob_span(pattern: str | None) -> tuple[date, date] | None:
         tuple[date, date] | None: (start, end) with end exclusive, or
         None when the glob does not start with a date prefix.
     """
-    literal = glob_prefix(pattern)
+    return literal_span(glob_prefix(pattern))
+
+
+def literal_span(literal: str) -> tuple[date, date] | None:
+    """The half-open range of dates a literal year, month or day names.
+
+    The reading ``glob_span`` applies to a glob's literal prefix, for a
+    caller that cuts the prefix first; separators trailing the literal
+    are ignored.
+
+    Args:
+        literal (str): the literal text, e.g. ``2026-01``.
+
+    Returns:
+        tuple[date, date] | None: (start, end) with end exclusive, or
+        None when the literal is not a date prefix.
+    """
     if not literal:
         return None
     parts = literal.rstrip("_-").split("-")

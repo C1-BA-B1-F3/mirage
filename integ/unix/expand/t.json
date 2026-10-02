@@ -59,7 +59,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qex && printf 'a\\tb\\n' > /data/qex/ex.txt && expand -t 4 /data/qex/ex.txt | cat -A",
       "expect": {
@@ -1140,6 +1143,302 @@
       "flags": [
         "t",
         "i"
+      ]
+    },
+    {
+      "id": "expand_t_a_list_takes_the_next_stop_past_the_column",
+      "seq": 14100501,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ab\\tc\\n' | expand -t 2,5; echo rc=$?; printf 'xxxxxxxxx\\tY\\n' | expand -t 5,9; echo rc=$?; printf 'a\\tb\\tc\\td\\te\\n' | expand -t 1,3,; echo rc=$?; printf 'a\\tb\\tc\\td\\te\\n' | expand -t ,1,3; echo rc=$?; printf 'a\\tb\\n' | expand -t ' 5 '; echo rc=$?; printf 'abcd\\tX\\n' | expand -t /4; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "ab   c\nrc=0\nxxxxxxxxx Y\nrc=0\na  b c d e\nrc=0\na  b c d e\nrc=0\na    b\nrc=0\nabcd    X\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_a_plus_zero_leaves_the_repeat_unset",
+      "seq": 14100502,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t +0; echo rc=$?; printf 'a\\tb\\tc\\td\\te\\n' | expand -t +0,4; echo rc=$?; printf 'a\\tb\\tc\\td\\te\\n' | expand -t 2,+0; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "a       b\nrc=0\na   b   c   d   e\nrc=0\na b c d e\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_occurrences_accumulate",
+      "seq": 14100503,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\tc\\td\\te\\n' | expand --tabs=2,4 --tabs=6; echo rc=$?; printf 'a\\tb\\tc\\td\\te\\n' | expand -t 4 -t ''; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b c d e\nrc=0\na   b   c   d   e\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_zero_and_order_refusals",
+      "seq": 14100504,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t 00; echo rc=$?; printf 'a\\tb\\n' | expand -t 3,3; echo rc=$?; printf 'a\\tb\\n' | expand -t 3,0,0; echo rc=$?; printf 'a\\tb\\n' | expand -t 3,1,0; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\nrc=1\n",
+        "stderr": "expand: tab size cannot be 0\nexpand: tab sizes must be ascending\nexpand: tab size cannot be 0\nexpand: tab sizes must be ascending\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_invalid_character_refusals",
+      "seq": 14100505,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t 1,3x; echo rc=$?; printf 'a\\tb\\n' | expand -t x,3,1; echo rc=$?; printf 'a\\tb\\n' | expand --tabs=$'8\\n4'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\n",
+        "stderr": "expand: tab size contains invalid character(s): 'x'\nexpand: tab size contains invalid character(s): 'x,3,1'\nexpand: tab size contains invalid character(s): '\\n4'\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_too_large_stop_refusals",
+      "seq": 14100506,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t 1,99999999999999999999; echo rc=$?; printf 'a\\tb\\n' | expand -t 99999999999999999999,x; echo rc=$?; printf 'a\\tb\\n' | expand -t 1,99999999999999999999,0; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\n",
+        "stderr": "expand: tab stop is too large '99999999999999999999'\nexpand: tab stop is too large '99999999999999999999'\nexpand: tab size contains invalid character(s): 'x'\nexpand: tab stop is too large '99999999999999999999'\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_t_specifier_refusals",
+      "seq": 14100507,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t /4,2; echo rc=$?; printf 'a\\tb\\n' | expand -t +4 -t +5; echo rc=$?; printf 'a\\tb\\n' | expand -t +4/5; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nrc=1\n",
+        "stderr": "expand: '/' specifier only allowed with the last value\nexpand: '+' specifier only allowed with the last value\nexpand: '/' specifier not at start of number: '/5'\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "expand_only_a_newline_resets_the_column",
+      "seq": 14100508,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\013b\\tX\\n' | expand; echo rc=$?; printf 'a\\014b\\tX\\n' | expand; echo rc=$?; printf 'a\\015\\n\\tb\\n' | expand -t 4; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\u000bb     X\nrc=0\na\fb     X\nrc=0\na\r\n    b\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t"
       ]
     }
   ]

@@ -58,6 +58,7 @@ export const CONTENT_CHANGING_OPS: ReadonlySet<string> = new Set([
   'create',
   'truncate',
   'append',
+  'pwrite',
 ])
 export const RETRACT_FINGERPRINT_OPS: ReadonlySet<string> = new Set([
   'unlink',

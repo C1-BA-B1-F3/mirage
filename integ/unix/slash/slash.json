@@ -431,7 +431,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "rmdir /data/slashd/dlink 2>&1",
       "expect": {
@@ -463,7 +465,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "rmdir /data/slashd/dlink/ 2>&1",
       "expect": {

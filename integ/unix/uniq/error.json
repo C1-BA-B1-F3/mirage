@@ -21,13 +21,17 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "uniq -f 2junk /data/dup.txt",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: invalid count: '2junk'"
+        "stderr": "uniq: invalid count: '2junk'\n"
       },
       "flags": [
         "f"

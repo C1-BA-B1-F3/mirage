@@ -88,10 +88,13 @@ Each callback above is implemented by your backend. Leave out `native` and
 | --- | --- | --- |
 | `ReadOps` | `readdir`, `read_bytes`, `stat` | Required filesystem behavior. |
 | `NativeReadOps` | `read_stream`, `read_range`, `exists`, `find`, `du` | Optional equivalent fast paths. |
-| `WriteOps` | `write`, `append`, `create`, `mkdir`, `unlink`, `rmdir`, `rm_r`, `rename`, `copy`, `dir_copy`, `truncate`, `set_attrs` | Individually supported mutations. |
+| `WriteOps` | `write`, `append`, `pwrite`, `create`, `mkdir`, `unlink`, `rmdir`, `rm_r`, `rename`, `copy`, `dir_copy`, `truncate`, `set_attrs` | Individually supported mutations. |
 
 A native range receives `(accessor, path, index, offset, size)`; `size=None`
-means through EOF. Use `FileStat.size=None` when rendered size is unknown.
+means through EOF. Its write twin, `pwrite`, receives `(accessor, path, data,
+offset)` and keeps every byte outside the window, as pwrite(2) does. A table
+with `write` and no `append` or `pwrite` gets both built from `read_bytes` and
+`write`, so supply them only when the backend writes a range natively. Use `FileStat.size=None` when rendered size is unknown.
 `du` supplies both size and entry enumeration. All operations enforce the same
 resource scope, including direct reads of known IDs. A partial listing cannot
 prove an omitted resource absent.

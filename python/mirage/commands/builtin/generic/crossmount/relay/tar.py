@@ -110,6 +110,7 @@ async def run_tar(
         C=directories or None,
         strip_components=parsed.strip_components,
         exclude=parsed.exclude,
+        one_file_system=parsed.one_file_system,
         links=ns.links if ns is not None else None,
         mounts=ns.mounts if ns is not None else None,
         relay=True,

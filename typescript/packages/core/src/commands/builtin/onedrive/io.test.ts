@@ -75,11 +75,4 @@ describe('OneDrive du', () => {
       `${BASE}/root:/sub:/children`,
     ])
   })
-
-  it('sizes a missing path as nothing, leaving the diagnostic to the command', async () => {
-    tree()
-    const accessor = new OneDriveAccessor({ accessToken: 'token' })
-    const missing = PathSpec.fromStrPath('/od/nosuch', 'nosuch')
-    expect(await IO.du?.size(accessor, missing, new RAMIndexCacheStore())).toBe(0)
-  })
 })

@@ -48,7 +48,9 @@ WRITE_FINGERPRINT_OPS = frozenset({"write"})
 # "rm_r", and the rename op records as "rename" or "rename_prefix"
 # depending on which of its two paths ran.
 STAMP_FINGERPRINT_OPS = frozenset({"read", "write", "create", "truncate"})
-CONTENT_CHANGING_OPS = frozenset({"write", "create", "truncate", "append"})
+CONTENT_CHANGING_OPS = frozenset(
+    {"write", "create", "truncate", "append", "pwrite"}
+)
 RETRACT_FINGERPRINT_OPS = frozenset(
     {"unlink", "rm_r", "rmdir", "rename", "rename_prefix", "copy"}
 )

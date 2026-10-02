@@ -750,6 +750,7 @@
         "find",
         "is_mounted",
         "mkdir",
+        "pwrite",
         "read_bytes",
         "read_range",
         "read_stream",
@@ -806,6 +807,7 @@
         "find",
         "is_mounted",
         "mkdir",
+        "pwrite",
         "read_bytes",
         "read_range",
         "read_stream",
@@ -1225,6 +1227,7 @@
         "find",
         "is_mounted",
         "mkdir",
+        "pwrite",
         "read_bytes",
         "read_range",
         "read_stream",
@@ -1345,6 +1348,7 @@
         "find",
         "is_mounted",
         "mkdir",
+        "pwrite",
         "read_bytes",
         "read_range",
         "read_stream",
@@ -1838,6 +1842,9 @@
           "required": false
         },
         "apiBase": {
+          "required": false
+        },
+        "bucketDays": {
           "required": false
         },
         "clientId": {

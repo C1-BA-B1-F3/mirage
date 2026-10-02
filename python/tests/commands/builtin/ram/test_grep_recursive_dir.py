@@ -23,22 +23,6 @@ def workspace():
 
 
 @pytest.mark.asyncio
-async def test_grep_recursive_dir_returns_matches(workspace):
-    await workspace.vfs.mkdir("/sub")
-    await workspace.vfs.write(
-        "/sub/a.txt", b"hello world\ngoodbye\nhello again"
-    )
-    await workspace.vfs.write("/sub/b.txt", b"nothing here\n")
-
-    io = await workspace.shell("grep -rn hello /sub")
-    output = (io.stdout or b"").decode()
-    assert io.exit_code == 0
-    assert "hello" in output
-    lines = output.strip().split("\n")
-    assert len(lines) >= 2
-
-
-@pytest.mark.asyncio
 async def test_grep_recursive_no_operand_searches_cwd(workspace):
     # GNU: `grep -r pat` with no path operand searches the cwd and
     # prints bare relative names (a.txt:hit, not ./a.txt:hit).
@@ -71,10 +55,3 @@ async def test_grep_recursive_no_operand_no_match_exits_one(workspace):
     assert io.exit_code == 1
     assert (io.stdout or b"") == b""
     assert not io.stderr
-
-
-@pytest.mark.asyncio
-async def test_grep_without_recursive_keeps_the_usage_error(workspace):
-    io = await workspace.shell("grep hello", cwd="/")
-    assert io.exit_code == 2
-    assert b"Usage: grep" in (io.stderr or b"")

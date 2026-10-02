@@ -6,7 +6,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "mkdir -p /data/guardroot && echo keep > /data/guardroot/k.txt && echo ok",
       "expect": {
@@ -21,7 +22,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "rmdir /data",
       "expect": {
@@ -36,7 +38,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "mv /data /data/guardroot/dst",
       "expect": {
@@ -51,7 +54,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "mkdir /data",
       "expect": {
@@ -66,7 +70,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "mkdir -p /data && echo ok",
       "expect": {
@@ -81,7 +86,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "touch /data",
       "expect": {
@@ -96,7 +102,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "ln -sT /data/guardroot/k.txt /data",
       "expect": {
@@ -111,7 +118,8 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis"
       ],
       "command": "cat /data/guardroot/k.txt && ls /data/guardroot",
       "expect": {

@@ -1,6 +1,12 @@
 {
- "baseline": 4922,
+ "baseline": 4921,
  "modules": {
+  "ops/generic/factory": {
+   "python_only": {
+    "_make_pwrite": "Python builds every emitted op through a named `_make_*` closure builder; TypeScript writes the same closure inline in makeGenericOps, as it does for the module's older builders.",
+    "_make_emulated_pwrite": "The read/splice/write pwrite for a table without a native one, built by a named `_make_*` builder in Python and inline in makeGenericOps in TypeScript, like emulated append."
+   }
+  },
   "core/github/tree": {
    "python_only": {
     "fetch_head": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",

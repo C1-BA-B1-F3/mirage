@@ -123,7 +123,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/g4/sub && printf 'error: disk full\\nwarning: low memory\\ninfo: all good\\nerror: timeout\\nnote: done\\n' > /data/g4/app.log && printf 'alpha\\nbeta\\ngamma\\nALPHA\\n' > /data/g4/notes.txt && printf 'alpha inner\\n' > /data/g4/sub/inner.txt",
       "expect": {

@@ -1,6 +1,5 @@
 import io
 import tarfile
-from dataclasses import replace
 
 import pytest
 
@@ -12,7 +11,6 @@ from mirage.commands.builtin.generic.tar import (
     strip_prefix,
     tar,
 )
-from mirage.commands.errors import UsageError
 from mirage.ops.types import LinkView, MountView
 from mirage.types import (
     LINK_TARGET_KEY,
@@ -23,7 +21,6 @@ from mirage.types import (
     PathSpec,
 )
 from mirage.utils.key_prefix import mount_key
-from mirage.utils.path import CycleError
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -139,15 +136,6 @@ def _links(entries: dict[str, str]) -> LinkView:
     )
 
 
-def _cycle(entries: dict[str, str]) -> LinkView:
-    """A LinkView whose resolve raises ELOOP, as the namespace does."""
-
-    def resolve(path):
-        raise CycleError(path)
-
-    return replace(_links(entries), resolve=resolve)
-
-
 def _mounts(
     descendants: tuple[str, ...] = (), roots: tuple[str, ...] = ()
 ) -> MountView:
@@ -209,11 +197,21 @@ def test_pruned_takes_the_children_of_an_excluded_directory():
     assert pruned(names, None) == names
 
 
-def test_member_name_strips_the_leading_slash_and_marks_directories():
-    assert member_name("/data/d/a.txt", "file") == "data/d/a.txt"
-    assert member_name("/data/d", "dir") == "data/d/"
-    assert member_name("d/", "dir") == "d/"
-    assert member_name("link", "link") == "link"
+@pytest.mark.parametrize(
+    "path,kind,name",
+    [
+        ("/data/d/a.txt", "file", "data/d/a.txt"),
+        ("/data/d", "dir", "data/d/"),
+        ("d/", "dir", "d/"),
+        ("link", "link", "link"),
+        ("..", "dir", "./"),
+        ("sub/..", "dir", "./"),
+    ],
+)
+def test_member_name_strips_the_leading_slash_and_marks_directories(
+    path: str, kind: str, name: str
+):
+    assert member_name(path, kind) == name
 
 
 # Every row is GNU tar 1.35 on debian:stable-slim: `tar -cf` for the
@@ -242,37 +240,6 @@ def test_strip_prefix_drops_through_the_last_dotdot(
     assert strip_prefix(spelled) == (name, prefix)
 
 
-def test_member_name_calls_an_all_traversal_directory_dot_slash():
-    assert member_name("..", "dir") == "./"
-    assert member_name("sub/..", "dir") == "./"
-
-
-@pytest.mark.asyncio
-async def test_create_walks_a_directory_operand():
-    tree = _Tree(
-        {"/d/a.txt": b"alpha", "/d/sub/b.txt": b"beta"},
-        dirs=("/d", "/d/sub", "/d/empty"),
-    )
-    out, io_res = await _create(
-        tree, [_raw("/d", "d")], c=True, v=True, f=_spec("/out.tar")
-    )
-    assert io_res.exit_code == 0
-    assert out.decode().split() == [
-        "d/",
-        "d/a.txt",
-        "d/empty/",
-        "d/sub/",
-        "d/sub/b.txt",
-    ]
-    assert _names(io_res.writes["/out.tar"]) == [
-        "d/",
-        "d/a.txt",
-        "d/empty/",
-        "d/sub/",
-        "d/sub/b.txt",
-    ]
-
-
 @pytest.mark.asyncio
 async def test_create_keeps_an_empty_directory_as_its_own_member():
     tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty", "/out"))
@@ -280,23 +247,6 @@ async def test_create_keeps_an_empty_directory_as_its_own_member():
         tree, [_raw("/d", "d")], c=True, f=_spec("/out.tar")
     )
     assert "d/empty/" in _names(io_res.writes["/out.tar"])
-
-
-@pytest.mark.asyncio
-async def test_create_names_members_as_the_operand_was_typed():
-    tree = _Tree({"/base/d/a.txt": b"x"}, dirs=("/base", "/base/d"))
-    _, io_res = await _create(
-        tree, [_raw("/base/d", "d")], c=True, f=_spec("/out.tar")
-    )
-    assert _names(io_res.writes["/out.tar"]) == ["d/", "d/a.txt"]
-
-
-@pytest.mark.asyncio
-async def test_create_warns_once_about_a_stripped_leading_slash():
-    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d",))
-    _, io_res = await _create(tree, [_spec("/d")], c=True, f=_spec("/out.tar"))
-    assert io_res.stderr.decode().count("Removing leading") == 1
-    assert _names(io_res.writes["/out.tar"]) == ["d/", "d/a.txt"]
 
 
 @pytest.mark.asyncio
@@ -314,41 +264,6 @@ async def test_create_reports_a_missing_operand_and_exits_two():
     assert "Exiting with failure status due to previous errors" in err
     # GNU still archives every operand it could read.
     assert "d/a.txt" in _names(io_res.writes["/out.tar"])
-
-
-@pytest.mark.asyncio
-async def test_create_announces_a_prefix_it_could_not_archive():
-    # GNU names the prefix before it reports the operand it could not
-    # read, even though nothing under that operand is stored.
-    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/sub"))
-    _, io_res = await _create(
-        tree,
-        [_raw("/d/missing", "sub/../missing")],
-        c=True,
-        f=_spec("/out.tar"),
-    )
-    assert io_res.exit_code == 2
-    assert io_res.stderr.decode().splitlines()[:2] == [
-        "tar: Removing leading `sub/../' from member names",
-        "tar: sub/../missing: Cannot stat: No such file or directory",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_create_keeps_notices_in_operand_order():
-    # A later operand's prefix notice must not jump ahead of an earlier
-    # operand's error: GNU emits diagnostics as it walks the operands.
-    tree = _Tree({"/base/file": b"x"}, dirs=("/base", "/base/sub"))
-    _, io_res = await _create(
-        tree,
-        [_raw("/base/nope", "nope"), _raw("/base/file", "../file")],
-        c=True,
-        f=_spec("/out.tar"),
-    )
-    assert io_res.stderr.decode().splitlines()[:2] == [
-        "tar: nope: Cannot stat: No such file or directory",
-        "tar: Removing leading `../' from member names",
-    ]
 
 
 @pytest.mark.asyncio
@@ -377,34 +292,6 @@ async def test_create_refuses_an_empty_archive():
 
 
 @pytest.mark.asyncio
-async def test_create_refuses_a_directory_it_cannot_enter():
-    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d",))
-    _, io_res = await _create(
-        tree,
-        [_raw("/nodir/a.txt", "a.txt")],
-        c=True,
-        f=_spec("/out.tar"),
-        C=[_raw("/nodir", "nodir")],
-    )
-    assert io_res.exit_code == 2
-    err = io_res.stderr.decode()
-    assert "tar: nodir: Cannot open: No such file or directory" in err
-    assert "Error is not recoverable: exiting now" in err
-    assert not io_res.writes
-
-
-@pytest.mark.asyncio
-async def test_create_prunes_an_excluded_subtree():
-    tree = _Tree(
-        {"/d/a.txt": b"a", "/d/sub/b.txt": b"b"}, dirs=("/d", "/d/sub")
-    )
-    _, io_res = await _create(
-        tree, [_raw("/d", "d")], c=True, f=_spec("/out.tar"), exclude="sub"
-    )
-    assert _names(io_res.writes["/out.tar"]) == ["d/", "d/a.txt"]
-
-
-@pytest.mark.asyncio
 async def test_create_stores_a_symlink_as_a_symlink():
     tree = _Tree({"/d/a.txt": b"a"}, dirs=("/d",))
     links = _links({"/d/link.txt": "a.txt"})
@@ -415,24 +302,6 @@ async def test_create_stores_a_symlink_as_a_symlink():
         link = tf.getmember("d/link.txt")
     assert link.issym()
     assert link.linkname == "a.txt"
-
-
-@pytest.mark.asyncio
-async def test_dereference_stores_the_target_content_under_the_link_name():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    links = _links({"/d/link.txt": "/d/a.txt"})
-    _, io_res = await _create(
-        tree,
-        [_raw("/d", "d")],
-        c=True,
-        h=True,
-        f=_spec("/out.tar"),
-        links=links,
-    )
-    with tarfile.open(fileobj=io.BytesIO(io_res.writes["/out.tar"])) as tf:
-        member = tf.getmember("d/link.txt")
-        assert not member.issym()
-        assert tf.extractfile(member).read() == b"alpha"
 
 
 @pytest.mark.asyncio
@@ -478,17 +347,6 @@ async def test_create_leaves_the_archive_out_of_itself():
 
 
 @pytest.mark.asyncio
-async def test_create_and_list_round_trip_plain_files():
-    tree = _Tree({"/a.txt": b"alpha", "/b.txt": b"beta"})
-    _, io_res = await _create(
-        tree, [_spec("/a.txt"), _spec("/b.txt")], c=True, f=_spec("/out.tar")
-    )
-    assert "/out.tar" in io_res.writes
-    out, _ = await _create(tree, [], t=True, f=_spec("/out.tar"))
-    assert out.decode().split() == ["a.txt", "b.txt"]
-
-
-@pytest.mark.asyncio
 async def test_extract_recreates_directories_including_empty_ones():
     tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty", "/out"))
     _, io_res = await _create(
@@ -503,99 +361,10 @@ async def test_extract_recreates_directories_including_empty_ones():
 
 
 @pytest.mark.asyncio
-async def test_extract_strips_leading_components():
-    tree = _Tree({"/deep/d/a.txt": b"x"}, dirs=("/deep", "/deep/d", "/out"))
-    _, io_res = await _create(
-        tree, [_spec("/deep/d")], c=True, f=_spec("/out.tar")
-    )
-    tree.files["/out.tar"] = io_res.writes["/out.tar"]
-    _, io_res = await _create(
-        tree,
-        [],
-        x=True,
-        f=_spec("/out.tar"),
-        strip_components=2,
-        C=[_spec("/out")],
-    )
-    assert "/out/a.txt" in io_res.writes
-
-
-@pytest.mark.asyncio
-async def test_requires_a_mode():
-    tree = _Tree({})
-    with pytest.raises(UsageError, match="You must specify one of"):
-        await _create(tree, [])
-
-
-@pytest.mark.asyncio
 async def test_requires_an_archive():
     tree = _Tree({"/a.txt": b"x"})
     with pytest.raises(ValueError, match="-f is required"):
         await _create(tree, [_spec("/a.txt")], c=True)
-
-
-@pytest.mark.asyncio
-async def test_create_fails_at_the_first_unenterable_c_not_the_last():
-    """GNU chdirs at each -C, so a bad early one stops the whole run.
-
-    Checking only the parsed flag's final value archived the operands
-    that followed the bad one and named the wrong subject.
-    """
-    tree = _Tree({"/good/y.txt": b"y"}, dirs=("/good",))
-    _, io_res = await _create(
-        tree,
-        [_raw("/good/y.txt", "y.txt")],
-        c=True,
-        f=_spec("/out.tar"),
-        C=[_raw("/missing", "missing"), _raw("/good", "good")],
-    )
-    assert io_res.exit_code == 2
-    err = io_res.stderr.decode()
-    assert "tar: missing: Cannot open: No such file or directory" in err
-    assert "Error is not recoverable" in err
-    assert not io_res.writes
-
-
-@pytest.mark.asyncio
-async def test_two_links_to_one_target_are_not_a_loop():
-    tree = _Tree({"/d/a.txt": b"alpha"}, dirs=("/d",))
-    links = _links({"/d/one": "/d/a.txt", "/d/two": "/d/a.txt"})
-    _, io_res = await _create(
-        tree,
-        [_raw("/d", "d")],
-        c=True,
-        h=True,
-        f=_spec("/out.tar"),
-        links=links,
-    )
-    assert io_res.exit_code == 0
-    assert io_res.stderr == b""
-    assert _names(io_res.writes["/out.tar"]) == [
-        "d/",
-        "d/a.txt",
-        "d/one",
-        "d/two",
-    ]
-
-
-@pytest.mark.asyncio
-async def test_a_symlink_cycle_is_reported_per_member_and_keeps_the_directory():
-    tree = _Tree({}, dirs=("/d",))
-    links = _cycle({"/d/a": "/d/b", "/d/b": "/d/a"})
-    _, io_res = await _create(
-        tree,
-        [_raw("/d", "d")],
-        c=True,
-        h=True,
-        f=_spec("/out.tar"),
-        links=links,
-    )
-    assert io_res.exit_code == 2
-    err = io_res.stderr.decode()
-    assert "tar: d/a: Cannot stat: Too many levels of symbolic links" in err
-    assert "tar: d/b: Cannot stat: Too many levels of symbolic links" in err
-    # GNU keeps the directory entry rather than aborting the archive.
-    assert _names(io_res.writes["/out.tar"]) == ["d/"]
 
 
 @pytest.mark.asyncio

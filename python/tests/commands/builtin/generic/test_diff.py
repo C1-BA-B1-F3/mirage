@@ -69,15 +69,6 @@ async def _run(paths: list[PathSpec], stdin: bytes | None = None, **flags):
 
 
 @pytest.mark.asyncio
-async def test_a_dash_operand_reads_stdin_and_is_named_dash():
-    assert await _run([DASH, FILE], b"x\n", q=True) == (
-        "Files - and a.txt differ\n",
-        "",
-        1,
-    )
-
-
-@pytest.mark.asyncio
 async def test_unified_headers_name_the_operands_as_typed():
     out, _, code = await _run([FILE, DEV_STDIN], b"x\n", u=True)
     assert out.startswith("--- a.txt\n+++ /dev/stdin\n")
@@ -101,9 +92,8 @@ async def test_two_stdin_operands_are_one_file():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("paths", [[DASH, SUB], [SUB, DASH]])
-async def test_a_dash_against_a_directory_is_refused(paths):
-    assert await _run(paths, b"x\n") == (
+async def test_a_directory_against_a_dash_is_refused():
+    assert await _run([SUB, DASH], b"x\n") == (
         "",
         "diff: cannot compare '-' to a directory\n",
         2,

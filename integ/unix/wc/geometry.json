@@ -7,7 +7,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'a\\tb\\n' | wc -L",
       "expect": {
@@ -26,7 +45,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf '\\tb\\n' | wc -L",
       "expect": {
@@ -45,7 +83,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'a\\rb\\n' | wc -L",
       "expect": {
@@ -64,7 +121,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf '中文\\n' | wc -L",
       "expect": {
@@ -83,7 +159,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'é\\n' | wc -L",
       "expect": {
@@ -102,7 +197,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'a\u001cb\\n' | wc -w",
       "expect": {
@@ -121,7 +235,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'a﻿b\\n' | wc -w",
       "expect": {
@@ -140,7 +273,26 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "printf 'a b　c\\n' | wc -w",
       "expect": {
@@ -150,6 +302,43 @@
       },
       "flags": [
         "w"
+      ]
+    },
+    {
+      "id": "wc_L_astral_and_private_use_lines",
+      "seq": 14103201,
+      "targets": [
+        "ram",
+        "opfs",
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\360\\237\\230\\200\\n\\356\\200\\200\\nb\\n' > /data/cfwcl.txt; wc -L /data/cfwcl.txt; echo rc=$?; rm -f /data/cfwcl.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "2 /data/cfwcl.txt\nrc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "L"
       ]
     }
   ]

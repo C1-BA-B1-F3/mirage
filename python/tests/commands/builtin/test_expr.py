@@ -780,7 +780,7 @@ def test_expr_string_operators_count_bytes(words, out, code):
     assert _eval_bytes(*words) == (out, code)
 
 
-# The same lines the integ and conformance batteries type, so the quoting
+# The same lines the integ battery types, so the quoting
 # an operator needs to reach expr intact is pinned here too. The list is
 # mirrored in expr.test.ts.
 SHELL_LINES = [

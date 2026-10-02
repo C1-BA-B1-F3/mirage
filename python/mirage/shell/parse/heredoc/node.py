@@ -90,6 +90,10 @@ class HeredocNode:
         ).encode()
 
     @property
+    def offsets(self) -> tuple[int, ...]:
+        return self._source.offsets
+
+    @property
     def source_text(self) -> bytes:
         if self._node.parent is None:
             return self._source.original

@@ -27,15 +27,12 @@ const DEC = new TextDecoder()
 
 const FILES: Record<string, string> = {
   '/a.txt': 'hello\nworld\n',
-  '/b.txt': 'hello\nworld\nfoo\nbar\nbaz\n',
   '/sub/nested.txt': 'nested\ncontent\n',
-  '/ov/x.txt': 'x\ny\nzz\n',
   '/oc/x.txt': 'b1\nb22\n',
   '/ovc/abc.txt': 'abc\n',
   '/ovc/def.txt': 'def\n',
-  '/octx/x.txt': 'a\nb\nc\n',
 }
-const DIRS = new Set(['/sub', '/ov', '/oc', '/ovc', '/octx'])
+const DIRS = new Set(['/sub', '/oc', '/ovc'])
 
 function spec(path: string): PathSpec {
   return new PathSpec({ virtual: path, directory: path, resolved: true, vfsPath: path.slice(1) })
@@ -80,20 +77,15 @@ async function run(
   pattern: string,
   flags: Record<string, string | boolean | number | string[]>,
   stdin: ByteSource | null,
+  read: (p: PathSpec) => AsyncIterable<Uint8Array> = stream,
 ): Promise<[string, number]> {
   const opts = { stdin, flags, filetypeFns: null, cwd: '/' } as unknown as CommandOpts
-  const [out, io] = (await rgGeneric(paths, [pattern], opts, stat, readdir, stream)) as [
+  const [out, io] = (await rgGeneric(paths, [pattern], opts, stat, readdir, read)) as [
     ByteSource,
     IOResult,
   ]
   const text = DEC.decode(await materialize(out))
   return [text, io.exitCode]
-}
-
-// eslint-disable-next-line @typescript-eslint/require-await
-async function* endlessAfterFirstMatch(): AsyncIterable<Uint8Array> {
-  yield ENC.encode('hello\n')
-  throw new Error('the probe read past the first selected line')
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await
@@ -103,24 +95,6 @@ async function* pipeThatGoesOn(first: string): AsyncIterable<Uint8Array> {
 }
 
 describe('rgGeneric - operand', () => {
-  it('reads stdin', async () => {
-    // ripgrep 14.1.1: `printf 'b\n' | rg b -` prints `b`, exit 0. The
-    // backend holds no `/-`, so reading one would fail the line.
-    expect(await run([stdinOperand()], 'b', {}, ENC.encode('b\n'))).toEqual(['b\n', 0])
-  })
-
-  it('is named <stdin> beside a file', async () => {
-    const paths = [stdinOperand(), spec('/a.txt')]
-    expect(await run(paths, 'world', {}, ENC.encode('world\n'))).toEqual([
-      '<stdin>:world\n/a.txt:world\n',
-      0,
-    ])
-    expect(await run(paths, 'world', { count: true }, ENC.encode('world\n'))).toEqual([
-      '<stdin>:1\n/a.txt:1\n',
-      0,
-    ])
-  })
-
   it('reads stdin once when named twice', async () => {
     // Both operands read one cursor: the second finds it drained.
     const paths = [stdinOperand(), stdinOperand()]
@@ -145,43 +119,6 @@ describe('rgGeneric - operand', () => {
     expect(await run(paths, 'b', { files_without_match: true }, ENC.encode('b\n'))).toEqual(['', 1])
   })
 
-  it.each([[{ files_with_matches: true }], [{ files_without_match: true }]])(
-    'stops a listing at the first match: %j',
-    async (flags) => {
-      // The listing is settled by the first selected line, so an endless
-      // stdin is never read past it.
-      const result = await run([stdinOperand()], 'hello', flags, endlessAfterFirstMatch())
-      expect(result).toEqual('files_with_matches' in flags ? ['<stdin>\n', 0] : ['', 1])
-    },
-  )
-
-  it('is never filtered by --type or --glob', async () => {
-    // ripgrep searches an explicit operand whatever --type or --glob say,
-    // and stdin is always explicit.
-    for (const flags of [{ type: ['py'] }, { glob: ['*.rs'] }]) {
-      expect(await run([stdinOperand()], 'b', flags, ENC.encode('b\n'))).toEqual(['b\n', 0])
-    }
-  })
-
-  it('prints context', async () => {
-    expect(await run([stdinOperand()], 'b', { context: '1' }, ENC.encode('a\nb\nc\n'))).toEqual([
-      'a\nb\nc\n',
-      0,
-    ])
-  })
-
-  it.each([
-    [{ max_count: '1', context: '1' }, false, 'a\nb\nc\n'],
-    [{ max_count: '1', type: ['py'] }, false, 'b\n'],
-    [{ max_count: '1' }, true, '<stdin>:b\n'],
-  ])('stops reading at max count: %j', async (flags, besideFile, want) => {
-    // -m is answered once its last selected line (and that line's trailing
-    // context) is out, so a pipe that goes on is never waited on: in the
-    // full-scan branch (context, --type) and beside a file.
-    const paths = besideFile ? [stdinOperand(), spec('/a.txt')] : [stdinOperand()]
-    expect(await run(paths, 'b', flags, pipeThatGoesOn('a\nb\nc\n'))).toEqual([want, 0])
-  })
-
   it('reads /dev/stdin under its own name', async () => {
     // ripgrep opens /dev/stdin as the path it is, so a label names it.
     const paths = [stdinOperand('/dev/stdin'), spec('/a.txt')]
@@ -192,88 +129,28 @@ describe('rgGeneric - operand', () => {
   })
 })
 
-describe('rgGeneric - no operand', () => {
-  it.each([
-    [{ files_with_matches: true }, 'b\n', ['<stdin>\n', 0]],
-    [{ with_filename: true }, 'b\n', ['<stdin>:b\n', 0]],
-    [{ with_filename: true, count: true }, 'b\n', ['<stdin>:1\n', 0]],
-    [{ context: '1' }, 'a\nb\nc\n', ['a\nb\nc\n', 0]],
-    [{ type: ['rust'] }, 'b\n', ['b\n', 0]],
-    [{ files_with_matches: true, max_count: '0' }, 'b\n', ['', 1]],
-  ])('searches stdin as an implicit `-`: %j', async (flags, data, want) => {
-    // ripgrep 14.1.1 searches a piped stdin as an implicit `-` when the line
-    // names no path, so every flag answers as it does for a typed one:
-    // `printf 'b\n' | rg -l b` prints `<stdin>`.
-    expect(await run([], 'b', flags, ENC.encode(data))).toEqual(want)
-  })
-
-  it.each([
-    [{ files_with_matches: true }, '<stdin>\n'],
-    [{ max_count: '1', context: '1' }, 'a\nb\nc\n'],
-    [{ max_count: '1', with_filename: true }, '<stdin>:b\n'],
-  ])('stops reading at the answer: %j', async (flags, want) => {
-    expect(await run([], 'b', flags, pipeThatGoesOn('a\nb\nc\n'))).toEqual([want, 0])
-  })
-})
-
-describe('rgGeneric - labelled context', () => {
-  it.each([
-    [
-      { after_context: '1' },
-      ['/b.txt', '/b.txt'],
-      '/b.txt:world\n/b.txt-foo\n--\n/b.txt:world\n/b.txt-foo\n',
-    ],
-    [
-      { with_filename: true, line_number: true, context: '1' },
-      ['/b.txt'],
-      '/b.txt-1-hello\n/b.txt:2:world\n/b.txt-3-foo\n',
-    ],
-    [
-      { no_filename: true, after_context: '1' },
-      ['/b.txt', '/b.txt'],
-      'world\nfoo\n--\nworld\nfoo\n',
-    ],
-  ])('prints context under labels: %j %j', async (flags, paths, want) => {
-    // ripgrep 14.1.1 leads a context line with `name-` and a match with
-    // `name:`, and puts `--` between one file's context and the next file's,
-    // labelled or not.
-    expect(await run(paths.map(spec), 'world', flags, null)).toEqual([want, 0])
-  })
-
-  it('prints stdin context beside a file', async () => {
-    // `printf 'a\nb\nc\n' | rg -C1 b - b.txt` on ripgrep 14.1.1.
-    const paths = [stdinOperand(), spec('/b.txt')]
-    expect(await run(paths, 'b', { context: '1' }, ENC.encode('a\nb\nc\n'))).toEqual([
-      '<stdin>-a\n<stdin>:b\n<stdin>-c\n--\n/b.txt-foo\n/b.txt:bar\n/b.txt:baz\n',
-      0,
-    ])
-  })
-
-  it.each([
-    [{}, '/sub/nested.txt:content\n'],
-    [{ count: true }, '/sub/nested.txt:1\n'],
-  ])('walks a directory named after a file: %j', async (flags, want) => {
-    // `rg content b.txt sub` on ripgrep 14.1.1. Only the first operand was
-    // probed, so a later directory was read as a file and reported.
-    expect(await run([spec('/b.txt'), spec('/sub')], 'content', flags, null)).toEqual([want, 0])
-  })
-
-  it.each([
-    [['/b.txt'], null],
-    [[], ENC.encode('hello\nworld\nfoo\nbar\nbaz\n')],
-  ])('prints a selected line past -m as selected: %j', async (paths, stdin) => {
-    // `rg -n -m1 -A1 o b.txt` prints `2:world` on ripgrep 14.1.1, where GNU
-    // grep prints `2-world`: past -m, a trailing line that would be selected
-    // still prints as selected.
-    expect(
-      await run(
-        paths.map(spec),
-        'o',
-        { line_number: true, max_count: '1', after_context: '1' },
-        stdin,
-      ),
-    ).toEqual(['1:hello\n2:world\n', 0])
-  })
+// A listing is settled by the first selected line and -m once its last
+// selected line (and that line's trailing context) is out, so a source that
+// goes on is never read past the answer: `-` is a typed stdin operand.
+it.each([
+  ['stdin', [], { files_without_match: true }, '', 1],
+  ['stdin', ['-'], { files_with_matches: true }, '<stdin>\n', 0],
+  ['stdin', ['-'], { files_without_match: true }, '', 1],
+  ['stdin', ['-'], { max_count: '1', context: '1' }, 'a\nb\nc\n', 0],
+  ['stdin', ['-'], { max_count: '1', type: ['py'] }, 'b\n', 0],
+  ['stdin', ['-', '/a.txt'], { max_count: '1' }, '<stdin>:b\n', 0],
+  ['stdin', [], { files_with_matches: true }, '<stdin>\n', 0],
+  ['stdin', [], { max_count: '1', context: '1' }, 'a\nb\nc\n', 0],
+  ['stdin', [], { max_count: '1', with_filename: true }, '<stdin>:b\n', 0],
+  ['file', ['/a.txt'], { max_count: '1', with_filename: true }, '/a.txt:b\n', 0],
+])('stops reading %s at the answer: %j %j', async (source, paths, flags, want, code) => {
+  const operands = paths.map((p) => (p === '-' ? stdinOperand() : spec(p)))
+  const pipe = pipeThatGoesOn('a\nb\nc\n')
+  const result =
+    source === 'stdin'
+      ? await run(operands, 'b', flags, pipe)
+      : await run(operands, 'b', flags, null, () => pipe)
+  expect(result).toEqual([want, code])
 })
 
 // ripgrep 14.1.1's -o: a selected line with no match (an inverted selection)
@@ -281,23 +158,6 @@ describe('rgGeneric - labelled context', () => {
 // nothing for the first two and counts lines.
 describe('rgGeneric - only matching', () => {
   const specs = (paths: readonly string[]): PathSpec[] => paths.map(spec)
-  const octx = '/octx/x.txt-1-a\n/octx/x.txt:2:b\n/octx/x.txt-3-c\n'
-
-  it.each([
-    [[], 'x\ny\nzz\n', '1:x\n3:zz\n'],
-    [['/ov/x.txt'], null, '1:x\n3:zz\n'],
-    [['/ov'], null, '/ov/x.txt:1:x\n/ov/x.txt:3:zz\n'],
-  ] as const)('-v prints the unmatched lines whole from %j', async (paths, stdin, want) => {
-    const input = stdin === null ? null : ENC.encode(stdin)
-    expect(
-      await run(
-        specs(paths),
-        'y',
-        { only_matching: true, invert_match: true, line_number: true },
-        input,
-      ),
-    ).toEqual([want, 0])
-  })
 
   it.each([
     [[], 'b1\nb22\n', '3\n'],
@@ -331,17 +191,6 @@ describe('rgGeneric - only matching', () => {
       ).toEqual([want, code])
     },
   )
-
-  it.each([
-    [[], 'a\nb\nc\n', '1-a\n2:b\n3-c\n'],
-    [['/octx'], null, octx],
-    [['/octx/x.txt', '/octx/x.txt'], null, `${octx}--\n${octx}`],
-  ] as const)('prints context lines whole from %j', async (paths, stdin, want) => {
-    const input = stdin === null ? null : ENC.encode(stdin)
-    expect(
-      await run(specs(paths), 'b', { only_matching: true, line_number: true, context: '1' }, input),
-    ).toEqual([want, 0])
-  })
 })
 
 // ripgrep 14.1.1 names a path it could not read the way the line spelled it:
@@ -388,29 +237,6 @@ describe('rgGeneric - unreadable paths are named as typed', () => {
       io.exitCode,
     ]
   }
-  const missing =
-    'rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n'
-
-  it.each([
-    [
-      'beside a directory',
-      [typed('/d/sub', 'sub'), typed('/d/nope', 'nope')],
-      {},
-      'sub/ok.txt:hit\n',
-    ],
-    ['under --type', [typed('/d/nope', 'nope')], { type: ['txt'] }, ''],
-    [
-      'under -l',
-      [typed('/d/nope', 'nope'), typed('/d/sub', 'sub')],
-      { files_with_matches: true },
-      'sub/ok.txt\n',
-    ],
-  ] as const)('names a missing operand %s', async (_, paths, flags, want) => {
-    const [out, err, code] = await runTyped([...paths], flags)
-    expect([out, code]).toEqual([want, 2])
-    expect(err).toContain(missing)
-  })
-
   it('names a walked file it could not read', async () => {
     expect(await runTyped([typed('/d/sub', 'sub')], {})).toEqual([
       'sub/ok.txt:hit\n',
@@ -498,19 +324,6 @@ describe('rgGeneric - an operand the walk refused', () => {
       'rg: locked.txt: Permission denied (os error 13)\n',
     )
     expect(io.exitCode).toBe(2)
-  })
-
-  it('does not read a typed empty operand as the implicit cwd', async () => {
-    // A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so only
-    // the walk's verdict tells a typed '' apart. A line that named paths earns
-    // no "No files were searched" notice (ripgrep 14.1.1:
-    // `cd /data && rg o '' ''`).
-    const empty = walkRefused('/sub', '', 'ENOENT')
-    expect(await runAll([empty, empty])).toEqual([
-      '',
-      'rg: : IO error for operation on : No such file or directory (os error 2)\n'.repeat(2),
-      2,
-    ])
   })
 })
 

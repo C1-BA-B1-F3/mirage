@@ -160,25 +160,38 @@ class FileHandle:
         """True when the position sits at or past the end."""
         return self.pos >= len(self.buf)
 
+    @property
+    def size(self) -> int:
+        """The file's length as this handle holds it."""
+        return len(self.buf)
+
     def flush_plan(self) -> tuple[FlushKind, bytes]:
         """What this handle owes the mount at close."""
         return plan_flush(self.base_len, self.low_write, self.buf)
 
 
-def merge_writes(base: bytes, writes: Iterable[tuple[int, bytes]]) -> bytes:
-    """Apply buffered (offset, payload) writes over a base file.
+def write_runs(
+    writes: Iterable[tuple[int, bytes]],
+) -> list[tuple[int, bytes]]:
+    """Buffered (offset, payload) writes as the fewest pwrites that leave
+    a file as the writes did, in arrival order.
 
-    The batch form of the pwrite splice, for the kernel adapters: FUSE
-    buffers each write as an (offset, payload) pair on its handle and
-    owes the mount one merged body at flush, which is exactly a
-    sequence of pwrites over what the file held.
+    The kernel adapters buffer each write on its handle and owe the mount
+    the lot at flush. A write that starts inside the last run, or right
+    at its end, folds into it, so a sequential stream is one run. Any
+    other starts a run of its own; the runs apply in order, so a later
+    run still overwrites what it overlaps of an earlier one.
 
     Args:
-        base (bytes): the file's content before this handle's writes.
         writes (Iterable[tuple[int, bytes]]): the buffered writes, in
             arrival order.
     """
-    handle = FileHandle(path="", buf=bytearray(base), writable=True)
+    runs: list[tuple[int, bytearray]] = []
     for offset, chunk in writes:
-        handle.pwrite(offset, chunk)
-    return bytes(handle.buf)
+        if runs:
+            start, buf = runs[-1]
+            if start <= offset <= start + len(buf):
+                buf[offset - start : offset - start + len(chunk)] = chunk
+                continue
+        runs.append((offset, bytearray(chunk)))
+    return [(start, bytes(buf)) for start, buf in runs]

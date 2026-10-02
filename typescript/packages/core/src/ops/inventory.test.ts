@@ -19,6 +19,7 @@ import { CHROMA_OPS } from './chroma/index.ts'
 import { DATABRICKS_VOLUME_OPS } from './databricks_volume/index.ts'
 import { DISCORD_OPS } from './discord/index.ts'
 import { DROPBOX_OPS } from './dropbox/index.ts'
+import { GCAL_OPS } from './gcal/index.ts'
 import { GDOCS_OPS } from './gdocs/index.ts'
 import { GDRIVE_OPS } from './gdrive/index.ts'
 import { GITHUB_OPS } from './github/index.ts'
@@ -54,6 +55,7 @@ const TABLES = {
   databricks_volume: DATABRICKS_VOLUME_OPS,
   discord: DISCORD_OPS,
   dropbox: DROPBOX_OPS,
+  gcal: GCAL_OPS,
   gdocs: GDOCS_OPS,
   gdrive: GDRIVE_OPS,
   github: GITHUB_OPS,
@@ -82,6 +84,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'box', '', true],
     ['create', 'box', '', true],
     ['mkdir', 'box', '', true],
+    ['pwrite', 'box', '', true],
     ['read', 'box', '', false],
     ['glob', 'box', '', false],
     ['readdir', 'box', '', false],
@@ -102,6 +105,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'databricks_volume', '', true],
     ['create', 'databricks_volume', '', true],
     ['mkdir', 'databricks_volume', '', true],
+    ['pwrite', 'databricks_volume', '', true],
     ['read', 'databricks_volume', '', false],
     ['glob', 'databricks_volume', '', false],
     ['readdir', 'databricks_volume', '', false],
@@ -121,6 +125,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'dropbox', '', true],
     ['create', 'dropbox', '', true],
     ['mkdir', 'dropbox', '', true],
+    ['pwrite', 'dropbox', '', true],
     ['read', 'dropbox', '', false],
     ['glob', 'dropbox', '', false],
     ['readdir', 'dropbox', '', false],
@@ -130,6 +135,12 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['truncate', 'dropbox', '', true],
     ['unlink', 'dropbox', '', true],
     ['write', 'dropbox', '', true],
+  ],
+  gcal: [
+    ['read', 'gcal', '', false],
+    ['glob', 'gcal', '', false],
+    ['readdir', 'gcal', '', false],
+    ['stat', 'gcal', '', false],
   ],
   gdocs: [
     ['read', 'gdocs', '.gdoc.json', false],
@@ -141,6 +152,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'gdrive', '', true],
     ['create', 'gdrive', '', true],
     ['mkdir', 'gdrive', '', true],
+    ['pwrite', 'gdrive', '', true],
     ['read', 'gdrive', '', false],
     ['glob', 'gdrive', '', false],
     ['readdir', 'gdrive', '', false],
@@ -221,6 +233,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'onedrive', '', true],
     ['create', 'onedrive', '', true],
     ['mkdir', 'onedrive', '', true],
+    ['pwrite', 'onedrive', '', true],
     ['read', 'onedrive', '', false],
     ['glob', 'onedrive', '', false],
     ['readdir', 'onedrive', '', false],
@@ -247,6 +260,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'ram', '', true],
     ['create', 'ram', '', true],
     ['mkdir', 'ram', '', true],
+    ['pwrite', 'ram', '', true],
     ['read', 'ram', '', false],
     ['glob', 'ram', '', false],
     ['readdir', 'ram', '', false],
@@ -262,6 +276,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'redis', '', true],
     ['create', 'redis', '', true],
     ['mkdir', 'redis', '', true],
+    ['pwrite', 'redis', '', true],
     ['read', 'redis', '', false],
     ['glob', 'redis', '', false],
     ['readdir', 'redis', '', false],
@@ -283,6 +298,7 @@ const OPS_INVENTORY: Record<string, Row[]> = {
     ['append', 'sharepoint', '', true],
     ['create', 'sharepoint', '', true],
     ['mkdir', 'sharepoint', '', true],
+    ['pwrite', 'sharepoint', '', true],
     ['read', 'sharepoint', '', false],
     ['glob', 'sharepoint', '', false],
     ['readdir', 'sharepoint', '', false],

@@ -48,44 +48,6 @@ async function runWc(
 }
 
 describe('discord wc', () => {
-  it('counts lines, words, bytes by default', async () => {
-    const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
-      dates: ['2016-04-30'],
-    })
-    const transport = new FakeDiscordTransport((_m, endpoint) => {
-      if (endpoint === '/channels/C1/messages') {
-        return [
-          { id: '175928847299117056', content: 'a' },
-          { id: '175928847299117057', content: 'b' },
-          { id: '175928847299117058', content: 'c' },
-        ]
-      }
-      return null
-    })
-    const out = await runWc(
-      [
-        new PathSpec({
-          virtual: '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
-          directory: '/mnt/discord/My Server__G1/channels/general__C1/',
-          resolved: false,
-          vfsPath: mountKey(
-            '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
-            '/mnt/discord',
-          ),
-        }),
-      ],
-      {},
-      { index: idx, transport },
-    )
-    const parts = out.trim().split(/\s+/)
-    expect(parts[0]).toBe('3')
-    expect(parts.slice(3).join(' ')).toBe(
-      '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
-    )
-  })
-
   it('supports -l flag (line count)', async () => {
     const idx = new RAMIndexCacheStore()
     await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')

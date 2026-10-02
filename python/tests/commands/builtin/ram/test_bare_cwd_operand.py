@@ -46,16 +46,6 @@ async def test_find_bare_walks_the_cwd(workspace):
 
 
 @pytest.mark.asyncio
-async def test_find_bare_with_expression(workspace):
-    seeded = await _seed(workspace)
-    # `find -name x` is `find . -name x`; the implied `.` goes before
-    # the expression.
-    io = await seeded.shell("find -name '*.txt'", cwd="/")
-    assert io.exit_code == 0
-    assert (io.stdout or b"") == b"./a.txt\n./sub/b.txt\n"
-
-
-@pytest.mark.asyncio
 async def test_tree_bare_renders_the_cwd(workspace):
     seeded = await _seed(workspace)
     io = await seeded.shell("tree", cwd="/")

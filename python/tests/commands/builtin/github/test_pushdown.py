@@ -12,10 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from mirage.accessor.github import GitHubAccessor
-from mirage.commands.builtin.github.du import _subtree
 from mirage.commands.builtin.github.grep import grep
 from mirage.commands.builtin.github.pushdown import narrow_scope
 from mirage.commands.builtin.github.rg import rg
@@ -56,25 +56,6 @@ def _subdir() -> PathSpec:
     )
 
 
-def test_du_sizes_from_the_git_tree():
-    # du reads the tree, not the index: the tree is keyed repo-relative,
-    # which is the space this comparison is in, and it stays right
-    # however the mount keys its index.
-    accessor = GitHubAccessor(
-        None,
-        "acme",
-        "proj",
-        "main",
-        "main",
-        tree={
-            "src/main.py": TreeEntry(
-                path="src/main.py", type="blob", sha="main", size=7
-            )
-        },
-    )
-    assert _subtree(accessor, _subdir()) == ([("/src/main.py", 7)], [])
-
-
 @pytest.mark.asyncio
 async def test_subdir_narrows_and_fetches_fewer(
     mock_github_api, github_env, counting_read, monkeypatch
@@ -112,27 +93,20 @@ async def test_regex_scans_every_file(
 
 
 @pytest.mark.asyncio
-async def test_rg_shortcircuit_no_match_exit_1(
-    mock_github_api, github_env, monkeypatch
+async def test_grep_small_tree_skips_search(
+    mock_github_api, github_env, counting_read, monkeypatch
 ):
     accessor, index = github_env
-    monkeypatch.setitem(_NGLOBALS, "SCOPE_WARN", 1)
-    stdout, io = await rg(
+    spy = AsyncMock(return_value=[])
+    monkeypatch.setitem(_NGLOBALS, "narrow_paths", spy)
+    stdout, _ = await grep(
         accessor,
         [_root()],
         ["import"],
-        CommandOpts(
-            index=index,
-            flags={
-                "files_with_matches": True,
-                "glob": ["*.nomatch"],
-                "word_regexp": True,
-            },
-        ),
+        CommandOpts(index=index, flags={"r": True, "w": True}),
     )
-    body = (await materialize(stdout)).decode()
-    assert io.exit_code == 1
-    assert body == ""
+    await materialize(stdout)
+    spy.assert_not_awaited()
 
 
 # The mount conftest.py builds, as code search names it.

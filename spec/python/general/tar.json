@@ -326,6 +326,10 @@
     {
       "long": "--exclude",
       "type": "str"
+    },
+    {
+      "long": "--one-file-system",
+      "type": "bool"
     }
   ],
   "rest": {

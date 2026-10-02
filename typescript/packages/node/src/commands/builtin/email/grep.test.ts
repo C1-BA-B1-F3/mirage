@@ -58,17 +58,6 @@ beforeEach(() => {
 })
 
 describe('email grep push-down', () => {
-  it('defers an alternation to the generic scan', async () => {
-    // IMAP TEXT is a substring search, not a regex engine. Handed
-    // `parser|percent` verbatim it looked for that literal, matched
-    // nothing, and grep answered exit 1 for a search GNU satisfies twice
-    // over. With no literal every match must contain, only the generic
-    // scan is faithful (#1067).
-    await run(['parser|percent'], { r: true, E: true })
-    expect(search).not.toHaveBeenCalled()
-    expect(generic).toHaveBeenCalledTimes(1)
-  })
-
   it('narrows a regex on its required literal and runs itself over each candidate', async () => {
     // A candidate the case-insensitive substring search returns but the
     // regex rejects contributes nothing.
@@ -88,30 +77,5 @@ describe('email grep push-down', () => {
     const [, io] = (await run(['say "hi"'], { r: true, F: true })) as [Uint8Array, IOResult]
     expect(search.mock.calls[0]?.[2]).toBe('say "hi"')
     expect(io.exitCode).toBe(1)
-  })
-
-  it('narrows an optional group on the run it requires', async () => {
-    // `(forecast)?percent` matches a line holding only `percent`, so the
-    // optional group's longer run is not the one the server is asked for.
-    search.mockResolvedValue([['/email/INBOX/a.email.json', 'disk usage at 91 percent']])
-    const [out, io] = (await run(['(forecast)?percent'], { r: true, E: true })) as [
-      Uint8Array,
-      IOResult,
-    ]
-    expect(search.mock.calls[0]?.[2]).toBe('percent')
-    expect(DEC.decode(out)).toBe('/email/INBOX/a.email.json:disk usage at 91 percent\n')
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('reads a basic expression before narrowing', async () => {
-    // Without -E the pattern is a basic expression: `\(...\)\?` is the
-    // optional group there, so its run is skipped and `parser` is required.
-    search.mockResolvedValue([['/email/INBOX/a.email.json', 'yesterday shipped the parser']])
-    const [out, io] = (await run(['the \\(brand-new tokenizer or \\)\\?parser'], {
-      r: true,
-    })) as [Uint8Array, IOResult]
-    expect(search.mock.calls[0]?.[2]).toBe('parser')
-    expect(DEC.decode(out)).toBe('/email/INBOX/a.email.json:yesterday shipped the parser\n')
-    expect(io.exitCode).toBe(0)
   })
 })

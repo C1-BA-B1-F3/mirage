@@ -23,7 +23,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "chmod 644 '/data/*.txt'",
       "expect": {
@@ -55,7 +57,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "chmod 644 \"/data/*.txt\"",
       "expect": {
@@ -87,7 +91,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "chmod 644 /data/\\*.txt",
       "expect": {
@@ -119,7 +125,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "p='/data/sorted_*.txt'; chmod 644 \"$p\"",
       "expect": {
@@ -321,7 +329,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix"
       ],
       "command": "rm '/data/sorted_*.txt'",
       "expect": {
@@ -344,7 +354,18 @@
         "s3-prefix",
         "databricks-prefix",
         "gridfs-prefix",
-        "ssh"
+        "ssh",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "touch '/data/zq*zq.txt' && ls /data/zq*zq.txt && rm '/data/zq*zq.txt'",
       "expect": {
@@ -503,7 +524,18 @@
         "s3-prefix",
         "databricks-prefix",
         "gridfs-prefix",
-        "ssh"
+        "ssh",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
       ],
       "command": "touch '/data/zq*a.txt' /data/zqxa.txt && rm '/data/zq*'?.txt && ls -1 /data/zqxa.txt && rm /data/zqxa.txt",
       "expect": {

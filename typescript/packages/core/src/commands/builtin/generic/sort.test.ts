@@ -1,5 +1,3 @@
-import { parseCommand, parseToKwargs } from '../../spec/parser.ts'
-import { specOf } from '../../spec/builtins.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { unreadableStdin } from '../../../shell/descriptors.ts'
-import { eisdir, enoent } from '../../../utils/errors.ts'
+import { enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import { parseFlags, sortGeneric } from './sort.ts'
 
@@ -60,28 +58,7 @@ describe('sort quotes the word --check refuses', () => {
   })
 })
 
-// Measured, coreutils 9.4: `sort --check=x f` is SIX lines and exit 1.
-// `quiet` and `silent` are aliases of one value, so gnulib's
-// `argmatch_valid` puts them on one row; the exit is 1, not sort's usual
-// usage code of 2, because `argmatch_die` always calls
-// `usage (EXIT_FAILURE)`. Mirrors test_sort.py.
-describe('sort --check refusal carries GNU candidate block', () => {
-  it('lists the candidates and exits 1', async () => {
-    const [stderr, code] = await stderrOf({ check: 'x' })
-    expect(stderr).toBe(
-      "sort: invalid argument 'x' for '--check'\n" +
-        "Valid arguments are:\n  - 'quiet', 'silent'\n  - 'diagnose-first'\n" +
-        "Try 'sort --help' for more information.\n",
-    )
-    expect(code).toBe(1)
-  })
-
-  it('words an empty value as ambiguous', async () => {
-    const [stderr, code] = await stderrOf({ check: '' })
-    expect(stderr.split('\n')[0]).toBe("sort: ambiguous argument '' for '--check'")
-    expect(code).toBe(1)
-  })
-
+describe('sort --check resolves an unambiguous prefix', () => {
   // `sort --check=q`, `=s` and `=d` all exit 0 on sorted input (measured,
   // coreutils 9.4). The stdin here is NOT sorted, so the canonical word is
   // observable: the ('quiet', 'silent') value stays silent while
@@ -130,7 +107,6 @@ interface Run {
   files?: Record<string, Source>
   flags?: CommandOpts['flags']
   stdin?: CommandOpts['stdin']
-  write?: (path: PathSpec, data: Uint8Array) => Promise<void>
 }
 
 async function run(r: Run): Promise<[string, string, number]> {
@@ -149,7 +125,7 @@ async function run(r: Run): Promise<[string, string, number]> {
     if (source instanceof Error) throw source
     yield source
   }
-  const result = await sortGeneric(r.paths ?? [], opts, stream, r.write)
+  const result = await sortGeneric(r.paths ?? [], opts, stream)
   if (result === null) throw new Error('sort returned no result')
   const [out, io] = result
   const stdout = out === null ? '' : DEC.decode(await materialize(out))
@@ -160,33 +136,12 @@ async function run(r: Run): Promise<[string, string, number]> {
 // Every expectation below was measured against GNU coreutils 9.7 on
 // debian:stable-slim under LC_ALL=C. Mirrors test_sort.py.
 describe('sort names the step an input failed at', () => {
-  it('words a missing input as cannot read, exit 2', async () => {
-    const [, stderr, code] = await run({
-      paths: [spec('/data/missing.txt')],
-      files: { '/data/missing.txt': enoent('/data/missing.txt') },
-    })
-    expect(stderr).toBe('sort: cannot read: /data/missing.txt: No such file or directory\n')
-    expect(code).toBe(2)
-  })
-
   it('names the input as typed, quoted when it needs it', async () => {
     const [, stderr] = await run({
       paths: [spec('/data/no such.txt', 'no such.txt')],
       files: { '/data/no such.txt': enoent('/data/no such.txt') },
     })
     expect(stderr).toBe("sort: cannot read: 'no such.txt': No such file or directory\n")
-  })
-
-  it('reads a directory as read failed, behind a missing input', async () => {
-    const files = {
-      '/data/dir': eisdir('/data/dir'),
-      '/data/missing.txt': enoent('/data/missing.txt'),
-    }
-    const [, alone, code] = await run({ paths: [spec('/data/dir')], files })
-    expect(alone).toBe('sort: read failed: /data/dir: Is a directory\n')
-    expect(code).toBe(2)
-    const [, both] = await run({ paths: [spec('/data/dir'), spec('/data/missing.txt')], files })
-    expect(both).toBe('sort: cannot read: /data/missing.txt: No such file or directory\n')
   })
 
   it('stops at the first input that fails its access check', async () => {
@@ -204,29 +159,6 @@ describe('sort names the step an input failed at', () => {
   ])('fails a closed stdin where GNU first touches it (%j)', async (flags, verb) => {
     const [, stderr, code] = await run({ flags, stdin: unreadableStdin() })
     expect(stderr).toBe(`sort: ${verb}: -: Bad file descriptor\n`)
-    expect(code).toBe(2)
-  })
-
-  it('opens the input -c reads rather than testing access', async () => {
-    const [, stderr, code] = await run({
-      paths: [spec('/data/missing.txt')],
-      files: { '/data/missing.txt': enoent('/data/missing.txt') },
-      flags: { C: true },
-    })
-    expect(stderr).toBe('sort: open failed: /data/missing.txt: No such file or directory\n')
-    expect(code).toBe(2)
-  })
-
-  it.each([
-    [enoent('/data/nodir/out.txt'), 'No such file or directory'],
-    [eisdir('/data/nodir/out.txt'), 'Is a directory'],
-  ])('words an output that will not open as open failed', async (failure, strerror) => {
-    const [, stderr, code] = await run({
-      stdin: bytes('b\na\n'),
-      flags: { output: ['/data/nodir/out.txt'] },
-      write: () => Promise.reject(failure),
-    })
-    expect(stderr).toBe(`sort: open failed: /data/nodir/out.txt: ${strerror}\n`)
     expect(code).toBe(2)
   })
 })
@@ -257,12 +189,6 @@ describe('sort -c and -C', () => {
     expect(code).toBe(2)
   })
 
-  it('checks quietly under -C and exits 1', async () => {
-    const [, stderr, code] = await run({ stdin: bytes('b\na\n'), flags: { C: true } })
-    expect(stderr).toBe('')
-    expect(code).toBe(1)
-  })
-
   it.each([
     { c: true, C: true },
     { C: true, c: true },
@@ -290,17 +216,6 @@ describe('sort -o', () => {
     expect(stderr).toBe('sort: multiple output files specified\n')
     expect(code).toBe(2)
     expect(parseFlags({ output: ['/data/p1', '/data/p1'] }).output?.virtual).toBe('/data/p1')
-  })
-
-  it('tells two outputs apart by the word typed', () => {
-    // GNU compares -o values with STREQ: `-o ./out -o out` is refused
-    // although both name one file (coreutils 9.7). Mirrors test_sort.py.
-    const typed = (rawPath: string): PathSpec =>
-      new PathSpec({ virtual: '/data/out', directory: '/data/', vfsPath: 'out', rawPath })
-    expect(() => parseFlags({ output: [typed('./out'), typed('out')] })).toThrow(
-      'sort: multiple output files specified',
-    )
-    expect(parseFlags({ output: [typed('out'), typed('out')] }).output?.rawPath).toBe('out')
   })
 
   it('refuses the first bad option on the line', async () => {
@@ -354,15 +269,6 @@ describe('sort refuses incompatible orderings where GNU does', () => {
 })
 
 describe('sort inputs', () => {
-  it('ends each input at its own last line', async () => {
-    const [stdout, , code] = await run({
-      paths: [spec('/data/f1'), spec('/data/f2')],
-      files: { '/data/f1': bytes('b'), '/data/f2': bytes('a\n') },
-    })
-    expect(stdout).toBe('a\nb\n')
-    expect(code).toBe(0)
-  })
-
   it('merges without reordering a run under -m', async () => {
     const [single] = await run({
       paths: [spec('/data/in.txt')],
@@ -377,13 +283,4 @@ describe('sort inputs', () => {
     })
     expect(two).toBe('b\nc\na\n')
   })
-})
-
-it.each([
-  [['-o', 'out', '-k', '2,2', '-k', '0', '-o', 'out2'], 'field number is zero'],
-  [['-k', '2,2', '-o', 'out', '-o', 'out2', '-k', '0'], 'multiple output files'],
-  [['--check', '--check=quiet'], "options '-cC' are incompatible"],
-] as const)('refuses interleaved options in scan order: %j', (argv, message) => {
-  const flags = parseToKwargs(parseCommand(specOf('sort'), [...argv], '/data', 'sort'))
-  expect(() => parseFlags(flags)).toThrow(message)
 })

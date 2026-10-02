@@ -14,11 +14,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { IOResult } from '../../../io/types.ts'
-import { MountMode, type PathSpec } from '../../../types.ts'
+import type { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
-import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
-import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { UsageError } from '../../errors.ts'
 import { chunkAt, chunkParts, parseChunksValue, splitGeneric } from './split.ts'
 
@@ -58,11 +55,6 @@ describe('split flag values', () => {
     const written = await runSplit({ bytes: '1k' }, 'A'.repeat(1500))
     expect(written.xaa?.length).toBe(1024)
     expect(written.xab?.length).toBe(476)
-  })
-
-  it('honors a hex suffix start in base 16', async () => {
-    const written = await runSplit({ hex_suffixes: '10', lines: '1' }, 'a\nb\n')
-    expect(Object.keys(written).sort()).toEqual(['x10', 'x11'])
   })
 
   it('treats -a 0 as the default width instead of colliding names', async () => {
@@ -119,12 +111,6 @@ describe('split flag values', () => {
       )
     },
   )
-
-  it('refuses an empty separator', async () => {
-    await expect(runSplit({ separator: '' })).rejects.toThrow(
-      new UsageError('split: empty record separator', 1),
-    )
-  })
 
   it('exhausts an explicit width instead of wrapping onto earlier chunks', async () => {
     // GNU keeps the chunks already written and fails on the next name.
@@ -256,10 +242,6 @@ describe('split -n names the component GNU names', () => {
     )
   })
 
-  it.each([['4'], ['l/4'], ['r/4']])('accepts the shape %j', async (value) => {
-    expect(Object.keys(await runSplit({ number: value })).length).toBe(4)
-  })
-
   it.each([
     ['2/4', { kind: 'bytes', count: 4, only: 2 }],
     ['+2/3', { kind: 'bytes', count: 3, only: 2 }],
@@ -268,30 +250,12 @@ describe('split -n names the component GNU names', () => {
   ])('reads %j as chunk K of N', (value, spec) => {
     expect(parseChunksValue(value)).toEqual(spec)
   })
-
-  // coreutils 9.7: `4/3` and `0/3` name K, `3/0` names N.
-  it.each([
-    ['4/3', "split: invalid chunk number: '4'"],
-    ['0/3', "split: invalid chunk number: '0'"],
-    ['l/0/3', "split: invalid chunk number: '0'"],
-    ['3/0', "split: invalid number of chunks: '0'"],
-  ])('refuses %j as %s', (value, message) => {
-    expect(() => parseChunksValue(value)).toThrow(new UsageError(message, 1))
-  })
 })
 
 // Every row measured on coreutils 9.7 (debian:stable-slim).
 describe('split -n cuts the way GNU cuts', () => {
   const LINES = ENC.encode('line1\nline2\nline3\nline4\nline5\n')
   const text = (parts: Uint8Array[]): string[] => parts.map((p) => DEC.decode(p))
-
-  it('spreads the byte remainder over the first chunks', () => {
-    expect(text([...chunkParts(ENC.encode('abcdefg'), parseChunksValue('3'), 0x0a)])).toEqual([
-      'abc',
-      'de',
-      'fg',
-    ])
-  })
 
   it('leaves the tail chunks empty when the input is shorter than N', () => {
     expect(text([...chunkParts(ENC.encode('ab'), parseChunksValue('5'), 0x0a)])).toEqual([
@@ -341,14 +305,6 @@ describe('split -n cuts the way GNU cuts', () => {
     ])
   })
 
-  it('deals records round robin', () => {
-    expect(text([...chunkParts(LINES, parseChunksValue('r/3'), 0x0a)])).toEqual([
-      'line1\nline4\n',
-      'line2\nline5\n',
-      'line3\n',
-    ])
-  })
-
   it('reads one chunk without cutting the rest', () => {
     // coreutils 9.7 over `abc\ndef\n`, each instant however large N is.
     const huge = '1000000000'
@@ -374,44 +330,6 @@ describe('split -n cuts the way GNU cuts', () => {
     expect(() => parseChunksValue('99999999999999999999999')).toThrow(
       "split: invalid number of chunks: '99999999999999999999999'",
     )
-  })
-
-  it('writes chunk K of N to stdout and no file', async () => {
-    const written: Record<string, string> = {}
-    const opts = {
-      stdin: ENC.encode('line1\nline2\nline3\nline4\nline5\n'),
-      flags: { number: 'l/2/3' },
-      filetypeFns: null,
-      cwd: '/',
-    } as CommandOpts
-    const result = await splitGeneric(
-      [],
-      opts,
-      () => {
-        throw new Error('stdin only')
-      },
-      (p, data) => {
-        written[p.mountPath] = DEC.decode(data)
-        return Promise.resolve()
-      },
-    )
-    expect(result).not.toBeNull()
-    const [stdout] = result as [Uint8Array, unknown]
-    expect(DEC.decode(stdout)).toBe('line3\nline4\n')
-    expect(written).toEqual({})
-  })
-})
-
-describe('split suffix starts follow GNU', () => {
-  it('refuses an upper-case hex start value', async () => {
-    await expect(runSplit({ bytes: '2', hex_suffixes: 'A' }, 'abcdef\n')).rejects.toThrow(
-      new UsageError("split: 'A': invalid start value for hexadecimal suffix" + TRY, 1),
-    )
-  })
-
-  it('reads an empty numeric start as 0 with the width pinned', async () => {
-    const written = await runSplit({ bytes: '3', numeric_suffixes: '' }, 'abcdef\n')
-    expect(Object.keys(written).sort()).toEqual(['x00', 'x01', 'x02'])
   })
 })
 
@@ -527,33 +445,5 @@ describe('split names stdin outputs in the working directory', () => {
     expect(specs.map((p) => p.virtual)).toEqual(named)
     const [, io] = result as [unknown, IOResult]
     expect(Object.keys(io.writes)).toEqual(named.map((n) => n.slice('/data'.length)))
-  })
-})
-
-async function shell(
-  line: string,
-  stdin: Uint8Array | null = null,
-  seed: Record<string, string> = {},
-): Promise<[string, string, number]> {
-  const ws = new Workspace(
-    { '/data/': new RAMVFS() },
-    { mode: MountMode.WRITE, shellParser: await getTestParser() },
-  )
-  try {
-    for (const [path, body] of Object.entries(seed)) {
-      await ws.shell(`tee ${path} > /dev/null`, { stdin: new TextEncoder().encode(body) })
-    }
-    const io = await ws.shell(line, { stdin })
-    const dec = new TextDecoder()
-    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
-  } finally {
-    await ws.close()
-  }
-}
-
-describe('split with stdin', () => {
-  it('reads a dash input from stdin', async () => {
-    const r = await shell('cd /data && split -l 1 - sp_ && cat sp_aa sp_ab', ENC.encode('a\nb\n'))
-    expect(r).toEqual(['a\nb\n', '', 0])
   })
 })

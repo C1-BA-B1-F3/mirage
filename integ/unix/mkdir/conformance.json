@@ -229,6 +229,28 @@
         "stdout": "rc=1\nrc=0\n",
         "stderr": "mkdir: cannot create directory '/data/mkpf/f.txt': File exists\n"
       }
+    },
+    {
+      "id": "mkdir_refuses_a_directory_under_a_file",
+      "seq": 601084,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix"
+      ],
+      "command": "mkdir -p /data/mkuf && touch /data/mkuf/f.txt && mkdir /data/mkuf/f.txt/sub; echo rc=$?; mkdir -p /data/mkuf/f.txt/x/y; echo rc=$?; ls /data/mkuf",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=1\nf.txt\n",
+        "stderr": "mkdir: cannot create directory '/data/mkuf/f.txt/sub': Not a directory\nmkdir: cannot create directory '/data/mkuf/f.txt': Not a directory\n"
+      }
     }
   ]
 }

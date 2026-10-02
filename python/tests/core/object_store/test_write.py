@@ -118,6 +118,21 @@ def test_mkdir_refuses_a_name_that_exists(accessor):
     assert store.puts == []
 
 
+def test_mkdir_refuses_a_directory_under_a_file(accessor):
+    # A marker below a file put a directory under it. mkdir(2) blames
+    # the operand; the walk `mkdir -p` makes names the file it stops at.
+    store = FakeStore({"f.txt": b"x"})
+    mkdir = make_mkdir(make_driver(store))
+    for path, parents, named in (
+        ("/f.txt/sub", False, "/mnt/f.txt/sub"),
+        ("/f.txt/x/y", True, "/mnt/f.txt"),
+    ):
+        with pytest.raises(NotADirectoryError) as caught:
+            _managed(mkdir(accessor, spec(path), parents=parents))
+        assert caught.value.args == (named,)
+    assert store.puts == []
+
+
 def test_mkdir_without_marker_support_is_a_no_op(accessor):
     store = FakeStore()
     driver = replace(make_driver(store), markers_supported=False)

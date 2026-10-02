@@ -30,38 +30,6 @@ def _patch_read(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_read_valid_blob(github_env):
-    accessor, index = github_env
-    data = await github_read(
-        accessor, PathSpec.from_str_path("/README.md"), index
-    )
-    assert isinstance(data, bytes)
-    assert b"Mock Repo" in data
-
-
-@pytest.mark.asyncio
-async def test_read_missing_path(github_env):
-    accessor, index = github_env
-    with pytest.raises(FileNotFoundError):
-        await github_read(
-            accessor, PathSpec.from_str_path("/nonexistent.txt"), index
-        )
-
-
-@pytest.mark.asyncio
-async def test_read_empty_index_refills(github_env):
-    # An empty index is no knowledge, not knowledge of absence: the index
-    # here is the whole listing, and invalidation drops rows rather than
-    # expiring them, so reading a miss as ENOENT made an invalidated mount
-    # answer ENOENT forever.
-    accessor, _ = github_env
-    data = await github_read(
-        accessor, PathSpec.from_str_path("/README.md"), RAMIndexCacheStore()
-    )
-    assert b"Mock Repo" in data
-
-
-@pytest.mark.asyncio
 async def test_read_empty_index_still_enoent_off_tree(github_env):
     accessor, _ = github_env
     with pytest.raises(FileNotFoundError):

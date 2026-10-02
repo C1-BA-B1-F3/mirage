@@ -16,6 +16,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import TypeVar
 
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
@@ -32,6 +33,8 @@ from mirage.observe.context import active_recorder
 from mirage.observe.record import READ_FINGERPRINT_OPS
 from mirage.types import DEFAULT_READ_TTL, FileStat, PathSpec
 from mirage.utils.key_prefix import mount_key
+
+T = TypeVar("T")
 
 
 def _now() -> float:
@@ -530,10 +533,28 @@ class CacheManager:
         cached = await self.cached_bytes(path)
         if cached is not None:
             return cached
+        return await self.fill(path, fetch)
+
+    async def fill(
+        self, path: PathSpec, fetch: Callable[[], Awaitable[T]]
+    ) -> T:
+        """Run a cold whole-file read and keep its bytes for the next one.
+
+        The fill half of ``read_through``, for a door that probed the
+        cache itself (the dispatcher's). A write that lands while the
+        fetch runs retires the generation, so the bytes it read are not
+        kept; an answer that is not bytes is returned and kept nowhere.
+
+        Args:
+            path (PathSpec): file being read.
+            fetch (Callable): cold whole-file reader.
+        """
         generation = self._read_generation
         recorder = active_recorder()
         start = len(recorder.sink) if recorder is not None else 0
         data = await fetch()
+        if not isinstance(data, bytes):
+            return data
         key = self._cache_key(path)
         cache = self._readable_cache(key)
         if cache is not None:

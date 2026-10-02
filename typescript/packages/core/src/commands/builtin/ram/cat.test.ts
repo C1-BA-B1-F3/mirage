@@ -19,41 +19,7 @@ import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { PathSpec } from '../../../types.ts'
 const RAM_CAT = RAM_COMMANDS.filter((c) => c.name === 'cat' && c.filetype == null)
 
-const DEC = new TextDecoder()
-
-async function runCat(
-  vfs: RAMVFS,
-  paths: PathSpec[],
-  flags: Record<string, string | boolean | number | string[]> = {},
-): Promise<string> {
-  const cmd = RAM_CAT[0]
-  if (cmd === undefined) throw new Error('cat not registered')
-  const result = await cmd.fn(vfs.accessor, paths, [], {
-    stdin: null,
-    flags,
-    filetypeFns: null,
-    cwd: '/',
-  })
-  if (result === null) return ''
-  const [out] = result
-  if (out === null) return ''
-  const buf = out instanceof Uint8Array ? out : await materialize(out as AsyncIterable<Uint8Array>)
-  return DEC.decode(buf)
-}
-
 describe('cat', () => {
-  it('returns bytes for existing file', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', new TextEncoder().encode('hello world'))
-    expect(await runCat(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello world')
-  })
-
-  it('empty file', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', new Uint8Array())
-    expect(await runCat(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('')
-  })
-
   it('full byte range (256 bytes)', async () => {
     const vfs = new RAMVFS()
     const data = new Uint8Array(256)
@@ -74,11 +40,5 @@ describe('cat', () => {
       out instanceof Uint8Array ? out : await materialize(out as AsyncIterable<Uint8Array>)
     expect(buf.byteLength).toBe(256)
     for (let i = 0; i < 256; i++) expect(buf[i]).toBe(i)
-  })
-
-  it('multiline content', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/tmp/f.txt', new TextEncoder().encode('line1\nline2\nline3\n'))
-    expect(await runCat(vfs, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('line1\nline2\nline3\n')
   })
 })

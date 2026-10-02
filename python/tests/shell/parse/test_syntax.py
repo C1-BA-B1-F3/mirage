@@ -22,6 +22,7 @@ from mirage.shell.parse import (
     find_syntax_error,
     find_unterminated_backtick,
     parse,
+    source_offsets,
 )
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -234,3 +235,87 @@ async def test_literal_quotes_are_not_reported_as_unclosed(command, expected):
         assert await io.stderr_str() == ""
     finally:
         await ws.close()
+
+
+@pytest.mark.parametrize(
+    "command, word",
+    [
+        ("echo hi; fi", "fi"),
+        ("done", "done"),
+        ("then", "then"),
+        ("esac", "esac"),
+        ("}", "}"),
+        ("]]", "]]"),
+        ("in", "in"),
+        ("! fi", "fi"),
+        ("fi >/dev/null", "fi"),
+        ("echo a | fi", "fi"),
+        ("echo a && fi", "fi"),
+        ("fi; done", "fi"),
+        ("fi; for a in b; do done", "fi"),
+        ("if x; then fi; for a in b; do done", "fi"),
+    ],
+)
+def test_a_reserved_word_where_a_command_starts_is_a_syntax_error(
+    command, word
+):
+    # Pinned against bash 5.2.37, which refuses the line at the word.
+    assert find_syntax_error(parse(command)) == word
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        '"fi"',
+        "\\fi",
+        "x=1 fi",
+        ">/dev/null fi",
+        "echo fi done then",
+        "if true; then echo y; fi",
+        "for x in a; do echo $x; done",
+        "{ echo a; }",
+        "case a in a) echo m;; esac",
+    ],
+)
+def test_a_reserved_word_bash_reads_as_a_word_is_no_syntax_error(command):
+    assert find_syntax_error(parse(command)) is None
+
+
+@pytest.mark.parametrize(
+    "command, alias, word",
+    [
+        ("fi", "fi", None),
+        ("fi", "done", "fi"),
+        ("( fi )", "fi", None),
+        ("echo `fi`", "fi", None),
+        ('echo "$(fi)"', "fi", "fi"),
+        ("echo $( (fi) )", "fi", "fi"),
+        ("echo <(fi)", "fi", "fi"),
+    ],
+)
+def test_a_reserved_word_the_shell_expands_as_an_alias_is_a_command(
+    command, alias, word
+):
+    # Pinned against bash 5.2.37, which takes the reserved word first
+    # inside `$(...)` and a process substitution.
+    assert find_syntax_error(parse(command), frozenset({alias})) == word
+
+
+@pytest.mark.parametrize(
+    "line, own, word",
+    [
+        ("echo F; fi", {"fi": (0, 10)}, "fi"),
+        ("echo F; fi", {"fi": (0, 7)}, None),
+        ("echo C; fi echo F", {"c": (0, 11), "fi": (11, 17)}, None),
+        ("echo C; echo F; fi", {"c": (0, 8), "fi": (8, 18)}, "fi"),
+        ("echo F \\\n; fi", {"fi": (0, 13)}, "fi"),
+        ("echo F \\\n; fi", {"fi": (0, 10)}, None),
+    ],
+)
+def test_an_alias_name_is_reserved_inside_its_own_text(line, own, word):
+    # Pinned against bash 5.2.37: a name stays reserved only inside the
+    # text its alias put there, a trailing blank's chained one included.
+    # Spans are in the line as typed, which a continuation shifts.
+    root = parse(line)
+    offsets = source_offsets(line, root)
+    assert find_syntax_error(root, frozenset(own), own, offsets) == word

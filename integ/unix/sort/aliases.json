@@ -205,7 +205,12 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/tier1-sort && printf 'a\\nc\\n' > /data/tier1-sort/a && printf 'b\\nd\\n' > /data/tier1-sort/b && sort --merge /data/tier1-sort/a /data/tier1-sort/b",
       "expect": {
@@ -237,7 +242,12 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/tier1-sort && printf 'b\\na\\n' > /data/tier1-sort/in && sort --output=/data/tier1-sort/out /data/tier1-sort/in && cat /data/tier1-sort/out",
       "expect": {

@@ -21,7 +21,9 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/f4/del3 && printf 'z\\n' > /data/f4/del3/h.txt && find /data/f4/del3 -delete && find /data/f4 -name del3",
       "expect": {
@@ -54,7 +56,9 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/find_link_dir && ln -s missing /data/find_link_dir/link && find /data/find_link_dir -type d -delete",
       "expect": {
@@ -84,7 +88,9 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/find_link_dir -delete",
       "expect": {
@@ -114,7 +120,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "echo x > /data/delete_twice && find /data/delete_twice -delete -delete -print",
       "expect": {

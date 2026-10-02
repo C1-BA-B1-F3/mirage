@@ -576,6 +576,27 @@ def explain_notes(
     return notes
 
 
+def undecodable(streams: dict[str, bytes]) -> list[str]:
+    """Name each stream whose bytes are not UTF-8.
+
+    The battery compares a replacing decode, which reads a raw byte as
+    U+FFFD, so a host that printed the byte and one that printed U+FFFD
+    would pass alike. A case whose output is not text pins its bytes
+    through ``od -An -tx1`` instead.
+
+    Args:
+        streams (dict[str, bytes]): each stream's name and bytes.
+
+    Returns:
+        list[str]: one note per stream that is not UTF-8.
+    """
+    return [
+        f"{name}: not UTF-8; pin the bytes with od -An -tx1"
+        for name, raw in streams.items()
+        if raw.decode(errors="replace").encode() != raw
+    ]
+
+
 async def run_case(
     ws, case: dict, reasons: tuple[str, ...] = ()
 ) -> tuple[int, str, str, float, str | None, list[str]]:
@@ -625,13 +646,15 @@ async def run_case(
     record_start = len(ws.vfs.records) if read_paths else 0
     result = await ws.shell(case["command"], session_id=case.get("session"))
     elapsed = time.monotonic() - start
-    out = await result.stdout_str()
-    err = await result.stderr_str()
-    notes = (
-        explain_notes(predicted, recorded, result.exit_code, out, err, reasons)
-        if reasons and not case.get("explain_blind")
-        else []
-    )
+    raw_out = await result.materialize_stdout()
+    raw_err = await result.materialize_stderr()
+    out = raw_out.decode(errors="replace")
+    err = raw_err.decode(errors="replace")
+    notes = undecodable({"stdout": raw_out, "stderr": raw_err})
+    if reasons and not case.get("explain_blind"):
+        notes += explain_notes(
+            predicted, recorded, result.exit_code, out, err, reasons
+        )
     check_out = None
     if read_paths:
         paths = [
@@ -668,9 +691,10 @@ def malformed_mutate(spec: dict) -> str | None:
 
 async def run_scenario(
     read_ws, mutate, remove, mutate_line, steps: list[dict]
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, list[str]]:
     outs: list[str] = []
     errs: list[str] = []
+    notes: list[str] = []
     exit_code = 0
     for step in steps:
         if "mutate" in step:
@@ -687,10 +711,13 @@ async def run_scenario(
                 await mutate(spec["path"], spec["content"].encode())
             continue
         result = await read_ws.shell(step["command"])
-        outs.append(await result.stdout_str())
-        errs.append(await result.stderr_str())
+        raw_out = await result.materialize_stdout()
+        raw_err = await result.materialize_stderr()
+        outs.append(raw_out.decode(errors="replace"))
+        errs.append(raw_err.decode(errors="replace"))
+        notes += undecodable({"stdout": raw_out, "stderr": raw_err})
         exit_code = result.exit_code
-    return exit_code, "".join(outs), "".join(errs)
+    return exit_code, "".join(outs), "".join(errs), notes
 
 
 def compare(
@@ -708,7 +735,7 @@ def compare(
         diffs.append(f"exit: expected {expect['exit']}, got {exit_code}")
     if out != expect["stdout"]:
         diffs.append(f"stdout: expected {expect['stdout']!r}, got {out!r}")
-    if err.rstrip("\n") != expect["stderr"].rstrip("\n"):
+    if err != expect["stderr"]:
         diffs.append(f"stderr: expected {expect['stderr']!r}, got {err!r}")
     if case.get("check") is not None and check_out != expect["check"]:
         diffs.append(f"check: expected {expect['check']!r}, got {check_out!r}")

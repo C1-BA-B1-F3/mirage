@@ -21,7 +21,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "mkdir -p /data/f4/sub1/skipme /data/f4/del && printf 'alpha inner\\n' > /data/f4/sub1/inner.txt && printf 'alpha skip\\n' > /data/f4/sub1/skipme/deep.txt && printf 'x\\n' > /data/f4/del/f1.tmp && printf 'y\\n' > /data/f4/del/f2.tmp && printf 'keep\\n' > /data/f4/del/keep.txt",
       "expect": {
@@ -51,7 +55,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "find /data/f4/sub1 \\( -name inner.txt -o -name deep.txt \\)",
       "expect": {

@@ -305,7 +305,7 @@ export class Ops {
 
   // `raw` skips the filetype cascade: an explicit null filetype stops
   // the door from stamping the path's extension, so a rendered read op
-  // (gdoc/gsheet/gmail) is bypassed and the stored bytes come back.
+  // (gdoc/gsheet/gslide) is bypassed and the stored bytes come back.
   // `offset`/`size` ride the same kwargs the generic read op already reads,
   // so a backend with a native range fetches one window instead of the whole
   // object. Python spells this `read(path, offset, size, raw)`.
@@ -347,6 +347,17 @@ export class Ops {
    */
   async append(path: string, data: Uint8Array, sessionId?: string): Promise<void> {
     await this.through('append', path, [data], {}, sessionId)
+  }
+
+  /**
+   * Write bytes at an offset, keeping the rest of the file (the python
+   * facade's `pwrite`). pwrite(2): the bytes outside the window stay, a gap
+   * past the end reads back as zeros, and a missing file is created. It is
+   * one write at the door, so a session that may write the file and not
+   * read it can still do it.
+   */
+  async pwrite(path: string, data: Uint8Array, offset: number, sessionId?: string): Promise<void> {
+    await this.through('pwrite', path, [data, offset], {}, sessionId)
   }
 
   async readdir(path: string, sessionId?: string): Promise<string[]> {

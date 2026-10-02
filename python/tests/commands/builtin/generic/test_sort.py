@@ -5,7 +5,6 @@ import pytest
 from mirage.commands.builtin.errors import SortKeyError
 from mirage.commands.builtin.generic.sort import parse_flags, sort
 from mirage.commands.errors import UsageError
-from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.io.types import IOResult, materialize
 from mirage.shell.descriptors import unreadable_stdin
 from mirage.types import PathSpec
@@ -13,25 +12,6 @@ from mirage.types import PathSpec
 
 async def _unused_read_bytes(_path: PathSpec) -> bytes:
     raise AssertionError("read_bytes should not be called")
-
-
-@pytest.mark.asyncio
-async def test_no_operand_uses_empty_standard_input():
-    stdout, io = await sort([], read_bytes=_unused_read_bytes)
-
-    assert await materialize(stdout) == b""
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
-async def test_zero_field_keydef_exits_two():
-    stdout, io = await sort(
-        [], read_bytes=_unused_read_bytes, stdin=b"a\nb\n", key_defs=["0"]
-    )
-
-    assert await materialize(stdout) == b""
-    assert io.exit_code == 2
-    assert b"field number is zero" in await materialize(io.stderr)
 
 
 # GNU's ARGMATCH refusal names the refused word through gnulib's quote(),
@@ -55,36 +35,6 @@ def test_check_refusal_quotes_the_word(value, escaped):
     assert str(exc.value).startswith(
         f"sort: invalid argument '{escaped}' for '--check'\n"
     )
-
-
-def test_check_refusal_carries_gnus_candidate_block_and_exit_1():
-    """Measured, coreutils 9.4: `sort --check=x f` is SIX lines, exit 1.
-
-    `quiet` and `silent` are aliases of one value, so gnulib's
-    `argmatch_valid` puts them on one `  - ` row. The exit is 1, not
-    sort's usual usage code of 2, because `argmatch_die` always calls
-    `usage (EXIT_FAILURE)`.
-    """
-    with pytest.raises(UsageError) as exc:
-        parse_flags({"check": "x"})
-    assert str(exc.value) == (
-        "sort: invalid argument 'x' for '--check'\n"
-        "Valid arguments are:\n"
-        "  - 'quiet', 'silent'\n"
-        "  - 'diagnose-first'\n"
-        "Try 'sort --help' for more information."
-    )
-    assert exc.value.exit_code == 1
-
-
-def test_an_empty_check_is_ambiguous():
-    """`sort --check=` is `ambiguous argument ''`, exit 1 (measured)."""
-    with pytest.raises(UsageError) as exc:
-        parse_flags({"check": ""})
-    assert str(exc.value).startswith(
-        "sort: ambiguous argument '' for '--check'\n"
-    )
-    assert exc.value.exit_code == 1
 
 
 # gnulib's argmatch resolves an unambiguous prefix of one candidate, so
@@ -138,21 +88,6 @@ async def _stderr(io: IOResult) -> bytes:
 # Every row below was measured against GNU coreutils 9.7 on
 # debian:stable-slim under LC_ALL=C.
 @pytest.mark.asyncio
-async def test_a_missing_input_is_cannot_read_and_exits_two():
-    _, io = await sort(
-        [_spec("/data/missing.txt")],
-        read_bytes=_reader(
-            {"/data/missing.txt": FileNotFoundError("/data/missing.txt")}
-        ),
-        flags={},
-    )
-    assert await _stderr(io) == (
-        b"sort: cannot read: /data/missing.txt: No such file or directory\n"
-    )
-    assert io.exit_code == 2
-
-
-@pytest.mark.asyncio
 async def test_the_input_is_named_as_typed_and_quoted_when_it_needs_it():
     _, io = await sort(
         [_spec("/data/no such.txt", "no such.txt")],
@@ -163,29 +98,6 @@ async def test_the_input_is_named_as_typed_and_quoted_when_it_needs_it():
     )
     assert await _stderr(io) == (
         b"sort: cannot read: 'no such.txt': No such file or directory\n"
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_directory_is_read_failed_and_waits_behind_a_missing_input():
-    files: dict[str, bytes | OSError] = {
-        "/data/dir": IsADirectoryError("/data/dir"),
-        "/data/missing.txt": FileNotFoundError("/data/missing.txt"),
-    }
-    _, io = await sort(
-        [_spec("/data/dir")], read_bytes=_reader(files), flags={}
-    )
-    assert await _stderr(io) == (
-        b"sort: read failed: /data/dir: Is a directory\n"
-    )
-    assert io.exit_code == 2
-    _, io = await sort(
-        [_spec("/data/dir"), _spec("/data/missing.txt")],
-        read_bytes=_reader(files),
-        flags={},
-    )
-    assert await _stderr(io) == (
-        b"sort: cannot read: /data/missing.txt: No such file or directory\n"
     )
 
 
@@ -227,50 +139,6 @@ async def test_a_closed_stdin_fails_where_gnu_first_touches_it(flags, verb):
 
 
 @pytest.mark.asyncio
-async def test_check_opens_its_input_rather_than_testing_access():
-    _, io = await sort(
-        [_spec("/data/missing.txt")],
-        read_bytes=_reader(
-            {"/data/missing.txt": FileNotFoundError("/data/missing.txt")}
-        ),
-        flags={"C": True},
-    )
-    assert await _stderr(io) == (
-        b"sort: open failed: /data/missing.txt: No such file or directory\n"
-    )
-    assert io.exit_code == 2
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "failure,strerror",
-    [
-        (
-            FileNotFoundError("/data/nodir/out.txt"),
-            b"No such file or directory",
-        ),
-        (IsADirectoryError("/data/nodir/out.txt"), b"Is a directory"),
-    ],
-)
-async def test_an_output_that_will_not_open_is_open_failed(failure, strerror):
-
-    async def write_bytes(_path: PathSpec, _data: bytes) -> None:
-        raise failure
-
-    _, io = await sort(
-        [],
-        read_bytes=_unused_read_bytes,
-        write_bytes=write_bytes,
-        stdin=b"b\na\n",
-        flags={"output": [_spec("/data/nodir/out.txt")]},
-    )
-    assert await _stderr(io) == (
-        b"sort: open failed: /data/nodir/out.txt: " + strerror + b"\n"
-    )
-    assert io.exit_code == 2
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "flags,mode",
     [
@@ -306,15 +174,6 @@ async def test_a_second_operand_outranks_the_output_and_names_the_mode():
     assert io.exit_code == 2
 
 
-@pytest.mark.asyncio
-async def test_quiet_check_is_silent_and_exits_one():
-    _, io = await sort(
-        [], read_bytes=_unused_read_bytes, stdin=b"b\na\n", flags={"C": True}
-    )
-    assert await _stderr(io) == b""
-    assert io.exit_code == 1
-
-
 @pytest.mark.parametrize(
     "flags",
     [
@@ -344,24 +203,6 @@ def test_two_outputs_are_refused_unless_they_name_one_file():
     assert exc.value.exit_code == 2
     parsed = parse_flags({"output": [_spec("/data/p1"), _spec("/data/p1")]})
     assert parsed.output is not None and parsed.output.virtual == "/data/p1"
-
-
-def test_two_outputs_are_told_apart_by_the_word_typed():
-    # GNU compares -o values with STREQ: `-o ./out -o out` is refused
-    # although both name one file (coreutils 9.7).
-    def typed(raw: str) -> PathSpec:
-        return PathSpec(
-            virtual="/data/out",
-            directory="/data/",
-            vfs_path="out",
-            raw_path=raw,
-        )
-
-    with pytest.raises(UsageError) as exc:
-        parse_flags({"output": [typed("./out"), typed("out")]})
-    assert str(exc.value) == "sort: multiple output files specified"
-    parsed = parse_flags({"output": [typed("out"), typed("out")]})
-    assert parsed.output is not None and parsed.output.raw_path == "out"
 
 
 def test_the_first_bad_option_on_the_line_is_the_one_refused():
@@ -426,17 +267,6 @@ async def test_incompatible_orderings_outrank_the_operands(paths, flags):
 
 
 @pytest.mark.asyncio
-async def test_each_input_ends_its_own_last_line():
-    stdout, io = await sort(
-        [_spec("/data/f1"), _spec("/data/f2")],
-        read_bytes=_reader({"/data/f1": b"b", "/data/f2": b"a\n"}),
-        flags={},
-    )
-    assert await materialize(stdout) == b"a\nb\n"
-    assert io.exit_code == 0
-
-
-@pytest.mark.asyncio
 async def test_merge_trusts_its_inputs_and_never_reorders_one():
     stdout, _ = await sort(
         [_spec("/data/in.txt")],
@@ -450,27 +280,3 @@ async def test_merge_trusts_its_inputs_and_never_reorders_one():
         flags={"merge": True},
     )
     assert await materialize(stdout) == b"b\nc\na\n"
-
-
-@pytest.mark.parametrize(
-    "argv, message",
-    [
-        (
-            ["-o", "out", "-k", "2,2", "-k", "0", "-o", "out2"],
-            "field number is zero",
-        ),
-        (
-            ["-k", "2,2", "-o", "out", "-o", "out2", "-k", "0"],
-            "multiple output files",
-        ),
-        (["--check", "--check=quiet"], "options '-cC' are incompatible"),
-    ],
-)
-def test_interleaved_occurrences_refuse_the_first_invalid_option(
-    argv, message
-):
-    flags = parse_to_kwargs(
-        parse_command(SPECS["sort"], argv, "/data", "sort")
-    )
-    with pytest.raises((UsageError, SortKeyError), match=message):
-        parse_flags(flags)

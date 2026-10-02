@@ -221,6 +221,20 @@ async def _run_forever(job: Job) -> tuple[IOResult, ExecutionNode]:
     return IOResult(), ExecutionNode()
 
 
+async def _emit_after(
+    job: Job, gate: asyncio.Event
+) -> tuple[IOResult, ExecutionNode]:
+    """A runner that prints only once the test opens ``gate``, so it is
+    still running while ``fg`` picks a job.
+
+    Args:
+        job (Job): the job being run.
+        gate (asyncio.Event): what the runner waits on before printing.
+    """
+    await gate.wait()
+    return await _emit_and_settle(job, stdout=b"late")
+
+
 def _submit_settled(
     table: JobTable,
     command: str = "foo",
@@ -421,6 +435,35 @@ async def test_fg_without_an_operand_reports_when_there_is_no_job():
     _, io, _ = await handle_fg(JobTable(), ["fg"])
     assert io.exit_code == 1
     assert io.stderr == b"bash: fg: current: no such job\n"
+
+
+@pytest.mark.asyncio
+async def test_fg_without_an_operand_adopts_a_job_that_already_finished():
+    # A background job can end before `fg` runs; it is still the current
+    # job, as `fg %N` would find it, so its output is not lost.
+    table = JobTable()
+    job = _submit_settled(table, command="quick", stdout=b"body", exit_code=3)
+    await table.wait(job.id)
+    stdout, io, _ = await handle_fg(table, ["fg"])
+    assert stdout == b"quick\nbody"
+    assert io.exit_code == 3
+
+
+@pytest.mark.asyncio
+async def test_fg_without_an_operand_prefers_a_running_job_to_a_finished_one():
+    # bash's current job is the newest one still running; a finished job
+    # answers only when nothing runs. The older job holds until fg has
+    # picked, which it does before its first await.
+    table = JobTable()
+    gate = asyncio.Event()
+    table.submit("older", partial(_emit_after, gate=gate), cwd="/")
+    done = _submit_settled(table, command="newer", stdout=b"early")
+    await table.wait(done.id)
+    fg = asyncio.create_task(handle_fg(table, ["fg"]))
+    await asyncio.sleep(0)
+    gate.set()
+    stdout, _, _ = await fg
+    assert stdout == b"older\nlate"
 
 
 @pytest.mark.asyncio

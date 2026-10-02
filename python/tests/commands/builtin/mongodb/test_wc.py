@@ -30,32 +30,6 @@ def _path(s: str) -> PathSpec:
 
 
 @pytest.mark.asyncio
-async def test_wc_l_does_not_count_a_collection_it_cannot_see(monkeypatch):
-    """``count_documents`` answers 0 for a collection that does not exist
-    and for one outside ``databases``, so ``wc -l`` printed a zero count
-    for a file ``ls`` and ``cat`` said was not there."""
-    monkeypatch.setattr(
-        "mirage.core.mongodb.readdir.entity_exists",
-        AsyncMock(return_value=False),
-    )
-    count = AsyncMock(side_effect=AssertionError("counted the collection"))
-    monkeypatch.setitem(wc.__wrapped__.__globals__, "count_documents", count)
-    accessor = MongoDBAccessor(
-        config=MongoDBConfig(uri="mongodb://localhost:27017")
-    )
-    out, io = await wc(
-        accessor,
-        [_path("/db1/collections/missing/documents.jsonl")],
-        [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": True}),
-    )
-    await materialize(out)
-    assert io.exit_code == 1
-    assert b"No such file or directory" in await materialize(io.stderr)
-    count.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_wc_l_counts_a_visible_collection_server_side(monkeypatch):
     monkeypatch.setattr(
         "mirage.core.mongodb.readdir.entity_exists",

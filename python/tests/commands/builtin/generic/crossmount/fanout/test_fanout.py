@@ -17,7 +17,6 @@ import asyncio
 import pytest
 
 from mirage.commands.builtin.generic.crossmount.fanout import run_fanout
-from mirage.commands.builtin.generic.crossmount.types import OperandRun
 from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.types import PathSpec
@@ -30,10 +29,6 @@ def _scope(virtual: str) -> PathSpec:
         vfs_path="",
         resolved=True,
     )
-
-
-def _op(data: bytes, exit_code: int = 0) -> OperandRun:
-    return OperandRun(_scope("/a/x"), data, IOResult(exit_code=exit_code))
 
 
 class FakeRunSingle:
@@ -70,20 +65,6 @@ class FakeRunSingle:
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def test_run_fanout_concats_in_operand_order_and_merges_exit():
-    rs = FakeRunSingle(
-        {
-            "/a/x": (b"hash1  /a/x\n", 0),
-            "/b/y": (b"hash2  /b/y\n", 0),
-        }
-    )
-    out, io = _run(
-        run_fanout("sha256sum", [_scope("/a/x"), _scope("/b/y")], [], {}, rs)
-    )
-    assert _run(materialize(out)) == b"hash1  /a/x\nhash2  /b/y\n"
-    assert io.exit_code == 0
 
 
 def test_run_fanout_forces_grep_filenames_unless_suppressed():

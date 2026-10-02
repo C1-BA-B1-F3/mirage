@@ -109,6 +109,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-t", long="--target-directory", type="path"),
             Option(short="-T", long="--no-target-directory"),
             Option(short="-S", long="--suffix", type="str"),
+            Option(short="-x", long="--one-file-system"),
         ),
         rest=Operand(type="path"),
     ),

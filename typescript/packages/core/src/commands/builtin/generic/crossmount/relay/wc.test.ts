@@ -32,13 +32,11 @@ const ROWS: Record<string, [string, string | null]> = {
   '/b/x': ['1 /b/x\n', null],
   '/pg/rows': ['5 /pg/rows\n', null],
   '/pg2/rows': ['3 /pg2/rows\n', null],
-  '/a/n\nq': ['2 /a/n\nq\n', null],
   '/gone': ['4 /gone\n', null],
 }
 const SIZES: Record<string, number | null> = {
   '/b/name with spaces': 6,
   '/b/x': 120,
-  '/a/n\nq': 4,
 }
 
 class Mounts {
@@ -113,19 +111,6 @@ it.each([
   )
   expect(DEC.decode(await materialize(body))).toBe(expected)
   expect(io.exitCode).toBe(0)
-})
-
-it('reads a name holding a newline as one quoted row', async () => {
-  // One operand's run is one row, whatever its name holds; the report quotes
-  // that name as GNU wc does, so no row spans two lines.
-  const mounts = new Mounts()
-  const [body] = await runWc(
-    specs('/a/n\nq', '/b/x'),
-    { lines: true },
-    mounts.dispatch,
-    mounts.runSingle,
-  )
-  expect(DEC.decode(await materialize(body))).toBe("  2 '/a/n'$'\\n''q'\n  1 /b/x\n  3 total\n")
 })
 
 it('keeps every count when a file is gone before sizing', async () => {

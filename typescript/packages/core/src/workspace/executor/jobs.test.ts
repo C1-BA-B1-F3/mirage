@@ -234,6 +234,46 @@ describe('handleWait with an invocation signal', () => {
   })
 })
 
+describe('handleFg without an operand', () => {
+  // A background job can end before `fg` runs; it is still the current job,
+  // as `fg %N` would find it, so its output is not lost.
+  it('adopts a job that already finished', async () => {
+    const jt = new JobTable()
+    const run: JobRunner = async (job) => {
+      await job.console.emit(Channel.STDOUT, new TextEncoder().encode('body'))
+      return [new IOResult({ exitCode: 3 }), new ExecutionNode({ command: 'quick', exitCode: 3 })]
+    }
+    const job = jt.submit({ command: 'quick', run, abort: new AbortController(), cwd: '/' })
+    await jt.wait(job.id)
+    const [stdout, io] = await handleFg(jt, ['fg'])
+    expect(decode(stdout as Uint8Array)).toBe('quick\nbody')
+    expect(io.exitCode).toBe(3)
+  })
+
+  // bash's current job is the newest one still running; a finished job
+  // answers only when nothing runs. The older job holds until fg has picked,
+  // which it does before its first await.
+  it('prefers a running job to a finished one', async () => {
+    const jt = new JobTable()
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const late: JobRunner = async (job) => {
+      await gate
+      await job.console.emit(Channel.STDOUT, new TextEncoder().encode('late'))
+      return [new IOResult(), new ExecutionNode({ command: 'older' })]
+    }
+    jt.submit({ command: 'older', run: late, abort: new AbortController(), cwd: '/' })
+    const done = jt.submit({ command: 'newer', run: quiet, abort: new AbortController(), cwd: '/' })
+    await jt.wait(done.id)
+    const fg = handleFg(jt, ['fg'])
+    release()
+    const [stdout] = await fg
+    expect(decode(stdout as Uint8Array)).toBe('older\nlate')
+  })
+})
+
 describe('handleFg with an invocation signal', () => {
   it('releases the caller on abort and leaves the job running', async () => {
     const jt = new JobTable()

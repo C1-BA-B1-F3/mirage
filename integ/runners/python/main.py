@@ -103,11 +103,19 @@ async def run_consistency_case(
     opened = await adapters.open_consistency(target, spec, mount_read_of(case))
     read_ws, mutate, remove, mutate_line, cleanup = opened
     try:
-        exit_code, out, err = await harness.run_scenario(
+        exit_code, out, err, notes = await harness.run_scenario(
             read_ws, mutate, remove, mutate_line, case["scenario"]
         )
         _emit_or_record(
-            emit, report, target["id"], case, exit_code, out, err, 0.0
+            emit,
+            report,
+            target["id"],
+            case,
+            exit_code,
+            out,
+            err,
+            0.0,
+            notes=notes,
         )
     finally:
         await cleanup()

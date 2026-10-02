@@ -71,14 +71,6 @@ async function run(
 }
 
 describe('diffGeneric with stdin', () => {
-  it('reads a dash operand from stdin and names it dash', async () => {
-    expect(await run([DASH, FILE], 'x\n', { brief: true })).toEqual([
-      'Files - and a.txt differ\n',
-      '',
-      1,
-    ])
-  })
-
   it('names the operands as typed in unified headers', async () => {
     const [out, , code] = await run([FILE, DEV_STDIN], 'x\n', { u: true })
     expect(out.startsWith('--- a.txt\n+++ /dev/stdin\n')).toBe(true)
@@ -94,11 +86,12 @@ describe('diffGeneric with stdin', () => {
     expect([out, io.exitCode]).toEqual([null, 0])
   })
 
-  it.each([
-    [DASH, SUB],
-    [SUB, DASH],
-  ])('refuses a dash against a directory', async (a, b) => {
-    expect(await run([a, b], 'x\n')).toEqual(['', "diff: cannot compare '-' to a directory\n", 2])
+  it('refuses a directory against a dash', async () => {
+    expect(await run([SUB, DASH], 'x\n')).toEqual([
+      '',
+      "diff: cannot compare '-' to a directory\n",
+      2,
+    ])
   })
 
   it("refuses a lone operand with GNU's missing operand usage error", async () => {

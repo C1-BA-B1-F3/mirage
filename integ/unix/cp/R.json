@@ -19,7 +19,11 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix",
+        "ssh"
       ],
       "command": "mkdir -p /data/pcp2/tree/sub && printf 'a' > /data/pcp2/tree/f.txt && printf 'b' > /data/pcp2/tree/sub/g.txt && cp -R /data/pcp2/tree /data/pcp2/tcopy && cat /data/pcp2/tcopy/f.txt /data/pcp2/tcopy/sub/g.txt",
       "expect": {

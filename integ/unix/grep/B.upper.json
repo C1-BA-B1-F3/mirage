@@ -36,6 +36,43 @@
       "flags": [
         "B"
       ]
+    },
+    {
+      "id": "grep_B_context_lengths_and_file_separators",
+      "seq": 14101201,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/cfgA; printf 'hello\\nworld\\nfoo\\nbar\\nbaz\\n' > /data/cfgA/a.txt; printf 'a\\nb\\nc\\n' > /data/cfgA/g1; printf 'x\\na\\ny\\n' > /data/cfgA/g2; printf 'zzz\\n' > /data/cfgA/g0; grep -B -1 world /data/cfgA/a.txt; echo rc=$?; grep -B -0 world /data/cfgA/a.txt; echo rc=$?; grep -B1 a /data/cfgA/g1 /data/cfgA/g2; echo rc=$?; rm -rf /data/cfgA",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\nworld\nrc=0\n/data/cfgA/g1:a\n--\n/data/cfgA/g2-x\n/data/cfgA/g2:a\nrc=0\n",
+        "stderr": "grep: -1: invalid context length argument\n"
+      },
+      "flags": [
+        "B"
+      ]
     }
   ]
 }

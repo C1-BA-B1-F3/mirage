@@ -16,7 +16,8 @@ import { constants as fsConstants } from 'node:fs'
 import { posix } from 'node:path'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import type { Ops } from '@struktoai/mirage-core/ops/ops'
-import { FileTable, mergeWrites } from '@struktoai/mirage-core/runtime/handles/index'
+import { ChunkedHandle, FileTable, writeRuns } from '@struktoai/mirage-core/runtime/handles/index'
+import { READ_CHUNK } from '@struktoai/mirage-core/runtime/handles/constants'
 import { FileType } from '@struktoai/mirage-core/types'
 import type { FileStat } from '@struktoai/mirage-core/types'
 import { isMissingOp } from '@struktoai/mirage-core/utils/errors'
@@ -45,6 +46,8 @@ export interface Handle {
   key: string
   data?: Uint8Array
   writeBuf?: [number, Uint8Array][]
+  /** A large file reads a chunk at a time rather than hydrating whole. */
+  chunked?: ChunkedHandle
 }
 
 interface PrefetchEntry {
@@ -101,6 +104,9 @@ export class MountCore {
   // buffer and that buffer landing, which would let the flush restore the
   // old body over a truncation that already succeeded.
   private readonly pending = new Map<string, Promise<void>>()
+  // One chain per file identity that its removals (an unlink, a rename
+  // onto it) join, which an open of the file waits out: see `removing`.
+  private readonly removals = new Map<string, Promise<void>>()
   private readonly uid: number
   private readonly gid: number
 
@@ -290,15 +296,46 @@ export class MountCore {
    * truncate that would then be undone when the flush completes.
    */
   private mutate<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.pending.get(key) ?? Promise.resolve()
+    return this.queue(this.pending, key, fn)
+  }
+
+  /**
+   * Run `fn`, which removes or replaces the file at `path`, with opens of
+   * that file held back until it is done, as the kernel orders an open
+   * and an unlink of one name. `hold` reads the rest for the handles open
+   * before; an open that slipped in while that read was out would get a
+   * chunked handle onto bytes about to go. A chain of its own rather than
+   * `pending`, which a rename holds for its source: holding the target's
+   * there too would let two renames that cross wait on each other.
+   */
+  private removing(path: string, fn: () => Promise<void>): Promise<void> {
+    if (this.namesLink(path)) return fn()
+    return this.queue(this.removals, this.identity(path), fn)
+  }
+
+  /** Whether `path` names a link entry: removing it takes the link, never its target's bytes. */
+  private namesLink(path: string): boolean {
+    return this.ops.links?.isLink(this.resolve(path)) === true
+  }
+
+  /**
+   * Run `fn` after every call already queued under `key` in `queues`, and
+   * let the next one wait for it, whether it resolves or throws.
+   */
+  private queue<T>(
+    queues: Map<string, Promise<void>>,
+    key: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prev = queues.get(key) ?? Promise.resolve()
     const run = prev.then(fn, fn)
     const tail: Promise<void> = run.then(
       () => undefined,
       () => undefined,
     )
-    this.pending.set(key, tail)
+    queues.set(key, tail)
     void tail.then(() => {
-      if (this.pending.get(key) === tail) this.pending.delete(key)
+      if (queues.get(key) === tail) queues.delete(key)
     })
     return run
   }
@@ -315,19 +352,21 @@ export class MountCore {
   }
 
   /**
-   * Merge buffered writes over the raw base and persist the result.
-   * The base is read raw so a flush never stores a rendered view back
-   * into the mount.
+   * Land buffered writes on the mount, one pwrite per run. A pwrite keeps
+   * every stored byte the handle did not write, so nothing is read through
+   * the door first: a session that may write a file and not read it writes
+   * through FUSE, as through a write-only descriptor. A run that fails still
+   * invalidates what the core holds, since the runs before it have landed.
    */
   private async applyWrites(path: string, writes: [number, Uint8Array][]): Promise<void> {
-    let existing: Uint8Array = new Uint8Array(0)
+    const target = this.resolve(path)
     try {
-      existing = await this.op(() => this.ops.readFile(this.resolve(path), { raw: true }))
-    } catch {
-      // missing file: start from empty; the write creates it
+      for (const [offset, data] of writeRuns(writes)) {
+        await this.op(() => this.ops.pwrite(target, data, offset))
+      }
+    } finally {
+      await this.changed(path)
     }
-    await this.writeFile(path, mergeWrites(existing, writes))
-    await this.changed(path)
   }
 
   // ── POSIX surface (throws; adapters classify) ────────────────────
@@ -389,6 +428,7 @@ export class MountCore {
     // none by default, so this reads raw bytes until a mount adds one.
     // Matches Python's `self._ops.read(path)`, which also dispatches.
     path = ctx?.path ?? path
+    if (ctx?.chunked !== undefined && ctx.data === undefined) return ctx.chunked.pread(pos, len)
     if (ctx !== undefined && ctx.data === undefined) {
       const cached = this.cachedData(path)
       ctx.data = cached ?? (await this.op(() => this.ops.readFile(this.resolve(path))))
@@ -466,7 +506,10 @@ export class MountCore {
    */
   async unlink(path: string): Promise<void> {
     await this.mutate(this.identity(path), async () => {
-      await this.op(() => this.ops.unlink(this.resolve(path)))
+      await this.removing(path, async () => {
+        await this.hold(path)
+        await this.op(() => this.ops.unlink(this.resolve(path)))
+      })
       await this.changed(path, false)
     })
   }
@@ -493,6 +536,9 @@ export class MountCore {
       this.prefetchGen.set(key, (this.prefetchGen.get(key) ?? 0) + 1)
     }
     if (!rehydrate) return
+    for (const ctx of this.handles.values()) {
+      if (ctx.key === key) ctx.chunked?.drop()
+    }
     const hydrated = [...this.handles.values()].filter(
       (ctx) => ctx.key === key && ctx.data !== undefined,
     )
@@ -522,7 +568,10 @@ export class MountCore {
     await this.mutate(this.identity(src), async () => {
       const source = this.resolve(src)
       const target = this.resolve(dst)
-      await this.op(() => this.ops.rename(source, target))
+      await this.removing(dst, async () => {
+        await this.hold(dst)
+        await this.op(() => this.ops.rename(source, target))
+      })
       for (const ctx of this.handles.values()) {
         if (ctx.key === source || ctx.key.startsWith(`${source}/`)) {
           ctx.key = target + ctx.key.slice(source.length)
@@ -650,6 +699,7 @@ export class MountCore {
   }
 
   async open(path: string, flags = 0): Promise<number> {
+    await this.removals.get(this.identity(path))
     const s = await this.op(() => this.ops.stat(this.resolve(path)))
     const ctx: Handle = { path, key: this.identity(path) }
     if (s.type === FileType.DIRECTORY) return this.handles.add(ctx)
@@ -669,8 +719,46 @@ export class MountCore {
       // rather than shadowed by literal raw emptiness.
       const data = await this.prefetch(path)
       if (data !== null) ctx.data = data
+    } else if (s.size > READ_CHUNK && (flags & fsConstants.O_TRUNC) === 0) {
+      // A file larger than a chunk is read a chunk at a time: the kernel
+      // asks in small pieces, and fetching the whole file on the first one
+      // moved all of it to answer a `head`. Mirrors Python's MountCore.open.
+      // The fetch reads the handle's path as it is then: a rename moves it.
+      ctx.chunked = new ChunkedHandle(path, s.size, (offset, size) =>
+        this.op(() => this.ops.readFile(this.resolve(ctx.path), { offset, size })),
+      )
     }
     return this.handles.add(ctx)
+  }
+
+  /**
+   * Read the rest of the chunked handles on `path` before it goes. POSIX
+   * keeps an open descriptor on the bytes it had, and a chunked handle
+   * holds one chunk of them, so an unlink or a rename onto the file would
+   * leave the rest unreadable. One read serves every such handle; it runs
+   * under `removing`, so no handle opens on the file meanwhile. A read
+   * that fails (a policy may allow the removal and refuse the read) leaves
+   * them chunked rather than refusing a mutation the caller is allowed.
+   * Mirrors Python's `MountCore._hold`.
+   */
+  private async hold(path: string): Promise<void> {
+    if (this.namesLink(path)) return
+    const key = this.identity(path)
+    const held = [...this.handles.values()].filter(
+      (ctx) => ctx.key === key && ctx.chunked !== undefined,
+    )
+    if (held.length === 0) return
+    let data: Uint8Array
+    try {
+      data = await this.op(() => this.ops.readFile(this.resolve(path)))
+    } catch (err) {
+      console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
+      return
+    }
+    for (const ctx of held) {
+      ctx.data = data
+      delete ctx.chunked
+    }
   }
 
   async release(fd: number): Promise<void> {

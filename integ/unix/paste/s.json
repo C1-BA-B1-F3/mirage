@@ -58,7 +58,11 @@
         "sharepoint-prefix",
         "ssh",
         "nextcloud",
-        "box"
+        "box",
+        "hf",
+        "hf-prefix",
+        "gdrive",
+        "gdrive-folder"
       ],
       "command": "paste -s /data/empty.txt",
       "expect": {

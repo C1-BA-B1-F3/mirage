@@ -22,7 +22,10 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "gridfs",
+        "gridfs-prefix",
+        "box"
       ],
       "command": "echo one | tee /data/xta.txt /data2/xta.txt > /dev/null && echo two | tee -a /data/xta.txt /data2/xta.txt > /dev/null && cat /data/xta.txt /data2/xta.txt && rm /data/xta.txt /data2/xta.txt",
       "expect": {

@@ -172,6 +172,15 @@ def _window(kwargs: dict[str, Any]) -> tuple[int, int | None]:
     )
 
 
+def _whole_read(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """A read's keyword arguments with its range dropped: the whole file.
+
+    Args:
+        kwargs (dict[str, Any]): the op's keyword arguments.
+    """
+    return {k: v for k, v in kwargs.items() if k not in ("offset", "size")}
+
+
 @dataclass(frozen=True, slots=True)
 class _MountChannel:
     """The ops plane's remnant channel: every step goes through
@@ -505,12 +514,29 @@ class Dispatcher:
             )
         await mount.ensure_ready()
         caches_reads = mount.vfs.caches_reads
-        # The file cache is keyed on the path alone, and what a command
-        # put there is the rendered read. A raw read asks for a
-        # different value under the same key, so it must not be served
-        # from that cache; nothing populates it from here, so skipping
-        # the probe is the whole fix.
+        # The file cache is keyed on the path alone, and what it holds is
+        # the rendered read. A raw read asks for a different value under
+        # the same key, so it is neither served from that cache nor kept
+        # in it.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
+        # A cold read keeps the whole file it fetched for the next reader,
+        # through the mount's own manager, the one a command's read
+        # fills: a write racing the fetch retires its generation, so the
+        # bytes it read are not kept. A ranged read comes from the store
+        # only where the store can serve one; elsewhere the read op would
+        # fetch the whole file and slice it for every range, so the whole
+        # file is read once, kept, and each range sliced from it.
+        offset, size = _window(kwargs)
+        whole = (offset, size) == (0, None)
+        filler = (
+            mount.cache_manager
+            if caches_reads
+            and not raw
+            and op in DISPATCH_READ_OPS
+            and size != 0
+            and (whole or not mount.reads_ranges(path.virtual))
+            else None
+        )
 
         if caches_reads and not raw and op in DISPATCH_READ_OPS:
             cached = await self._cache.get(path.virtual)
@@ -528,7 +554,6 @@ class Dispatcher:
                 # instead of the file, and git reads pack indexes this
                 # way. slice_window is the same helper the ranged read
                 # op falls back to, so warm and cold agree.
-                offset, size = _window(kwargs)
                 served = slice_window(cached, offset, size)
                 # Nothing crossed the network, and neither a gate nor a
                 # hard cap leaves the caller able to tell: without the
@@ -559,6 +584,17 @@ class Dispatcher:
         try:
             if op == "setattr":
                 result = await self._apply_setattr(mount, path, kwargs)
+            elif filler is not None:
+                kept = await filler.fill(
+                    path,
+                    functools.partial(
+                        mount.execute_op,
+                        op,
+                        path.virtual,
+                        **_whole_read(kwargs),
+                    ),
+                )
+                result = kept if whole else slice_window(kept, offset, size)
             else:
                 result = await mount.execute_op(op, path.virtual, **kwargs)
         except (FileNotFoundError, NotADirectoryError):

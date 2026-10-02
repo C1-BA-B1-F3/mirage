@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qsort && printf 'v1.10\\nv1.9\\nv1.2\\n' > /data/qsort/vs.txt && sort -V /data/qsort/vs.txt",
       "expect": {

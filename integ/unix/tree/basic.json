@@ -54,7 +54,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/ptree/a/deep /data/ptree/b && printf x>/data/ptree/a/f.txt && printf y>/data/ptree/a/deep/g.txt && printf z>/data/ptree/top.txt && tree /data/ptree",
       "expect": {

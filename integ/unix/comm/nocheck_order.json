@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/qcomm && printf 'a\\nb\\nc\\n' > /data/qcomm/ca && printf 'a\\nc\\nd\\n' > /data/qcomm/cb && comm --nocheck-order /data/qcomm/ca /data/qcomm/cb",
       "expect": {

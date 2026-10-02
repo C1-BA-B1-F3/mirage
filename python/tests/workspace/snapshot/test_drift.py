@@ -294,7 +294,13 @@ def test_the_four_op_sets_hold_exactly_what_the_ladder_needs():
     """Each member is load-bearing: dropping one silently changes which
     arm an op takes, and every behaviour test would still pass."""
     assert STAMP_FINGERPRINT_OPS == {"read", "write", "create", "truncate"}
-    assert CONTENT_CHANGING_OPS == {"write", "create", "truncate", "append"}
+    assert CONTENT_CHANGING_OPS == {
+        "write",
+        "create",
+        "truncate",
+        "append",
+        "pwrite",
+    }
     assert RETRACT_FINGERPRINT_OPS == {
         "unlink",
         "rm_r",

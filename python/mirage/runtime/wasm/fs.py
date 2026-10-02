@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
 from mirage.runtime.errors import CrossMountError
-from mirage.runtime.handles import FileHandle, FileTable
+from mirage.runtime.handles import ChunkedHandle, FileHandle, FileTable
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.runtime.handles.mode import OpenMode
 from mirage.runtime.open import apply_open
 from mirage.runtime.types import VFSStat
@@ -175,7 +176,7 @@ class FdEntry:
     """
 
     kind: FdKind
-    handle: FileHandle | None = None
+    handle: FileHandle | ChunkedHandle | None = None
     path: str = ""
     preopen: bool = False
     dirents: list[tuple[str, int]] | None = None
@@ -248,7 +249,7 @@ class WasiFs:
 
     # -- fd lookups -------------------------------------------------------
 
-    def _handle(self, fd: int) -> FileHandle | None:
+    def _handle(self, fd: int) -> FileHandle | ChunkedHandle | None:
         """The buffered handle under `fd`: a file's, or stdin's.
 
         Args:
@@ -257,7 +258,7 @@ class WasiFs:
         entry = self._fds.get(fd)
         return entry.handle if entry is not None else None
 
-    def _file_handle(self, fd: int) -> FileHandle | None:
+    def _file_handle(self, fd: int) -> FileHandle | ChunkedHandle | None:
         """The handle under `fd` only when it is a regular file.
 
         Args:
@@ -322,10 +323,24 @@ class WasiFs:
             if mode.writable:
                 raise
             return self._open_dir(caller, path, out)
-        data = b"" if row is None else self._fs.read(path)
-        handle = FileHandle.opened(
-            path, data, writable=mode.writable, append=mode.append
-        )
+        handle: FileHandle | ChunkedHandle
+        if row is not None and not mode.writable and row.size > READ_CHUNK:
+            handle = ChunkedHandle(
+                path=path,
+                size=row.size,
+                fetch=lambda offset, size: self._fs.read(
+                    path, offset=offset, size=size
+                ),
+            )
+        else:
+            # A handle that writes starts from the stored bytes: its
+            # close stores what it holds.
+            data = (
+                b"" if row is None else self._fs.read(path, raw=mode.writable)
+            )
+            handle = FileHandle.opened(
+                path, data, writable=mode.writable, append=mode.append
+            )
         # A file the open created or emptied has no row from before it,
         # so fd_filestat_get answers from the row the open left behind.
         if row is None:
@@ -347,7 +362,7 @@ class WasiFs:
             return EBADF
         self._fds.pop(fd)
         h = entry.handle
-        if entry.kind == "file" and h is not None and h.dirty:
+        if entry.kind == "file" and isinstance(h, FileHandle) and h.dirty:
             self._fs.flush(h.path, h.base_len, h.low_write, h.buf)
         return OK
 
@@ -427,7 +442,10 @@ class WasiFs:
             elif entry.kind == "stderr":
                 self.stderr += data
             elif entry.kind == "file" and entry.handle is not None:
-                if not entry.handle.writable:
+                if (
+                    not isinstance(entry.handle, FileHandle)
+                    or not entry.handle.writable
+                ):
                     return EBADF
                 entry.handle.write(data)
             else:
@@ -446,7 +464,7 @@ class WasiFs:
         nwritten: int,
     ) -> int:
         h = self._file_handle(fd)
-        if h is None or not h.writable:
+        if not isinstance(h, FileHandle) or not h.writable:
             return EBADF
         total, pos = 0, offset
         for bptr, blen in self._iovs(caller, iovs, count):
@@ -503,7 +521,7 @@ class WasiFs:
         if entry.kind == "file" and entry.handle is not None:
             mtime = entry.stat.mtime_ns if entry.stat is not None else 0
             packed = pack_filestat(
-                len(entry.handle.buf), mtime, FT_REG, self._ino(entry.path)
+                entry.handle.size, mtime, FT_REG, self._ino(entry.path)
             )
         elif entry.kind == "dir":
             st = self._fs.stat(entry.path)
@@ -542,7 +560,7 @@ class WasiFs:
         self, caller: "wasmtime.Caller", fd: int, size: int
     ) -> int:
         h = self._file_handle(fd)
-        if h is None or not h.writable:
+        if not isinstance(h, FileHandle) or not h.writable:
             return EBADF
         h.truncate(size)
         return OK

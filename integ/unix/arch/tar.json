@@ -213,7 +213,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "tar: Old option 'f' requires an argument.\nTry 'tar --help' for more information."
+        "stderr": "tar: Old option 'f' requires an argument.\nTry 'tar --help' for more information.\n"
       }
     },
     {
@@ -229,7 +229,7 @@
       "expect": {
         "exit": 64,
         "stdout": "",
-        "stderr": "tar: invalid option -- 'Q'\nTry 'tar --help' for more information."
+        "stderr": "tar: invalid option -- 'Q'\nTry 'tar --help' for more information.\n"
       }
     },
     {

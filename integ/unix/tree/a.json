@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pta && printf x>/data/pta/f.txt && printf .>/data/pta/.hid && tree -a /data/pta",
       "expect": {

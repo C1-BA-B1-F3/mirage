@@ -59,7 +59,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pln1 && printf 'y' > /data/pln1/t.txt && ln -sv /data/pln1/t.txt /data/pln1/lk",
       "expect": {
@@ -94,7 +97,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pln2 && printf 'y' > /data/pln2/t.txt && ln -s /data/pln2/t.txt /data/pln2/lk && ln -sf /data/pln2/t.txt /data/pln2/lk && readlink /data/pln2/lk",
       "expect": {

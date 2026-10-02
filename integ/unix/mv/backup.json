@@ -171,7 +171,11 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix"
       ]
     },
     {

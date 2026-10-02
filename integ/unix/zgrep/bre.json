@@ -6,7 +6,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "mkdir -p /data/zbre && printf 'aab\\na+b\\n' > /data/zbre/both.txt && printf 'aab\\n' > /data/zbre/ere.txt && printf 'a+b\\n' > /data/zbre/bre.txt && gzip /data/zbre/both.txt /data/zbre/ere.txt /data/zbre/bre.txt",
       "expect": {
@@ -21,7 +36,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep 'a+b' /data/zbre/both.txt.gz",
       "expect": {
@@ -36,7 +66,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -E 'a+b' /data/zbre/both.txt.gz",
       "expect": {
@@ -51,7 +96,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -G 'a+b' /data/zbre/both.txt.gz",
       "expect": {
@@ -66,7 +126,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep 'a\\+b' /data/zbre/both.txt.gz",
       "expect": {
@@ -81,7 +156,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep 'aab|zzz' /data/zbre/both.txt.gz",
       "expect": {
@@ -96,7 +186,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -E 'aab|zzz' /data/zbre/both.txt.gz",
       "expect": {
@@ -111,7 +216,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -l 'a+b' /data/zbre/ere.txt.gz /data/zbre/bre.txt.gz",
       "expect": {
@@ -126,7 +246,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -c 'a+b' /data/zbre/both.txt.gz",
       "expect": {
@@ -141,7 +276,22 @@
       "targets": [
         "ram",
         "opfs",
-        "disk"
+        "disk",
+        "redis",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
       ],
       "command": "zgrep -o 'a+b' /data/zbre/both.txt.gz",
       "expect": {

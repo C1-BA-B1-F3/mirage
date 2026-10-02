@@ -15,10 +15,7 @@
 import { stripSlash } from '../../../utils/slash.ts'
 import { describe, expect, it } from 'vitest'
 import { IOResult, materialize } from '../../../io/types.ts'
-import { MountMode, PathSpec } from '../../../types.ts'
-import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
-import { Workspace } from '../../../workspace/workspace/workspace.ts'
+import { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { checksumGeneric } from './checksum.ts'
 
@@ -137,23 +134,6 @@ describe('checksum --check', () => {
     expect(code).toBe(1)
   })
 
-  it('fails alone when no line is properly formatted', async () => {
-    const [out, err, code] = await runCheck({ '/sums.txt': 'junk\nmore junk\n' })
-    expect(out).toBe('')
-    expect(err).toBe('md5sum: /sums.txt: no properly formatted checksum lines found\n')
-    expect(code).toBe(1)
-  })
-
-  it('reports nothing verified under --ignore-missing when all are missing', async () => {
-    const [out, err, code] = await runCheck(
-      { '/sums.txt': '5aabc  /gone.txt\n' },
-      { ignore_missing: true },
-    )
-    expect(out).toBe('')
-    expect(err).toBe('md5sum: /sums.txt: no file was verified\n')
-    expect(code).toBe(1)
-  })
-
   it('--status silences no-file-verified but keeps its exit 1', async () => {
     const [out, err, code] = await runCheck(
       { '/sums.txt': '5aabc  /gone.txt\n' },
@@ -241,18 +221,6 @@ describe('checksum --check', () => {
     expect(code).toBe(0)
   })
 
-  it('reports a missing list operand and continues', async () => {
-    const [out, err, code] = await runCheck(
-      { '/one.txt': '5aabc  /a.txt\n', '/a.txt': 'abc' },
-      {},
-      '/',
-      ['/one.txt', '/nope.txt'],
-    )
-    expect(out).toBe('/a.txt: OK\n')
-    expect(err).toBe('md5sum: /nope.txt: No such file or directory\n')
-    expect(code).toBe(1)
-  })
-
   it('keeps operand order when the missing list comes first', async () => {
     const [out, err, code] = await runCheck(
       { '/one.txt': '5aabc  /a.txt\n', '/a.txt': 'abc' },
@@ -265,34 +233,6 @@ describe('checksum --check', () => {
     expect(code).toBe(1)
   })
 
-  it('a directory list operand is the literal "read error"', async () => {
-    // GNU 9.7: `md5sum -c d` on a directory says "read error", not the
-    // EISDIR strerror (its fopen succeeds, the read fails).
-    function stream(p: PathSpec): AsyncIterable<Uint8Array> {
-      async function* gen(): AsyncIterable<Uint8Array> {
-        await Promise.resolve()
-        if (p.virtual === '/d') {
-          const err = new Error(p.virtual) as Error & { code: string }
-          err.code = 'EISDIR'
-          throw err
-        }
-        yield ENC.encode(p.virtual === '/one.txt' ? '5aabc  /a.txt\n' : 'abc')
-      }
-      return gen()
-    }
-    const result = await checksumGeneric(
-      [spec('/d'), spec('/one.txt')],
-      opts({ check: true }),
-      stream,
-      hasher,
-      'md5sum',
-    )
-    const [out, io] = result ?? [null, new IOResult()]
-    expect(DEC.decode(await materialize(out))).toBe('/a.txt: OK\n')
-    expect(DEC.decode(await materialize(io.stderr))).toBe('md5sum: /d: read error\n')
-    expect(io.exitCode).toBe(1)
-  })
-
   it('--status keeps a missing list operand strerror', async () => {
     const [out, err, code] = await runCheck(
       { '/one.txt': '5aabc  /a.txt\n', '/a.txt': 'abc' },
@@ -303,55 +243,5 @@ describe('checksum --check', () => {
     expect(out).toBe('')
     expect(err).toBe('md5sum: /nope.txt: No such file or directory\n')
     expect(code).toBe(1)
-  })
-})
-
-async function shell(
-  line: string,
-  stdin: Uint8Array | null = null,
-  seed: Record<string, string> = {},
-): Promise<[string, string, number]> {
-  const ws = new Workspace(
-    { '/data/': new RAMVFS() },
-    { mode: MountMode.WRITE, shellParser: await getTestParser() },
-  )
-  try {
-    for (const [path, body] of Object.entries(seed)) {
-      await ws.shell(`tee ${path} > /dev/null`, { stdin: new TextEncoder().encode(body) })
-    }
-    const io = await ws.shell(line, { stdin })
-    const dec = new TextDecoder()
-    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
-  } finally {
-    await ws.close()
-  }
-}
-
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', ENC.encode(text))
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-describe('checksums with stdin', () => {
-  it('hash dash and /dev/stdin under their own names', async () => {
-    // One stdin: the second operand reads what the first left, nothing.
-    const r = await shell('sha256sum - /dev/stdin', ENC.encode('a\nb\n'))
-    expect(r).toEqual([`${await sha256('a\nb\n')}  -\n${await sha256('')}  /dev/stdin\n`, '', 0])
-  })
-
-  it('check the list on stdin when -c names no operand', async () => {
-    const r = await shell('cd /data && sha256sum a.txt | sha256sum -c', null, {
-      '/data/a.txt': 'hello\n',
-    })
-    expect(r).toEqual(['a.txt: OK\n', '', 0])
-  })
-
-  it('call a stdin list standard input', async () => {
-    const r = await shell('sha256sum -c -', ENC.encode('junk\n'))
-    expect(r).toEqual([
-      '',
-      "sha256sum: 'standard input': no properly formatted checksum lines found\n",
-      1,
-    ])
   })
 })

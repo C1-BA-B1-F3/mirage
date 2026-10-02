@@ -71,13 +71,19 @@ class BuildDir:
             mtime_ns=st.st_mtime_ns,
         )
 
-    def read(self, path: str) -> bytes:
-        """Read a build file.
+    def read(
+        self, path: str, *, offset: int = 0, size: int | None = None
+    ) -> bytes:
+        """Read a build file, or a range of it.
 
         Args:
             path (str): guest-absolute path.
+            offset (int): where the range starts.
+            size (int | None): its length; None reads to the end.
         """
-        return self.target(path).read_bytes()
+        with self.target(path).open("rb") as f:
+            f.seek(offset)
+            return f.read(-1 if size is None else size)
 
     def readdir(self, path: str) -> list[tuple[str, int]]:
         """List a build directory as (name, preview1 filetype) pairs.

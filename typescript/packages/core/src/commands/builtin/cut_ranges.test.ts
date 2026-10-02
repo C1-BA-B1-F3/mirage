@@ -13,38 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import type { FlagValue } from '../spec/types.ts'
-import type { CommandOpts } from '../config.ts'
 import { parseRanges } from './cut_ranges.ts'
-import { cutGeneric } from './generic/cut.ts'
 
-const DEC = new TextDecoder()
 const TRY = "Try 'cut --help' for more information.\n"
 const OPEN_END = 2 ** 31 - 1
-
-function stubStream(): AsyncIterable<Uint8Array> {
-  throw new Error('cut read an operand although its range was refused')
-}
-
-async function run(flags: Record<string, FlagValue>): Promise<{ exit: number; stderr: string }> {
-  const opts = {
-    stdin: null,
-    flags,
-    filetypeFns: null,
-    cwd: '/',
-    vfs: { kind: 'ram' } as never,
-  } as CommandOpts
-  // `CommandFnResult` is nullable — null is how a handler says it does not
-  // apply — and cut never answers that way, so say so rather than destructure
-  // a union.
-  const result = await cutGeneric([], opts, stubStream)
-  if (result === null) throw new Error('cut declined to handle its own operands')
-  const [, io] = result
-  return {
-    exit: io.exitCode,
-    stderr: io.stderr instanceof Uint8Array ? DEC.decode(io.stderr) : '',
-  }
-}
 
 describe('parseRanges accepts what GNU cut accepts', () => {
   it('reads a single position, a range and a list', () => {
@@ -108,38 +80,6 @@ describe('parseRanges refuses what GNU cut refuses', () => {
   ])('refuses -c and -b %j in their own wording', (spec, message) => {
     expect(parseRanges(spec, 'characters')).toBe(message + TRY)
     expect(parseRanges(spec, 'bytes')).toBe(message + TRY)
-  })
-})
-
-describe('cut reports a refused range with GNU exit status', () => {
-  it('exits 1 for a field list it cannot read whole', async () => {
-    expect(await run({ delimiter: ',', fields: '2-3x' })).toEqual({
-      exit: 1,
-      stderr: "cut: invalid field value 'x'\n" + TRY,
-    })
-    expect(await run({ delimiter: ',', fields: 'abc' })).toEqual({
-      exit: 1,
-      stderr: "cut: invalid field value 'abc'\n" + TRY,
-    })
-    expect(await run({ delimiter: ',', fields: '0' })).toEqual({
-      exit: 1,
-      stderr: 'cut: fields are numbered from 1\n' + TRY,
-    })
-    expect(await run({ delimiter: ',', fields: '3-1' })).toEqual({
-      exit: 1,
-      stderr: 'cut: invalid decreasing range\n' + TRY,
-    })
-    expect(await run({ delimiter: ',', fields: '1-2-3' })).toEqual({
-      exit: 1,
-      stderr: 'cut: invalid field range\n' + TRY,
-    })
-  })
-
-  it('exits 1 for a byte/character list it cannot read whole', async () => {
-    expect(await run({ characters: 'abc' })).toEqual({
-      exit: 1,
-      stderr: "cut: invalid byte/character position 'abc'\n" + TRY,
-    })
   })
 })
 

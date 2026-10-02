@@ -22,7 +22,10 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
       ],
       "command": "mkdir -p /data/pgz && printf 'level9\\n' > /data/pgz/l.txt && gzip -9 /data/pgz/l.txt && zcat /data/pgz/l.txt.gz",
       "expect": {

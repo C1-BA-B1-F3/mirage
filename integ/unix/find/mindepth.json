@@ -61,7 +61,9 @@
         "nextcloud",
         "gdrive",
         "gdrive-folder",
-        "box"
+        "box",
+        "dropbox",
+        "dropbox-root"
       ],
       "command": "find /data -mindepth 0 -type d",
       "expect": {

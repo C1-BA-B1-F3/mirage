@@ -18,33 +18,29 @@ from mirage.commands.builtin.generic.od import parse_count
 from mirage.commands.errors import UsageError
 
 
-def test_decimal():
-    assert parse_count("64", "-N") == 64
-
-
-def test_strtol_base_0_hex_and_octal():
-    # GNU od honors strtoumax base 0: 0x… is hex, a leading 0 is octal.
-    assert parse_count("0x10", "-N") == 16
-    assert parse_count("010", "-j") == 8
-    assert parse_count("0", "-j") == 0
-
-
-def test_size_suffixes():
-    assert parse_count("3k", "-N") == 3072
-    assert parse_count("1KiB", "-N") == 1024
-    assert parse_count("1KB", "-N") == 1000
-    assert parse_count("2b", "-N") == 1024
-    assert parse_count("010K", "-N") == 8192
-
-
-def test_signed_and_spaced_counts_keep_their_radix():
-    # strtoumax skips leading whitespace and allows one '+'; the radix is still
-    # chosen from the digits, so +0x10 is hex and +010 is octal.
-    assert parse_count("+10", "-N") == 10
-    assert parse_count(" 10", "-N") == 10
-    assert parse_count("+0x10", "-N") == 16
-    assert parse_count("+010", "-j") == 8
-    assert parse_count("+10K", "-N") == 10240
+# strtoumax base 0 (0x hex, leading 0 octal), GNU size suffixes, and one
+# leading '+' or whitespace that keeps the radix.
+@pytest.mark.parametrize(
+    "raw, flag, value",
+    [
+        ("64", "-N", 64),
+        ("0x10", "-N", 16),
+        ("010", "-j", 8),
+        ("0", "-j", 0),
+        ("3k", "-N", 3072),
+        ("1KiB", "-N", 1024),
+        ("1KB", "-N", 1000),
+        ("2b", "-N", 1024),
+        ("010K", "-N", 8192),
+        ("+10", "-N", 10),
+        (" 10", "-N", 10),
+        ("+0x10", "-N", 16),
+        ("+010", "-j", 8),
+        ("+10K", "-N", 10240),
+    ],
+)
+def test_parse_count_accepts(raw, flag, value):
+    assert parse_count(raw, flag) == value
 
 
 @pytest.mark.parametrize("value", ["abc", "", "x10", "++10", "-10", "+ 10"])

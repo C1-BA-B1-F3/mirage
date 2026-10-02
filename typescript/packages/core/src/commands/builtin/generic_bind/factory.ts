@@ -86,12 +86,12 @@ export function withProbeAnswers<A extends Accessor>(ops: CommandIO<A>): Command
 // a parent that is itself absent GNU reports the parent first (ENOENT); the
 // spelling is refused here without a round trip, so that corner reads
 // EISDIR too.
-function slashCheckedWrite<A extends Accessor, T>(
-  write: (accessor: A, path: PathSpec, arg: T) => Promise<void>,
-): (accessor: A, path: PathSpec, arg: T) => Promise<void> {
-  return async (accessor: A, path: PathSpec, arg: T) => {
+function slashCheckedWrite<A extends Accessor, T extends unknown[]>(
+  write: (accessor: A, path: PathSpec, ...args: T) => Promise<void>,
+): (accessor: A, path: PathSpec, ...args: T) => Promise<void> {
+  return async (accessor: A, path: PathSpec, ...args: T) => {
     if (path.rawPath.endsWith('/')) throw eisdir(path)
-    return write(accessor, path, arg)
+    return write(accessor, path, ...args)
   }
 }
 
@@ -103,6 +103,7 @@ export function withSlashGuard<A extends Accessor>(ops: CommandIO<A>): CommandIO
     ...ops,
     ...(ops.write === undefined ? {} : { write: slashCheckedWrite(ops.write) }),
     ...(ops.append === undefined ? {} : { append: slashCheckedWrite(ops.append) }),
+    ...(ops.pwrite === undefined ? {} : { pwrite: slashCheckedWrite(ops.pwrite) }),
     ...(ops.truncate === undefined ? {} : { truncate: slashCheckedWrite(ops.truncate) }),
   }
 }

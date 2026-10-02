@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import Literal
+
 from mirage.core.google.config import GoogleConfig
 from mirage.core.time_config import TimeRangeConfig
 
@@ -22,6 +24,7 @@ class GCalConfig(GoogleConfig, TimeRangeConfig):
     # would make the same day directory name mean different 24-hour windows
     # on different calendars. Defaults to the primary calendar's zone.
     time_zone: str | None = None
+    bucket_days: Literal[1, 7, 30] = 1
     # Keep only calendars at or above this accessRole, e.g. "writer" for
     # ones the agent can actually schedule into.
     min_access_role: str | None = None

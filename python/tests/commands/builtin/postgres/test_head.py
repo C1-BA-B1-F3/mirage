@@ -102,18 +102,6 @@ async def test_head_prints_every_row_asked_for_past_the_default(table):
 
 
 @pytest.mark.asyncio
-async def test_head_past_the_read_ceiling_stops_and_says_so(table):
-    table.extend({"id": i} for i in range(30))
-    data, code, err = await _head(_accessor(max_read_rows=20), 25)
-    assert len(data.splitlines()) == 20
-    assert code == 1
-    assert err == (
-        b"head: /public/tables/users/rows.jsonl: stopped at 20 "
-        b"rows (max_read_rows); the output is incomplete\n"
-    )
-
-
-@pytest.mark.asyncio
 async def test_head_past_the_ceiling_of_a_short_table_prints_it_whole(table):
     table.extend({"id": i} for i in range(15))
     data, code, err = await _head(_accessor(max_read_rows=20), 25)

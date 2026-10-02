@@ -47,8 +47,3 @@ FDFLAG_APPEND = 1
 # rights
 RIGHT_FD_WRITE = 1 << 6
 ALL_RIGHTS = 2**64 - 1
-
-# seek whence
-WHENCE_SET = 0
-WHENCE_CUR = 1
-WHENCE_END = 2

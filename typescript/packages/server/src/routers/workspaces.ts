@@ -72,6 +72,11 @@ interface LoadWorkspaceBody {
   override?: OverrideShape
 }
 
+/** Refuse an id that would name the state root, not a workspace. */
+function refuseId(reply: FastifyReply, id: string): FastifyReply {
+  return reply.status(400).send({ detail: `invalid workspace id: ${id}` })
+}
+
 export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRoutesDeps): void {
   app.post<{ Body: CreateWorkspaceBody }>(
     '/v1/workspaces',
@@ -80,9 +85,6 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       const config: unknown = body.config
       if (config === null || typeof config !== 'object' || Array.isArray(config)) {
         return reply.status(400).send({ detail: 'config must be a mapping' })
-      }
-      if (body.id !== undefined && DOT_IDS.has(body.id)) {
-        return reply.status(400).send({ detail: `invalid workspace id: ${body.id}` })
       }
       if (body.id !== undefined && deps.registry.has(body.id)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${body.id}` })
@@ -123,8 +125,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       // so resolve it before construction: explicit REST id, then the
       // config's workspaceId, then a fresh mint.
       const wid = body.id ?? args.options.workspaceId ?? newWorkspaceId()
-      if (DOT_IDS.has(wid))
-        return reply.status(400).send({ detail: `invalid workspace id: ${wid}` })
+      if (DOT_IDS.has(wid)) return refuseId(reply, wid)
       let ws: Workspace
       try {
         // Every option the config produced rides through: enumerating
@@ -177,9 +178,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       if (!safePath.startsWith(snapshotRoot + sep)) {
         return reply.status(400).send({ detail: 'path escapes the configured root' })
       }
-      if (workspaceId !== undefined && DOT_IDS.has(workspaceId)) {
-        return reply.status(400).send({ detail: `invalid workspace id: ${workspaceId}` })
-      }
+      if (workspaceId !== undefined && DOT_IDS.has(workspaceId)) return refuseId(reply, workspaceId)
       if (workspaceId !== undefined && deps.registry.has(workspaceId)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${workspaceId}` })
       }
@@ -247,9 +246,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       const { id } = req.params
       if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
       const body = req.body
-      if (body.id !== undefined && DOT_IDS.has(body.id)) {
-        return reply.status(400).send({ detail: `invalid workspace id: ${body.id}` })
-      }
+      if (body.id !== undefined && DOT_IDS.has(body.id)) return refuseId(reply, body.id)
       if (body.id !== undefined && deps.registry.has(body.id)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${body.id}` })
       }

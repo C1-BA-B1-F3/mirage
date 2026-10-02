@@ -17,15 +17,10 @@ import errno as host_errno
 from mirage.errors import FsCondition
 from mirage.runtime.constants import HARD_LINK_REFUSAL
 from mirage.runtime.wasm.errors import (
-    EACCES,
-    EEXIST,
     EINVAL,
     EIO,
-    EISDIR,
     ENOENT,
     ENOTDIR,
-    ENOTSUP,
-    EXDEV,
     LINK_REFUSAL,
     WASI,
     errno_for,
@@ -37,12 +32,16 @@ from mirage.utils.path import CycleError
 
 def test_errno_map_covers_fs_exceptions():
     assert errno_for(FileNotFoundError("x")) == ENOENT
-    assert errno_for(FileExistsError("x")) == EEXIST
-    assert errno_for(IsADirectoryError("x")) == EISDIR
+    assert errno_for(FileExistsError("x")) == wasi_errno(FsCondition.EEXIST)
+    assert errno_for(IsADirectoryError("x")) == wasi_errno(FsCondition.EISDIR)
     assert errno_for(NotADirectoryError("x")) == ENOTDIR
-    assert errno_for(PermissionError("x")) == EACCES
-    assert errno_for(NotImplementedError("x")) == ENOTSUP
-    assert errno_for(OSError(host_errno.EXDEV, "x")) == EXDEV
+    assert errno_for(PermissionError("x")) == wasi_errno(FsCondition.EACCES)
+    assert errno_for(NotImplementedError("x")) == wasi_errno(
+        FsCondition.ENOTSUP
+    )
+    assert errno_for(OSError(host_errno.EXDEV, "x")) == wasi_errno(
+        FsCondition.EXDEV
+    )
     assert errno_for(OSError("boom")) == EIO
     # A path outside every mount is a miss, the same answer the FUSE
     # classifier gives the kernel. Only the registry's typed miss reads
@@ -56,7 +55,7 @@ def test_errno_values_are_preview1_not_posix():
     # The wire ABI numbers its errnos independently of the host: ENOENT
     # is 2 in Python's errno module but 44 on the wire.
     assert ENOENT == 44
-    assert EACCES == 2
+    assert wasi_errno(FsCondition.EACCES) == 2
     assert host_errno.ENOENT == 2
 
 
@@ -65,7 +64,7 @@ def test_exdev_is_wasi_libc_75_not_the_host_18():
     # real cross-device rename forwarded from a disk backend arrived as
     # a math-domain error in the guest. Same numbering-bug family as
     # pyodide's EXDEV=75 fix.
-    assert EXDEV == 75
+    assert wasi_errno(FsCondition.EXDEV) == 75
 
 
 def test_symlink_loop_is_wire_eloop():

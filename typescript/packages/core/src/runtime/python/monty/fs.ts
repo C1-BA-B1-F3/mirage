@@ -42,7 +42,7 @@ function payloadBytes(data: unknown): Uint8Array {
   return new TextEncoder().encode(typeof data === 'string' ? data : '')
 }
 
-/** Match Python OSAccess's per-call entropy cap before allocating host memory. */
+/** Match Python MontyFs's per-call entropy cap before allocating host memory. */
 function urandom(value: unknown): Uint8Array {
   const size = Number(value)
   if (size > MAX_URANDOM_BYTES) {
@@ -136,6 +136,12 @@ const CONTENT = new Set([
   'Path.unlink',
   'Path.rename',
 ])
+
+/** The predicates, which answer false where there is no filesystem. */
+const PROBES = new Set(['Path.exists', 'Path.is_file', 'Path.is_dir', 'Path.is_symlink'])
+
+/** The other calls this door serves, which refuse where there is none. */
+const STRUCTURE = new Set(['Path.mkdir', 'Path.iterdir', 'Path.stat'])
 
 /**
  * Monty's OS door: every path a guest names is the workspace's.
@@ -231,29 +237,9 @@ export class MontyFs {
 
   /** Outside a workspace there is no filesystem: probes answer false, the rest refuse. */
   private unbound(name: string, path: string): unknown {
-    switch (name) {
-      case 'Path.exists':
-      case 'Path.is_file':
-      case 'Path.is_dir':
-      case 'Path.is_symlink':
-        return false
-      case 'open':
-      case 'Path.read_text':
-      case 'Path.read_bytes':
-      case 'Path.write_text':
-      case 'Path.write_bytes':
-      case 'Path.append_text':
-      case 'Path.append_bytes':
-      case 'Path.mkdir':
-      case 'Path.rmdir':
-      case 'Path.unlink':
-      case 'Path.rename':
-      case 'Path.iterdir':
-      case 'Path.stat':
-        throw guestError('ENOENT', path)
-      default:
-        return this.notHandled
-    }
+    if (PROBES.has(name)) return false
+    if (CONTENT.has(name) || STRUCTURE.has(name)) throw guestError('ENOENT', path)
+    return this.notHandled
   }
 
   private op(

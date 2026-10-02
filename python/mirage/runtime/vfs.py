@@ -86,7 +86,7 @@ class RuntimeVFS:
     backend, which is what lets a guest create a link or chmod a file on
     a mount whose store has neither. Encoders hold one
     of these; they never inherit it, because a monty encoder must
-    inherit the binding's own OSAccess and a wasm encoder is a table of
+    inherit the engine's own AbstractOS and a wasm encoder is a table of
     preview1 host functions.
 
     The surface is sync on purpose: guest calls arrive on a worker

@@ -222,10 +222,11 @@ class WasmView:
         """The mount's unclassified rows for `path`, or None.
 
         Asked of a path with no row. The build directory holds rows for
-        everything it holds, so a path it serves never lists here. A
-        path outside the view lists only where it is a directory there
-        (``RuntimeVFS.view_stat``): the history mount lists its one file
-        as empty, and that file is withheld, not a directory.
+        everything it holds, so a path it serves never lists here, and
+        neither does a path outside the view: its stat already answered
+        the directory row ``RuntimeVFS.view_stat`` finds. The history
+        mount lists its one file as empty, and that file is withheld, not
+        a directory.
 
         Args:
             path (str): guest-absolute path.
@@ -237,7 +238,7 @@ class WasmView:
         if build is not None:
             return None
         core = self._require_core()
-        if not core.serves(path) and core.view_stat(path) is None:
+        if not core.serves(path):
             return None
         return core.listing_or_none(path)
 

@@ -60,7 +60,6 @@ async def create_workspace(
     req: CreateWorkspaceRequest, request: Request
 ) -> WorkspaceDetail:
     registry = request.app.state.registry
-    _refuse_dot_id(req.id)
     if req.id is not None and req.id in registry:
         raise HTTPException(
             status_code=409, detail=f"workspace id already exists: {req.id!r}"
@@ -81,7 +80,11 @@ async def create_workspace(
     # The registry id and the state-store scope must be the same identity,
     # so resolve it before construction: explicit REST id, then the
     # config's workspace_id, then a fresh mint.
-    wid = req.id or kwargs.get("workspace_id") or new_workspace_id()
+    wid = (
+        req.id
+        if req.id is not None
+        else kwargs.get("workspace_id") or new_workspace_id()
+    )
     _refuse_dot_id(wid)
     kwargs["workspace_id"] = wid
     # Daemon default is disk (a created workspace survives restart with

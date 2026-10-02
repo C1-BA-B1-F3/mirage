@@ -80,30 +80,17 @@ class MirageFile:
         self._buf: io.BytesIO | io.StringIO | None = None
         # The open's effect lands now, by the rule every door shares; a
         # refusal leaves the file closed, so nothing flushes behind it.
-        apply_open(self._door, path, self._facts)
+        self._kept = apply_open(self._door, path, self._facts) is not None
         self._closed = False
 
     def _load(self) -> io.BytesIO | io.StringIO:
         if self._buf is not None:
             return self._buf
-        if self._facts.truncate or self._facts.exclusive:
-            if self._binary:
-                self._buf = io.BytesIO()
-            else:
-                self._buf = io.StringIO(newline=self._newline)
-            return self._buf
-        if self._facts.append:
-            data = self._door.run(self._door.ops.read(self._path))
-            if self._binary:
-                self._buf = io.BytesIO(data)
-            else:
-                self._buf = io.StringIO(
-                    data.decode(self._encoding, self._errors),
-                    newline=self._newline,
-                )
-            self._buf.seek(0, 2)
-            return self._buf
-        data = self._door.run(self._door.ops.read(self._path))
+        data = (
+            self._door.run(self._door.ops.read(self._path))
+            if self._kept
+            else b""
+        )
         if self._binary:
             self._buf = io.BytesIO(data)
         else:
@@ -111,6 +98,8 @@ class MirageFile:
                 data.decode(self._encoding, self._errors),
                 newline=self._newline,
             )
+        if self._facts.append:
+            self._buf.seek(0, 2)
         return self._buf
 
     def _check_closed(self) -> None:

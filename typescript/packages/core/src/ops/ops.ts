@@ -345,18 +345,8 @@ export class Ops {
     return ((await this.through('readdir', path, [], {}, sessionId)) as string[] | null) ?? []
   }
 
-  /**
-   * One path's row. `nofollow` reports a trailing symlink itself rather
-   * than its target (lstat), which is how an exclusive open learns a
-   * dangling link is a name that is there.
-   */
-  async stat(
-    path: string,
-    sessionId?: string,
-    opts: { nofollow?: boolean } = {},
-  ): Promise<FileStat> {
-    const kwargs = opts.nofollow === true ? { nofollow: true } : {}
-    return (await this.through('stat', path, [], kwargs, sessionId)) as FileStat
+  async stat(path: string, sessionId?: string): Promise<FileStat> {
+    return (await this.through('stat', path, [], {}, sessionId)) as FileStat
   }
 
   // The three probes below answer "is this path there?", so only a path that

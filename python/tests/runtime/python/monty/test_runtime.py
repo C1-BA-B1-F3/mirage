@@ -398,7 +398,7 @@ def test_monty_refuses_a_path_no_mount_serves():
 
 
 def test_monty_serves_the_host_clock():
-    # The binding's OSAccess defaults these to the host clock; the TS
+    # MontyFs leaves these to the engine's host clock; the TS
     # door answers with DateTime markers, and both hosts must agree a
     # guest can read a naive local now and an aware UTC now.
     runtime = MontyRuntime()

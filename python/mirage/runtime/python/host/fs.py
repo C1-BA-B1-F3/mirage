@@ -935,12 +935,12 @@ def os_routing(
 ) -> dict[str, Callable[..., Any]]:
     """Every `os` name that must not answer from the host, and what does.
 
-    Built from the three tables above: a routed name gets the workspace
-    door, a refused name gets that table's errno on a mounted path, and a
-    passthrough name is absent here because it is a program or a string,
-    never a file. A
-    name the host python does not have (``lchmod`` off macOS) is absent
-    too, so ``hasattr`` still reports what it did before.
+    Built from the three tables in ``host/constants``: a routed name gets
+    the workspace door, a refused name gets that table's errno on a
+    mounted path, and a passthrough name is absent here because it is a
+    program or a string, never a file. A name the host python does not
+    have (``lchmod`` off macOS) is absent too, so ``hasattr`` still
+    reports what it did before.
 
     The table is what makes the fix complete rather than a list someone
     maintains: ``os.walk`` reads ``os.scandir`` and ``os.path.exists``

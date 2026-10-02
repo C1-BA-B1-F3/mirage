@@ -301,8 +301,8 @@ describe('MontyRuntime', () => {
   }, 30_000)
 
   it('mutating os.environ cannot reach the host env', async () => {
-    // The callback hands back a copy, like python's
-    // OSAccess(environ=dict(environ)).
+    // The callback hands back a copy, like python's MontyFs, which
+    // keeps dict(environ).
     const code = "import os\nos.environ['K'] = 'guest'\nprint(os.getenv('K'))"
     const result = await run(make(), code, [], { K: 'v' })
     expect([result.exitCode, text(result.stdout)]).toEqual([0, 'v\n'])

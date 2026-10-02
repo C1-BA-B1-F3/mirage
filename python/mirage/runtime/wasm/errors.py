@@ -59,16 +59,11 @@ def wasi_errno(condition: FsCondition) -> int:
 # table's condition, never a mount's, so the vocabulary does not name
 # it.
 OK = 0
-EACCES = wasi_errno(FsCondition.EACCES)
 EBADF = 8
-EXDEV = wasi_errno(FsCondition.EXDEV)
-EEXIST = wasi_errno(FsCondition.EEXIST)
 EINVAL = wasi_errno(FsCondition.EINVAL)
 EIO = wasi_errno(FsCondition.EIO)
-EISDIR = wasi_errno(FsCondition.EISDIR)
 ENOENT = wasi_errno(FsCondition.ENOENT)
 ENOTDIR = wasi_errno(FsCondition.ENOTDIR)
-ENOTSUP = wasi_errno(FsCondition.ENOTSUP)
 
 # Which refusal a hard link gets is decided once, for every surface that
 # can spell one; rendering it in preview1 numbers is this one's part.

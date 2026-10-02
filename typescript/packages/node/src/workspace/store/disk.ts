@@ -36,11 +36,11 @@ function expandHome(p: string): string {
   return p
 }
 
-// Match Python's urllib quote(safe="") for the workspace path segment.
 // The workspace ids that would name the state root or its `workspaces`
 // directory rather than one workspace's own.
 export const DOT_IDS: ReadonlySet<string> = new Set(['', '.', '..'])
 
+// Match Python's urllib quote(safe="") for the workspace path segment.
 function quoteSegment(name: string): string {
   return encodeURIComponent(name).replace(
     /[!'()*]/g,

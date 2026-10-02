@@ -46,4 +46,4 @@ def numbered(exc: OSError) -> OSError:
     if exc.errno is not None or condition is None:
         return exc
     path = exc.filename if exc.filename is not None else exc.args[0]
-    return OSError(posix_errno(condition), gnu_phrase(condition), path)
+    return refused(condition, path)

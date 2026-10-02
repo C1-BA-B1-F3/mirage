@@ -56,7 +56,7 @@ export function errnoFor(err: unknown): number {
   // condition in preview1 numbers. EIO is the same everything-else
   // fallback the python host keeps for an unnamed OSError.
   const condition = classify(err)
-  return condition !== null ? WASI[condition] : WASI.EIO
+  return wasiErrno(condition ?? 'EIO')
 }
 
 export class QuickJsUnavailableError extends Error {

@@ -26,7 +26,7 @@ class OpenSurface(Protocol):
 
     The file door answers for the mounts (``RuntimeVFS``), the wasm
     router for a guest's whole tree, its build directory included
-    (``WasmView``), and ``MirageFile`` through the ``Ops`` facade.
+    (``WasmView``), and ``MirageFile`` through ``HostVFS``.
     """
 
     def stat_or_none(

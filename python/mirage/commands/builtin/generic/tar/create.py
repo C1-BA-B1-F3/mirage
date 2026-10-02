@@ -199,6 +199,7 @@ async def plan_create(
     directories: list[PathSpec] | None = None,
     links: LinkView | None = None,
     mounts: MountView | None = None,
+    one_file_system: bool = False,
 ) -> CreateResult:
     """Decide every member of a new archive, before writing any of it.
 
@@ -224,6 +225,8 @@ async def plan_create(
             each one before reading anything.
         links (LinkView | None): the namespace's symlink facts.
         mounts (MountView | None): where the mount boundaries are.
+        one_file_system (bool): --one-file-system, asked for, so a mount
+            left out goes unreported, as in GNU.
     """
     if not paths:
         return _refusal([constants.EMPTY_ARCHIVE, constants.USAGE_HINT])
@@ -285,6 +288,10 @@ async def plan_create(
             named.append((member_name(spelled, entry.kind), spelled, entry))
         for problem in scan.problems:
             shown = respell_one(problem.path, base, raw)
+            # A link followed onto another mount is a crossing too, which
+            # --one-file-system leaves unreported, as in GNU.
+            if one_file_system and problem.reason == OTHER_FILESYSTEM:
+                continue
             if problem.unreadable:
                 # A directory the walk could not open: GNU names it,
                 # keeps its entry, and fails the run.
@@ -298,7 +305,7 @@ async def plan_create(
             exit_code = constants.CREATE_ERROR_EXIT
         if scan.missing:
             continue
-        for crossing in scan.crossings:
+        for crossing in [] if one_file_system else scan.crossings:
             shown = member_name(respell_one(crossing, base, raw), "dir")
             notices.append(f"tar: {shown}: {OTHER_FILESYSTEM}")
         keep = set(pruned([name for name, _, _ in named], exclude))

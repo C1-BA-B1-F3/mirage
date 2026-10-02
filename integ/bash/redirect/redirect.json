@@ -1358,7 +1358,7 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "echo hi < NOPE; echo next; true && printf 'x\\n' | cat < NOPE; echo \"${PIPESTATUS[@]}\"; ! cat < NOPE; echo rc=$?",
+      "command": "echo hi < NOPE; echo next; true && true | cat < NOPE; echo \"${PIPESTATUS[@]}\"; ! cat < NOPE; echo rc=$?",
       "expect": {
         "exit": 0,
         "stdout": "next\n0 1\nrc=0\n",

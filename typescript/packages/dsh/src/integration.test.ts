@@ -22,6 +22,12 @@ import { MirageService } from './service.ts'
 import { MirageShellExecutor } from './shell.ts'
 import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
 import { MirageSpillStore } from './spill-store.ts'
+import type { ShellExecSpec, ShellExecutor, ShellRunResult } from '@deepseek-ai/dsh-shell'
+
+/** A foreground run, as dsh's own tools await one: the execution's result. */
+async function runOn(shell: ShellExecutor, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await shell.execute(spec)).result()
+}
 
 type SessionId = SaveTextSpill['owner']['sessionId']
 type ToolCallId = Extract<SaveTextSpill['source'], { kind: 'tool' }>['callId']
@@ -52,7 +58,10 @@ describe('one execution world', () => {
     const target = await ctx.fs.resolve('/data/notes.txt')
     await ctx.fs.writeText(target, 'written by the fs seam\n')
     const shell = ctx.shell
-    const result = await shell.run(shell.resolve({ command: `cat ${ctx.fs.processPath(target)}` }))
+    const result = await runOn(
+      shell,
+      shell.resolve({ command: `cat ${ctx.fs.processPath(target)}` }),
+    )
     expect(result.exitCode).toBe(0)
     expect(result.stdout.text).toBe('written by the fs seam\n')
   })
@@ -60,7 +69,8 @@ describe('one execution world', () => {
   it('a file created by the shell stats and edits through ctx.fs', async () => {
     const ctx = await makeWorld()
     const shell = ctx.shell
-    const written = await shell.run(
+    const written = await runOn(
+      shell,
       shell.resolve({ command: 'printf "from the shell" > /data/made.txt' }),
     )
     expect(written.exitCode).toBe(0)
@@ -73,7 +83,7 @@ describe('one execution world', () => {
       info === undefined ? undefined : { version: info.version },
     )
     expect(edited.after).toBe('from the mirage shell')
-    const reread = await shell.run(shell.resolve({ command: 'cat /data/made.txt' }))
+    const reread = await runOn(shell, shell.resolve({ command: 'cat /data/made.txt' }))
     expect(reread.stdout.text).toBe('from the mirage shell')
   })
 
@@ -82,7 +92,7 @@ describe('one execution world', () => {
     await ctx.fs.writeText(await ctx.fs.resolve('/data/one.txt'), 'alpha needle\n')
     await ctx.fs.writeText(await ctx.fs.resolve('/data/two.txt'), 'no match here\n')
     const shell = ctx.shell
-    const result = await shell.run(shell.resolve({ command: 'grep -rl needle /data' }))
+    const result = await runOn(shell, shell.resolve({ command: 'grep -rl needle /data' }))
     expect(result.exitCode).toBe(0)
     expect(result.stdout.text.trim()).toBe('/data/one.txt')
   })
@@ -109,7 +119,7 @@ describe('a spilled result is recoverable from inside the world', () => {
     const locator = String(ref.locator)
     const shell = ctx.shell
     // Exactly what the retrieval hint tells the model to do.
-    const grepped = await shell.run(shell.resolve({ command: `grep needle ${locator}` }))
+    const grepped = await runOn(shell, shell.resolve({ command: `grep needle ${locator}` }))
     expect(grepped.exitCode).toBe(0)
     expect(grepped.stdout.text.trim()).toBe('beta needle')
   })

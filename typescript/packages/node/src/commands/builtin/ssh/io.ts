@@ -24,6 +24,7 @@ import { size as sshDu, entries as sshDuAll } from '../../../core/ssh/du/index.t
 import { exists as sshExists } from '../../../core/ssh/exists.ts'
 import { find as sshFind } from '../../../core/ssh/find.ts'
 import { mkdir as sshMkdir } from '../../../core/ssh/mkdir.ts'
+import { pwrite as sshPwrite } from '../../../core/ssh/pwrite.ts'
 import { read as sshRead } from '../../../core/ssh/read.ts'
 import { readdir as sshReaddir } from '../../../core/ssh/readdir.ts'
 import { rename as sshRename } from '../../../core/ssh/rename.ts'
@@ -56,6 +57,7 @@ export const IO: CommandIO<SSHAccessor> = new VFSAdapter<SSHAccessor>({
     create: sshCreate,
     truncate: sshTruncate,
     append: sshAppend,
+    pwrite: sshPwrite,
     setAttrs: sshSetAttrs,
   },
   maxGlobMatches: SCOPE_ERROR,

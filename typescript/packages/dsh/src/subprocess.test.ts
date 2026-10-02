@@ -83,8 +83,24 @@ describe('workspace subprocess', () => {
     const { ws, provider } = await attach()
     try {
       await expect(
-        provider.spawnTerminal({ argv: ['bash'], cwd: '/', graceMs: 100, rows: 24, cols: 80 }),
+        provider.spawnTerminal({
+          argv: ['bash'],
+          cwd: '/',
+          graceMs: 100,
+          rows: 24,
+          cols: 80,
+          terminalType: 'xterm-256color',
+        }),
       ).rejects.toThrow('terminal')
+      expect(() =>
+        provider.spawn({
+          argv: ['true'],
+          cwd: '/',
+          graceMs: 100,
+          stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', control: 'pipe' },
+        }),
+      ).toThrow('control channel')
+      await expect(provider.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
       expect(() =>
         provider.spawn({
           argv: [],

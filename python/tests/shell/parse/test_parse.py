@@ -27,7 +27,7 @@ from mirage.shell.helpers import (
     get_text,
     get_while_parts,
 )
-from mirage.shell.parse import join_continuations
+from mirage.shell.parse import join_continuations, source_offsets
 from mirage.shell.types import NodeType as NT
 
 
@@ -352,6 +352,30 @@ def test_unquoted_heredoc_body_joins_its_lines():
     assert root.text == b'cat <"ab $x\n" | tr a b\n'
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo A; \\\n fi",
+        "echo /api/$c/$id.json; fi",
+        "! echo A \\\n; fi",
+        "time echo A \\\n; fi",
+        "cat <<E; fi\nbody\nE",
+    ],
+    ids=["continuation", "rebrace", "bang", "time", "heredoc"],
+)
+def test_source_offsets_point_back_into_the_line_as_typed(command):
+    root = parse(command)
+    stack, names = [root], []
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type == "command_name" and node.text == b"fi":
+            names.append(node)
+    (fi,) = names
+    offsets = source_offsets(command, root)
+    assert offsets[fi.start_byte] == command.encode().rindex(b"fi")
+
+
 # tree-sitter-bash 0.25.1 drops a later unbraced `$var` out of its word
 # when the name is cut short by a name-terminating character: the `$`
 # stays behind as a literal token and the rest splits into a sibling
@@ -569,3 +593,111 @@ def test_heredoc_unterminated_body_is_left_as_typed():
     assert not root.has_error
     assert root.source_text.decode() == "cat <<EOF; echo x\nhi\n"
     assert root.warnings
+
+
+@pytest.mark.parametrize(
+    "line, words",
+    [
+        ("echo ==", ["echo", "=="]),
+        ("echo == x", ["echo", "==", "x"]),
+        ("echo a =~ b", ["echo", "a", "=~", "b"]),
+        ("echo =~ a.b*", ["echo", "=~", "a.b*"]),
+        ("test a == a", ["test", "a", "==", "a"]),
+        ('echo =="x"', ["echo", '=="x"']),
+    ],
+)
+def test_a_test_operator_as_an_argument_is_the_word_bash_reads(line, words):
+    # tree-sitter-bash takes `==`/`=~` there for a `[`-style operator that
+    # wants an operand, so `echo ==` failed and `echo == x` lost the word.
+    root = parse(line)
+    assert not root.has_error
+    assert [get_text(p) for p in get_parts(root.named_children[0])] == words
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "echo ==; echo hi",
+        "echo == | cat",
+        "echo ==&& echo hi",
+        "f() { echo ==; }",
+        "case x in x) echo ==;; esac",
+        "echo $; echo hi",
+    ],
+)
+def test_an_operator_word_before_a_terminator_is_no_syntax_error(line):
+    assert not parse(line).has_error
+
+
+def test_a_redirect_after_an_operator_word_stays_a_redirect():
+    # The operand the grammar wanted after `==` swallowed `>/dev/null`.
+    command, redirects = get_redirects(
+        parse("echo == >/dev/null").named_children[0]
+    )
+    assert [get_text(p) for p in get_parts(command)] == ["echo", "=="]
+    assert [r.target for r in redirects] == ["/dev/null"]
+
+
+def test_the_translation_marker_stays_with_its_string():
+    command = parse('echo $"hello"').named_children[0]
+    assert [get_text(p) for p in get_parts(command)] == ["echo", '"hello"']
+
+
+@pytest.mark.parametrize(
+    "line, operator",
+    [("[[ a == b ]]", "=="), ("[ a =~ b ]", "=~"), ("(( 1 == 1 ))", "==")],
+)
+def test_an_operator_inside_a_test_stays_an_operator(line, operator):
+    expression = parse(line).named_children[0].named_children[0]
+    assert expression.type == NT.BINARY_EXPRESSION
+    assert [c.type for c in expression.children if not c.is_named] == [
+        operator
+    ]
+
+
+def _nodes(node, kind: str) -> list:
+    found = [node] if node.type == kind else []
+    for child in node.named_children:
+        found.extend(_nodes(child, kind))
+    return found
+
+
+@pytest.mark.parametrize(
+    "line, commands",
+    [
+        ("[ a && b ]", [["[", "a"], ["b", "]"]]),
+        ("[ a | b ]", [["[", "a"], ["b", "]"]]),
+        ("[ a ]]", [["[", "a", "]]"]]),
+        ("[ a ]x", [["[", "a", "]x"]]),
+        ("[ a; echo x", [["[", "a"], ["echo", "x"]]),
+        ("[ c", [["[", "c"]]),
+        ("[ \\( a \\) ]", [["[", "\\(", "a", "\\)", "]"]]),
+    ],
+)
+def test_a_bracket_bash_reads_as_a_command_parses_as_one(line, commands):
+    # `[` is a command to bash: its words stop at a list or pipe operator
+    # and need a `]` of their own, where the grammar builds a test anyway.
+    root = parse(line)
+    assert not root.has_error
+    assert [
+        [get_text(p) for p in get_parts(c)] for c in _nodes(root, NT.COMMAND)
+    ] == commands
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[ a ] && [ b ]",
+        "[ a -a b ]",
+        '[ "a && b" ]',
+        "[ a ]>/dev/null",
+        "( [ a ])",
+        "[ ! a ]",
+    ],
+)
+def test_a_well_formed_bracket_test_stays_a_test(line):
+    root = parse(line)
+    assert _nodes(root, NT.TEST_COMMAND)
+    assert not any(
+        get_command_name(c) == "[" for c in _nodes(root, NT.COMMAND)
+    )

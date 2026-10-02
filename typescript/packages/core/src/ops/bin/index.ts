@@ -24,13 +24,22 @@ import type { RegisteredOp } from '../registry.ts'
 // "Operation not supported" where a read-only directory says EROFS.
 export const BIN_OPS: readonly RegisteredOp[] = [
   ...makeGenericOps(VFSName.BIN, IO),
-  ...['write', 'append', 'create', 'mkdir', 'unlink', 'rmdir', 'rename', 'truncate', 'setattr'].map(
-    (name): RegisteredOp => ({
-      name,
-      vfs: VFSName.BIN,
-      filetype: null,
-      fn: (accessor, path) => refuse(accessor as BinAccessor, path),
-      write: true,
-    }),
-  ),
+  ...[
+    'write',
+    'append',
+    'pwrite',
+    'create',
+    'mkdir',
+    'unlink',
+    'rmdir',
+    'rename',
+    'truncate',
+    'setattr',
+  ].map((name): RegisteredOp => ({
+    name,
+    vfs: VFSName.BIN,
+    filetype: null,
+    fn: (accessor, path) => refuse(accessor as BinAccessor, path),
+    write: true,
+  })),
 ]

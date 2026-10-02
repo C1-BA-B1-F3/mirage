@@ -139,10 +139,10 @@
       },
       "steps": [
         {
-          "command": "if then fi this-is-a-deliberately-long-unparsable-line-well-past-forty-chars",
+          "command": "if ; this-is-a-deliberately-long-unparsable-line-well-past-forty-chars",
           "expect": {
             "exit": 2,
-            "stderr": "mirage: syntax error near 'if then fi this-is-a-deliberately-long-unparsable-line-well-past-forty-chars'\n"
+            "stderr": "mirage: syntax error near 'if ; this-is-a-deliberately-long-unparsable-line-well-past-forty-chars'\n"
           }
         }
       ]

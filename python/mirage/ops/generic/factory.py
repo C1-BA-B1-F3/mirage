@@ -20,9 +20,13 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.ops.generic.types import OpFn, OpsTable
 from mirage.ops.registry import RegisteredOp
 from mirage.types import FileType, PathSpec
-from mirage.utils.errors import enotsup
+from mirage.utils.errors import einval, enotsup
 from mirage.utils.glob_walk import make_resolve_glob
-from mirage.utils.ranges import is_unsatisfiable_range, slice_window
+from mirage.utils.ranges import (
+    is_unsatisfiable_range,
+    slice_window,
+    splice_window,
+)
 
 
 def _make_read(fn: OpFn) -> OpFn:
@@ -165,6 +169,49 @@ def _make_emulated_append(
     return append
 
 
+def _expect_offset(offset: int, path: PathSpec) -> int:
+    if offset < 0:
+        raise einval(path)
+    return offset
+
+
+def _make_pwrite(fn: OpFn) -> OpFn:
+
+    async def pwrite(
+        accessor: Accessor, path: PathSpec, data: bytes, offset: int, **kwargs
+    ) -> None:
+        await fn(accessor, path, data, _expect_offset(offset, path))
+
+    return pwrite
+
+
+def _make_emulated_pwrite(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
+
+    async def pwrite(
+        accessor: Accessor,
+        path: PathSpec,
+        data: bytes,
+        offset: int,
+        *,
+        index: IndexCacheStore | None = None,
+        **kwargs,
+    ) -> None:
+        # The read is this op's own, below the door that judged it a
+        # write: a session that may write a file and not read it still
+        # writes at an offset, as pwrite(2) on a write-only descriptor
+        # does. It takes the caller's index for the reason append does.
+        offset = _expect_offset(offset, path)
+        try:
+            existing = await read_bytes(accessor, path, index)
+        except FileNotFoundError:
+            existing = b""
+        await write_bytes(
+            accessor, path, splice_window(existing, offset, data)
+        )
+
+    return pwrite
+
+
 def _make_path_write(fn: OpFn) -> OpFn:
 
     async def mutate(accessor: Accessor, path: PathSpec, **kwargs) -> None:
@@ -291,8 +338,9 @@ def make_generic_ops(
     ``make_generic_commands``, so a backend declares its core surface
     once. Ops whose table field is None are omitted, mirroring how the
     command factory skips write commands on read-only backends. A writable
-    table without native append uses read-modify-write, which is async but
-    not atomic against concurrent writers, like emulated truncate.
+    table without a native append or pwrite builds them from read and
+    write, which is async but not atomic against concurrent writers, like
+    emulated truncate.
 
     ``index`` is forwarded into read/readdir/stat for every backend, so
     there is deliberately no ``forward_index`` knob here, in either
@@ -357,6 +405,26 @@ def make_generic_ops(
             vfs_names,
             "append",
             _make_emulated_append(table.stat, table.read_bytes, table.write),
+            True,
+            None,
+            skip,
+        )
+    if table.pwrite is not None:
+        _emit(
+            ops,
+            vfs_names,
+            "pwrite",
+            _make_pwrite(table.pwrite),
+            True,
+            None,
+            skip,
+        )
+    elif table.write is not None:
+        _emit(
+            ops,
+            vfs_names,
+            "pwrite",
+            _make_emulated_pwrite(table.read_bytes, table.write),
             True,
             None,
             skip,

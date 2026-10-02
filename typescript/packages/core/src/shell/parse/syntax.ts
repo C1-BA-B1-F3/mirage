@@ -117,21 +117,20 @@ function isStructuralError(node: TSNodeLike): boolean {
 }
 
 /**
- * The text of a `;;` / `;&` / `;;&` token outside a case item. The
+ * Each `;;` / `;&` / `;;&` token outside a case item, with its start. The
  * grammar takes them as ordinary statement separators, so `true;;s`
  * parses cleanly and would run `s`; bash refuses the line at the token.
  */
-function strayCaseTerminator(node: TSNodeLike): string | null {
+function* strayCaseTerminators(node: TSNodeLike): Generator<[number, string]> {
   const stack: TSNodeLike[] = [node]
   for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
     for (const child of current.children) {
       if (CASE_TERMINATORS.has(child.type) && current.type !== 'case_item') {
-        return child.text || child.type
+        yield [child.startIndex ?? 0, child.text || child.type]
       }
       stack.push(child)
     }
   }
-  return null
 }
 
 const BODY_OPENERS = new Set(['do', '{', 'then', 'else'])
@@ -139,12 +138,12 @@ const BODY_CLOSERS = new Set(['done', '}', 'fi', 'elif', 'else'])
 const BODY_NODES = new Set(['do_group', 'compound_statement', 'if_statement'])
 
 /**
- * The token closing a compound list that holds no command. bash requires a
- * command in every `do`, `then`, `else` and brace body (5.2: `for x in a; do
- * done` is a syntax error near `done`); the grammar accepts an empty one,
- * comments aside. Mirrors Python's _empty_compound.
+ * Each token closing a compound list that holds no command, with its start.
+ * bash requires a command in every `do`, `then`, `else` and brace body (5.2:
+ * `for x in a; do done` is a syntax error near `done`); the grammar accepts
+ * an empty one, comments aside. Mirrors Python's _empty_compounds.
  */
-function emptyCompound(node: TSNodeLike): string | null {
+function* emptyCompounds(node: TSNodeLike): Generator<[number, string]> {
   const stack: TSNodeLike[] = [node]
   for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
     stack.push(...current.children)
@@ -153,12 +152,67 @@ function emptyCompound(node: TSNodeLike): string | null {
     for (const kid of current.children.flatMap((child) =>
       child.type === 'elif_clause' || child.type === 'else_clause' ? [...child.children] : [child],
     )) {
-      if (opened && BODY_CLOSERS.has(kid.type)) return kid.text
+      if (opened && BODY_CLOSERS.has(kid.type)) yield [kid.startIndex ?? 0, kid.text]
       if (BODY_OPENERS.has(kid.type)) opened = true
       else if (kid.isNamed && kid.type !== 'comment') opened = false
     }
   }
-  return null
+}
+
+// Reserved words that close or continue a compound command; quoted, escaped,
+// after an assignment or a redirect, or named as an alias the shell would
+// expand there, they are plain words.
+const RESERVED_CLOSERS = new Set([
+  'do',
+  'done',
+  'elif',
+  'else',
+  'esac',
+  'fi',
+  'in',
+  'then',
+  '}',
+  ']]',
+])
+
+/**
+ * Each reserved word a command starts with, where none may stand, with its
+ * start. The grammar reads `echo hi; fi` as two commands and would run both;
+ * bash 5.2 refuses the line at `fi`, as it does `done`, `then` and the rest
+ * when they stand where a command starts. Inside `$(...)` and a process
+ * substitution, bash 5.2 takes such a word as reserved even when an alias
+ * spells it. `own` maps each alias whose own text the line opens with to
+ * the span of the line that text covers, and `offsets` gives where each char
+ * the parser read sits in that line; a word spelled like the alias starting
+ * inside its span is reserved, since an alias never expands within its own
+ * text. Mirrors Python's _stray_reserved_words.
+ */
+function* strayReservedWords(
+  node: TSNodeLike,
+  aliases: ReadonlySet<string>,
+  own: ReadonlyMap<string, readonly [number, number]>,
+  offsets: readonly number[] | undefined,
+): Generator<[number, string]> {
+  const stack: [TSNodeLike, ReadonlySet<string>][] = [[node, aliases]]
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const [current, inherited] = top
+    const names =
+      current.type === 'process_substitution' ||
+      (current.type === 'command_substitution' && !current.text.startsWith('`'))
+        ? new Set<string>()
+        : inherited
+    for (const child of current.children) stack.push([child, names])
+    if (current.type !== 'command') continue
+    const name = current.children[0]
+    if (name?.type !== 'command_name') continue
+    if (!RESERVED_CLOSERS.has(name.text)) continue
+    const start = name.startIndex ?? 0
+    const span = own.get(name.text)
+    const at = offsets === undefined ? start : (offsets[start] ?? start)
+    if (!names.has(name.text) || (span !== undefined && span[0] <= at && at < span[1])) {
+      yield [start, name.text]
+    }
+  }
 }
 
 function walkNamed(node: TSNodeLike): TSNodeLike[] {
@@ -203,13 +257,20 @@ function missingQuote(node: TSNodeLike): string | null {
 /**
  * Locate structural errors and missing tokens throughout a parsed AST.
  * The grammar recovers an empty for-list with an ERROR containing `in`;
- * Bash accepts that one recovery.
+ * Bash accepts that one recovery. A reserved word among `aliases`, the names
+ * the shell would expand where a command starts, is a command there, except
+ * inside the own text of an alias in `own`. Of the tokens the grammar
+ * accepts and bash refuses, the first on the line is the one reported, as
+ * bash stops there.
  *
  * Returns the offending region's text, or `null` if the AST is clean.
  */
 export function findSyntaxError(
   node: TSNodeLike,
   parse?: (command: string) => TSNodeLike,
+  aliases: ReadonlySet<string> = new Set(),
+  own: ReadonlyMap<string, readonly [number, number]> = new Map(),
+  offsets?: readonly number[],
 ): string | null {
   // Expansion and the `[` builtin own their argument grammar.
   if (node.type === 'expansion') {
@@ -228,10 +289,15 @@ export function findSyntaxError(
   ) {
     return findSyntaxError(parse(node.text.slice(2, -1)), parse)
   }
-  const stray = strayCaseTerminator(node)
-  if (stray !== null) return stray
-  const empty = emptyCompound(node)
-  if (empty !== null) return empty
+  let stray: [number, string] | null = null
+  for (const hit of [
+    ...strayCaseTerminators(node),
+    ...emptyCompounds(node),
+    ...strayReservedWords(node, aliases, own, offsets),
+  ]) {
+    if (stray === null || hit[0] < stray[0]) stray = hit
+  }
+  if (stray !== null) return stray[1]
   if (!node.hasError) return findUnterminatedQuote(node)
   let previous: TSNodeLike | null = null
   for (const child of node.children) {
@@ -257,7 +323,7 @@ export function findSyntaxError(
       return child.text
     }
     if (child.type !== 'ERROR') {
-      const nested = findSyntaxError(child, parse)
+      const nested = findSyntaxError(child, parse, aliases, own, offsets)
       if (nested !== null) return nested
     }
     if (child.isNamed) previous = child

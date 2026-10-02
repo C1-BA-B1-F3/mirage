@@ -21,6 +21,7 @@ from mirage.core.disk.du import size as _du_size
 from mirage.core.disk.exists import exists as _exists
 from mirage.core.disk.find import find as _find
 from mirage.core.disk.mkdir import mkdir as _mkdir
+from mirage.core.disk.pwrite import pwrite as _pwrite
 from mirage.core.disk.read import read_bytes as _read
 from mirage.core.disk.read import read_range as _read_range
 from mirage.core.disk.readdir import readdir as _readdir
@@ -56,6 +57,7 @@ IO = VFSAdapter(
         create=_create,
         truncate=_truncate,
         append=_append,
+        pwrite=_pwrite,
         set_attrs=_set_attrs,
     ),
     is_mounted=lambda a: a.root is not None,

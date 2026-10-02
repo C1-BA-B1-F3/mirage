@@ -16,7 +16,7 @@ import { constants as fsConstants } from 'node:fs'
 import { posix } from 'node:path'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import type { Ops } from '@struktoai/mirage-core/ops/ops'
-import { FileTable, mergeWrites } from '@struktoai/mirage-core/runtime/handles/index'
+import { FileTable, writeRuns } from '@struktoai/mirage-core/runtime/handles/index'
 import { FileType } from '@struktoai/mirage-core/types'
 import type { FileStat } from '@struktoai/mirage-core/types'
 import { isMissingOp } from '@struktoai/mirage-core/utils/errors'
@@ -315,19 +315,21 @@ export class MountCore {
   }
 
   /**
-   * Merge buffered writes over the raw base and persist the result.
-   * The base is read raw so a flush never stores a rendered view back
-   * into the mount.
+   * Land buffered writes on the mount, one pwrite per run. A pwrite keeps
+   * every stored byte the handle did not write, so nothing is read through
+   * the door first: a session that may write a file and not read it writes
+   * through FUSE, as through a write-only descriptor. A run that fails still
+   * invalidates what the core holds, since the runs before it have landed.
    */
   private async applyWrites(path: string, writes: [number, Uint8Array][]): Promise<void> {
-    let existing: Uint8Array = new Uint8Array(0)
+    const target = this.resolve(path)
     try {
-      existing = await this.op(() => this.ops.readFile(this.resolve(path), { raw: true }))
-    } catch {
-      // missing file: start from empty; the write creates it
+      for (const [offset, data] of writeRuns(writes)) {
+        await this.op(() => this.ops.pwrite(target, data, offset))
+      }
+    } finally {
+      await this.changed(path)
     }
-    await this.writeFile(path, mergeWrites(existing, writes))
-    await this.changed(path)
   }
 
   // ── POSIX surface (throws; adapters classify) ────────────────────

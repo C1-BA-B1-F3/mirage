@@ -58,10 +58,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "find /data",
+      "command": "find /data; find /data -xdev; find /data -mount -type f",
       "expect": {
         "exit": 0,
-        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n/data\n/data/inner\n/data/top.txt\n/data/top.txt\n",
         "stderr": ""
       }
     },
@@ -98,10 +98,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "tree /data",
+      "command": "tree /data; tree -x /data",
       "expect": {
         "exit": 0,
-        "stdout": "/data\n|-- inner\n|   `-- leaf.txt\n`-- top.txt\n\n2 directories, 2 files\n",
+        "stdout": "/data\n|-- inner\n|   `-- leaf.txt\n`-- top.txt\n\n2 directories, 2 files\n/data\n|-- inner\n`-- top.txt\n\n2 directories, 1 file\n",
         "stderr": ""
       }
     },
@@ -241,10 +241,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "du /data/i*",
+      "command": "du /data/i*; du -x /data; du /data",
       "expect": {
         "exit": 0,
-        "stdout": "5\t/data/inner\n",
+        "stdout": "5\t/data/inner\n4\t/data\n5\t/data/inner\n9\t/data\n",
         "stderr": ""
       }
     },
@@ -1023,10 +1023,10 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "rg --files --sortr path /data/inner/leaf.txt /data/top.txt; rg --sortr path -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sort modified -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sortr modified -l -e top -e deep /data/top.txt /data/inner/leaf.txt",
+      "command": "rg --files --sortr path /data/inner/leaf.txt /data/top.txt; rg --sortr path -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sort modified -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sortr modified -l -e top -e deep /data/top.txt /data/inner/leaf.txt; rg --one-file-system --sort path -l -e top -e deep /data /data/inner/leaf.txt",
       "expect": {
         "exit": 0,
-        "stdout": "/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stdout": "/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/top.txt\n/data/inner/leaf.txt\n",
         "stderr": ""
       },
       "note": "One invocation sorts across explicit operands owned by different mounts; timestamps established by nest_rg_time_sort_spans_mounts."
@@ -1068,6 +1068,19 @@
         "exit": 1,
         "stdout": "/data/file\n/data/inner/file\n/data/relative.txt\n",
         "stderr": "realpath: '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nest_one_file_system_stops_at_the_mount",
+      "seq": 950088,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "ln -s g.txt /ghost/deep/gl; cp -r /ghost /data/g1; find /data/g1; cp -rx /ghost /data/g2; find /data/g2; mkdir /data/g3; cp -rx -t /data/g3 /ghost; cp -t /data/g3 /ghost/deep/g.txt; mv -t /ghost/deep /data/g3/ghost; find /data/g3 /ghost/deep; rm -r /data/g1 /data/g2 /data/g3 /ghost/deep/ghost /ghost/deep/gl",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/g1\n/data/g1/deep\n/data/g1/deep/g.txt\n/data/g1/deep/gl\n/data/g2\n/data/g2/deep\n/data/g3\n/data/g3/g.txt\n/ghost/deep\n/ghost/deep/g.txt\n/ghost/deep/ghost\n/ghost/deep/ghost/deep\n/ghost/deep/gl\n",
+        "stderr": ""
       }
     }
   ]

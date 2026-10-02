@@ -608,6 +608,7 @@ async def tar(
     C: list[PathSpec] | None = None,
     strip_components: int = 0,
     exclude: str | None = None,
+    one_file_system: bool = False,
     links: LinkView | None = None,
     mounts: MountView | None = None,
     cwd: PathSpec | str = "/",
@@ -639,6 +640,7 @@ async def tar(
             directories=C or [],
             links=links,
             mounts=mounts,
+            one_file_system=one_file_system,
         )
         if not plan.write:
             return None, IOResult(
@@ -700,6 +702,7 @@ class TarFlags:
     directories: tuple[PathSpec, ...] = ()
     strip_components: int = 0
     exclude: str | None = None
+    one_file_system: bool = False
 
 
 _MODES = ("create", "extract", "list")
@@ -773,6 +776,7 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> TarFlags:
         directories=tuple(fl.as_paths("directory")),
         strip_components=strip,
         exclude=fl.as_str("exclude"),
+        one_file_system=fl.as_bool("one_file_system"),
     )
 
 
@@ -811,6 +815,7 @@ async def tar_generic(
         C=list(parsed.directories) or None,
         strip_components=parsed.strip_components,
         exclude=parsed.exclude,
+        one_file_system=parsed.one_file_system,
         links=opts.ns.links if opts.ns is not None else None,
         mounts=opts.ns.mounts if opts.ns is not None else None,
         cwd=opts.cwd,

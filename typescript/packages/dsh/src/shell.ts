@@ -18,20 +18,24 @@ import type {
   CollectedOutput,
   ShellExecRequest,
   ShellExecSpec,
-  ShellProcess,
+  ShellExecution,
   ShellProcessRead,
   ShellProcessStatus,
   ShellRunResult,
   ShellSandboxInfo,
 } from '@deepseek-ai/dsh-shell'
+import type { SubprocessOutputRead } from '@deepseek-ai/dsh-subprocess'
 import {
   Channel,
   JobConsole,
   KILLED_OUTCOME,
-  RAMConsoleStore,
   exitOutcome,
 } from '@struktoai/mirage-core/shell/console/index'
-import type { ConsoleChunk } from '@struktoai/mirage-core/shell/console/index'
+import type {
+  ConsoleChunk,
+  ConsoleStore,
+  ReadResult,
+} from '@struktoai/mirage-core/shell/console/index'
 import { setCwd } from '@struktoai/mirage-core/workspace/session/shell_dirs'
 import { sessionView } from '@struktoai/mirage-core/workspace/session/state'
 import type {
@@ -39,7 +43,7 @@ import type {
   ExecuteResult,
 } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import type { Workspace } from '@struktoai/mirage-node'
-import { TailBuffer, tailCap } from './text.ts'
+import { StreamTail, TailBuffer } from './text.ts'
 import { SpillSink, ensureDirPath, type SpillTarget } from './spill.ts'
 import type {} from './service.ts'
 import type { Refusal } from '@struktoai/mirage-core/types'
@@ -50,16 +54,6 @@ const MAX_TIMEOUT_MS = 600_000
 const DEFAULT_STDOUT_MAX_BYTES = 200_000
 const DEFAULT_STDERR_MAX_BYTES = 64_000
 const STDERR_MARKER = new TextEncoder().encode('\n--- stderr ---\n')
-// What a console may hold that its reader has not consumed yet. Capping
-// the delta does not bound this: a reader's cursor advances but frees
-// nothing, so an uncapped store keeps every chunk of a noisy command for
-// the life of the process. Five deltas' worth, because a drain awaits the
-// spill's own writes and has to be free to fall briefly behind, and
-// bounded, so a command that outruns it forever cannot grow the heap.
-// Derived from the call's own budget rather than fixed: a retention
-// smaller than one delta would make a slow reader lossy by construction.
-const CONSOLE_RETENTION_DELTAS = 5
-
 // Monotonic within the process, so concurrent background commands never
 // collide on a spill filename. Not reset, so it needs no time or randomness.
 let spillCounter = 0
@@ -127,11 +121,6 @@ export interface MirageShellConfig {
   spillDir?: string
 }
 
-function collect(text: string, maxBytes: number): CollectedOutput {
-  const capped = tailCap(text, maxBytes)
-  return { text: capped.text, truncated: capped.truncated }
-}
-
 function executeOptions(
   spec: ShellExecSpec,
   workdir: string,
@@ -167,86 +156,187 @@ function executeOptions(
   }
 }
 
+/** Where and as whom one command runs, settled before it starts. */
+interface Prepared {
+  ws: Workspace
+  sessionId: string | undefined
+  bound: boolean
+  workdir: string
+}
+
 /**
- * A background command over the workspace executor, streamed through a
- * `JobConsole`. The command runs with the console as its `sink`, so each
- * statement of a compound line lands as it finishes rather than the whole
- * line arriving at the end (a single command still shows up in one chunk,
- * having nothing to emit before it completes). A background follow loop
- * drains the console into `pending`, which `readOutput()` hands back and
- * clears — consuming, so consecutive reads never re-deliver. Unread output
- * is bounded to `budget` bytes: the head is dropped and `lossy` set once
- * it overruns, keeping the tail, which is where the full stream spills to
- * a file. Both ends of the conduit are bounded, because draining the
- * console does not free it: the console holds a retention budget of its
- * own, and a command that outruns this loop by that much loses chunks,
- * which arrives here as a gap in the sequence. `kill()` aborts
- * cooperatively (the executor observes the signal between pipeline stages
- * and inside sleep).
+ * Wait for `work` until `signal` fires; the reason the signal carries is
+ * then the rejection, and the work runs on unwatched.
+ *
+ * @param work the step being waited for.
+ * @param signal the signal that ends the wait.
+ * @returns what the step resolved with.
  */
-class MirageShellProcess implements ShellProcess {
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => {
+      reject(signal.reason as Error)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort)
+    })
+  })
+}
+
+/** How a settled execution ended, read once it has: the first cause wins. */
+interface Classification {
+  timedOut: boolean
+  aborted: boolean
+}
+
+/** What an execution needs from its executor, beyond the run itself. */
+interface ExecutionParts {
+  controller: AbortController
+  /** Budget of the consuming `readOutput` backlog. */
+  budget: number
+  stdoutMaxBytes: number
+  stderrMaxBytes: number
+  timeoutMs: number
+  spill: SpillSink | null
+  classify: () => Classification
+  /** The sandbox facts once the run settled, its denial read off them. */
+  verdict: (result: ExecuteResult | null, stderr: string) => ShellSandboxInfo | undefined
+  disarm: () => void
+}
+
+/**
+ * The console store one execution streams through: each chunk goes to the
+ * execution as the command emits it, and none is retained. The command
+ * awaits every emit, so a spill write holds it back rather than piling up
+ * behind it, and no retention budget can drop a chunk before it was read:
+ * memory holds only what the execution's bounded tails and backlog keep.
+ */
+class ExecutionStore implements ConsoleStore {
+  private nextSeq = 0
+  private isClosed = false
+  private waiters: (() => void)[] = []
+
+  constructor(private readonly deliver: (chunk: ConsoleChunk) => Promise<void>) {}
+
+  get closed(): boolean {
+    return this.isClosed
+  }
+
+  async append(channel: Channel, data: Uint8Array): Promise<ConsoleChunk> {
+    const chunk: ConsoleChunk = { seq: this.nextSeq, ts: Date.now() / 1000, channel, data }
+    this.nextSeq += 1
+    await this.deliver(chunk)
+    return chunk
+  }
+
+  readFrom(): Promise<ReadResult> {
+    return Promise.resolve([[], this.nextSeq, false])
+  }
+
+  wait(): Promise<void> {
+    if (this.isClosed) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      this.waiters.push(resolve)
+    })
+  }
+
+  close(): Promise<void> {
+    this.isClosed = true
+    for (const resolve of this.waiters.splice(0)) resolve()
+    return Promise.resolve()
+  }
+}
+
+/**
+ * One command over the workspace executor, streamed through a `JobConsole`:
+ * the handle `execute` returns, whether the caller awaits `result()` (a
+ * foreground run) or keeps the handle (a background one).
+ *
+ * The command runs with the console as its `sink`, so each statement of a
+ * compound line lands as it finishes rather than the whole line arriving at
+ * the end (a single command still shows up in one chunk, having nothing to
+ * emit before it completes). Each chunk goes to three places: the consuming
+ * `readOutput` backlog, which hands back and clears, so consecutive reads
+ * never re-deliver; and one bounded tail per stream, which `observed` reads
+ * at a caller's own offsets and `result()` projects once the command is
+ * over. Unread output is bounded on every path: a tail or the backlog that
+ * overruns its budget drops its head, keeping the tail, and the full stream
+ * moves to spill files. `kill()` aborts cooperatively (the executor observes
+ * the signal between pipeline stages and inside sleep).
+ */
+class MirageShellExecution implements ShellExecution {
   status: ShellProcessStatus = 'running'
   exitCode: number | null = null
   signal: NodeJS.Signals | null = null
   sandbox?: ShellSandboxInfo
   readonly done: Promise<void>
+  readonly observed: ShellExecution['observed']
 
-  private readonly controller: AbortController
+  private readonly parts: ExecutionParts
   private readonly console: JobConsole
-  private readonly spill: SpillSink | null
-  private readonly sandboxInfo: ShellSandboxInfo | undefined
-  private readonly consumed: Promise<void>
   private readonly pending: TailBuffer
+  private readonly stdoutTail: StreamTail
+  private readonly stderrTail: StreamTail
+  private failure: { error: unknown } | null = null
+  private settledResult: Promise<ShellRunResult> | null = null
   private lossy = false
   private inStderr = false
   private settled = false
-  private expectSeq = 0
 
+  /**
+   * @param launch starts the command streaming into the console it is
+   *   handed; null when the deadline expired while it was being prepared.
+   * @param parts what the execution needs from its executor.
+   */
   constructor(
-    run: Promise<ExecuteResult>,
-    controller: AbortController,
-    console_: JobConsole,
-    budget: number,
-    spill: SpillSink | null,
-    sandboxInfo: ShellSandboxInfo | undefined,
+    launch: ((sink: JobConsole) => Promise<ExecuteResult>) | null,
+    parts: ExecutionParts,
   ) {
-    this.controller = controller
-    this.console = console_
-    this.pending = new TailBuffer(budget)
-    this.spill = spill
-    this.sandboxInfo = sandboxInfo
-    this.consumed = this.consume()
-    this.done = run.then(
-      (result) => this.settle(result, null),
-      (err: unknown) => this.settle(null, err),
+    this.parts = parts
+    this.console = new JobConsole(
+      new ExecutionStore((chunk) =>
+        chunk.channel === Channel.CONTROL ? Promise.resolve() : this.appendChunk(chunk),
+      ),
     )
+    this.pending = new TailBuffer(parts.budget)
+    this.stdoutTail = new StreamTail(parts.stdoutMaxBytes)
+    this.stderrTail = new StreamTail(parts.stderrMaxBytes)
+    this.observed = {
+      stdout: { readFrom: (from) => this.readStream(this.stdoutTail, from, 'stdout') },
+      stderr: { readFrom: (from) => this.readStream(this.stderrTail, from, 'stderr') },
+    }
+    // A null launch is a deadline that expired while the command was still
+    // being prepared: it settles at once, timed out, with no output.
+    this.done =
+      launch === null
+        ? this.settleExpired()
+        : launch(this.console).then(
+            (result) => this.settle(result, null),
+            (err: unknown) => this.settle(null, err),
+          )
   }
 
-  private async consume(): Promise<void> {
-    // follow() yields every chunk in sequence and ends on the CONTROL
-    // chunk that finish() appends.
-    for await (const chunk of this.console.follow(0)) {
-      if (chunk.channel === Channel.CONTROL) return
-      // A seq that skips means the console trimmed chunks this loop had
-      // not read: the command outran the drain by a whole retention
-      // budget. Those bytes are gone for good, so say so, and stop the
-      // spill rather than let a file with a hole in it be handed back
-      // as the full stream.
-      if (chunk.seq !== this.expectSeq) {
-        this.lossy = true
-        this.spill?.disable()
-      }
-      this.expectSeq = chunk.seq + 1
-      await this.appendChunk(chunk)
-    }
+  private readStream(
+    tail: StreamTail,
+    fromByte: number,
+    channel: 'stdout' | 'stderr',
+  ): SubprocessOutputRead {
+    const read = tail.readFrom(fromByte)
+    const spillPath =
+      channel === 'stdout' ? this.parts.spill?.stdoutPath : this.parts.spill?.stderrPath
+    return { ...read, ...(spillPath !== undefined ? { spillPath } : {}) }
   }
 
   private async appendChunk(chunk: ConsoleChunk): Promise<void> {
+    const spill = this.parts.spill
     // The full, uncapped stream goes to the spill sink (if enabled)
-    // before the delta is capped, so nothing dropped from the delta is
-    // lost to a reader that follows the spill path.
-    if (this.spill !== null) await this.spill.ingest(chunk.channel, chunk.data)
-    // stderr rides the same delta as stdout, opened by a marker so the
+    // before anything is capped, so nothing a tail or the backlog drops
+    // is lost to a reader that follows the spill path.
+    if (spill !== null) await spill.ingest(chunk.channel, chunk.data)
+    const tail = chunk.channel === Channel.STDERR ? this.stderrTail : this.stdoutTail
+    tail.append(chunk.data)
+    // stderr rides the same backlog as stdout, opened by a marker so the
     // reader can tell the two apart; a run of stderr chunks marks once.
     let dropped = false
     if (chunk.channel === Channel.STDERR) {
@@ -260,19 +350,16 @@ class MirageShellProcess implements ShellProcess {
     // The backlog bounds itself as it grows, so a reader that never
     // drains cannot grow it without limit and an append costs the chunk
     // rather than everything buffered before it. The tail is kept (the
-    // freshest output), matching what the buffered path did at completion.
+    // freshest output).
     dropped = this.pending.append(chunk.data) || dropped
-    if (dropped) {
-      this.lossy = true
-      // The delta just dropped bytes; move the full stream to files so
-      // the reader can still recover them from the spill path.
-      if (this.spill !== null) await this.spill.begin()
-    }
+    if (dropped) this.lossy = true
+    // Something just dropped bytes; move the full stream to files so a
+    // reader can still recover them from the spill path.
+    if ((dropped || tail.truncated) && spill !== null) await spill.begin()
   }
 
   private async settle(result: ExecuteResult | null, err: unknown): Promise<void> {
     this.settled = true
-    if (this.sandboxInfo !== undefined) this.sandbox = this.sandboxInfo
     let outcome: string
     if (result !== null) {
       this.status = 'completed'
@@ -281,33 +368,78 @@ class MirageShellProcess implements ShellProcess {
     } else {
       this.status = 'killed'
       this.signal = 'SIGTERM'
-      const message = err instanceof Error ? err.message : String(err)
-      await this.console.emit(Channel.STDERR, new TextEncoder().encode(message))
       outcome = KILLED_OUTCOME
+      // Mirage answers an abort by throwing, so only a throw no abort
+      // explains is an infrastructure failure: `result()` rejects with it,
+      // and the read path carries it on stderr for a background reader.
+      if (!this.parts.controller.signal.aborted) {
+        this.failure = { error: err }
+        const message = err instanceof Error ? err.message : String(err)
+        await this.console.emit(Channel.STDERR, new TextEncoder().encode(message))
+      }
     }
-    // The CONTROL chunk ends the follow loop; awaiting `consumed`
-    // guarantees every chunk (the last one included) has landed in
-    // `pending` before `done` resolves, so a read after `done` is whole.
+    // Every emit was awaited as it was made, so everything the command
+    // printed has landed by now and a read after `done` is whole.
     await this.console.finish(outcome)
-    await this.consumed
+    this.stdoutTail.end()
+    this.stderrTail.end()
+    const stderr = this.stderrTail.readFrom(0).text
+    const sandbox = this.parts.verdict(result, stderr)
+    if (sandbox !== undefined) this.sandbox = sandbox
+    this.parts.disarm()
+  }
+
+  private async settleExpired(): Promise<void> {
+    this.settled = true
+    this.status = 'killed'
+    await this.console.finish(KILLED_OUTCOME)
+    const sandbox = this.parts.verdict(null, '')
+    if (sandbox !== undefined) this.sandbox = sandbox
+    this.parts.disarm()
   }
 
   readOutput(): ShellProcessRead {
     const delta = this.pending.take()
     const lossy = this.lossy
     this.lossy = false
+    const spill = this.parts.spill
     return {
       delta,
       lossy,
-      ...(this.spill?.stdoutPath !== undefined ? { stdoutSpillPath: this.spill.stdoutPath } : {}),
-      ...(this.spill?.stderrPath !== undefined ? { stderrSpillPath: this.spill.stderrPath } : {}),
+      ...(spill?.stdoutPath !== undefined ? { stdoutSpillPath: spill.stdoutPath } : {}),
+      ...(spill?.stderrPath !== undefined ? { stderrSpillPath: spill.stderrPath } : {}),
     }
   }
 
   kill(): boolean {
     if (this.settled) return false
-    this.controller.abort()
+    this.parts.controller.abort()
     return true
+  }
+
+  result(): Promise<ShellRunResult> {
+    this.settledResult ??= this.done.then(() => {
+      if (this.failure !== null) throw this.failure.error
+      return {
+        exitCode: this.exitCode,
+        signal: this.signal,
+        ...this.parts.classify(),
+        timeoutMs: this.parts.timeoutMs,
+        stdout: this.collected(this.stdoutTail, 'stdout'),
+        stderr: this.collected(this.stderrTail, 'stderr'),
+        ...(this.sandbox !== undefined ? { sandbox: this.sandbox } : {}),
+      }
+    })
+    return this.settledResult
+  }
+
+  private collected(tail: StreamTail, channel: 'stdout' | 'stderr'): CollectedOutput {
+    const read = this.readStream(tail, 0, channel)
+    return {
+      text: read.text,
+      truncated: read.lossy,
+      ...(read.spillPath !== undefined ? { spillPath: read.spillPath } : {}),
+    }
   }
 }
 
@@ -337,6 +469,9 @@ export class MirageShellExecutor extends ShellExecutor {
   private readonly spillDir: string | undefined
   private sessionReady: Promise<void> | null = null
   private readOnlyReady: Promise<string> | null = null
+  private readonly seeding = new Map<string, Promise<unknown>>()
+  private issued = 0
+  private readonly seeded = new Map<string, number>()
 
   constructor(ctx: Context, config: MirageShellConfig = {}) {
     super(ctx)
@@ -473,65 +608,6 @@ export class MirageShellExecutor extends ShellExecutor {
   }
 
   /**
-   * The retention budget of a background command's console.
-   *
-   * Only the background path caps retention: there a follow loop drains
-   * the console while the command still runs, so the budget bounds what
-   * the loop has not reached yet, and a chunk lost to it is reported as
-   * a gap in the sequence. A foreground console is read once, after the
-   * fact, with nothing to bound.
-   *
-   * @param spec the resolved spec carrying the stdout budget.
-   * @returns the retention budget in bytes.
-   */
-  private retentionFor(spec: ShellExecSpec): number {
-    return Math.max(spec.stdoutMaxBytes, this.stderrMaxBytes) * CONSOLE_RETENTION_DELTAS
-  }
-
-  /**
-   * Take a finished run's two streams off its console, capped, and spill
-   * whichever one lost bytes.
-   *
-   * A foreground run streams into a console rather than returning its
-   * output whole, because mirage throws on abort: bytes a killed command
-   * had already printed are recoverable from a sink and nowhere else.
-   * Only a truncated stream spills, since an untruncated one is already
-   * whole in `text` and writing a file for it would put a copy of every
-   * command's output on a mount. The console this reads is untrimmed, so
-   * a spill is the whole stream rather than the tail of one.
-   *
-   * @param console_ the console this run streamed into.
-   * @param spec the resolved spec carrying the stdout budget.
-   * @returns the capped streams, each with a spill path when it lost bytes.
-   */
-  private async collectFrom(
-    console_: JobConsole,
-    spec: ShellExecSpec,
-  ): Promise<{ stdout: CollectedOutput; stderr: CollectedOutput }> {
-    const decoder = new TextDecoder()
-    const outBytes = await console_.snapshot(Channel.STDOUT)
-    const errBytes = await console_.snapshot(Channel.STDERR)
-    const stdout = collect(decoder.decode(outBytes), spec.stdoutMaxBytes)
-    const stderr = collect(decoder.decode(errBytes), this.stderrMaxBytes)
-    if (!stdout.truncated && !stderr.truncated) return { stdout, stderr }
-    const spill = this.newSpill()
-    if (spill === null) return { stdout, stderr }
-    if (stdout.truncated) await spill.ingest(Channel.STDOUT, outBytes)
-    if (stderr.truncated) await spill.ingest(Channel.STDERR, errBytes)
-    await spill.begin()
-    return {
-      stdout: {
-        ...stdout,
-        ...(spill.stdoutPath !== undefined ? { spillPath: spill.stdoutPath } : {}),
-      },
-      stderr: {
-        ...stderr,
-        ...(spill.stderrPath !== undefined ? { spillPath: spill.stderrPath } : {}),
-      },
-    }
-  }
-
-  /**
    * Whether this run was refused, by the session's permission document
    * or by the read-only narrowing.
    *
@@ -571,6 +647,7 @@ export class MirageShellExecutor extends ShellExecutor {
       command: request.command,
       workdir,
       timeoutMs: Math.min(request.timeoutMs ?? this.defaultTimeoutMs, this.maxTimeoutMs),
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes: request.stdoutMaxBytes ?? this.stdoutMaxBytes,
       signal: request.signal,
       stdin: request.stdin,
@@ -604,15 +681,13 @@ export class MirageShellExecutor extends ShellExecutor {
    *
    * @param ws the live workspace holding the session.
    * @param sessionId the session this call runs in.
-   * @param spec the resolved spec carrying the snapshot.
+   * @param managed the call's managed snapshot.
    */
   private async applyManagedEnv(
     ws: Workspace,
     sessionId: string,
-    spec: ShellExecSpec,
+    managed: Record<string, string>,
   ): Promise<void> {
-    const managed = spec.dshEnv as Record<string, string> | undefined
-    if (managed === undefined) return
     const session = ws.getSession(sessionId)
     const view = sessionView(session)
     for (const key of Object.keys(session.env)) {
@@ -688,143 +763,115 @@ export class MirageShellExecutor extends ShellExecutor {
     setCwd(ws.createSession(sessionId), this.workdir)
   }
 
-  async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    const sandbox = this.sandboxInfo(spec)
-    // An already-aborted signal never fires its listener, so answer before
-    // dispatch: the command must not run at all.
-    if (spec.signal?.aborted === true) {
-      return {
-        exitCode: null,
-        signal: 'SIGTERM',
-        timedOut: false,
-        aborted: true,
-        timeoutMs: spec.timeoutMs,
-        stdout: { text: '', truncated: false },
-        stderr: { text: '', truncated: false },
-        ...(sandbox !== undefined ? { sandbox } : {}),
+  /**
+   * Where and as whom one command runs, settled before it starts: the
+   * session binding, the workdir in this world, and its managed env.
+   *
+   * Seeding the env is the one step that writes, so it comes last and
+   * waits for any seed already running on the same session (the bound
+   * one and its read-only twin queue apart). Calls are numbered as they
+   * arrive, and a seed is skipped once a later call has seeded the same
+   * session, so the newest snapshot wins: a slow or abandoned preparation
+   * never lands an old one over it, and a stall before the seed holds up
+   * no other call. A call carrying no snapshot seeds nothing, so it
+   * never counts as the newest, but it still waits for the seeds already
+   * running, so its command never sees one half applied.
+   *
+   * @param spec the resolved spec being prepared.
+   * @returns the workspace, session and workdir the command runs under.
+   */
+  private async prepare(spec: ShellExecSpec): Promise<Prepared> {
+    const ticket = ++this.issued
+    await this.ensureSession()
+    const ws = await this.workspace()
+    const sessionId = await this.sessionFor(spec)
+    const bound = this.sessionId !== undefined
+    const workdir = await this.worldWorkdir(spec)
+    const managed = spec.dshEnv as Record<string, string> | undefined
+    if (bound && sessionId !== undefined) {
+      const running = this.seeding.get(sessionId) ?? Promise.resolve()
+      if (managed === undefined) {
+        await running
+      } else {
+        const seed = running.then(async () => {
+          if (ticket < (this.seeded.get(sessionId) ?? 0)) return
+          await this.applyManagedEnv(ws, sessionId, managed)
+          this.seeded.set(sessionId, ticket)
+        })
+        this.seeding.set(
+          sessionId,
+          seed.catch(() => undefined),
+        )
+        await seed
       }
     }
+    return { ws, sessionId, bound, workdir }
+  }
+
+  async execute(spec: ShellExecSpec): Promise<ShellExecution> {
     const controller = new AbortController()
-    // The command streams into a console instead of returning its output
-    // whole, because mirage answers an abort by throwing: what a killed
-    // command already printed survives only in a sink.
-    //
-    // Retention is deliberately unbounded here, unlike the background
-    // console: nothing drains this one, `collectFrom` reads it once the
-    // command is over, and the store evicts whole chunks, so a budget
-    // would silently drop an entire buffered stream larger than itself
-    // and report empty output as untruncated. Holding the full stream
-    // for the length of one call is what the executor did anyway before
-    // a sink was attached, and it is what lets a truncated run spill
-    // every byte rather than only the tail a budget kept.
-    const console_ = new JobConsole(new RAMConsoleStore(null))
     let timedOut = false
     let aborted = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, spec.timeoutMs)
+    // `none` arms no deadline: the caller's signal and `kill()` are then
+    // the only ways the command stops.
+    const timer =
+      spec.onExpiry === 'kill'
+        ? setTimeout(() => {
+            timedOut = true
+            controller.abort()
+          }, spec.timeoutMs)
+        : undefined
     const onAbort = (): void => {
       if (!timedOut && !aborted) {
         aborted = true
         controller.abort()
       }
     }
-    spec.signal?.addEventListener('abort', onAbort, { once: true })
-    try {
-      await this.ensureSession()
-      const ws = await this.workspace()
-      const sessionId = await this.sessionFor(spec)
-      const bound = this.sessionId !== undefined
-      if (bound && sessionId !== undefined) await this.applyManagedEnv(ws, sessionId, spec)
-      const workdir = await this.worldWorkdir(spec)
-      const result = await ws.shell(
-        spec.command,
-        executeOptions(spec, workdir, controller.signal, sessionId, bound, this.workdir, console_),
-      )
-      const captured = await this.collectFrom(console_, spec)
-      const settled = this.sandboxInfo(spec, this.wasDenied(spec, result, captured.stderr.text))
-      return {
-        exitCode: result.exitCode,
-        signal: null,
-        timedOut: false,
-        aborted: false,
-        timeoutMs: spec.timeoutMs,
-        ...captured,
-        ...(settled !== undefined ? { sandbox: settled } : {}),
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) throw err
-      // The fused deadline was the first cause: report the kill as a
-      // result, never a rejection, per the seam contract.
-      return {
-        exitCode: null,
-        signal: 'SIGTERM',
-        timedOut,
-        aborted,
-        timeoutMs: spec.timeoutMs,
-        // Whatever the command printed before the kill landed. GNU's own
-        // timeout keeps it, and a model that watched a build run for two
-        // minutes is owed the log rather than an empty string.
-        ...(await this.collectFrom(console_, spec)),
-        ...(sandbox !== undefined ? { sandbox } : {}),
-      }
-    } finally {
+    // An already-aborted signal never fires its listener, so it is
+    // treated as fired here: the command must not run at all.
+    if (spec.signal?.aborted === true) onAbort()
+    else spec.signal?.addEventListener('abort', onAbort, { once: true })
+    const disarm = (): void => {
       clearTimeout(timer)
       spec.signal?.removeEventListener('abort', onAbort)
     }
-  }
-
-  start(spec: ShellExecSpec): ShellProcess {
-    // A background handle has no aggregated stderr to read a denial back
-    // off, so its facts carry the mode without the verdict; a reader that
-    // needs it sees the refusal in the streamed output.
-    const sandbox = this.sandboxInfo(spec)
-    const controller = new AbortController()
-    // The console is the streaming conduit, holding what the follow loop
-    // has not drained yet (nothing, when the loop keeps up). Its own
-    // retention budget is what bounds that, since reading a chunk does
-    // not release it.
-    const console_ = new JobConsole(new RAMConsoleStore(this.retentionFor(spec)))
-    const spill = this.newSpill()
-    if (spec.signal?.aborted === true) {
-      controller.abort()
-      return new MirageShellProcess(
-        Promise.reject(new Error('command aborted before start')),
-        controller,
-        console_,
-        spec.stdoutMaxBytes,
-        spill,
-        sandbox,
-      )
+    const parts: ExecutionParts = {
+      controller,
+      budget: spec.stdoutMaxBytes,
+      stdoutMaxBytes: spec.stdoutMaxBytes,
+      stderrMaxBytes: this.stderrMaxBytes,
+      timeoutMs: spec.timeoutMs,
+      spill: this.newSpill(),
+      classify: () => ({ timedOut, aborted }),
+      verdict: (result, stderr) =>
+        this.sandboxInfo(spec, result !== null && this.wasDenied(spec, result, stderr)),
+      disarm,
     }
-    const onAbort = (): void => {
-      controller.abort()
+    let prepared: Prepared
+    try {
+      // The wait ends at the deadline or a cancel even if a step has
+      // stalled; the preparation runs on, and its seed lands only if no
+      // later call has seeded the session first.
+      controller.signal.throwIfAborted()
+      prepared = await untilAborted(this.prepare(spec), controller.signal)
+    } catch (err) {
+      // Expiry while the command was still being prepared settles a
+      // timed-out handle with no output; a caller's cancellation or a
+      // failure to prepare is the caller's to see.
+      if (!parts.classify().timedOut) {
+        disarm()
+        throw err
+      }
+      return new MirageShellExecution(null, parts)
     }
-    spec.signal?.addEventListener('abort', onAbort, { once: true })
-    const run = this.ensureSession()
-      .then(async () => {
-        const sessionId = await this.sessionFor(spec)
-        const ws = await this.workspace()
-        const bound = this.sessionId !== undefined
-        if (bound && sessionId !== undefined) await this.applyManagedEnv(ws, sessionId, spec)
-        return { ws, sessionId, bound, workdir: await this.worldWorkdir(spec) }
-      })
-      .then(({ ws, sessionId, bound, workdir }) =>
+    const { ws, sessionId, bound, workdir } = prepared
+    return new MirageShellExecution(
+      (sink) =>
         ws.shell(
           spec.command,
-          executeOptions(
-            spec,
-            workdir,
-            controller.signal,
-            sessionId,
-            bound,
-            this.workdir,
-            console_,
-          ),
+          executeOptions(spec, workdir, controller.signal, sessionId, bound, this.workdir, sink),
         ),
-      )
-      .finally(() => spec.signal?.removeEventListener('abort', onAbort))
-    return new MirageShellProcess(run, controller, console_, spec.stdoutMaxBytes, spill, sandbox)
+      parts,
+    )
   }
 }

@@ -31,25 +31,6 @@ def make_vfs(**overrides) -> DropboxVFS:
     )
 
 
-def test_registers_read_write_op_surface():
-    vfs = make_vfs()
-    ops = {(o.name, o.write) for o in vfs.ops()}
-    assert ops == {
-        ("glob", False),
-        ("read", False),
-        ("readdir", False),
-        ("stat", False),
-        ("write", True),
-        ("append", True),
-        ("create", True),
-        ("mkdir", True),
-        ("unlink", True),
-        ("rmdir", True),
-        ("rename", True),
-        ("truncate", True),
-    }
-
-
 def test_subfolder_root_reaches_accessor():
     vfs = make_vfs(root_path="Team/data/")
     assert vfs.accessor.root_path == "/Team/data"

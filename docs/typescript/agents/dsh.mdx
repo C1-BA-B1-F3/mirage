@@ -18,6 +18,7 @@ Four Cordis plugins. `MirageService` owns the workspace; the providers inject it
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
+import type { ShellExecRequest } from '@deepseek-ai/dsh-shell'
 import { buildRuntime, MountMode, RAMVFS, RedisVFS, SlackVFS, Workspace } from '@struktoai/mirage-node'
 import {
   MirageFileSystem,
@@ -44,12 +45,16 @@ await ctx.plugin(MirageSpillStore, {}).await()
 
 `MirageSpillStore` is what keeps an oversized tool result recoverable. dsh replaces a result over its inline cap with a preview plus a locator and tells the model to read or grep it; without this plugin that locator names a file on the harness's own disk, which nothing in the workspace can open. Registered, the artifact is written through the same op door as every other effect, so the locator is an ordinary workspace path. It defaults to `/tmp/dsh-spill`, so give it a `dir` on a writable mount if `/tmp` is not one.
 
-Mirage mounts are read-only by default; the mode ladder is `READ` < `WRITE` < `EXEC`, so mount with `MountMode.WRITE` where dsh's write tools should work and `MountMode.EXEC` where scripts may run. dsh's bash tool now spans every source in one line (`resolve` fills a request into a spec with the defaults and `run` executes it, the same two calls dsh's own tools make):
+Mirage mounts are read-only by default; the mode ladder is `READ` < `WRITE` < `EXEC`, so mount with `MountMode.WRITE` where dsh's write tools should work and `MountMode.EXEC` where scripts may run. dsh's bash tool now spans every source in one line (`resolve` fills a request into a spec with the defaults, `execute` starts it and hands back the process, and `result()` waits for its outcome, the same calls dsh's own tools make):
 
 ```ts
 const shell = ctx.shell
-const sweep = await shell.run(shell.resolve({ command: 'grep -rln session /redis /tmp' }))
+const run = async (request: ShellExecRequest) => (await shell.execute(shell.resolve(request))).result()
+
+const sweep = await run({ command: 'grep -rln session /redis /tmp' })
 ```
+
+A caller that keeps the process instead of awaiting `result()` runs the command in the background: `readOutput()` drains what it printed so far, and `onExpiry: 'none'` lets it outlive `timeoutMs`.
 
 `MirageService` also accepts `mounts` instead of a live `workspace`; it then constructs the workspace itself and closes it when the plugin unloads.
 
@@ -67,8 +72,8 @@ dsh sends a working directory and a set of managed `DSH_*` variables with every 
 // dsh sends its own machine's cwd, a path this world does not contain
 const host = '/Users/somebody/host-project'
 
-await shell.run(shell.resolve({ command: 'cd /tmp && export TOKEN=abc', workdir: host }))
-const result = await shell.run(shell.resolve({ command: 'pwd; echo $TOKEN', workdir: host }))
+await run({ command: 'cd /tmp && export TOKEN=abc', workdir: host })
+const result = await run({ command: 'pwd; echo $TOKEN', workdir: host })
 // result.stdout.text === '/tmp\nabc\n'
 ```
 
@@ -77,11 +82,9 @@ const result = await shell.run(shell.resolve({ command: 'pwd; echo $TOKEN', work
 The `runtimes` entry above sets [monty](https://github.com/pydantic/monty), a sandboxed Python interpreter with no host access, up to capture `python` and `python3`; the catch-all `workspace` runtime serving the shell commands is always present and needs no entry. A captured invocation (a script file, inline `-c` code, or code piped on stdin) runs inside the workspace, never on the machine. A script can live on any mount: upload `example.py` to a Slack channel and run it straight off the mount, with the shell's redirection filing its stdout back into Redis:
 
 ```ts
-const script = await shell.run(
-  shell.resolve({
-    command: 'python3 /slack/channels/general__C0.../2026-08-13/files/example__F0....py > /redis/report.txt',
-  }),
-)
+const script = await run({
+  command: 'python3 /slack/channels/general__C0.../2026-08-13/files/example__F0....py > /redis/report.txt',
+})
 ```
 
 [`examples/typescript/dsh/dsh.ts`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dsh/dsh.ts) is the runnable version of this whole page, with the script in [`example.py`](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dsh/example.py).
@@ -119,7 +122,7 @@ The claim is enforced per call, not merely advertised. dsh resolves a policy for
 ```ts
 const policy = { mode: 'read-only', workspaceRoot: '/Users/somebody/host-project' } as const
 
-const denied = await shell.run(shell.resolve({ command: 'echo hi > /tmp/out.txt', sandboxPolicy: policy }))
+const denied = await run({ command: 'echo hi > /tmp/out.txt', sandboxPolicy: policy })
 // nonzero exitCode, and denied.sandbox is { mode: 'read-only', denied: true, ... }
 
 await ctx.fs.writeText(await ctx.fs.resolve('/tmp/out.txt'), 'hi', undefined, undefined, policy)
@@ -188,9 +191,9 @@ Only `allowed-once` is a yes, and it grants exactly the line that asked; a singl
 A question never outlives the run that raised it. The run's abort signal goes to the channel with the request, so a prompt can take itself down, and the ledger stops waiting on the same signal — a line whose approval is still unanswered when its timeout expires (or when the caller kills it) comes back as the kill it was given, not as a refusal:
 
 ```ts
-const run = await ctx.shell.run(ctx.shell.resolve({ command: 'rm /data/notes.txt', timeoutMs: 5000 }))
-// run.timedOut  true
-// run.exitCode  null
+const killed = await run({ command: 'rm /data/notes.txt', timeoutMs: 5000 })
+// killed.timedOut  true
+// killed.exitCode  null
 ```
 
 Whatever the human says afterwards is dropped rather than recorded. Banking a late yes would leave a spend-once grant in the ledger for the next identical line to take, with nobody asked; the question stays open instead.

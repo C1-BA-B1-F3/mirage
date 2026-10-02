@@ -43,6 +43,14 @@ class _Registry:
                 return _Mount(prefix)
         return None
 
+    def descendant_mounts(self, virtual: str) -> list[_Mount]:
+        below = virtual.rstrip("/") + "/"
+        return [
+            _Mount(prefix)
+            for prefix in self._prefixes.values()
+            if prefix.startswith(below) and prefix != below
+        ]
+
 
 def _scope(virtual: str) -> PathSpec:
     return PathSpec(
@@ -105,3 +113,12 @@ def test_is_cross_mount_false_for_single_mount_or_unknown_command():
     spanning = [_scope("/a/x.txt"), _scope("/b/y.txt")]
     assert not is_cross_mount("uniq", spanning, registry)
     assert not is_cross_mount("sort", spanning[:1], registry)
+
+
+def test_cp_crosses_for_a_source_holding_a_mount_not_the_destination():
+    registry = _Registry({"a": "/a/", "n": "/a/d/n/"})
+    tree, file, into = _scope("/a/d"), _scope("/a/f.txt"), _scope("/a/e")
+    assert is_cross_mount("cp", [tree, into], registry)
+    assert not is_cross_mount("cp", [file, tree], registry)
+    assert is_cross_mount("cp", [into, tree], registry, [into])
+    assert not is_cross_mount("cp", [tree, file], registry, [tree])

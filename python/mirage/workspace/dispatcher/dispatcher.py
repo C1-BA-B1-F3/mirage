@@ -562,11 +562,11 @@ class Dispatcher:
             if op == "setattr":
                 result = await self._apply_setattr(mount, path, kwargs)
             elif op in EVICTED_WRITE_OPS:
-                prev = push_cache_manager(None)
+                prev_manager = push_cache_manager(None)
                 try:
                     result = await mount.execute_op(op, path.virtual, **kwargs)
                 finally:
-                    push_cache_manager(prev)
+                    push_cache_manager(prev_manager)
             else:
                 result = await mount.execute_op(op, path.virtual, **kwargs)
         except (FileNotFoundError, NotADirectoryError):

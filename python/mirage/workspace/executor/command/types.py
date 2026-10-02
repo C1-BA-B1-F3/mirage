@@ -20,6 +20,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
 from mirage.workspace.session import SessionState
@@ -40,6 +41,8 @@ class ExecuteNodeFn(Protocol):
         session: SessionState,
         stdin: ByteSource | None,
         call_stack: CallStack,
+        *,
+        sink: JobConsole | None = None,
     ) -> Awaitable[tuple[ByteSource | None, IOResult, ExecutionNode]]: ...
 
 

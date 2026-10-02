@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "for i in 1 2; do for j in a b; do echo $i$j; break; done; done",
+      "command": "for i in 1 2; do for j in a b; do echo $i$j; break; done; done; for i in 1 2 3; do case $i in 1) echo one; continue;; 2) echo two; break;; esac; echo no; done; cb() { case x in x) echo in; return 4;; esac; echo no; }; cb; echo rc=$?; (case y in y) echo sub; exit 3;; esac; echo no); echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "1a\n2a\n",
+        "stdout": "1a\n2a\none\ntwo\nin\nrc=4\nsub\nrc=3\n",
         "stderr": ""
       }
     },
@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "for i in 1 2; do for j in a b; do echo $i$j; break 2; done; done",
+      "command": "for i in 1 2; do for j in a b; do echo $i$j; break 2; done; done; select s in p q; do while :; do echo s$s; break 2; done; done <<< 2; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "1a\n",
-        "stderr": ""
+        "stdout": "1a\nsq\nrc=0\n",
+        "stderr": "1) p\n2) q\n#? "
       }
     },
     {

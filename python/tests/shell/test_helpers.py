@@ -47,6 +47,7 @@ from mirage.shell.helpers import (
     split_env_prefix,
     take_continuation,
 )
+from mirage.shell.parse import parse
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import RedirectKind
 
@@ -60,6 +61,12 @@ def _parse(cmd: str):
 
 def _first(cmd: str):
     return _parse(cmd).children[0]
+
+
+def _shielded(cmd: str):
+    # The executor's parse, whose redirect shield reads `0<f` and
+    # `<<<` the way bash does.
+    return parse(cmd).children[0]
 
 
 def test_get_command_name():
@@ -281,7 +288,7 @@ def test_get_function_body():
 
 
 def test_get_function_body_rejects_non_function_node():
-    with pytest.raises(ValueError, match="no compound body"):
+    with pytest.raises(ValueError, match="has no body"):
         get_function_body(_first("echo hello"))
 
 
@@ -302,19 +309,19 @@ def test_get_parts_excludes_redirect():
 
 
 def test_get_parts_drops_a_bare_zero_descriptor():
-    stmt = _first("cat a 0>&-")
+    stmt = _shielded("cat a 0>&-")
     parts = get_parts(stmt.named_children[0])
     assert [get_text(p) for p in parts] == ["cat", "a"]
     _, redirects = get_redirects(stmt)
     assert [(r.fd, r.target) for r in redirects] == [(0, -1)]
-    spaced = _first("cat a 0 >&-")
+    spaced = _shielded("cat a 0 >&-")
     assert [get_text(p) for p in get_parts(spaced.named_children[0])] == [
         "cat",
         "a",
         "0",
     ]
     assert [r.fd for r in get_redirects(spaced)[1]] == [1]
-    _, chained = get_redirects(_first("cat 0<a >b"))
+    _, chained = get_redirects(_shielded("cat 0<a >b"))
     assert [(r.fd, r.target) for r in chained] == [(0, "a"), (1, "b")]
 
 
@@ -735,7 +742,7 @@ def test_redirect_raw_string_target_all_operators(cmd: str):
 
 def test_herestring_raw_string_target():
     # `<<< 'text'` shares the same target-type gate as file redirects.
-    node = _first("cat <<< 'hi' > out.txt")
+    node = _shielded("cat <<< 'hi' > out.txt")
     _, redirects = get_redirects(node)
     herestring = [r for r in redirects if r.kind == RedirectKind.HERESTRING]
     assert len(herestring) == 1
@@ -764,7 +771,7 @@ def test_redirect_dollar_quoted_targets_ride_along(
 
 
 def test_herestring_ansi_c_target():
-    node = _first("cat <<< $'a\\tb' > out.txt")
+    node = _shielded("cat <<< $'a\\tb' > out.txt")
     _, redirects = get_redirects(node)
     herestring = [r for r in redirects if r.kind == RedirectKind.HERESTRING]
     assert len(herestring) == 1
@@ -865,7 +872,7 @@ def test_get_redirects_hoists_file_redirect_inside_heredoc():
 
 
 def test_get_redirects_hoists_herestring_before_file_redirect():
-    node = _first("cat <<< here < input.txt")
+    node = _shielded("cat <<< here < input.txt")
     _, redirects = get_redirects(node)
     assert [r.kind for r in redirects] == [
         RedirectKind.HERESTRING,
@@ -874,7 +881,7 @@ def test_get_redirects_hoists_herestring_before_file_redirect():
 
 
 def test_get_redirects_recovers_herestring_after_file_redirect():
-    node = _first("cat < input.txt <<< here")
+    node = _shielded("cat < input.txt <<< here")
     _, redirects = get_redirects(node)
     assert [r.kind for r in redirects] == [
         RedirectKind.STDIN,

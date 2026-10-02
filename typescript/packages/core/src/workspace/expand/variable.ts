@@ -14,7 +14,7 @@
 
 import { substringOperands } from './substring.ts'
 
-import { scanParameter } from '../../shell/parameter.ts'
+import { badSubstitution, scanParameter } from '../../shell/parameter.ts'
 import { nextRandom } from '../session/state.ts'
 import { evaluateArith } from '../../shell/arith.ts'
 import type { ArithWrite } from '../../shell/types.ts'
@@ -30,7 +30,13 @@ import {
 } from '../../shell/array.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { RANDOM } from '../../shell/constants.ts'
-import { ArithError, ExitSignal, UnboundVariable } from '../../shell/errors.ts'
+import {
+  ArithError,
+  BadSubstitution,
+  ExitSignal,
+  named,
+  UnboundVariable,
+} from '../../shell/errors.ts'
 import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
 import { PolicyDenied } from '../../policy/errors.ts'
 import type { SessionView } from '../../ops/types.ts'
@@ -571,13 +577,14 @@ function unescapeAll(text: string): string {
  */
 async function nestedString(node: TSNodeLike, expandChild: ExpandChild): Promise<Chunk[]> {
   const out: Chunk[] = [piece('')]
+  const inside = node.text.slice(1, -1)
   for (const part of sourceParts(node)) {
     let text: string
     if (typeof part === 'string') text = part
     else if (part.type === NT.STRING_CONTENT) text = part.text
     else if (part.type === NT.DQUOTE) text = part.text.slice(0, -1)
     else {
-      for (const c of await expandChild(part, true)) out.push(c)
+      for (const c of await named(inside, expandChild(part, true))) out.push(c)
       continue
     }
     out.push(piece(markGlobs(unescapeAll(text))))
@@ -849,7 +856,12 @@ async function operatorWord(
 ): Promise<Chunk[]> {
   const group = p.groups[0]
   if (group === undefined) return []
-  return wordChunks(group, expandChild, quoted, session, callStack)
+  return named(source(group), wordChunks(group, expandChild, quoted, session, callStack))
+}
+
+/** An operand's text as written, the word a bad substitution names. */
+function source(parts: readonly (string | TSNodeLike)[]): string {
+  return parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
 }
 
 /**
@@ -1067,6 +1079,8 @@ async function expandBracesIn(
   operand: ArithOperand,
   quoted: boolean,
 ): Promise<Chunk[]> {
+  const text = node.text.trimStart()
+  if (badSubstitution(text)) throw new BadSubstitution(text)
   const p = parseBraces(node)
   const env = visibleEnv(session)
   const arrays = visibleArrays(session)
@@ -1083,9 +1097,15 @@ async function expandBracesIn(
     for (let gi = 0; gi < p.groups.length; gi++) {
       const group = p.groups[gi] ?? []
       if (gi === 0 && p.op !== null && PATTERN_OPS.has(p.op)) {
-        groups.push(await patternGroup(group, expandChild, session, callStack))
+        groups.push(
+          await named(source(group), patternGroup(group, expandChild, session, callStack)),
+        )
       } else {
-        groups.push(chunksText(await wordChunks(group, expandChild, false, session, callStack)))
+        groups.push(
+          chunksText(
+            await named(source(group), wordChunks(group, expandChild, false, session, callStack)),
+          ),
+        )
       }
     }
   }
@@ -1123,7 +1143,7 @@ async function expandBracesIn(
     // element 2. An empty key reads as unset (GNU warns "bad array
     // subscript" on stderr and expands empty; expansion has no warning
     // channel, so the empty answer stands alone).
-    const key = await expandSubscriptKey(p, expandChild)
+    const key = await named(p.subscript, expandSubscriptKey(p, expandChild))
     val = amap[key] ?? ''
     varInEnv = amap[key] !== undefined
     writeKey = key
@@ -1135,7 +1155,7 @@ async function expandBracesIn(
       const scalar = env[baseName]
       arr = scalar === undefined ? [] : [scalar]
     }
-    const subText = await expandSubscriptKey(p, expandChild)
+    const subText = await named(p.subscript, expandSubscriptKey(p, expandChild))
     let idx = await expansionIndex(session, view, subText)
     if (idx < 0) idx += arrayExtent(arr)
     val = arrayGet(arr, idx)

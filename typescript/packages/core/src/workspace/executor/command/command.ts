@@ -18,6 +18,7 @@ import { SPECS } from '../../../commands/spec/index.ts'
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
 import type { CallStack } from '../../../shell/call_stack.ts'
+import type { JobConsole } from '../../../shell/console/index.ts'
 import type { JobTable } from '../../../shell/job_table/index.ts'
 import { PathSpec } from '../../../types.ts'
 import {
@@ -175,6 +176,8 @@ export async function handleCommand(
   executeFn?: ExecuteFn,
   handed: HandOff | null = null,
   signal?: AbortSignal,
+  // Where a function body writes its statements as they finish.
+  sink?: JobConsole,
 ): Promise<Result> {
   if (parts.length === 0) {
     return [null, new IOResult(), new ExecutionNode({ command: '', exitCode: 0 })]
@@ -215,6 +218,7 @@ export async function handleCommand(
       agentId,
       handed,
       registry.decisions,
+      sink,
     )
   }
 

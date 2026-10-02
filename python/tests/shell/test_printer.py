@@ -12,16 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.exec.constants import CLOSED
-from mirage.workspace.executor.builtins.exec.exec import (
-    divert_statement,
-    handle_exec_command,
-    install_exec_redirects,
-)
+from mirage.shell.helpers import get_function_body
+from mirage.shell.parse import parse
+from mirage.shell.printer import function_text
 
-__all__ = [
-    "CLOSED",
-    "divert_statement",
-    "handle_exec_command",
-    "install_exec_redirects",
-]
+
+def test_function_text_reads_the_definition_under_its_redirects():
+    # get_function_body wraps a body under two redirects in a statement
+    # of its own; the printer finds the definition again from it.
+    definition = parse("f() { echo a; } >o 2>&1").named_children[0]
+    body = get_function_body(definition.named_children[0])
+    assert function_text("f", body) == "f () \n{ \n    echo a\n} > o 2>&1"

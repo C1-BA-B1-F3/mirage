@@ -380,6 +380,8 @@ describe('admission', () => {
     'echo x | cat < /data/secret',
     'echo a && echo x | cat < /data/secret',
     'echo a && cat < /data/secret | cat',
+    'time cat < /data/secret',
+    '! { time cat < /data/secret; }',
   ]
 
   it.each(HOISTED)('admitLine binds a hoisted redirect to its command: %s', async (text) => {

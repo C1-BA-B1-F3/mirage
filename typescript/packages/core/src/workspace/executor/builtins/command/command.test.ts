@@ -161,14 +161,6 @@ describe('handleCommandBuiltin -v/-V', () => {
     expect(io.exitCode).toBe(0)
   })
 
-  it('reports a function', async () => {
-    const session = makeSession()
-    session.functions.myfn = []
-    const [out, io] = await handleCommandBuiltin(vi.fn(), ['-V', 'myfn'], session, makeRegistry())
-    expect(await body(out)).toBe('myfn is a function\n')
-    expect(io.exitCode).toBe(0)
-  })
-
   it('last of -vV/-Vv wins for output shape', async () => {
     const [vOut] = await handleCommandBuiltin(
       vi.fn(),

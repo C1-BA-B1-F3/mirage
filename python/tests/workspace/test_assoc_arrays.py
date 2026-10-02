@@ -813,9 +813,9 @@ FUNC_JOB_CASES = [
         0,
     ),
     (
-        "declare_f_names_row",
+        "declare_f_prints_the_body",
         "h(){ :; }; declare -f h; echo rc=$?; declare -f nothere; echo rc=$?",
-        "declare -f h\nrc=0\nrc=1\n",
+        "h () \n{ \n    :\n}\nrc=0\nrc=1\n",
         "",
         0,
     ),

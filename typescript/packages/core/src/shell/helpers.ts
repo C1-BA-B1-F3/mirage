@@ -85,30 +85,6 @@ export function getCommandName(node: TSNodeLike): string {
   return ''
 }
 
-const SKIP_PARTS: ReadonlySet<string> = new Set([NT.FILE_REDIRECT, NT.HERESTRING_REDIRECT])
-
-/**
- * The descriptor a bare `0` before a redirect operator names.
- *
- * tree-sitter-bash reads `0>&-` and `0<f` as an operand `0` followed by an
- * undecorated redirect, where it gives every other digit string its
- * `file_descriptor` node. bash's rule is that a digit string touching the
- * operator is the descriptor, so the number is one when it ends exactly
- * where a sibling `file_redirect` begins; `cat a 0 >&-` keeps its operand.
- */
-export function claimedDescriptor(command: TSNodeLike, last: TSNodeLike): number | null {
-  if (last.type === NT.COMMAND_NAME && last.namedChildren.length === 1) {
-    last = last.namedChildren[0] ?? last
-  }
-  if (last.type !== NT.NUMBER || command.parent == null) return null
-  for (const sibling of command.parent.namedChildren) {
-    if (sibling.type === NT.FILE_REDIRECT && sibling.startIndex === last.endIndex) {
-      return parseInt(getText(last), 10)
-    }
-  }
-  return null
-}
-
 export function getParts(node: TSNodeLike): TSNodeLike[] {
   // A bare `$` word is an anonymous token rather than a named child, but
   // bash passes it through as a literal argument (`echo $` prints `$`), so
@@ -120,8 +96,7 @@ export function getParts(node: TSNodeLike): TSNodeLike[] {
   for (let position = 0; position < children.length; position += 1) {
     const c = children[position]
     if (c === undefined) continue
-    if (c.isNamed === true && !SKIP_PARTS.has(c.type)) {
-      if (position === children.length - 1 && claimedDescriptor(node, c) !== null) continue
+    if (c.isNamed === true && c.type !== NT.FILE_REDIRECT) {
       parts.push(c)
     } else if (c.type === '$') {
       const nxt = children[position + 1]
@@ -347,15 +322,22 @@ export function getWhileParts(node: TSNodeLike): [TSNodeLike, TSNodeLike[]] {
   return [condition, body]
 }
 
+/**
+ * Get (variable, values, bodyCommands) from for/select. The parser spells a
+ * name the grammar cannot read as `for 0 in NAME`, so that header names NAME.
+ */
 export function getForParts(node: TSNodeLike): [string, TSNodeLike[], TSNodeLike[]] {
   const nc = node.namedChildren
   const first = nc[0]
   const last = nc[nc.length - 1]
   if (first === undefined || last === undefined) throw new Error('for: missing parts')
-  const variable = getText(first)
   const values = nc.slice(1).filter((c) => c.type !== NT.DO_GROUP && c.type !== NT.ERROR)
   const body = [...last.namedChildren]
-  return [variable, values, body]
+  const spelled = values[0]
+  if (getText(first) === '0' && spelled !== undefined && !/^\w+$/.test(getText(spelled))) {
+    return [getText(spelled), values.slice(1), body]
+  }
+  return [getText(first), values, body]
 }
 
 /**
@@ -414,7 +396,6 @@ export function isBackgrounded(node: TSNodeLike): boolean {
 export const REDIRECT_NODE_TYPES: ReadonlySet<string> = new Set([
   NT.FILE_REDIRECT,
   NT.HEREDOC_REDIRECT,
-  NT.HERESTRING_REDIRECT,
 ])
 
 // RAW_STRING (single quotes) belongs here alongside STRING (double
@@ -465,11 +446,11 @@ const REDIRECT_OPERATORS: ReadonlySet<string> = new Set([
  * STDERR_TO_STDOUT kind the fd router keys on; every other output redirect
  * is STDOUT or STDERR by the descriptor it claims.
  */
-function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Redirect {
-  // `claimed` is the descriptor the grammar left as the command's last
-  // operand (`claimedDescriptor`), which a `file_descriptor` child
-  // overrides.
-  let fd: number | null = claimed
+function parseFileRedirect(child: TSNodeLike): Redirect {
+  // The parser's redirect shield lets the grammar see `0<f` and `3<<< w`
+  // with their descriptor (`operatorSource`); a redirect whose text opens
+  // with `<<<` is a herestring.
+  let fd: number | null = null
   let target: string | number = ''
   let targetNode: TSNodeLike | null = null
   let op: string | null = null
@@ -479,7 +460,7 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     if (c.type === NT.FILE_DESCRIPTOR) {
       fd = parseInt(getText(c), 10)
     } else if (REDIRECT_OPERATORS.has(c.type)) {
-      op = c.type
+      op = getText(c) === '<>' ? '<>' : c.type
     } else if (c.type === NT.NUMBER) {
       dupFd = parseInt(getText(c), 10)
     }
@@ -493,6 +474,7 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     }
   }
 
+  if (/^\d*<<</.test(getText(child))) return parseHerestringRedirect(child, fd ?? 0)
   if (child.heredoc !== undefined) {
     return new Redirect({
       fd: fd ?? 0,
@@ -522,13 +504,14 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     })
   }
 
-  const input = op !== null && INPUT_OPERATORS.has(op)
+  const input = op === '<>' || (op !== null && INPUT_OPERATORS.has(op))
   fd ??= input ? FD_STDIN : FD_STDOUT
   if (op !== null && CLOSE_OPERATORS.has(op)) target = FD_CLOSE
   else if (op !== null && DUP_OPERATORS.has(op) && dupFd !== null) target = dupFd
 
   let kind: RedirectKind
-  if (input) kind = RedirectKind.STDIN
+  if (op === '<>') kind = RedirectKind.READWRITE
+  else if (input) kind = RedirectKind.STDIN
   else if (fd === FD_STDERR && target === FD_STDOUT && op === NT.REDIRECT_STDERR) {
     kind = RedirectKind.STDERR_TO_STDOUT
   } else if (fd === FD_STDERR) kind = RedirectKind.STDERR
@@ -544,17 +527,14 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
   })
 }
 
-function parseHerestringRedirect(child: TSNodeLike): Redirect {
-  let content = ''
-  let targetNode: TSNodeLike | null = null
-  for (const candidate of child.namedChildren) {
-    if (TARGET_TYPES.has(candidate.type)) {
-      content = getText(candidate)
-      targetNode = candidate
-      break
-    }
-  }
-  return new Redirect({ fd: 0, target: content, targetNode, kind: RedirectKind.HERESTRING })
+function parseHerestringRedirect(child: TSNodeLike, fd: number): Redirect {
+  const word = child.namedChildren.find((candidate) => candidate.type !== NT.FILE_DESCRIPTOR)
+  return new Redirect({
+    fd,
+    target: word === undefined ? '' : getText(word),
+    targetNode: word ?? null,
+    kind: RedirectKind.HERESTRING,
+  })
 }
 
 /**
@@ -570,34 +550,15 @@ export function getRedirects(node: TSNodeLike): [TSNodeLike | null, Redirect[]] 
   const command = first !== undefined && !REDIRECT_NODE_TYPES.has(first.type) ? first : null
   const redirects: Redirect[] = []
 
-  let claimed: number | null = null
-  if (command !== null && command.type === NT.COMMAND) {
-    for (const child of command.namedChildren) {
-      if (child.type === NT.HERESTRING_REDIRECT) {
-        redirects.push(parseHerestringRedirect(child))
-      }
-    }
-    const last = command.children[command.children.length - 1]
-    if (last !== undefined) claimed = claimedDescriptor(command, last)
-  }
-
-  let recoverHerestring = false
-  const commandEnd = command === null ? -1 : command.endIndex
   for (let i = command === null ? 0 : 1; i < nc.length; i++) {
     const child = nc[i]
-    if (child === undefined) continue
-
-    if (child.type === NT.ERROR && getText(child) === '<<') {
-      recoverHerestring = true
-      continue
-    }
-
-    if (child.type === NT.HEREDOC_REDIRECT) {
+    if (child?.type === NT.HEREDOC_REDIRECT) {
       const [body, , quoted] = getHeredocMeta(child)
       const [pipeNode, continuation] = heredocTail(child)
+      const descriptor = child.namedChildren.find((c) => c.type === NT.FILE_DESCRIPTOR)
       redirects.push(
         new Redirect({
-          fd: 0,
+          fd: descriptor === undefined ? 0 : parseInt(getText(descriptor), 10),
           target: body,
           targetNode: child,
           kind: RedirectKind.HEREDOC,
@@ -614,27 +575,9 @@ export function getRedirects(node: TSNodeLike): [TSNodeLike | null, Redirect[]] 
           redirects.push(parseFileRedirect(hc))
         }
       }
-      continue
+    } else if (child?.type === NT.FILE_REDIRECT) {
+      redirects.push(parseFileRedirect(child))
     }
-
-    if (child.type === NT.HERESTRING_REDIRECT) {
-      redirects.push(parseHerestringRedirect(child))
-      recoverHerestring = false
-      continue
-    }
-
-    if (child.type !== NT.FILE_REDIRECT) {
-      recoverHerestring = false
-      continue
-    }
-
-    if (recoverHerestring) {
-      redirects.push(parseHerestringRedirect(child))
-    } else {
-      // Only the redirect touching the operand can own it.
-      redirects.push(parseFileRedirect(child, child.startIndex === commandEnd ? claimed : null))
-    }
-    recoverHerestring = false
   }
 
   return [
@@ -1007,9 +950,55 @@ export function getFunctionName(node: TSNodeLike): string {
   return first !== undefined ? getText(first) : ''
 }
 
-export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
-  for (const c of node.namedChildren) {
-    if (c.type === NT.COMPOUND_STATEMENT) return [...c.namedChildren]
+/**
+ * Get function body commands: the compound_statement's children, or any
+ * other compound command (`f() ( ... )`) as the one statement. The redirects
+ * a definition carries, its own and those of a statement it is the body of
+ * (`f() { ...; } >o 2>&1`), apply at every call, as bash's do, so then the
+ * body is one statement: the group under them. Mirrors Python's
+ * get_function_body.
+ */
+/**
+ * The redirects a function definition carries: its own, and those of a
+ * statement it is the body of (`f() { ...; } >o 2>&1`, whose second
+ * redirect tree-sitter hangs on a redirected_statement around it).
+ */
+export function getFunctionRedirects(node: TSNodeLike): TSNodeLike[] {
+  const redirects = node.namedChildren.filter((c) => REDIRECT_NODE_TYPES.has(c.type))
+  const outer = node.parent
+  if (
+    outer?.type === NT.REDIRECTED_STATEMENT &&
+    outer.namedChildren[0]?.id !== undefined &&
+    outer.namedChildren[0].id === node.id
+  ) {
+    redirects.push(...outer.namedChildren.slice(1).filter((c) => REDIRECT_NODE_TYPES.has(c.type)))
   }
-  return null
+  return redirects
+}
+
+export function getFunctionBody(node: TSNodeLike): TSNodeLike[] | null {
+  const body =
+    node.childForFieldName?.('body') ??
+    node.namedChildren.find((c) => c.type === NT.COMPOUND_STATEMENT)
+  if (body === undefined) return null
+  const redirects = getFunctionRedirects(node)
+  if (redirects.length === 0) {
+    return body.type === NT.COMPOUND_STATEMENT ? [...body.namedChildren] : [body]
+  }
+  const parts = [body, ...redirects]
+  return [
+    {
+      type: NT.REDIRECTED_STATEMENT,
+      text: node.text,
+      children: parts,
+      namedChildren: parts,
+      parent: null,
+      nextSibling: null,
+      ...(node.id === undefined ? {} : { id: node.id }),
+      ...(node.startIndex === undefined ? {} : { startIndex: node.startIndex }),
+      ...(node.endIndex === undefined ? {} : { endIndex: node.endIndex }),
+      ...(node.startPosition === undefined ? {} : { startPosition: node.startPosition }),
+      ...(node.endPosition === undefined ? {} : { endPosition: node.endPosition }),
+    },
+  ]
 }

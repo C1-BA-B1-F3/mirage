@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { ByteSource } from '../io/types.ts'
 import type { ArithWrite } from './types.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
@@ -83,14 +84,65 @@ export class UnboundVariable extends ExitSignal {
   }
 }
 
+/**
+ * A `${...}` bash cannot read, found as its word expands. bash names the text
+ * of the expansion it was running: the whole word, a double-quoted part's
+ * inside, an operator's word, an arithmetic expression, a heredoc's body.
+ * Each level the error leaves renames it (`within`) until one of those fixes
+ * the name. Fatal with status 1, as `$((1/0))` is, and contained the same
+ * way. Mirrors Python's mirage.shell.errors.BadSubstitution.
+ */
+export class BadSubstitution extends ExitSignal {
+  private fixed = false
+
+  constructor(text: string) {
+    super(1, new Uint8Array(), null, 1)
+    this.name = 'BadSubstitution'
+    this.within(text)
+  }
+
+  /** Name the word being expanded, unless a boundary already has. */
+  within(word: string, fixed = false): this {
+    if (!this.fixed) {
+      this.stderr = new TextEncoder().encode(`bash: ${word}: bad substitution\n`)
+      this.fixed = fixed
+    }
+    return this
+  }
+}
+
+/**
+ * Await an expansion of `word`, which a bad substitution names: a
+ * double-quoted part's inside, an operator's word, an arithmetic expression.
+ * Mirrors Python's mirage.shell.errors.named.
+ */
+export async function named<T>(word: string, pending: Promise<T>): Promise<T> {
+  try {
+    return await pending
+  } catch (err) {
+    if (err instanceof BadSubstitution) throw err.within(word, true)
+    throw err
+  }
+}
+
+/**
+ * `return` unwinding to the function or sourced file it ends; `stdout` is the
+ * output the constructs it left had produced before it.
+ */
 export class ReturnSignal extends Error {
   readonly exitCode: number
   readonly stderr: Uint8Array
-  constructor(exitCode: number, stderr: Uint8Array = new Uint8Array()) {
+  readonly stdout: ByteSource | null
+  constructor(
+    exitCode: number,
+    stderr: Uint8Array = new Uint8Array(),
+    stdout: ByteSource | null = null,
+  ) {
     super('return')
     this.name = 'ReturnSignal'
     this.exitCode = exitCode
     this.stderr = stderr
+    this.stdout = stdout
   }
 }
 

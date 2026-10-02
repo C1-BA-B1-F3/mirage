@@ -134,6 +134,33 @@ function strayCaseTerminator(node: TSNodeLike): string | null {
   return null
 }
 
+const BODY_OPENERS = new Set(['do', '{', 'then', 'else'])
+const BODY_CLOSERS = new Set(['done', '}', 'fi', 'elif', 'else'])
+const BODY_NODES = new Set(['do_group', 'compound_statement', 'if_statement'])
+
+/**
+ * The token closing a compound list that holds no command. bash requires a
+ * command in every `do`, `then`, `else` and brace body (5.2: `for x in a; do
+ * done` is a syntax error near `done`); the grammar accepts an empty one,
+ * comments aside. Mirrors Python's _empty_compound.
+ */
+function emptyCompound(node: TSNodeLike): string | null {
+  const stack: TSNodeLike[] = [node]
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
+    stack.push(...current.children)
+    if (!BODY_NODES.has(current.type)) continue
+    let opened = false
+    for (const kid of current.children.flatMap((child) =>
+      child.type === 'elif_clause' || child.type === 'else_clause' ? [...child.children] : [child],
+    )) {
+      if (opened && BODY_CLOSERS.has(kid.type)) return kid.text
+      if (BODY_OPENERS.has(kid.type)) opened = true
+      else if (kid.isNamed && kid.type !== 'comment') opened = false
+    }
+  }
+  return null
+}
+
 function walkNamed(node: TSNodeLike): TSNodeLike[] {
   const out: TSNodeLike[] = [node]
   for (const child of node.namedChildren) out.push(...walkNamed(child))
@@ -203,6 +230,8 @@ export function findSyntaxError(
   }
   const stray = strayCaseTerminator(node)
   if (stray !== null) return stray
+  const empty = emptyCompound(node)
+  if (empty !== null) return empty
   if (!node.hasError) return findUnterminatedQuote(node)
   let previous: TSNodeLike | null = null
   for (const child of node.children) {

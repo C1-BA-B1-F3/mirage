@@ -60,7 +60,7 @@ describe('redirect parser keeps the descriptor as typed', () => {
 })
 
 describe('unsupportedDescriptor', () => {
-  it('accepts the shell descriptors and the two sentinels', async () => {
+  it('accepts every descriptor and the two sentinels', async () => {
     for (const line of [
       'echo x > f',
       'echo x 2>&1',
@@ -70,23 +70,16 @@ describe('unsupportedDescriptor', () => {
       'echo x >&2',
       'echo x 1>&1',
       'cat < f',
+      'echo x 3> f',
+      'echo x 3< f',
+      'echo x <&3',
+      'echo x >&3',
+      'echo x 2>&3',
+      'echo x 3>&1',
+      'echo x 3>&-',
+      'echo x > f 4>&1',
     ]) {
       expect(unsupportedDescriptor(await redirects(line))).toBeNull()
-    }
-  })
-
-  it('names the first descriptor above 2, claimed or duplicated from', async () => {
-    for (const [line, fd] of [
-      ['echo x 3> f', 3],
-      ['echo x 3< f', 3],
-      ['echo x <&3', 3],
-      ['echo x >&3', 3],
-      ['echo x 2>&3', 3],
-      ['echo x 3>&1', 3],
-      ['echo x 3>&-', 3],
-      ['echo x > f 4>&1', 4],
-    ] as [string, number][]) {
-      expect(unsupportedDescriptor(await redirects(line))).toBe(fd)
     }
     expect(new TextDecoder().decode(badDescriptorLine(3))).toBe('3: Bad file descriptor\n')
   })

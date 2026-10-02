@@ -147,26 +147,3 @@ export function protectedSource(text: string, root: Node): string | null {
   })
   return out === text ? null : out
 }
-
-/** Whether two trees agree on every node's type and span. */
-export function sameShape(left: Node, right: Node): boolean {
-  const stack: [Node, Node][] = [[left, right]]
-  for (;;) {
-    const pair = stack.pop()
-    if (pair === undefined) return true
-    const [a, b] = pair
-    if (
-      a.type !== b.type ||
-      a.startIndex !== b.startIndex ||
-      a.endIndex !== b.endIndex ||
-      a.childCount !== b.childCount
-    ) {
-      return false
-    }
-    const bChildren = b.children
-    a.children.forEach((child, i) => {
-      const other = bChildren[i]
-      if (other !== undefined) stack.push([child, other])
-    })
-  }
-}

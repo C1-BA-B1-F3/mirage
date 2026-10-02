@@ -36,7 +36,7 @@ from mirage.shell.helpers import get_text, is_backgrounded
 from mirage.shell.job_table import Job, JobStatus, JobTable
 from mirage.shell.types import TSNodeLike
 from mirage.workspace.executor.builtins.getopt import scan_options
-from mirage.workspace.executor.statement import statement_stdin
+from mirage.workspace.executor.statement import failed_read, statement_stdin
 from mirage.workspace.node.occurrence import occurrence_of
 from mirage.workspace.session import (
     SessionState,
@@ -78,6 +78,37 @@ async def pump(
         if console.closed_reader:
             await close_quietly(stream)
             return
+
+
+async def drained(
+    sink: JobConsole,
+    stdout: ByteSource | None,
+    io: IOResult,
+    exec_node: ExecutionNode,
+) -> tuple[None, IOResult, ExecutionNode]:
+    """Write a finished statement's returned output to a sink.
+
+    Its stdout goes before its stderr, since one command keeps no order
+    between them; what it already wrote there as it ran (a function
+    body, a redirected group) came first. A read its stream fails is the
+    statement's own failure (``failed_read``). The result carries no
+    output, so nothing lands twice.
+
+    Args:
+        sink (JobConsole): where the statement writes.
+        stdout (ByteSource | None): the output it returned.
+        io (IOResult): its result, its stderr emptied once written.
+        exec_node (ExecutionNode): its record.
+    """
+    try:
+        await pump(sink, Channel.STDOUT, stdout)
+    except OSError as exc:
+        await failed_read(io, exc, exec_node)
+    stderr = await io.materialize_stderr()
+    if stderr:
+        await sink.emit(Channel.STDERR, stderr)
+        io.stderr = None
+    return None, io, exec_node
 
 
 async def handle_background(
@@ -169,7 +200,7 @@ async def handle_background(
                     exit_code=sig.contained_code,
                 )
             except ReturnSignal as sig:
-                stdout = None
+                stdout = sig.stdout
                 io = IOResult(
                     exit_code=sig.exit_code, stderr=sig.stderr or None
                 )

@@ -12,9 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 import shlex
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import cast
 
 from mirage.shell.constants import (
     FD_BOTH,
@@ -121,33 +124,6 @@ def get_command_name(node: TSNodeLike) -> str:
     return ""
 
 
-def claimed_descriptor(command: TSNodeLike, last: TSNodeLike) -> int | None:
-    """The descriptor a bare ``0`` before a redirect operator names.
-
-    tree-sitter-bash reads ``0>&-`` and ``0<f`` as an operand ``0``
-    followed by an undecorated redirect, where it gives every other
-    digit string its ``file_descriptor`` node. bash's rule is that a
-    digit string touching the operator is the descriptor, so the number
-    is one when it ends exactly where a sibling ``file_redirect``
-    begins; ``cat a 0 >&-`` keeps its operand.
-
-    Args:
-        command (TSNodeLike): the command node the number is in.
-        last (TSNodeLike): the command's last child.
-    """
-    if last.type == NT.COMMAND_NAME and len(last.named_children) == 1:
-        last = last.named_children[0]
-    if last.type != NT.NUMBER or command.parent is None:
-        return None
-    for sibling in command.parent.named_children:
-        if (
-            sibling.type == NT.FILE_REDIRECT
-            and sibling.start_byte == last.end_byte
-        ):
-            return int(get_text(last))
-    return None
-
-
 def get_parts(node: TSNodeLike) -> list[TSNodeLike]:
     """Get command parts as child nodes.
 
@@ -158,16 +134,10 @@ def get_parts(node: TSNodeLike) -> list[TSNodeLike]:
     very next byte, where it is the translation marker of ``$"..."``
     and the string node carries the whole word.
     """
-    _SKIP = frozenset({NT.FILE_REDIRECT, NT.HERESTRING_REDIRECT})
     children = node.children
     parts: list[TSNodeLike] = []
     for position, c in enumerate(children):
-        if c.is_named and c.type not in _SKIP:
-            if (
-                position == len(children) - 1
-                and claimed_descriptor(node, c) is not None
-            ):
-                continue
+        if c.is_named and c.type != NT.FILE_REDIRECT:
             parts.append(c)
         elif c.type == "$":
             nxt = (
@@ -425,11 +395,18 @@ def get_for_parts(
     """Get (variable, values, body_commands) from for/select.
 
     Returns the do_group's children list so multi-statement
-    bodies are preserved.
+    bodies are preserved. The parser spells a name the grammar cannot
+    read as ``for 0 in NAME``, so that header names NAME.
     """
     nc = node.named_children
     variable = get_text(nc[0])
     values = [c for c in nc[1:] if c.type not in (NT.DO_GROUP, "ERROR")]
+    if (
+        variable == "0"
+        and values
+        and not re.fullmatch(r"\w+", get_text(values[0]), re.ASCII)
+    ):
+        variable, values = get_text(values[0]), values[1:]
     body = list(nc[-1].named_children)
     return variable, values, body
 
@@ -492,7 +469,6 @@ REDIRECT_NODE_TYPES = frozenset(
     {
         NT.FILE_REDIRECT,
         NT.HEREDOC_REDIRECT,
-        NT.HERESTRING_REDIRECT,
     }
 )
 
@@ -531,17 +507,17 @@ _REDIRECT_OPERATORS = (
 )
 
 
-def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
+def _parse_file_redirect(child: TSNodeLike) -> Redirect:
     """Parse a single file_redirect node into a Redirect.
 
     The operator token decides the shape and the explicit descriptor,
     when there is one, is kept as typed: `3<f` claims fd 3 and `<&3`
-    duplicates from it, and both are refused downstream rather than
-    read as stdin (`shell/descriptors.py`). ``fd`` is the descriptor
-    the grammar left as the command's last operand (`claimed_descriptor`),
-    which a ``file_descriptor`` child overrides. Three forms carry an int
-    target: a dup (`2>&1`, `>&2`, `<&0`) names the descriptor it copies,
-    a close (`>&-`, `<&-`) carries FD_CLOSE, and `&>` claims FD_BOTH.
+    duplicates from it (`shell/descriptors.py`); the parser's redirect
+    shield lets the grammar see `0<f` and `3<<< w` that way too
+    (`_operator_source`). A redirect whose text opens with `<<<` is a
+    herestring. Three forms carry an int target: a dup (`2>&1`, `>&2`,
+    `<&0`) names the descriptor it copies, a close (`>&-`, `<&-`)
+    carries FD_CLOSE, and `&>` claims FD_BOTH.
     `2>&1` alone keeps the STDERR_TO_STDOUT kind the fd router keys on;
     every other output redirect is STDOUT or STDERR by the descriptor
     it claims.
@@ -550,12 +526,13 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
     target_node = None
     op: str | None = None
     dup_fd: int | None = None
+    fd: int | None = None
 
     for c in child.children:
         if c.type == NT.FILE_DESCRIPTOR:
             fd = int(get_text(c))
         elif c.type in _REDIRECT_OPERATORS:
-            op = c.type
+            op = "<>" if get_text(c) == "<>" else c.type
         elif c.type == NT.NUMBER:
             dup_fd = int(get_text(c))
 
@@ -565,6 +542,8 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
             target_node = c
             break
 
+    if re.match(r"^\d*<<<", get_text(child)):
+        return _parse_herestring_redirect(child, 0 if fd is None else fd)
     document = getattr(child, "heredoc", None)
     if document is not None:
         return Redirect(
@@ -601,13 +580,15 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
         )
 
     if fd is None:
-        fd = FD_STDIN if op in _INPUT_OPERATORS else FD_STDOUT
+        fd = FD_STDIN if op in _INPUT_OPERATORS or op == "<>" else FD_STDOUT
     if op in _CLOSE_OPERATORS:
         target = FD_CLOSE
     elif op in _DUP_OPERATORS and dup_fd is not None:
         target = dup_fd
 
-    if op in _INPUT_OPERATORS:
+    if op == "<>":
+        kind = RedirectKind.READWRITE
+    elif op in _INPUT_OPERATORS:
         kind = RedirectKind.STDIN
     elif fd == FD_STDERR and target == FD_STDOUT and op == NT.REDIRECT_STDERR:
         kind = RedirectKind.STDERR_TO_STDOUT
@@ -626,18 +607,19 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
     )
 
 
-def _parse_herestring_redirect(child: TSNodeLike) -> Redirect:
-    content = ""
-    target_node = None
-    for candidate in child.named_children:
-        if candidate.type in _TARGET_TYPES:
-            content = get_text(candidate)
-            target_node = candidate
-            break
+def _parse_herestring_redirect(child: TSNodeLike, fd: int = 0) -> Redirect:
+    word = next(
+        (
+            candidate
+            for candidate in child.named_children
+            if candidate.type != NT.FILE_DESCRIPTOR
+        ),
+        None,
+    )
     return Redirect(
-        fd=0,
-        target=content,
-        target_node=target_node,
+        fd=fd,
+        target=get_text(word) if word is not None else "",
+        target_node=word,
         kind=RedirectKind.HERESTRING,
     )
 
@@ -756,27 +738,20 @@ def get_redirects(
     nc = node.named_children
     command = nc[0] if nc and nc[0].type not in REDIRECT_NODE_TYPES else None
     redirects: list[Redirect] = []
-
-    claimed: int | None = None
-    if command is not None and command.type == NT.COMMAND:
-        for child in command.named_children:
-            if child.type == NT.HERESTRING_REDIRECT:
-                redirects.append(_parse_herestring_redirect(child))
-        if command.children:
-            claimed = claimed_descriptor(command, command.children[-1])
-
-    recover_herestring = False
-    command_end = -1 if command is None else command.end_byte
     for child in nc if command is None else nc[1:]:
-        if child.type == "ERROR" and get_text(child) == "<<":
-            recover_herestring = True
-            continue
         if child.type == NT.HEREDOC_REDIRECT:
             body, _, quoted = get_heredoc_meta(child)
             pipe_node, continuation = heredoc_tail(child)
             redirects.append(
                 Redirect(
-                    fd=0,
+                    fd=next(
+                        (
+                            int(get_text(c))
+                            for c in child.named_children
+                            if c.type == NT.FILE_DESCRIPTOR
+                        ),
+                        0,
+                    ),
                     target=body,
                     target_node=child,
                     kind=RedirectKind.HEREDOC,
@@ -791,24 +766,8 @@ def get_redirects(
             for hc in child.named_children:
                 if hc.type == NT.FILE_REDIRECT:
                     redirects.append(_parse_file_redirect(hc))
-            continue
-
-        if child.type == NT.HERESTRING_REDIRECT:
-            redirects.append(_parse_herestring_redirect(child))
-            recover_herestring = False
-            continue
-
-        if child.type != NT.FILE_REDIRECT:
-            recover_herestring = False
-            continue
-
-        if recover_herestring:
-            redirects.append(_parse_herestring_redirect(child))
-        else:
-            # Only the redirect touching the operand can own it.
-            fd = claimed if child.start_byte == command_end else None
-            redirects.append(_parse_file_redirect(child, fd))
-        recover_herestring = False
+        elif child.type == NT.FILE_REDIRECT:
+            redirects.append(_parse_file_redirect(child))
 
     if (
         command is not None
@@ -1057,13 +1016,70 @@ def get_function_name(node: TSNodeLike) -> str:
     return get_text(node.named_children[0])
 
 
+def get_function_redirects(node: TSNodeLike) -> list[TSNodeLike]:
+    """The redirects a function definition carries: its own, and those of
+    a statement it is the body of (``f() { ...; } >o 2>&1``, whose second
+    redirect tree-sitter hangs on a redirected_statement around it).
+
+    Args:
+        node (TSNodeLike): the function_definition node.
+    """
+    redirects = [
+        c for c in node.named_children if c.type in REDIRECT_NODE_TYPES
+    ]
+    outer = node.parent
+    if (
+        outer is not None
+        and outer.type == NT.REDIRECTED_STATEMENT
+        and outer.named_children[0].id == node.id
+    ):
+        redirects += [
+            c
+            for c in outer.named_children[1:]
+            if c.type in REDIRECT_NODE_TYPES
+        ]
+    return redirects
+
+
 def get_function_body(node: TSNodeLike) -> FunctionBody:
     """Get function body commands.
 
-    Returns the compound_statement's children list so
-    multi-statement bodies are preserved.
+    Returns the compound_statement's children list so multi-statement
+    bodies are preserved; any other compound command (``f() ( ... )``)
+    is the one statement. The redirects a definition carries, its own
+    and those of a statement it is the body of (``f() { ...; } >o
+    2>&1``), apply at every call, as bash's do, so then the body is one
+    statement: the group under them.
+
+    Args:
+        node (TSNodeLike): the function_definition node.
     """
-    for c in node.named_children:
-        if c.type == NT.COMPOUND_STATEMENT:
-            return list(c.named_children)
-    raise ValueError("function definition has no compound body")
+    body = node.child_by_field_name("body")
+    if body is None:
+        raise ValueError("function definition has no body")
+    redirects = get_function_redirects(node)
+    if not redirects:
+        return (
+            list(body.named_children)
+            if body.type == NT.COMPOUND_STATEMENT
+            else [body]
+        )
+    parts = [body, *redirects]
+    return [
+        cast(
+            TSNodeLike,
+            SimpleNamespace(
+                type=NT.REDIRECTED_STATEMENT,
+                children=parts,
+                named_children=parts,
+                next_sibling=None,
+                parent=None,
+                id=node.id,
+                text=node.text,
+                start_byte=node.start_byte,
+                end_byte=node.end_byte,
+                start_point=node.start_point,
+                end_point=node.end_point,
+            ),
+        )
+    ]

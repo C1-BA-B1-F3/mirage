@@ -30,6 +30,7 @@ from mirage.policy import (
 from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
+from mirage.shell.call_stack import CallStack
 from mirage.shell.console import JobConsole
 from mirage.shell.helpers import input_substitution_redirect
 from mirage.shell.job_table import JobTable
@@ -61,6 +62,7 @@ async def run_command_tree(
     handed: HandOff | None = None,
     sink: JobConsole | None = None,
     command_substitution: bool = False,
+    call_stack: CallStack | None = None,
 ) -> tuple[IOResult, ExecutionNode]:
     """Run a parsed command tree and finalize its output stream.
 
@@ -91,6 +93,8 @@ async def run_command_tree(
             command's gate.
         command_substitution (bool): capture a lone input redirect's data
             using the same expansion, dispatcher and output gates.
+        call_stack (CallStack | None): the frames of the caller the tree
+            runs in place of (``eval``), None for a line of its own.
 
     Returns:
         tuple[IOResult, ExecutionNode]: the finalized result (with
@@ -114,7 +118,7 @@ async def run_command_tree(
         input_substitution_redirect(ast) if command_substitution else None
     )
     if redirect is None:
-        stdout, io, exec_node = await run(ast, session, stdin)
+        stdout, io, exec_node = await run(ast, session, stdin, call_stack)
     else:
         redirects, _ = await expand_redirects(
             [redirect],

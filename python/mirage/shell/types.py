@@ -277,6 +277,7 @@ class RedirectKind(StrEnum):
     STDOUT = "stdout"
     STDERR = "stderr"
     STDIN = "stdin"
+    READWRITE = "readwrite"
     STDERR_TO_STDOUT = "stderr_to_stdout"
     HEREDOC = "heredoc"
     HERESTRING = "herestring"
@@ -285,6 +286,10 @@ class RedirectKind(StrEnum):
     # redirect` before the command runs, so the target is kept for the
     # message and nothing is opened.
     AMBIGUOUS = "ambiguous"
+    # A heredoc whose body failed to expand: bash fails the command with
+    # the expansion's status and diagnostic and goes on with the line,
+    # so the error is kept as the target and nothing is read.
+    UNEXPANDED = "unexpanded"
 
 
 @dataclass

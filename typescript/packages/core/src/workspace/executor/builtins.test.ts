@@ -14,6 +14,7 @@
 
 import { helpPage, versionLine } from '../../commands/spec/standard.ts'
 import { HELP as PRINTF_HELP } from './builtins/printf/printf.ts'
+import type { ExecuteStringFn } from './builtins/types.ts'
 import { specOf } from '../../commands/spec/index.ts'
 import { renderHelp } from '../../commands/spec/help.ts'
 import { makeVar } from '../../shell/variable.ts'
@@ -1209,12 +1210,13 @@ describe('handleCd', () => {
 })
 
 describe('handleEval', () => {
-  it('calls the provided executeFn with joined args', async () => {
-    const exec = vi.fn(() => Promise.resolve(new IOResult({ exitCode: 7 })))
+  it('runs the joined words in the frames of its caller', async () => {
+    const exec = vi.fn<ExecuteStringFn>(() => Promise.resolve(new IOResult({ exitCode: 7 })))
     const s = new SessionState({ sessionId: 'sess' })
-    const [, io] = await handleEval(exec, ['echo', 'hi'], s)
+    const cs = new CallStack()
+    const [, io] = await handleEval(exec, ['echo', 'hi'], s, null, undefined, cs)
     expect(io.exitCode).toBe(7)
-    expect(exec).toHaveBeenCalledWith('echo hi', { sessionId: 'sess', stdin: null })
+    expect(exec).toHaveBeenCalledWith('echo hi', { sessionId: 'sess', stdin: null, callStack: cs })
   })
 })
 

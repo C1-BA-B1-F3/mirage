@@ -34,7 +34,6 @@ from mirage.shell.parse.heredoc.shield import (
     first_content_line,
     heredoc_operators,
     protected_source,
-    same_shape,
     terminator_lookalikes,
 )
 from mirage.shell.parse.heredoc.types import HeredocOperator
@@ -55,7 +54,6 @@ __all__ = [
     "protected_source",
     "quote_end",
     "reserved_word",
-    "same_shape",
     "terminator_line",
     "terminator_lookalikes",
     "tree_root",

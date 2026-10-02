@@ -20,7 +20,7 @@ const stdout = (r: { stdout: Uint8Array }): string => DEC.decode(r.stdout)
 const stderr = (r: { stderr: Uint8Array | null }): string =>
   r.stderr === null ? '' : DEC.decode(r.stderr)
 
-describe('Workspace.executePythonRepl', () => {
+describe('Workspace.executePythonRepl', { timeout: 60_000 }, () => {
   it('prints the value of the last expression (single-mode behavior)', async () => {
     const { ws } = await makeWorkspace()
     const r = await ws.executePythonRepl('1 + 2')
@@ -28,7 +28,7 @@ describe('Workspace.executePythonRepl', () => {
     expect(r.exitCode).toBe(0)
     expect(stdout(r)).toBe('3\n')
     await ws.close()
-  }, 60_000)
+  })
 
   it('persists state across calls in the same session', async () => {
     const { ws } = await makeWorkspace()

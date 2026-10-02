@@ -21,7 +21,16 @@ import type { Policy } from '../policy/base.ts'
 import { PolicyDenied, PolicyError } from '../policy/errors.ts'
 import type { Action, OpsContext, OpsResultContext } from '../policy/types.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
-import { DEFAULT_READ_TTL, FileType, Limit, MountMode, OnExceed, ReadPolicy } from '../types.ts'
+import { stat as ramStat } from '../core/ram/stat.ts'
+import {
+  DEFAULT_READ_TTL,
+  FileStat,
+  FileType,
+  Limit,
+  MountMode,
+  OnExceed,
+  ReadPolicy,
+} from '../types.ts'
 import { eacces, enoent, enotdir } from '../utils/errors.ts'
 import { Session } from '../workspace/workspace/handle.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
@@ -495,8 +504,6 @@ describe('Ops is one door with the dispatcher', () => {
     )
     await ws.vfs.writeFile('/m/books.tally', 'stored')
     await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
-    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
-    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
     const other = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE })
     await other.vfs.unlink('/m/books.tally')
     await expect(ws.vfs.readFileText('/m/books.tally')).rejects.toThrow()
@@ -548,6 +555,48 @@ describe('Ops is one door with the dispatcher', () => {
         })
         return data
       },
+    })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
+  })
+
+  // The entry carries the version the backend answers, so the freshness
+  // check would serve it: only the renderer rule keeps the bytes out.
+  it('still renders a user renderer whose entry is fresh', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true, readRevalidatable: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    const ws = new Workspace(
+      { '/m': vfs },
+      { mode: MountMode.WRITE, ops, read: { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL } },
+    )
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    })
+    ops.register({
+      name: 'stat',
+      vfs: vfs.name,
+      filetype: null,
+      write: false,
+      fn: async (accessor, path) => {
+        const real = await ramStat(accessor as never, path)
+        return new FileStat({
+          name: real.name,
+          size: real.size,
+          modified: real.modified,
+          type: real.type,
+          fingerprint: 'v1',
+        })
+      },
+    })
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), {
+      ttl: 600,
+      fingerprint: 'v1',
     })
     expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
   })

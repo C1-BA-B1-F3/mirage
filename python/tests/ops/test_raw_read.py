@@ -15,9 +15,10 @@
 import pytest
 
 from mirage import MountMode, Workspace
+from mirage.core.ram.stat import stat as ram_stat
 from mirage.io import IOResult
 from mirage.ops.registry import op
-from mirage.types import PathSpec, ReadPolicy, ReadSpec
+from mirage.types import FileStat, PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
 
 # A raw read is what read-modify-write needs: FUSE hands the merged
@@ -209,10 +210,20 @@ async def test_a_user_renderer_read_of_a_remotely_deleted_path_fails_under_fresh
         await ws.vfs.read("/data/books.tally")
 
 
+@op("stat", vfs="ram")
+async def _stat_with_version(accessor, path: PathSpec, **kwargs) -> FileStat:
+    stat = await ram_stat(accessor, path)
+    return stat.model_copy(update={"fingerprint": "v1"})
+
+
 @pytest.mark.asyncio
 async def test_a_user_renderer_still_renders_under_fresh():
+    # The entry carries the version the backend answers, so the freshness
+    # check would serve it: only the renderer rule keeps the bytes out.
     ws = _fresh_rendering_workspace(_CachingRAM())
-    await _seed(ws, "/data/books.tally")
+    await ws.vfs.write("/data/books.tally", b"STORED")
+    ws.mount("/data/").register_fns([_stat_with_version])
+    await ws.cache.set("/data/books.tally", b"CACHED", fingerprint="v1")
     assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
 
 

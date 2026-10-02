@@ -89,17 +89,8 @@ export class RAMFileCacheStore extends RAMVFS implements FileCache {
   // the key is the cache entry's, not a path the mount resolves.
   exists(key: string | PathSpec): Promise<boolean> {
     const k = typeof key === 'string' ? key : key.mountPath
-    return this.lock.withLock(k, () => {
-      const entry = this.entries.get(k)
-      if (entry === undefined) return Promise.resolve(false)
-      if (entry.expired) {
-        this.size -= entry.size
-        this.entries.delete(k)
-        this.store.files.delete(k)
-        return Promise.resolve(false)
-      }
-      return Promise.resolve(true)
-    })
+    const entry = this.entries.get(k)
+    return Promise.resolve(entry !== undefined && !entry.expired)
   }
   async set(
     key: string,

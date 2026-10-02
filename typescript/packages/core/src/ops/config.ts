@@ -31,6 +31,7 @@ export const STAMP_WRITE_OPS: ReadonlySet<string> = new Set([
   'write',
   'write_bytes',
   'append',
+  'pwrite',
   'create',
   'truncate',
   'mkdir',

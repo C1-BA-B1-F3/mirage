@@ -349,6 +349,17 @@ export class Ops {
     await this.through('append', path, [data], {}, sessionId)
   }
 
+  /**
+   * Write bytes at an offset, keeping the rest of the file (the python
+   * facade's `pwrite`). pwrite(2): the bytes outside the window stay, a gap
+   * past the end reads back as zeros, and a missing file is created. It is
+   * one write at the door, so a session that may write the file and not
+   * read it can still do it.
+   */
+  async pwrite(path: string, data: Uint8Array, offset: number, sessionId?: string): Promise<void> {
+    await this.through('pwrite', path, [data, offset], {}, sessionId)
+  }
+
   async readdir(path: string, sessionId?: string): Promise<string[]> {
     return ((await this.through('readdir', path, [], {}, sessionId)) as string[] | null) ?? []
   }

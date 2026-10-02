@@ -71,8 +71,8 @@ function newestFirst(a: string, b: string): number {
   return a < b ? 1 : a > b ? -1 : 0
 }
 
-function bash(shell: ShellExecutor, command: string): Promise<ShellRunResult> {
-  return shell.run(shell.resolve({ command }))
+async function bash(shell: ShellExecutor, command: string): Promise<ShellRunResult> {
+  return (await shell.execute(shell.resolve({ command }))).result()
 }
 
 async function composeWorld(ws: Workspace): Promise<Context> {

@@ -25,6 +25,7 @@ OPS = make_generic_ops("bin", IO) + [
     for name in (
         "write",
         "append",
+        "pwrite",
         "create",
         "mkdir",
         "unlink",

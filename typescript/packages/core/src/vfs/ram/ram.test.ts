@@ -54,6 +54,7 @@ describe('RAMVFS.kind / ops()', () => {
       'create',
       'glob',
       'mkdir',
+      'pwrite',
       'read',
       'readdir',
       'rename',

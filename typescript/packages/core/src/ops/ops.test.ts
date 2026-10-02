@@ -102,6 +102,34 @@ describe('Ops', () => {
     expect(ws.records.map((r) => r.op)).toContain('append')
   })
 
+  it('pwrite writes at an offset and keeps the rest (the python facade has it too)', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.writeFile('/data/f.txt', 'hello')
+    await ws.vfs.pwrite('/data/f.txt', new TextEncoder().encode('XY'), 1)
+    await ws.vfs.pwrite('/data/f.txt', new TextEncoder().encode('!'), 7)
+    expect([...(await ws.vfs.readFile('/data/f.txt'))]).toEqual([
+      ...new TextEncoder().encode('hXYlo'),
+      0,
+      0,
+      33,
+    ])
+    expect(ws.records.map((r) => r.op)).toContain('pwrite')
+  })
+
+  it('pwrite is one write at the door, so a refused read does not stop it', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.writeFile('/data/f.txt', 'abc')
+    const seen: [string, boolean][] = []
+    ws.policies.add({
+      preOps(ctx: OpsContext): Action | null {
+        seen.push([ctx.op, ctx.write])
+        return ctx.op === 'read' ? { kind: 'deny', reason: 'write-only' } : null
+      },
+    })
+    await ws.vfs.pwrite('/data/f.txt', new TextEncoder().encode('Z'), 1)
+    expect(seen).toEqual([['pwrite', true]])
+  })
+
   it('exists returns true for existing files and dirs', async () => {
     const ws = mkWorkspace()
     await ws.vfs.writeFile('/data/hi.txt', 'hi')

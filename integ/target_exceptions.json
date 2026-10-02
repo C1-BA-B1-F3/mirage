@@ -83,6 +83,18 @@
     "integ/session/commands/script.json :: scriptopsjs_read_passes_the_op_door": {
       "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
     },
+    "integ/session/commands/script.json :: scriptopsjs_drop_descriptor_writes_without_reading": {
+      "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
+    },
+    "integ/session/commands/script.json :: scriptopsjs_drop_read_is_refused": {
+      "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
+    },
+    "integ/session/commands/script.json :: scriptopsjs_drop_read_write_open_is_refused": {
+      "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
+    },
+    "integ/session/commands/script.json :: scriptopsjs_drop_holds_what_the_descriptor_wrote": {
+      "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
+    },
     "integ/session/commands/script.json :: scriptopsjs_env_write_is_refused_at_the_session_door": {
       "ram-commands": "This case drives the scriptedopsjs profile, whose runtime is the quickjs wasm engine declared as the quickjs service, and ram-scripted is the one target carrying that service, so the case skips cleanly on a machine without the engine; ram-commands declares no service and would fail there instead. The scriptops_* monty twins in this same file run on ram-commands, so a profile policy at the op and session doors is still judged on the modal target and only the second engine rides the narrower one."
     },

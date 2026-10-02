@@ -84,6 +84,7 @@ def test_s3_write_ops_tagged():
     write_op_names = {
         "write",
         "append",
+        "pwrite",
         "unlink",
         "rmdir",
         "mkdir",

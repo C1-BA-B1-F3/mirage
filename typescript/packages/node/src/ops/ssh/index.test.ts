@@ -17,8 +17,8 @@ import { VFSName } from '@struktoai/mirage-core/types'
 import { SSH_OPS } from './index.ts'
 
 describe('SSH_OPS', () => {
-  it('registers the expected 13 ops with VFS=ssh', () => {
-    expect(SSH_OPS).toHaveLength(13)
+  it('registers the expected 14 ops with VFS=ssh', () => {
+    expect(SSH_OPS).toHaveLength(14)
     for (const op of SSH_OPS) expect(op.vfs).toBe(VFSName.SSH)
   })
 
@@ -30,6 +30,7 @@ describe('SSH_OPS', () => {
         'create',
         'glob',
         'mkdir',
+        'pwrite',
         'read',
         'readdir',
         'rename',
@@ -50,6 +51,7 @@ describe('SSH_OPS', () => {
         'append',
         'create',
         'mkdir',
+        'pwrite',
         'rename',
         'rmdir',
         'setattr',

@@ -88,6 +88,7 @@ def test_full_table_emits_mutations():
         ("create", True),
         ("truncate", True),
         ("append", True),
+        ("pwrite", True),
         ("setattr", True),
     }
 
@@ -190,6 +191,51 @@ async def test_native_append_skips_emulation_and_overrides_still_win():
             "x", make_table(write=AsyncMock()), overrides={"append"}
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_emulated_pwrite_splices_pads_and_creates_missing():
+    table = make_table(write=AsyncMock())
+    table.read_bytes.side_effect = [b"hello", b"ab", FileNotFoundError()]
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    acc = NOOPAccessor()
+    for data, offset in ((b"XY", 1), (b"z", 4), (b"new", 2)):
+        await op.fn(acc, PATH, data, offset)
+    assert [call.args[2] for call in table.write.await_args_list] == [
+        b"hXYlo",
+        b"ab\0\0z",
+        b"\0\0new",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_emulated_pwrite_forwards_index():
+    table = make_table(write=AsyncMock())
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    acc = NOOPAccessor()
+    await op.fn(acc, PATH, b"new", 0, index=NULL_INDEX)
+    table.read_bytes.assert_awaited_once_with(acc, PATH, NULL_INDEX)
+
+
+@pytest.mark.asyncio
+async def test_emulated_pwrite_does_not_overwrite_after_read_failure():
+    table = make_table(write=AsyncMock())
+    table.read_bytes.side_effect = PermissionError(PATH.virtual)
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    with pytest.raises(PermissionError):
+        await op.fn(NOOPAccessor(), PATH, b"new", 0)
+    table.write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_pwrite_skips_emulation():
+    table = make_table(write=AsyncMock(), pwrite=AsyncMock())
+    op = next(o for o in make_generic_ops("x", table) if o.name == "pwrite")
+    acc = NOOPAccessor()
+    await op.fn(acc, PATH, b"XY", 3, index=NULL_INDEX)
+    table.pwrite.assert_awaited_once_with(acc, PATH, b"XY", 3)
+    table.read_bytes.assert_not_awaited()
+    table.write.assert_not_awaited()
 
 
 @pytest.mark.asyncio

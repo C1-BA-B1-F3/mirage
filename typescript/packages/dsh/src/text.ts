@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { FsError } from '@deepseek-ai/dsh-fs'
+import type { SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 
 const BINARY_SAMPLE_BYTES = 8192
 
@@ -174,5 +175,44 @@ export class TailBuffer {
     return new TextDecoder('utf-8', { fatal: false }).decode(
       joined.subarray(charBoundary(joined, 0)),
     )
+  }
+}
+
+/**
+ * One collected output stream as a whole-stream offset reader over its
+ * bounded tail: `readFrom(0)` after it settles is the batch result, and an
+ * offset that slid out of the tail reads `lossy` with the whole tail.
+ */
+export class StreamTail implements SubprocessOutputReader {
+  private bytes = Buffer.alloc(0)
+  private offset = 0
+  constructor(private readonly max: number) {}
+
+  /** Whether the tail has lost its head, so the stream is truncated. */
+  get truncated(): boolean {
+    return this.offset > this.bytes.length
+  }
+
+  append(chunk: Uint8Array): void {
+    this.offset += chunk.length
+    this.bytes = Buffer.concat([this.bytes, chunk]).subarray(-this.max)
+    if (this.max === 0) this.bytes = Buffer.alloc(0)
+  }
+
+  readFrom(fromByte: number): SubprocessOutputRead {
+    if (!Number.isSafeInteger(fromByte) || fromByte < 0 || fromByte > this.offset)
+      throw new Error('invalid output offset')
+    const start = this.offset - this.bytes.length
+    let from = Math.max(0, fromByte - start)
+    // A tail that lost its head can begin mid-character; the reader is
+    // handed whole characters only, so the stray continuation bytes go.
+    if (from === 0 && start > 0) {
+      while (from < this.bytes.length && ((this.bytes[from] ?? 0) & 0xc0) === 0x80) from += 1
+    }
+    return {
+      text: this.bytes.subarray(from).toString('utf8'),
+      nextOffset: this.offset,
+      lossy: fromByte < start,
+    }
   }
 }

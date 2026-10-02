@@ -25,6 +25,7 @@ import pytest_asyncio
 from mirage.fuse.core import MountCore
 from mirage.observe import OpRecord
 from mirage.ops.registry import op
+from mirage.policy import Deny, Policy
 from mirage.types import ContentType, FileStat, FileType, MountMode, PathSpec
 from mirage.utils.stat_view import DIR_SIZE, mtime_ns
 from mirage.vfs.ram import RAMVFS
@@ -363,6 +364,29 @@ async def test_read_still_renders_after_a_partial_write():
     core.write("/data/books.tally", b"XY", 4, None)
     body = core.read("/data/books.tally", 100, 0, None)
     assert body == b"RENDERED-AND-MUCH-LONGER"
+
+
+class _NoReads(Policy):
+    async def pre_ops(self, ctx):
+        return Deny("write-only") if ctx.op == "read" else None
+
+
+@pytest.mark.asyncio
+async def test_a_write_lands_on_a_file_the_session_may_not_read():
+    # Writing at an offset is one write at the door, so a policy that
+    # refuses reads leaves FUSE writes alone, as a write-only descriptor
+    # takes pwrite(2). The flush used to read the file first and fail.
+    vfs = RAMVFS()
+    ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
+    await ws.shell("printf 'line1\\n' > /log")
+    ws.policies.add(_NoReads())
+    core = MountCore(ws.vfs)
+    core.write("/log", b"more\n", 6, None)
+    fh = core.open("/log", os.O_WRONLY)
+    core.write("/log", b"a", 11, fh)
+    core.write("/log", b"b\n", 12, fh)
+    core.release(fh)
+    assert vfs._store.files["/log"] == b"line1\nmore\nab\n"
 
 
 @pytest.mark.asyncio

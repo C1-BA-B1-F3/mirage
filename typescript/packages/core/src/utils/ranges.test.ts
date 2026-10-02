@@ -18,6 +18,7 @@ import {
   isUnsatisfiableRange,
   rangeHeader,
   sliceWindow,
+  spliceWindow,
   windowFor,
   windowIfUnranged,
   windowOf,
@@ -58,6 +59,18 @@ describe('rangeHeader', () => {
     // bytes=2--1 is malformed and no header means the opposite of what was
     // asked, so the caller has to short-circuit instead.
     expect(() => rangeHeader(2, 0)).toThrow(RangeError)
+  })
+})
+
+describe('spliceWindow', () => {
+  it('keeps both sides of the window', () => {
+    expect(DEC.decode(spliceWindow(DATA, 2, ENC.encode('ab')))).toBe('01ab456789')
+    expect(DEC.decode(spliceWindow(DATA, 8, ENC.encode('xyz')))).toBe('01234567xyz')
+  })
+
+  it('fills a gap past the end with zeros', () => {
+    expect([...spliceWindow(ENC.encode('ab'), 4, ENC.encode('z'))]).toEqual([97, 98, 0, 0, 122])
+    expect(DEC.decode(spliceWindow(new Uint8Array(), 0, ENC.encode('new')))).toBe('new')
   })
 })
 

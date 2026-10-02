@@ -315,7 +315,13 @@ describe('captureFingerprints op sets', () => {
     // Each member is load-bearing: dropping one silently changes which
     // arm an op takes, and every behaviour test would still pass.
     expect([...STAMP_FINGERPRINT_OPS].sort()).toEqual(['create', 'read', 'truncate', 'write'])
-    expect([...CONTENT_CHANGING_OPS].sort()).toEqual(['append', 'create', 'truncate', 'write'])
+    expect([...CONTENT_CHANGING_OPS].sort()).toEqual([
+      'append',
+      'create',
+      'pwrite',
+      'truncate',
+      'write',
+    ])
     expect([...RETRACT_FINGERPRINT_OPS].sort()).toEqual([
       'copy',
       'rename',

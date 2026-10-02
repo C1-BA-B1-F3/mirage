@@ -16,8 +16,8 @@ import { describe, expect, it } from 'vitest'
 import { REDIS_OPS } from './index.ts'
 
 describe('REDIS_OPS table', () => {
-  it('registers the expected 13 ops with VFS=redis', () => {
-    expect(REDIS_OPS).toHaveLength(13)
+  it('registers the expected 14 ops with VFS=redis', () => {
+    expect(REDIS_OPS).toHaveLength(14)
     for (const op of REDIS_OPS) {
       expect(op.vfs).toBe('redis')
     }
@@ -34,6 +34,7 @@ describe('REDIS_OPS table', () => {
         'append',
         'create',
         'mkdir',
+        'pwrite',
         'rename',
         'rmdir',
         'setattr',

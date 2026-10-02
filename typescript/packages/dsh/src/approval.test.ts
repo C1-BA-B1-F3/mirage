@@ -22,6 +22,12 @@ import { APPROVAL_TOOL_NAME, approvalReason, approverOf } from './approval.ts'
 import type { ApprovalOutcome } from './approval.ts'
 import { MirageService } from './service.ts'
 import { MirageShellExecutor } from './shell.ts'
+import type { ShellExecSpec, ShellExecutor, ShellRunResult } from '@deepseek-ai/dsh-shell'
+
+/** A foreground run, as dsh's own tools await one: the execution's result. */
+async function runOn(shell: ShellExecutor, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return (await shell.execute(spec)).result()
+}
 
 const ASK_RM = { commands: { ask: [{ reason: 'deletes are reviewed', commands: ['rm'] }] } }
 
@@ -163,7 +169,7 @@ describe('approvalReason', () => {
 describe('an asked line with an approval channel', () => {
   it('runs the line when the human allows it once', async () => {
     const { shell, ws, asked } = await world(ASK_RM, 'allowed-once')
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.exitCode).toBe(0)
     expect(run.stderr.text).toBe('')
     expect(await ws.vfs.exists('/data/notes.txt')).toBe(false)
@@ -174,14 +180,14 @@ describe('an asked line with an approval channel', () => {
 
   it('does not re-prompt the retry of a line just refused, then asks afresh', async () => {
     const { shell, asked } = await world(ASK_RM, 'rejected')
-    const first = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const first = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(first.exitCode).toBe(126)
     expect(asked).toHaveLength(1)
     // Keep a refusal for the immediate retry, then spend it.
-    const retry = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const retry = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(retry.exitCode).toBe(126)
     expect(asked).toHaveLength(1)
-    const third = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const third = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(third.exitCode).toBe(126)
     expect(asked).toHaveLength(2)
     // Both questions were the same line, so they quote one identity.
@@ -191,8 +197,8 @@ describe('an asked line with an approval channel', () => {
   it('grants once and never for the session, so the next line asks again', async () => {
     const { shell, ws, asked } = await world(ASK_RM, 'allowed-once')
     await ws.vfs.writeFile('/data/second.txt', 'also private')
-    expect((await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))).exitCode).toBe(0)
-    expect((await shell.run(shell.resolve({ command: 'rm /data/second.txt' }))).exitCode).toBe(0)
+    expect((await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))).exitCode).toBe(0)
+    expect((await runOn(shell, shell.resolve({ command: 'rm /data/second.txt' }))).exitCode).toBe(0)
     // One nod covered one line; the second line raised its own question.
     expect(asked).toHaveLength(2)
   })
@@ -203,7 +209,7 @@ describe('an asked line with an approval channel', () => {
     ['unavailable', 'a channel that could not answer'],
   ] as const)('refuses the line on %s (%s)', async (outcome, _why) => {
     const { shell, ws } = await world(ASK_RM, outcome)
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.exitCode).toBe(126)
     expect(run.stderr.text).toBe('rm: Permission denied\n')
     expect(await ws.vfs.exists('/data/notes.txt')).toBe(true)
@@ -214,7 +220,7 @@ describe('an asked line with an approval channel', () => {
 
   it('leaves an unasked line alone', async () => {
     const { shell, asked } = await world(ASK_RM, 'rejected')
-    const run = await shell.run(shell.resolve({ command: 'cat /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'cat /data/notes.txt' }))
     expect(run.exitCode).toBe(0)
     expect(run.stdout.text).toBe('private')
     expect(asked).toEqual([])
@@ -224,7 +230,7 @@ describe('an asked line with an approval channel', () => {
 describe('an asked line with no approval channel', () => {
   it('stays pending in the ledger rather than being rewritten as a deny', async () => {
     const { shell, ws } = await world(ASK_RM)
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.exitCode).toBe(126)
     // The operator's document said `ask`; the refusal says so too, and
     // names the approval a host can grant.
@@ -238,22 +244,22 @@ describe('an asked line with no approval channel', () => {
 
   it('passes the retry once a host answers the pending record out of band', async () => {
     const { shell, ws } = await world(ASK_RM)
-    const first = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const first = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(first.exitCode).toBe(126)
     const waiting = ws.decisions.pending('agent')[0]
     expect(waiting).toBeDefined()
     await ws.decisions.answer(waiting?.id ?? '', Outcome.ALLOW, Scope.ONCE)
-    const retry = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const retry = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(retry.exitCode).toBe(0)
     expect(await ws.vfs.exists('/data/notes.txt')).toBe(false)
   })
 
   it('refuses the retry when the host answers no', async () => {
     const { shell, ws } = await world(ASK_RM)
-    await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     const waiting = ws.decisions.pending('agent')[0]
     await ws.decisions.answer(waiting?.id ?? '', Outcome.DENY, Scope.ONCE)
-    const retry = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const retry = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(retry.exitCode).toBe(126)
     expect(retry.stderr.text).toBe('rm: Permission denied\n')
     expect(retry.sandbox?.denied).toBe(true)
@@ -266,7 +272,7 @@ describe('the sandbox facts a refused run reports', () => {
     const { shell } = await world({
       commands: { deny: [{ reason: 'no removes', commands: ['rm'] }] },
     })
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.exitCode).toBe(126)
     expect(run.sandbox).toMatchObject({ mode: 'workspace-write', denied: true })
   })
@@ -278,7 +284,8 @@ describe('the sandbox facts a refused run reports', () => {
     const { shell } = await world({
       commands: { deny: [{ reason: 'no removes', commands: ['rm'] }] },
     })
-    const run = await shell.run(
+    const run = await runOn(
+      shell,
       shell.resolve({
         command: 'rm /data/notes.txt',
         sandboxPolicy: { mode: 'workspace-write', workspaceRoot: '/host' },
@@ -289,19 +296,19 @@ describe('the sandbox facts a refused run reports', () => {
 
   it('marks an unanswered ask as denied too', async () => {
     const { shell } = await world(ASK_RM)
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.sandbox?.denied).toBe(true)
   })
 
   it('leaves an allowed line unmarked', async () => {
     const { shell } = await world(ASK_RM, 'allowed-once')
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))
     expect(run.sandbox?.denied).toBe(false)
   })
 
   it('does not mark an ordinary command failure', async () => {
     const { shell } = await world(ASK_RM, 'allowed-once')
-    const run = await shell.run(shell.resolve({ command: 'cat /data/no-such-file.txt' }))
+    const run = await runOn(shell, shell.resolve({ command: 'cat /data/no-such-file.txt' }))
     expect(run.exitCode).not.toBe(0)
     expect(run.sandbox?.denied).toBe(false)
   })
@@ -317,7 +324,7 @@ function neverAnswers(): Promise<ApprovalOutcome> {
 describe('an ask that outlives the run that raised it', () => {
   it('reports the timeout instead of waiting on the human forever', async () => {
     const { shell, ws } = await world(ASK_RM, undefined, neverAnswers)
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt', timeoutMs: 200 }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt', timeoutMs: 200 }))
     // Without a bound on the wait this call never returned at all: the
     // run sat inside the approval request, deaf to its own deadline.
     expect(run.timedOut).toBe(true)
@@ -332,7 +339,8 @@ describe('an ask that outlives the run that raised it', () => {
     // which asks its own questions. That pass took no signal, so this
     // shape ignored the deadline even after the single-command one
     // stopped doing so.
-    const run = await shell.run(
+    const run = await runOn(
+      shell,
       shell.resolve({ command: 'rm /data/notes.txt; echo done', timeoutMs: 200 }),
     )
     expect(run.timedOut).toBe(true)
@@ -345,7 +353,7 @@ describe('an ask that outlives the run that raised it', () => {
       expect(req.signal?.aborted).toBe(false)
       return Promise.resolve('allowed-once')
     })
-    expect((await shell.run(shell.resolve({ command: 'rm /data/notes.txt' }))).exitCode).toBe(0)
+    expect((await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt' }))).exitCode).toBe(0)
     const signal = asked[0]?.signal
     expect(signal).toBeInstanceOf(AbortSignal)
   })
@@ -358,7 +366,10 @@ describe('an ask that outlives the run that raised it', () => {
         }, 400),
       )
     })
-    const killed = await shell.run(shell.resolve({ command: 'rm /data/notes.txt', timeoutMs: 150 }))
+    const killed = await runOn(
+      shell,
+      shell.resolve({ command: 'rm /data/notes.txt', timeoutMs: 150 }),
+    )
     expect(killed.timedOut).toBe(true)
     await new Promise((settle) => setTimeout(settle, 500))
     // The human said yes to a line that no longer existed. Banking that
@@ -375,7 +386,7 @@ describe('a refusal the line redirected away from stderr', () => {
     const { shell } = await world({
       commands: { deny: [{ reason: 'no removes', commands: ['rm'] }] },
     })
-    const run = await shell.run(shell.resolve({ command: 'rm /data/notes.txt 2>&1' }))
+    const run = await runOn(shell, shell.resolve({ command: 'rm /data/notes.txt 2>&1' }))
     expect(run.exitCode).toBe(126)
     expect(run.stderr.text).toBe('')
     expect(run.stdout.text).toBe('rm: Permission denied\n')
@@ -386,7 +397,7 @@ describe('a refusal the line redirected away from stderr', () => {
 
   it('does not read the same words as a refusal when a line prints them as data', async () => {
     const { shell } = await world(ASK_RM, 'allowed-once')
-    const run = await shell.run(shell.resolve({ command: "echo 'rm: Permission denied'" }))
+    const run = await runOn(shell, shell.resolve({ command: "echo 'rm: Permission denied'" }))
     expect(run.exitCode).toBe(0)
     expect(run.stdout.text).toBe('rm: Permission denied\n')
     // The words are data; only the result's own record is a ruling.

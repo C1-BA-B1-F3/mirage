@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.runtime.handles.file_handle import FileHandle, merge_writes
+from mirage.runtime.handles.file_handle import FileHandle, write_runs
 from mirage.runtime.handles.file_table import FileTable
 from mirage.runtime.handles.flush import NO_WRITE, FlushKind, plan_flush
 from mirage.runtime.handles.mode import parse_mode
@@ -22,7 +22,7 @@ __all__ = [
     "FileHandle",
     "FileTable",
     "FlushKind",
-    "merge_writes",
     "parse_mode",
     "plan_flush",
+    "write_runs",
 ]

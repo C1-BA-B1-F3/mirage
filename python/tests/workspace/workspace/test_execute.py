@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import threading
 
 import pytest
 
@@ -27,6 +28,42 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace.abort import ABORT_JOIN_SECONDS, MirageAbortError
 from mirage.workspace.session.ram import RAMSessionStore
 from mirage.workspace.session.store import SessionFields
+
+
+@pytest.mark.asyncio
+async def test_sync_cli_does_not_block_other_sessions_or_escape_cancellation():
+    ws = _make_ws()
+    ws.create_session("other")
+    loop = asyncio.get_running_loop()
+    entered, release = asyncio.Event(), threading.Event()
+    finished = []
+
+    def blocking(inv):
+        loop.call_soon_threadsafe(entered.set)
+        assert release.wait(2)
+        finished.append(True)
+        return b"done", IOResult()
+
+    ws.register_cli("blocking", CLISpec(name="blocking", fn=blocking))
+    task = asyncio.create_task(ws.shell("blocking"))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert not finished
+        result = await asyncio.wait_for(
+            ws.shell("echo responsive", session_id="other"), 1
+        )
+        assert await result.stdout_str() == "responsive\n"
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished == [True]
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await ws.close()
 
 
 class _StalledSessionStore(RAMSessionStore):

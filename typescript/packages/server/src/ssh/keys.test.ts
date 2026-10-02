@@ -12,12 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DiskRecordClient } from '@struktoai/mirage-node'
 import ssh2 from 'ssh2'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { loadHostKey, mintKeyPair } from './keys.ts'
+
+vi.mock('node:fs/promises', async (original) => {
+  const real = await original<typeof fs>()
+  return { ...real, link: vi.fn(real.link), writeFile: vi.fn(real.writeFile) }
+})
 
 function publicOf(privateKey: string): string {
   const parsed = ssh2.utils.parseKey(privateKey)
@@ -26,39 +33,76 @@ function publicOf(privateKey: string): string {
 }
 
 describe('loadHostKey', () => {
-  it('mints an owner-only ed25519 key on first use', () => {
+  it('mints an owner-only ed25519 key on first use', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'ssh', 'host_key')
-    const key = loadHostKey(path, ssh2.utils)
+    const key = await loadHostKey(path, ssh2.utils)
     const parsed = ssh2.utils.parseKey(key)
     expect(parsed instanceof Error ? parsed : parsed.type).toBe('ssh-ed25519')
     expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(statSync(join(path, '..')).mode & 0o777).toBe(0o700)
   })
 
-  it('keeps the same key across loads', () => {
+  it('keeps the same key across loads', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
-    const first = loadHostKey(path, ssh2.utils)
-    expect(publicOf(loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
+    const first = await loadHostKey(path, ssh2.utils)
+    expect(publicOf(await loadHostKey(path, ssh2.utils))).toBe(publicOf(first))
   })
 
-  it('reads an existing key instead of replacing it', () => {
+  it('racing loads agree on one key without hard links', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    const path = join(dir, 'host_key')
+    vi.mocked(fs.link).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }))
+    try {
+      const keys = await Promise.all(Array.from({ length: 8 }, () => loadHostKey(path, ssh2.utils)))
+      expect(new Set(keys.map(publicOf)).size).toBe(1)
+      expect(readFileSync(path, 'utf-8')).toBe(keys[0])
+      expect(readdirSync(dir)).toEqual(['host_key'])
+    } finally {
+      vi.mocked(fs.link).mockReset()
+    }
+  })
+
+  it('a start waiting on the lock reads the winner', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    const path = join(dir, 'host_key')
+    const records = new DiskRecordClient(dir, '')
+    const lock = await records.lock('host_key')
+    const loading = loadHostKey(path, ssh2.utils)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const winner = mintKeyPair(ssh2.utils).private
+    writeFileSync(path, winner)
+    await records.unlock('host_key', lock)
+    expect(await loading).toBe(winner)
+  })
+
+  it('leaves no key file behind when writing it fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-'))
+    vi.mocked(fs.writeFile).mockImplementationOnce((file) => {
+      writeFileSync(file as string, 'partial')
+      return Promise.reject(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }))
+    })
+    await expect(loadHostKey(join(dir, 'host_key'), ssh2.utils)).rejects.toThrow('ENOSPC')
+    expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('reads an existing key instead of replacing it', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
     const mine = mintKeyPair(ssh2.utils).private
     writeFileSync(path, mine)
-    expect(loadHostKey(path, ssh2.utils)).toBe(mine)
+    expect(await loadHostKey(path, ssh2.utils)).toBe(mine)
     expect(readFileSync(path, 'utf-8')).toBe(mine)
   })
 })
 
 describe('mintKeyPair', () => {
-  it('mints again when ssh2 hands back a pair it cannot read', () => {
+  it('mints again when ssh2 hands back a pair it cannot read', async () => {
     const pairs = [{ private: 'truncated', public: 'truncated' }]
     const utils = {
       ...ssh2.utils,
       generateKeyPairSync: () => pairs.shift() ?? ssh2.utils.generateKeyPairSync('ed25519'),
     }
     const path = join(mkdtempSync(join(tmpdir(), 'mirage-ssh-keys-')), 'host_key')
-    const key = loadHostKey(path, utils)
+    const key = await loadHostKey(path, utils)
     expect(ssh2.utils.parseKey(key)).not.toBeInstanceOf(Error)
     expect(readFileSync(path, 'utf-8')).toBe(key)
   })

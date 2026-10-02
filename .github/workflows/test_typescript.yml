@@ -141,9 +141,28 @@ jobs:
         working-directory: typescript
         run: pnpm -r --no-bail typecheck
 
+      # vitest starts the files it remembers as slowest first; with no
+      # results file it falls back to the largest, which left the slowest
+      # (pyodide and git) starting late and the last minute of the core leg
+      # on one or two workers. The file is ~90 KB per package; main saves a
+      # fresh one each run and everything restores the newest.
+      - name: Restore vitest's per-file durations
+        uses: actions/cache/restore@v6
+        with:
+          path: typescript/packages/*/node_modules/.vite/vitest
+          key: vitest-results-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: vitest-results-${{ matrix.leg }}-
+
       - name: Run TypeScript tests
         working-directory: typescript
         run: pnpm run test:leg:${{ matrix.leg }}
+
+      - name: Save vitest's per-file durations
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: typescript/packages/*/node_modules/.vite/vitest
+          key: vitest-results-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Each truth file owns the command it was captured against, so this
       # list is paths only and cannot drift from what is asserted. The

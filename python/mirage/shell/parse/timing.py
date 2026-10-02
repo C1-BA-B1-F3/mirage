@@ -208,6 +208,10 @@ class PrefixNode:
         return self._wrap(self._node.next_sibling)
 
     @property
+    def offsets(self) -> tuple[int, ...]:
+        return self._source.offsets
+
+    @property
     def source_text(self) -> bytes:
         if any(
             self.start_byte <= start < self.end_byte

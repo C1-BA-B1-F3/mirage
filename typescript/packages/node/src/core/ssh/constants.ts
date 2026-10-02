@@ -14,3 +14,7 @@
 
 export const SCOPE_WARN = 500
 export const SCOPE_ERROR = 5000
+
+/** SFTP open flags: write, creating a missing file and truncating none. */
+export const FXF_WRITE = 0x00000002
+export const FXF_CREAT = 0x00000008

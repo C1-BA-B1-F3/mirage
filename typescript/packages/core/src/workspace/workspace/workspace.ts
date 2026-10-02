@@ -1573,7 +1573,7 @@ export class Workspace {
     overrides: Record<string, BaseVFS | Mount> = {},
     cliOverrides: CLIOverrides = {},
   ): Promise<InstanceType<T>> {
-    const bytes = typeof source === 'string' ? readFileBytes(source) : source
+    const bytes = typeof source === 'string' ? await readFileBytes(source) : source
     const state = (await readSnapshotTar(bytes)) as WorkspaceStateDict
     return this.fromState(state, options, overrides, cliOverrides)
   }

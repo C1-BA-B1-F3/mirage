@@ -21,6 +21,7 @@ from mirage.core.ram.du import size as _du_size
 from mirage.core.ram.exists import exists as _exists
 from mirage.core.ram.find import find as _find
 from mirage.core.ram.mkdir import mkdir as _mkdir
+from mirage.core.ram.pwrite import pwrite as _pwrite
 from mirage.core.ram.read import read as _read
 from mirage.core.ram.readdir import readdir as _readdir
 from mirage.core.ram.rename import rename as _rename
@@ -54,6 +55,7 @@ IO = VFSAdapter(
         copy=_copy,
         create=_create,
         append=_append,
+        pwrite=_pwrite,
         set_attrs=_set_attrs,
         truncate=_truncate,
     ),

@@ -1,0 +1,6 @@
+[
+  {"id": "curl_get", "command": "curl -s {url}", "finish": "release"},
+  {"id": "curl_form", "command": "curl -s -d message=hello {url}", "finish": "cancel"},
+  {"id": "wget", "command": "wget -qO- {url}", "finish": "cancel"},
+  {"id": "shell_loop", "command": "for ((i=0;i<100000000;i++)); do :; done", "finish": "cancel"}
+]

@@ -157,6 +157,46 @@ describe('MountCore', () => {
     expect(new TextDecoder().decode((await ws.shell('cat /data/f.txt')).stdout)).toBe('body\n')
   })
 
+  it('writes a file the session may not read', async () => {
+    // Writing at an offset is one write at the door, so a policy that
+    // refuses reads leaves FUSE writes alone, as a write-only descriptor
+    // takes pwrite(2). The flush used to read the file first, and a refused
+    // read was taken for an empty file, so the write wiped what was there.
+    const vfs = new RAMVFS()
+    const ws = new Workspace({ '/data/': vfs }, { mode: MountMode.WRITE })
+    await ws.shell("printf 'line1\\n' > /data/log")
+    ws.policies.add({
+      preOps: (ctx) => (ctx.op === 'read' ? { kind: 'deny', reason: 'write-only' } : null),
+    })
+    const core = new MountCore(ws.vfs)
+    const enc = new TextEncoder()
+    await core.write('/data/log', -1, enc.encode('more\n'), 6)
+    const fd = await core.open('/data/log', fsConstants.O_WRONLY)
+    await core.write('/data/log', fd, enc.encode('a'), 11)
+    await core.write('/data/log', fd, enc.encode('b\n'), 12)
+    await core.release(fd)
+    expect(new TextDecoder().decode(vfs.store.files.get('/log'))).toBe('line1\nmore\nab\n')
+  })
+
+  it('refreshes what it holds when a flush fails after a run landed', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell('printf abcdefgh > /data/f')
+    const realPwrite = ws.vfs.pwrite.bind(ws.vfs)
+    vi.spyOn(ws.vfs, 'pwrite')
+      .mockImplementationOnce(realPwrite)
+      .mockRejectedValueOnce(errnoError('EACCES', 'denied'))
+    const core = new MountCore(ws.vfs)
+    const dec = new TextDecoder()
+    const enc = new TextEncoder()
+    const reader = await core.open('/data/f', fsConstants.O_RDONLY)
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('abcdefgh')
+    const fd = await core.open('/data/f', fsConstants.O_WRONLY)
+    await core.write('/data/f', fd, enc.encode('X'), 0)
+    await core.write('/data/f', fd, enc.encode('Y'), 5)
+    await expect(core.flush('/data/f', fd)).rejects.toMatchObject({ code: 'EACCES' })
+    expect(dec.decode(await core.read('/data/f', reader, 0, 8))).toBe('Xbcdefgh')
+  })
+
   it('reports a file with its real size', async () => {
     const core = await mkCore()
     const attr = await core.getattr('/data/greeting.txt')

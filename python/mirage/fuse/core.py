@@ -27,7 +27,7 @@ from mirage.bridge.sync import run_async_from_sync
 from mirage.context import reset_current_session, set_current_session
 from mirage.fuse.platform.macos import is_macos_metadata
 from mirage.ops import Ops
-from mirage.runtime.handles import ChunkedHandle, FileTable, merge_writes
+from mirage.runtime.handles import ChunkedHandle, FileTable, write_runs
 from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.types import FileStat, FileType
 from mirage.utils.stat_view import (
@@ -459,24 +459,24 @@ class MountCore:
         return data[offset : offset + size]
 
     def _apply_writes(self, path: str, writes: WriteBuf) -> None:
-        """Merge buffered writes over the raw base and persist the result.
+        """Land buffered writes on the mount, one pwrite per run.
 
-        The base is read raw so a flush never stores a rendered view
-        back into the mount.
+        A pwrite keeps every stored byte the handle did not write, so
+        nothing is read through the door first: a session that may write
+        a file and not read it writes through FUSE, as through a
+        write-only descriptor. A run that fails still invalidates what
+        the core holds, since the runs before it have landed.
 
         Args:
             path (str): mount path being written.
             writes (WriteBuf): (offset, payload) pairs in arrival order.
         """
-        existing = b""
+        target = self.resolve(path)
         try:
-            existing = self._run(self._ops.read(self.resolve(path), raw=True))
-        except FileNotFoundError:
-            # missing file: start from empty; the write creates it
-            pass
-        merged = merge_writes(existing, writes)
-        self._run(self._ops.write(self.resolve(path), merged))
-        self._changed(path)
+            for offset, data in write_runs(writes):
+                self._run(self._ops.pwrite(target, data, offset))
+        finally:
+            self._changed(path)
 
     def write(
         self, path: str, data: bytes, offset: int, fh: int | None

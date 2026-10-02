@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { FileHandle, mergeWrites } from './file_handle.ts'
+import { FileHandle, writeRuns } from './file_handle.ts'
 import { NO_WRITE } from './flush.ts'
 
 const enc = new TextEncoder()
@@ -84,17 +84,42 @@ describe('FileHandle', () => {
   })
 })
 
-describe('mergeWrites', () => {
-  it('splices, pads, and keeps arrival order', () => {
-    expect(mergeWrites(enc.encode('hello'), [[1, enc.encode('XY')]])).toEqual(enc.encode('hXYlo'))
-    expect(mergeWrites(enc.encode('ab'), [[4, enc.encode('z')]])).toEqual(
-      new Uint8Array([...enc.encode('ab'), 0, 0, ...enc.encode('z')]),
-    )
+describe('writeRuns', () => {
+  it('folds a sequential stream into one run', () => {
     expect(
-      mergeWrites(new Uint8Array(), [
+      writeRuns([
+        [0, enc.encode('ab')],
+        [2, enc.encode('cd')],
+        [4, enc.encode('e')],
+      ]),
+    ).toEqual([[0, enc.encode('abcde')]])
+    expect(
+      writeRuns([
         [0, enc.encode('new')],
         [1, enc.encode('O')],
       ]),
-    ).toEqual(enc.encode('nOw'))
+    ).toEqual([[0, enc.encode('nOw')]])
+    expect(writeRuns([])).toEqual([])
+  })
+
+  it('keeps scattered writes apart and in order', () => {
+    expect(
+      writeRuns([
+        [0, enc.encode('a')],
+        [10, enc.encode('b')],
+      ]),
+    ).toEqual([
+      [0, enc.encode('a')],
+      [10, enc.encode('b')],
+    ])
+    expect(
+      writeRuns([
+        [4, enc.encode('xy')],
+        [0, enc.encode('abcdef')],
+      ]),
+    ).toEqual([
+      [4, enc.encode('xy')],
+      [0, enc.encode('abcdef')],
+    ])
   })
 })

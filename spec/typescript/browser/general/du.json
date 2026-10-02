@@ -246,6 +246,11 @@
       "long": "--separate-dirs",
       "short": "-S",
       "type": "bool"
+    },
+    {
+      "long": "--one-file-system",
+      "short": "-x",
+      "type": "bool"
     }
   ],
   "rest": {

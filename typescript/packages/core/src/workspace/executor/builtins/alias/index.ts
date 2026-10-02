@@ -12,5 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { aliasCommandText, aliasValue, handleAlias, handleUnalias } from './alias.ts'
+export {
+  aliasCommandText,
+  aliasValue,
+  expandingAliases,
+  handleAlias,
+  handleUnalias,
+} from './alias.ts'
 export type { AliasMark } from './types.ts'

@@ -27,6 +27,7 @@ import {
 import { readFailExitCode } from '../../spec/usage.ts'
 import { resolvePath } from '../../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
+import { compareCodePoints } from '../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
 
@@ -131,7 +132,8 @@ export function mountParentReaddir(
 ): (p: string) => Promise<string[]> {
   if (mounts === undefined || mounts === null) return readdir
   return async (p: string) => {
-    if (rstripSlash(mounts.rootOf(p)).startsWith(rstripSlash(home) + '/')) return []
+    const below = mounts.descendants(home === '' ? '/' : home)
+    if (below.some((root) => p === root || p.startsWith(rstripSlash(root) + '/'))) return []
     try {
       return await readdir(p)
     } catch (e) {
@@ -140,6 +142,19 @@ export function mountParentReaddir(
       return []
     }
   }
+}
+
+/**
+ * The mount roots a walk of `directory` reaches first, sorted: the edge of
+ * the directory's own filesystem, so a mount nested in a mount is not one
+ * of them. Mirrors Python's mount_points.
+ */
+export function mountPoints(mounts: MountView | null | undefined, directory: string): string[] {
+  if (mounts === undefined || mounts === null) return []
+  const roots = mounts.visibleDescendants(directory)
+  return roots
+    .filter((root) => !roots.some((other) => root.startsWith(`${other}/`)))
+    .sort(compareCodePoints)
 }
 
 /**

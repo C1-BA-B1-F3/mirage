@@ -25,6 +25,7 @@ export const DISPATCH_WRITE_OPS: ReadonlySet<string> = new Set([
   'write',
   'write_bytes',
   'append',
+  'pwrite',
   'unlink',
   'create',
   'truncate',
@@ -78,6 +79,7 @@ export const FILE_CREATE_OPS: ReadonlySet<string> = new Set([
   'write',
   'write_bytes',
   'append',
+  'pwrite',
   'create',
 ])
 

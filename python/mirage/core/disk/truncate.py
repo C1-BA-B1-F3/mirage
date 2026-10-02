@@ -19,7 +19,7 @@ import aiofiles
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.disk.utils import resolve_inside
+from mirage.core.disk.utils import open_flags, resolve_inside
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
@@ -34,7 +34,9 @@ async def truncate(
     p = await resolve_inside(accessor.root, path_spec)
     flags = os.O_WRONLY | (0 if no_create else os.O_CREAT)
     try:
-        async with aiofiles.open(p, "wb", opener=partial(_open, flags)) as f:
+        async with aiofiles.open(
+            p, "wb", opener=partial(open_flags, flags)
+        ) as f:
             await f.truncate(length)
     except FileNotFoundError:
         if no_create:
@@ -42,7 +44,3 @@ async def truncate(
         raise
     record("truncate", path_spec.virtual, "disk", 0, timer)
     await invalidate_after_write(path_spec)
-
-
-def _open(flags: int, path: str, _mode: int) -> int:
-    return os.open(path, flags, 0o666)

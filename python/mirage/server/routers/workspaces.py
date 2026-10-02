@@ -12,12 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from mirage import Workspace
+from mirage.concurrency.limiter import run_blocking
 from mirage.config import resolve_secrets
 from mirage.secrets.errors import SecretsError
 from mirage.server.clone import (
@@ -107,7 +108,9 @@ async def create_workspace(
             backend,
             mountpoint,
         ) in req.config.kernel_mounts().items():
-            ws.add_fuse_mount(prefix, mountpoint, backend=backend)
+            await run_blocking(
+                ws.add_fuse_mount, prefix, mountpoint, backend=backend
+            )
         entry = registry.add(ws, workspace_id=wid)
     except ValueError as e:
         await ws.close()
@@ -137,8 +140,6 @@ async def get_workspace(
 async def delete_workspace(
     workspace_id: str, request: Request
 ) -> DeleteWorkspaceResponse:
-    import time
-
     registry = request.app.state.registry
     if workspace_id not in registry:
         raise HTTPException(status_code=404, detail="workspace not found")
@@ -146,7 +147,7 @@ async def delete_workspace(
     try:
         await registry.remove(
             workspace_id,
-            cleanup=lambda: asyncio.to_thread(backend.drop_repo, workspace_id),
+            cleanup=lambda: run_blocking(backend.drop_repo, workspace_id),
         )
     except Exception as exc:
         raise HTTPException(
@@ -197,18 +198,17 @@ async def snapshot_workspace(
         raise HTTPException(status_code=404, detail="workspace not found")
     entry = registry.get(workspace_id)
     try:
-        target = resolve_within_root(request.app.state.snapshot_root, req.path)
+        target = await run_blocking(
+            resolve_within_root, request.app.state.snapshot_root, req.path
+        )
     except PathOutsideRootError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    await entry.runner.call(_run_snapshot(entry.runner.ws, str(target)))
+    await run_blocking(target.parent.mkdir, parents=True, exist_ok=True)
+    await entry.runner.call(entry.runner.ws.snapshot(str(target)))
+    info = await run_blocking(target.stat)
     return SnapshotWorkspaceResponse(
-        id=workspace_id, path=str(target), size=target.stat().st_size
+        id=workspace_id, path=str(target), size=info.st_size
     )
-
-
-async def _run_snapshot(ws: Workspace, target: str) -> None:
-    await ws.snapshot(target)
 
 
 @router.post("/load", response_model=WorkspaceDetail, status_code=201)
@@ -217,8 +217,8 @@ async def load_workspace(
 ) -> WorkspaceDetail:
     registry = request.app.state.registry
     try:
-        safe_path = resolve_within_root(
-            request.app.state.snapshot_root, req.path
+        safe_path = await run_blocking(
+            resolve_within_root, request.app.state.snapshot_root, req.path
         )
     except PathOutsideRootError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -126,7 +126,11 @@ export function buildApp(options: BuildAppOptions = {}) {
   }
   app.addHook('onClose', async () => {
     if (ssh.listener !== null) await ssh.listener.close()
-    await registry.closeAll()
+    try {
+      await jobs.close()
+    } finally {
+      await registry.closeAll()
+    }
   })
   return Object.assign(app, { registry, jobs, versionBackend, pidFile, ssh })
 }

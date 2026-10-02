@@ -317,6 +317,7 @@ const MUTATIONS = {
   write: { create: true },
   mkdir: { create: true },
   append: { create: true },
+  pwrite: { create: true },
   create: { create: true },
   truncate: { create: true },
   unlink: {},
@@ -611,6 +612,7 @@ export function withWalkGuard<A extends Accessor = Accessor>(
   if (ops.find !== undefined) guarded.find = walkedCall(bound, ops.find)
   if (ops.write !== undefined) guarded.write = walkedCall(bound, ops.write)
   if (ops.append !== undefined) guarded.append = walkedCall(bound, ops.append)
+  if (ops.pwrite !== undefined) guarded.pwrite = walkedCall(bound, ops.pwrite)
   if (ops.create !== undefined) guarded.create = walkedCall(bound, ops.create)
   if (ops.truncate !== undefined) guarded.truncate = walkedCall(bound, ops.truncate)
   if (ops.mkdir !== undefined) guarded.mkdir = walkedCall(bound, ops.mkdir, true)
@@ -807,6 +809,7 @@ export function withAbortGuard<A extends Accessor = Accessor>(
   if (ops.write !== undefined) guarded.write = refusedAfterAbort(signal, ops.write)
   if (ops.mkdir !== undefined) guarded.mkdir = refusedAfterAbort(signal, ops.mkdir)
   if (ops.append !== undefined) guarded.append = refusedAfterAbort(signal, ops.append)
+  if (ops.pwrite !== undefined) guarded.pwrite = refusedAfterAbort(signal, ops.pwrite)
   if (ops.create !== undefined) guarded.create = refusedAfterAbort(signal, ops.create)
   if (ops.unlink !== undefined) guarded.unlink = refusedAfterAbort(signal, ops.unlink)
   if (ops.rmdir !== undefined) guarded.rmdir = refusedAfterAbort(signal, ops.rmdir)

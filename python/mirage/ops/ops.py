@@ -461,6 +461,29 @@ class Ops:
         """
         await self._call("append", path, session_id, data=data)
 
+    async def pwrite(
+        self,
+        path: str,
+        data: bytes,
+        offset: int,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Write bytes at an offset, keeping the rest of the file.
+
+        pwrite(2): the bytes outside ``[offset, offset + len(data))``
+        stay, a gap past the end reads back as zeros, and a missing file
+        is created. It is one write at the door, so a session that may
+        write the file and not read it can still do it.
+
+        Args:
+            path (str): Virtual path.
+            data (bytes): The bytes to write.
+            offset (int): Where the first of them lands.
+            session_id (str | None): Session to run as outside a line.
+        """
+        await self._call("pwrite", path, session_id, data=data, offset=offset)
+
     async def stat(
         self,
         path: str,

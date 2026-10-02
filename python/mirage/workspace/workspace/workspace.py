@@ -35,6 +35,7 @@ from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import IndexConfig
 from mirage.commands.cli import CLISpec
 from mirage.commands.cli.specs import cli_spec_for
+from mirage.concurrency.limiter import run_blocking
 from mirage.context import (
     get_current_session_for,
     get_current_session_unless_foreign,
@@ -103,6 +104,7 @@ from mirage.vfs.history import HISTORY_PREFIX, HistoryViewVFS
 from mirage.workspace.abort import MirageAbortError, run_cancellable
 from mirage.workspace.cli import CLIInstall
 from mirage.workspace.dispatcher import Dispatcher
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.executor.statement import restore_status
 from mirage.workspace.file_prompt import build_file_prompt
 from mirage.workspace.lookup import lookup, program, program_note, programs
@@ -1225,7 +1227,7 @@ class Workspace:
                 drop.
         """
         return await cls.from_state(
-            read_tar(source),
+            await run_blocking(read_tar, source),
             mounts=mounts,
             clis=clis,
             secrets=secrets,
@@ -1738,6 +1740,7 @@ class Workspace:
         handed: HandOff | None = None,
         sink: JobConsole | None = None,
         call_stack: CallStack | None = None,
+        execution_scope: ExecutionScope | None = None,
     ) -> IOResult:
         """Execute a shell command in the workspace.
 
@@ -1791,6 +1794,9 @@ class Workspace:
                 caller's positional parameters and locals, and an
                 ``exit``, ``return``, ``break`` or ``continue`` in it
                 unwinds into the caller instead of ending the line.
+            execution_scope: Internal. Scheduling and admission shared by
+                nested foreground evaluations. Background jobs start a
+                separate scope.
         """
         # The one cancellation seam: the whole line is one task, so a
         # cancel set while a store is still loading, a secret is still
@@ -1820,6 +1826,7 @@ class Workspace:
                         frame,
                         sink=sink,
                         call_stack=call_stack,
+                        execution_scope=execution_scope,
                     ),
                 ),
                 cancel,

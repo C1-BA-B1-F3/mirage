@@ -85,6 +85,88 @@ describe('findSyntaxError', () => {
   })
 })
 
+describe('a reserved word where a command starts', () => {
+  // Pinned against bash 5.2.37, which refuses the line at the word.
+  it.each([
+    ['echo hi; fi', 'fi'],
+    ['done', 'done'],
+    ['then', 'then'],
+    ['esac', 'esac'],
+    ['}', '}'],
+    [']]', ']]'],
+    ['in', 'in'],
+    ['! fi', 'fi'],
+    ['fi >/dev/null', 'fi'],
+    ['echo a | fi', 'fi'],
+    ['echo a && fi', 'fi'],
+    ['fi; done', 'fi'],
+    ['fi; for a in b; do done', 'fi'],
+    ['if x; then fi; for a in b; do done', 'fi'],
+  ])('names %j a syntax error at %j', (cmd, word) => {
+    expect(findSyntaxError(parser.parse(cmd))).toBe(word)
+  })
+
+  it.each([
+    '"fi"',
+    '\\fi',
+    'x=1 fi',
+    '>/dev/null fi',
+    'echo fi done then',
+    'if true; then echo y; fi',
+    'for x in a; do echo $x; done',
+    '{ echo a; }',
+    'case a in a) echo m;; esac',
+  ])('reads the word in %j as a word', (cmd) => {
+    expect(findSyntaxError(parser.parse(cmd))).toBeNull()
+  })
+
+  // Pinned against bash 5.2.37, which takes the reserved word first inside
+  // `$(...)` and a process substitution.
+  it.each([
+    ['fi', 'fi', null],
+    ['fi', 'done', 'fi'],
+    ['( fi )', 'fi', null],
+    ['echo `fi`', 'fi', null],
+    ['echo "$(fi)"', 'fi', 'fi'],
+    ['echo $( (fi) )', 'fi', 'fi'],
+    ['echo <(fi)', 'fi', 'fi'],
+  ])('reads %j with an alias %j as %j', (cmd, alias, word) => {
+    const parse = (source: string) => parser.parse(source)
+    expect(findSyntaxError(parser.parse(cmd), parse, new Set([alias]))).toBe(word)
+  })
+
+  // Pinned against bash 5.2.37: a name stays reserved only inside the text its
+  // alias put there, a trailing blank's chained one included.
+  const OWN: [string, [string, number, number][], string | null][] = [
+    ['echo F; fi', [['fi', 0, 10]], 'fi'],
+    ['echo F; fi', [['fi', 0, 7]], null],
+    [
+      'echo C; fi echo F',
+      [
+        ['c', 0, 11],
+        ['fi', 11, 17],
+      ],
+      null,
+    ],
+    [
+      'echo C; echo F; fi',
+      [
+        ['c', 0, 8],
+        ['fi', 8, 18],
+      ],
+      'fi',
+    ],
+    ['echo F \\\n; fi', [['fi', 0, 13]], 'fi'],
+    ['echo F \\\n; fi', [['fi', 0, 10]], null],
+  ]
+  it.each(OWN)('reads %j with alias text %j as %j', (line, spans, word) => {
+    const own = new Map(spans.map(([name, start, end]) => [name, [start, end] as const]))
+    const root = parser.parse(line)
+    const offsets = parser.sourceOffsets(line, root)
+    expect(findSyntaxError(root, undefined, new Set(own.keys()), own, offsets)).toBe(word)
+  })
+})
+
 describe('findUnterminatedBacktick', () => {
   it.each(['echo `echo a', 'echo "`echo \'`\'`"', 'echo a`', '`'])(
     'flags the open region in %j',

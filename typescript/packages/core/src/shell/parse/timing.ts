@@ -173,6 +173,9 @@ export class PrefixNode implements ShellNode {
   childForFieldName(name: string): PrefixNode | null {
     return this.wrap(this.node.childForFieldName(name), this)
   }
+  get offsets(): readonly number[] {
+    return this.source.offsets
+  }
   get sourceText(): string {
     if (this.source.documents.some(([start]) => this.startIndex <= start && start < this.endIndex))
       return this.node.sourceText

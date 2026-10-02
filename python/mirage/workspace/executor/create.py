@@ -21,6 +21,7 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.descriptors import FileDescription
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS
+from mirage.utils.ranges import splice_window
 from mirage.workspace.session import SessionState
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,12 @@ async def write_description(
 ) -> None:
     """Write through a shared open file description, preserving its offset.
 
+    A write-only description lands at its offset with one ``pwrite``, so
+    it needs no read of the file, as a write to a write-only descriptor
+    needs none (``exec 3>f; echo a >&3``). A read-write one (``<>``)
+    still reads it: that description was opened to read, and its own
+    reader resumes over what the write left.
+
     Args:
         dispatch (DispatchFn): operation dispatcher.
         session (SessionState): file creation mode.
@@ -111,18 +118,16 @@ async def write_description(
             return
     if not data:
         return
-    if file.append and file.source is None:
-        await create_file(dispatch, session, file.scope, data, append=True)
+    if file.source is None:
+        if file.append:
+            await create_file(dispatch, session, file.scope, data, append=True)
+        else:
+            await dispatch("pwrite", file.scope, data=data, offset=file.offset)
+            file.offset += len(data)
         return
     content, _ = await dispatch("read", file.scope)
-    content = await materialize(content) or b""
-    offset = file.offset + (file.source.lines.position if file.source else 0)
-    content = (
-        content[:offset].ljust(offset, b"\0")
-        + data
-        + content[offset + len(data) :]
-    )
+    offset = file.offset + file.source.lines.position
+    content = splice_window(await materialize(content) or b"", offset, data)
     await create_file(dispatch, session, file.scope, content)
     file.offset = offset + len(data)
-    if file.source is not None:
-        file.source.lines = AsyncLineIterator(content[file.offset :])
+    file.source.lines = AsyncLineIterator(content[file.offset :])

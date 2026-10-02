@@ -21,6 +21,7 @@ from mirage.core.ssh.du import size as _du_size
 from mirage.core.ssh.exists import exists as _exists
 from mirage.core.ssh.find import find as _find
 from mirage.core.ssh.mkdir import mkdir as _mkdir
+from mirage.core.ssh.pwrite import pwrite as _pwrite
 from mirage.core.ssh.read import read_bytes as _read
 from mirage.core.ssh.readdir import readdir as _readdir
 from mirage.core.ssh.rename import rename as _rename
@@ -47,6 +48,7 @@ IO = VFSAdapter(
     writes=WriteOps(
         write=_write,
         append=_append,
+        pwrite=_pwrite,
         mkdir=_mkdir,
         unlink=_unlink,
         rmdir=_rmdir,

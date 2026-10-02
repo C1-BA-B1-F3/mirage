@@ -77,10 +77,9 @@ def mount_parent_readdir(
 
     async def listing(path: str | PathSpec) -> list[str]:
         virtual = path.virtual if isinstance(path, PathSpec) else path
-        if (
-            mounts.root_of(virtual)
-            .rstrip("/")
-            .startswith(home.rstrip("/") + "/")
+        if any(
+            virtual == root or virtual.startswith(root.rstrip("/") + "/")
+            for root in mounts.descendants(home or "/")
         ):
             return []
         try:

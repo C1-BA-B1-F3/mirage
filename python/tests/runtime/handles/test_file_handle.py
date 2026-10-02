@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.runtime.handles.file_handle import FileHandle, merge_writes
+from mirage.runtime.handles.file_handle import FileHandle, write_runs
 from mirage.runtime.handles.flush import NO_WRITE
 
 
@@ -74,7 +74,15 @@ def test_eof_tracks_the_position():
     assert h.eof
 
 
-def test_merge_writes_splices_pads_and_keeps_arrival_order():
-    assert merge_writes(b"hello", [(1, b"XY")]) == b"hXYlo"
-    assert merge_writes(b"ab", [(4, b"z")]) == b"ab\0\0z"
-    assert merge_writes(b"", [(0, b"new"), (1, b"O")]) == b"nOw"
+def test_write_runs_fold_a_sequential_stream_into_one():
+    assert write_runs([(0, b"ab"), (2, b"cd"), (4, b"e")]) == [(0, b"abcde")]
+    assert write_runs([(0, b"new"), (1, b"O")]) == [(0, b"nOw")]
+    assert write_runs([]) == []
+
+
+def test_write_runs_keep_scattered_writes_apart_and_in_order():
+    assert write_runs([(0, b"a"), (10, b"b")]) == [(0, b"a"), (10, b"b")]
+    assert write_runs([(4, b"xy"), (0, b"abcdef")]) == [
+        (4, b"xy"),
+        (0, b"abcdef"),
+    ]

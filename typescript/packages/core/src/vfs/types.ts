@@ -37,6 +37,17 @@ export type WriteOp<A extends Accessor = Accessor> = (
   data: Uint8Array,
 ) => Promise<void>
 
+/**
+ * Write `data` at `offset`, keeping every byte outside it, as pwrite(2)
+ * does; a gap past the end reads back as zeros and a missing file is created.
+ */
+export type PwriteOp<A extends Accessor = Accessor> = (
+  accessor: A,
+  path: PathSpec,
+  data: Uint8Array,
+  offset: number,
+) => Promise<void>
+
 export type ExistsOp<A extends Accessor = Accessor> = (
   accessor: A,
   path: PathSpec,
@@ -128,6 +139,7 @@ export interface NativeReadOps<A extends Accessor = Accessor> {
 export interface WriteOps<A extends Accessor = Accessor> {
   write?: WriteOp<A>
   append?: WriteOp<A>
+  pwrite?: PwriteOp<A>
   create?: PathOp<A>
   mkdir?: MkdirOp<A>
   unlink?: PathOp<A>

@@ -35,6 +35,7 @@ from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.shell.helpers import get_text, is_backgrounded
 from mirage.shell.job_table import Job, JobStatus, JobTable
 from mirage.shell.types import TSNodeLike
+from mirage.workspace.execution import ExecutionScope
 from mirage.workspace.executor.builtins.getopt import scan_options
 from mirage.workspace.executor.statement import failed_read, statement_stdin
 from mirage.workspace.node.occurrence import occurrence_of
@@ -179,6 +180,7 @@ async def handle_background(
                     sink=console,
                     handed=job_handed,
                     cancel=None,
+                    execution_scope=ExecutionScope(),
                 )
             except CommandTimeoutError as exc:
                 msg = (str(exc) + "\n").encode()

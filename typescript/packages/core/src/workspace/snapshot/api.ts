@@ -22,6 +22,6 @@ export async function snapshot(ws: Workspace, target: string): Promise<number> {
   const state = await toStateDict(ws)
   const [manifest, blobs] = splitManifestAndBlobs(state as unknown as Record<string, unknown>)
   const tar = await writeSnapshotTar(manifest, blobs)
-  writeFileBytes(target, tar)
+  await writeFileBytes(target, tar)
   return tar.byteLength
 }

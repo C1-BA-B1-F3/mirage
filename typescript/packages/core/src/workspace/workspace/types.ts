@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ExecutionScope } from '../execution.ts'
 import type { HandOff } from '../../policy/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import type { CacheConfig } from '../../cache/file/config.ts'
@@ -211,6 +212,8 @@ export class ExecuteResult {
 }
 
 export interface ExecuteOptions {
+  /** @internal Scheduling scope; background jobs create their own. */
+  executionScope?: ExecutionScope
   stdin?: ByteSource | null
   sessionId?: string
   /** @internal The exact session carried by an evaluator, including an unregistered fork. */

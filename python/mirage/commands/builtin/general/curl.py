@@ -357,7 +357,7 @@ async def curl(
         if form:
             method = request or "POST"
             key, _, value = form.partition("=")
-            resp = http_form_request(
+            resp = await http_form_request(
                 url,
                 method=method,
                 form_data={key: value},
@@ -381,7 +381,7 @@ async def curl(
                 if body_type is not None
                 else headers
             )
-            resp = http_request(
+            resp = await http_request(
                 url,
                 method=method,
                 headers=sent,

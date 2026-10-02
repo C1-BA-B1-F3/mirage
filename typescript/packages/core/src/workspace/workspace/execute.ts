@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ExecutionScope } from '../execution.ts'
 import { PathSpec } from '../../types.ts'
 import { literalTree } from '../../shell/literal.ts'
 import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
@@ -194,6 +195,7 @@ export async function executeLine(
   options: ExecuteOptions,
   argv?: readonly string[],
 ): Promise<ExecuteResult> {
+  options = { ...options, executionScope: options.executionScope ?? new ExecutionScope() }
   const frame: LineFrame = { session: null, statusBefore: null, writer: newStatusWriter() }
   try {
     let result = await runLine(env, command, options, frame, argv)
@@ -255,7 +257,6 @@ async function runLine(
   // Loads nothing the shell observes, so a stalled state store loses to
   // the signal at once rather than holding the caller.
   await abortable(preflight(env), options.signal)
-  const stdin = options.stdin ?? null
   const parser = await abortable(env.parser(), options.signal)
   const root = argv === undefined ? parser.parse(command) : literalTree(argv)
   // tree-sitter accepts an unclosed backtick as a complete command, so
@@ -278,6 +279,7 @@ async function runLine(
       ? ambient
       : env.sessions.get(options.sessionId ?? env.sessions.defaultId))
   frame.session = targetSession
+  await options.executionScope?.start()
   if (targetSession.processId === null) {
     const abort = new AbortController()
     const combined =
@@ -296,7 +298,16 @@ async function runLine(
         run: async () => {
           result = await runWithSession(
             targetSession,
-            () => runLine(env, command, { ...options, signal: combined }, frame, argv),
+            () =>
+              runPreparedLine(
+                env,
+                command,
+                { ...options, signal: combined },
+                frame,
+                targetSession,
+                parser,
+                rootNode,
+              ),
             env.sessions,
           )
           return result.exitCode
@@ -321,6 +332,19 @@ async function runLine(
       targetSession.processId = null
     }
   }
+  return runPreparedLine(env, command, options, frame, targetSession, parser, rootNode)
+}
+
+async function runPreparedLine(
+  env: ExecuteEnv,
+  command: string,
+  options: ExecuteOptions,
+  frame: LineFrame,
+  targetSession: SessionState,
+  parser: ShellParser,
+  rootNode: TSNodeLike,
+): Promise<ExecuteResult> {
+  const stdin = options.stdin ?? null
   frame.statusBefore = snapshotStatus(targetSession)
   let routingDecision: RouteDecision | null
   try {
@@ -359,8 +383,9 @@ async function runLine(
     }
     // A builtin that bounds its inner line (`timeout`) hands a signal
     // of its own, merged with the line's so either can end the run.
-    const innerSignal = mergeSignals(options.signal, opts.signal)
+    const innerSignal = opts.signal
     if (innerSignal !== undefined) innerOpts.signal = innerSignal
+    if (opts.executionScope !== undefined) innerOpts.executionScope = opts.executionScope
     // The agent rides with the execution: an approval a nested line
     // raises is the typed line's agent's, not the workspace default's.
     if (options.agentId !== undefined) innerOpts.agentId = options.agentId
@@ -391,7 +416,14 @@ async function runLine(
         : null
     if (substitutionTree !== null && inputSubstitutionRedirect(substitutionTree) !== null) {
       const [stdout, io] = await runCommandTree(
-        withHandOff(deps, innerOpts.handed ?? handed),
+        withHandOff(
+          {
+            ...deps,
+            ...(innerSignal !== undefined ? { signal: innerSignal } : {}),
+            ...(opts.executionScope !== undefined ? { executionScope: opts.executionScope } : {}),
+          },
+          innerOpts.handed ?? handed,
+        ),
         substitutionTree,
         session,
         null,
@@ -433,6 +465,7 @@ async function runLine(
       executeFn,
       agentId: options.agentId ?? env.agentId ?? '',
       workspaceId: env.workspaceId,
+      executionScope: options.executionScope ?? new ExecutionScope(),
       registerCloser: (fn: () => Promise<void>) => {
         env.registerCloser(fn)
       },

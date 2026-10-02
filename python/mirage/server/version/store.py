@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import stat
 import time
 
@@ -26,6 +25,7 @@ from dulwich.objects import Blob, Commit, ObjectID, Tree
 from dulwich.refs import Ref
 from dulwich.repo import Repo
 
+from mirage.concurrency.limiter import run_blocking
 from mirage.server.version.backend import VersionBackend
 from mirage.server.version.errors import HeadMovedError
 
@@ -161,42 +161,42 @@ class VersionStore:
     async def open(
         cls, backend: VersionBackend, workspace_id: str
     ) -> "VersionStore":
-        repo = await asyncio.to_thread(backend.open_repo, workspace_id)
+        repo = await run_blocking(backend.open_repo, workspace_id)
         return cls(repo)
 
     async def write_blob(self, data: bytes) -> bytes:
-        return await asyncio.to_thread(_add_blob, self._repo, data)
+        return await run_blocking(_add_blob, self._repo, data)
 
     async def read_blob(self, oid: bytes) -> bytes:
-        return await asyncio.to_thread(_read_blob, self._repo, oid)
+        return await run_blocking(_read_blob, self._repo, oid)
 
     async def write_tree(self, entries: dict[str, bytes]) -> bytes:
-        return await asyncio.to_thread(_build_tree, self._repo, entries)
+        return await run_blocking(_build_tree, self._repo, entries)
 
     async def read_tree(self, oid: bytes) -> dict[str, bytes]:
-        return await asyncio.to_thread(_read_tree, self._repo, oid)
+        return await run_blocking(_read_tree, self._repo, oid)
 
     async def commit(
         self, tree_oid: bytes, parents: list[bytes], branch: str, message: str
     ) -> bytes:
-        return await asyncio.to_thread(
+        return await run_blocking(
             _commit, self._repo, tree_oid, parents, branch, message
         )
 
     async def head(self, branch: str) -> bytes:
-        return await asyncio.to_thread(_head, self._repo, branch)
+        return await run_blocking(_head, self._repo, branch)
 
     async def set_branch(self, name: str, oid: bytes) -> None:
-        await asyncio.to_thread(_set_branch, self._repo, name, oid)
+        await run_blocking(_set_branch, self._repo, name, oid)
 
     async def read_commit(self, oid: bytes) -> Commit:
-        return await asyncio.to_thread(_read_commit, self._repo, oid)
+        return await run_blocking(_read_commit, self._repo, oid)
 
     async def branches(self) -> list[str]:
-        return await asyncio.to_thread(_branches, self._repo)
+        return await run_blocking(_branches, self._repo)
 
     async def log(self, branch: str) -> list[bytes]:
-        return await asyncio.to_thread(_log, self._repo, branch)
+        return await run_blocking(_log, self._repo, branch)
 
     async def diff(self, tree_a: bytes, tree_b: bytes) -> dict[str, list[str]]:
-        return await asyncio.to_thread(_diff, self._repo, tree_a, tree_b)
+        return await run_blocking(_diff, self._repo, tree_a, tree_b)

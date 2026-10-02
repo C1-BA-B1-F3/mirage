@@ -13,15 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 interface NodeFs {
-  readFileSync(path: string): Uint8Array
-  writeFileSync(path: string, data: Uint8Array): void
+  readFile(path: string): Promise<Uint8Array>
+  writeFile(path: string, data: Uint8Array): Promise<void>
 }
 
 async function tryLoadFs(): Promise<NodeFs | null> {
   const g = globalThis as unknown as { process?: { versions?: { node?: string } } }
   if (g.process?.versions?.node === undefined) return null
   try {
-    const modName = 'node:fs'
+    const modName = 'node:fs/promises'
     const mod = (await import(/* @vite-ignore */ modName)) as NodeFs
     return mod
   } catch {
@@ -31,12 +31,12 @@ async function tryLoadFs(): Promise<NodeFs | null> {
 
 const nodeFs: NodeFs | null = await tryLoadFs()
 
-export function readFileBytes(path: string): Uint8Array {
+export async function readFileBytes(path: string): Promise<Uint8Array> {
   if (nodeFs === null) throw new Error('readFileBytes: not available (node:fs unavailable)')
-  return nodeFs.readFileSync(path)
+  return nodeFs.readFile(path)
 }
 
-export function writeFileBytes(path: string, data: Uint8Array): void {
+export async function writeFileBytes(path: string, data: Uint8Array): Promise<void> {
   if (nodeFs === null) throw new Error('writeFileBytes: not available (node:fs unavailable)')
-  nodeFs.writeFileSync(path, data)
+  await nodeFs.writeFile(path, data)
 }

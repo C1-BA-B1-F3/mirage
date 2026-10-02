@@ -160,7 +160,7 @@ describe('startSSHServer', () => {
 })
 
 describe('readAuthorizedKeys', () => {
-  it('skips comments, blanks and lines carrying options it does not read', () => {
+  it('skips comments, blanks and lines carrying options it does not read', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-server-'))
     const good = mintKeyPair(ssh2.utils)
     const optioned = mintKeyPair(ssh2.utils)
@@ -172,12 +172,12 @@ describe('readAuthorizedKeys', () => {
         `mirage-profile="guarded",no-pty ${mixed.public}\n`,
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const keys = readAuthorizedKeys(file, ssh2.utils)
+    const keys = await readAuthorizedKeys(file, ssh2.utils)
     expect(keys.map((k) => k.profile)).toEqual([[]])
     expect(warn).toHaveBeenCalledTimes(2)
   })
 
-  it('reads the mirage-profile option off its key', () => {
+  it('reads the mirage-profile option off its key', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-server-'))
     const bound = mintKeyPair(ssh2.utils)
     const quoted = mintKeyPair(ssh2.utils)
@@ -186,7 +186,7 @@ describe('readAuthorizedKeys', () => {
       file,
       `mirage-profile="guarded" ${bound.public}\nMIRAGE-PROFILE="a \\"b\\"" ${quoted.public}\n`,
     )
-    const keys = readAuthorizedKeys(file, ssh2.utils)
+    const keys = await readAuthorizedKeys(file, ssh2.utils)
     expect(keys.map((k) => k.profile)).toEqual([['guarded'], ['a "b"']])
   })
 })

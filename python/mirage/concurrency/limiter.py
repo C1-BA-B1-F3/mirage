@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
-from typing import TypeVar, cast
+from typing import ParamSpec, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,30 @@ class ConcurrencyLimiter:
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
+_P = ParamSpec("_P")
+
+
+async def run_blocking(
+    fn: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
+) -> _R:
+    """Run blocking work off-loop, retaining ownership until its thread ends.
+
+    Args:
+        fn (Callable): synchronous operation; receives the caller's context.
+        args: positional arguments to the operation.
+        kwargs: keyword arguments to the operation.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        try:
+            await settle(worker)
+        except Exception:
+            logger.debug(
+                "blocking operation failed during cancellation", exc_info=True
+            )
+        raise
 
 
 async def bounded_map(

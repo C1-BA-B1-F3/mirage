@@ -18,6 +18,7 @@ from pathlib import Path
 
 import asyncssh
 
+from mirage.concurrency.limiter import run_blocking
 from mirage.server.registry import WorkspaceRegistry
 from mirage.server.ssh.codex import serve_codex
 from mirage.server.ssh.config import SSHConfig
@@ -49,11 +50,14 @@ class MirageSSHServer(asyncssh.SSHServer):
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         self._conn = conn
 
-    def begin_auth(self, username: str) -> bool:
+    async def begin_auth(self, username: str) -> bool:
         if self._conn is None:
             return True
         try:
-            self._conn.set_authorized_keys(str(self._keys_file))
+            keys = await run_blocking(
+                asyncssh.read_authorized_keys, str(self._keys_file)
+            )
+            self._conn.set_authorized_keys(keys)
         except (OSError, ValueError) as exc:
             logger.warning(
                 "ssh: refusing %r, cannot read %s: %s",
@@ -102,7 +106,7 @@ async def start_ssh_server(
     Returns:
         asyncssh.SSHAcceptor: the listener; ``close()`` stops it.
     """
-    if not config.authorized_keys_file.exists():
+    if not await run_blocking(config.authorized_keys_file.exists):
         logger.warning(
             "ssh: %s does not exist; every login will be refused until "
             "it holds a public key",
@@ -111,7 +115,9 @@ async def start_ssh_server(
     acceptor = await asyncssh.listen(
         config.host,
         config.port,
-        server_host_keys=[load_host_key(config.host_key_file)],
+        server_host_keys=[
+            await run_blocking(load_host_key, config.host_key_file)
+        ],
         server_factory=functools.partial(
             MirageSSHServer, config.authorized_keys_file
         ),

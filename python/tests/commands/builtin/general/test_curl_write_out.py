@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -23,7 +23,7 @@ CASES = json.loads(
 )["cases"]
 
 
-def response(url, **kwargs):
+async def response(url, **kwargs):
     if ":9/" in url:
         raise HttpConnectError("127.0.0.1", 9)
     status = 404 if url.endswith("/missing") else 200
@@ -61,7 +61,7 @@ async def test_http_shell_regressions(case, monkeypatch):
 async def test_wget_passes_timeout_and_classifies_failure(
     argument, seconds, monkeypatch
 ):
-    request = Mock(side_effect=HttpTimeoutError("example.test", 443, 250))
+    request = AsyncMock(side_effect=HttpTimeoutError("example.test", 443, 250))
     monkeypatch.setitem(wget.__wrapped__.__globals__, "http_get", request)
     with Workspace({}) as ws:
         result = await ws.shell(
@@ -82,7 +82,7 @@ async def test_wget_passes_timeout_and_classifies_failure(
 async def test_template_failure_refuses_transfer(
     failure, silent, show_error, monkeypatch
 ):
-    request = Mock()
+    request = AsyncMock()
     monkeypatch.setitem(curl.__wrapped__.__globals__, "http_request", request)
     dispatch = AsyncMock(side_effect=failure) if failure is not None else None
     opts = CommandOpts(

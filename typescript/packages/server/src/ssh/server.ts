@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import type * as Ssh2Mod from 'ssh2'
 import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel } from 'ssh2'
@@ -70,10 +71,13 @@ interface KeyOption {
  * `from=`, ...) is skipped too, since the door does not honor it and so
  * will not accept the key as if it were absent.
  */
-export function readAuthorizedKeys(path: string, utils: typeof Ssh2Mod.utils): AuthorizedKey[] {
+export async function readAuthorizedKeys(
+  path: string,
+  utils: typeof Ssh2Mod.utils,
+): Promise<AuthorizedKey[]> {
   let text: string
   try {
-    text = readFileSync(path, 'utf-8')
+    text = await readFile(path, 'utf-8')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn(`ssh: refusing logins, cannot read ${path}: ${message}`)
@@ -155,17 +159,17 @@ function splitOptions(line: string): { options: KeyOption[]; rest: string } | nu
  * passwords, no keyboard-interactive. A key the client only offers is
  * accepted as usable; a signed attempt must verify.
  */
-function authenticate(
+async function authenticate(
   ctx: AuthContext,
   keysFile: string,
   utils: typeof Ssh2Mod.utils,
-): AuthorizedKey | null {
+): Promise<AuthorizedKey | null> {
   if (ctx.method !== 'publickey') {
     ctx.reject(['publickey'])
     return null
   }
   const offered = ctx.key.data
-  const match = readAuthorizedKeys(keysFile, utils).find((k) =>
+  const match = (await readAuthorizedKeys(keysFile, utils)).find((k) =>
     k.key.getPublicSSH().equals(offered),
   )
   if (match === undefined) {
@@ -178,7 +182,6 @@ function authenticate(
       return null
     }
   }
-  ctx.accept()
   return match
 }
 
@@ -193,11 +196,18 @@ function serveConnection(
   let username = ''
   let profile: readonly string[] = []
   client.on('authentication', (ctx) => {
-    const match = authenticate(ctx, config.authorizedKeysFile, utils)
-    if (match !== null) {
-      username = ctx.username
-      profile = match.profile
-    }
+    void authenticate(ctx, config.authorizedKeysFile, utils)
+      .then((match) => {
+        if (match !== null) {
+          username = ctx.username
+          profile = match.profile
+          ctx.accept()
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('ssh: authentication failed', error)
+        ctx.reject(['publickey'])
+      })
   })
   client.on('ready', () => {
     client.on('session', (accept) => {

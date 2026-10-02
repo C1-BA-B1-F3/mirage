@@ -70,16 +70,9 @@ def _build_execute_kwargs(
     return kwargs
 
 
-def _make_coro_factory(runner, kwargs: dict[str, Any]):
-    return functools.partial(_invoke_execute, runner, kwargs)
-
-
-async def _invoke_execute(runner, kwargs: dict[str, Any]):
-    return await runner.ws.shell(**kwargs)
-
-
-def _schedule_on_runner(runner, coro):
-    return asyncio.run_coroutine_threadsafe(coro, runner.loop)
+async def _invoke_execute(runner, kwargs: dict[str, Any], scope):
+    result = await runner.ws.shell(**kwargs, execution_scope=scope)
+    return await io_result_to_dict(result)
 
 
 @router.post("")
@@ -92,15 +85,23 @@ async def execute(
     job_table = request.app.state.jobs
     content_type = request.headers.get("content-type", "")
     req_obj, stdin_bytes = await _parse_execute_body(request, content_type)
-    schedule = functools.partial(_schedule_on_runner, entry.runner)
-    job = job_table.submit(
+    schedule = functools.partial(
+        asyncio.run_coroutine_threadsafe, loop=entry.runner.loop
+    )
+    await entry.runner.call(entry.runner.ws.ensure_sessions_loaded())
+    kwargs = _build_execute_kwargs(req_obj, stdin_bytes)
+    session_id = (
+        req_obj.session_id
+        if req_obj.session_id is not None
+        else entry.runner.ws.default_session_id
+    )
+    kwargs["session_id"] = session_id
+    job = await job_table.submit(
         workspace_id=workspace_id,
         command=req_obj.command,
         schedule=schedule,
-        coro_factory=_make_coro_factory(
-            entry.runner,
-            _build_execute_kwargs(req_obj, stdin_bytes),
-        ),
+        coro_factory=functools.partial(_invoke_execute, entry.runner, kwargs),
+        session_id=session_id,
     )
     if background:
         return Response(
@@ -113,16 +114,15 @@ async def execute(
             status_code=202,
             headers={"X-Mirage-Job-Id": job.id},
         )
-    await job_table.wait(job.id)
+    job = await job_table.wait(job.id)
     if job.status == JobStatus.CANCELED:
         raise HTTPException(status_code=499, detail="job canceled")
     if job.status == JobStatus.FAILED:
         raise HTTPException(
             status_code=500, detail=job.error or "execute failed"
         )
-    result_dict = await io_result_to_dict(job.result)
     return Response(
-        content=json.dumps(result_dict),
+        content=json.dumps(job.result),
         media_type="application/json",
         status_code=200,
         headers={"X-Mirage-Job-Id": job.id},

@@ -57,18 +57,16 @@ class WorkspaceRunner:
         """
         self.ws = ws
         self.loop = asyncio.new_event_loop()
-        self._ready = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
             name=f"mirage-ws-{id(ws):x}",
             daemon=True,
         )
         self._thread.start()
-        self._ready.wait()
+        # call_soon_threadsafe queues work even before run_forever starts.
 
     def _run(self) -> None:
         asyncio.set_event_loop(self.loop)
-        self.loop.call_soon(self._ready.set)
         self.loop.run_forever()
 
     async def call(self, coro: Coroutine[Any, Any, T]) -> T:

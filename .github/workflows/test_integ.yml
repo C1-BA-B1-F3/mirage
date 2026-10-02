@@ -208,6 +208,64 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  integ-hosting:
+    needs: [changes, typescript-build]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      S3_ENDPOINT: http://127.0.0.1:9000
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup-uv
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --frozen --extra monty --extra s3 --extra redis
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: '24'
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile=false
+      - uses: actions/download-artifact@v4
+        with:
+          name: integ-typescript-dist
+          path: typescript/packages
+      - name: Generate the Slack fixture client
+        working-directory: integ
+        env:
+          INTEG_DB_URL: file:/tmp/mirage-hosting-schema.db
+        run: pnpm exec prisma generate --schema prisma/slack.prisma
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio-hosting -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 server /data
+          for i in $(seq 1 30); do
+            curl -sf "$S3_ENDPOINT/minio/health/live" && break
+            sleep 1
+          done
+          curl -sf "$S3_ENDPOINT/minio/health/live"
+      - name: Run parallel hosted requests over real HTTP (Python and TypeScript)
+        working-directory: integ
+        run: pnpm exec tsx hosting/run.ts --mounts
+
   integ:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true') }}

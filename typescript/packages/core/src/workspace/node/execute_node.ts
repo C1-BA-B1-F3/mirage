@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ExecutionScope } from '../execution.ts'
 import { timingReport } from './timing.ts'
 import { PathSpec } from '../../types.ts'
 import { runInCommandScope } from '../../cache/index/scope.ts'
@@ -161,6 +162,7 @@ function withOpts(base: ExecuteNodeDeps, opts?: ExecuteNodeOpts): ExecuteNodeDep
   let next: ExecuteNodeDeps = { ...base }
   if (opts.sink !== undefined) next.sink = opts.sink
   if (opts.signal !== undefined) next.signal = opts.signal
+  if (opts.executionScope !== undefined) next.executionScope = opts.executionScope
   if (opts.handed !== undefined) next = withHandOff(next, opts.handed)
   return next
 }
@@ -674,6 +676,8 @@ async function recursePipeStderr(
 }
 
 export interface ExecuteNodeDeps {
+  /** @internal Scheduling scope; background jobs create their own. */
+  executionScope?: ExecutionScope
   dispatch: DispatchFn
   registry: MountRegistry
   namespace: Namespace
@@ -728,6 +732,22 @@ export async function executeNode(
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
 ): Promise<Result> {
+  const executionScope = deps.executionScope ?? new ExecutionScope()
+  await executionScope.checkpoint(deps.signal ?? session.abortSignal ?? undefined)
+  const inner = deps.executeFn
+  deps = {
+    ...deps,
+    executionScope,
+    executeFn: (cmd, opts) => {
+      if (opts.executionScope !== undefined) return inner(cmd, opts)
+      const signal = mergeSignals(deps.signal, opts.signal)
+      return inner(cmd, {
+        ...opts,
+        executionScope,
+        ...(signal !== undefined ? { signal } : {}),
+      })
+    },
+  }
   const outer = session.diagnostics
   session.diagnostics = []
   try {

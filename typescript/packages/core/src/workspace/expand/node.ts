@@ -47,10 +47,13 @@ import type { HandOff } from '../../policy/types.ts'
  * it, so a line a job evaluates after the typed line has ended still
  * stands under the hand-off holding the job's grants.
  */
+import type { ExecutionScope } from '../execution.ts'
+
 export type ExecuteFn = (
   command: string,
   opts: {
     sessionId: string
+    executionScope?: ExecutionScope
     session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal

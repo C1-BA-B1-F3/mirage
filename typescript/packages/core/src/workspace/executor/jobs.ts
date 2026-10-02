@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ExecutionScope } from '../execution.ts'
 import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
@@ -40,6 +41,8 @@ import { ExecutionNode } from '../types.ts'
 
 /** Per-call overrides a caller can layer onto the walker's deps. */
 export interface ExecuteNodeOpts {
+  /** @internal Scheduling scope; background jobs create their own. */
+  executionScope?: ExecutionScope
   sink?: JobConsole
   signal?: AbortSignal
   /** The hand-off the subtree runs on: a background job's own. */
@@ -154,7 +157,11 @@ export async function handleBackground(
         // writes as it finishes rather than the whole construct landing
         // at the end. The signal is what makes `kill` able to stop the
         // job at all, since a promise cannot be cancelled.
-        const opts: ExecuteNodeOpts = { sink: console_, signal: abort.signal }
+        const opts: ExecuteNodeOpts = {
+          sink: console_,
+          signal: abort.signal,
+          executionScope: new ExecutionScope(),
+        }
         if (jobHanded !== null) opts.handed = jobHanded
         ;[stdout, io, execNode] = await executeNode(left, bgSession, null, bgCallStack, opts)
       } catch (err) {

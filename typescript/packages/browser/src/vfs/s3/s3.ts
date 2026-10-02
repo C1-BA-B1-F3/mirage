@@ -22,6 +22,7 @@ import { buildDeltaHook } from '@struktoai/mirage-core/core/s3/watch'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 import { S3_OPS } from '@struktoai/mirage-core/ops/s3/index'
 
+import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { s3StorageLocation } from '@struktoai/mirage-core/vfs/s3/storage_id'
 import { VFSName } from '@struktoai/mirage-core/types'
 
@@ -56,7 +57,16 @@ export class S3VFS extends BaseVFS {
 
   constructor(config: S3Config) {
     super()
-    this.config = config
+    // Normalized as node's S3VFS does: the keys are `prefix + path`, so a
+    // raw `team/x` keyed `team/xa.txt` and a raw `/team/x/` a leading slash.
+    const normalized = normalizeKeyPrefix(config.keyPrefix)
+    const cfg: S3Config = { ...config }
+    if (normalized !== undefined) {
+      cfg.keyPrefix = normalized
+    } else {
+      delete cfg.keyPrefix
+    }
+    this.config = cfg
     this.accessor = new S3Accessor(this.config)
   }
 

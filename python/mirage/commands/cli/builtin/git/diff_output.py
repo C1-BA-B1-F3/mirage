@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import stat
 from dataclasses import dataclass, replace
 from io import BytesIO
 
@@ -33,6 +34,7 @@ from mirage.commands.cli.builtin.git.patch import (
     file_patch,
     short_oid,
 )
+from mirage.commands.cli.builtin.git.pathspec import pathspec_selects
 from mirage.commands.cli.builtin.git.render import quote_path
 from mirage.commands.cli.builtin.git.summary import (
     FileStat,
@@ -50,7 +52,11 @@ RENAME_SCORE = 50
 
 @dataclass(frozen=True, slots=True)
 class DiffFlags:
-    """One interpretation of Git diff options, shared by all tree readers."""
+    """One interpretation of Git diff options, shared by all tree readers.
+
+    ``pathspecs`` limits every reader to the paths they name, all paths
+    when empty, the way git's diff options carry their pathspec.
+    """
 
     name_only: bool = False
     name_status: bool = False
@@ -67,6 +73,7 @@ class DiffFlags:
     function_context: bool = False
     context: int = HUNK_CONTEXT
     quote_path_fully: bool = True
+    pathspecs: tuple[str, ...] = ()
 
 
 def parse_diff_flags(
@@ -430,13 +437,56 @@ def _summary(row: Change, display: str, shown: str) -> list[str]:
 
 
 def entries(
-    repo: BaseRepo, tree: bytes | None, recursive: bool
+    repo: BaseRepo,
+    tree: bytes | None,
+    recursive: bool,
+    pathspecs: tuple[str, ...] = (),
 ) -> dict[bytes, tuple[int, bytes]]:
+    """A tree's entries a diff compares, limited to a pathspec.
+
+    Every leaf when recursive, otherwise the tree's own entries, where a
+    subtree stands for whatever lies inside it.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        tree (bytes | None): the tree id, None for the empty tree.
+        recursive (bool): whether to descend into subtrees.
+        pathspecs (tuple[str, ...]): repository-relative patterns, all
+            paths when empty.
+    """
     if recursive or tree is None:
-        return tree_entries(repo.object_store, tree)
-    obj = repo.object_store[ObjectID(tree)]
-    assert isinstance(obj, Tree)
-    return {entry.path: (entry.mode, entry.sha) for entry in obj.iteritems()}
+        found = tree_entries(repo.object_store, tree)
+    else:
+        obj = repo.object_store[ObjectID(tree)]
+        assert isinstance(obj, Tree)
+        found = {e.path: (e.mode, e.sha) for e in obj.iteritems()}
+    return limited(found, pathspecs)
+
+
+def limited(
+    found: dict[bytes, tuple[int, bytes]], pathspecs: tuple[str, ...]
+) -> dict[bytes, tuple[int, bytes]]:
+    """The entries a pathspec names, every one of them for none.
+
+    Applied to both sides before anything is paired, so a rename is
+    found only where the pathspec names both of its paths and is
+    otherwise an addition or a deletion (pinned against git 2.54).
+
+    Args:
+        found (dict[bytes, tuple[int, bytes]]): path to (mode, id).
+        pathspecs (tuple[str, ...]): repository-relative patterns.
+    """
+    if not pathspecs:
+        return found
+    return {
+        path: entry
+        for path, entry in found.items()
+        if pathspec_selects(
+            path.decode("utf-8", errors="surrogateescape"),
+            pathspecs,
+            stat.S_ISDIR(entry[0]),
+        )
+    }
 
 
 def tree_output(
@@ -450,12 +500,37 @@ def tree_output(
         repo,
         compare(
             repo,
-            entries(repo, before, recursive),
-            entries(repo, after, recursive),
+            entries(repo, before, recursive, flags.pathspecs),
+            entries(repo, after, recursive, flags.pathspecs),
             flags.renames,
         ),
         flags,
     )
+
+
+def _block(
+    repo: BaseRepo,
+    before: bytes | None,
+    after: bytes,
+    flags: DiffFlags,
+    recursive: bool,
+) -> bytes | None:
+    """One parent's diff block, None when the commit does not differ.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        before (bytes | None): the parent's tree, None for a root.
+        after (bytes): the commit's tree.
+        flags (DiffFlags): the diff flags.
+        recursive (bool): whether to descend into subtrees.
+    """
+    rows = compare(
+        repo,
+        entries(repo, before, recursive, flags.pathspecs),
+        entries(repo, after, recursive, flags.pathspecs),
+        flags.renames,
+    )
+    return render_changes(repo, rows, flags) if rows else None
 
 
 def commit_output(
@@ -464,28 +539,45 @@ def commit_output(
     flags: DiffFlags,
     recursive: bool = True,
     root: bool = True,
-) -> list[bytes]:
+) -> list[bytes | None]:
+    """A commit's diff blocks, one per parent the merge mode compares.
+
+    A parent the commit does not differ from gets None rather than an
+    empty block: git prints nothing for it, not even its header, where
+    a block whose format says nothing (``--summary`` of a modification)
+    still claims one (pinned against git 2.54). A combined diff is one
+    block whatever it holds.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        commit (Commit): the commit to diff.
+        flags (DiffFlags): the diff flags.
+        recursive (bool): whether to descend into subtrees.
+        root (bool): whether a root commit diffs against the empty tree.
+    """
     parents = [repo.object_store[p] for p in commit.parents]
     assert all(isinstance(p, Commit) for p in parents)
     trees = [p.tree for p in parents if isinstance(p, Commit)]
     if not trees:
         return (
-            [tree_output(repo, None, commit.tree, flags, recursive)]
-            if root
-            else []
+            [_block(repo, None, commit.tree, flags, recursive)] if root else []
         )
     if len(trees) == 1 or flags.merge == "first-parent":
-        return [tree_output(repo, trees[0], commit.tree, flags, recursive)]
+        return [_block(repo, trees[0], commit.tree, flags, recursive)]
     if flags.merge == "off":
         return []
     if flags.merge == "separate":
         return [
-            tree_output(repo, tree, commit.tree, flags, recursive)
-            for tree in trees
+            _block(repo, tree, commit.tree, flags, recursive) for tree in trees
         ]
-    after = entries(repo, commit.tree, recursive)
+    after = entries(repo, commit.tree, recursive, flags.pathspecs)
     comparisons = [
-        compare(repo, entries(repo, tree, recursive), after, flags.renames)
+        compare(
+            repo,
+            entries(repo, tree, recursive, flags.pathspecs),
+            after,
+            flags.renames,
+        )
         for tree in trees
     ]
     common = set.intersection(
@@ -543,6 +635,40 @@ def commit_output(
         else b""
     )
     return [head + (b"\n" if head and patch else b"") + patch]
+
+
+def commit_touches(
+    repo: BaseRepo, commit: Commit, flags: DiffFlags, first_parent: bool
+) -> bool:
+    """Whether a commit changes anything its pathspec names.
+
+    ``show <rev> -- <path>`` prints nothing at all for a commit that
+    changes none of it, git's pruning. A root commit changes whatever
+    it holds. A merge has to differ from every parent, unless its diff
+    is split per parent (``-m``, ``--diff-merges=first-parent``), which
+    turns git's history simplification off and keeps a merge that
+    differs from any one; ``--first-parent`` weighs the first parent
+    alone (pinned against git 2.54).
+
+    Args:
+        repo (BaseRepo): repository to read.
+        commit (Commit): the commit being shown.
+        flags (DiffFlags): the diff flags, pathspec included.
+        first_parent (bool): whether ``--first-parent`` was given.
+    """
+    after = entries(repo, commit.tree, True, flags.pathspecs)
+    parents = commit.parents[:1] if first_parent else commit.parents
+    changed = []
+    for oid in parents:
+        parent = repo.object_store[oid]
+        assert isinstance(parent, Commit)
+        before = entries(repo, parent.tree, True, flags.pathspecs)
+        changed.append(before != after)
+    if not changed:
+        return bool(after)
+    if flags.merge in ("separate", "first-parent"):
+        return any(changed)
+    return all(changed)
 
 
 def combined_patch(
@@ -680,7 +806,7 @@ def separator_line(commit: Commit, kind: str, flags: DiffFlags) -> str | None:
 def join_output(
     commit: Commit,
     header: bytes,
-    bodies: list[bytes],
+    bodies: list[bytes | None],
     kind: str,
     width: int,
     flags: DiffFlags,
@@ -691,6 +817,8 @@ def join_output(
     line = separator_line(commit, kind, flags)
     blocks = []
     for index, body in enumerate(bodies):
+        if body is None:
+            continue
         head = header
         if len(bodies) > 1 and kind not in ("format", "tformat"):
             parent = commit.parents[index].decode()
@@ -707,4 +835,4 @@ def join_output(
             gap = b"\n"
         blocks.append(head + gap + body)
     separator = b"\n" if kind not in ("format", "tformat", "oneline") else b""
-    return separator.join(blocks)
+    return separator.join(blocks) or header

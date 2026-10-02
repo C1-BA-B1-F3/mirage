@@ -141,12 +141,7 @@ def check_sizes(
     offenders = ops.unsized_mounts(root_prefix)
     if not offenders:
         return
-    # resource_type may be a VFSName enum member; print its value, not
-    # the "VFSName.SLACK" repr Python 3.12 gives a str-mixin Enum.
-    listed = ", ".join(
-        f"{prefix} ({getattr(name, 'value', name)})"
-        for prefix, name in offenders
-    )
+    listed = ", ".join(f"{prefix} ({name})" for prefix, name in offenders)
     logger.warning(
         "the fskit mount backend cannot serve mounts whose file sizes "
         "are only known after a read; size-unknown files under these "
@@ -186,10 +181,7 @@ def check_writes(
     ]
     if not offenders:
         return
-    listed = ", ".join(
-        f"{prefix} ({getattr(name, 'value', name)})"
-        for prefix, name in offenders
-    )
+    listed = ", ".join(f"{prefix} ({name})" for prefix, name in offenders)
     logger.warning(
         "file data written through an fskit mount may be flushed by the "
         "macFUSE FSKit shim as zeroed pages (metadata ops are reliable; "

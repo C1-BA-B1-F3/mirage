@@ -92,6 +92,28 @@ export function escaped(argv: readonly string[]): Set<string> {
 }
 
 /**
+ * The operands before a `--` on the line and the ones after it.
+ *
+ * `git diff A B -- docs` reads what comes before the marker as revisions and
+ * what follows as pathspecs, whatever either looks like. Every word after the
+ * marker is an operand, so they are the tail of the operands, as many as the
+ * verbatim argv holds past it.
+ *
+ * @param texts positional text operands, as typed
+ * @param argv the line's verbatim tokens after the head word, subcommand words
+ *   included
+ */
+export function splitMarked(
+  texts: readonly string[],
+  argv: readonly string[],
+): [string[], string[]] {
+  const at = argv.indexOf(MARKER)
+  if (at === -1) return [[...texts], []]
+  const cut = texts.length - (argv.length - at - 1)
+  return [texts.slice(0, cut), texts.slice(cut)]
+}
+
+/**
  * Refuse an operand that is really an option this build lacks.
  *
  * A verb taking a revision accepts free text, so every flag mirage does not
@@ -105,10 +127,12 @@ export function escaped(argv: readonly string[]): Set<string> {
  * option here; see `escaped`, which is where the marker survives the parser.
  *
  * Which side of the marker an operand fell on says nothing about what it
- * *means*: a verb taking a revision reads an escaped word as one and fails with
- * git's own "unknown revision or path" wording, where git would narrow the walk
- * by it instead. That divergence is unchanged and deliberate, because limiting
- * by nothing would print every commit and look like an answer.
+ * *means* here. `diff`, `show` and `diff-tree` read what follows the marker as
+ * pathspecs (`splitMarked`); a walk (`log`, `rev-list`, `shortlog`) reads an
+ * escaped word as a revision and fails with git's own "unknown revision or
+ * path" wording, where git would narrow the walk by it instead. That divergence
+ * is deliberate, because limiting by nothing would print every commit and look
+ * like an answer.
  *
  * Which refusal to raise is the caller's, because git words this differently per
  * verb and means each one: see UnknownSwitchError for the three.

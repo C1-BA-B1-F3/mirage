@@ -46,6 +46,7 @@ import { printfKind } from '../find_printf.ts'
 import type { LinkView } from '../../../ops/types.ts'
 import { pathAllowed } from '../../../context/session_context.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
+import { contentSize } from '../../../utils/stat_view.ts'
 
 const ENC = new TextEncoder()
 
@@ -217,7 +218,7 @@ export async function linkResults(
       mtime: modifiedTs(st.modified),
     }
     if (!keep(entry, tree, minDepth)) continue
-    const size = st.size ?? 0
+    const size = contentSize(st)
     if (minSize !== null && size < minSize) continue
     if (maxSize !== null && size > maxSize) continue
     if (mtimeMin !== null || mtimeMax !== null) {

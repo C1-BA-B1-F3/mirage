@@ -163,10 +163,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "find -L /data/symx/dlink",
+      "command": "find -L /data/symx/dlink; find -L /data/symx/dlink -size 4096c",
       "expect": {
         "exit": 0,
-        "stdout": "/data/symx/dlink\n/data/symx/dlink/inner.txt\n",
+        "stdout": "/data/symx/dlink\n/data/symx/dlink/inner.txt\n/data/symx/dlink\n",
         "stderr": ""
       }
     },

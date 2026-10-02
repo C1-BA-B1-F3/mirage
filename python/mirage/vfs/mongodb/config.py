@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class MongoDBConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     uri: SecretStr
     databases: list[str] | None = None

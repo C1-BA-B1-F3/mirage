@@ -26,7 +26,7 @@ ScopeKind = Literal["user", "agent", "run"]
 
 
 class Mem0Config(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     api_key: SecretStr
     host: str = "https://api.mem0.ai"

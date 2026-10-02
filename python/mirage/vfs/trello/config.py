@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class TrelloConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     api_key: SecretStr
     api_token: SecretStr

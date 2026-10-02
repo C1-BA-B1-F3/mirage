@@ -31,7 +31,7 @@ from mirage.utils.dates import iso_timestamp, matches_mtime
 from mirage.utils.errors import MISS_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_one, respell_raw
-from mirage.utils.stat_view import DIR_SIZE
+from mirage.utils.stat_view import DIR_SIZE, content_size
 
 
 def parse_find_args(
@@ -1007,7 +1007,7 @@ async def link_results(
         )
         if not find_eval.keep(entry, tree, args.mindepth):
             continue
-        size = st.size or 0
+        size = content_size(st)
         if args.min_size is not None and size < args.min_size:
             continue
         if args.max_size is not None and size > args.max_size:

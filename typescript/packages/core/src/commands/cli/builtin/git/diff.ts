@@ -16,7 +16,7 @@ import git from 'isomorphic-git'
 import { headEntries } from './changes.ts'
 import { readIndex, refuseUnresolved } from './index_file.ts'
 import { treeEntries, type TreeEntry } from './tree.ts'
-import { compare, renderChanges } from './diff_output.ts'
+import { compare, limited, renderChanges } from './diff_output.ts'
 import { HEAD } from './constants.ts'
 
 import { IOResult } from '../../../../io/types.ts'
@@ -25,10 +25,11 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { GitError, InvalidOptionError, NoMergeBaseError } from './errors.ts'
 import { treeOutput, parseDiffFlags, renamesEnabled } from './diff_output.ts'
+import { pathspecPatterns } from './pathspec.ts'
 import { configBool, repoArgs, type Repo } from './repo.ts'
 import { opened } from './session.ts'
 import { mergeBases, rangeCommits, resolveCommit } from './revparse.ts'
-import { checkOperands, escaped, fatal } from './util.ts'
+import { checkOperands, escaped, fatal, splitMarked, startPoint } from './util.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
 const ENC = new TextEncoder()
@@ -66,18 +67,21 @@ async function sides(repo: Repo, texts: readonly string[]): Promise<[string, str
  *
  * One revision diffs it against HEAD's tree, two diff against each other. The
  * index is compared with the named revision under --cached or --staged,
- * defaulting to HEAD or the empty tree on an unborn branch.
+ * defaulting to HEAD or the empty tree on an unborn branch. Operands after
+ * `--` are pathspecs, read once the revisions have resolved, as git reads
+ * them, and every format shows only the paths they name.
  */
 export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
   const doors = inv.doors ?? {}
   const texts = [...inv.texts]
   const fl = new FlagView(inv.flags)
   const cached = fl.asBool('cached') || fl.asBool('staged')
-  if (texts.length === 0 && !cached) return [null, new IOResult()]
+  const [revisions, paths] = splitMarked(texts, inv.argv)
+  if (revisions.length === 0 && !cached) return [null, new IOResult()]
   try {
     checkOperands(texts, InvalidOptionError, escaped(inv.argv))
     const repo = await opened(fl, doors)
-    const flags = parseDiffFlags(
+    const parsed = parseDiffFlags(
       fl,
       true,
       'off',
@@ -88,11 +92,11 @@ export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
     let body: string,
       warning = ''
     if (cached) {
-      if (texts.length > 1) throw new GitError('--cached accepts at most one revision')
+      if (revisions.length > 1) throw new GitError('--cached accepts at most one revision')
       const state = await readIndex(repo, repo.dispatch)
       refuseUnresolved(state)
-      const before = texts.length
-        ? await treeEntries(repo, await treeOf(repo, texts[0] ?? HEAD))
+      const before = revisions.length
+        ? await treeEntries(repo, await treeOf(repo, revisions[0] ?? HEAD))
         : ((await headEntries(repo)) ?? new Map<string, TreeEntry>())
       const after = new Map(
         [...state.entries].map(([path, entry]) => [
@@ -100,11 +104,18 @@ export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
           { oid: entry.oid, mode: entry.mode.toString(8).padStart(6, '0') },
         ]),
       )
-      body = await renderChanges(repo, await compare(repo, before, after, flags.renames), flags)
+      const pathspecs = pathspecPatterns(repo.location, startPoint(fl), paths)
+      const flags = { ...parsed, pathspecs }
+      body = await renderChanges(
+        repo,
+        await compare(repo, limited(before, pathspecs), limited(after, pathspecs), flags.renames),
+        flags,
+      )
     } else {
-      const [before, after, note] = await sides(repo, texts)
+      const [before, after, note] = await sides(repo, revisions)
       warning = note
-      body = await treeOutput(repo, before, after, flags)
+      const pathspecs = pathspecPatterns(repo.location, startPoint(fl), paths)
+      body = await treeOutput(repo, before, after, { ...parsed, pathspecs })
     }
     const result = warning ? new IOResult({ stderr: ENC.encode(warning) }) : new IOResult()
     if (body === '') return [null, result]

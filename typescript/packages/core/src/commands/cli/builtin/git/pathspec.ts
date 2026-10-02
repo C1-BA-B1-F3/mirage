@@ -12,10 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { encodeText } from '../../../../shell/bytes.ts'
+import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { posixNormpath } from '../../../../utils/path.ts'
-import { OutsideRepositoryError } from './errors.ts'
+import { EmptyPathspecError, OutsideRepositoryError, UnsupportedPathspecError } from './errors.ts'
 import type { RepoLocation } from './types.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
+
+const MAGIC = ':'
+const SLASH = '/'
 
 /**
  * The virtual path a path operand names.
@@ -82,4 +87,64 @@ export function under(path: string, directory: string): boolean {
  */
 export function matched(paths: Iterable<string>, target: string): Set<string> {
   return new Set([...paths].filter((path) => path === target || under(path, target)))
+}
+
+/**
+ * Pathspec operands as the repository-relative patterns they name.
+ *
+ * A trailing slash survives, because `docs/` names only what lies under a
+ * directory where `docs` also names a file of that name. An empty operand is
+ * git's own refusal, and magic (`:(top)`, `:!`) is refused as unsupported
+ * rather than matched as a path.
+ *
+ * @param location the discovered repository
+ * @param start absolute virtual path git is running in
+ * @param operands the pathspecs as typed
+ */
+export function pathspecPatterns(
+  location: RepoLocation,
+  start: string,
+  operands: readonly string[],
+): string[] {
+  return operands.map((operand) => {
+    if (operand === '') throw new EmptyPathspecError()
+    if (operand.startsWith(MAGIC)) throw new UnsupportedPathspecError(operand)
+    const pattern = repoRelative(location, start, operand)
+    return pattern !== '' && operand.endsWith(SLASH) ? pattern + SLASH : pattern
+  })
+}
+
+/**
+ * Whether a repository-relative path is one a pathspec names.
+ *
+ * git's default pathspec: a path it spells, a directory the path lies under
+ * (`docs` and `docs/` both name `docs/a.md`, only `docs` names a file `docs`),
+ * or a wildcard pattern matching the whole path. A wildcard crosses `/`, so
+ * `*.c` finds `sub/x.c`, and matches bytes, so `??.txt` is what names `é.txt`
+ * (pinned against git 2.54). A tree a diff does not descend into is also named
+ * by a pathspec inside it, which is how `diff-tree A -- dir/x` prints `dir`.
+ *
+ * @param path repository-relative path, surrogate-escaped
+ * @param patterns patterns from `pathspecPatterns`
+ * @param directory whether the path is a tree left undescended
+ */
+export function pathspecSelects(
+  path: string,
+  patterns: readonly string[],
+  directory = false,
+): boolean {
+  return patterns.some((pattern) => selects(path, pattern, directory))
+}
+
+/** Whether one pattern names a path; see `pathspecSelects`. */
+function selects(path: string, pattern: string, directory: boolean): boolean {
+  const stem = pattern.endsWith(SLASH) ? pattern.slice(0, -1) : pattern
+  if (under(path, stem) || path === pattern) return true
+  if (directory && (path === stem || under(stem, path))) return true
+  return fnmatch(byteText(path), byteText(pattern))
+}
+
+/** A path's bytes one character each, for a byte-wise glob. */
+function byteText(text: string): string {
+  return String.fromCharCode(...encodeText(text))
 }

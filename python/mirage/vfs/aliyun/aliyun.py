@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.types import VFSName
 from mirage.vfs.aliyun.config import AliyunConfig
 from mirage.vfs.aliyun.prompt import PROMPT
 from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class AliyunVFS(S3AliasVFS):
+    name: str = VFSName.ALIYUN
     prompt: str = PROMPT
 
     def __init__(self, config: AliyunConfig) -> None:

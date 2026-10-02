@@ -761,6 +761,7 @@ export const GIT = new CLISpec({
         new Option({ short: '-r', description: 'Recurse into subtrees' }),
       ],
       positional: [new Operand({ type: 'str', name: 'commit', required: true })],
+      rest: PATHSPEC,
     }),
     new CLISpec({
       name: 'status',

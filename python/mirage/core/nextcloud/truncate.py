@@ -2,6 +2,7 @@ from opendal.exceptions import NotFound
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.context import invalidate_after_write
+from mirage.core.nextcloud.util import nextcloud_key
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enotsup
@@ -15,7 +16,7 @@ async def truncate(
 ) -> None:
     if no_create:
         raise enotsup("nextcloud", "truncate --no-create", path)
-    key = path.mount_path.lstrip("/")
+    key = nextcloud_key(path)
     timer = start_op()
     op = accessor.operator()
     try:

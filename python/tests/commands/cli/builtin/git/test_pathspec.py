@@ -14,10 +14,16 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.git.errors import OutsideRepositoryError
+from mirage.commands.cli.builtin.git.errors import (
+    EmptyPathspecError,
+    OutsideRepositoryError,
+    UnsupportedPathspecError,
+)
 from mirage.commands.cli.builtin.git.pathspec import (
     absolute_operand,
     matched,
+    pathspec_patterns,
+    pathspec_selects,
     repo_relative,
     under,
 )
@@ -92,3 +98,51 @@ def test_the_root_selects_everything():
 def test_a_name_that_is_both_a_file_and_a_directory_selects_both():
     paths = {"slot", "slot/child", "other"}
     assert matched(paths, "slot") == {"slot", "slot/child"}
+
+
+@pytest.mark.parametrize(
+    "path,patterns,directory,expected",
+    [
+        ("docs/a.md", [""], False, True),
+        ("docs/a.md", ["docs"], False, True),
+        ("docs/a.md", ["doc"], False, False),
+        ("docs/a.md", ["docs/a.md"], False, True),
+        ("docs/sub/a.md", ["*.md"], False, True),
+        ("docs/a.md", ["docs/*.txt", "*.md"], False, True),
+        ("a.txt", ["docs"], False, False),
+        ("docs/a.md", ["docs/"], False, True),
+        ("docs", ["docs/"], False, False),
+        ("docs", ["docs/"], True, True),
+        ("docs", ["docs/a.md"], True, True),
+        ("docs", ["docs/a.md"], False, False),
+        ("\u00e9.txt", ["?.txt"], False, False),
+        ("\u00e9.txt", ["??.txt"], False, True),
+    ],
+)
+def test_a_pathspec_names_a_path_a_directory_or_a_glob(
+    path, patterns, directory, expected
+):
+    assert pathspec_selects(path, patterns, directory) is expected
+
+
+def test_patterns_resolve_from_the_run_directory_keeping_a_trailing_slash():
+    operands = ["sub/", ".", "*.md"]
+    assert pathspec_patterns(LOCATION, "/repo/docs", operands) == (
+        "docs/sub/",
+        "docs",
+        "docs/*.md",
+    )
+
+
+@pytest.mark.parametrize(
+    "operand,error",
+    [
+        ("", EmptyPathspecError),
+        (":(top)a.txt", UnsupportedPathspecError),
+        (":!a.txt", UnsupportedPathspecError),
+        ("/elsewhere/a.txt", OutsideRepositoryError),
+    ],
+)
+def test_a_pathspec_git_refuses_or_this_build_lacks_is_refused(operand, error):
+    with pytest.raises(error):
+        pathspec_patterns(LOCATION, "/repo", [operand])

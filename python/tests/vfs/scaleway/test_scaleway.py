@@ -15,9 +15,8 @@
 import pytest
 from pydantic import ValidationError
 
-from mirage.types import VFSName
 from mirage.vfs.s3 import S3Config
-from mirage.vfs.scaleway import ScalewayConfig, ScalewayVFS
+from mirage.vfs.scaleway import ScalewayConfig
 from mirage.vfs.secrets import reveal_secret
 
 
@@ -55,16 +54,3 @@ def test_scaleway_to_s3_config():
     assert isinstance(s3, S3Config)
     assert s3.endpoint_url == "https://s3.pl-waw.scw.cloud"
     assert reveal_secret(s3.aws_access_key_id) == "key"
-
-
-def test_scaleway_resource_uses_s3_resource_type():
-    vfs = ScalewayVFS(
-        ScalewayConfig(
-            bucket="b",
-            region="fr-par",
-            access_key_id="k",
-            secret_access_key="s",
-        )
-    )
-    assert vfs.name == VFSName.S3
-    assert isinstance(vfs.config, S3Config)

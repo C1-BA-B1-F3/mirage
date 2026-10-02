@@ -367,10 +367,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cat /data/slashd/sub/../reg /data/slashd/dlink/./f2 /data/slashd/reg/ /data/slashd/reg/. /data/slashd/nope/../reg /data/slashd/dlink/nope/../f2 2>&1",
+      "command": "cat /data/slashd/sub/../reg /data/slashd/dlink/./f2 /data/slashd/reg/ /data/slashd/reg/. /data/slashd/nope/../reg /data/slashd/dlink/nope/../f2 2>&1; head -c1 /data/slashd/reg/ 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "hi\nhello\ncat: /data/slashd/reg/: Not a directory\ncat: /data/slashd/reg/.: Not a directory\ncat: /data/slashd/nope/../reg: No such file or directory\ncat: /data/slashd/dlink/nope/../f2: No such file or directory\n",
+        "stdout": "hi\nhello\ncat: /data/slashd/reg/: Not a directory\ncat: /data/slashd/reg/.: Not a directory\ncat: /data/slashd/nope/../reg: No such file or directory\ncat: /data/slashd/dlink/nope/../f2: No such file or directory\nhead: cannot open '/data/slashd/reg/' for reading: Not a directory\n",
         "stderr": ""
       }
     },
@@ -499,10 +499,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rm /data/slashd/dlink/ 2>&1",
+      "command": "rm /data/slashd/dlink/ 2>&1; rm /data/slashd/reg/ 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "rm: cannot remove '/data/slashd/dlink/': Is a directory\n",
+        "stdout": "rm: cannot remove '/data/slashd/dlink/': Is a directory\nrm: cannot remove '/data/slashd/reg/': Not a directory\n",
         "stderr": ""
       }
     },

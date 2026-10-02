@@ -2,6 +2,7 @@ from opendal.exceptions import NotFound
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.nextcloud.util import nextcloud_key
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -14,8 +15,7 @@ async def read_bytes(
     offset: int = 0,
     size: int | None = None,
 ) -> bytes:
-    raw = path.mount_path
-    key = raw.lstrip("/")
+    key = nextcloud_key(path)
     op = accessor.operator()
     timer = start_op()
     try:

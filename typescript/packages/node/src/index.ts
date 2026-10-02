@@ -39,7 +39,7 @@ export {
   RedisWorkspaceStateStore,
   type RedisWorkspaceStateStoreOptions,
 } from './workspace/store/redis.ts'
-export { patchNodeFs } from './fs_monkey.ts'
+export { patchNodeFs } from './ops/os_patch.ts'
 export { RedisVFS, type RedisVFSOptions, type RedisVFSState } from './vfs/redis/redis.ts'
 export { REDIS_PROMPT } from '@struktoai/mirage-core/vfs/redis/prompt'
 export { RedisStore, type RedisStoreOptions } from './vfs/redis/store.ts'

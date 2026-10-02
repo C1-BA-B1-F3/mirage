@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { pathSafeName } from '../../utils/sanitize.ts'
-import { fitIdName, makeIdName } from '../../utils/naming.ts'
+import { fileIdName, makeIdName } from '../../utils/naming.ts'
 import type { SearchTarget } from './scope.ts'
 
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -40,20 +40,11 @@ export function userFilename(u: { id: string; name?: string }): string {
 
 /**
  * Construct a stable VFS filename for a Slack file, of shape
- * `<stem>__<F-id>.<ext>`. The stem keeps the original spelling, only `/` is
- * replaced, and it is the only part trimmed to fit NAME_MAX -- the id and
- * extension are what make the name resolve, so they are spent first.
+ * `<stem>__<F-id>.<ext>`, named after `name` and else `title` (see
+ * `fileIdName`).
  */
 export function fileBlobName(file: { id?: string; name?: string; title?: string }): string {
-  const raw = file.name ?? file.title ?? 'file'
-  const fid = file.id ?? ''
-  const dot = raw.lastIndexOf('.')
-  if (dot >= 0) {
-    const stem = raw.slice(0, dot)
-    const ext = raw.slice(dot + 1)
-    return fitIdName(pathSafeName(stem), fid, `.${ext}`)
-  }
-  return fitIdName(pathSafeName(raw), fid)
+  return fileIdName(file.id ?? '', file.name, file.title)
 }
 
 interface SearchMessageMatch {

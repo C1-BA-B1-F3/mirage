@@ -16,13 +16,14 @@ import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from dulwich.objects import Blob, Commit, Tree
+from dulwich.objects import Blob, Commit, ShaFile, Tree
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.dates import date_clock, parse_date_mode
 from mirage.commands.cli.builtin.git.diff_output import (
     DiffFlags,
     commit_output,
+    commit_touches,
     join_output,
     parse_diff_flags,
     renames_enabled,
@@ -40,6 +41,7 @@ from mirage.commands.cli.builtin.git.format import (
 from mirage.commands.cli.builtin.git.history import decorations, pretty_format
 from mirage.commands.cli.builtin.git.mailmap import load_mailmap, use_mailmap
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.pathspec import pathspec_patterns
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import (
     resolve_commit,
@@ -52,6 +54,8 @@ from mirage.commands.cli.builtin.git.util import (
     escaped,
     fatal,
     revision_arg,
+    split_marked,
+    start_point,
 )
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -69,6 +73,7 @@ class ShowFlags:
     date: DateMode = DEFAULT_DATE
     mailmap: tuple[MailmapEntry, ...] = ()
     use_mailmap: bool = True
+    first_parent: bool = False
 
 
 def parse_show_flags(
@@ -96,6 +101,7 @@ def parse_show_flags(
         ),
         date=parse_date_mode(fl.as_str("date") or "default", date_clock(env)),
         pretty=pretty,
+        first_parent=fl.as_bool("first_parent"),
     )
 
 
@@ -141,21 +147,26 @@ def _header(
 
 
 def _render(
-    repo: BaseRepo, revision: str, flags: ShowFlags, want_decor: bool
+    repo: BaseRepo,
+    revision: str,
+    obj: ShaFile,
+    flags: ShowFlags,
+    want_decor: bool,
 ) -> bytes:
-    """Resolve a revision and render its entry and diff, synchronously.
+    """Render a resolved revision's entry and diff, synchronously.
 
-    Runs on a worker thread: resolving, walking the tree and reading
+    Runs on a worker thread: peeling, walking the tree and reading
     blobs all fetch through the dispatcher, so this must not sit on the
-    loop that answers those fetches.
+    loop that answers those fetches. A commit that changes nothing the
+    pathspec names prints nothing at all.
 
     Args:
         repo (BaseRepo): repository to read.
         revision (str): the revision to show.
+        obj (ShaFile): the object the revision names.
         flags (ShowFlags): the parsed invocation.
         want_decor (bool): whether the format renders %d/%D.
     """
-    obj = resolve_object(repo, revision)
     if isinstance(obj, Blob):
         return obj.data
     if isinstance(obj, Tree):
@@ -164,6 +175,10 @@ def _render(
             for name, mode, _ in obj.iteritems()
         )
     commit = resolve_commit(repo, revision)
+    if flags.diff.pathspecs and not commit_touches(
+        repo, commit, flags.diff, flags.first_parent
+    ):
+        return b""
     decor = decorations(repo) if want_decor else None
     header = _header(commit, flags, abbrev_for(repo), decor)
     bodies = commit_output(repo, commit, flags.diff)
@@ -181,6 +196,10 @@ def _render(
 async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """Show one commit: its log entry, then its diff against its parent.
 
+    Operands after ``--`` are pathspecs, read once the revision has
+    resolved, as git reads them; they limit the diff to the paths they
+    name.
+
     Args:
         inv (CLIInvocation[None]): the line's invocation record.
             git declares no config_model; the planes it reads
@@ -196,6 +215,7 @@ async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         if dispatch is None:
             raise NoWorkspaceError()
         check_operands(texts, marked=escaped(inv.argv))
+        revisions, paths = split_marked(tuple(texts), inv.argv)
         repo, location = await opened(fl, doors)
         parsed = parse_show_flags(
             fl,
@@ -213,10 +233,20 @@ async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                 ),
             ),
         )
+        revision = revision_arg(revisions)
+        obj = await asyncio.to_thread(resolve_object, repo, revision)
+        parsed = replace(
+            parsed,
+            diff=replace(
+                parsed.diff,
+                pathspecs=pathspec_patterns(location, start_point(fl), paths),
+            ),
+        )
         rendered = await asyncio.to_thread(
             _render,
             repo,
-            revision_arg(texts),
+            revision,
+            obj,
             parsed,
             needs_decorations(parsed.pretty),
         )
@@ -227,21 +257,42 @@ async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
 
 def _diff_tree(
     repo: BaseRepo,
-    revision: str,
+    commit: Commit,
     flags: DiffFlags,
     no_commit_id: bool,
     recursive: bool,
 ) -> bytes:
-    commit = resolve_commit(repo, revision)
+    """A resolved commit's diff against its parents, synchronously.
+
+    Every block opens with the commit id unless ``--no-commit-id``, and a
+    parent the commit does not differ from prints nothing, id included.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        commit (Commit): the commit to compare.
+        flags (DiffFlags): the parsed diff flags.
+        no_commit_id (bool): whether to leave the commit id out.
+        recursive (bool): whether to descend into subtrees.
+    """
     bodies = commit_output(repo, commit, flags, recursive, root=False)
     return b"".join(
-        (b"" if no_commit_id else commit.id + b"\n") + body for body in bodies
+        (b"" if no_commit_id else commit.id + b"\n") + body
+        for body in bodies
+        if body is not None
     )
 
 
 async def diff_tree(
     inv: CLIInvocation[None],
 ) -> tuple[ByteSource | None, IOResult]:
+    """Compare a commit with its parents.
+
+    Operands after ``--`` are pathspecs, read once the commit has
+    resolved; they limit every block to the paths they name.
+
+    Args:
+        inv (CLIInvocation[None]): the line's invocation record.
+    """
     fl = FlagView(inv.flags)
     doors = inv.doors or CLIDoors()
     try:
@@ -251,16 +302,25 @@ async def diff_tree(
         fully = await config_bool(
             doors.dispatch, location, b"core", b"quotepath", True
         )
+        parsed = parse_diff_flags(
+            fl,
+            default_patch=False,
+            porcelain=False,
+            quote_path_fully=fully,
+        )
+        revisions, paths = split_marked(tuple(inv.texts), inv.argv)
+        commit = await asyncio.to_thread(
+            resolve_commit, repo, revision_arg(revisions)
+        )
+        parsed = replace(
+            parsed,
+            pathspecs=pathspec_patterns(location, start_point(fl), paths),
+        )
         out = await asyncio.to_thread(
             _diff_tree,
             repo,
-            inv.texts[0] if inv.texts else "HEAD",
-            parse_diff_flags(
-                fl,
-                default_patch=False,
-                porcelain=False,
-                quote_path_fully=fully,
-            ),
+            commit,
+            parsed,
             fl.as_bool("no_commit_id"),
             fl.as_bool("r"),
         )

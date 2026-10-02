@@ -549,7 +549,7 @@ export class Dispatcher {
                 Promise.resolve(
                   opName === 'setattr'
                     ? this.applySetattr(mount, vfs, scope, p, fullKwargs)
-                    : this.callOp(opName, vfs, scope, fullArgs, fullKwargs, p.virtual),
+                    : this.callOp(opName, vfs, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
                 opName,
@@ -560,6 +560,7 @@ export class Dispatcher {
         return wrapOpStream(answer, mount.mountId, mount.activity)
       })
     } catch (err) {
+      if (EVICTED_WRITE_OPS.has(opName)) await this.evictAfterFailedWrite(p.virtual)
       const code = (err as { code?: string }).code
       if (opName === 'rmdir' && (code === 'ENOTEMPTY' || code === 'EEXIST')) {
         await this.rmdirRemnants(vfs, scope, mountPrefix, mode, err, issuer)
@@ -1383,30 +1384,31 @@ export class Dispatcher {
 
   /**
    * Run one registered op. An op in EVICTED_WRITE_OPS runs without the
-   * enclosing command's cache manager: the dispatcher evicts what it wrote,
-   * also when the op fails after its write landed (a timeout after the
-   * upload), since its own invalidation reached no manager.
+   * enclosing command's cache manager: the dispatcher evicts what it wrote.
    */
-  private async callOp(
+  private callOp(
     opName: string,
     vfs: BaseVFS,
     scope: PathSpec,
     args: readonly unknown[],
     kwargs: OpKwargs,
-    virtual: string,
   ): Promise<unknown> {
     const call = (): Promise<unknown> =>
       this.opsRegistry.call(opName, vfs, vfs.accessor, scope, args, kwargs)
-    if (!EVICTED_WRITE_OPS.has(opName)) return call()
+    return EVICTED_WRITE_OPS.has(opName) ? runWithCacheManager(null, call) : call()
+  }
+
+  /**
+   * Evict a path whose write op failed, outside the op's timeout: the write
+   * may have landed first (a timeout after the upload), and with no manager
+   * its own invalidation reached nothing. An eviction failure is logged so
+   * the op's own error is the one raised.
+   */
+  private async evictAfterFailedWrite(virtual: string): Promise<void> {
     try {
-      return await runWithCacheManager(null, call)
+      await this.invalidateAfterWriteByPath(virtual)
     } catch (err) {
-      try {
-        await this.invalidateAfterWriteByPath(virtual)
-      } catch (evictError) {
-        console.warn(`evicting after a failed write: ${String(evictError)}`)
-      }
-      throw err
+      console.warn(`evicting after a failed write: ${String(err)}`)
     }
   }
 
@@ -1418,7 +1420,6 @@ export class Dispatcher {
    * not be, and evicting the index inline here spelled the key the other way
    * and missed.
    */
-
   private managerFor(mount: MountEntry): CacheManager {
     return (
       mount.cacheManager ??

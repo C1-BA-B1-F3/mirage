@@ -656,27 +656,31 @@ describe('MountCore chunks', () => {
     await expect(ws.vfs.stat('/data/b.bin')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('holds a handle opened while the hold was reading', async () => {
-    // FUSE serves an open while an unlink's hold awaits its read, and that
-    // descriptor must keep its bytes too.
+  it('holds a handle opened while the hold was reading from its own read', async () => {
+    // FUSE serves an open while an unlink's hold awaits its read, and the
+    // file may change meanwhile: the early descriptor keeps the bytes it
+    // had, the late one the bytes it opened on.
     const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
-    const body = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
-    await ws.vfs.writeFile('/data/a.bin', body)
+    const before = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 251)
+    const after = Uint8Array.from({ length: 3 * READ_CHUNK }, (_, i) => i % 241)
+    await ws.vfs.writeFile('/data/a.bin', before)
     const core = new MountCore(ws.vfs)
-    const first = await core.open('/data/a.bin')
-    await core.read('/data/a.bin', first, 0, 1)
+    const early = await core.open('/data/a.bin')
+    await core.read('/data/a.bin', early, 0, 1)
     const real = ws.vfs.readFile.bind(ws.vfs)
     let late = -1
     const reads = vi.spyOn(ws.vfs, 'readFile').mockImplementation(async (path, options) => {
-      if (options === undefined && late < 0) {
-        late = await core.open('/data/a.bin')
-        await core.read('/data/a.bin', late, 0, 1)
-      }
-      return real(path, options)
+      if (options !== undefined || late >= 0) return real(path, options)
+      const held = await real(path, options)
+      await ws.vfs.writeFile('/data/a.bin', after)
+      late = await core.open('/data/a.bin')
+      await core.read('/data/a.bin', late, 0, 1)
+      return held
     })
     await core.unlink('/data/a.bin')
     reads.mockRestore()
     const far = 2 * READ_CHUNK + 5
-    expect(await core.read('/data/a.bin', late, far, 4)).toEqual(body.slice(far, far + 4))
+    expect(await core.read('/data/a.bin', early, far, 4)).toEqual(before.slice(far, far + 4))
+    expect(await core.read('/data/a.bin', late, far, 4)).toEqual(after.slice(far, far + 4))
   })
 })

@@ -694,27 +694,31 @@ export class MountCore {
    * Read the rest of the chunked handles on `path` before it goes. POSIX
    * keeps an open descriptor on the bytes it had, and a chunked handle
    * holds one chunk of them, so an unlink or a rename onto the file would
-   * leave the rest unreadable. One read serves every such handle. A read
-   * that fails (a policy may allow the removal and refuse the read) leaves
-   * them chunked rather than refusing a mutation the caller is allowed.
-   * Mirrors Python's `MountCore._hold`.
+   * leave the rest unreadable. A read serves the handles open when it
+   * started; one opened while it was out may have opened on newer bytes,
+   * so the next round reads again for it. A read that fails (a policy may
+   * allow the removal and refuse the read) leaves the handles chunked
+   * rather than refusing a mutation the caller is allowed. Mirrors
+   * Python's `MountCore._hold`.
    */
   private async hold(path: string): Promise<void> {
     const key = this.identity(path)
-    const held = (ctx: Handle): boolean => ctx.key === key && ctx.chunked !== undefined
-    if (![...this.handles.values()].some(held)) return
-    let data: Uint8Array
-    try {
-      data = await this.op(() => this.ops.readFile(this.resolve(path)))
-    } catch (err) {
-      console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
-      return
-    }
-    // Every handle on the file now, a handle opened while the read was out
-    // included.
-    for (const ctx of [...this.handles.values()].filter(held)) {
-      ctx.data = data
-      delete ctx.chunked
+    for (;;) {
+      const held = [...this.handles.values()].filter(
+        (ctx) => ctx.key === key && ctx.chunked !== undefined,
+      )
+      if (held.length === 0) return
+      let data: Uint8Array
+      try {
+        data = await this.op(() => this.ops.readFile(this.resolve(path)))
+      } catch (err) {
+        console.warn(`fuse: holding ${path} before it goes failed: ${String(err)}`)
+        return
+      }
+      for (const ctx of held) {
+        ctx.data = data
+        delete ctx.chunked
+      }
     }
   }
 

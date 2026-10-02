@@ -26,7 +26,7 @@ import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 // through lighter routes instead (ls receives a light-stat adapter from the
 // package factory, the find wrapper threads statLight unless a time test needs
 // detail timestamps), mirroring the Python wiring.
-export const DIFY_IO: CommandIO<DifyAccessor> = new VFSAdapter<DifyAccessor>({
+export const IO: CommandIO<DifyAccessor> = new VFSAdapter<DifyAccessor>({
   search: { search: searchResource, searchMany },
   read: { readdir: DIFY_TREE.readdir, readBytes, stat },
   native: { readRange: rangeOf(readBytes), readStream },

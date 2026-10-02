@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GRIDFS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote MongoDB GridFS bucket. Maps GridFS filenames to virtual paths.
   IMPORTANT: This is a remote mount. Prefer targeted reads (grep, head) over full scans. Avoid cat on large files without piping to head/tail.
   find -type f pushes -name/-size filters into the fs.files query server-side, so it is cheap even on large buckets.

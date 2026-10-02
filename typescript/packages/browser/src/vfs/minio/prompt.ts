@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const MINIO_BROWSER_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote MinIO bucket (S3-compatible) accessed via presigned URLs (browser runtime).
   Supports the full filesystem command set: ls/tree/cat/grep/find/du/cp/mv/rm/etc.
   Listing operations require the presigner to sign LIST/COPY operations in

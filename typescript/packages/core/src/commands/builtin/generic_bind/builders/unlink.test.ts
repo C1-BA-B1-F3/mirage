@@ -20,7 +20,7 @@ import { materialize } from '../../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
 import { eacces, enoent } from '../../../../utils/errors.ts'
 import type { CommandIO } from '../adapter.ts'
-import { UNLINK_BUILDER } from './unlink.ts'
+import { BUILDER } from './unlink.ts'
 
 const DEC = new TextDecoder()
 const INDEX = new RAMIndexCacheStore()
@@ -55,7 +55,7 @@ function ops(removed?: string[]): CommandIO {
 }
 
 async function unlink(io: CommandIO, path: string): Promise<[number, string]> {
-  const result = await UNLINK_BUILDER.fn(io, {} as Accessor, [PathSpec.fromStrPath(path)], [], {
+  const result = await BUILDER.fn(io, {} as Accessor, [PathSpec.fromStrPath(path)], [], {
     stdin: null,
     flags: {},
     filetypeFns: null,

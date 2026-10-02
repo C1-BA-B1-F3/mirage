@@ -24,7 +24,7 @@ import { SSH_COMMANDS } from '../../commands/builtin/ssh/index.ts'
 
 import { SSH_OPS } from '../../ops/ssh/index.ts'
 import { type SSHConfig, type SSHConfigRedacted, redactSshConfig } from './config.ts'
-import { SSH_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/ssh/watch.ts'
 
@@ -40,7 +40,7 @@ export class SSHVFS extends BaseVFS {
   // file; reads are the same raw bytes.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 60
-  override readonly prompt = SSH_PROMPT
+  override readonly prompt = PROMPT
   readonly config: SSHConfig
   override readonly accessor: SSHAccessor
 

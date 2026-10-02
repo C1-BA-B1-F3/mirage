@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const DISCORD_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   <guild-name>__<guild-id>/
     channels/
       <channel-name>__<channel-id>/
@@ -44,7 +44,7 @@ export const DISCORD_PROMPT = `{prefix}
   so grep falls back to per-file scan via CDN download. Binary attachments
   (JPG, PDF) will produce noise.`
 
-export const DISCORD_WRITE_PROMPT = `  Writes go through the discord CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the discord CLI if installed:
     discord send --channel <channel-id> --text "message"
     discord react --channel <channel-id> --message <id> --emoji "✅"
   See discord --help for every verb (edit, delete, threads, polls).`

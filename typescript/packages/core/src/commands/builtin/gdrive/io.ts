@@ -32,7 +32,7 @@ import { unlink as gdriveUnlink } from '../../../core/gdrive/unlink.ts'
 import { write as gdriveWrite } from '../../../core/gdrive/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const GDRIVE_IO: CommandIO<GDriveAccessor> = new VFSAdapter<GDriveAccessor>({
+export const IO: CommandIO<GDriveAccessor> = new VFSAdapter<GDriveAccessor>({
   read: { readdir: gdriveReaddir, readBytes: gdriveRead, stat: gdriveStat },
   native: {
     readRange: rangeOf(gdriveRead),

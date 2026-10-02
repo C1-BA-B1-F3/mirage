@@ -6,7 +6,7 @@ import { readdir } from '../../../core/mem0/readdir.ts'
 import { stat } from '../../../core/mem0/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const MEM0_IO: CommandIO<Mem0Accessor> = new VFSAdapter<Mem0Accessor>({
+export const IO: CommandIO<Mem0Accessor> = new VFSAdapter<Mem0Accessor>({
   search: { search: searchResource, searchMany },
   read: { readdir, readBytes: read, stat },
   native: { readStream },

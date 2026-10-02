@@ -16,7 +16,7 @@ import { wcAggregate } from '../../aggregators.ts'
 import { wcGeneric } from '../../generic/wc.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const WC_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'wc',
   read: true,
   aggregate: wcAggregate,

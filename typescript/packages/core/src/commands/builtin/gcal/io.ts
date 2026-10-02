@@ -20,7 +20,7 @@ import { readdir as gcalReaddir } from '../../../core/gcal/readdir.ts'
 import { stat as gcalStat } from '../../../core/gcal/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GCAL_IO: CommandIO<GCalAccessor> = new VFSAdapter<GCalAccessor>({
+export const IO: CommandIO<GCalAccessor> = new VFSAdapter<GCalAccessor>({
   read: { readdir: gcalReaddir, readBytes: gcalRead, stat: gcalStat },
   isMounted: () => true,
   local: false,

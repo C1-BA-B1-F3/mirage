@@ -15,7 +15,7 @@
 import { readlinkGeneric } from '../../generic/readlink.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
-export const READLINK_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'readlink',
   fn: async (ops, accessor, paths, texts, opts) =>
     readlinkGeneric(

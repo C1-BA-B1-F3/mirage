@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const SSH_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   Remote filesystem via SSH/SFTP.
   IMPORTANT: This is a remote mount. Prefer targeted reads over full scans.
   Supports: ls, cat, head, tail, grep, rg, wc, find, tree, stat, mkdir, touch, cp, mv, rm, tee.`

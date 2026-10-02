@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { JAEGER_IO } from '../../commands/builtin/jaeger/io.ts'
+import { IO } from '../../commands/builtin/jaeger/io.ts'
 import { VFSName } from '../../types.ts'
 import { makeGenericOps } from '../generic/factory.ts'
 import type { RegisteredOp } from '../registry.ts'
 
-export const JAEGER_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.JAEGER, JAEGER_IO)
+export const JAEGER_OPS: readonly RegisteredOp[] = makeGenericOps(VFSName.JAEGER, IO)

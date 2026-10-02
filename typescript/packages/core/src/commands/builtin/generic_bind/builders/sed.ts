@@ -44,7 +44,7 @@ function positionalAsPaths(texts: string[], opts: CommandOpts): PathSpec[] {
   })
 }
 
-export const SED_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'sed',
   fn: async (ops, accessor, paths, texts, opts) => {
     const idx = opts.index ?? undefined

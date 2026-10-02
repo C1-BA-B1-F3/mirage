@@ -20,7 +20,7 @@ import type { ChromaAccessor } from '../../../accessor/chroma.ts'
 import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const CHROMA_IO: CommandIO<ChromaAccessor> = new VFSAdapter<ChromaAccessor>({
+export const IO: CommandIO<ChromaAccessor> = new VFSAdapter<ChromaAccessor>({
   search: { search: searchResource, searchMany },
   read: { readdir: CHROMA_TREE.readdir, readBytes, stat },
   native: { readStream },

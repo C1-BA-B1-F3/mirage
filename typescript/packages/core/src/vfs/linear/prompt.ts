@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const LINEAR_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   teams/
     <team-key>__<team-name>__<team-id>/
       team.json
@@ -124,7 +124,7 @@ export const LINEAR_PROMPT = `{prefix}
   comments, projects, cycles, labels, users, documents, search), use
   the linear CLI if installed: linear --help`
 
-export const LINEAR_WRITE_PROMPT = `  Writes go through the linear CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the linear CLI if installed:
     linear issue create --team STR --title "Title" --description "Body"
     linear comment add STR-42 --body "comment"
   See linear --help for every verb.`

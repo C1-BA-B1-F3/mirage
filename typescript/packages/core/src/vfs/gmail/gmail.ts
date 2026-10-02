@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GMAIL_OPS } from '../../ops/gmail/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GMAIL_PROMPT, GMAIL_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGmailConfig, type GmailConfig, type GmailConfigRedacted } from './config.ts'
@@ -40,8 +40,8 @@ export class GmailVFS extends BaseVFS {
   // attachments carry the decoded byte count.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  override readonly prompt: string = GMAIL_PROMPT
-  override readonly writePrompt: string = GMAIL_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: GmailConfig
   override readonly accessor: GmailAccessor
 

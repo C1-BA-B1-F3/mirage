@@ -36,7 +36,7 @@ import { unlink as ramUnlink } from '../../../core/ram/unlink.ts'
 import { writeBytes as ramWrite } from '../../../core/ram/write.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const RAM_IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
+export const IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
   read: { readdir: ramReaddir, readBytes: devAwareRead, stat: devAwareStat },
   native: {
     readRange: devAwareReadRange,

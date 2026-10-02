@@ -31,7 +31,7 @@ import { unlink as dropboxUnlink } from '../../../core/dropbox/unlink.ts'
 import { write as dropboxWrite } from '../../../core/dropbox/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const DROPBOX_IO: CommandIO<DropboxAccessor> = new VFSAdapter<DropboxAccessor>({
+export const IO: CommandIO<DropboxAccessor> = new VFSAdapter<DropboxAccessor>({
   read: { readdir: dropboxReaddir, readBytes: dropboxRead, stat: dropboxStat },
   native: {
     readRange: rangeOf(dropboxRead),

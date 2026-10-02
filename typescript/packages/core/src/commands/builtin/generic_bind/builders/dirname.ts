@@ -15,7 +15,7 @@
 import { dirnameFn } from '../../generic/dirname.ts'
 import type { Builder } from '../adapter.ts'
 
-export const DIRNAME_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'dirname',
   fn: (_ops, accessor, paths, texts, opts) => dirnameFn(accessor, paths, texts, opts),
 }

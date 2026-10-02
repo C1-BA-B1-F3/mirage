@@ -15,7 +15,7 @@
 import { patchGeneric } from '../../generic/patch.ts'
 import { type Builder, dirAwareStat, requireOp, resolveGlobOf } from '../adapter.ts'
 
-export const PATCH_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'patch',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

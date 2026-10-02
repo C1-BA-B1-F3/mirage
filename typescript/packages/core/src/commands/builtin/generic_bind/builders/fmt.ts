@@ -15,7 +15,7 @@
 import { fmtGeneric } from '../../generic/fmt.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const FMT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'fmt',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -31,7 +31,7 @@ import { stream as hfStream } from '../../../core/hf_buckets/stream.ts'
 import { exists as hfExists } from '../../../core/hf_buckets/exists.ts'
 import { write as hfWrite } from '../../../core/hf_buckets/write.ts'
 
-export const HF_BUCKETS_IO: CommandIO<HfBucketsAccessor> = new VFSAdapter<HfBucketsAccessor>({
+export const IO: CommandIO<HfBucketsAccessor> = new VFSAdapter<HfBucketsAccessor>({
   read: { readdir: hfReaddir, readBytes: hfRead, stat: hfStat },
   native: {
     readRange: rangeOf(hfRead),

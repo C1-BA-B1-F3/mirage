@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GCAL_OPS } from '../../ops/gcal/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GCAL_PROMPT, GCAL_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGCalConfig, type GCalConfig, type GCalConfigRedacted } from './config.ts'
@@ -40,7 +40,7 @@ export class GCalVFS extends BaseVFS {
   // already moved.
   override readonly indexTtl: number = 300
   override readonly prompt: string
-  override readonly writePrompt: string = GCAL_WRITE_PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: GCalConfig
   override readonly accessor: GCalAccessor
 
@@ -49,7 +49,7 @@ export class GCalVFS extends BaseVFS {
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GCalAccessor({ tokenManager: tm, config })
-    this.prompt = GCAL_PROMPT + this.accessor.timeRange.prompt()
+    this.prompt = PROMPT + this.accessor.timeRange.prompt()
   }
 
   override commands(): readonly RegisteredCommand[] {

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const QINGSTOR_PROMPT = `\
+export const PROMPT = `\
 {prefix}
   Remote QingStor bucket (S3-compatible).
   IMPORTANT: This is a remote mount. Prefer targeted reads over full scans.

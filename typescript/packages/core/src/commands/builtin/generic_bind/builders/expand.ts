@@ -15,7 +15,7 @@
 import { expandGeneric } from '../../generic/expand.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const EXPAND_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'expand',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

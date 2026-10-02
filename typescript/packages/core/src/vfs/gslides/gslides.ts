@@ -22,7 +22,7 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GSLIDES_OPS } from '../../ops/gslides/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { GSLIDES_PROMPT, GSLIDES_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactGSlidesConfig, type GSlidesConfig, type GSlidesConfigRedacted } from './config.ts'
@@ -38,8 +38,8 @@ export class GSlidesVFS extends BaseVFS {
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
   override readonly readRevalidatable: boolean = true
-  override readonly prompt: string = GSLIDES_PROMPT
-  override readonly writePrompt: string = GSLIDES_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: GSlidesConfig
   override readonly accessor: GSlidesAccessor
 

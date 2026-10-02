@@ -15,7 +15,7 @@
 import { statGeneric } from '../../generic/stat.ts'
 import { type Builder, overlaidStat, resolveGlobOf } from '../adapter.ts'
 
-export const STAT_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'stat',
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined

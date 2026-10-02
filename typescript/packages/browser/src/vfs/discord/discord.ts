@@ -22,7 +22,7 @@ import { BrowserDiscordTransport } from '@struktoai/mirage-core/core/discord/cli
 import { DISCORD_OPS } from '@struktoai/mirage-core/ops/discord/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import { DISCORD_PROMPT, DISCORD_WRITE_PROMPT } from '@struktoai/mirage-core/vfs/discord/prompt'
+import { PROMPT, WRITE_PROMPT } from '@struktoai/mirage-core/vfs/discord/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { redactDiscordConfig, type DiscordConfig, type DiscordConfigRedacted } from './config.ts'
@@ -40,7 +40,7 @@ export class DiscordVFS extends BaseVFS {
   // attachments carry Discord's CDN byte count.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly prompt: string
-  override readonly writePrompt: string = DISCORD_WRITE_PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: DiscordConfig
   override readonly accessor: DiscordAccessor
 
@@ -54,7 +54,7 @@ export class DiscordVFS extends BaseVFS {
       }),
       config,
     )
-    this.prompt = DISCORD_PROMPT + this.accessor.timeRange.prompt()
+    this.prompt = PROMPT + this.accessor.timeRange.prompt()
   }
 
   override commands(): readonly RegisteredCommand[] {

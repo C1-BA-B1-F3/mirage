@@ -201,6 +201,11 @@ jobs:
       - name: Layout parity
         run: ./python/.venv/bin/python scripts/check_layout_parity.py --strict
 
+      # The same ratchet one level down: the top-level names inside each
+      # module pair.
+      - name: Symbol parity
+        run: ./python/.venv/bin/python scripts/check_symbol_parity.py --strict
+
       # Same ratchet, applied to battery coverage: a backend that cannot pass
       # a case is normally just deleted from its `targets`, which turns a
       # divergence into an omission nobody can see. This fails when a case

@@ -16,8 +16,8 @@ import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/gen
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { HfBucketsAccessor } from '../../../accessor/hf_buckets.ts'
-import { HF_BUCKETS_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const HF_BUCKETS_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<HfBucketsAccessor>(VFSName.HF_BUCKETS, HF_BUCKETS_IO),
+  ...makeGenericCommands<HfBucketsAccessor>(VFSName.HF_BUCKETS, IO),
 ]

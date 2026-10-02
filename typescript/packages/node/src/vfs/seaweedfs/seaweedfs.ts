@@ -20,12 +20,12 @@ import {
   type SeaweedFSConfig,
   type SeaweedFSConfigRedacted,
 } from './config.ts'
-import { SEAWEEDFS_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
 export type SeaweedFSVFSState = S3AliasVFSState<SeaweedFSConfigRedacted>
 
 export class SeaweedFSVFS extends S3AliasVFS<SeaweedFSConfig, SeaweedFSConfigRedacted> {
-  override readonly prompt: string = SEAWEEDFS_PROMPT
+  override readonly prompt: string = PROMPT
 
   constructor(config: SeaweedFSConfig) {
     super(VFSName.SEAWEEDFS, config, seaweedfsToS3Config(config), redactSeaweedFSConfig)

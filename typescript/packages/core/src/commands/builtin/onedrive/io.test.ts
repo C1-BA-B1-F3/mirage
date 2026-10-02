@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OneDriveAccessor } from '../../../accessor/onedrive.ts'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
 import { PathSpec } from '../../../types.ts'
-import { ONEDRIVE_IO } from './io.ts'
+import { IO } from './io.ts'
 
 const BASE = 'https://graph.microsoft.com/v1.0/me/drive'
 
@@ -59,11 +59,10 @@ describe('OneDrive du', () => {
     const seen = tree()
     const accessor = new OneDriveAccessor({ accessToken: 'token' })
     const root = PathSpec.fromStrPath('/od', '')
-    const [entries, total] = (await ONEDRIVE_IO.du?.entries(
-      accessor,
-      root,
-      new RAMIndexCacheStore(),
-    )) ?? [[], 0]
+    const [entries, total] = (await IO.du?.entries(accessor, root, new RAMIndexCacheStore())) ?? [
+      [],
+      0,
+    ]
     expect(entries).toEqual([
       ['/a.txt', 3],
       ['/sub/b.txt', 5],
@@ -81,6 +80,6 @@ describe('OneDrive du', () => {
     tree()
     const accessor = new OneDriveAccessor({ accessToken: 'token' })
     const missing = PathSpec.fromStrPath('/od/nosuch', 'nosuch')
-    expect(await ONEDRIVE_IO.du?.size(accessor, missing, new RAMIndexCacheStore())).toBe(0)
+    expect(await IO.du?.size(accessor, missing, new RAMIndexCacheStore())).toBe(0)
   })
 })

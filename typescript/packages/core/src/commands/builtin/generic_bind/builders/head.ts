@@ -16,7 +16,7 @@ import { headerAggregate } from '../../aggregators.ts'
 import { headGeneric } from '../../generic/head.ts'
 import { type Builder, dirAwareStat, resolveGlobOf } from '../adapter.ts'
 
-export const HEAD_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'head',
   read: true,
   aggregate: headerAggregate,

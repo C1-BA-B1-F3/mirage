@@ -21,7 +21,7 @@ import type { CommandIO } from '../generic_bind/index.ts'
 // The view is read-only (the lookup owns what is there), so only the read
 // trio is wired. There is no native streaming read, so the stream yields
 // the whole rendered stub.
-export const BIN_IO: CommandIO<BinAccessor> = {
+export const IO: CommandIO<BinAccessor> = {
   readdir: binReaddir,
   readBytes: binRead,
   readStream: async function* (accessor, path) {

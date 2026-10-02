@@ -22,7 +22,7 @@ import { HttpTrelloTransport } from '../../core/trello/client.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { TRELLO_OPS } from '../../ops/trello/index.ts'
 
-import { TRELLO_PROMPT, TRELLO_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
 import { redactTrelloConfig, type TrelloConfig, type TrelloConfigRedacted } from './config.ts'
@@ -35,8 +35,8 @@ export interface TrelloVFSState {
 export class TrelloVFS extends BaseVFS {
   override readonly name: string = VFSName.TRELLO
   override readonly cachesReads: boolean = true
-  override readonly prompt: string = TRELLO_PROMPT
-  override readonly writePrompt: string = TRELLO_WRITE_PROMPT
+  override readonly prompt: string = PROMPT
+  override readonly writePrompt: string = WRITE_PROMPT
   readonly config: TrelloConfig
   override readonly accessor: TrelloAccessor
 

@@ -20,10 +20,10 @@ import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { PathSpec } from '../../types.ts'
 import type { SlackResponse, SlackTransport } from './client.ts'
 import { resolveGlobOf } from '../../commands/builtin/generic_bind/index.ts'
-import { SLACK_IO } from '../../commands/builtin/slack/io.ts'
+import { IO } from '../../commands/builtin/slack/io.ts'
 import { DEFAULT_MAX_GLOB_MATCHES } from '../../utils/glob_walk.ts'
 
-const resolveSlackGlob = resolveGlobOf(SLACK_IO)
+const resolveSlackGlob = resolveGlobOf(IO)
 
 class FakeSlackTransport implements SlackTransport {
   public readonly calls: string[] = []

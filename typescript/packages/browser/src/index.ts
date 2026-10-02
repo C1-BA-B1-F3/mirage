@@ -30,11 +30,12 @@ export type { OneDriveConfig } from '@struktoai/mirage-core/accessor/onedrive'
 export type { SharePointConfig } from '@struktoai/mirage-core/accessor/sharepoint'
 export { Workspace } from './workspace.ts'
 export { OPFSVFS, type OPFSVFSOptions, type OPFSVFSState } from './vfs/opfs/opfs.ts'
-export { OPFS_PROMPT } from './vfs/opfs/prompt.ts'
+export { PROMPT as OPFS_PROMPT } from './vfs/opfs/prompt.ts'
 export { OPFS_OPS } from './ops/opfs/index.ts'
 export { OPFSAccessor } from './accessor/opfs.ts'
 export { OPFS_COMMANDS } from './commands/builtin/opfs/index.ts'
-export { S3VFS, S3_BROWSER_PROMPT, type S3VFSState } from './vfs/s3/s3.ts'
+export { S3VFS, type S3VFSState } from './vfs/s3/s3.ts'
+export { PROMPT as S3_BROWSER_PROMPT } from './vfs/s3/prompt.ts'
 export { S3_COMMANDS } from '@struktoai/mirage-core/commands/builtin/s3/index'
 export {
   normalizeS3Config,
@@ -46,7 +47,7 @@ export {
   type S3ConfigRedacted,
 } from './vfs/s3/config.ts'
 export { GCSVFS, type GCSVFSState } from './vfs/gcs/gcs.ts'
-export { GCS_BROWSER_PROMPT } from './vfs/gcs/prompt.ts'
+export { PROMPT as GCS_BROWSER_PROMPT } from './vfs/gcs/prompt.ts'
 export {
   redactGcsConfig,
   gcsToS3Config,
@@ -54,7 +55,7 @@ export {
   type GCSConfigRedacted,
 } from './vfs/gcs/config.ts'
 export { R2VFS, type R2VFSState } from './vfs/r2/r2.ts'
-export { R2_BROWSER_PROMPT } from './vfs/r2/prompt.ts'
+export { PROMPT as R2_BROWSER_PROMPT } from './vfs/r2/prompt.ts'
 export {
   redactR2Config,
   r2ToS3Config,
@@ -63,7 +64,7 @@ export {
   type R2ConfigRedacted,
 } from './vfs/r2/config.ts'
 export { OCIVFS, type OCIVFSState } from './vfs/oci/oci.ts'
-export { OCI_BROWSER_PROMPT } from './vfs/oci/prompt.ts'
+export { PROMPT as OCI_BROWSER_PROMPT } from './vfs/oci/prompt.ts'
 export {
   redactOciConfig,
   ociToS3Config,
@@ -72,7 +73,7 @@ export {
   type OCIConfigRedacted,
 } from './vfs/oci/config.ts'
 export { SupabaseVFS, type SupabaseVFSState } from './vfs/supabase/supabase.ts'
-export { SUPABASE_BROWSER_PROMPT } from './vfs/supabase/prompt.ts'
+export { PROMPT as SUPABASE_BROWSER_PROMPT } from './vfs/supabase/prompt.ts'
 export {
   redactSupabaseConfig,
   supabaseToS3Config,
@@ -81,7 +82,7 @@ export {
   type SupabaseConfigRedacted,
 } from './vfs/supabase/config.ts'
 export { MinIOVFS, type MinIOVFSState } from './vfs/minio/minio.ts'
-export { MINIO_BROWSER_PROMPT } from './vfs/minio/prompt.ts'
+export { PROMPT as MINIO_BROWSER_PROMPT } from './vfs/minio/prompt.ts'
 export {
   redactMinIOConfig,
   minioToS3Config,
@@ -89,7 +90,7 @@ export {
   type MinIOConfigRedacted,
 } from './vfs/minio/config.ts'
 export { SeaweedFSVFS, type SeaweedFSVFSState } from './vfs/seaweedfs/seaweedfs.ts'
-export { SEAWEEDFS_BROWSER_PROMPT } from './vfs/seaweedfs/prompt.ts'
+export { PROMPT as SEAWEEDFS_BROWSER_PROMPT } from './vfs/seaweedfs/prompt.ts'
 export {
   redactSeaweedFSConfig,
   seaweedfsToS3Config,
@@ -97,7 +98,7 @@ export {
   type SeaweedFSConfigRedacted,
 } from './vfs/seaweedfs/config.ts'
 export { CephVFS, type CephVFSState } from './vfs/ceph/ceph.ts'
-export { CEPH_BROWSER_PROMPT } from './vfs/ceph/prompt.ts'
+export { PROMPT as CEPH_BROWSER_PROMPT } from './vfs/ceph/prompt.ts'
 export {
   redactCephConfig,
   cephToS3Config,
@@ -105,7 +106,7 @@ export {
   type CephConfigRedacted,
 } from './vfs/ceph/config.ts'
 export { WasabiVFS, type WasabiVFSState } from './vfs/wasabi/wasabi.ts'
-export { WASABI_BROWSER_PROMPT } from './vfs/wasabi/prompt.ts'
+export { PROMPT as WASABI_BROWSER_PROMPT } from './vfs/wasabi/prompt.ts'
 export {
   redactWasabiConfig,
   wasabiToS3Config,
@@ -114,7 +115,7 @@ export {
   type WasabiConfigRedacted,
 } from './vfs/wasabi/config.ts'
 export { BackblazeVFS, type BackblazeVFSState } from './vfs/backblaze/backblaze.ts'
-export { BACKBLAZE_BROWSER_PROMPT } from './vfs/backblaze/prompt.ts'
+export { PROMPT as BACKBLAZE_BROWSER_PROMPT } from './vfs/backblaze/prompt.ts'
 export {
   redactBackblazeConfig,
   backblazeToS3Config,
@@ -123,7 +124,7 @@ export {
   type BackblazeConfigRedacted,
 } from './vfs/backblaze/config.ts'
 export { DigitalOceanVFS, type DigitalOceanVFSState } from './vfs/digitalocean/digitalocean.ts'
-export { DIGITALOCEAN_BROWSER_PROMPT } from './vfs/digitalocean/prompt.ts'
+export { PROMPT as DIGITALOCEAN_BROWSER_PROMPT } from './vfs/digitalocean/prompt.ts'
 export {
   redactDigitalOceanConfig,
   digitalOceanToS3Config,
@@ -132,7 +133,7 @@ export {
   type DigitalOceanConfigRedacted,
 } from './vfs/digitalocean/config.ts'
 export { TencentVFS, type TencentVFSState } from './vfs/tencent/tencent.ts'
-export { TENCENT_BROWSER_PROMPT } from './vfs/tencent/prompt.ts'
+export { PROMPT as TENCENT_BROWSER_PROMPT } from './vfs/tencent/prompt.ts'
 export {
   redactTencentConfig,
   tencentToS3Config,
@@ -141,7 +142,7 @@ export {
   type TencentConfigRedacted,
 } from './vfs/tencent/config.ts'
 export { AliyunVFS, type AliyunVFSState } from './vfs/aliyun/aliyun.ts'
-export { ALIYUN_BROWSER_PROMPT } from './vfs/aliyun/prompt.ts'
+export { PROMPT as ALIYUN_BROWSER_PROMPT } from './vfs/aliyun/prompt.ts'
 export {
   redactAliyunConfig,
   aliyunToS3Config,
@@ -150,7 +151,7 @@ export {
   type AliyunConfigRedacted,
 } from './vfs/aliyun/config.ts'
 export { ScalewayVFS, type ScalewayVFSState } from './vfs/scaleway/scaleway.ts'
-export { SCALEWAY_BROWSER_PROMPT } from './vfs/scaleway/prompt.ts'
+export { PROMPT as SCALEWAY_BROWSER_PROMPT } from './vfs/scaleway/prompt.ts'
 export {
   redactScalewayConfig,
   scalewayToS3Config,
@@ -159,7 +160,7 @@ export {
   type ScalewayConfigRedacted,
 } from './vfs/scaleway/config.ts'
 export { QingStorVFS, type QingStorVFSState } from './vfs/qingstor/qingstor.ts'
-export { QINGSTOR_BROWSER_PROMPT } from './vfs/qingstor/prompt.ts'
+export { PROMPT as QINGSTOR_BROWSER_PROMPT } from './vfs/qingstor/prompt.ts'
 export {
   redactQingStorConfig,
   qingStorToS3Config,
@@ -277,7 +278,7 @@ export {
 } from '@struktoai/mirage-core/vfs/gcal/config'
 export { RedisVFS, type RedisVFSOptions, type RedisVFSState } from './vfs/redis/redis.ts'
 export { UpstashRedisStore, type UpstashRedisStoreOptions } from './vfs/redis/store.ts'
-export { REDIS_PROMPT } from '@struktoai/mirage-core/vfs/redis/prompt'
+export { PROMPT as REDIS_PROMPT } from '@struktoai/mirage-core/vfs/redis/prompt'
 export { REDIS_OPS } from '@struktoai/mirage-core/ops/redis/index'
 export { REDIS_COMMANDS } from '@struktoai/mirage-core/commands/builtin/redis/index'
 export { RedisAccessor } from '@struktoai/mirage-core/accessor/redis'

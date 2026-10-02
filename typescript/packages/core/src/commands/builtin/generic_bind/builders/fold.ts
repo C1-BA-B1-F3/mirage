@@ -15,7 +15,7 @@
 import { foldGeneric } from '../../generic/fold.ts'
 import { type Builder, dirAwareStream, resolveGlobOf } from '../adapter.ts'
 
-export const FOLD_BUILDER: Builder = {
+export const BUILDER: Builder = {
   name: 'fold',
   read: true,
   fn: async (ops, accessor, paths, _texts, opts) => {

@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { HF_BUCKETS_COMMANDS } from './index.ts'
-import { HF_BUCKETS_IO } from './io.ts'
+import { IO } from './io.ts'
 
 const EXPECTED_NAMES = [
   'awk',
@@ -82,7 +82,7 @@ describe('HF_BUCKETS_COMMANDS', () => {
     // whose builder resolves a pattern operand through the shared
     // adapter; a bespoke wrapper left that to the dispatcher, which
     // cannot see the namespace.
-    expect(HF_BUCKETS_IO.find).toBeDefined()
+    expect(IO.find).toBeDefined()
   })
 
   it('registers the python hf_buckets command list', () => {

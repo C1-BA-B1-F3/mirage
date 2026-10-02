@@ -16,9 +16,9 @@ import type { BoxAccessor } from '../../../accessor/box.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { BOX_IO } from './io.ts'
+import { IO } from './io.ts'
 
 export const BOX_COMMANDS: readonly RegisteredCommand[] = makeGenericCommands<BoxAccessor>(
   VFSName.BOX,
-  BOX_IO,
+  IO,
 )

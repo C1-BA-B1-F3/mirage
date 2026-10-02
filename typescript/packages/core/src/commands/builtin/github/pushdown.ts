@@ -16,7 +16,7 @@ import type { GitHubAccessor } from '../../../accessor/github.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { SCOPE_WARN } from '../../../core/github/constants.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { GITHUB_IO } from './io.ts'
+import { IO } from './io.ts'
 import {
   countScopeFiles,
   isDirectoryKey,
@@ -30,7 +30,7 @@ import { narrowPaths } from '../../../core/github/search.ts'
 import type { PathSpec } from '../../../types.ts'
 import { textCandidates, wholeWordLiteral } from '../grep_pushdown.ts'
 
-const resolveGlob = resolveGlobOf(GITHUB_IO)
+const resolveGlob = resolveGlobOf(IO)
 
 export interface NarrowResult {
   resolved: PathSpec[]

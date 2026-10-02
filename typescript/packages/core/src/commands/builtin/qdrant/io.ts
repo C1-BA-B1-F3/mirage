@@ -17,7 +17,7 @@ import { read, readdir, SEARCH, stat } from '../../../core/qdrant/tree.ts'
 import { VFSAdapter } from '../../../vfs/adapter.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const QDRANT_IO: CommandIO<QdrantAccessor> = new VFSAdapter<QdrantAccessor>({
+export const IO: CommandIO<QdrantAccessor> = new VFSAdapter<QdrantAccessor>({
   search: SEARCH,
   read: { readdir, readBytes: read, stat },
   isMounted: () => true,

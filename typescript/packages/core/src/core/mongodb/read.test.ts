@@ -17,7 +17,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MongoDBAccessor } from '../../accessor/mongodb.ts'
 import { resolveMongoDBConfig } from '../../vfs/mongodb/config.ts'
 import { PathSpec } from '../../types.ts'
-import { MONGODB_IO } from '../../commands/builtin/mongodb/io.ts'
+import { IO } from '../../commands/builtin/mongodb/io.ts'
 import { read } from './read.ts'
 import { arrayIter, stubMongoDriver } from './_test_util.ts'
 
@@ -110,7 +110,7 @@ describe('registered read stream contract', () => {
       const path = ps(`/mongo/app/${leaf}`)
       const expected = decode(await read(accessor, path))
       let actual = ''
-      for await (const chunk of MONGODB_IO.readStream(accessor, path)) actual += decode(chunk)
+      for await (const chunk of IO.readStream(accessor, path)) actual += decode(chunk)
       expect(actual).toBe(expected)
       expect(countDocuments).not.toHaveBeenCalled()
       expect(getIndexStats).not.toHaveBeenCalled()
@@ -135,7 +135,7 @@ describe('registered read stream contract', () => {
       },
     })
     const accessor = new MongoDBAccessor(driver, resolveMongoDBConfig({ uri: 'mongodb://h' }))
-    for await (const chunk of MONGODB_IO.readStream(
+    for await (const chunk of IO.readStream(
       accessor,
       ps('/mongo/app/collections/users/documents.jsonl'),
     )) {

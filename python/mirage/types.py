@@ -734,17 +734,6 @@ class Refusal:
     ask_id: str | None = None
 
 
-class VFSWriteOp(str, Enum):
-    WRITE = "write"
-    UNLINK = "unlink"
-    RMDIR = "rmdir"
-    MKDIR = "mkdir"
-    RENAME = "rename"
-    TRUNCATE = "truncate"
-    CREATE = "create"
-    APPEND = "append"
-
-
 class VFSName(StrEnum):
     DISK = "disk"
     S3 = "s3"

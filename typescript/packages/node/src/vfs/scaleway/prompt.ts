@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const SCALEWAY_PROMPT = `\
+export const PROMPT = `\
 {prefix}
   Remote Scaleway Object Storage bucket (S3-compatible).
   IMPORTANT: This is a remote mount. Prefer targeted reads over full scans.

@@ -13,11 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { GDRIVE_PROMPT } from './prompt.ts'
+import { PROMPT } from './prompt.ts'
 
-describe('GDRIVE_PROMPT', () => {
+describe('PROMPT', () => {
   it('cross-references the per-service shapes and notes scope', () => {
-    const rendered = GDRIVE_PROMPT.replace(/\{prefix\}/g, '/gdrive')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/gdrive')
     expect(rendered).toContain('.gdoc.json')
     expect(rendered).toContain('.gsheet.json')
     expect(rendered).toContain('.gslide.json')

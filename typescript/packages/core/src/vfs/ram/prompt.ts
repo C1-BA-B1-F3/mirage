@@ -12,6 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const RAM_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   In-memory filesystem. Files and directories are created on demand.
   Standard commands: ls, cat, head, tail, grep, wc, find, tree, mkdir, touch, cp, mv, rm, tee, echo > file.`

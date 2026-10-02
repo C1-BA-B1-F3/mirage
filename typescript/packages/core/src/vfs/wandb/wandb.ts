@@ -9,7 +9,7 @@ import type { WandbConfig, WandbConfigRedacted } from '../../core/wandb/config.t
 import { WANDB_OPS } from '../../ops/wandb/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import { WANDB_PROMPT } from '../../vfs/wandb/prompt.ts'
+import { PROMPT } from '../../vfs/wandb/prompt.ts'
 import { VFSName } from '../../types.ts'
 
 export interface WandbVFSState {
@@ -19,7 +19,7 @@ export interface WandbVFSState {
 
 export class WandbVFS extends BaseVFS {
   override readonly name: string = VFSName.WANDB
-  override readonly prompt: string = WANDB_PROMPT
+  override readonly prompt: string = PROMPT
   readonly config: WandbConfig
   override readonly accessor: WandbAccessor
 

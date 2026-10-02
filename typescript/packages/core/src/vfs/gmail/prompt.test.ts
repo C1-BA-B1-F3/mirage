@@ -13,11 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { GMAIL_PROMPT, GMAIL_WRITE_PROMPT } from './prompt.ts'
+import { PROMPT, WRITE_PROMPT } from './prompt.ts'
 
-describe('GMAIL_PROMPT', () => {
+describe('PROMPT', () => {
   it('renders prefix and includes path anatomy + processed shape', () => {
-    const rendered = GMAIL_PROMPT.replace(/\{prefix\}/g, '/gmail')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/gmail')
     expect(rendered).toContain('<label>')
     expect(rendered).toContain('INBOX')
     expect(rendered).toContain('after:/before:')
@@ -27,7 +27,7 @@ describe('GMAIL_PROMPT', () => {
   })
 
   it('documents file-per-message layout with sibling attachments dir', () => {
-    const rendered = GMAIL_PROMPT.replace(/\{prefix\}/g, '/gmail')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/gmail')
     expect(rendered).toContain('<subject>__<message-id>.gmail.json')
     expect(rendered).toContain('<subject>__<message-id>/')
     expect(rendered).toContain('attachments dir')
@@ -35,24 +35,24 @@ describe('GMAIL_PROMPT', () => {
   })
 
   it('mentions grep skips binary attachments', () => {
-    const rendered = GMAIL_PROMPT.replace(/\{prefix\}/g, '/gmail')
+    const rendered = PROMPT.replace(/\{prefix\}/g, '/gmail')
     expect(rendered).toContain('grep')
     expect(rendered.toLowerCase()).toContain('binary')
   })
 })
 
-describe('GMAIL_WRITE_PROMPT', () => {
+describe('WRITE_PROMPT', () => {
   it('matches actual command flag signatures', () => {
-    expect(GMAIL_WRITE_PROMPT).toContain('gws gmail send')
-    expect(GMAIL_WRITE_PROMPT).toContain('--to')
-    expect(GMAIL_WRITE_PROMPT).toContain('--subject')
-    expect(GMAIL_WRITE_PROMPT).toContain('--body')
+    expect(WRITE_PROMPT).toContain('gws gmail send')
+    expect(WRITE_PROMPT).toContain('--to')
+    expect(WRITE_PROMPT).toContain('--subject')
+    expect(WRITE_PROMPT).toContain('--body')
   })
 
   it('documents rm (trash) and the newline gotcha', () => {
-    expect(GMAIL_WRITE_PROMPT).toContain('rm ')
-    expect(GMAIL_WRITE_PROMPT).toContain('.gmail.json')
-    expect(GMAIL_WRITE_PROMPT).toContain('Trash')
-    expect(GMAIL_WRITE_PROMPT).toContain("$'")
+    expect(WRITE_PROMPT).toContain('rm ')
+    expect(WRITE_PROMPT).toContain('.gmail.json')
+    expect(WRITE_PROMPT).toContain('Trash')
+    expect(WRITE_PROMPT).toContain("$'")
   })
 })

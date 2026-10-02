@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const GDOCS_PROMPT = `{prefix}
+export const PROMPT = `{prefix}
   owned/
     <date>_<title>__<doc-id>.gdoc.json
   shared/
@@ -88,7 +88,7 @@ export const GDOCS_PROMPT = `{prefix}
   .paragraph, so a path through .paragraph needs the \`?\` or it fails with
   "Cannot iterate over null".`
 
-export const GDOCS_WRITE_PROMPT = `  Writes go through the gws CLI if installed:
+export const WRITE_PROMPT = `  Writes go through the gws CLI if installed:
     gws docs write --document <doc-id> --text "text to append"
     gws docs write --document <doc-id> --tab <tab-id> --text "..."
     See gws docs --help for the raw API passthroughs.

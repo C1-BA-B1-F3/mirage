@@ -46,7 +46,7 @@ import { stream as hubStream } from '../../../core/hf_hub/stream.ts'
 // which is an ordinary writable filesystem, so the files are edited there with
 // ordinary commands and `hf upload /work/f path` sends one commit back. Pinned
 // end to end by `hf_a_local_mount_is_the_writable_copy` in integ/cli/hf.json.
-export const HF_HUB_IO: CommandIO<HfHubAccessor> = new VFSAdapter<HfHubAccessor>({
+export const IO: CommandIO<HfHubAccessor> = new VFSAdapter<HfHubAccessor>({
   read: { readdir: hubReaddir, readBytes: hubRead, stat: hubStat },
   native: { readRange: rangeOf(hubRead), readStream: hubStream, exists: hubExists },
   isMounted: () => true,

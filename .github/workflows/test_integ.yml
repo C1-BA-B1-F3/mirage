@@ -1849,6 +1849,11 @@ jobs:
             for i in $(seq 1 30); do grep -q "_URL=" /tmp/$f.log && break; sleep 1; done
             cat /tmp/$f.log
           done
+          # Fail HERE, not later as a connection refused inside one host's
+          # battery: a fake that died on startup still prints its log.
+          for f in trello linear trello-python linear-python; do
+            grep -q "_URL=" /tmp/$f.log
+          done
           echo "TRELLO_URL=http://127.0.0.1:5095" >> "$GITHUB_ENV"
           echo "LINEAR_URL=http://127.0.0.1:5094" >> "$GITHUB_ENV"
 
@@ -1900,6 +1905,9 @@ jobs:
           for f in discord discord-python; do
             for i in $(seq 1 30); do grep -q "DISCORD_URL=" /tmp/$f.log && break; sleep 1; done
             cat /tmp/$f.log
+          done
+          for f in discord discord-python; do
+            grep -q "DISCORD_URL=" /tmp/$f.log
           done
           echo "DISCORD_URL=http://127.0.0.1:5090" >> "$GITHUB_ENV"
 
@@ -1957,6 +1965,7 @@ jobs:
           '
 
       - name: Run every facet battery (typescript host)
+        if: ${{ !cancelled() }}
         working-directory: integ
         run: |
           failed=""

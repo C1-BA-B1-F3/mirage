@@ -282,7 +282,14 @@ run_host() {
     fi
     # Whichever of the host's lanes reaches a suite first runs it: mkdir
     # either creates the claim or fails because another lane already did.
-    mkdir "$RESULT_DIR/claims/$host-$suite" 2>/dev/null || continue
+    # Any other failure would drop the suite from both lanes, so it counts.
+    if ! mkdir "$RESULT_DIR/claims/$host-$suite" 2>/dev/null; then
+      if [ ! -d "$RESULT_DIR/claims/$host-$suite" ]; then
+        failures+=("$host/$suite: could not claim the suite")
+        fail=$((fail + 1))
+      fi
+      continue
+    fi
     requires=$(jq -r --arg h "$host" \
       '(.requires // []) | if type == "array" then . else (.[$h] // []) end | .[]' \
       <<<"$suite_json")

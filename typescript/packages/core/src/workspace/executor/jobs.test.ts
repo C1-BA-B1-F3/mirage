@@ -234,6 +234,23 @@ describe('handleWait with an invocation signal', () => {
   })
 })
 
+describe('handleFg without an operand', () => {
+  // A background job can end before `fg` runs; it is still the current job,
+  // as `fg %N` would find it, so its output is not lost.
+  it('adopts a job that already finished', async () => {
+    const jt = new JobTable()
+    const run: JobRunner = async (job) => {
+      await job.console.emit(Channel.STDOUT, new TextEncoder().encode('body'))
+      return [new IOResult({ exitCode: 3 }), new ExecutionNode({ command: 'quick', exitCode: 3 })]
+    }
+    const job = jt.submit({ command: 'quick', run, abort: new AbortController(), cwd: '/' })
+    await jt.wait(job.id)
+    const [stdout, io] = await handleFg(jt, ['fg'])
+    expect(decode(stdout as Uint8Array)).toBe('quick\nbody')
+    expect(io.exitCode).toBe(3)
+  })
+})
+
 describe('handleFg with an invocation signal', () => {
   it('releases the caller on abort and leaves the job running', async () => {
     const jt = new JobTable()

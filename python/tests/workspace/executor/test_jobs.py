@@ -424,6 +424,18 @@ async def test_fg_without_an_operand_reports_when_there_is_no_job():
 
 
 @pytest.mark.asyncio
+async def test_fg_without_an_operand_adopts_a_job_that_already_finished():
+    # A background job can end before `fg` runs; it is still the current
+    # job, as `fg %N` would find it, so its output is not lost.
+    table = JobTable()
+    job = _submit_settled(table, command="quick", stdout=b"body", exit_code=3)
+    await table.wait(job.id)
+    stdout, io, _ = await handle_fg(table, ["fg"])
+    assert stdout == b"quick\nbody"
+    assert io.exit_code == 3
+
+
+@pytest.mark.asyncio
 async def test_fg_rejects_an_unknown_job_id_with_the_operand_as_typed():
     _, io, _ = await handle_fg(JobTable(), ["fg", "%9"])
     assert io.exit_code == 1

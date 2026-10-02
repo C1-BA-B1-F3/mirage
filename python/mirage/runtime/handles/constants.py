@@ -26,3 +26,9 @@ MODE_BASES = (
     frozenset("x"),
     frozenset("wx"),
 )
+
+# The least a read-only handle fetches per trip to the mount. A guest
+# reads in small pieces (a line, a 4 KiB buffer), so one chunk per
+# request keeps a sequential read at one round trip per MiB rather than
+# one per call.
+READ_CHUNK = 1 << 20

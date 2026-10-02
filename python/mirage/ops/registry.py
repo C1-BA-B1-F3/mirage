@@ -22,11 +22,24 @@ from mirage.types import PathSpec
 
 @dataclass
 class RegisteredOp:
+    """One op a VFS answers.
+
+    Args:
+        name (str): the op name (``read``, ``stat``, ...).
+        vfs (str): the VFS it is registered for.
+        filetype (str | None): the extension it is scoped to, if any.
+        fn (Callable): the op itself.
+        write (bool): whether it mutates the mount.
+        ranges (bool): a ``read`` that fetches a byte range from the
+            store itself, rather than reading the whole file and slicing.
+    """
+
     name: str
     vfs: str
     filetype: str | None
     fn: Callable[..., Any]
     write: bool = False
+    ranges: bool = False
 
 
 def op(

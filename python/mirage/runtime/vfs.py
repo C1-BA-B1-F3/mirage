@@ -246,8 +246,27 @@ class RuntimeVFS:
             directory = directory.rstrip("/") + "/" + name
         return False
 
-    def read(self, path: str) -> bytes:
-        data = self.call("read", path)
+    def read(
+        self,
+        path: str,
+        *,
+        offset: int = 0,
+        size: int | None = None,
+        raw: bool = False,
+    ) -> bytes:
+        """A file's bytes, or the range of them a handle asked for.
+
+        Args:
+            path (str): absolute virtual path.
+            offset (int): where the range starts.
+            size (int | None): its length; None reads to the end.
+            raw (bool): the stored bytes rather than a rendering, which
+                is what an edit that is written back must start from.
+        """
+        kwargs: dict[str, Any] = {"filetype": None} if raw else {}
+        if offset or size is not None:
+            kwargs.update(offset=offset, size=size)
+        data = self.call("read", path, **kwargs)
         if isinstance(data, str):
             return data.encode()
         return bytes(data)

@@ -26,6 +26,7 @@ from mirage.fuse.core import MountCore
 from mirage.observe import OpRecord
 from mirage.ops.registry import op
 from mirage.policy import Deny, Policy
+from mirage.runtime.handles.constants import READ_CHUNK
 from mirage.types import ContentType, FileStat, FileType, MountMode, PathSpec
 from mirage.utils.stat_view import DIR_SIZE, mtime_ns
 from mirage.vfs.ram import RAMVFS
@@ -531,3 +532,98 @@ async def test_rename_keeps_open_handles_on_the_moved_file(seeded, directory):
     assert seeded.read(target, 100, 0, None) == b"BEFOREAFTER"
     with pytest.raises(FileNotFoundError):
         seeded.getattr("/sub/b.txt")
+
+
+@pytest.mark.asyncio
+async def test_a_large_file_reads_a_chunk_at_a_time():
+    # The kernel asks in small pieces; hydrating the whole file on the
+    # first one moved all of it to answer a `head`.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/big.bin", b"\x01" * (3 * READ_CHUNK))
+    core = MountCore(ws.vfs)
+    fh = core.open("/big.bin")
+    before = len(ws.vfs.records)
+    assert core.read("/big.bin", 4096, 0, fh) == b"\x01" * 4096
+    assert core.read("/big.bin", 4096, 4096, fh) == b"\x01" * 4096
+    tail = core.read("/big.bin", 4096, 3 * READ_CHUNK - 2, fh)
+    assert tail == b"\x01\x01"
+    moved = [r.bytes for r in ws.vfs.records[before:] if r.op == "read"]
+    assert moved == [READ_CHUNK, 2]
+    core.release(fh)
+
+
+@pytest.mark.asyncio
+async def test_a_write_drops_the_chunk_an_open_handle_kept():
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/f.txt", b"old" * READ_CHUNK)
+    core = MountCore(ws.vfs)
+    reader = core.open("/f.txt")
+    assert core.read("/f.txt", 3, 0, reader) == b"old"
+    writer = core.open("/f.txt")
+    core.write("/f.txt", b"new", 0, writer)
+    core.release(writer)
+    assert core.read("/f.txt", 3, 0, reader) == b"new"
+    core.release(reader)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["rename", "unlink"])
+async def test_an_open_chunked_handle_outlives_a_rename_or_unlink(change):
+    # POSIX keeps an open descriptor on its file: a rename moves it and an
+    # unlink leaves its bytes readable, chunks it has not fetched included.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    body = bytes(i % 251 for i in range(3 * READ_CHUNK))
+    await ws.vfs.write("/big.bin", body)
+    core = MountCore(ws.vfs)
+    fh = core.open("/big.bin")
+    assert core.read("/big.bin", 3, 0, fh) == body[:3]
+    if change == "rename":
+        core.rename("/big.bin", "/moved.bin")
+    else:
+        core.unlink("/big.bin")
+    far = 2 * READ_CHUNK + 5
+    assert core.read("/big.bin", 4, far, fh) == body[far : far + 4]
+    core.release(fh)
+
+
+@pytest.mark.asyncio
+async def test_holding_reads_once_and_never_blocks_the_removal(monkeypatch):
+    # One read serves every open handle; a read a policy refuses leaves
+    # them chunked rather than refusing the unlink it allows.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    for name in ("/a.bin", "/b.bin"):
+        await ws.vfs.write(name, b"x" * (2 * READ_CHUNK))
+    core = MountCore(ws.vfs)
+    shared = [core.open("/a.bin") for _ in range(2)]
+    for fh in shared:
+        core.read("/a.bin", 1, 0, fh)
+    before = len(ws.vfs.records)
+    core.unlink("/a.bin")
+    assert [r.op for r in ws.vfs.records[before:]].count("read") == 1
+    refused = core.open("/b.bin")
+    core.read("/b.bin", 1, 0, refused)
+
+    async def refuse(*args, **kwargs):
+        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES))
+
+    monkeypatch.setattr(ws.vfs, "read", refuse)
+    core.unlink("/b.bin")
+    monkeypatch.undo()
+    with pytest.raises(FileNotFoundError):
+        await ws.vfs.stat("/b.bin")
+
+
+@pytest.mark.asyncio
+async def test_removing_a_link_leaves_its_targets_handles_alone():
+    # unlink(2) on a link takes the link entry, never the pointee's bytes,
+    # so nothing is read to hold an open handle on the target.
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.vfs.write("/real.bin", b"x" * (2 * READ_CHUNK))
+    await ws.shell("ln -s real.bin /alias")
+    core = MountCore(ws.vfs)
+    fh = core.open("/real.bin")
+    core.read("/real.bin", 1, 0, fh)
+    before = len(ws.vfs.records)
+    core.unlink("/alias")
+    assert "read" not in [r.op for r in ws.vfs.records[before:]]
+    core.release(fh)

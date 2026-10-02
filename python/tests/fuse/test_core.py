@@ -25,6 +25,7 @@ import pytest_asyncio
 from mirage.fuse.core import MountCore
 from mirage.observe import OpRecord
 from mirage.ops.registry import op
+from mirage.policy import Deny, Policy
 from mirage.types import ContentType, FileStat, FileType, MountMode, PathSpec
 from mirage.utils.stat_view import DIR_SIZE, mtime_ns
 from mirage.vfs.ram import RAMVFS
@@ -343,21 +344,8 @@ def _tally_core() -> MountCore:
 
 
 @pytest.mark.asyncio
-async def test_partial_write_merges_against_stored_bytes():
-    # Read-modify-write hands its merged buffer to `write`, which
-    # stores, so the read that feeds it has to be the stored bytes. A
-    # mount that renders this extension would otherwise have the
-    # rendering written over the file on any partial write.
-    core = _tally_core()
-    core.write("/data/books.tally", b"0123456789", 0, None)
-    core.write("/data/books.tally", b"XY", 4, None)
-    stored = core._run(core._ops.read("/data/books.tally", raw=True))
-    assert stored == b"0123XY6789"
-
-
-@pytest.mark.asyncio
 async def test_read_still_renders_after_a_partial_write():
-    # The other half of the same rule: only the write path reads raw.
+    # A partial write lands in the stored bytes; a read still renders.
     core = _tally_core()
     core.write("/data/books.tally", b"0123456789", 0, None)
     core.write("/data/books.tally", b"XY", 4, None)
@@ -365,8 +353,64 @@ async def test_read_still_renders_after_a_partial_write():
     assert body == b"RENDERED-AND-MUCH-LONGER"
 
 
+class _NoReads(Policy):
+    async def pre_ops(self, ctx):
+        return Deny("write-only") if ctx.op == "read" else None
+
+
 @pytest.mark.asyncio
-async def test_buffered_write_flush_merges_against_stored_bytes():
+async def test_a_write_lands_on_a_file_the_session_may_not_read():
+    # Writing at an offset is one write at the door, so a policy that
+    # refuses reads leaves FUSE writes alone, as a write-only descriptor
+    # takes pwrite(2). The flush used to read the file first and fail.
+    vfs = RAMVFS()
+    ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
+    await ws.shell("printf 'line1\\n' > /log")
+    ws.policies.add(_NoReads())
+    core = MountCore(ws.vfs)
+    core.write("/log", b"more\n", 6, None)
+    fh = core.open("/log", os.O_WRONLY)
+    core.write("/log", b"a", 11, fh)
+    core.write("/log", b"b\n", 12, fh)
+    core.release(fh)
+    assert vfs._store.files["/log"] == b"line1\nmore\nab\n"
+
+
+class _SecondPwriteFails:
+    def __init__(self, ops):
+        self._inner = ops
+        self.calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def pwrite(self, path, data, offset):
+        self.calls += 1
+        if self.calls == 2:
+            raise PermissionError(errno.EACCES, "denied", path)
+        await self._inner.pwrite(path, data, offset)
+
+
+@pytest.mark.asyncio
+async def test_a_flush_that_fails_after_a_run_landed_still_refreshes():
+    vfs = RAMVFS()
+    ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
+    await ws.shell("printf abcdefgh > /f")
+    core = MountCore(_SecondPwriteFails(ws.vfs))
+    reader = core.open("/f", os.O_RDONLY)
+    assert core.read("/f", 8, 0, reader) == b"abcdefgh"
+    fh = core.open("/f", os.O_WRONLY)
+    core.write("/f", b"X", 0, fh)
+    core.write("/f", b"Y", 5, fh)
+    with pytest.raises(PermissionError):
+        core.flush("/f", fh)
+    assert core.read("/f", 8, 0, reader) == b"Xbcdefgh"
+
+
+@pytest.mark.asyncio
+async def test_buffered_write_flush_lands_in_the_stored_bytes():
+    # A mount that renders this extension must not get the rendering
+    # written over the file on a partial write.
     core = _tally_core()
     core.write("/data/books.tally", b"0123456789", 0, None)
     fh = core.open("/data/books.tally")

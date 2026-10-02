@@ -22,6 +22,7 @@ import { size as ramDu, entries as ramDuAll } from '../../../core/ram/du/index.t
 import { exists as ramExists } from '../../../core/ram/exists.ts'
 import { find as ramFind } from '../../../core/ram/find.ts'
 import { mkdir as ramMkdir } from '../../../core/ram/mkdir.ts'
+import { pwrite as ramPwrite } from '../../../core/ram/pwrite.ts'
 import { read as devAwareRead, readRange as devAwareReadRange } from '../../../core/dev/read.ts'
 import { readdir as ramReaddir } from '../../../core/ram/readdir.ts'
 import { rename as ramRename } from '../../../core/ram/rename.ts'
@@ -56,6 +57,7 @@ export const IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
     create: ramCreate,
     truncate: ramTruncate,
     append: ramAppend,
+    pwrite: ramPwrite,
     setAttrs: ramSetAttrs,
   },
   isMounted: () => true,

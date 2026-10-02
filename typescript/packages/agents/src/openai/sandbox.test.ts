@@ -101,6 +101,16 @@ describe('MirageSandboxClient', () => {
     expect(await session.pathExists('rel.txt')).toBe(true)
   })
 
+  it('tells a directory from a file and from nothing', async () => {
+    const ws = mkWs()
+    const session = await new MirageSandboxClient(ws).create(new Manifest({ root: '/project' }))
+    await ws.vfs.mkdir('/project/sub')
+    await ws.vfs.writeFile('/project/sub/f.txt', 'f')
+    expect(await session.directoryExists('sub')).toBe(true)
+    expect(await session.directoryExists('sub/f.txt')).toBe(false)
+    expect(await session.directoryExists('nope')).toBe(false)
+  })
+
   it('materializes nested entries, creating every parent', async () => {
     const ws = mkWs()
     await new MirageSandboxClient(ws).create(

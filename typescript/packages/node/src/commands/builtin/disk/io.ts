@@ -24,6 +24,7 @@ import { size as diskDu, entries as diskDuAll } from '../../../core/disk/du/inde
 import { exists as diskExists } from '../../../core/disk/exists.ts'
 import { find as diskFind } from '../../../core/disk/find.ts'
 import { mkdir as diskMkdir } from '../../../core/disk/mkdir.ts'
+import { pwrite as diskPwrite } from '../../../core/disk/pwrite.ts'
 import { read as diskRead, readRange as diskReadRange } from '../../../core/disk/read.ts'
 import { readdir as diskReaddir } from '../../../core/disk/readdir.ts'
 import { rename as diskRename } from '../../../core/disk/rename.ts'
@@ -56,6 +57,7 @@ export const IO: CommandIO<DiskAccessor> = new VFSAdapter<DiskAccessor>({
     create: diskCreate,
     truncate: diskTruncate,
     append: diskAppend,
+    pwrite: diskPwrite,
     setAttrs: diskSetAttrs,
   },
   isMounted: (a) => a.root !== '',

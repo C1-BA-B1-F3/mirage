@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { concat } from '../../io/cachable_iterator.ts'
+import { spliceWindow } from '../../utils/ranges.ts'
 import { NO_WRITE, planFlush, type FlushKind } from './flush.ts'
 
 /**
@@ -147,21 +149,35 @@ export class FileHandle {
 }
 
 /**
- * Apply buffered (offset, payload) writes over a base file.
+ * Buffered (offset, payload) writes as the fewest pwrites that leave a file
+ * as the writes did, in arrival order.
  *
- * The batch form of the pwrite splice, for the kernel adapters: FUSE
- * buffers each write as an (offset, payload) pair on its handle and
- * owes the mount one merged body at flush, which is exactly a sequence
- * of pwrites over what the file held.
+ * The kernel adapters buffer each write on its handle and owe the mount the
+ * lot at flush. A write that starts inside the last run, or right at its
+ * end, folds into it, so a sequential stream is one run. Any other starts a
+ * run of its own; the runs apply in order, so a later run still overwrites
+ * what it overlaps of an earlier one.
  *
  * Args:
- *   base: the file's content before this handle's writes.
  *   writes: the buffered writes, in arrival order.
  */
-export function mergeWrites(base: Uint8Array, writes: [number, Uint8Array][]): Uint8Array {
-  const handle = new FileHandle('', base.slice(), true)
+export function writeRuns(writes: readonly [number, Uint8Array][]): [number, Uint8Array][] {
+  const runs: { start: number; parts: Uint8Array[]; length: number }[] = []
   for (const [offset, chunk] of writes) {
-    handle.pwrite(offset, chunk)
+    const last = runs.at(-1)
+    if (last !== undefined && last.start <= offset && offset <= last.start + last.length) {
+      const at = offset - last.start
+      if (at === last.length) {
+        last.parts.push(chunk.slice())
+        last.length += chunk.byteLength
+        continue
+      }
+      const merged = spliceWindow(concat(last.parts), at, chunk)
+      last.parts = [merged]
+      last.length = merged.byteLength
+      continue
+    }
+    runs.push({ start: offset, parts: [chunk.slice()], length: chunk.byteLength })
   }
-  return handle.buf
+  return runs.map((run): [number, Uint8Array] => [run.start, concat(run.parts)])
 }

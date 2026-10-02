@@ -13,13 +13,20 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import copy
+import logging
 
 import aiohttp
 import pytest
 from fakeredis.aioredis import FakeRedis
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import NULL_INDEX, IndexEntry, ListResult, LookupStatus
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexEntry,
+    ListResult,
+    LookupResult,
+    LookupStatus,
+)
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.core.github import lookup as lookup_mod
@@ -314,6 +321,33 @@ async def test_a_genuine_miss_is_asked_twice_without_a_request(
     # The first lookup left the listing that answers the second.
     assert calls == ["/gh/docs/sub/nope.txt"] * 2
     assert gh.counts() == (0, 0, 0)
+
+
+# A listed name with no row refills once; when the refill no longer lists
+# it, the name is absent, even with its old row still served.
+@pytest.mark.asyncio
+async def test_a_name_the_eviction_refill_drops_is_absent(
+    gh, monkeypatch, caplog
+):
+    caplog.set_level(logging.DEBUG, logger="mirage.core.github.lookup")
+    index = RAMIndexCacheStore()
+    accessor = await _listed(gh, index)
+    key = "/gh/docs/a.txt"
+    stale = (await index.get(key)).entry
+    await index.invalidate_entry(key)
+    del gh.files["docs/a.txt"]
+    get = index.get
+
+    async def survived(path):
+        if path == key and gh.count("recursive") >= 1:
+            return LookupResult(entry=stale)
+        return await get(path)
+
+    monkeypatch.setattr(index, "get", survived)
+    with pytest.raises(FileNotFoundError):
+        await stat(accessor, _spec("docs/a.txt"), index)
+    assert gh.count("recursive") == 1
+    assert "found a listed name with no row" in caplog.text
 
 
 @pytest.mark.asyncio

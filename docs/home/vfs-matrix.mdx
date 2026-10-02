@@ -16,7 +16,7 @@ Every VFS accepts `read: bounded`. `read: fresh`, which revalidates cached bytes
 
 Under `fresh`, a cached listing is checked too, and what it is checked against depends on the VFS (`listing_version` in `spec/*/vfs.json`; see [listings under `fresh`](/home/cache#listings-under-fresh)):
 
-- `mount`: GitHub (Python, Node, browser) and HF Models, HF Datasets, HF Spaces (Python, Node). One check per command against the head commit; a mount pinned to a full commit sha sends none once its listings were fetched at that sha.
+- `mount`: GitHub (Python, Node, browser) and HF Models, HF Datasets, HF Spaces (Python, Node). One check per command against the head commit; a GitHub mount pinned to a full commit sha sends none once its listings were fetched at that sha, since github.com refuses 40- and 64-hex branch and tag names (a GitHub Enterprise host is assumed to as well; a Hub mount checks every command, even at a full sha).
 - `folder`: Disk (Python, Node). One local stat per listed folder. `folder_versions: false` turns it off for that mount.
 - `none`: every other VFS. A cached listing is re-listed once per command.
 

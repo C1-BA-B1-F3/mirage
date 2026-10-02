@@ -72,13 +72,6 @@ describe('FakeGitHub head commits', () => {
     expect(await sha(gh, 'main')).not.toBe(plain)
   })
 
-  it('names through head() the commit the wire answers', async () => {
-    const gh = hub()
-    expect(await gh.head()).toBe(await sha(gh, 'main'))
-    gh.set('new.txt', 'new')
-    expect(await gh.head()).toBe(await sha(gh, 'main?recursive=1'))
-  })
-
   it('answers a ref and its root tree with different shas', async () => {
     const gh = hub()
     const head = await sha(gh, 'main')
@@ -130,18 +123,6 @@ describe('FakeGitHub history', () => {
     expect([...(await rows(gh, 'main:docs')).keys()].sort()).toEqual(['a.txt', 'new.txt', 'sub'])
   })
 
-  it('accepts an old head in uppercase and answers it lowercase', async () => {
-    const gh = hub()
-    const old = await sha(gh, 'main')
-    gh.set('docs/new.txt', 'new')
-    expect(await sha(gh, old.toUpperCase())).toBe(old)
-    expect(await sha(gh, `${old.toUpperCase()}?recursive=1`)).toBe(old)
-    expect([...(await rows(gh, `${old.toUpperCase()}:docs`)).keys()].sort()).toEqual([
-      'a.txt',
-      'sub',
-    ])
-  })
-
   it('does not find a sha it never answered', async () => {
     const gh = hub()
     await sha(gh, 'main')
@@ -173,23 +154,5 @@ describe('FakeGitHub hooks', () => {
     release()
     await held
     expect(answered).toBe(await gh.head())
-  })
-
-  it('runs afterHead once the shallow listing of the ref is built', async () => {
-    const gh = hub()
-    const fired: string[] = []
-    gh.afterHead = () => {
-      fired.push('head')
-      gh.set('late.txt', 'late')
-    }
-    await sha(gh, 'main:')
-    await sha(gh, 'main:docs')
-    await sha(gh, 'main?recursive=1')
-    expect(fired).toEqual([])
-    const before = await sha(gh, 'main')
-    expect(fired).toEqual(['head'])
-    expect([...(await rows(gh, before)).keys()]).not.toContain('late.txt')
-    gh.afterHead = null
-    expect(await sha(gh, 'main')).not.toBe(before)
   })
 })

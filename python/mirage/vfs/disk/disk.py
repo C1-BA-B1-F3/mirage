@@ -33,6 +33,7 @@ from mirage.types import (
 )
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.disk.prompt import PROMPT
+from mirage.vfs.errors import VFSConfigError
 from mirage.watch.base import DeltaHook
 
 
@@ -59,9 +60,7 @@ class DiskVFS(BaseVFS):
             times may not move with the folder's entries.
         """
         if not isinstance(folder_versions, bool):
-            raise TypeError(
-                f"folder_versions must be a boolean, got {folder_versions!r}"
-            )
+            raise VFSConfigError("disk: folder_versions: must be a boolean")
         super().__init__()
         self.folder_versions = folder_versions
         if not folder_versions:

@@ -50,11 +50,6 @@ export class VersionedVFS extends RAMVFS {
     Object.defineProperty(this, 'listingVersion', { value: kind, configurable: true })
   }
 
-  /** Pin the mount's listings, as a pinned ref would. */
-  pin(value: string | null): void {
-    Object.defineProperty(this, 'listingsPin', { value, configurable: true })
-  }
-
   /** Make every stat wait until `release()`. */
   hold(): void {
     this.holding = new Promise((resolve) => {

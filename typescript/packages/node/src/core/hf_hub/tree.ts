@@ -411,13 +411,11 @@ export async function refillSnapshot(
   prefix: string,
 ): Promise<IndexSnapshot> {
   const previous = accessor.treeLoaded ? new Map(accessor.tree) : null
-  // The head first, pinned or not, and the tree walked at the commit it
-  // names: the version stored is then the one these rows are at, never a
-  // later one a commit landing between the two requests would give. A pinned
-  // mount's version still comes from a response, so a 40-hex branch name is
-  // never mistaken for its own commit. The head failing is the refill
-  // failing. '' (a Hub that names none) walks the branch and stores no
-  // version. Mirrors Python's `refill_snapshot`.
+  // The head first, and the tree walked at the commit it names: the version
+  // stored is then the one these rows are at, never a later one a commit
+  // landing between the two requests would give. The head failing is the
+  // refill failing. '' (a Hub that names none) walks the branch and stores
+  // no version. Mirrors Python's `refill_snapshot`.
   const head = (await headCommit(accessor)) || null
   const tree = await fetchTree(accessor, head ?? undefined)
   accessor.tree = tree

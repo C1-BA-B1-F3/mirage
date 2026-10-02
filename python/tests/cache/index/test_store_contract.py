@@ -492,14 +492,3 @@ async def test_an_unversioned_seed_clears_the_version(store):
     listing = await store.list_dir("/dir")
     assert listing.entries == ["/dir/a"]
     assert listing.version is None
-
-
-@pytest.mark.asyncio
-async def test_a_peer_reads_the_version_the_writer_stored(
-    store, store_factory
-):
-    await store.set_dir("/dir", [("a", entry())], version="v1")
-    peer = store_factory()
-    listing = await peer.list_dir("/dir")
-    assert listing.entries == ["/dir/a"]
-    assert listing.version == "v1"

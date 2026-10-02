@@ -140,10 +140,11 @@ class BaseVFS:
     # tests/vfs/test_listing_version.py holds each one to that.
     listing_version: ListingVersion = ListingVersion.NONE
 
-    # The version every listing of this mount is pinned at, when the mount
-    # is pinned to something that cannot move (a full commit sha). A stored
-    # listing whose version equals it is served without a check. It depends
-    # on the mount's config, so an instance sets it; None pins nothing.
+    # The version every listing of this mount is pinned at, when its ref
+    # names a commit outright (github's full-sha ref; see
+    # ``github._pin_of`` for why that cannot move). A stored listing
+    # whose version equals it is served without a check. It depends on the
+    # mount's config, so an instance sets it; None pins nothing.
     listings_pin: str | None = None
 
     _closed: bool = False

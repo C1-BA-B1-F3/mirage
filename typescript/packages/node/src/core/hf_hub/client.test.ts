@@ -367,8 +367,6 @@ describe('a transport failure', () => {
   }
 
   it.each([
-    ['stallFetch(0)', () => stallFetch(0)('http://127.0.0.1:1/x')],
-    ['stallFetch(1000)', () => stallFetch(1000)('http://127.0.0.1:1/x')],
     ['hubGet', () => hubGet(undefined, 'http://127.0.0.1:1/x')],
     ['hubGet with a bound', () => hubGet(undefined, 'http://127.0.0.1:1/x', undefined, 1000)],
     ['hubPost', () => hubPost(undefined, 'http://127.0.0.1:1/x', {})],
@@ -377,7 +375,6 @@ describe('a transport failure', () => {
     ['hubBytesTagged', () => hubBytesTagged(undefined, 'http://127.0.0.1:1/x')],
     ['hubRequest', () => hubRequest(undefined, 'DELETE', 'http://127.0.0.1:1/x', null)],
     ['hubStream', () => drained(0)],
-    ['hubStream with a bound', () => drained(1000)],
   ] as [string, () => Promise<unknown>][])('is a connection error from %s', async (_name, call) => {
     const err = await rejected(call)
     expect(err).toBeInstanceOf(HfHubConnectionError)

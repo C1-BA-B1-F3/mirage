@@ -19,7 +19,7 @@ import { FileStat, FileType, PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
-import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
+import { CHECKED_LIMIT, LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
 import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
@@ -470,6 +470,29 @@ describe('which version check a mount remembers', () => {
     expect(asked).toEqual([])
     expect(await manager.checkedVersion('/data', 'V1', answer('V4'))).toBe('V4')
     expect(asked).toEqual(['V4'])
+  })
+
+  // A check serves only a caller inside its window, so once the map is full
+  // the stale entries are dead weight; dropping one costs at most another
+  // check, never a stale listing.
+  it('drops checks out of their window once the map is full', async () => {
+    const clock = shiftPerformanceNow()
+    const manager = new CacheManager(
+      new RAMFileCacheStore(),
+      new RAMIndexCacheStore({ ttl: 600 }),
+      '/data/',
+      true,
+    )
+    const limit: number = CHECKED_LIMIT
+    expect(limit).toBeGreaterThan(0)
+    const check = (): Promise<string> => Promise.resolve('V')
+    for (let n = 0; n < limit; n++) {
+      expect(await manager.checkedVersion(`/data/old${String(n)}`, 'V', check)).toBe('V')
+    }
+    clock.advance(LISTING_TRUST_WINDOW * 1000 + 10)
+    expect(await manager.checkedVersion('/data/new', 'V', check)).toBe('V')
+    const checked = (manager as unknown as { checked: Map<string, unknown> }).checked
+    expect([...checked.keys()]).toEqual(['/data/new'])
   })
 })
 

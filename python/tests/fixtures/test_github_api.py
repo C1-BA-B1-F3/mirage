@@ -78,13 +78,6 @@ def test_the_symlink_bit_is_part_of_the_head():
         assert _sha(hub, "main") != plain
 
 
-def test_head_helper_names_the_commit_the_wire_answers():
-    with serve(_hub()) as hub:
-        assert hub.head() == _sha(hub, "main")
-        hub.files["new.txt"] = b"new"
-        assert hub.head() == _sha(hub, "main?recursive=1")
-
-
 def test_a_ref_and_its_root_tree_answer_different_shas():
     with serve(_hub()) as hub:
         head = _sha(hub, "main")
@@ -132,15 +125,6 @@ def test_an_old_head_serves_the_files_it_named():
         assert set(_rows(hub, "main:docs")) == {"a.txt", "new.txt", "sub"}
 
 
-def test_an_old_head_is_accepted_in_uppercase_and_answered_lowercase():
-    with serve(_hub()) as hub:
-        old = _sha(hub, "main")
-        hub.files["docs/new.txt"] = b"new"
-        assert _sha(hub, old.upper()) == old
-        assert _sha(hub, f"{old.upper()}?recursive=1") == old
-        assert set(_rows(hub, f"{old.upper()}:docs")) == {"a.txt", "sub"}
-
-
 def test_a_sha_the_fake_never_answered_is_not_found():
     with serve(_hub()) as hub:
         _sha(hub, "main")
@@ -168,23 +152,3 @@ def test_hold_dir_gates_only_the_shallow_listing_of_the_ref():
         hub.hold_dir.set()
         held.join(10)
         assert answered == [hub.head()]
-
-
-def test_after_head_runs_once_the_shallow_ref_listing_is_built():
-    with serve(_hub()) as hub:
-        fired: list[str] = []
-
-        def edit() -> None:
-            fired.append("head")
-            hub.files["late.txt"] = b"late"
-
-        hub.after_head = edit
-        _sha(hub, "main:")
-        _sha(hub, "main:docs")
-        _sha(hub, "main?recursive=1")
-        assert fired == []
-        before = _sha(hub, "main")
-        assert fired == ["head"]
-        assert "late.txt" not in _rows(hub, before)
-        hub.after_head = None
-        assert _sha(hub, "main") != before

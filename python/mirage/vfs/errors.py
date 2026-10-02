@@ -12,16 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
 
-from mirage.vfs.disk import DiskVFS
-from mirage.vfs.errors import VFSConfigError
+class VFSConfigError(ValueError):
+    """A mount config the caller got wrong.
 
-
-@pytest.mark.parametrize("value", ["no", 1, None])
-def test_folder_versions_must_be_a_boolean(tmp_path, value):
-    root = tmp_path / "root"
-    with pytest.raises(VFSConfigError) as exc:
-        DiskVFS(str(root), folder_versions=value)
-    assert str(exc.value) == "disk: folder_versions: must be a boolean"
-    assert not root.exists()
+    Raised by ``build_vfs`` and by a VFS constructor that refuses a
+    field. It subclasses ``ValueError`` so every door that already
+    answers a bad config as the caller's mistake keeps doing so.
+    """

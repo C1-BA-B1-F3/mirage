@@ -24,6 +24,7 @@ import { type WorkspaceRegistry } from '../registry.ts'
 import type { VersionBackend } from '../version/backend.ts'
 import { z } from '@struktoai/mirage-core/vfs/secrets'
 import { SecretsError } from '@struktoai/mirage-core/secrets/errors'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import { buildOverrideMounts, cloneWorkspaceWithOverride, type OverrideShape } from '../clone.ts'
 import {
   configToWorkspaceArgs,
@@ -110,7 +111,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       try {
         args = await configToWorkspaceArgs(cfg)
       } catch (e) {
-        if (e instanceof SecretsError || e instanceof z.ZodError) {
+        if (e instanceof SecretsError || e instanceof z.ZodError || e instanceof VFSConfigError) {
           // A `secrets:` block the host cannot resolve is the caller's
           // config, not a backend that would not answer. Resolution moved
           // into configToWorkspaceArgs, so without this the same body that
@@ -255,7 +256,7 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       try {
         newWs = await cloneWorkspaceWithOverride(src, body.override ?? null)
       } catch (e) {
-        if (e instanceof SecretsError || e instanceof z.ZodError) {
+        if (e instanceof SecretsError || e instanceof z.ZodError || e instanceof VFSConfigError) {
           // An override naming a source the host cannot resolve, or a
           // block the schema refuses, is the caller's mistake -- the
           // answer create, load and the historical clone already give.

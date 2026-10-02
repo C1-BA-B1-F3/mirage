@@ -19,7 +19,7 @@ function sha1(text: string | Uint8Array): string {
   return createHash('sha1').update(text).digest('hex')
 }
 
-function blobSha(data: Uint8Array): string {
+export function blobSha(data: Uint8Array): string {
   return sha1(Buffer.concat([Buffer.from(`blob ${String(data.byteLength)}\0`), data]))
 }
 

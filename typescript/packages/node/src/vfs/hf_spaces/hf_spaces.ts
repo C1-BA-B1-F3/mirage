@@ -16,7 +16,7 @@ import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import { HfSpacesHubAccessor } from '../../accessor/hf_hub.ts'
 import { assertHfRepoRef } from '../hf_buckets/config.ts'
-import { HfHubVFS, hfListingsPin } from '../hf_hub/base.ts'
+import { HfHubVFS } from '../hf_hub/base.ts'
 import { type HfSpacesConfig, type HfSpacesConfigRedacted, redactHfSpacesConfig } from './config.ts'
 import { PROMPT } from './prompt.ts'
 
@@ -30,7 +30,6 @@ export class HfSpacesVFS extends HfHubVFS {
   readonly prompt: string = PROMPT
   readonly config: HfSpacesConfig
   readonly accessor: HfSpacesHubAccessor
-  override readonly listingsPin: string | null
 
   constructor(config: HfSpacesConfig) {
     super()
@@ -44,7 +43,6 @@ export class HfSpacesVFS extends HfHubVFS {
     }
     this.config = cfg
     this.accessor = new HfSpacesHubAccessor(this.config)
-    this.listingsPin = hfListingsPin(this.accessor.revision, this.accessor.keyPrefix)
   }
 
   getState(): Promise<HfSpacesVFSState> {

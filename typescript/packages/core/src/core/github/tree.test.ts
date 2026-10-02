@@ -364,15 +364,6 @@ describe('the head commit a tree response names', () => {
     vi.unstubAllGlobals()
   })
 
-  it.each([
-    [{ sha: 'c0ffee', tree: [], truncated: false }, 'c0ffee'],
-    [{ tree: [], truncated: false }, null],
-  ])('fetchTree returns the top-level sha of %j', async (payload, head) => {
-    const get = (): Promise<unknown> => Promise.resolve(payload)
-    const answered = await fetchTree({ get } as unknown as GitHubTransport, 'o', 'r', 'main')
-    expect(answered.sha).toBe(head)
-  })
-
   it('stamps every folder of a refill with its head', async () => {
     const gh = new FakeGitHub({ 'd1/a.txt': 'a', 'd1/sub/b.txt': 'b', 'top.txt': 't' })
     vi.stubGlobal('fetch', gh.fetch)

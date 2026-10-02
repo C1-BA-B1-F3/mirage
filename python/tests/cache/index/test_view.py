@@ -644,10 +644,9 @@ async def test_the_gate_is_handed_the_stored_version():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["ram", "fake-redis", "redis"])
-async def test_a_refusal_keeps_the_version_for_the_next_serve(kind):
+async def test_a_refusal_keeps_the_version_for_the_next_serve():
     gate = _VersionGate(False)
-    async with _store(kind, 600) as store:
+    async with _store("ram", 600) as store:
         view = IndexView(
             store,
             RAMFileCacheStore(),

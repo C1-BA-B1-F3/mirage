@@ -33,9 +33,12 @@ def _pin_of(ref: str | None) -> str | None:
     """The commit a ref pins every listing at, when it names one outright.
 
     Only a full 40- or 64-hex string can be a commit. GitHub answers shas in
-    lowercase, so the pin is lowercased to compare with what it stores. A
-    branch that happens to look like one is still safe: its listings are
-    stored at the head its tree answered, which never equals its name.
+    lowercase, so the pin is lowercased to compare with what it stores.
+    Listings are stored at the head their tree answered, so a ref is served
+    unchecked only when its listing was fetched at that sha. github.com
+    refuses a branch or tag named with 40 or 64 hex characters (HTTP 422),
+    so such a ref always names a commit, which cannot move; a GitHub
+    Enterprise host behind ``base_url`` is assumed to refuse them too.
 
     Args:
         ref (str | None): the mount's effective ref.

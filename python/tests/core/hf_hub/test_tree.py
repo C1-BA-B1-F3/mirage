@@ -310,16 +310,6 @@ def test_index_rows_implies_a_parent_a_page_boundary_split_off():
     }
 
 
-def test_index_rows_keeps_a_folders_own_row_over_an_implied_one():
-    tree = {
-        "d/a.txt": parse_entry(file_row("d/a.txt")),
-        "d": parse_entry(dir_row("d")),
-    }
-    entries, children = index_rows(tree, "")
-    assert children["/"] == ["/d"]
-    assert entries["/d"].id == "tree-d"
-
-
 def test_index_rows_leaves_a_directory_size_unset():
     tree = {"d": parse_entry(dir_row("d"))}
     entries, _ = index_rows(tree, "")

@@ -78,18 +78,6 @@ class IndexCacheStore:
     async def list_dir(self, vfs_path: str) -> ListResult:
         raise NotImplementedError
 
-    async def peek_dir(self, vfs_path: str) -> ListResult:
-        """Read a stored listing without asking whether it may be served.
-
-        A store has no gate, so this is ``list_dir``. A view answers it
-        past the freshness gate: a caller reading the listing's own
-        version, which is what a gate would check, must not trigger one.
-
-        Args:
-            vfs_path (str): the listing key.
-        """
-        return await self.list_dir(vfs_path)
-
     async def set_dir(
         self,
         vfs_path: str,

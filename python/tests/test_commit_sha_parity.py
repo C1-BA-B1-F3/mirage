@@ -17,27 +17,11 @@ import re
 
 import pytest
 
-from mirage.core.github.constants import COMMIT_SHA as GITHUB_COMMIT_SHA
-from mirage.core.hf_hub.constants import COMMIT_SHA as HF_COMMIT_SHA
+from mirage.core.github.constants import COMMIT_SHA
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
-TS_COPIES = (
-    REPO
-    / "typescript"
-    / "packages"
-    / "core"
-    / "src"
-    / "core"
-    / "github"
-    / "constants.ts",
-    REPO
-    / "typescript"
-    / "packages"
-    / "node"
-    / "src"
-    / "core"
-    / "hf_hub"
-    / "constants.ts",
+TS_CONSTANTS = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "typescript/packages/core/src/core/github/constants.ts"
 )
 TS_LITERAL = re.compile(
     r"^export const COMMIT_SHA = /(.+)/([a-z]*)$", re.MULTILINE
@@ -58,43 +42,25 @@ REFUSED = (
 )
 
 
-def _ts_copy(path: pathlib.Path) -> re.Pattern[str]:
-    match = TS_LITERAL.search(path.read_text(encoding="utf-8"))
-    assert match is not None, f"no COMMIT_SHA literal in {path}"
-    assert match.group(2) == "", f"{path} adds flags {match.group(2)!r}"
+def _ts_commit_sha() -> re.Pattern[str]:
+    match = TS_LITERAL.search(TS_CONSTANTS.read_text(encoding="utf-8"))
+    assert match is not None, f"no COMMIT_SHA literal in {TS_CONSTANTS}"
+    assert match.group(2) == "", f"COMMIT_SHA adds flags {match.group(2)!r}"
     source = match.group(1)
     if source.endswith("$"):
         source = source[:-1] + r"\Z"
     return re.compile(source)
 
 
-def _copies() -> dict[str, re.Pattern[str]]:
-    return {
-        "python github": GITHUB_COMMIT_SHA,
-        "python hf_hub": HF_COMMIT_SHA,
-        **{str(path.relative_to(REPO)): _ts_copy(path) for path in TS_COPIES},
-    }
-
-
-def _python_accepts(pattern: re.Pattern[str], sample: str) -> bool:
-    return pattern.fullmatch(sample) is not None
-
-
-def _ts_accepts(pattern: re.Pattern[str], sample: str) -> bool:
-    return pattern.search(sample) is not None
-
-
 @pytest.mark.parametrize("sample", ACCEPTED + REFUSED)
-def test_every_commit_sha_copy_gives_the_same_answer(sample):
-    """Four copies of one rule: which ref pins a mount to a commit.
+def test_python_and_typescript_commit_sha_give_the_same_answer(sample):
+    """Python's ``fullmatch`` and TypeScript's anchored ``RegExp.test``.
 
-    Python matches with ``fullmatch`` and TypeScript with an anchored
-    ``RegExp.test``, so each copy is asked the way its host asks it (a
-    JavaScript ``$`` is the end of input, Python's ``\\Z``). A
-    copy that drifts (one length changed, an anchor dropped, a case flag
-    added) would pin a branch on one host and not the other.
+    Each copy is asked the way its host asks it (a JavaScript ``$`` is the
+    end of input, Python's ``\\Z``). A copy that drifts (one length
+    changed, an anchor dropped, a case flag added) would pin a branch on
+    one host and not the other.
     """
     expected = sample in ACCEPTED
-    for name, pattern in _copies().items():
-        ask = _python_accepts if name.startswith("python") else _ts_accepts
-        assert ask(pattern, sample) is expected, (name, sample)
+    assert (COMMIT_SHA.fullmatch(sample) is not None) is expected
+    assert (_ts_commit_sha().search(sample) is not None) is expected

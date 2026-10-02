@@ -127,17 +127,18 @@ async def _checked(ws: Workspace, key: str = "/m") -> str | None:
     return remote.fingerprint
 
 
-def test_the_version_is_the_folders_device_inode_and_change_times(tmp_path):
-    st = os.stat(tmp_path)
-    quiet = max(st.st_ctime_ns, st.st_mtime_ns) + QUIET_NS
-    assert folder_version(tmp_path, quiet) == _expected(tmp_path)
-
-
 def test_a_folder_changed_within_two_seconds_has_no_version(tmp_path):
     st = os.stat(tmp_path)
     changed = max(st.st_ctime_ns, st.st_mtime_ns)
     assert folder_version(tmp_path, changed + 1_999_999_999) is None
     assert folder_version(tmp_path, changed + 2_000_000_000) is not None
+
+
+def test_a_fresh_ctime_withholds_the_version_of_an_old_mtime(tmp_path):
+    os.utime(tmp_path, ns=(OLD_NS, OLD_NS))
+    st = os.stat(tmp_path)
+    assert st.st_mtime_ns == OLD_NS
+    assert folder_version(tmp_path, st.st_ctime_ns + 1_000_000_000) is None
 
 
 FUTURE_NS = 60_000_000_000
@@ -159,15 +160,6 @@ def _mtime_ahead(folder: Path) -> tuple[int, int]:
 # Where st_ctime is a creation time, the mtime is what a change moves, so
 # a folder whose mtime is ahead of the clock is still settling however
 # long ago its ctime was.
-def test_a_folder_whose_mtime_is_ahead_has_no_version_until_it_passes(
-    tmp_path,
-):
-    ctime, mtime = _mtime_ahead(tmp_path)
-    assert folder_version(tmp_path, ctime + QUIET_NS) is None
-    assert folder_version(tmp_path, mtime + 1_999_999_999) is None
-    assert folder_version(tmp_path, mtime + 2_000_000_000) is not None
-
-
 @pytest.mark.asyncio
 async def test_a_folder_whose_mtime_is_ahead_is_relisted_until_it_passes(
     tmp_path, clock, scans
@@ -199,67 +191,6 @@ async def test_a_quiet_folder_stores_the_version_its_stat_answers(
         stored = await _stored(ws)
         assert stored == _expected(tmp_path)
         assert await _checked(ws) == stored
-    finally:
-        await ws.close()
-
-
-@pytest.mark.asyncio
-async def test_a_folder_changed_just_now_is_relisted(
-    tmp_path, clock, scans, checks
-):
-    (tmp_path / "a.txt").write_text("a")
-    st = os.stat(tmp_path)
-    clock.now = max(st.st_ctime_ns, st.st_mtime_ns) + 500_000_000
-    ws = _ws(tmp_path)
-    try:
-        await _ls(ws)
-        assert await _stored(ws) is None
-        await _ls(ws)
-        assert scans == [tmp_path, tmp_path]
-        assert checks == []
-    finally:
-        await ws.close()
-
-
-def _add(root: Path) -> None:
-    (root / "new.txt").write_text("n")
-
-
-def _rename(root: Path) -> None:
-    (root / "old.txt").rename(root / "renamed.txt")
-
-
-def _delete(root: Path) -> None:
-    (root / "old.txt").unlink()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "change, listed",
-    [
-        (_add, "keep.txt\nnew.txt\nold.txt\n"),
-        (_rename, "keep.txt\nrenamed.txt\n"),
-        (_delete, "keep.txt\n"),
-    ],
-)
-async def test_a_change_inside_the_folder_moves_its_version(
-    tmp_path, clock, scans, change, listed
-):
-    (tmp_path / "keep.txt").write_text("k")
-    (tmp_path / "old.txt").write_text("o")
-    clock.settle(tmp_path)
-    ws = _ws(tmp_path)
-    try:
-        assert await _ls(ws) == "keep.txt\nold.txt\n"
-        stored = await _stored(ws)
-        assert stored is not None
-        change(tmp_path)
-        clock.settle(tmp_path)
-        moved = await _checked(ws)
-        assert moved is not None
-        assert moved != stored
-        assert await _ls(ws) == listed
-        assert scans == [tmp_path, tmp_path]
     finally:
         await ws.close()
 

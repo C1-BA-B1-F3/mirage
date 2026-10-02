@@ -24,8 +24,6 @@ import type { DeltaHook } from '@struktoai/mirage-core/watch/index'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HF_HUB_COMMANDS } from '../../commands/builtin/hf_hub/index.ts'
 
-import { COMMIT_SHA } from '../../core/hf_hub/constants.ts'
-import { mountVersion } from '../../core/hf_hub/repo.ts'
 import { buildDeltaHook } from '../../core/hf_hub/watch.ts'
 import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
 
@@ -38,21 +36,6 @@ import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
  * revisions. These three are git repositories, read through the Hub's own
  * tree API and written as commits.
  */
-
-/**
- * The version a revision pins every listing at, when it names a commit
- * outright. Only a full 40- or 64-hex string can be a commit; the Hub answers
- * shas lowercase, so the pin is lowercased to compare with what it stores,
- * and joined with the key prefix the way the stored version is
- * (`mountVersion`). A branch that happens to look like one is still safe: its
- * listings are stored at the head its revision answered, which never equals
- * its name. Each of the three VFS sets its own `listingsPin` from its
- * accessor's effective revision and key prefix with this.
- */
-export function hfListingsPin(revision: string, keyPrefix: string): string | null {
-  const lowered = revision.toLowerCase()
-  return COMMIT_SHA.test(lowered) ? mountVersion(lowered, keyPrefix) : null
-}
 
 export abstract class HfHubVFS extends BaseVFS {
   abstract override readonly prompt: string
@@ -70,7 +53,10 @@ export abstract class HfHubVFS extends BaseVFS {
   override readonly readRevalidatable: boolean = true
   // One version covers every listing: the head commit the revision resolves
   // to, asked with `revision/{rev}?expand[]=sha`, and the tree is walked at
-  // that commit so the rows and the version agree.
+  // that commit so the rows and the version agree. A full-sha revision is
+  // checked the same way and never pinned: a branch or tag named like it
+  // could take the name, and mirage does not assume which one the Hub
+  // resolves.
   override readonly listingVersion: ListingVersion = ListingVersion.MOUNT
   // The index is not a cache in front of a listing, it IS the listing: one
   // recursive fetch seeds it whole. A long TTL therefore spares the Hub a

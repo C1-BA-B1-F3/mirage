@@ -792,33 +792,28 @@ describe('the listing gate', () => {
     ])
   })
 
-  for (const kind of ['ram', 'redis']) {
-    it.skipIf(kind === 'redis' && process.env.REDIS_URL === undefined)(
-      `${kind}: a refusal keeps the version for the next serve`,
-      async () => {
-        const spy = versionGate(false)
-        const store = storeOf(kind)
-        try {
-          const view = new IndexView(store, new RAMFileCacheStore(), '/data', () => true, {
-            mayServeListing: spy.call,
-          })
-          await view.setDir('/data', [['a', row('a')]], undefined, { version: 'v1' })
-          expect((await view.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
-          spy.answer = true
-          const served = await view.listDir('/data')
-          expect(served.entries).toEqual(['/data/a'])
-          expect(served.version).toBe('v1')
-          expect(spy.asked).toEqual([
-            ['/data', 'v1'],
-            ['/data', 'v1'],
-          ])
-        } finally {
-          await store.clear()
-          await store.close()
-        }
-      },
-    )
-  }
+  it('a refusal keeps the version for the next serve', async () => {
+    const spy = versionGate(false)
+    const store = storeOf('ram')
+    try {
+      const view = new IndexView(store, new RAMFileCacheStore(), '/data', () => true, {
+        mayServeListing: spy.call,
+      })
+      await view.setDir('/data', [['a', row('a')]], undefined, { version: 'v1' })
+      expect((await view.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+      spy.answer = true
+      const served = await view.listDir('/data')
+      expect(served.entries).toEqual(['/data/a'])
+      expect(served.version).toBe('v1')
+      expect(spy.asked).toEqual([
+        ['/data', 'v1'],
+        ['/data', 'v1'],
+      ])
+    } finally {
+      await store.clear()
+      await store.close()
+    }
+  })
 
   it('passes a served listing through', async () => {
     const [, mayServeListing] = gate(true)

@@ -20,7 +20,11 @@ from contextlib import asynccontextmanager
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.constants import LISTING_TRUST_WINDOW, PROBED_LIMIT
+from mirage.cache.index.constants import (
+    CHECKED_LIMIT,
+    LISTING_TRUST_WINDOW,
+    PROBED_LIMIT,
+)
 from mirage.cache.index.scope import command_started, tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
@@ -118,6 +122,7 @@ class CacheManager:
             str, tuple[int, float, asyncio.Task[str | None]]
         ] = {}
         self._check_epoch = 0
+        self._check_bound = CHECKED_LIMIT
         self._probed: dict[str, tuple[int, int, FileStat]] = {}
         self._probe_bound = PROBED_LIMIT
         self._read_generation = 0
@@ -225,6 +230,16 @@ class CacheManager:
             return stamp > started
         return _now() - at < LISTING_TRUST_WINDOW
 
+    def _prune_checks(self) -> None:
+        # A check answers only a caller inside its window, so the rest are
+        # dead weight; the next prune waits for the map to double.
+        self._checked = {
+            key: checked
+            for key, checked in self._checked.items()
+            if self._sent_recently(checked[1], checked[2])
+        }
+        self._check_bound = max(CHECKED_LIMIT, 2 * len(self._checked))
+
     def _forget_checks(self) -> None:
         # The versions were checked against listings of the old store, so
         # none of them says anything about the new one. The first view has
@@ -302,6 +317,8 @@ class CacheManager:
                 and epoch == self._check_epoch
                 and (checked is None or checked[1] < sent_tick)
             ):
+                if checked is None and len(self._checked) >= self._check_bound:
+                    self._prune_checks()
                 self._checked[key] = (version, sent_tick, sent_at)
             return version
 

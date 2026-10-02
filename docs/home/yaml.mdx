@@ -72,7 +72,7 @@ mounts:
 Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A cached listing is served when:
 
 1. the running command wrote it;
-2. the mount is pinned to a full commit sha and the listing was fetched at it (GitHub, the Hugging Face Hub repos), with no request;
+2. the mount is a GitHub mount pinned to a full commit sha and the listing was fetched at it, with no request (a Hugging Face Hub mount never pins);
 3. its stored version still matches the backend's: one check per command for a GitHub or Hub mount, one local stat per folder on disk.
 
 Otherwise the folder is listed again, and that re-list is trusted for the rest of the command. A read that belongs to no command (FUSE, a programmatic op such as `ws.vfs`, an agent's file tools) trusts a listing written, or a version check sent, in the last second, so calls in a short `ls -l` burst over FUSE can share one re-list or one check; a burst lasting beyond the window can re-list again, and an outside change can stay hidden from those reads for up to that second.

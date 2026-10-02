@@ -43,6 +43,7 @@ from mirage.vfs.registry import (
     VFSEntry,
     resolve_class,
     resolve_entry,
+    unknown_kwargs,
 )
 from mirage.vfs.secrets import (
     has_redacted_secret,
@@ -759,7 +760,13 @@ def _construct_vfs(mount_state: dict[str, Any]):
     if ptype == VFSName.RAM:
         built = cls()
     elif ptype == VFSName.DISK:
-        built = cls(root=tempfile.mkdtemp(prefix="mirage-disk-"))
+        saved = vfs_state.get(VFSStateKey.CONFIG) or {}
+        knobs = {}
+        if "folder_versions" in saved:
+            knobs["folder_versions"] = saved["folder_versions"]
+        for key in unknown_kwargs(cls, knobs):
+            del knobs[key]
+        built = cls(root=tempfile.mkdtemp(prefix="mirage-disk-"), **knobs)
     elif ptype == VFSName.REDIS:
         raise ValueError(
             f"Redis mount at {mount_state[MountKey.PREFIX]} requires "

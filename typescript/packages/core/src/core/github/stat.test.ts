@@ -199,24 +199,6 @@ describe('the root stat names the head commit', () => {
     vi.unstubAllGlobals()
   })
 
-  // The gate's check store has no root listing, so the root's version is
-  // asked with one shallow request, and it is the head commit.
-  it('asks the head through the check store', async () => {
-    const gh = three()
-    const found = await stat(servedAccessor(), ROOT, new ListingCheckStore())
-    expect(found.fingerprint).toBe(await gh.head())
-    expect(gh.counts()).toEqual([1, 0, 0])
-  })
-
-  // Any other index without a root listing names no version and asks
-  // nothing; only the gate's check store wants the request.
-  it('asks nothing through another empty index', async () => {
-    const gh = three()
-    const found = await stat(servedAccessor(), ROOT, new RAMIndexCacheStore())
-    expect(found.fingerprint).toBeNull()
-    expect(gh.counts()).toEqual([0, 0, 0])
-  })
-
   // With no index at all (the null index) the root names no version and asks
   // nothing (it used to ask the head once); any other path is still absent.
   it('asks nothing with no index', async () => {

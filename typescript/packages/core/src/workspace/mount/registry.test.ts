@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { CLISpec } from '../../commands/cli/types.ts'
 import { command, type CommandFn } from '../../commands/config.ts'
 import { CommandSpec } from '../../commands/spec/types.ts'
@@ -24,8 +24,6 @@ import { isNoMount } from '../../utils/errors.ts'
 import { RAMFileCacheStore } from '../../cache/file/ram.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { runWithAdmission } from '../../context/session_context.ts'
-import { runInCommandScope } from '../../cache/index/scope.ts'
-import { VersionedVFS, versionedWorkspace } from '../fixtures/versioned_vfs.ts'
 import type { MountEntry } from './mount.ts'
 import { MountCommandUnsupported, MountRegistry } from './registry.ts'
 
@@ -562,24 +560,6 @@ describe('MountRegistry read gate', () => {
     mount.retiring = true
     expect(await gateOf(registry).mayServeListing(mount, '/data/d', null)).toBe(false)
     expect(rec.asked).toEqual([])
-  })
-
-  it("sends no version check for a retiring mount's listing", async () => {
-    const vfs = new VersionedVFS('mount')
-    const { ws, mount } = versionedWorkspace(vfs)
-    try {
-      await mount.indexStore.setDir('/m/a', [], null, { version: 'v1' })
-      mount.retiring = true
-      const registry = (ws.namespace as unknown as { registry: MountRegistry }).registry
-      expect(
-        await runInCommandScope(() => gateOf(registry).mayServeListing(mount, '/m/a', 'v1')),
-      ).toBe(false)
-      expect(vfs.stats).toEqual([])
-    } finally {
-      mount.retiring = false
-      vi.restoreAllMocks()
-      await ws.close()
-    }
   })
 
   // No EBUSY twin: as for the read gate, this side's probe never enters

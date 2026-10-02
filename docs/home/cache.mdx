@@ -26,7 +26,7 @@ A fresh directory listing proves a child absent only when that child is not list
 `fresh` also checks cached listings. A live cached listing (one still inside the mount's `ttl`) is served when one of these holds, checked in this order; otherwise the folder is listed again:
 
 1. The running command wrote it. A read outside any command (FUSE, `ws.vfs`, an agent's file tools) trusts a listing written in the last second instead.
-2. The mount is pinned to a full 40- or 64-hex commit sha, and the listing was fetched at that sha. This costs no request.
+2. The mount is a GitHub mount pinned to a full 40- or 64-hex commit sha, and the listing was fetched at that sha. This costs no request: github.com refuses a branch or tag named with 40 or 64 hex characters, so such a ref always names a commit (a GitHub Enterprise host is assumed to do the same). A Hugging Face Hub mount never pins: a full-sha revision is checked every command like a branch, since a branch or tag named like the sha could take the name, and mirage does not assume which one the Hub resolves.
 3. The backend versions its listings, and the version stored with the listing still matches the backend's.
 
 Which backends version their listings:

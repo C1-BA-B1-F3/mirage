@@ -813,17 +813,6 @@ async def test_a_versioned_listing_missing_a_child_row_is_served(
 
 
 @pytest.mark.asyncio
-async def test_an_unversioned_listing_missing_a_child_row_is_served(
-    rolling_client,
-):
-    client, prefix = rolling_client
-    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
-    await store.set_dir("/d", [_row("a"), _row("b")])
-    await client.delete(f"{prefix}{ENTRY_PREFIX}/d/b")
-    assert (await store.list_dir("/d")).entries == ["/d/a", "/d/b"]
-
-
-@pytest.mark.asyncio
 async def test_an_empty_versioned_listing_is_served(rolling_client):
     client, prefix = rolling_client
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)

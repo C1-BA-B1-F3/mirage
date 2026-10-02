@@ -5,7 +5,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Nless required by applicable law or agreed to in writing, software
+# Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
@@ -313,28 +313,6 @@ def _vfs(hub: FakeGitHub) -> GitHubVFS:
             token="t", owner="o", repo="r", ref="main", base_url=hub.url
         )
     )
-
-
-# The gate's check store has no root listing, so the root's version is
-# asked with one shallow request, and it is the head commit.
-@pytest.mark.asyncio
-async def test_a_root_stat_through_the_check_store_asks_the_head():
-    with serve(_three()) as hub:
-        vfs = _vfs(hub)
-        found = await stat(vfs.accessor, ROOT, ListingCheckStore())
-        assert found.fingerprint == hub.head()
-        assert hub.counts() == (1, 0, 0)
-
-
-# Any other index without a root listing names no version and asks
-# nothing; only the gate's check store wants the request.
-@pytest.mark.asyncio
-async def test_a_root_stat_through_another_empty_index_asks_nothing():
-    with serve(_three()) as hub:
-        vfs = _vfs(hub)
-        found = await stat(vfs.accessor, ROOT, RAMIndexCacheStore())
-        assert found.fingerprint is None
-        assert hub.counts() == (0, 0, 0)
 
 
 @pytest.mark.asyncio

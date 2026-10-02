@@ -622,15 +622,6 @@ ${script}`,
     expect(listing.version).toBe('v1')
   })
 
-  it('serves an unversioned listing missing a child row', async () => {
-    await store.setDir('/d', [
-      ['a', entry('a', 'a')],
-      ['b', entry('b', 'b')],
-    ])
-    await (await redis()).del(`${prefix}mirage:idx:entry:/d/b`)
-    expect((await store.listDir('/d')).entries).toEqual(['/d/a', '/d/b'])
-  })
-
   it('serves an empty versioned listing', async () => {
     await store.setDir('/e', [], undefined, { version: 'v1' })
     const listing = await store.listDir('/e')

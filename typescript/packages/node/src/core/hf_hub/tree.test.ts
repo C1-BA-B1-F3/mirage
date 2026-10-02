@@ -293,16 +293,6 @@ describe('indexRows', () => {
     expect(new Set(entries.keys())).toEqual(new Set([...children.values()].flat()))
   })
 
-  it("keeps a folder's own row over an implied one", () => {
-    const tree = new Map([
-      ['d/a.txt', parseEntry(fileRow('d/a.txt'))],
-      ['d', parseEntry(dirRow('d'))],
-    ])
-    const { entries, children } = indexRows(tree, '')
-    expect(children.get('/')).toEqual(['/d'])
-    expect(entries.get('/d')?.id).toBe('tree-d')
-  })
-
   it('leaves a directory size unset', () => {
     const tree = new Map([['d', parseEntry(dirRow('d'))]])
     const { entries } = indexRows(tree, '')

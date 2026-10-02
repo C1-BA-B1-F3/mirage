@@ -1,4 +1,34 @@
 {
  "baseline": 4922,
- "modules": {}
+ "modules": {
+  "core/github/tree": {
+   "python_only": {
+    "fetch_head": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "_head_of": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "_match_tree_to_index": "TypeScript makes the same tree-older-than-index check inline in ensureLiveTree."
+   }
+  },
+  "core/github/client": {
+   "typescript_only": {
+    "fetchHead": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts.",
+    "headOf": "The head fetch sits beside each host's tree fetch: fetch_tree is in core/github/tree.py, fetchTree in core/github/client.ts."
+   }
+  },
+  "core/hf_hub/client": {
+   "typescript_only": {
+    "hubFetch": "fetch reports a transport failure as a bare TypeError, so TypeScript wraps it; aiohttp already raises ClientError, which the Python callers catch.",
+    "HfHubConnectionError": "fetch reports a transport failure as a bare TypeError, so TypeScript wraps it; aiohttp already raises ClientError, which the Python callers catch."
+   }
+  },
+  "workspace/reconcile": {
+   "typescript_only": {
+    "scopeOf": "TypeScript's opsRegistry.call takes a PathSpec; Python's dispatcher takes the path itself."
+   }
+  },
+  "core/disk/readdir": {
+   "python_only": {
+    "_scan": "Python moves the blocking os.scandir to a thread; Node's fs readdir is already async."
+   }
+  }
+ }
 }

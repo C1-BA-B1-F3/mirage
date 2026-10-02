@@ -436,7 +436,7 @@
         "folder_versions": "no"
       },
       "expect": {
-        "refused": "folder_versions must be a boolean, got 'no'"
+        "refused": "disk: folder_versions: must be a boolean"
       }
     },
     {

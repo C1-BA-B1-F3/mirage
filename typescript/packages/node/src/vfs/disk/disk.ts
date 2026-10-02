@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import {
   chmod,
   mkdir,
@@ -54,29 +55,6 @@ export interface DiskVFSState {
   modes?: Record<string, number>
 }
 
-// A refused value printed the way python's repr prints it, so the two hosts
-// refuse one config with one message.
-function pyRepr(value: unknown): string {
-  if (value === null || value === undefined) return 'None'
-  if (typeof value === 'boolean') return value ? 'True' : 'False'
-  if (typeof value === 'string') {
-    const quote = value.includes("'") && !value.includes('"') ? '"' : "'"
-    const body = value
-      .replace(/\\/g, '\\\\')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t')
-    return quote + (quote === "'" ? body.replace(/'/g, "\\'") : body) + quote
-  }
-  if (Array.isArray(value)) return `[${value.map(pyRepr).join(', ')}]`
-  if (typeof value === 'object') {
-    const items = Object.entries(value).map(([k, v]) => `${pyRepr(k)}: ${pyRepr(v)}`)
-    return `{${items.join(', ')}}`
-  }
-  if (typeof value === 'number' || typeof value === 'bigint') return String(value)
-  return typeof value
-}
-
 async function walkFiles(current: string, out: string[]): Promise<void> {
   const entries = await readEntries(current)
   for (const e of entries) {
@@ -109,7 +87,7 @@ export class DiskVFS extends BaseVFS {
     let folderVersions: unknown = options.folderVersions
     if (folderVersions === undefined) folderVersions = true
     if (typeof folderVersions !== 'boolean') {
-      throw new TypeError(`folder_versions must be a boolean, got ${pyRepr(folderVersions)}`)
+      throw new VFSConfigError('disk: folder_versions: must be a boolean')
     }
     super()
     this.folderVersions = folderVersions

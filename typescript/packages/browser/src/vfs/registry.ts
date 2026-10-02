@@ -17,6 +17,7 @@ import type { ResolvedSource } from '@struktoai/mirage-core/secrets/types'
 import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { refuseUnknownKeys, z } from '@struktoai/mirage-core/vfs/secrets'
 import { errorSummary } from '@struktoai/mirage-core/secrets/summary'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import type { OPFSVFSOptions } from './opfs/opfs.ts'
 import type { RedisVFSOptions } from './redis/redis.ts'
 import { normalizeFields } from '@struktoai/mirage-core/utils/normalize'
@@ -323,7 +324,7 @@ export async function buildVfs(
     // route answers this message as its 400 detail: zod's own rendering
     // would hand the refused value straight back. Field and code only, the
     // way python's `build_vfs` reports its config class.
-    if (err instanceof z.ZodError) throw new Error(`${name}: ${errorSummary(err)}`)
+    if (err instanceof z.ZodError) throw new VFSConfigError(`${name}: ${errorSummary(err)}`)
     throw err
   }
   return built

@@ -20,7 +20,7 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
-import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
+import { CHECKED_LIMIT, LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { commandStarted, tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
@@ -71,6 +71,7 @@ export class CacheManager {
   // The newest check in flight per key, with its tick and send time.
   private readonly checking = new Map<string, [number, number, Promise<string | null>]>()
   private checkEpoch = 0
+  private checkBound = CHECKED_LIMIT
 
   constructor(
     fileCache: FileCache | null,
@@ -204,6 +205,15 @@ export class CacheManager {
     return performance.now() - at < LISTING_TRUST_WINDOW * 1000
   }
 
+  // A check answers only a caller inside its window, so the rest are dead
+  // weight; the next prune waits for the map to double.
+  private pruneChecks(): void {
+    for (const [key, [, sentTick, sentAt]] of this.checked) {
+      if (!this.sentRecently(sentTick, sentAt)) this.checked.delete(key)
+    }
+    this.checkBound = Math.max(CHECKED_LIMIT, 2 * this.checked.size)
+  }
+
   // The versions were checked against listings of the old store, so none of
   // them says anything about the new one. The first view has no old store,
   // and a check may be what builds it.
@@ -260,6 +270,7 @@ export class CacheManager {
       const checked = this.checked.get(key)
       // An older check that lands late never replaces a newer one.
       if (version !== null && epoch === this.checkEpoch && (checked?.[1] ?? 0) < sentTick) {
+        if (checked === undefined && this.checked.size >= this.checkBound) this.pruneChecks()
         this.checked.set(key, [version, sentTick, sentAt])
       }
       return version

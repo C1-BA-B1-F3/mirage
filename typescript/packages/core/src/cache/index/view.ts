@@ -161,10 +161,6 @@ export class IndexView extends IndexCacheStore {
     return result
   }
 
-  override peekDir(path: string): Promise<ListResult> {
-    return this.fencedListDir(path)
-  }
-
   private fencedListDir(path: string): Promise<ListResult> {
     return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }

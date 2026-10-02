@@ -628,6 +628,29 @@ async def test_inside_a_command_the_window_does_not_apply(clock):
 
 
 @pytest.mark.asyncio
+async def test_version_checks_out_of_their_window_are_dropped_past_the_bound(
+    clock, monkeypatch
+):
+    # A check serves only a caller inside its window, so once the map is
+    # full the stale entries are dead weight; dropping one costs at most
+    # another check, never a stale listing.
+    monkeypatch.setattr("mirage.cache.manager.CHECKED_LIMIT", 4, raising=False)
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+
+    async def check() -> str:
+        return "V"
+
+    for n in range(4):
+        assert (
+            await manager.checked_version(f"/data/old{n}", "V", check) == "V"
+        )
+    clock.now += LISTING_TRUST_WINDOW + 0.01
+    assert await manager.checked_version("/data/new", "V", check) == "V"
+    assert list(manager._checked) == ["/data/new"]
+
+
+@pytest.mark.asyncio
 async def test_a_late_older_check_never_replaces_a_newer_memo(clock):
     # Check A is sent and stalls; once it is out of the window a caller
     # sends check B, which answers V2 first. A then lands with V1, the

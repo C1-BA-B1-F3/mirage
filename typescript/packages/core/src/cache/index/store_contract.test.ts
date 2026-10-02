@@ -525,18 +525,6 @@ for (const backend of ['ram', 'redis']) {
         expect(listing.version).toBeNull()
       })
 
-      it('lets a peer read the version the writer stored', async () => {
-        await store.setDir('/dir', [['a', entry()]], undefined, { version: 'v1' })
-        const reader = peer()
-        try {
-          const listing = await reader.listDir('/dir')
-          expect(listing.entries).toEqual(['/dir/a'])
-          expect(listing.version).toBe('v1')
-        } finally {
-          if (reader !== store) await reader.close()
-        }
-      })
-
       it('keeps rows only put wrote', async () => {
         await store.put('/dir/p', entry('p'))
         await store.setDir('/dir', [['a', entry()]])

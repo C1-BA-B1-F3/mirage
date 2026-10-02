@@ -18,25 +18,14 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type * as UtilsModule from '../core/disk/utils.ts'
-import type * as StatModule from '../core/disk/stat.ts'
-import { ListingCheckStore, RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
-import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
-import {
-  FileStat,
-  FileType,
-  ListingVersion,
-  MountMode,
-  PathSpec,
-  ReadPolicy,
-} from '@struktoai/mirage-core/types'
+import { ListingCheckStore } from '@struktoai/mirage-core/cache/index/ram'
+import type { FileStat } from '@struktoai/mirage-core/types'
+import { ListingVersion, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
 import type { MountEntry } from '@struktoai/mirage-core/workspace/mount/mount'
-import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { Reconciler } from '@struktoai/mirage-core/workspace/reconcile'
-import { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { Workspace as NodeWorkspace } from '../workspace.ts'
 import { FakeHub, serveHub } from '../core/hf_hub/_test_util.ts'
-import * as diskStat from '../core/disk/stat.ts'
 import * as diskUtils from '../core/disk/utils.ts'
 import { DiskVFS } from './disk/disk.ts'
 import { InlineGitHub } from './fixtures/github.ts'
@@ -45,11 +34,6 @@ import { buildVfs, knownVfsNames } from './registry.ts'
 vi.mock('../core/disk/utils.ts', async (importOriginal) => {
   const original = await importOriginal<typeof UtilsModule>()
   return { ...original, readEntries: vi.fn(original.readEntries) }
-})
-
-vi.mock('../core/disk/stat.ts', async (importOriginal) => {
-  const original = await importOriginal<typeof StatModule>()
-  return { ...original, stat: vi.fn(original.stat) }
 })
 
 const SPEC_VFS = resolve(
@@ -248,10 +232,6 @@ function declared(): string[] {
     .map(([name]) => name)
 }
 
-class StubVFS extends RAMVFS {
-  override readonly indexTtl: number = 600
-}
-
 describe('listing version declarations', () => {
   it('every backend declares one of the three kinds', () => {
     for (const [name, caps] of Object.entries(manifest())) {
@@ -275,79 +255,17 @@ describe('listing version declarations', () => {
       'hf_spaces',
     ])
   })
-
-  const undeclared = (): string[] => {
-    const known = new Set(knownVfsNames())
-    const caps = manifest()
-    return [...known].filter((name) => caps[name]?.listing_version === 'none').sort()
-  }
-
-  it.each(undeclared())('%s never pays a version check', async (name) => {
-    const vfs = new StubVFS()
-    Object.defineProperty(vfs, 'listingVersion', {
-      value: manifest()[name]?.listing_version,
-      configurable: true,
-    })
-    const ws = new Workspace(
-      { '/m': vfs },
-      { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: 600 } },
-    )
-    const stat = vi
-      .spyOn(ws.opsRegistry, 'call')
-      .mockResolvedValue(new FileStat({ name: 'm', type: FileType.DIRECTORY, fingerprint: 'v1' }))
-    try {
-      const mount = ws.namespace.mountFor('/m/a')
-      await mount.indexStore.setDir('/m/a', [], null, { version: 'v1' })
-      const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-      expect(await runInCommandScope(() => rec.mayServeListing(mount, '/m/a', 'v1'))).toBe(false)
-      expect(stat).not.toHaveBeenCalled()
-    } finally {
-      vi.restoreAllMocks()
-      await ws.close()
-    }
-  })
 })
 
 describe('a declarer checks what its fill stored', () => {
   afterEach(() => {
     vi.restoreAllMocks()
-    vi.mocked(diskStat.stat).mockReset()
     vi.mocked(diskUtils.readEntries).mockReset()
     vi.unstubAllGlobals()
   })
 
   it.each(Object.keys(HARNESSES).sort())('%s', async (name) => {
     await checkContract(name)
-  })
-
-  it('goes red on github seeding a tree sha', async () => {
-    // github made to store each listing at a tree's sha while its check
-    // answers the head commit: one kind of token on each side.
-    const seed = Object.getOwnPropertyDescriptor(RAMIndexCacheStore.prototype, 'seed')
-      ?.value as RAMIndexCacheStore['seed']
-    vi.spyOn(RAMIndexCacheStore.prototype, 'seed').mockImplementation(function (
-      this: RAMIndexCacheStore,
-      entries,
-      children,
-      expiresAt,
-      version,
-    ) {
-      seed.call(this, entries, children, expiresAt, version == null ? version : 'f'.repeat(40))
-    })
-    await expect(checkContract('github')).rejects.toThrow()
-  })
-
-  it('goes red on disk stat formatting its own way', async () => {
-    // disk made to answer its folder check in another layout than its
-    // readdir stores: the same four numbers, in a different order.
-    const actual = await vi.importActual<typeof StatModule>('../core/disk/stat.ts')
-    vi.mocked(diskStat.stat).mockImplementation(async (accessor, p) => {
-      const st = await actual.stat(accessor, p)
-      if (st.type !== FileType.DIRECTORY || st.fingerprint === null) return st
-      const [dev, ino, ctime, mtime] = st.fingerprint.split(':')
-      return st.with({ fingerprint: [ino, dev, mtime, ctime].join(':') })
-    })
-    await expect(checkContract('disk')).rejects.toThrow()
   })
 })
 

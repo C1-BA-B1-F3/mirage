@@ -257,6 +257,13 @@ prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
   string.sub(KEYS[1], #ARGV[2] + 1))
 `
 
+interface PendingSeed {
+  entries: Map<string, IndexEntry>
+  children: Map<string, string[]>
+  expiresAt: number
+  version: string | null
+}
+
 interface RedisPipeline {
   eval: (script: string, options: { keys: string[]; arguments: string[] }) => RedisPipeline
   set: (key: string, value: string, options?: { NX: boolean }) => RedisPipeline
@@ -302,12 +309,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
   private clientPromise: Promise<RedisClientLike> | null = null
 
   private readonly seedLock = new KeyLock()
-  private readonly pendingSeeds: {
-    entries: Map<string, IndexEntry>
-    children: Map<string, string[]>
-    expiresAt: number
-    version: string | null
-  }[] = []
+  private readonly pendingSeeds: PendingSeed[] = []
   private closed = false
 
   constructor(options: RedisIndexCacheOptions = {}) {

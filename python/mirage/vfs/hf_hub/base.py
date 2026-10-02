@@ -17,8 +17,6 @@ from typing import Any, Generic, TypeVar
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.commands.builtin.hf_hub import COMMANDS as HF_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
-from mirage.core.hf_hub.constants import COMMIT_SHA
-from mirage.core.hf_hub.repo import mount_version
 from mirage.core.hf_hub.watch import build_delta_hook
 from mirage.ops.hf_hub import OPS as HF_OPS
 from mirage.ops.registry import RegisteredOp
@@ -31,26 +29,6 @@ from mirage.watch.base import DeltaHook
 # allows; python attributes are invariant, so the same narrowing has to be a
 # type parameter or mypy reads every subclass as an illegal override.
 A = TypeVar("A", bound=HfHubAccessor)
-
-
-def _pin_of(revision: str, key_prefix: str) -> str | None:
-    """The version a revision pins every listing at, when it names a commit.
-
-    Only a full 40- or 64-hex string can be a commit. The Hub answers shas
-    in lowercase, so the pin is lowercased to compare with what it stores,
-    and joined with the key prefix the way the stored version is
-    (``mount_version``). A branch that happens to look like one is still
-    safe: its listings are stored at the head its revision answered, which
-    never equals its name.
-
-    Args:
-        revision (str): the mount's effective revision.
-        key_prefix (str): the mount's normalized key prefix, "" for none.
-    """
-    lowered = revision.lower()
-    if not COMMIT_SHA.fullmatch(lowered):
-        return None
-    return mount_version(lowered, key_prefix)
 
 
 class HfHubVFS(BaseVFS, Generic[A]):
@@ -80,16 +58,16 @@ class HfHubVFS(BaseVFS, Generic[A]):
     read_revalidatable: bool = True
     # One version covers every listing: the head commit the revision
     # resolves to, asked with `revision/{rev}?expand[]=sha`, and the tree
-    # is walked at that commit so the rows and the version agree.
+    # is walked at that commit so the rows and the version agree. A
+    # full-sha revision is checked the same way and never pinned: a branch
+    # or tag named like it could take the name, and mirage does not assume
+    # which one the Hub resolves.
     listing_version: ListingVersion = ListingVersion.MOUNT
 
     def __init__(self, config: Any) -> None:
         super().__init__()
         self.config = config
         self.accessor = self.ACCESSOR(self.config)
-        self.listings_pin = _pin_of(
-            self.accessor.revision, self.accessor.key_prefix
-        )
 
     def ops(self) -> list[RegisteredOp]:
         return HF_OPS

@@ -285,6 +285,25 @@ describe('the retry', () => {
     expect(gh.counts()).toEqual([0, 0, 0])
   })
 
+  // A listed name with no row refills once; when the refill no longer lists
+  // it, the name is absent, even with its old row still served.
+  it('answers absent for a name the eviction refill drops', async () => {
+    const index = new RAMIndexCacheStore()
+    const accessor = await listed(index)
+    const key = '/gh/docs/a.txt'
+    const stale = (await index.get(key)).entry
+    await index.invalidateEntry(key)
+    gh.files.delete('docs/a.txt')
+    const get = index.get.bind(index)
+    vi.spyOn(index, 'get').mockImplementation(async (path: string) =>
+      path === key && gh.count('recursive') >= 1 ? { entry: stale ?? null } : get(path),
+    )
+    await expect(stat(accessor, spec('docs/a.txt'), index)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    expect(gh.count('recursive')).toBe(1)
+  })
+
   it('answers absent without an index', async () => {
     // With no store there is nothing a clear could have emptied, and lookup
     // answers at once; python's NULL_INDEX twin counts the single lookup.

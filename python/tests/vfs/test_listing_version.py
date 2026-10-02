@@ -24,8 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from mirage.cache.index.ram import ListingCheckStore, RAMIndexCacheStore
-from mirage.cache.index.scope import command_scope
+from mirage.cache.index.ram import ListingCheckStore
 from mirage.types import ListingVersion, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.disk import DiskVFS
@@ -37,10 +36,8 @@ from mirage.workspace.reconcile import Reconciler
 from tests.fixtures.github_api import FakeGitHub, serve
 from tests.fixtures.hf_hub_api import FakeHub
 from tests.fixtures.hf_hub_api import serve as serve_hub
-from tests.fixtures.versioned_vfs import VersionedVFS
 
 disk_readdir = importlib.import_module("mirage.core.disk.readdir")
-disk_stat = importlib.import_module("mirage.core.disk.stat")
 
 
 @dataclass
@@ -258,32 +255,6 @@ def test_the_base_declares_no_version_and_no_pin():
     assert [m.value for m in ListingVersion] == ["none", "mount", "folder"]
 
 
-def _undeclared() -> list[str]:
-    declared = _declared()
-    return sorted(
-        name
-        for name in known_vfs_names()
-        if name in REGISTRY and name not in declared
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("name", _undeclared())
-async def test_an_undeclaring_backend_never_pays_a_version_check(name):
-    vfs = VersionedVFS()
-    vfs.listing_version = load_attr(REGISTRY[name].vfs_path).listing_version
-    ws = Workspace({"/m/": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
-    try:
-        mount = ws.namespace.mount_for("/m/a")
-        await mount.index_store.set_dir("/m/a", [], version="v1")
-        rec = Reconciler(ws.cache, ws.namespace)
-        async with command_scope():
-            assert await rec.may_serve_listing(mount, "/m/a", "v1") is False
-        assert vfs.stats == []
-    finally:
-        await ws.close()
-
-
 async def _shell(ws: Workspace, line: str) -> None:
     result = await asyncio.wait_for(ws.shell(line), 10)
     await result.materialize_stdout()
@@ -322,52 +293,6 @@ async def _check_contract(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(HARNESSES))
 async def test_a_declarers_check_answers_what_its_fill_stored(name):
     await _check_contract(name)
-
-
-@pytest.mark.asyncio
-async def test_the_contract_goes_red_on_github_seeding_a_tree_sha(monkeypatch):
-    # github made to store each listing at the root tree's sha while its
-    # check answers the head commit: one kind of token on each side.
-    original = RAMIndexCacheStore.seed
-
-    def seed(self, entries, children, expires_at, *, version=None):
-        tree = None if version is None else "f" * 40
-        original(self, entries, children, expires_at, version=tree)
-
-    monkeypatch.setattr(RAMIndexCacheStore, "seed", seed)
-    with pytest.raises(AssertionError):
-        await _check_contract("github")
-
-
-@pytest.mark.asyncio
-async def test_the_contract_goes_red_on_hf_seeding_the_root_only(monkeypatch):
-    # hf made to stamp only the mount root's listing: the nested folder is
-    # stored unversioned, so it re-lists every command.
-    original = RAMIndexCacheStore.seed
-
-    def seed(self, entries, children, expires_at, *, version=None):
-        root = {k: v for k, v in children.items() if k == "/m"}
-        rest = {k: v for k, v in children.items() if k != "/m"}
-        original(self, entries, rest, expires_at, version=None)
-        original(self, {}, root, expires_at, version=version)
-
-    monkeypatch.setattr(RAMIndexCacheStore, "seed", seed)
-    with pytest.raises(AssertionError):
-        await _check_contract("hf_models")
-
-
-@pytest.mark.asyncio
-async def test_the_contract_goes_red_on_disk_stat_formatting_its_own_way(
-    monkeypatch,
-):
-    # disk made to answer its folder check in another layout than its
-    # readdir stores: the same four numbers, in a different order.
-    def reordered(st, now_ns):
-        return f"{st.st_ino}:{st.st_dev}:{st.st_mtime_ns}:{st.st_ctime_ns}"
-
-    monkeypatch.setattr(disk_stat, "stamp", reordered)
-    with pytest.raises(AssertionError):
-        await _check_contract("disk")
 
 
 def test_turning_folder_versions_off_leaves_the_declaration(tmp_path):

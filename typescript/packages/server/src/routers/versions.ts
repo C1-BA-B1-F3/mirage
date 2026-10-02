@@ -19,6 +19,7 @@ import { Workspace } from '@struktoai/mirage-node'
 import type { SecretEntries } from '@struktoai/mirage-core/secrets/config'
 import { z } from '@struktoai/mirage-core/vfs/secrets'
 import { SecretsError } from '@struktoai/mirage-core/secrets/errors'
+import { VFSConfigError } from '@struktoai/mirage-core/vfs/errors'
 import { cloneWorkspaceWithOverride } from '../clone.ts'
 import type { WorkspaceRegistry } from '../registry.ts'
 import { makeDetail } from '../summary.ts'
@@ -214,7 +215,7 @@ export function registerVersionsRoutes(app: FastifyInstance, deps: VersionRoutes
         if (e instanceof Errors.NotFoundError) {
           return reply.status(404).send({ detail: `version not found: ${at}` })
         }
-        if (e instanceof SecretsError || e instanceof z.ZodError) {
+        if (e instanceof SecretsError || e instanceof z.ZodError || e instanceof VFSConfigError) {
           // A declarations override the host cannot resolve, or a
           // block the schema refuses, is a bad request, not a 500.
           // The python twin catches ValueError for the same pair,

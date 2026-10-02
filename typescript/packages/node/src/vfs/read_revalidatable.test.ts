@@ -96,6 +96,7 @@ import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { checkReadCapability } from '@struktoai/mirage-core/workspace/mount/read_policy'
 import { DEFAULT_READ_TTL, ReadPolicy } from '@struktoai/mirage-core/types'
+import { InlineGitHub, blobSha } from './fixtures/github.ts'
 
 interface GDriveItem {
   id: string
@@ -611,80 +612,6 @@ function slotOf(fake: Fake, row: Row): string {
   return row === 'bytes' ? SLOTS[row] : fake.streamSlot
 }
 
-function sha1Blob(data: Uint8Array): string {
-  return createHash('sha1')
-    .update(Buffer.concat([Buffer.from(`blob ${String(data.byteLength)}\0`), data]))
-    .digest('hex')
-}
-
-// A github repository behind a fetch router: the recursive tree, one
-// directory's tree by `{ref}:{dir}` (or the ref itself for the root), and
-// blobs by sha. Inlined because core's FakeGitHub (_test_util.ts) is left out
-// of core's build and so cannot be imported from node.
-class InlineGitHub {
-  readonly files = new Map<string, Uint8Array>()
-  readonly blobs = new Map<string, Uint8Array>()
-  readonly log: string[] = []
-
-  private row(path: string, name: string): Record<string, unknown> {
-    const data = this.files.get(path)
-    if (data === undefined) return { path: name, type: 'tree', sha: `tree-${path}` }
-    const sha = sha1Blob(data)
-    this.blobs.set(sha, data)
-    return { path: name, type: 'blob', sha, size: data.byteLength }
-  }
-
-  private dirs(): Set<string> {
-    const out = new Set<string>()
-    for (const path of this.files.keys()) {
-      const parts = path.split('/').slice(0, -1)
-      for (let i = 1; i <= parts.length; i += 1) out.add(parts.slice(0, i).join('/'))
-    }
-    return out
-  }
-
-  readonly fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(new Request(input, init).url)
-    const reply = (body: unknown, status = 200): Promise<Response> =>
-      Promise.resolve(
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-    const tree = /\/git\/trees\/([^/]+)$/.exec(url.pathname)
-    if (tree !== null) {
-      const segment = decodeURIComponent(tree[1] ?? '')
-      if (url.searchParams.get('recursive') === '1') {
-        this.log.push('recursive')
-        const paths = [...this.files.keys(), ...this.dirs()].sort()
-        return reply({ tree: paths.map((p) => this.row(p, p)), truncated: false })
-      }
-      this.log.push('dir')
-      const at = segment.includes(':') ? segment.slice(segment.indexOf(':') + 1) : ''
-      const prefix = at === '' ? '' : `${at}/`
-      const names = new Set<string>()
-      for (const p of [...this.files.keys(), ...this.dirs()]) {
-        if (p.startsWith(prefix) && p !== at) names.add(p.slice(prefix.length).split('/')[0] ?? '')
-      }
-      return reply({
-        tree: [...names].sort().map((n) => this.row(prefix + n, n)),
-        truncated: false,
-      })
-    }
-    const blob = /\/git\/blobs\/([^/]+)$/.exec(url.pathname)
-    if (blob !== null) {
-      this.log.push('blob')
-      for (const data of this.files.values()) this.blobs.set(sha1Blob(data), data)
-      const data = this.blobs.get(blob[1] ?? '')
-      if (data === undefined) return reply({ message: 'Not Found' }, 404)
-      return reply({ content: Buffer.from(data).toString('base64'), encoding: 'base64' })
-    }
-    if (/^\/repos\/[^/]+\/[^/]+$/.test(url.pathname)) return reply({ default_branch: 'main' })
-    throw new Error(`InlineGitHub: unrouted ${url.pathname}`)
-  }
-}
-
 function chunked(data: Uint8Array): Uint8Array[] {
   const out: Uint8Array[] = []
   for (let i = 0; i < data.byteLength; i += 16384) out.push(data.slice(i, i + 16384))
@@ -766,7 +693,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       owner: 'o',
       repo: 'r',
       ref: 'main',
-      base_url: 'http://github.test',
+      base_url: gh.url,
     })
     const accessor = vfs.accessor as GitHubAccessor
     expect(vfs.readRevalidatable).toBe(true)
@@ -1490,7 +1417,7 @@ describe('the read-token contract', () => {
       await line(ws, `cat ${virtual}`)
       expect(await ws.cache.isFresh(virtual, md5Hex(SEED))).toBe(true)
       const stat = await reconcileStat(ws, fake, virtual)
-      expect(stat.fingerprint).toBe(sha1Blob(SEED))
+      expect(stat.fingerprint).toBe(blobSha(SEED))
       expect(await ws.cache.isFresh(virtual, stat.fingerprint ?? '')).toBe(false)
     } finally {
       await ws.close()

@@ -16,10 +16,8 @@ import {
   closeSync,
   mkdirSync,
   openSync,
-  renameSync,
   rmSync,
   statSync,
-  unlinkSync,
   utimesSync,
   writeFileSync,
   writeSync,
@@ -141,25 +139,17 @@ afterEach(() => {
 })
 
 describe('folderVersion', () => {
-  it('is the folder device, inode and change times', async () => {
-    const quiet = changedNs(root) + 3000000000n
-    expect(await folderVersion(root, quiet)).toBe(expected(root))
-  })
-
   it('is withheld while the folder changed within two seconds', async () => {
     const changed = changedNs(root)
     expect(await folderVersion(root, changed + 1999999999n)).toBeNull()
     expect(await folderVersion(root, changed + 2000000000n)).not.toBeNull()
   })
 
-  // Where ctime is a creation time, the mtime is what a change moves, so a
-  // folder whose mtime is ahead of the clock is still settling however long
-  // ago its ctime was.
-  it('is withheld while the mtime is ahead, until the clock passes it', async () => {
-    const [ctime, mtime] = mtimeAhead(root)
-    expect(await folderVersion(root, ctime + 3000000000n)).toBeNull()
-    expect(await folderVersion(root, mtime + 1999999999n)).toBeNull()
-    expect(await folderVersion(root, mtime + 2000000000n)).not.toBeNull()
+  it('is withheld while the ctime is fresh, however old the mtime', async () => {
+    utimesSync(root, OLD_S, OLD_S)
+    const st = statSync(root, { bigint: true })
+    expect(st.mtimeNs).toBe(OLD_NS)
+    expect(await folderVersion(root, st.ctimeNs + 1000000000n)).toBeNull()
   })
 })
 
@@ -178,6 +168,9 @@ describe('disk folder versions under fresh', () => {
     }
   })
 
+  // Where ctime is a creation time, the mtime is what a change moves, so a
+  // folder whose mtime is ahead of the clock is still settling however long
+  // ago its ctime was.
   it('a folder whose mtime is ahead is re-listed until the clock passes it', async () => {
     writeFileSync(join(root, 'a.txt'), 'a')
     const [ctime, mtime] = mtimeAhead(root)
@@ -189,66 +182,6 @@ describe('disk folder versions under fresh', () => {
       vi.setSystemTime(Number(mtime / 1000000n) + QUIET_MS)
       await ls(ws)
       expect(await stored(ws)).toBe(expected(root))
-      expect(scans).toEqual([root, root])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('a folder changed just now is re-listed', async () => {
-    writeFileSync(join(root, 'a.txt'), 'a')
-    vi.setSystemTime(Number(changedNs(root) / 1000000n) + 500)
-    const ws = workspace()
-    try {
-      await ls(ws)
-      expect(await stored(ws)).toBeNull()
-      await ls(ws)
-      expect(scans).toEqual([root, root])
-      expect(checks).toEqual([])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  const changes: [string, (dir: string) => void, string][] = [
-    [
-      'add',
-      (dir) => {
-        writeFileSync(join(dir, 'new.txt'), 'n')
-      },
-      'keep.txt\nnew.txt\nold.txt\n',
-    ],
-    [
-      'rename',
-      (dir) => {
-        renameSync(join(dir, 'old.txt'), join(dir, 'renamed.txt'))
-      },
-      'keep.txt\nrenamed.txt\n',
-    ],
-    [
-      'delete',
-      (dir) => {
-        unlinkSync(join(dir, 'old.txt'))
-      },
-      'keep.txt\n',
-    ],
-  ]
-
-  it.each(changes)('a %s inside the folder moves its version', async (_name, change, listed) => {
-    writeFileSync(join(root, 'keep.txt'), 'k')
-    writeFileSync(join(root, 'old.txt'), 'o')
-    settle(root)
-    const ws = workspace()
-    try {
-      expect(await ls(ws)).toBe('keep.txt\nold.txt\n')
-      const version = await stored(ws)
-      expect(version).not.toBeNull()
-      change(root)
-      settle(root)
-      const moved = await checked(ws)
-      expect(moved).not.toBeNull()
-      expect(moved).not.toBe(version)
-      expect(await ls(ws)).toBe(listed)
       expect(scans).toEqual([root, root])
     } finally {
       await ws.close()

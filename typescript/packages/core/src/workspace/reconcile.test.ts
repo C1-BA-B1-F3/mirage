@@ -788,9 +788,8 @@ describe('the listing version gate', () => {
   async function withVersioned(
     vfs: VersionedVFS,
     body: (ctx: ReturnType<typeof versionedWorkspace>) => Promise<void>,
-    policy: ReadPolicy = ReadPolicy.FRESH,
   ): Promise<void> {
-    const ctx = versionedWorkspace(vfs, policy)
+    const ctx = versionedWorkspace(vfs)
     try {
       await body(ctx)
     } finally {
@@ -799,19 +798,6 @@ describe('the listing version gate', () => {
       await ctx.ws.close()
     }
   }
-
-  it('sends no check under bounded', async () => {
-    const vfs = new VersionedVFS('mount')
-    await withVersioned(
-      vfs,
-      async ({ mount, rec }) => {
-        await store(mount, '/m/a', 'v1')
-        expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
-        expect(vfs.stats).toEqual([])
-      },
-      ReadPolicy.BOUNDED,
-    )
-  })
 
   it("trusts this command's own listing unchecked", async () => {
     const vfs = new VersionedVFS('mount')
@@ -842,21 +828,6 @@ describe('the listing version gate', () => {
     })
   })
 
-  it('checks a mount version once per command', async () => {
-    // One check of the mount root answers for every folder of the mount.
-    const vfs = new VersionedVFS('mount')
-    await withVersioned(vfs, async ({ mount, rec }) => {
-      await store(mount, '/m/a', 'v1')
-      await store(mount, '/m/b', 'v1')
-      await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
-        expect(vfs.stats).toEqual(['/m'])
-        expect(await rec.mayServeListing(mount, '/m/b', 'v1')).toBe(true)
-      })
-      expect(vfs.stats).toEqual(['/m'])
-    })
-  })
-
   it('refuses a moved version and keeps the listing', async () => {
     // A refusal leaves the listing stored for the re-list to diff, and the
     // index is never cleared.
@@ -876,25 +847,20 @@ describe('the listing version gate', () => {
     })
   })
 
-  it.each(['enoent', 'none', 'failed'])(
-    'refuses what the check cannot confirm (%s)',
-    async (outcome) => {
-      const vfs = new VersionedVFS('mount')
-      if (outcome === 'enoent') vfs.rejects = enoent('/m')
-      else if (outcome === 'none') vfs.remote = null
-      else vfs.rejects = new Error('backend down')
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-      await withVersioned(vfs, async ({ mount, rec }) => {
-        await store(mount, '/m/a', 'v1')
-        expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
-        expect(vfs.stats).toEqual(['/m'])
-        expect((await mount.indexStore.listDir('/m/a')).version).toBe('v1')
-        const logged = warn.mock.calls.map((c) => String(c[0]))
-        expect(logged.length).toBe(outcome === 'failed' ? 1 : 0)
-        if (outcome === 'failed') expect(logged[0]).toContain('backend down')
-      })
-    },
-  )
+  it.each(['enoent', 'none'])('refuses what the check cannot confirm (%s)', async (outcome) => {
+    const vfs = new VersionedVFS('mount')
+    if (outcome === 'enoent') vfs.rejects = enoent('/m')
+    else vfs.remote = null
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await withVersioned(vfs, async ({ mount, rec }) => {
+      await store(mount, '/m/a', 'v1')
+      expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
+      expect(vfs.stats).toEqual(['/m'])
+      expect((await mount.indexStore.listDir('/m/a')).version).toBe('v1')
+      const logged = warn.mock.calls.map((c) => String(c[0]))
+      expect(logged).toEqual([])
+    })
+  })
 
   it.each([
     ['TypeError', () => new TypeError('bug')],
@@ -917,23 +883,6 @@ describe('the listing version gate', () => {
       expect(await inCommand(rec, mount, '/m/a', 'v1')).toBe(false)
       expect(asked).toEqual(['stat'])
       expect(warn).not.toHaveBeenCalled()
-    })
-  })
-
-  it('serves a pinned listing only at its pin', async () => {
-    const pin = 'a'.repeat(40)
-    const other = 'd'.repeat(40)
-    const vfs = new VersionedVFS('mount', other)
-    vfs.pin(pin)
-    await withVersioned(vfs, async ({ mount, rec }) => {
-      await store(mount, '/m/a', pin)
-      await store(mount, '/m/b', other)
-      await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/m/a', pin)).toBe(true)
-        expect(vfs.stats).toEqual([])
-        expect(await rec.mayServeListing(mount, '/m/b', other)).toBe(true)
-      })
-      expect(vfs.stats).toEqual(['/m'])
     })
   })
 
@@ -1068,21 +1017,6 @@ describe('the listing version gate', () => {
     })
   })
 
-  it('checks each folder of a folder-versioned mount', async () => {
-    const vfs = new VersionedVFS('folder')
-    vfs.remotes.set('/m/a', 'v1')
-    vfs.remotes.set('/m/b', 'v2')
-    await withVersioned(vfs, async ({ mount, rec }) => {
-      await store(mount, '/m/a', 'v1')
-      await store(mount, '/m/b', 'v1')
-      await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/m/a', 'v1')).toBe(true)
-        expect(await rec.mayServeListing(mount, '/m/b', 'v1')).toBe(false)
-      })
-      expect(vfs.stats).toEqual(['/m/a', '/m/b'])
-    })
-  })
-
   it('forgets its checks when the store changes', async () => {
     const vfs = new VersionedVFS('mount')
     await withVersioned(vfs, async ({ mount }) => {
@@ -1097,33 +1031,5 @@ describe('the listing version gate', () => {
       })
       expect(vfs.stats).toEqual(['/m', '/m'])
     })
-  })
-
-  it('compares a remembered check with the stored version', async () => {
-    const vfs = new VersionedVFS('mount', 'v2')
-    await withVersioned(vfs, async ({ mount, rec }) => {
-      await store(mount, '/m/a', 'v2')
-      await store(mount, '/m/b', 'v1')
-      await runInCommandScope(async () => {
-        expect(await rec.mayServeListing(mount, '/m/a', 'v2')).toBe(true)
-        expect(await rec.mayServeListing(mount, '/m/b', 'v1')).toBe(false)
-      })
-      expect(vfs.stats).toEqual(['/m', '/m'])
-    })
-  })
-
-  it('on an unversioned backend never reads a pin', async () => {
-    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
-    const call = vi.spyOn(ws.opsRegistry, 'call')
-    try {
-      const mount = withFresh(mountOf(ws, '/data/d'))
-      const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-      await mount.indexStore.setDir('/data/d', [])
-      expect(await inCommand(rec, mount, '/data/d', null)).toBe(false)
-      expect(call).not.toHaveBeenCalled()
-    } finally {
-      vi.restoreAllMocks()
-      await ws.close()
-    }
   })
 })

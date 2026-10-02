@@ -624,6 +624,62 @@ async def test_clone_with_a_bad_secrets_override_is_a_bad_request():
 
 
 @pytest.mark.asyncio
+async def test_clone_with_a_bad_disk_override_is_a_bad_request(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        r = await client.post("/v1/workspaces", json=_minimal_config())
+        wid = r.json()["id"]
+        block = {
+            "vfs": "disk",
+            "config": {"root": str(tmp_path), "folder_versions": "no"},
+        }
+        r = await client.post(
+            f"/v1/workspaces/{wid}/clone",
+            json={"override": {"mounts": {"/": block}}},
+        )
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"] == "disk: folder_versions: must be a boolean"
+
+
+@pytest.mark.asyncio
+async def test_clone_with_an_unknown_mount_key_is_a_bad_request():
+    app, _ = _make_app_with_short_grace(grace=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        r = await client.post("/v1/workspaces", json=_minimal_config())
+        wid = r.json()["id"]
+        block = {"vfs": "ram", "config": {"bogus": 1}}
+        r = await client.post(
+            f"/v1/workspaces/{wid}/clone",
+            json={"override": {"mounts": {"/": block}}},
+        )
+        assert r.status_code == 400, r.text
+        assert "bogus" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_bad_disk_mount_is_a_bad_request(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        body = _minimal_config()
+        body["config"]["mounts"]["/"] = {
+            "vfs": "disk",
+            "config": {"root": str(tmp_path), "folder_versions": "no"},
+        }
+        r = await client.post("/v1/workspaces", json=body)
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"] == "disk: folder_versions: must be a boolean"
+
+
+@pytest.mark.asyncio
 async def test_load_with_a_non_mapping_secrets_override_is_a_bad_request(
     tmp_path,
 ):

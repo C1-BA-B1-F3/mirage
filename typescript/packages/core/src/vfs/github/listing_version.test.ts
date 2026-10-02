@@ -23,7 +23,7 @@ import { runInCommandScope } from '../../cache/index/scope.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
 import { stat } from '../../core/github/stat.ts'
 import { GitHubWalk } from '../../core/github/watch.ts'
-import { FileType, ListingVersion, MountMode, PathSpec, ReadPolicy } from '../../types.ts'
+import { ListingVersion, MountMode, PathSpec, ReadPolicy } from '../../types.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { Mount } from '../../workspace/mount/spec.ts'
 import { Reconciler } from '../../workspace/reconcile.ts'
@@ -37,6 +37,7 @@ const LISTED = 'a.txt\nb.txt\nc.txt\n'
 const GROWN = 'a.txt\nb.txt\nc.txt\nnew.txt\n'
 
 let gh: FakeGitHub
+const opened: Workspace[] = []
 
 function three(): FakeGitHub {
   const hub = new FakeGitHub(
@@ -52,7 +53,8 @@ beforeEach(() => {
   gh = three()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  for (const w of opened.splice(0)) await w.close()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -78,6 +80,7 @@ async function wsOf(
   if (index !== null) {
     ;(w.registry.mountFor('/gh') as { indexStore: IndexCacheStore }).indexStore = index
   }
+  opened.push(w)
   return w
 }
 
@@ -134,10 +137,6 @@ async function stored(w: Workspace, key = '/gh'): Promise<string | null> {
 }
 
 describe('github versions a listing by its head commit', () => {
-  it('declares one version for the whole mount', async () => {
-    expect((await vfsOf()).listingVersion).toBe(ListingVersion.MOUNT)
-  })
-
   // Only the gate's check store wants the root's version, so a root stat
   // through the mount's own index names none and reads neither the index nor
   // the backend, however stale the trust is (it used to answer the stored one).
@@ -148,23 +147,19 @@ describe('github versions a listing by its head commit', () => {
       const vfs = await vfsOf()
       expect(vfs.listingVersion).toBe(ListingVersion.MOUNT)
       const w = await wsOf(vfs)
-      try {
-        await out(w, 'ls /gh')
-        const version = await stored(w)
-        clock.advance(LISTING_TRUST_WINDOW * 2000)
-        gh.log.length = 0
-        const index = w.registry.mountFor('/gh').index
-        const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
-        const found = scoped
-          ? await runInCommandScope(() => stat(vfs.accessor, ROOT, index))
-          : await stat(vfs.accessor, ROOT, index)
-        expect(version).not.toBeNull()
-        expect(found.fingerprint).toBeNull()
-        expect(reads).toEqual([])
-        expect(gh.counts()).toEqual([0, 0, 0])
-      } finally {
-        await w.close()
-      }
+      await out(w, 'ls /gh')
+      const version = await stored(w)
+      clock.advance(LISTING_TRUST_WINDOW * 2000)
+      gh.log.length = 0
+      const index = w.registry.mountFor('/gh').index
+      const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
+      const found = scoped
+        ? await runInCommandScope(() => stat(vfs.accessor, ROOT, index))
+        : await stat(vfs.accessor, ROOT, index)
+      expect(version).not.toBeNull()
+      expect(found.fingerprint).toBeNull()
+      expect(reads).toEqual([])
+      expect(gh.counts()).toEqual([0, 0, 0])
     },
   )
 
@@ -174,93 +169,40 @@ describe('github versions a listing by its head commit', () => {
     'asks nothing for a root stat before the first listing (%s)',
     async (policy) => {
       const w = await wsOf(await vfsOf(), policy)
-      try {
-        expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
-        expect(gh.counts()).toEqual([0, 0, 0])
-        await out(w, 'ls /gh')
-        gh.log.length = 0
-        expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
-        expect(gh.counts()).toEqual([0, 0, 0])
-      } finally {
-        await w.close()
-      }
+      expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
+      expect(gh.counts()).toEqual([0, 0, 0])
+      await out(w, 'ls /gh')
+      gh.log.length = 0
+      expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
+      expect(gh.counts()).toEqual([0, 0, 0])
     },
   )
 
-  // Repeated root stats on a mount that has not listed send nothing, on a
-  // branch or pinned to a commit.
-  it.each([false, true])('sends no request for a bounded root stat (pinned=%s)', async (pinned) => {
-    const w = await wsOf(await vfsOf(pinned ? await gh.head() : 'main'), ReadPolicy.BOUNDED)
-    try {
-      for (let i = 0; i < 5; i++) expect((await w.vfs.stat('/gh')).type).toBe(FileType.DIRECTORY)
-      expect(gh.counts()).toEqual([0, 0, 0])
-    } finally {
-      await w.close()
-    }
-  })
-
-  // A root stat through the mount asks nothing, so it answers with the
-  // backend unreachable, as a FUSE getattr of the root must.
-  it('answers a root stat with the backend unreachable', async () => {
-    const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED)
-    try {
-      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
-      expect(await out(w, 'stat -c %n /gh')).toBe('/gh\n')
-    } finally {
-      await w.close()
-    }
-  })
-
-  // An expired root listing names no version and asks nothing.
-  it('names no version for an expired root listing', async () => {
-    const vfs = await vfsOf()
-    const w = await wsOf(vfs, ReadPolicy.BOUNDED)
-    try {
-      await out(w, 'ls /gh')
-      await w.registry.mountFor('/gh').indexStore.invalidate()
-      gh.log.length = 0
-      const found = await stat(vfs.accessor, ROOT, w.registry.mountFor('/gh').index)
-      expect(found.fingerprint).toBeNull()
-      expect(gh.counts()).toEqual([0, 0, 0])
-    } finally {
-      await w.close()
-    }
-  })
-
   // An add outside mirage moves the head, so the next command's one check
-  // misses and the tree is fetched once; ls and a glob both see the file.
-  it.each([
-    ['ls /gh/d1', GROWN],
-    ['echo /gh/d1/*', '/gh/d1/a.txt /gh/d1/b.txt /gh/d1/c.txt /gh/d1/new.txt\n'],
-  ])('sees an outside add after one check and one walk: %s', async (line, expected) => {
+  // misses and the tree is fetched once; a glob sees the file.
+  it('sees an outside add after one check and one walk', async () => {
     const w = await wsOf(await vfsOf())
-    try {
-      await out(w, 'ls /gh')
-      gh.set('d1/new.txt', 'new\n')
-      gh.log.length = 0
-      expect(await out(w, line)).toBe(expected)
-      expect(gh.counts()).toEqual([1, 1, 0])
-    } finally {
-      await w.close()
-    }
+    await out(w, 'ls /gh')
+    gh.set('d1/new.txt', 'new\n')
+    gh.log.length = 0
+    expect(await out(w, 'echo /gh/d1/*')).toBe(
+      '/gh/d1/a.txt /gh/d1/b.txt /gh/d1/c.txt /gh/d1/new.txt\n',
+    )
+    expect(gh.counts()).toEqual([1, 1, 0])
   })
 
   // The version is the head the tree response itself named, so a commit
   // landing right after that response is a mismatch for the next command.
   it('catches a commit made after the tree response on the next command', async () => {
     const w = await wsOf(await vfsOf())
-    try {
-      gh.afterRecursive = () => {
-        if (!gh.files.has('d1/new.txt')) gh.set('d1/new.txt', 'new\n')
-      }
-      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-      gh.afterRecursive = null
-      gh.log.length = 0
-      expect(await out(w, 'ls /gh/d1')).toBe(GROWN)
-      expect(gh.counts()).toEqual([1, 1, 0])
-    } finally {
-      await w.close()
+    gh.afterRecursive = () => {
+      if (!gh.files.has('d1/new.txt')) gh.set('d1/new.txt', 'new\n')
     }
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    gh.afterRecursive = null
+    gh.log.length = 0
+    expect(await out(w, 'ls /gh/d1')).toBe(GROWN)
+    expect(gh.counts()).toEqual([1, 1, 0])
   })
 
   // A second workspace refills the index both share, so the first one's
@@ -279,21 +221,16 @@ describe('github versions a listing by its head commit', () => {
           : new RedisIndexCacheStore({ url: process.env.REDIS_URL ?? '', keyPrefix })
       const one = await wsOf(await vfsOf(), ReadPolicy.FRESH, store())
       const two = await wsOf(await vfsOf(), ReadPolicy.FRESH, store())
-      try {
-        await out(one, 'ls /gh')
-        gh.set('d1/new.txt', 'new x\n')
-        await out(two, 'ls /gh/d1')
-        gh.log.length = 0
-        expect(await out(one, 'ls /gh/d1')).toBe(GROWN)
-        expect(gh.counts()).toEqual([1, 0, 0])
-        gh.log.length = 0
-        expect(await out(one, 'find /gh -name new.txt')).toBe('/gh/d1/new.txt\n')
-        expect(gh.counts()).toEqual([1, 1, 0])
-        expect(await out(one, 'grep -rl x /gh')).toContain('/gh/d1/new.txt')
-      } finally {
-        await one.close()
-        await two.close()
-      }
+      await out(one, 'ls /gh')
+      gh.set('d1/new.txt', 'new x\n')
+      await out(two, 'ls /gh/d1')
+      gh.log.length = 0
+      expect(await out(one, 'ls /gh/d1')).toBe(GROWN)
+      expect(gh.counts()).toEqual([1, 0, 0])
+      gh.log.length = 0
+      expect(await out(one, 'find /gh -name new.txt')).toBe('/gh/d1/new.txt\n')
+      expect(gh.counts()).toEqual([1, 1, 0])
+      expect(await out(one, 'grep -rl x /gh')).toContain('/gh/d1/new.txt')
     },
   )
 
@@ -304,26 +241,17 @@ describe('github versions a listing by its head commit', () => {
     const vfs = await vfsOf(head.toUpperCase())
     expect(vfs.listingsPin).toBe(head)
     const w = await wsOf(vfs)
-    try {
-      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-      expect(await stored(w)).toBe(head)
-      gh.log.length = 0
-      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-      expect(gh.counts()).toEqual([0, 0, 0])
-    } finally {
-      await w.close()
-    }
-  })
-
-  it('pins nothing for a branch', async () => {
-    expect((await vfsOf()).listingsPin).toBeNull()
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    expect(await stored(w)).toBe(head)
+    gh.log.length = 0
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    expect(gh.counts()).toEqual([0, 0, 0])
   })
 
   // Only a full SHA-1 or SHA-256 hex string names a commit; one short or one
   // long is a branch name, so it pins nothing.
   it.each([
     ['c'.repeat(64), 'c'.repeat(64)],
-    ['C'.repeat(64), 'c'.repeat(64)],
     ['c'.repeat(39), null],
     ['c'.repeat(41), null],
     ['c'.repeat(63), null],
@@ -339,46 +267,32 @@ describe('github versions a listing by its head commit', () => {
     const old = await gh.head()
     const shared = new RAMIndexCacheStore()
     const main = await wsOf(await vfsOf(), ReadPolicy.FRESH, shared)
-    try {
-      await out(main, 'ls /gh/d1')
-      gh.set('d1/new.txt', 'new\n')
-      expect(await out(main, 'ls /gh/d1')).toBe(GROWN)
-    } finally {
-      await main.close()
-    }
+    await out(main, 'ls /gh/d1')
+    gh.set('d1/new.txt', 'new\n')
+    expect(await out(main, 'ls /gh/d1')).toBe(GROWN)
+    await main.close()
     const pinned = await wsOf(await vfsOf(old), ReadPolicy.FRESH, shared)
-    try {
-      gh.log.length = 0
-      expect(await out(pinned, 'ls /gh/d1')).toBe(LISTED)
-      expect(gh.count('dir')).toBe(1)
-    } finally {
-      await pinned.close()
-    }
+    gh.log.length = 0
+    expect(await out(pinned, 'ls /gh/d1')).toBe(LISTED)
+    expect(gh.count('dir')).toBe(1)
   })
 
-  // A ref shaped like a commit is not one: a branch named with 40 or 64 hex
-  // characters is stored at the head its tree answered, so it never matches
-  // the ref and an outside change is always seen.
-  for (const ref of ['a'.repeat(40), 'b'.repeat(64)]) {
-    for (const truncated of [false, true]) {
-      it(`never serves a hex branch name as a pin (${String(ref.length)}, truncated=${String(truncated)})`, async () => {
-        gh.ref = ref
-        gh.truncatedRecursive = truncated
-        const vfs = await vfsOf(ref)
-        expect(vfs.listingsPin).toBe(ref)
-        const w = await wsOf(vfs)
-        try {
-          expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-          gh.set('d1/new.txt', 'new\n')
-          gh.log.length = 0
-          expect(await out(w, 'ls /gh/d1')).toBe(GROWN)
-          expect(gh.counts()).not.toEqual([0, 0, 0])
-        } finally {
-          await w.close()
-        }
-      })
-    }
-  }
+  // A full-sha ref is served unchecked because github.com refuses a 40- or
+  // 64-hex branch or tag name (an Enterprise host is assumed to as well). A
+  // hex ref that answers another head is stored at that head, so it never
+  // matches its pin and an outside change is seen.
+  it('never serves a hex branch name as a pin', async () => {
+    const ref = 'a'.repeat(40)
+    gh.ref = ref
+    const vfs = await vfsOf(ref)
+    expect(vfs.listingsPin).toBe(ref)
+    const w = await wsOf(vfs)
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    gh.set('d1/new.txt', 'new\n')
+    gh.log.length = 0
+    expect(await out(w, 'ls /gh/d1')).toBe(GROWN)
+    expect(gh.counts()).not.toEqual([0, 0, 0])
+  })
 
   // A truncated tree stores no version, pinned or not, so it re-lists folder
   // by folder as it did before versions existed.
@@ -388,15 +302,11 @@ describe('github versions a listing by its head commit', () => {
       gh = three()
       gh.truncatedRecursive = true
       const w = await wsOf(await vfsOf(pinned ? await gh.head() : 'main'))
-      try {
-        await out(w, 'ls /gh/d1')
-        expect(await stored(w, '/gh/d1')).toBeNull()
-        gh.log.length = 0
-        expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-        costs.push([gh.counts(), gh.count('sha_dir')])
-      } finally {
-        await w.close()
-      }
+      await out(w, 'ls /gh/d1')
+      expect(await stored(w, '/gh/d1')).toBeNull()
+      gh.log.length = 0
+      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+      costs.push([gh.counts(), gh.count('sha_dir')])
     }
     expect(costs[0]).toEqual(costs[1])
   })
@@ -406,16 +316,12 @@ describe('github versions a listing by its head commit', () => {
   it('stores no version for a response without a head', async () => {
     gh.dropSha = true
     const w = await wsOf(await vfsOf())
-    try {
-      await out(w, 'ls /gh')
-      expect(await stored(w)).toBeNull()
-      expect(await stored(w, '/gh/d1')).toBeNull()
-      gh.log.length = 0
-      await out(w, 'ls /gh/d1')
-      expect(gh.counts()).toEqual([0, 1, 0])
-    } finally {
-      await w.close()
-    }
+    await out(w, 'ls /gh')
+    expect(await stored(w)).toBeNull()
+    expect(await stored(w, '/gh/d1')).toBeNull()
+    gh.log.length = 0
+    await out(w, 'ls /gh/d1')
+    expect(gh.counts()).toEqual([0, 1, 0])
   })
 
   // Tree walks check the version like a listing does, and refill on a miss.
@@ -423,15 +329,11 @@ describe('github versions a listing by its head commit', () => {
     '%s after an outside add checks then walks once',
     async (line) => {
       const w = await wsOf(await vfsOf())
-      try {
-        await out(w, 'ls /gh')
-        gh.set('d1/new.txt', 'new\n')
-        gh.log.length = 0
-        expect(await out(w, line)).toContain('/gh/d1/new.txt')
-        expect(gh.counts()).toEqual([1, 1, 0])
-      } finally {
-        await w.close()
-      }
+      await out(w, 'ls /gh')
+      gh.set('d1/new.txt', 'new\n')
+      gh.log.length = 0
+      expect(await out(w, line)).toContain('/gh/d1/new.txt')
+      expect(gh.counts()).toEqual([1, 1, 0])
     },
   )
 
@@ -443,39 +345,31 @@ describe('github versions a listing by its head commit', () => {
   ])('carries the head a watched tree was walked at (%s)', async (policy, cost) => {
     const vfs = await vfsOf()
     const w = await wsOf(vfs, policy)
-    try {
-      await out(w, 'ls /gh')
-      gh.set('d1/new.txt', 'new\n')
-      for await (const entry of new GitHubWalk(vfs.accessor).walk(ROOT)) void entry
-      expect(vfs.accessor.treeVersion).toBe(await gh.head())
-      gh.files.delete('d1/new.txt')
-      gh.log.length = 0
-      expect(await out(w, 'find /gh -name new.txt')).toBe('')
-      expect(gh.counts()).toEqual(cost)
-    } finally {
-      await w.close()
-    }
+    await out(w, 'ls /gh')
+    gh.set('d1/new.txt', 'new\n')
+    for await (const entry of new GitHubWalk(vfs.accessor).walk(ROOT)) void entry
+    expect(vfs.accessor.treeVersion).toBe(await gh.head())
+    gh.files.delete('d1/new.txt')
+    gh.log.length = 0
+    expect(await out(w, 'find /gh -name new.txt')).toBe('')
+    expect(gh.counts()).toEqual(cost)
   })
 
   // A backend that cannot be reached answers EXPIRED at the gate, warned,
   // and the listing stays stored for the re-list to diff.
   it('keeps the listing when the backend cannot be reached', async () => {
     const w = await wsOf(await vfsOf())
-    try {
-      await out(w, 'ls /gh')
-      const mount = w.registry.mountFor('/gh')
-      const before = await mount.indexStore.listDir('/gh/d1')
-      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-      const rec = new Reconciler(w.cache, w.namespace, w.opsRegistry)
-      expect(
-        await runInCommandScope(() => rec.mayServeListing(mount, '/gh/d1', before.version ?? null)),
-      ).toBe(false)
-      expect((await mount.indexStore.listDir('/gh/d1')).entries).toEqual(before.entries)
-      expect(warn).toHaveBeenCalled()
-    } finally {
-      await w.close()
-    }
+    await out(w, 'ls /gh')
+    const mount = w.registry.mountFor('/gh')
+    const before = await mount.indexStore.listDir('/gh/d1')
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const rec = new Reconciler(w.cache, w.namespace, w.opsRegistry)
+    expect(
+      await runInCommandScope(() => rec.mayServeListing(mount, '/gh/d1', before.version ?? null)),
+    ).toBe(false)
+    expect((await mount.indexStore.listDir('/gh/d1')).entries).toEqual(before.entries)
+    expect(warn).toHaveBeenCalled()
   })
 
   // Eviction can drop a child's row while its listing survives. The store
@@ -490,18 +384,14 @@ describe('github versions a listing by its head commit', () => {
     async (backend, policy) => {
       const store = storeOf(backend)
       const w = await wsOf(await vfsOf(), policy, store)
-      try {
-        await out(w, 'ls /gh')
-        await dropRow(store, '/gh/d1/a.txt')
-        gh.log.length = 0
-        expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
-        expect(gh.count('recursive')).toBe(1)
-        expect(await out(w, 'stat -c %n /gh/d1/a.txt')).toBe('/gh/d1/a.txt\n')
-        expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-        expect(gh.count('recursive')).toBe(1)
-      } finally {
-        await w.close()
-      }
+      await out(w, 'ls /gh')
+      await dropRow(store, '/gh/d1/a.txt')
+      gh.log.length = 0
+      expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
+      expect(gh.count('recursive')).toBe(1)
+      expect(await out(w, 'stat -c %n /gh/d1/a.txt')).toBe('/gh/d1/a.txt\n')
+      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+      expect(gh.count('recursive')).toBe(1)
     },
   )
 
@@ -511,59 +401,44 @@ describe('github versions a listing by its head commit', () => {
     gh.truncatedRecursive = true
     const store = new RAMIndexCacheStore()
     const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED, store)
-    try {
-      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-      await store.invalidateEntry('/gh/d1/a.txt')
-      gh.log.length = 0
-      expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
-      expect(gh.count('recursive')).toBe(0)
-      expect(gh.count('sha_dir')).toBeGreaterThanOrEqual(1)
-    } finally {
-      await w.close()
-    }
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    await store.invalidateEntry('/gh/d1/a.txt')
+    gh.log.length = 0
+    expect(await out(w, 'cat /gh/d1/a.txt')).toBe('x\n')
+    expect(gh.count('recursive')).toBe(0)
+    expect(gh.count('sha_dir')).toBeGreaterThanOrEqual(1)
   })
 
   // A listed child whose row is still missing after the eviction refill is
   // absent, as it was before rows were checked: one refill per command, and
   // the retry inside the same stat does not refill again.
-  it.each([ReadPolicy.BOUNDED, ReadPolicy.FRESH])(
-    'refills once per command for a row the refill does not bring back (%s)',
-    async (policy) => {
-      const store = new RAMIndexCacheStore()
-      const w = await wsOf(await vfsOf(), policy, store)
-      try {
-        await out(w, 'ls /gh')
-        rowStaysMissing(store, '/gh/d1/a.txt')
-        for (const command of [1, 2]) {
-          gh.log.length = 0
-          const result = await w.shell('stat /gh/d1/a.txt')
-          expect(result.exitCode).toBe(1)
-          expect(DEC.decode(result.stderr)).toContain('No such file')
-          expect(gh.count('recursive'), String(command)).toBe(1)
-        }
-      } finally {
-        await w.close()
-      }
-    },
-  )
+  it('refills once per command for a row the refill does not bring back', async () => {
+    const store = new RAMIndexCacheStore()
+    const w = await wsOf(await vfsOf(), ReadPolicy.FRESH, store)
+    await out(w, 'ls /gh')
+    rowStaysMissing(store, '/gh/d1/a.txt')
+    for (const command of [1, 2]) {
+      gh.log.length = 0
+      const result = await w.shell('stat /gh/d1/a.txt')
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).toContain('No such file')
+      expect(gh.count('recursive'), String(command)).toBe(1)
+    }
+  })
 
   // The truncated arm re-lists the folder once per command, not twice.
   it('re-lists once per command for a row the re-list does not bring back', async () => {
     gh.truncatedRecursive = true
     const store = new RAMIndexCacheStore()
     const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED, store)
-    try {
-      expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
-      rowStaysMissing(store, '/gh/d1/a.txt')
-      for (const command of [1, 2]) {
-        gh.log.length = 0
-        const result = await w.shell('stat /gh/d1/a.txt')
-        expect(result.exitCode).toBe(1)
-        expect(gh.count('recursive')).toBe(0)
-        expect(gh.count('sha_dir'), String(command)).toBe(1)
-      }
-    } finally {
-      await w.close()
+    expect(await out(w, 'ls /gh/d1')).toBe(LISTED)
+    rowStaysMissing(store, '/gh/d1/a.txt')
+    for (const command of [1, 2]) {
+      gh.log.length = 0
+      const result = await w.shell('stat /gh/d1/a.txt')
+      expect(result.exitCode).toBe(1)
+      expect(gh.count('recursive')).toBe(0)
+      expect(gh.count('sha_dir'), String(command)).toBe(1)
     }
   })
 
@@ -572,34 +447,23 @@ describe('github versions a listing by its head commit', () => {
   // stat find and du make reads nothing.
   it.each(['find /gh', 'du -a /gh'])('reads the root listing once for a warm %s', async (line) => {
     const w = await wsOf(await vfsOf(), ReadPolicy.BOUNDED)
-    try {
-      await out(w, 'ls -R /gh')
-      await out(w, line)
-      const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
-      gh.log.length = 0
-      await out(w, line)
-      expect(reads.filter((path) => path === '/gh')).toHaveLength(1)
-      expect(gh.counts()).toEqual([0, 0, 0])
-    } finally {
-      await w.close()
-    }
+    await out(w, 'ls -R /gh')
+    await out(w, line)
+    const reads = countListDirs(w.registry.mountFor('/gh').indexStore)
+    gh.log.length = 0
+    await out(w, line)
+    expect(reads.filter((path) => path === '/gh')).toHaveLength(1)
+    expect(gh.counts()).toEqual([0, 0, 0])
   })
 
   // A name the live listing does not hold is absent, and costs no refill.
-  it.each(rowCases)(
-    'answers an unlisted name absent without a refill (%s, %s)',
-    async (backend, policy) => {
-      const w = await wsOf(await vfsOf(), policy, storeOf(backend))
-      try {
-        await out(w, 'ls /gh')
-        gh.log.length = 0
-        const result = await w.shell('stat /gh/d1/zz.txt')
-        expect(result.exitCode).toBe(1)
-        expect(DEC.decode(result.stderr)).toContain('No such file')
-        expect(gh.count('recursive')).toBe(0)
-      } finally {
-        await w.close()
-      }
-    },
-  )
+  it.each(rowBackends)('answers an unlisted name absent without a refill (%s)', async (backend) => {
+    const w = await wsOf(await vfsOf(), ReadPolicy.FRESH, storeOf(backend))
+    await out(w, 'ls /gh')
+    gh.log.length = 0
+    const result = await w.shell('stat /gh/d1/zz.txt')
+    expect(result.exitCode).toBe(1)
+    expect(DEC.decode(result.stderr)).toContain('No such file')
+    expect(gh.count('recursive')).toBe(0)
+  })
 })

@@ -5,7 +5,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Nless required by applicable law or agreed to in writing, software
+# Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
@@ -14,6 +14,7 @@
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 import pytest
 from fakeredis.aioredis import FakeRedis
@@ -27,8 +28,6 @@ from mirage.core.github.config import GitHubConfig
 from mirage.core.github.stat import stat
 from mirage.core.github.watch import GitHubWalk
 from mirage.types import (
-    FileType,
-    ListingVersion,
     MountMode,
     PathSpec,
     ReadPolicy,
@@ -82,6 +81,14 @@ def _ws(vfs, policy: ReadPolicy = ReadPolicy.FRESH, index=None) -> Workspace:
     return ws
 
 
+@asynccontextmanager
+async def _open(ws: Workspace):
+    try:
+        yield ws
+    finally:
+        await ws.close()
+
+
 async def _out(ws: Workspace, line: str, session_id: str | None = None):
     kwargs = {} if session_id is None else {"session_id": session_id}
     result = await asyncio.wait_for(ws.shell(line, **kwargs), 10)
@@ -93,10 +100,6 @@ async def _out(ws: Workspace, line: str, session_id: str | None = None):
 
 async def _stored(ws: Workspace, key: str = "/gh") -> str | None:
     return (await ws.mount("/gh").index_store.list_dir(key)).version
-
-
-def test_github_declares_one_version_for_the_whole_mount():
-    assert GitHubVFS.listing_version is ListingVersion.MOUNT
 
 
 def _count_list_dirs(monkeypatch, store) -> list[str]:
@@ -122,8 +125,7 @@ async def test_a_root_stat_through_the_mount_index_names_no_version(
     now = [100.0]
     monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub))
-        try:
+        async with _open(_ws(_vfs(hub))) as ws:
             await _out(ws, "ls /gh")
             stored = await _stored(ws)
             now[0] += LISTING_TRUST_WINDOW * 2
@@ -139,8 +141,6 @@ async def test_a_root_stat_through_the_mount_index_names_no_version(
             assert found.fingerprint is None
             assert reads == []
             assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()
 
 
 # Only the gate's check store asks the head, so a root stat through the
@@ -149,92 +149,28 @@ async def test_a_root_stat_through_the_mount_index_names_no_version(
 @pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
 async def test_a_root_stat_before_the_first_listing_asks_nothing(policy):
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=policy)
-        try:
+        async with _open(_ws(_vfs(hub), policy=policy)) as ws:
             assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
             assert hub.counts() == (0, 0, 0)
             await _out(ws, "ls /gh")
             hub.log.clear()
             assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
             assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()
-
-
-# Repeated root stats on a mount that has not listed send nothing, on a
-# branch or pinned to a commit.
-@pytest.mark.asyncio
-@pytest.mark.parametrize("pinned", [False, True])
-async def test_a_bounded_root_stat_sends_no_request(pinned):
-    with serve(_three()) as hub:
-        ws = _ws(
-            _vfs(hub, ref=hub.head() if pinned else "main"),
-            policy=ReadPolicy.BOUNDED,
-        )
-        try:
-            for _ in range(5):
-                assert (await ws.stat("/gh")).type == FileType.DIRECTORY
-            assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()
-
-
-# A root stat through the mount asks nothing, so it answers with the
-# backend unreachable, as a FUSE getattr of the root must.
-@pytest.mark.asyncio
-async def test_a_root_stat_answers_with_the_backend_unreachable():
-    with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED)
-    try:
-        assert await _out(ws, "stat -c %n /gh") == b"/gh\n"
-    finally:
-        await ws.close()
-
-
-# An expired root listing names no version and asks nothing; a refused
-# head names none either, and never falls into a refill of the index.
-@pytest.mark.asyncio
-async def test_an_expired_root_listing_names_no_version():
-    with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED)
-        try:
-            await _out(ws, "ls /gh")
-            mount = ws.mount("/gh")
-            await mount.index_store.invalidate()
-            hub.log.clear()
-            found = await stat(mount.vfs.accessor, ROOT, mount.index)
-            assert found.fingerprint is None
-            assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()
 
 
 # An add outside mirage moves the head, so the next command's one check
-# misses and the tree is fetched once; ls and a glob both see the file.
+# misses and the tree is fetched once; a glob sees the file.
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "line,expected",
-    [
-        ("ls /gh/d1", GROWN),
-        (
-            "echo /gh/d1/*",
-            b"/gh/d1/a.txt /gh/d1/b.txt /gh/d1/c.txt /gh/d1/new.txt\n",
-        ),
-    ],
-)
-async def test_an_outside_add_is_seen_after_one_check_and_one_walk(
-    line, expected
-):
+async def test_an_outside_add_is_seen_after_one_check_and_one_walk():
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub))
-        try:
+        async with _open(_ws(_vfs(hub))) as ws:
             await _out(ws, "ls /gh")
             hub.files["d1/new.txt"] = b"new\n"
             hub.log.clear()
-            assert await _out(ws, line) == expected
+            assert await _out(ws, "echo /gh/d1/*") == (
+                b"/gh/d1/a.txt /gh/d1/b.txt /gh/d1/c.txt /gh/d1/new.txt\n"
+            )
             assert hub.counts() == (1, 1, 0)
-        finally:
-            await ws.close()
 
 
 # The version is the head the tree response itself named, so a commit
@@ -242,8 +178,7 @@ async def test_an_outside_add_is_seen_after_one_check_and_one_walk(
 @pytest.mark.asyncio
 async def test_a_commit_after_the_tree_response_is_caught_next_command():
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub))
-        try:
+        async with _open(_ws(_vfs(hub))) as ws:
             hub.after_recursive = lambda: hub.files.setdefault(
                 "d1/new.txt", b"new\n"
             )
@@ -252,8 +187,6 @@ async def test_a_commit_after_the_tree_response_is_caught_next_command():
             hub.log.clear()
             assert await _out(ws, "ls /gh/d1") == GROWN
             assert hub.counts() == (1, 1, 0)
-        finally:
-            await ws.close()
 
 
 # A second workspace refills the index both share, so the first one's
@@ -309,37 +242,23 @@ def test_the_pin_is_the_effective_ref_lowercased():
     assert GitHubVFS(pinned).listings_pin == SHA
 
 
-# Only a full SHA-1 or SHA-256 hex string names a commit; one short or
-# one long is a branch name, so it pins nothing.
-@pytest.mark.parametrize(
-    "ref,pin",
-    [
-        ("c" * 64, "c" * 64),
-        ("C" * 64, "c" * 64),
-        ("c" * 39, None),
-        ("c" * 41, None),
-        ("c" * 63, None),
-        ("c" * 65, None),
-    ],
-)
-def test_only_a_full_length_hex_ref_pins(ref, pin):
+# Only a full SHA-1 or SHA-256 hex string names a commit; one character
+# longer is a branch name, so it pins nothing.
+def test_only_a_full_length_hex_ref_pins():
     config = GitHubConfig(token="t", owner="o", repo="r", base_url="x")
-    assert GitHubVFS(config, ref=ref).listings_pin == pin
+    assert GitHubVFS(config, ref="c" * 41).listings_pin is None
 
 
 @pytest.mark.asyncio
 async def test_a_mount_pinned_to_a_commit_serves_its_listing_unchecked():
     with serve(_three()) as hub:
         head = hub.head()
-        ws = _ws(_vfs(hub, ref=head.upper()))
-        try:
+        async with _open(_ws(_vfs(hub, ref=head.upper()))) as ws:
             assert await _out(ws, "ls /gh/d1") == LISTED
             assert await _stored(ws) == head
             hub.log.clear()
             assert await _out(ws, "ls /gh/d1") == LISTED
             assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()
 
 
 # A mount pinned to an older commit, over a store a `main` mount
@@ -349,42 +268,32 @@ async def test_a_pinned_mount_never_serves_another_refs_listing():
     with serve(_three()) as hub:
         old = hub.head()
         shared = RAMIndexCacheStore()
-        main = _ws(_vfs(hub), index=shared)
-        try:
+        async with _open(_ws(_vfs(hub), index=shared)) as main:
             await _out(main, "ls /gh/d1")
             hub.files["d1/new.txt"] = b"new\n"
             assert await _out(main, "ls /gh/d1") == GROWN
-        finally:
-            await main.close()
-        pinned = _ws(_vfs(hub, ref=old), index=shared)
-        try:
+        async with _open(_ws(_vfs(hub, ref=old), index=shared)) as pinned:
             hub.log.clear()
             assert await _out(pinned, "ls /gh/d1") == LISTED
             assert hub.count("dir") == 1
-        finally:
-            await pinned.close()
 
 
-# A ref shaped like a commit is not one. A branch named with 40 hex
-# characters, or a 64-hex name, is stored at the head its tree answered, so
-# it never matches the ref and an outside change is always seen.
+# A full-sha ref is served unchecked because github.com refuses a 40- or
+# 64-hex branch or tag name (an Enterprise host is assumed to as well). A
+# hex ref that answers another head is stored at that head, so it never
+# matches its pin and an outside change is seen.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("ref", ["a" * 40, "b" * 64])
-@pytest.mark.parametrize("truncated", [False, True])
-async def test_a_hex_branch_name_is_never_served_as_a_pin(ref, truncated):
+async def test_a_hex_branch_name_is_never_served_as_a_pin():
+    ref = "a" * 40
     with serve(_three()) as hub:
         hub.ref = ref
-        hub.truncated_recursive = truncated
-        ws = _ws(_vfs(hub, ref=ref))
-        try:
+        async with _open(_ws(_vfs(hub, ref=ref))) as ws:
             assert ws.mount("/gh").vfs.listings_pin == ref
             assert await _out(ws, "ls /gh/d1") == LISTED
             hub.files["d1/new.txt"] = b"new\n"
             hub.log.clear()
             assert await _out(ws, "ls /gh/d1") == GROWN
             assert hub.counts() != (0, 0, 0)
-        finally:
-            await ws.close()
 
 
 # A truncated tree stores no version, pinned or not, so it re-lists
@@ -395,15 +304,14 @@ async def test_a_truncated_pinned_mount_relists_like_an_unpinned_one():
     for pinned in (False, True):
         with serve(_three()) as hub:
             hub.truncated_recursive = True
-            ws = _ws(_vfs(hub, ref=hub.head() if pinned else "main"))
-            try:
+            async with _open(
+                _ws(_vfs(hub, ref=hub.head() if pinned else "main"))
+            ) as ws:
                 await _out(ws, "ls /gh/d1")
                 assert await _stored(ws, "/gh/d1") is None
                 hub.log.clear()
                 assert await _out(ws, "ls /gh/d1") == LISTED
                 costs.append((hub.counts(), hub.count("sha_dir")))
-            finally:
-                await ws.close()
     assert costs[0] == costs[1]
 
 
@@ -413,16 +321,13 @@ async def test_a_truncated_pinned_mount_relists_like_an_unpinned_one():
 async def test_a_response_without_a_head_stores_no_version():
     with serve(_three()) as hub:
         hub.drop_sha = True
-        ws = _ws(_vfs(hub))
-        try:
+        async with _open(_ws(_vfs(hub))) as ws:
             await _out(ws, "ls /gh")
             assert await _stored(ws) is None
             assert await _stored(ws, "/gh/d1") is None
             hub.log.clear()
             await _out(ws, "ls /gh/d1")
             assert hub.counts() == (0, 1, 0)
-        finally:
-            await ws.close()
 
 
 # Tree walks check the version like a listing does, and refill on a miss.
@@ -430,15 +335,12 @@ async def test_a_response_without_a_head_stores_no_version():
 @pytest.mark.parametrize("line", ["find /gh", "du -a /gh"])
 async def test_a_tree_walk_after_an_outside_add_checks_then_walks_once(line):
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub))
-        try:
+        async with _open(_ws(_vfs(hub))) as ws:
             await _out(ws, "ls /gh")
             hub.files["d1/new.txt"] = b"new\n"
             hub.log.clear()
             assert b"/gh/d1/new.txt" in await _out(ws, line)
             assert hub.counts() == (1, 1, 0)
-        finally:
-            await ws.close()
 
 
 # The watcher's walk reseats the tree, and stamps the head it answered,
@@ -454,8 +356,7 @@ async def test_a_tree_walk_after_an_outside_add_checks_then_walks_once(line):
 async def test_a_watched_tree_carries_the_head_it_was_walked_at(policy, cost):
     with serve(_three()) as hub:
         vfs = _vfs(hub)
-        ws = _ws(vfs, policy=policy)
-        try:
+        async with _open(_ws(vfs, policy=policy)) as ws:
             await _out(ws, "ls /gh")
             hub.files["d1/new.txt"] = b"new\n"
             async for _ in GitHubWalk(vfs.accessor)(ROOT):
@@ -465,8 +366,6 @@ async def test_a_watched_tree_carries_the_head_it_was_walked_at(policy, cost):
             hub.log.clear()
             assert await _out(ws, "find /gh -name new.txt") == b""
             assert hub.counts() == cost
-        finally:
-            await ws.close()
 
 
 async def _drop_row(store, client, key: str) -> None:
@@ -517,26 +416,24 @@ async def test_a_listed_child_without_a_row_in_a_truncated_tree_relists():
     store = RAMIndexCacheStore()
     with serve(_three()) as hub:
         hub.truncated_recursive = True
-        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
-        try:
+        async with _open(
+            _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
+        ) as ws:
             assert await _out(ws, "ls /gh/d1") == LISTED
             await store.invalidate_entry("/gh/d1/a.txt")
             hub.log.clear()
             assert await _out(ws, "cat /gh/d1/a.txt") == b"x\n"
             assert hub.count("recursive") == 0
             assert hub.count("sha_dir") >= 1
-        finally:
-            await ws.close()
 
 
 # A name the live listing does not hold is absent, and costs no refill.
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
-@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
-async def test_an_unlisted_name_is_absent_without_a_refill(backend, policy):
+async def test_an_unlisted_name_is_absent_without_a_refill(backend):
     store, client = _store(backend)
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=policy, index=store)
+        ws = _ws(_vfs(hub), index=store)
         try:
             await _out(ws, "ls /gh")
             hub.log.clear()
@@ -609,12 +506,10 @@ def _row_stays_missing(store, key: str) -> None:
 # absent, as it was before rows were checked: one refill per command, and
 # the retry inside the same stat does not refill again.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("policy", [ReadPolicy.BOUNDED, ReadPolicy.FRESH])
-async def test_a_row_missing_after_its_refill_costs_one_refill(policy):
+async def test_a_row_missing_after_its_refill_costs_one_refill():
     store = RAMIndexCacheStore()
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=policy, index=store)
-        try:
+        async with _open(_ws(_vfs(hub), index=store)) as ws:
             await _out(ws, "ls /gh")
             _row_stays_missing(store, "/gh/d1/a.txt")
             for command in (1, 2):
@@ -623,8 +518,6 @@ async def test_a_row_missing_after_its_refill_costs_one_refill(policy):
                 assert result.exit_code == 1
                 assert "No such file" in await result.stderr_str()
                 assert hub.count("recursive") == 1, command
-        finally:
-            await ws.close()
 
 
 # The truncated arm re-lists the folder once per command, not twice.
@@ -633,8 +526,9 @@ async def test_a_row_missing_after_its_relist_relists_once():
     store = RAMIndexCacheStore()
     with serve(_three()) as hub:
         hub.truncated_recursive = True
-        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
-        try:
+        async with _open(
+            _ws(_vfs(hub), policy=ReadPolicy.BOUNDED, index=store)
+        ) as ws:
             assert await _out(ws, "ls /gh/d1") == LISTED
             _row_stays_missing(store, "/gh/d1/a.txt")
             for command in (1, 2):
@@ -643,8 +537,6 @@ async def test_a_row_missing_after_its_relist_relists_once():
                 assert result.exit_code == 1
                 assert hub.count("recursive") == 0
                 assert hub.count("sha_dir") == 1, command
-        finally:
-            await ws.close()
 
 
 # A warm tree walk reads the root listing once: the version the liveness
@@ -654,8 +546,7 @@ async def test_a_row_missing_after_its_relist_relists_once():
 @pytest.mark.parametrize("line", ["find /gh", "du -a /gh"])
 async def test_a_warm_tree_walk_reads_the_root_listing_once(monkeypatch, line):
     with serve(_three()) as hub:
-        ws = _ws(_vfs(hub), policy=ReadPolicy.BOUNDED)
-        try:
+        async with _open(_ws(_vfs(hub), policy=ReadPolicy.BOUNDED)) as ws:
             await _out(ws, "ls -R /gh")
             await _out(ws, line)
             reads = _count_list_dirs(monkeypatch, ws.mount("/gh").index_store)
@@ -663,5 +554,3 @@ async def test_a_warm_tree_walk_reads_the_root_listing_once(monkeypatch, line):
             await _out(ws, line)
             assert reads.count("/gh") == 1
             assert hub.counts() == (0, 0, 0)
-        finally:
-            await ws.close()

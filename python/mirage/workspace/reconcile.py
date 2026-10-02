@@ -217,12 +217,16 @@ class Reconciler:
         read outside any command trusts one written within the last
         ``LISTING_TRUST_WINDOW`` seconds instead,
         ``CacheManager.listing_trusted``). Past that, a listing stored at
-        the mount's pin is served without asking, since a pinned commit
-        cannot move. A mount that declares a ``listing_version`` then has
-        its stored ``version`` checked against a stat of the mount root
-        (MOUNT) or of the folder (FOLDER), sent through a throwaway index
-        so no cached row answers it. One check answers for a whole command,
-        and concurrent callers share it (``CacheManager.checked_version``).
+        the mount's pin is served without asking: github pins a full-sha
+        ref and serves its listing unchecked when the stored version equals
+        that sha. It names a commit: github.com refuses a 40- or 64-hex
+        branch or tag name, and a GitHub Enterprise host is assumed to as
+        well (``github._pin_of``). A mount that declares a
+        ``listing_version`` then has its stored ``version`` checked against
+        a stat of the mount root (MOUNT) or of the folder (FOLDER), sent
+        through a throwaway index so no cached row answers it. One check
+        answers for a whole command, and concurrent callers share it
+        (``CacheManager.checked_version``).
 
         A match serves the listing. Anything else answers EXPIRED and keeps
         the listing stored for the re-list to diff: a moved version, a path

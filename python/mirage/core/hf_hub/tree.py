@@ -553,13 +553,11 @@ async def refill_snapshot(
     if index is NULL_INDEX:
         return None
     previous = dict(accessor.tree) if accessor.tree_loaded else None
-    # The head first, pinned or not, and the tree walked at the commit it
-    # names: the version stored is then the one these rows are at, never a
-    # later one a commit landing between the two requests would give. A
-    # pinned mount's version still comes from a response, so a 40-hex
-    # branch name is never mistaken for its own commit. The head failing
-    # is the refill failing. "" (a Hub that names none) walks the branch
-    # and stores no version.
+    # The head first, and the tree walked at the commit it names: the
+    # version stored is then the one these rows are at, never a later one
+    # a commit landing between the two requests would give. The head
+    # failing is the refill failing. "" (a Hub that names none) walks the
+    # branch and stores no version.
     head = await head_commit(accessor) or None
     tree = await fetch_tree(accessor, head)
     accessor.tree = tree

@@ -914,3 +914,157 @@ describe('a cold read keeps its bytes for the next reader', () => {
     expect(fetched).toHaveLength(2)
   })
 })
+
+// An EntryGate that refuses one path and remembers what it was asked.
+function refusing(refused: string) {
+  const asked: string[] = []
+  return {
+    asked,
+    gate: {
+      scoped: true,
+      granted: [],
+      check: (virtual: string): void => {
+        asked.push(virtual)
+        if (virtual === refused) throw new Error(`sealed ${virtual}`)
+      },
+      refuses: (virtual: string): boolean => virtual === refused,
+    },
+  }
+}
+
+// A workspace with a linked directory and a link to a file inside it.
+async function linkedWs(): Promise<Workspace> {
+  const parser = await getTestParser()
+  const ws = new Workspace(
+    { '/data': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+  )
+  await ws.shell(
+    'mkdir -p /data/real && echo s > /data/real/secret && ' +
+      'ln -s /data/real /data/alias && ln -s /data/real/secret /data/flink',
+  )
+  return ws
+}
+
+const text = async (ws: Workspace, virtual: string): Promise<string> =>
+  new TextDecoder().decode((await ws.dispatch('read', virtual)) as Uint8Array)
+
+const spec = (virtual: string): PathSpec => PathSpec.fromStrPath(virtual)
+
+describe('a marked op is judged on the paths the door reaches', () => {
+  // Each spelling once, in the order the door meets it: as handed in,
+  // walked, then followed. A refused op leaves the bytes alone; an unmarked
+  // one is the door's alone.
+  it('judges every spelling once', async () => {
+    const ws = await linkedWs()
+    try {
+      await ws.shell(
+        'echo new > /data/real/other && echo o > /data/other && ' +
+          'ln -s /data/other /data/real/flink2',
+      )
+      const { gate, asked } = refusing('/data/real/secret')
+      for (const [op, virtual, args, kwargs] of [
+        ['unlink', '/data/alias/secret', [], {}],
+        ['rename', '/data/real/other', [spec('/data/alias/secret')], {}],
+        ['read', '/data/flink', [], {}],
+        ['write', '/data/alias/secret', [new TextEncoder().encode('x\n')], { nofollow: true }],
+      ] as const) {
+        await expect(ws.dispatch(op, virtual, args, { ...kwargs, ruleGate: gate })).rejects.toThrow(
+          'sealed',
+        )
+      }
+      expect(asked).toEqual([
+        '/data/alias/secret',
+        '/data/real/secret',
+        '/data/real/other',
+        '/data/alias/secret',
+        '/data/real/secret',
+        '/data/flink',
+        '/data/real/secret',
+        '/data/alias/secret',
+        '/data/real/secret',
+      ])
+      expect(await text(ws, '/data/real/secret')).toBe('s\n')
+      expect(await text(ws, '/data/real/other')).toBe('new\n')
+      const walked = refusing('/data/real/flink2')
+      await expect(
+        ws.dispatch('read', '/data/alias/flink2', [], { ruleGate: walked.gate }),
+      ).rejects.toThrow('sealed')
+      expect(walked.asked).toEqual(['/data/alias/flink2', '/data/real/flink2'])
+      await ws.dispatch('unlink', '/data/alias/secret')
+      await expect(text(ws, '/data/real/secret')).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // The link table answers unlink of a link: a rule on the link name holds
+  // before that answer, and one on the referent is never asked.
+  it('judges a link removal on the link entry', async () => {
+    const ws = await linkedWs()
+    try {
+      await expect(
+        ws.dispatch('unlink', '/data/flink', [], { ruleGate: refusing('/data/flink').gate }),
+      ).rejects.toThrow('sealed')
+      const referent = refusing('/data/real/secret')
+      await ws.dispatch('unlink', '/data/flink', [], { ruleGate: referent.gate })
+      expect(referent.asked).toEqual(['/data/flink'])
+      expect(await text(ws, '/data/real/secret')).toBe('s\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A write into hidden space, a link there, a hidden rename endpoint and
+  // one behind a linked parent are missing, and the gate is never asked.
+  it('answers hidden space before any rule', async () => {
+    const ws = await linkedWs()
+    try {
+      await ws.shell(
+        'mkdir -p /data/hid && echo h > /data/hid/h && ' +
+          'ln -s /data/hid /data/halias && ln -s /data/hid/h /data/hlink',
+      )
+      const session = new SessionState({
+        sessionId: 'hider',
+        hiddenPaths: { paths: ['/data/hid'] },
+      })
+      const { gate, asked } = refusing('/data/real/secret')
+      await runWithSession(session, async () => {
+        for (const [op, virtual, args] of [
+          ['write', '/data/hid/x', [new TextEncoder().encode('x\n')]],
+          ['read', '/data/hlink', []],
+          ['rename', '/data/real/secret', [spec('/data/hid/x')]],
+          ['rename', '/data/hid/h', [spec('/data/real/moved')]],
+          ['rename', '/data/real/secret', [spec('/data/halias/x')]],
+        ] as const) {
+          await expect(ws.dispatch(op, virtual, args, { ruleGate: gate })).rejects.toMatchObject({
+            code: 'ENOENT',
+          })
+        }
+      })
+      expect(asked).toEqual([])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // The door lifts the mark at entry: the mount's op sees only its own
+  // arguments. A null mark is no mark, as Python's rule_gate=None.
+  it('never forwards the mark to the op', async () => {
+    const ws = await linkedWs()
+    const spy = vi.spyOn(OpsRegistry.prototype, 'call')
+    try {
+      const { gate, asked } = refusing('/nothing')
+      await ws.dispatch('read', '/data/real/secret', [], { ruleGate: gate })
+      const seen = spy.mock.calls.map((call) => call[5])
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((kw) => kw === undefined || !('ruleGate' in kw))).toBe(true)
+      expect(asked).toEqual(['/data/real/secret'])
+      const read = await ws.dispatch('read', '/data/real/secret', [], { ruleGate: null })
+      expect(new TextDecoder().decode(read as Uint8Array)).toBe('s\n')
+    } finally {
+      spy.mockRestore()
+      await ws.close()
+    }
+  })
+})

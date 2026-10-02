@@ -31,7 +31,7 @@ from mirage.policy import (
     render_deny,
     render_pending,
 )
-from mirage.policy.match import Outcome, decide
+from mirage.policy.match import Outcome, decide, has_rules
 from mirage.shell import parse
 from mirage.shell.helpers import (
     get_parts,
@@ -45,6 +45,7 @@ from mirage.shell.types import NodeType
 from mirage.types import PathSpec
 from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
+from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.admission import (
@@ -211,12 +212,50 @@ class Judged:
             run, and the gate would ask again about the words that do.
             Such a command is judged here for a deny, which speaks on
             the name alone, and asked about at the gate.
+        unread (frozenset[str]): the paths no policy was shown
+            (``_unread_paths``), so a pass that asks the gate again asks
+            about what this explanation judged.
     """
 
     explanation: Explanation
     occurrence: Occurrence
     stated: bool
     intrinsic: bool = False
+    unread: frozenset[str] = frozenset()
+
+
+def _unread_paths(
+    words: Sequence[Word],
+    kinds: Sequence[str | PathSpec],
+    cwd: str,
+    lost: bool,
+) -> frozenset[str]:
+    """The paths a command's words may name that the pass cannot vouch
+    for: what a word only the runtime expands names, and, once a ``cd``
+    lost the cwd, the cwd and what every relative word names. Judged as
+    typed in the cwd the pass last knew, a glob in a rule matched them
+    and refused lines that touch only allowed files. A path some word
+    names outright as a path stays read: ``rm -rf /data/old`` names
+    ``/data/old`` even when that is the cwd a ``cd`` lost, while the
+    pattern in ``grep -r -e /data/old`` names no path at all.
+
+    Args:
+        words (Sequence[Word]): the command's words after its name, and
+            its redirect targets.
+        kinds (Sequence[str | PathSpec]): the same words classified, a
+            path as a PathSpec.
+        cwd (str): the cwd the pass last knew.
+        lost (bool): whether a ``cd`` the walk could not follow ran
+            before the command.
+    """
+    unread = {cwd} if lost else set()
+    read: set[str] = set()
+    for w, kind in zip(words, kinds, strict=True):
+        if w.text is None or (lost and not w.value.startswith("/")):
+            unread.add(resolve_path(w.value, cwd))
+        elif isinstance(kind, PathSpec):
+            read.add(kind.virtual)
+    return frozenset(unread - read)
 
 
 async def _judge_words(
@@ -230,6 +269,8 @@ async def _judge_words(
     stated: bool = True,
     missing: str | None = None,
     intrinsic: bool = False,
+    whole_line: bool = False,
+    lost: bool = False,
 ) -> list[Judged]:
     """Explain one command and whatever lines it runs in turn, each
     with its occurrence.
@@ -266,16 +307,35 @@ async def _judge_words(
             reports a name the session cannot see, None for the gate's
             own words. ``xargs`` and ``timeout`` look the name up before
             the gate reads it, so the run prints theirs.
+        whole_line (bool): whether a runtime takes the line whole. Only
+            its gate refuses a name the runtime expands, and only under a
+            rule (``admit_line``); the executor judges the expanded name.
+        lost (bool): whether a ``cd`` the walk could not follow ran
+            before the command, as ``Walked`` carries it.
     """
     head = words[0]
     if head.text is None:
-        return [Judged(_unreadable(head.raw), occurrence, False)]
+        if whole_line and has_rules(session.commands):
+            return [Judged(_unreadable(head.raw), occurrence, False)]
+        return []
     stated = stated and all(
         w.text is not None for w in [*words, *redirect_words]
     )
     name = head.value
     args = [w.value for w in words[1:]]
     classified = classified_words(name, args, session, registry)
+    unread = _unread_paths(
+        [*words[1:], *redirect_words],
+        [
+            *classified[1:],
+            *(
+                classify_bare_path(w.value, registry, session.cwd)
+                for w in redirect_words
+            ),
+        ],
+        session.cwd,
+        lost,
+    )
     gated = await gate(
         name,
         args,
@@ -286,6 +346,7 @@ async def _judge_words(
         agent_id,
         redirects=redirect_paths(redirect_words, registry, session.cwd),
         intrinsic=intrinsic,
+        unread=unread,
     )
     if isinstance(gated, Refused):
         return [
@@ -303,6 +364,7 @@ async def _judge_words(
             occurrence,
             stated,
             intrinsic,
+            unread,
         )
     ]
     for inner in inner_lines(name, words[1:]):
@@ -318,6 +380,8 @@ async def _judge_words(
                     agent_id,
                     line_frame(inner.line, occurrence),
                     stated and not inner.open,
+                    whole_line,
+                    lost,
                 )
             )
         else:
@@ -335,6 +399,8 @@ async def _judge_words(
                     agent_id,
                     stated=stated and not inner.open,
                     missing=inner.missing,
+                    whole_line=whole_line,
+                    lost=lost,
                 )
             )
     return out
@@ -418,6 +484,8 @@ class Walked:
         redirects (tuple[Word, ...]): the statement's redirect targets.
         session (SessionState): the session the command is judged in.
         occurrence (Occurrence): the command's place on the line.
+        lost (bool): a ``cd`` the walk could not follow ran before the
+            command, so the session's cwd is not where it stands.
     """
 
     words: list[Word]
@@ -425,12 +493,14 @@ class Walked:
     session: SessionState
     occurrence: Occurrence
     intrinsic: bool = False
+    lost: bool = False
 
 
-# A walk yields each command and returns the session its scope ends in,
-# which is how a `cd` reaches the commands after it without escaping the
-# child shell it ran in.
-Walk = Generator[Walked, None, SessionState]
+# A walk yields each command and returns where its scope ends: the
+# session, and whether a `cd` it could not follow lost the cwd. That is
+# how a `cd` reaches the commands after it without escaping the child
+# shell it ran in.
+Walk = Generator[Walked, None, tuple[SessionState, bool]]
 
 
 def _words_of(node: Any, home: str | None) -> list[Word]:
@@ -445,7 +515,11 @@ def _words_of(node: Any, home: str | None) -> list[Word]:
 
 
 def _walk_substitution(
-    tree: Any, session: SessionState, home: str | None, frame: Frame
+    tree: Any,
+    session: SessionState,
+    home: str | None,
+    frame: Frame,
+    lost: bool,
 ) -> Walk:
     """Walk a substitution as the evaluator parses and admits it.
 
@@ -454,10 +528,12 @@ def _walk_substitution(
         session (SessionState): the shell whose paths are read.
         home (str | None): home directory for literal tilde expansion.
         frame (Frame): the body's occurrence frame.
+        lost (bool): whether the shell's cwd is lost, as ``Walked``
+            carries it.
     """
     redirect = input_substitution_redirect(tree)
     if redirect is None:
-        return (yield from _walk_node(tree, session, home, frame))
+        return (yield from _walk_node(tree, session, home, frame, lost))
     target = redirect.target_node
     assert target is not None
     yield Walked(
@@ -466,13 +542,18 @@ def _walk_substitution(
         session,
         occurrence_in(tree, frame),
         True,
+        lost,
     )
-    yield from _walk_node(target, session, home, frame)
-    return session
+    yield from _walk_node(target, session, home, frame, lost)
+    return session, lost
 
 
 def _walk_node(
-    node: Any, session: SessionState, home: str | None, frame: Frame
+    node: Any,
+    session: SessionState,
+    home: str | None,
+    frame: Frame,
+    lost: bool = False,
 ) -> Walk:
     """Every command under one node, in source order, each with the
     session it is judged in; returns the session the node leaves behind.
@@ -505,9 +586,11 @@ def _walk_node(
         session (SessionState): the session this node begins in.
         home (str | None): the home directory a leading ``~`` names.
         frame (Frame): the scope the node is read in.
+        lost (bool): whether the node begins with its cwd lost, as
+            ``Walked`` carries it.
     """
     if node.type == NodeType.COMMAND:
-        walked = session
+        walked = session, lost
         words = _words_of(node, home)
         if words:
             yield Walked(
@@ -515,11 +598,12 @@ def _walk_node(
                 statement_redirects(node, home),
                 session,
                 occurrence_in(node, frame),
+                lost=lost,
             )
-            walked = _after_cd(words, session)
+            walked = _after_cd(words, session, lost)
         for child in node.children:
             # A substitution among the words runs in its own shell.
-            yield from _walk_node(child, session, home, frame)
+            yield from _walk_node(child, session, home, frame, lost)
         return walked
     if node.type in FORK_SCOPES:
         segments = segment_frames(node, frame)
@@ -530,9 +614,9 @@ def _walk_node(
             # what runs.
             for segment in segments:
                 yield from _walk_substitution(
-                    parse(segment.text), session, home, segment
+                    parse(segment.text), session, home, segment, lost
                 )
-            return session
+            return session, lost
         inner = body_frame(node, frame)
         if node.type == NodeType.COMMAND_SUBSTITUTION and inner is not None:
             yield from _walk_substitution(
@@ -540,67 +624,84 @@ def _walk_node(
                 session,
                 home,
                 Frame(inner.text, 0, inner.parent),
+                lost,
             )
-            return session
+            return session, lost
         yield from _walk_children(
-            node, session, home, frame if inner is None else inner
+            node, session, home, frame if inner is None else inner, lost
         )
-        return session
+        return session, lost
     if node.type == NodeType.PIPELINE:
         for child in node.children:
-            yield from _walk_node(child, session, home, frame)
-        return session
-    return (yield from _walk_children(node, session, home, frame))
+            yield from _walk_node(child, session, home, frame, lost)
+        return session, lost
+    return (yield from _walk_children(node, session, home, frame, lost))
 
 
 def _walk_children(
-    node: Any, session: SessionState, home: str | None, frame: Frame
+    node: Any,
+    session: SessionState,
+    home: str | None,
+    frame: Frame,
+    lost: bool,
 ) -> Walk:
     """One scope's children in order, threading the cwd between them;
-    returns the session the scope ends in.
+    returns where the scope ends.
 
     Args:
         node (Any): the tree-sitter node whose children form the scope.
         session (SessionState): the session the scope begins in.
         home (str | None): the home directory a leading ``~`` names.
         frame (Frame): the scope the children are read in.
+        lost (bool): whether the scope begins with its cwd lost.
     """
-    walked = session
     children = node.children
     for index, child in enumerate(children):
         after = children[index + 1] if index + 1 < len(children) else None
-        ended = yield from _walk_node(child, walked, home, frame)
+        ended = yield from _walk_node(child, session, home, frame, lost)
         if after is not None and after.type == "&":
             continue
-        walked = ended
-    return walked
+        session, lost = ended
+    return session, lost
 
 
-def _after_cd(words: list[Word], session: SessionState) -> SessionState:
-    """The session the next command of a line is judged in, which
-    differs from this one only when this command was a literal ``cd``.
+def _after_cd(
+    words: list[Word], session: SessionState, lost: bool
+) -> tuple[SessionState, bool]:
+    """Where the next command of a line stands, which differs from this
+    one only when this command was a ``cd``.
 
     ``cd /repo && git commit`` is judged before the line runs, so
     without this the rule about ``/repo`` reads the cwd the session
     happened to be in and answers about the wrong directory. A ``cd``
-    whose argument the gate cannot read (``cd "$d"``) leaves the cwd
-    where it was, and the per-command gate judges that command in the
-    real one.
+    the walk cannot follow (``cd "$d"``, ``cd -``, a relative one once
+    the cwd is lost) loses the cwd, and what the commands after it name
+    relative to it is the per-command gate's to judge, in the real one:
+    judged in the cwd the walk last knew, ``cd "$d" && rm x`` refused a
+    line that removes an allowed file.
 
     Args:
         words (list[Word]): the command's words, name first.
         session (SessionState): the session the command was judged in.
+        lost (bool): whether the command's cwd was already lost.
     """
-    if len(words) != 2 or words[0].value != "cd" or words[1].text is None:
-        return session
-    target = words[1].value
-    if target.startswith("-"):
-        return session
-    return session.fork(cwd=resolve_path(target, session.cwd))
+    if words[0].value != "cd":
+        return session, lost
+    target = words[1].text if len(words) == 2 else None
+    if (
+        target is None
+        or target.startswith("-")
+        or (lost and not target.startswith("/"))
+    ):
+        return session, True
+    return session.fork(cwd=resolve_path(target, session.cwd)), False
 
 
 def _walked_line(
-    ast: Any, session: SessionState, frame: Frame | None = None
+    ast: Any,
+    session: SessionState,
+    frame: Frame | None = None,
+    lost: bool = False,
 ) -> Iterator[Walked]:
     """Every command of a line with its redirect targets, the session
     it is judged in and its place on the line.
@@ -617,10 +718,12 @@ def _walked_line(
         session (SessionState): the session running the line.
         frame (Frame | None): the scope the line is read in; None
             reads ``ast`` as a line of its own.
+        lost (bool): whether the line begins with its cwd lost, as a
+            line a command runs after such a ``cd`` does.
     """
     if frame is None:
         frame = root_frame(ast, None)
-    yield from _walk_node(ast, session, home_dir(session), frame)
+    yield from _walk_node(ast, session, home_dir(session), frame, lost)
 
 
 async def prejudge_line(
@@ -751,6 +854,7 @@ async def prejudge_line(
                     agent_id,
                     item.redirects,
                     intrinsic=item.intrinsic,
+                    lost=item.lost,
                 ),
             )
         )
@@ -785,6 +889,7 @@ async def prejudge_line(
                 # pass.
                 claimant=Claimant(handed, one.occurrence),
                 intrinsic=one.intrinsic,
+                unread=one.unread,
             )
             if isinstance(answered, Refused):
                 return answered
@@ -845,6 +950,7 @@ async def _verdict_refuses(
         agent_id,
         redirects=redirects,
         intrinsic=judged.intrinsic,
+        unread=judged.unread,
     )
     if isinstance(gated, Refused):
         return True
@@ -949,6 +1055,7 @@ async def _command_refused(
         namespace,
         agent_id,
         item.redirects,
+        lost=item.lost,
     )
     targets = redirect_paths(item.redirects, registry, walked.cwd)
     for index, judged in enumerate(explained):
@@ -1053,6 +1160,8 @@ async def _judge_line(
     agent_id: str,
     frame: Frame,
     stated: bool = True,
+    whole_line: bool = False,
+    lost: bool = False,
 ) -> list[Judged]:
     """Every command of a line explained, in the order the gate reads
     them, each with its place on the line.
@@ -1067,9 +1176,13 @@ async def _judge_line(
         frame (Frame): the scope the line is read in.
         stated (bool): whether the line's text reaches here as the gate
             will read it, as ``_judge_words`` takes it.
+        whole_line (bool): whether a runtime takes the line whole, as
+            ``_judge_words`` takes it.
+        lost (bool): whether the line begins with its cwd lost, as a
+            line a command runs after such a ``cd`` does.
     """
     out: list[Judged] = []
-    for item in _walked_line(ast, session, frame):
+    for item in _walked_line(ast, session, frame, lost):
         out.extend(
             await _judge_words(
                 item.words,
@@ -1081,6 +1194,8 @@ async def _judge_line(
                 item.redirects,
                 stated,
                 intrinsic=item.intrinsic,
+                whole_line=whole_line,
+                lost=item.lost,
             )
         )
     return out
@@ -1092,6 +1207,7 @@ async def explain_line(
     registry: MountRegistry,
     namespace: Namespace | None,
     agent_id: str = "",
+    whole_line: bool = False,
 ) -> list[Explanation]:
     """What every command of a line would do, in the order the gate
     reads them, without running any of it.
@@ -1113,8 +1229,17 @@ async def explain_line(
             decision ledger and the CLI installs.
         namespace (Namespace | None): the link table.
         agent_id (str): the agent the line is attributed to.
+        whole_line (bool): whether a runtime takes the line whole, which
+            reads it as typed (``admit_line``); the executor's gate reads
+            each command once expanded.
     """
     judged = await _judge_line(
-        ast, session, registry, namespace, agent_id, root_frame(ast, None)
+        ast,
+        session,
+        registry,
+        namespace,
+        agent_id,
+        root_frame(ast, None),
+        whole_line=whole_line,
     )
     return [one.explanation for one in judged]

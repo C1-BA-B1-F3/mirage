@@ -666,6 +666,82 @@ describe('prejudge', () => {
     expect(w.decisions.list('s')).toEqual([])
   })
 
+  it('explains an expanded name as the route reads it', async () => {
+    // The executor judges a name once expanded, so explain says nothing
+    // about it; a runtime that takes the line whole reads it as typed and
+    // refuses it under a rule, and explain then says exactly that.
+    const parser = await getTestParser()
+    const line = 'X=echo; "$X" hi'
+    for (const [whole, profile, code] of [
+      [false, PROFILE, 0],
+      [true, parseSessionProfile({}), 0],
+      [true, PROFILE, 126],
+    ] as const) {
+      const w = new Workspace(
+        { '/data': new RAMVFS() },
+        {
+          mode: MountMode.EXEC,
+          shellParser: parser,
+          profiles: { r: profile },
+          ...(whole ? { runtimes: [new LineBox(), 'workspace'] } : {}),
+        },
+      )
+      open.push(w)
+      w.createSession('s', { profile: 'r' })
+      const said = await w.explain(line, 's')
+      const ran = await w.shell(line, { sessionId: 's' })
+      expect(ran.exitCode).toBe(code)
+      expect(said.filter((e) => e.exitCode !== 0).map((e) => [e.exitCode, e.stderr])).toEqual(
+        code === 0 ? [] : [[code, DEC.decode(ran.stderr)]],
+      )
+    }
+  })
+
+  it('leaves a path the pass cannot read to the gate', async () => {
+    // Read as typed in the cwd the pass last knew, `$F` and a relative
+    // word after `cd "$d"` matched the rule's glob, refusing whole lines
+    // that remove only an allowed file, and `.` read as a mount root. A
+    // path a word names outright stays read though it is the lost cwd;
+    // a grep pattern spelling that cwd names no path.
+    const sealed = parseSessionProfile({
+      commands: { deny: [{ reason: 'sealed', commands: { grep: ['/data/prod'] } }] },
+    })
+    const w = new Workspace(
+      { '/data': new RAMVFS() },
+      {
+        mode: MountMode.EXEC,
+        shellParser: await getTestParser(),
+        profiles: { r: PROFILE, g: sealed },
+      },
+    )
+    open.push(w)
+    w.createSession('s', { profile: 'r' })
+    w.createSession('g', { profile: 'g' })
+    w.createSession('t')
+    await w.shell('mkdir /data/prod; touch /data/x /data/w', { sessionId: 't' })
+    for (const [session, line, code] of [
+      ['s', 'cd /data/prod; F=/data/x; rm $F; echo ok', 0],
+      ['s', 'cd /data/prod; d=/data; cd "$d" && rm w; echo ok', 0],
+      ['s', 'd=/data; cd "$d" && rm /data/prod/y; echo ok', 1],
+      ['s', 'cd /data/prod; mkdir v; cd v; d=/data; cd "$d" && rm -r /data/prod/v; echo ok', 1],
+      [
+        'g',
+        'mkdir -p /data/q; cd /data/prod; d=/data/q; cd "$d" && grep -r -e /data/prod; echo ok',
+        0,
+      ],
+      ['t', 'cd /data; d=prod; cd "$d" && tar -cf /data/t.tar . && echo ok', 0],
+    ] as const) {
+      const said = await w.explain(line, session)
+      const ran = await w.shell(line, { sessionId: session })
+      const err = DEC.decode(ran.stderr)
+      expect([ran.exitCode, err]).toEqual([code, code === 0 ? '' : err])
+      expect(DEC.decode(ran.stdout)).toBe(code === 0 ? 'ok\n' : '')
+      expect(said.filter((e) => e.exitCode !== 0).map((e) => [e.exitCode, e.stderr])).toEqual(
+        code === 0 ? [] : [[code, err]],
+      )
+    }
+  })
+
   it('hands a borrow back when the job cannot be submitted', async () => {
     // The job borrows the line's hand-off before it is submitted, and
     // its runner hands it back. A submission that fails starts no

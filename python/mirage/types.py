@@ -576,6 +576,15 @@ class EntryGate(Protocol):
         """
         ...
 
+    def refuses(self, virtual: str) -> bool:
+        """True exactly where ``check`` would raise, for a door that
+        declines instead (the read cache).
+
+        Args:
+            virtual (str): absolute virtual path of the entry.
+        """
+        ...
+
 
 MOUNT_MODE_ALIASES: dict[str, MountMode] = {
     "r": MountMode.READ,

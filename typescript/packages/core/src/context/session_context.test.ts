@@ -415,7 +415,12 @@ describe('the per-operand hide gate', () => {
 
 describe('the admission binding', () => {
   it('is scoped to one command and hands the outer one back', async () => {
-    const gate = (scoped: boolean) => ({ scoped, granted: [], check: () => undefined })
+    const gate = (scoped: boolean) => ({
+      scoped,
+      granted: [],
+      check: () => undefined,
+      refuses: () => false,
+    })
     expect(getAdmission()).toBeNull()
     expect(pathRulesActive()).toBe(false)
     const outer = gate(true)

@@ -323,6 +323,9 @@ class _Gate:
         if virtual == self.refused:
             raise PermissionError(virtual)
 
+    def refuses(self, virtual: str) -> bool:
+        return virtual == self.refused
+
 
 def _spec(virtual: str) -> PathSpec:
     return PathSpec(
@@ -398,6 +401,34 @@ async def test_rule_guard_asks_the_bound_gate_and_leaves_stat_alone():
     assert ("read", "/data/locked/y") in calls
     assert ("rename", "/data/a", "/data/locked/y") not in calls
     assert ("rename", "/data/a", "/data/b") in calls
+
+
+@pytest.mark.asyncio
+async def test_dispatch_rule_guard_marks_an_op_with_the_bound_gate():
+    from mirage.commands.builtin.generic_bind.adapter import (
+        with_dispatch_rule_guard,
+    )
+
+    seen: list[tuple[str, _Gate | None]] = []
+
+    async def door(op, path, **kwargs):
+        seen.append((op, kwargs.get("rule_gate")))
+        return None, None
+
+    dispatch = with_dispatch_rule_guard(door)
+    # No gate bound: the op goes to the door unmarked.
+    await dispatch("read", _spec("/data/f"))
+    gate = _Gate(refused="/data/locked/y")
+    token = set_admission(gate)
+    try:
+        await dispatch("read", _spec("/data/f"), dst=_spec("/data/g"))
+        # A metadata op is never judged: deny is present and refused.
+        await dispatch("stat", _spec("/data/f"))
+    finally:
+        reset_admission(token)
+    assert seen == [("read", None), ("read", gate), ("stat", None)]
+    # The wrapper judges nothing itself: the door does, on its own paths.
+    assert gate.asked == []
 
 
 class _SealedRead(Policy):
